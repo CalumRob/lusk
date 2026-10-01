@@ -3,3 +3,93 @@
   background-color: var(--editorial-paper);
   color: var(--editorial-ink);
 }
+
+.editorial-sheet {
+  min-width: 0;
+  background-color: var(--editorial-paper);
+  color: var(--editorial-ink);
+}
+
+.editorial-spread {
+  display: grid;
+  min-width: 0;
+  gap: var(--editorial-section-gap);
+}
+
+.editorial-evidence {
+  display: grid;
+  min-width: 0;
+  gap: var(--space-5);
+  align-items: start;
+}
+
+.editorial-evidence > * {
+  min-width: 0;
+}
+
+.editorial-section-heading {
+  color: var(--editorial-ink);
+  font-family: var(--font-display-title);
+  font-weight: 400;
+  text-wrap: balance;
+}
+
+.editorial-section-index {
+  color: var(--editorial-margin);
+  font-variant-numeric: tabular-nums;
+}
+
+.editorial-provenance {
+  color: var(--editorial-muted);
+  font-size: max(0.875rem, 1em);
+  line-height: 1.5;
+  overflow-wrap: anywhere;
+}
+
+.editorial-control {
+  color: var(--editorial-ink);
+}
+
+.editorial-control:focus-visible {
+  outline: 2px solid var(--editorial-margin);
+  outline-offset: 3px;
+}
+
+.editorial-figure {
+  min-width: 0;
+  color: var(--editorial-ink);
+  border-block-start: 1px solid var(--editorial-rule);
+  padding-block: var(--space-3);
+}
+
+.presentation-editorial .evidence-figure {
+  color: var(--editorial-ink);
+}
+
+.editorial-figure :is(figcaption, .cahier-figure-title, .cahier-figure-legend) {
+  color: var(--editorial-muted);
+  font: var(--type-figure-label);
+  letter-spacing: var(--type-figure-label-tracking);
+}
+
+.editorial-figure :is(.cahier-figure-scalar-value, [data-editorial-value]) {
+  color: var(--editorial-ink);
+  font: var(--type-figure-value);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 600px) {
+  .presentation-editorial .editorial-sheet {
+    padding-inline: var(--editorial-page-inset);
+  }
+
+  .presentation-editorial .editorial-provenance {
+    max-width: 100%;
+    font-size: 0.875rem;
+  }
+
+  .editorial-evidence,
+  .editorial-spread {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

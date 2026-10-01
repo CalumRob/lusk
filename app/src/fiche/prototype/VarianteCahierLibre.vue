@@ -18,7 +18,7 @@ import {
   Utensils,
   WalletCards,
 } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import type { Component } from 'vue'
 
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
@@ -62,8 +62,11 @@ import BivariateDistributionFigureCahier from './BivariateDistributionFigureCahi
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
 import CahierSharingFigure from './CahierSharingFigure.vue'
-import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
+
+const CartographicBreakoutPrototype = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('./CartographicBreakoutPrototype.vue'))
+  : null
 
 const props = defineProps<{
   content: ThemeContent | SingleUnitThemeContent
@@ -493,7 +496,7 @@ onBeforeUnmount(() => {
       </aside>
 
       <details class="mobile-index">
-        <summary>Sommaire du cahier</summary>
+          <summary class="editorial-control">Sommaire du cahier</summary>
         <nav aria-label="Sommaire du cahier">
           <a v-for="entry in pagination.entries" :key="entry.key" :href="`#${entry.anchor}`">
             <span class="spine-number">{{ entry.page === null ? '—' : String(entry.page).padStart(2, '0') }}</span>
@@ -507,7 +510,7 @@ onBeforeUnmount(() => {
           v-for="currentUnit in units"
           :key="currentUnit.key"
           :id="pageAnchorFor(currentUnit.key)"
-          class="cahier-page"
+          class="cahier-page editorial-sheet"
           :data-figure="pageAnchorFor(currentUnit.key)"
           :aria-labelledby="`${pageAnchorFor(currentUnit.key)}-title`"
         >
@@ -518,7 +521,7 @@ onBeforeUnmount(() => {
             <div class="page-main">
               <header class="page-heading">
                 <h2
-                  class="cahier-baseline-anchor"
+                  class="cahier-baseline-anchor editorial-section-heading"
                   :id="`${pageAnchorFor(currentUnit.key)}-title`"
                 >{{ currentUnit.label }}</h2>
               </header>
@@ -528,7 +531,7 @@ onBeforeUnmount(() => {
                 <CahierProse v-if="currentUnit.rundown" class="page-subtitle page-rundown" :blocks="currentUnit.rundown" />
               </div>
 
-              <div class="figure-stack">
+              <div class="figure-stack editorial-spread">
                 <section
               v-for="(section, sectionIndex) in currentUnit.sections"
               :key="section.key"
@@ -537,15 +540,15 @@ onBeforeUnmount(() => {
               :class="`cahier-section--${section.availability}`"
             >
               <div v-if="!isMapPrototypeSection(currentUnit.key, section.key)" class="concept-group-heading cahier-baseline-group">
-                <span>{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
+                <span class="editorial-section-index">{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
                 <div
                   v-if="props.presentation === 'plain' && section.lecture"
                   class="concept-group-heading-copy"
                 >
                   <span class="concept-group-label">{{ section.label }}</span>
-                  <h3 class="concept-group-narrative">{{ section.lecture.marelle }}</h3>
+                  <h3 class="concept-group-narrative editorial-section-heading">{{ section.lecture.marelle }}</h3>
                 </div>
-                <h3 v-else>{{ section.label }}</h3>
+                <h3 v-else class="editorial-section-heading">{{ section.label }}</h3>
               </div>
 
               <div
@@ -566,7 +569,7 @@ onBeforeUnmount(() => {
 
                 <section
                   v-else
-                  class="figure-spread"
+                  class="figure-spread editorial-evidence"
                   :class="{
                     'figure-spread--flip': sectionIndex % 2 === 1,
                     'figure-spread--paired': section.evidence?.kind === 'distribution'
@@ -605,7 +608,7 @@ onBeforeUnmount(() => {
 
                   <figure
                     v-if="section.key === 'distribution-acces-par-batiment' && props.buildingStatus && props.buildingStatus !== 'ready'"
-                    class="evidence-side evidence-figure building-api-state"
+                     class="evidence-side evidence-figure editorial-figure building-api-state"
                     :aria-busy="props.buildingStatus === 'loading'"
                   >
                     <p v-if="props.buildingStatus === 'loading'" role="status">Chargement des données d’accès aux bâtiments…</p>
@@ -617,7 +620,7 @@ onBeforeUnmount(() => {
 
                   <figure
                     v-if="section.evidence?.kind === 'distribution' && section.evidence.buildingDistribution?.availability === 'complete'"
-                   class="evidence-side evidence-figure bivariate-evidence"
+                   class="evidence-side evidence-figure editorial-figure bivariate-evidence"
                  >
                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Part des bâtiments par nombre de types et d’équipements accessibles — {{ section.evidence.buildingDistribution!.modeLabel }}</figcaption>
                     <BivariateDistributionFigureCahier
@@ -635,7 +638,7 @@ onBeforeUnmount(() => {
 
                   <figure
                     v-if="section.evidence?.kind === 'distribution' && section.evidence.accessRamp?.availability === 'complete'"
-                   class="evidence-side evidence-figure access-ramp-evidence"
+                   class="evidence-side evidence-figure editorial-figure access-ramp-evidence"
                  >
                    <figcaption class="cahier-figure-title cahier-baseline-anchor">Nombre de types accessibles par part cumulée des bâtiments</figcaption>
                     <AccessRampFigureCahier
@@ -660,7 +663,7 @@ onBeforeUnmount(() => {
                         :evidence="section.evidence"
                         :targets="section.explorationTargets"
                       />
-                      <figure class="sharing-network-figure evidence-figure">
+                      <figure class="sharing-network-figure evidence-figure editorial-figure">
                         <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.networkReadingsLabel }}</figcaption>
                         <CahierSharingFigure
                           :evidence="section.evidence"
@@ -675,7 +678,7 @@ onBeforeUnmount(() => {
                     </div>
                     <figure
                       v-else
-                      class="evidence-side evidence-figure sharing-networks-evidence"
+                   class="evidence-side evidence-figure editorial-figure sharing-networks-evidence"
                     >
                       <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
                       <CahierSharingFigure
@@ -692,7 +695,7 @@ onBeforeUnmount(() => {
 
                    <figure
                      v-else-if="section.evidence?.kind === 'cycling-offer'"
-                     class="evidence-side evidence-figure sharing-cycling-offer-evidence"
+                  class="evidence-side evidence-figure editorial-figure sharing-cycling-offer-evidence"
                    >
                      <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
                      <CahierSharingFigure
@@ -707,7 +710,7 @@ onBeforeUnmount(() => {
 
                    <figure
                      v-else-if="section.evidence?.kind === 'sharing-parking'"
-                    class="evidence-side evidence-figure sharing-parking-evidence"
+                 class="evidence-side evidence-figure editorial-figure sharing-parking-evidence"
                   >
                     <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
                     <CahierSharingFigure
@@ -720,7 +723,7 @@ onBeforeUnmount(() => {
                     <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                   </figure>
 
-                  <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
+               <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure editorial-figure summary-evidence">
                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)</figcaption>
                   <div class="cahier-figure-frame" :style="CAHIER_FIGURE_STYLE">
                   <template v-if="props.presentation === 'plain'">
@@ -836,7 +839,7 @@ onBeforeUnmount(() => {
                    <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                  </figure>
 
-                <figure v-else-if="section.evidence?.kind === 'bpe-profiles'" class="evidence-side evidence-figure bpe-evidence">
+             <figure v-else-if="section.evidence?.kind === 'bpe-profiles'" class="evidence-side evidence-figure editorial-figure bpe-evidence">
                   <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
                   <p v-if="section.evidence.totalTypes !== null" class="bpe-profile-total">
                     {{ formatNumber(section.evidence.totalTypes, 0) }} types d’équipement
@@ -950,7 +953,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <aside class="page-margin" aria-label="Informations marginales">
+            <aside class="page-margin editorial-provenance" aria-label="Informations marginales">
               <div class="page-number">
                 <span>page</span>
                 {{ String(pageEntryFor(currentUnit.key)?.page ?? pagination.currentPage).padStart(2, '0') }}<small>/{{ String(pagination.totalPages).padStart(2, '0') }}</small>
@@ -965,13 +968,13 @@ onBeforeUnmount(() => {
 
         <section
           :id="sourceEntry?.anchor ?? 'figure-sources'"
-          class="sources-page"
+          class="sources-page editorial-sheet"
           :data-figure="sourceEntry?.anchor ?? 'figure-sources'"
           aria-labelledby="sources-title"
         >
           <div class="page-margin" aria-hidden="true"><div class="page-number"><span>fin</span> ·</div></div>
-          <header class="page-heading"><h2 id="sources-title">Carnet des sources</h2></header>
-          <dl class="sources-list">
+          <header class="page-heading"><h2 id="sources-title" class="editorial-section-heading">Carnet des sources</h2></header>
+          <dl class="sources-list editorial-provenance">
             <div v-for="source in content.sourceRegister" :key="source.id">
               <dt><RouterLink to="/sources">{{ source.source }}</RouterLink></dt>
               <dd>
@@ -1252,7 +1255,7 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 600px) {
   .cahier--sans-grille { --cahier-page-left-inset: 18px; --cahier-page-right-inset: 96px; }
-  .cahier { --margin-line: 74px; }
+  .cahier { --margin-line: 12px; }
   .cahier-cover { padding: 18px 20px 44px; }
   .cahier-local-nav { padding-left: 44px; font-size: 10px; }
   .cahier-home-link { display: none; }
@@ -1263,8 +1266,12 @@ onBeforeUnmount(() => {
   .cover-bottom-rule { margin-top: 52px; }
   .cahier-reader { padding: 48px 20px 88px; }
   .cahier-pages { gap: 64px; }
-  .cahier-page, .sources-page { --page-left-inset: 96px; --page-right-inset: 18px; padding: 36px var(--page-right-inset) 40px var(--page-left-inset); }
-  .page-margin { top: 36px; left: 10px; width: 48px; }
+  .cahier-page, .sources-page { --page-left-inset: 28px; --page-right-inset: 18px; padding: 36px var(--page-right-inset) 40px var(--page-left-inset); }
+  .page-margin { position: static; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; width: auto; margin: 0 0 var(--space-5); text-align: left; }
+  .page-margin .page-number { display: flex; align-items: baseline; gap: 5px; font-size: 20px; }
+  .margin-sources { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 6px 12px; }
+  .margin-sources .margin-label { flex-basis: 100%; text-align: right; }
+  .margin-sources a { font-size: 14px; line-height: 1.4; }
   .page-number { font-size: 24px; }
   .page-heading h2 { font-size: clamp(1.35rem, 7vw, 1.85rem); }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }

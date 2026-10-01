@@ -34,6 +34,26 @@ describe('shared E editorial foundation', () => {
     expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toContain('--margin-line: var(--editorial-margin-offset)')
   })
 
+  it('owns shared sheet, reading, evidence, provenance, control, and responsive spread grammar centrally', () => {
+    const css = read('src/styles/editorial.css')
+    for (const selector of ['.editorial-sheet', '.editorial-spread', '.editorial-evidence', '.editorial-section-heading',
+      '.editorial-section-index', '.editorial-provenance', '.editorial-control', '.editorial-figure']) {
+      expect(css).toContain(selector)
+    }
+    expect(css).toMatch(/\.editorial-provenance\s*\{[^}]*overflow-wrap:\s*anywhere/s)
+    expect(css).toMatch(/@media\s*\(max-width:\s*600px\)/)
+    const mobility = read('src/fiche/mobilite/ProductionMobilite.vue')
+    expect(mobility).toContain('show-all-units')
+    expect(mobility).not.toContain('show-map-prototype')
+    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toContain('page-margin editorial-provenance')
+    const mobilityLayout = read('src/fiche/prototype/VarianteCahierLibre.vue')
+    expect(mobilityLayout).toContain('.cahier { --margin-line: 12px; }')
+    expect(mobilityLayout).toContain('.page-margin { position: static; display: flex;')
+    expect(mobilityLayout).toContain('--page-left-inset: 28px; --page-right-inset: 18px;')
+    expect(mobilityLayout).toContain('const CartographicBreakoutPrototype = import.meta.env.DEV')
+    expect(mobilityLayout).not.toContain("import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'")
+  })
+
   it('keeps typography roles and specialized prototype flourishes outside universal tokens', () => {
     const tokens = read('src/styles/tokens.css')
     expect(tokens).toContain('--font-wordmark: var(--font-serif)')
