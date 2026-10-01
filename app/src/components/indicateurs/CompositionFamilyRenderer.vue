@@ -63,6 +63,6 @@ function barStyle(partie: PartieComposition): Record<string, string> {
 .composition-legend li.active{border-left-color:var(--indicateur-accent);background:var(--indicateur-soft)}
 .composition-legend li small{color:var(--text-secondary);font-size:.78rem;font-weight:400}
 .composition-note,.composition-vide{margin:12px 0 0;color:var(--text-secondary)}
-.composition-note{padding:8px 12px;border-left:3px solid var(--indicateur-accent);background:var(--indicateur-soft)}
+.composition-note{padding:8px 12px;border-top:2px solid var(--indicateur-accent);background:var(--indicateur-soft)}
 figcaption{margin-top:16px;color:var(--text-secondary);font-weight:400}
 </style>

@@ -38,10 +38,10 @@ const categoriesManquantes = computed(() => props.profil?.etat === 'incomplet' ?
 .profil-bloc h2{font:var(--text-h3);margin:0 0 12px}
 .profil-lignes{display:flex;flex-direction:column}
 .profil-ligne{display:flex;justify-content:space-between;gap:16px;padding:8px 4px;border-bottom:1px solid var(--border-subtle)}
-.profil-ligne.active{background:var(--indicateur-soft);border-left:3px solid var(--indicateur-accent)}
+.profil-ligne.active{background:var(--indicateur-soft);font-weight:600}
 .profil-libelle{color:var(--text-secondary)}
 .profil-valeur{font-weight:600;white-space:nowrap}
 .profil-valeur small{font-weight:400;color:var(--text-secondary)}
-.profil-note{margin:12px 0 0;padding:8px 12px;border-left:3px solid var(--indicateur-accent);background:var(--indicateur-soft);color:var(--text-secondary)}
+.profil-note{margin:12px 0 0;padding:8px 12px;border-top:2px solid var(--indicateur-accent);background:var(--indicateur-soft);color:var(--text-secondary)}
 .list-renderer figcaption{margin-top:12px;color:var(--text-secondary)}
 </style>

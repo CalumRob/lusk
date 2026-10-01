@@ -55,6 +55,6 @@ const nomsIncomplets = computed(() => (props.relation?.incomplets ?? []).map((po
 .relation-axe{stroke:var(--indicateur-line);stroke-width:.5}
 .relation-point{fill:var(--indicateur-accent)}
 .relation-point.selection{fill:var(--status-error)}
-.relation-note{margin:12px 0 0;padding:8px 12px;border-left:3px solid var(--indicateur-accent);background:var(--indicateur-soft);color:var(--text-secondary)}
+.relation-note{margin:12px 0 0;padding:8px 12px;border-top:2px solid var(--indicateur-accent);background:var(--indicateur-soft);color:var(--text-secondary)}
 .relationship-renderer figcaption{margin-top:12px;color:var(--text-secondary)}
 </style>
