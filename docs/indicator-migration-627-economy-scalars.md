@@ -29,11 +29,14 @@ are not projected. This check did not write to the artifact or any database.
 - `eco_activites` is sparse/non-ordinary scalar evidence and remains in the
   canonical static indicator/read-model consumers pending a separately bounded
   evidence mapping.
-- Economy `indicator_pages`/Repères/Carte consumers, fiche scalar
-  `effectifs_salaries`, and numeric-map layer values still use the existing
-  static indicator/read-model acquisition. This PR does not claim an API
-  consumer cutover. The next #627 step must add the bounded cohort comparison
-  read and migrate those seams to fail visibly/retryably without static fallback.
+- Economy `indicator_pages`/Repères/Carte consumers in
+  `app/src/views/IndicateurPage.vue` and `app/src/payload/indicatorReadModel.ts`,
+  fiche scalar facts resolved through `app/src/fiche/content/`, and numeric-map
+  layers assembled in `app/src/carte/coucheModel.ts` / `app/src/carte/fusion.ts`
+  still use static indicator/read-model acquisition. This PR does not claim an
+  API consumer cutover. The next #627 step must add bounded cohort comparison
+  acquisition and migrate those seams to visible/retryable unavailable states
+  without static fallback.
 - Static `indicateurs_economie` artifact, ranks and downstream pipeline
   consumers remain; none are deleted. `histoires_economie` remains an active
   fiche semantic consumer and is not part of these two scalar facts.
