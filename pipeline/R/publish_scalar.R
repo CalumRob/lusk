@@ -216,7 +216,7 @@ publish_service_share_scalars <- function(con, access, metadata, eligible_territ
 # producer-owned scalar_contract for eligible levels, completeness, facet and
 # null status.
 project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
-    eligible_territories, fixture_policy=NULL) {
+    eligible_territories, fixture_policy=NULL, source_vintages=NULL) {
   required <- c("territory_id", "territory_type", "indicator_id", "value", "unit",
     "source_name", "source_version", "reference_date", "publication_date")
   if (!is.data.frame(rows) || !all(required %in% names(rows)) ||
@@ -241,33 +241,78 @@ project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
     if (length(completeness) != 1L || !completeness %in% c("sparse", "dense_complete") ||
         length(missing_status) != 1L || !missing_status %in% c("suppressed", "unsupported", "not_available") ||
         length(levels) == 0L || any(!levels %in% c("commune", "epci", "departement", "region")) ||
-        !identical(policy$counts_available, FALSE) || length(policy$comparison_facet) != 1L ||
+        !is.logical(policy$counts_available) || length(policy$counts_available) != 1L ||
+        (!identical(policy$counts_available, FALSE) &&
+          (!is.character(policy$support_count_field) || length(policy$support_count_field) != 1L ||
+            !policy$support_count_field %in% names(rows))) || length(policy$comparison_facet) != 1L ||
+        (!is.null(policy$zero_support_status) && !policy$zero_support_status %in% c("unsupported", "not_available")) ||
+        (!is.null(policy$suppressed_below) && (!is.numeric(policy$suppressed_below) ||
+          length(policy$suppressed_below) != 1L || policy$suppressed_below <= 0)) ||
         (!is.na(policy$comparison_facet) && !nzchar(policy$comparison_facet)))
       stop("Producer scalar contract is invalid for indicator: ", id, call.=FALSE)
     selected <- rows[rows$indicator_id == id & rows$territory_type %in% levels, , drop=FALSE]
-    if (!nrow(selected) || length(source_ids) != 1L)
-      stop("Canonical indicator facts or single-source provenance are unavailable: ", id, call.=FALSE)
+    if (!nrow(selected) || !length(source_ids))
+      stop("Canonical indicator facts or source provenance are unavailable: ", id, call.=FALSE)
     if (anyNA(selected$unit) || any(unique(as.character(selected$unit)) != as.character(page$unit)))
       stop("Canonical scalar unit disagrees with declared metadata: ", id, call.=FALSE)
     selected <- selected[order(selected$territory_type, selected$territory_id), , drop=FALSE]
+    support <- if (isTRUE(policy$counts_available)) as.integer(selected[[policy$support_count_field]]) else NA_integer_
+    if (isTRUE(policy$counts_available) && (anyNA(support) || any(support < 0L)))
+      stop("Canonical scalar support count is invalid for indicator: ", id, call.=FALSE)
+    missing <- rep(missing_status, nrow(selected))
+    if (isTRUE(policy$counts_available)) {
+      if (!is.null(policy$zero_support_status) && length(policy$zero_support_status) == 1L)
+        missing[is.na(selected$value) & support == 0L] <- policy$zero_support_status
+      if (!is.null(policy$suppressed_below) && length(policy$suppressed_below) == 1L &&
+          is.numeric(policy$suppressed_below))
+        missing[is.na(selected$value) & support > 0L & support < policy$suppressed_below] <- "suppressed"
+    }
     facts_out[[id]] <- data.frame(indicator_id=id, territory_id=as.character(selected$territory_id),
       territory_type=as.character(selected$territory_type), value=as.numeric(selected$value),
-      status=ifelse(is.na(selected$value), missing_status, "measured"),
-      support_count=NA_integer_, denominator_count=NA_integer_, stringsAsFactors=FALSE)
+      status=ifelse(is.na(selected$value), missing, "measured"),
+      support_count=support, denominator_count=support, stringsAsFactors=FALSE)
     descriptors_out[[id]] <- data.frame(indicator_id=id, allowed_sources=I(list(source_ids)),
       label=as.character(page$label), unit=as.character(page$unit), direction=as.character(page$direction),
       comparison_facet=as.character(policy$comparison_facet), allowed_levels=I(list(levels)),
       denominator_semantics=as.character(page$calculation), completeness=completeness,
       descriptor_version=scalar_content_version(list(page=page, scalar_contract=policy)), stringsAsFactors=FALSE)
-    provenance_out[[id]] <- unique(data.frame(indicator_id=id, territory_id=as.character(selected$territory_id),
-      source_id=source_ids[[1L]], vintage_id=paste(selected$source_version, selected$reference_date, sep="/"),
-      stringsAsFactors=FALSE))
-    datasets_out[[id]] <- unique(data.frame(source_id=source_ids[[1L]], name=as.character(selected$source_name),
-      stringsAsFactors=FALSE))
-    vintages_out[[id]] <- unique(data.frame(source_id=source_ids[[1L]],
-      vintage_id=paste(selected$source_version, selected$reference_date, sep="/"),
-      version=as.character(selected$source_version), reference_date=as.Date(selected$reference_date),
-      publication_date=as.Date(selected$publication_date), stringsAsFactors=FALSE))
+    if (length(source_ids) == 1L) {
+      provenance_out[[id]] <- unique(data.frame(indicator_id=id, territory_id=as.character(selected$territory_id),
+        source_id=source_ids[[1L]], vintage_id=paste(selected$source_version, selected$reference_date, sep="/"),
+        stringsAsFactors=FALSE))
+      datasets_out[[id]] <- unique(data.frame(source_id=source_ids[[1L]], name=as.character(selected$source_name), stringsAsFactors=FALSE))
+      vintages_out[[id]] <- unique(data.frame(source_id=source_ids[[1L]], vintage_id=paste(selected$source_version, selected$reference_date, sep="/"),
+        version=as.character(selected$source_version), reference_date=as.Date(selected$reference_date),
+        publication_date=as.Date(selected$publication_date), stringsAsFactors=FALSE))
+    } else {
+      if (!is.data.frame(source_vintages) || !all(c("id", "source", "version", "date_reference", "date_publication") %in% names(source_vintages)))
+        stop("Declared multi-source scalar requires canonical source vintages: ", id, call.=FALSE)
+      if (anyDuplicated(source_ids))
+        stop("Declared multi-source scalar contains duplicate source IDs: ", id, call.=FALSE)
+      reference_source <- metadata$sources[[id]]
+      if (!is.character(reference_source) || length(reference_source) != 1L ||
+          is.na(reference_source) || !nzchar(reference_source) ||
+          !reference_source %in% source_ids)
+        stop("Scalar reference source is not declared among indicator sources: ", id, call.=FALSE)
+      records <- source_vintages[as.character(source_vintages$id) %in% source_ids, , drop=FALSE]
+      if (anyDuplicated(as.character(records$id)) || !setequal(as.character(records$id), source_ids))
+        stop("Missing or duplicate canonical source vintage for scalar: ", id, call.=FALSE)
+      primary <- match(reference_source, as.character(records$id))
+      if (any(as.character(selected$source_version) != as.character(records$version[[primary]]) |
+          as.character(selected$reference_date) != as.character(records$date_reference[[primary]]) |
+          as.character(selected$publication_date) != as.character(records$date_publication[[primary]]) |
+          as.character(selected$source_name) != as.character(records$source[[primary]])))
+        stop("Canonical scalar freshness stamp disagrees with primary source vintage: ", id, call.=FALSE)
+      provenance_out[[id]] <- do.call(rbind, lapply(source_ids, function(source_id)
+        data.frame(indicator_id=id, territory_id=as.character(selected$territory_id), source_id=source_id,
+          vintage_id=paste(records$version[match(source_id, records$id)], records$date_reference[match(source_id, records$id)], sep="/"), stringsAsFactors=FALSE)))
+      datasets_out[[id]] <- data.frame(source_id=source_ids, name=as.character(records$source[match(source_ids, records$id)]), stringsAsFactors=FALSE)
+      vintages_out[[id]] <- data.frame(source_id=source_ids,
+        vintage_id=paste(records$version[match(source_ids, records$id)], records$date_reference[match(source_ids, records$id)], sep="/"),
+        version=as.character(records$version[match(source_ids, records$id)]),
+        reference_date=as.Date(records$date_reference[match(source_ids, records$id)]),
+        publication_date=as.Date(records$date_publication[match(source_ids, records$id)]), stringsAsFactors=FALSE)
+    }
   }
   projection <- list(facts=do.call(rbind, facts_out), descriptors=do.call(rbind, descriptors_out),
     provenance=do.call(rbind, provenance_out), datasets=unique(do.call(rbind, datasets_out)),

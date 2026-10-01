@@ -634,7 +634,7 @@ test_that("sous-groupes : la décomposition #370 + #408 — quatorze sous-groupe
     ),
     demographie = list(
       c("etat-de-la-population", "trajectoire-demographique"),
-      c("pyramid", "trajectory")
+      c("pyramid", "scalar")
     ),
     habitat = list(
       c("composition-du-parc", "etat-energetique-du-parc", "marche"),

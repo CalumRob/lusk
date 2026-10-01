@@ -195,8 +195,12 @@ project_theme_scalar_cohort <- function(sortie, eligible_territories, theme) {
     value=as.numeric(rows$value), unit=as.character(rows$unit),
     source_name=as.character(rows$vintage_source), source_version=as.character(rows$vintage_version),
     reference_date=as.character(rows$vintage_date_reference),
-    publication_date=as.character(rows$vintage_date_publication), stringsAsFactors=FALSE)
-  project_scalar_canonical_rows(rows, metadata, ids, eligible_territories)
+    publication_date=as.character(rows$vintage_date_publication),
+    support=if ("n" %in% names(rows)) as.integer(rows$n) else NA_integer_, stringsAsFactors=FALSE)
+  vintages_path <- file.path(sortie, "vintages.parquet")
+  source_vintages <- if (file.exists(vintages_path)) nanoparquet::read_parquet(vintages_path) else NULL
+  project_scalar_canonical_rows(rows, metadata, ids, eligible_territories,
+    source_vintages=source_vintages)
 }
 
 project_economy_scalar_cohort <- function(sortie, eligible_territories) {
@@ -211,13 +215,18 @@ project_mobility_scalar_cohort <- function(sortie, eligible_territories) {
   project_theme_scalar_cohort(sortie, eligible_territories, "mobilite")
 }
 
+project_housing_scalar_cohort <- function(sortie, eligible_territories) {
+  project_theme_scalar_cohort(sortie, eligible_territories, "habitat")
+}
+
 project_service_scalar_snapshot <- function(donnees, sortie) {
   service <- project_service_share_scalars(donnees$scalar_access,
     donnees$scalar_metadata, donnees$scalar_eligible_territories)
   economy <- project_economy_scalar_cohort(sortie, donnees$scalar_eligible_territories)
   demography <- project_demography_scalar_cohort(sortie, donnees$scalar_eligible_territories)
   mobility <- project_mobility_scalar_cohort(sortie, donnees$scalar_eligible_territories)
-  additional <- list(economy, demography, mobility)
+  housing <- project_housing_scalar_cohort(sortie, donnees$scalar_eligible_territories)
+  additional <- list(economy, demography, mobility, housing)
   list(projection=assemble_scalar_snapshot(service, additional),
     additional_projections=additional)
 }

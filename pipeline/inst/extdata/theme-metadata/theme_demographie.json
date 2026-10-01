@@ -131,7 +131,8 @@
   }},
   "scalar_contracts": {
     "densite": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "densite", "missing_status": "not_available", "counts_available": false },
-    "taille_menages": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "taille_menages", "missing_status": "not_available", "counts_available": false }
+    "taille_menages": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "taille_menages", "missing_status": "not_available", "counts_available": false },
+    "evolution_1968": { "allowed_levels": ["commune", "epci", "departement"], "completeness": "sparse", "comparison_facet": "evolution_1968", "missing_status": "not_available", "counts_available": false }
   },
   "source_records": {
     "serie_historique": {

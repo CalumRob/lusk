@@ -1215,14 +1215,14 @@ themes_fusion <- if (selection_complete) {
 # Publication SQL explicite depuis le PC : jamais dans le cron/static par
 # défaut. Le leaf attend la dernière écriture du référentiel territorial, la
 # table fusionnée des vintages, les métadonnées Mobilité, et les publications
-# canoniques Démographie et Économie consommées par le snapshot scalaire. Un marqueur DB en
+# canoniques Habitat, Démographie et Économie consommées par le snapshot scalaire. Un marqueur DB en
 # retard doit être retenté même quand tous les upstream targets sont à jour :
 # seul ce LEAF a cue=always, pas les calculs coûteux en amont.
 publication_service <- list()
 if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
   if (identical(MODE_RUN, "cron") ||
-      !all(c("mobilite", "economie", "demographie") %in% names(THEMES_RUN))) {
-    stop("LUSK_PUBLISH_DB exige un run local incluant les thèmes Mobilité, Économie/Emploi et Démographie; cron interdit.",
+      !all(c("mobilite", "economie", "demographie", "habitat") %in% names(THEMES_RUN))) {
+    stop("LUSK_PUBLISH_DB exige un run local incluant les thèmes Mobilité, Économie/Emploi, Démographie et Habitat; cron interdit.",
          call. = FALSE)
   }
   derniere_publication <- as.name(paste0(
@@ -1235,6 +1235,7 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
       publie_mobilite
       publie_economie
       publie_demographie
+      publie_habitat
       metadata_mobilite
       fusion_vintages
       publier_tables_service_depuis_parquet(.(SORTIE_RUN))

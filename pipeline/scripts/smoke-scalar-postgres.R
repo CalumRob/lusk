@@ -119,7 +119,7 @@ tryCatch({
     identical(DBI::dbGetQuery(connection, "SELECT value,status FROM scalar_observation WHERE indicator_id='densite' ORDER BY territory_id LIMIT 1"), previous_fact),
     identical(DBI::dbGetQuery(connection, "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]], previous_marker))
 
-  # Exercise the real table-level Services + economy + demography + mobility assembly against canonical
+  # Exercise the real table-level Services + economy + demography + mobility + housing assembly against canonical
   # producer Parquet, then the existing publisher wrapper and PostgreSQL adapter.
   DBI::dbExecute(connection, "DROP TRIGGER reject_smoke_value ON scalar_observation")
   DBI::dbExecute(connection, "DROP FUNCTION reject_smoke_value()")
@@ -147,8 +147,17 @@ tryCatch({
     DBI::dbGetQuery(connection, "SELECT count(*) AS n FROM scalar_observation")$n[[1L]] ==
       nrow(snapshot$projection$facts))
   stopifnot(all(c("surface_reseaux_routiers", "offre_tc", "bornes_recharge",
-    "densite", "taille_menages", "effectifs_salaries", "chomage") %in%
+    "densite", "taille_menages", "effectifs_salaries", "chomage", "part_passoires") %in%
     snapshot$projection$descriptors$indicator_id))
+  housing_rows <- DBI::dbGetQuery(connection,
+    "SELECT o.territory_id,o.value,o.status,o.support_count,o.denominator_count FROM scalar_observation o WHERE o.indicator_id='part_passoires' ORDER BY o.territory_id")
+  expected_housing <- snapshot$projection$facts[snapshot$projection$facts$indicator_id == "part_passoires", , drop=FALSE]
+  expected_housing <- expected_housing[order(expected_housing$territory_id), , drop=FALSE]
+  stopifnot(identical(as.character(housing_rows$territory_id), expected_housing$territory_id),
+    isTRUE(all.equal(housing_rows$value, expected_housing$value)),
+    identical(as.character(housing_rows$status), expected_housing$status),
+    identical(as.integer(housing_rows$support_count), expected_housing$support_count),
+    identical(as.integer(housing_rows$denominator_count), expected_housing$denominator_count))
 
   snapshot_sql <- function() list(
     facts=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation ORDER BY indicator_id,territory_id"),

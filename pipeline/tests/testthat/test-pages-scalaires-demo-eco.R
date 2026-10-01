@@ -109,6 +109,10 @@ test_that("la republication depuis les canons épinglés est stable à l'octet c
     republie <- file.path(sortie, paste0("theme_", theme, ".json"))
     attendu <- readBin(commis, "raw", file.size(commis))
     observe <- readBin(republie, "raw", file.size(republie))
+    # JSON artifact parity is about the payload, not the platform's newline
+    # convention (writeLines uses CRLF on Windows).
+    attendu <- attendu[attendu != as.raw(0x0d)]
+    observe <- observe[observe != as.raw(0x0d)]
     expect_identical(observe, attendu,
                      info = paste("artefact", theme,
                                   "non régénéré depuis son canon épinglé"))

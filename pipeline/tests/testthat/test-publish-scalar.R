@@ -211,27 +211,81 @@ test_that("economy scalar projector retains canonical units, levels, and source 
   expect_false("region" %in% unlist(metadata$indicator_pages$effectifs_salaries$levels))
 })
 
+test_that("housing DPE scalar retains producer denominator and suppression", {
+  metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_habitat.json"), simplifyVector=FALSE)
+  public <- jsonlite::fromJSON(file.path(pkgload::pkg_path(), "..", "public", "data", "theme_habitat.json"), simplifyVector=FALSE)
+  expect_identical(names(public$scalar_contracts), names(metadata$scalar_contracts))
+  expect_identical(public$scalar_contracts, metadata$scalar_contracts)
+  canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_habitat.parquet"))
+  rows <- data.frame(territory_id=as.character(canonical$territoire),
+    territory_type=as.character(canonical$type), indicator_id=as.character(canonical$key),
+    value=as.numeric(canonical$value), unit=as.character(canonical$unit),
+    source_name=as.character(canonical$vintage_source), source_version=as.character(canonical$vintage_version),
+    reference_date=as.character(canonical$vintage_date_reference),
+    publication_date=as.character(canonical$vintage_date_publication), support=as.integer(canonical$n))
+  eligible <- unique(data.frame(territory_id=rows$territory_id, territory_type=rows$territory_type))
+  projection <- project_scalar_canonical_rows(rows, metadata, "part_passoires", eligible)
+  facts <- projection$facts
+  expect_true(any(facts$status == "suppressed" & facts$support_count < 30L))
+  expected <- canonical[canonical$key == "part_passoires", , drop=FALSE]
+  expect_equal(facts$support_count, as.integer(expected$n[match(facts$territory_id, expected$territoire)]))
+  expect_equal(facts$denominator_count, facts$support_count)
+  expect_true(all(facts$status[facts$support_count == 0L] == "not_available"))
+  expect_true(all(facts$status[facts$support_count > 0L & facts$support_count < 30L] == "suppressed"))
+  expect_equal(projection$descriptors$comparison_facet, "part_passoires")
+  expect_true("region" %in% projection$descriptors$allowed_levels[[1L]])
+  inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
+  snapshot <- project_service_scalar_snapshot(inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
+  expect_equal(nrow(snapshot$descriptors), 42L)
+  expect_true(all(c("effectifs_salaries", "chomage", "densite", "taille_menages", "part_passoires") %in%
+    snapshot$descriptors$indicator_id))
+  expect_true(all(c("distribution_dpe", "part_passoires") %in% names(metadata$indicator_pages)))
+  expect_identical(metadata$indicator_pages$distribution_dpe$comparison$indicator, "part_passoires")
+})
+
+test_that("all producer scalar contracts match their checked-in generated metadata", {
+  root <- pkgload::pkg_path()
+  themes <- c("services", "economie", "demographie", "mobilite", "habitat", "milieux", "programmes")
+  themes <- themes[file.exists(file.path(root, "inst", "extdata", "theme-metadata", paste0("theme_", themes, ".json")))]
+  for (theme in themes) {
+    source <- jsonlite::fromJSON(file.path(root, "inst", "extdata", "theme-metadata", paste0("theme_", theme, ".json")), simplifyVector=FALSE)
+    generated <- jsonlite::fromJSON(file.path(root, "..", "public", "data", paste0("theme_", theme, ".json")), simplifyVector=FALSE)
+    expect_identical(generated$scalar_contracts, source$scalar_contracts, info=theme)
+  }
+})
+
 test_that("demography scalars are projected from the canonical producer into full snapshots", {
   canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_demographie.parquet"))
   eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type)))
   projection <- project_demography_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible)
-  expect_setequal(projection$descriptors$indicator_id, c("densite", "taille_menages"))
+  expect_setequal(projection$descriptors$indicator_id, c("densite", "taille_menages", "evolution_1968"))
   for (id in projection$descriptors$indicator_id) {
     expected <- canonical[canonical$key == id, , drop=FALSE]
+    expected <- expected[expected$type %in% projection$descriptors$allowed_levels[[
+      match(id, projection$descriptors$indicator_id)]], , drop=FALSE]
     actual <- projection$facts[projection$facts$indicator_id == id, , drop=FALSE]
     expect_setequal(paste(actual$territory_id, actual$territory_type), paste(expected$territoire, expected$type))
     expect_equal(actual$value[match(expected$territoire, actual$territory_id)], expected$value)
     expect_true(all(is.na(actual$support_count) & is.na(actual$denominator_count)))
   }
-  expect_false(any(projection$descriptors$indicator_id %in% c("structure_age", "evolution_1968")))
+  expect_false("structure_age" %in% projection$descriptors$indicator_id)
   service_inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
   snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))
   original_service <- project_service_share_scalars(service_inputs$scalar_access,
     service_inputs$scalar_metadata, service_inputs$scalar_eligible_territories)
-  expect_equal(sum(snapshot$projection$facts$indicator_id %in% c("densite", "taille_menages")), nrow(projection$facts))
-  expect_true(all(c("effectifs_salaries", "chomage", "densite", "taille_menages") %in%
+  expect_equal(sum(snapshot$projection$facts$indicator_id %in% projection$descriptors$indicator_id), nrow(projection$facts))
+  expect_true(all(c("effectifs_salaries", "chomage", "densite", "taille_menages", "evolution_1968") %in%
     snapshot$projection$descriptors$indicator_id))
+  expected <- canonical[canonical$key == "evolution_1968", , drop=FALSE]
+  expected <- expected[expected$type %in% projection$descriptors$allowed_levels[[
+    match("evolution_1968", projection$descriptors$indicator_id)]], , drop=FALSE]
+  actual <- projection$facts[projection$facts$indicator_id == "evolution_1968", , drop=FALSE]
+  expect_gt(nrow(expected), 0L)
+  expect_equal(actual$value[match(expected$territoire, actual$territory_id)], expected$value)
+  lineage <- projection$provenance[projection$provenance$indicator_id == "evolution_1968", , drop=FALSE]
+  expect_true(all(lineage$source_id == "serie_historique"))
+  expect_true(all(lineage$vintage_id == paste(expected$vintage_version, expected$vintage_date_reference, sep="/")))
   retained_service <- snapshot$projection$facts[snapshot$projection$facts$indicator_id %in% original_service$descriptors$indicator_id, , drop=FALSE]
   rownames(retained_service) <- NULL
   expect_equal(retained_service, original_service$facts)
@@ -243,13 +297,16 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
     "tot_loss_t", "tot_loss_b", "avg_tot_car", "avg_tot_b", "avg_tot_t",
     "avg_div_car", "avg_div_b", "avg_div_t", "iso_alimentation", "iso_sante",
-    "iso_administration", "iso_ecole", "iso_banque", "raccordement_tc")
+    "iso_administration", "iso_ecole", "iso_banque", "raccordement_tc",
+    "bornes_ev_par_station_service", "stationnement_velo_par_voiture")
   eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type)))
   projection <- project_mobility_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible)
   expect_setequal(projection$descriptors$indicator_id, ids)
   for (id in ids) {
     expected <- canonical[canonical$key == id, , drop=FALSE]
+    allowed_levels <- projection$descriptors$allowed_levels[[match(id, projection$descriptors$indicator_id)]]
+    expected <- expected[expected$type %in% allowed_levels, , drop=FALSE]
     actual <- projection$facts[projection$facts$indicator_id == id, , drop=FALSE]
     expect_equal(nrow(actual), nrow(expected))
     expect_equal(actual$value[match(expected$territoire, actual$territory_id)], expected$value)
@@ -267,6 +324,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     iso_administration="mobilite_snapshot", iso_ecole="mobilite_snapshot", iso_banque="mobilite_snapshot",
     raccordement_tc="matrice_temps_mairies")
   for (id in ids) {
+    if (!id %in% names(source_by_id)) next
     expected <- canonical[canonical$key == id, , drop=FALSE]
     lineage <- projection$provenance[projection$provenance$indicator_id == id, , drop=FALSE]
     expect_true(all(lineage$source_id == source_by_id[[id]]))
@@ -275,11 +333,82 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     expect_identical(projection$descriptors$unit[match(id, projection$descriptors$indicator_id)],
       unique(expected$unit))
   }
+  metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_mobilite.json"), simplifyVector=FALSE)
+  source_vintages <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "vintages.parquet"))
+  multi_source_ids <- c("bornes_ev_par_station_service", "stationnement_velo_par_voiture")
+  mobility_rows <- data.frame(territory_id=as.character(canonical$territoire),
+    territory_type=as.character(canonical$type), indicator_id=as.character(canonical$key),
+    value=as.numeric(canonical$value), unit=as.character(canonical$unit),
+    source_name=as.character(canonical$vintage_source), source_version=as.character(canonical$vintage_version),
+    reference_date=as.character(canonical$vintage_date_reference),
+    publication_date=as.character(canonical$vintage_date_publication), stringsAsFactors=FALSE)
+  for (id in multi_source_ids) {
+    page_sources <- unlist(metadata$indicator_pages[[id]]$sources, use.names=FALSE)
+    reference_source <- as.character(metadata$sources[[id]])
+    expect_true(reference_source %in% page_sources, info=id)
+    descriptor <- projection$descriptors[projection$descriptors$indicator_id == id, , drop=FALSE]
+    expect_setequal(as.character(descriptor$allowed_sources[[1L]]), page_sources)
+    expected <- canonical[canonical$key == id & canonical$type %in% descriptor$allowed_levels[[1L]], , drop=FALSE]
+    actual <- projection$facts[projection$facts$indicator_id == id, , drop=FALSE]
+    expected_key <- paste(expected$territoire, expected$type)
+    actual_key <- paste(actual$territory_id, actual$territory_type)
+    expect_setequal(actual_key, expected_key)
+    expect_equal(actual$value[match(expected_key, actual_key)], expected$value)
+    expect_equal(actual$status[match(expected_key, actual_key)],
+      ifelse(is.na(expected$value), "not_available", "measured"))
+    lineage <- projection$provenance[projection$provenance$indicator_id == id, , drop=FALSE]
+    expect_equal(nrow(lineage), nrow(expected) * length(page_sources))
+    for (territory_key in expected_key) {
+      territory <- expected$territoire[match(territory_key, expected_key)]
+      # Territory identifiers are unique in the canonical territory reference.
+      links <- lineage[lineage$territory_id == territory, , drop=FALSE]
+      expect_setequal(as.character(links$source_id), page_sources)
+      for (source_id in page_sources) {
+        vintage <- source_vintages[as.character(source_vintages$id) == source_id, , drop=FALSE]
+        expected_vintage_id <- paste(as.character(vintage$version[[1L]]),
+          as.character(vintage$date_reference[[1L]]), sep="/")
+        expect_identical(as.character(links$vintage_id[links$source_id == source_id]),
+          expected_vintage_id)
+      }
+    }
+    for (source_id in page_sources) {
+      vintage <- source_vintages[as.character(source_vintages$id) == source_id, , drop=FALSE]
+      expect_equal(nrow(vintage), 1L, info=source_id)
+      vintage_id <- paste(as.character(vintage$version[[1L]]),
+        as.character(vintage$date_reference[[1L]]), sep="/")
+      source_links <- lineage[lineage$source_id == source_id, , drop=FALSE]
+      expect_true(all(source_links$vintage_id == vintage_id), info=source_id)
+      dataset <- projection$datasets[projection$datasets$source_id == source_id, , drop=FALSE]
+      expect_identical(as.character(dataset$name), as.character(vintage$source[[1L]]))
+      stored_vintage <- projection$vintages[projection$vintages$source_id == source_id, , drop=FALSE]
+      expect_identical(as.character(stored_vintage$vintage_id), vintage_id)
+      expect_identical(as.character(stored_vintage$version), as.character(vintage$version[[1L]]))
+      expect_identical(as.character(stored_vintage$reference_date), as.character(vintage$date_reference[[1L]]))
+      expect_identical(as.character(stored_vintage$publication_date), as.character(vintage$date_publication[[1L]]))
+    }
+    reference_vintage <- source_vintages[as.character(source_vintages$id) == reference_source, , drop=FALSE]
+    expect_equal(nrow(reference_vintage), 1L)
+    expect_true(all(as.character(expected$vintage_version) == as.character(reference_vintage$version[[1L]])))
+    expect_true(all(as.character(expected$vintage_date_reference) == as.character(reference_vintage$date_reference[[1L]])))
+    expect_true(all(as.character(expected$vintage_date_publication) == as.character(reference_vintage$date_publication[[1L]])))
+  }
+  # Page source order is not the reference-freshness contract: the reference
+  # source is independently owned by metadata$sources.
+  reordered_metadata <- metadata
+  for (id in multi_source_ids) {
+    reordered_metadata$indicator_pages[[id]]$sources <-
+      as.list(rev(unlist(reordered_metadata$indicator_pages[[id]]$sources, use.names=FALSE)))
+  }
+  reordered_projection <- project_scalar_canonical_rows(mobility_rows, reordered_metadata,
+    multi_source_ids, eligible, source_vintages=source_vintages)
+  expect_setequal(unique(reordered_projection$provenance$source_id),
+    unique(projection$provenance$source_id[projection$provenance$indicator_id %in% multi_source_ids]))
   expect_true(all(c("region", "commune", "epci", "departement") %in% projection$facts$territory_type))
   service_inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
   snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
-  expect_true(all(c(ids, "effectifs_salaries", "chomage", "densite", "taille_menages") %in% snapshot$descriptors$indicator_id))
-  expect_equal(nrow(snapshot$descriptors), 38L)
+  expect_true(all(c(ids, "effectifs_salaries", "chomage", "densite", "taille_menages",
+    "evolution_1968", "part_passoires") %in% snapshot$descriptors$indicator_id))
+  expect_equal(nrow(snapshot$descriptors), 42L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
 })
 
