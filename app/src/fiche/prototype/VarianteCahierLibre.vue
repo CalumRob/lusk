@@ -1008,12 +1008,11 @@ onBeforeUnmount(() => {
   --red-soft: var(--editorial-margin-soft);
   --cahier-default: var(--muted);
   --cahier-profile-inaccessible: color-mix(in srgb, var(--cahier-default) 42%, var(--paper));
-  --margin-line: var(--editorial-reading-width);
+  --margin-line: var(--editorial-margin-offset);
   --rule: color-mix(in srgb, var(--cahier-theme) 19%, transparent);
   --fine-rule: color-mix(in srgb, var(--cahier-theme) 8%, transparent);
   min-height: 0;
   color: var(--ink);
-  background: transparent;
   font-family: var(--font-body);
 }
 

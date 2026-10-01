@@ -8,16 +8,30 @@ const read = (path: string) => readFileSync(join(root, path), 'utf8')
 describe('shared E editorial foundation', () => {
   it('exposes observed E decisions as site-wide tokens', () => {
     const tokens = read('src/styles/tokens.css')
-    for (const token of ['--editorial-paper', '--editorial-paper-deep', '--editorial-ink', '--editorial-margin', '--editorial-margin-soft', '--editorial-reading-width']) {
+    for (const token of ['--editorial-paper', '--editorial-paper-deep', '--editorial-ink', '--editorial-margin', '--editorial-margin-soft', '--editorial-margin-offset']) {
       expect(tokens).toContain(token)
     }
   })
 
-  it('is consumed by both production territory and indicator surfaces', () => {
-    expect(read('src/components/fiche/OngletTheme.vue')).toContain('presentation-editorial')
-    expect(read('src/views/IndicateurPage.vue')).toContain('presentation-editorial')
-    expect(read('src/styles/editorial.css')).toContain('var(--editorial-margin-soft)')
+  it('applies the same shared paper surface to E, territory, and normal indicator roots', () => {
+    const css = read('src/styles/editorial.css')
+    const sharedSurface = css.match(/\.presentation-editorial\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(sharedSurface).toContain('background-color: var(--editorial-paper)')
+    expect(sharedSurface).toContain('--surface-primary: var(--editorial-paper)')
+    expect(sharedSurface).not.toContain('border-inline-start')
+    for (const path of ['src/fiche/prototype/VarianteCahierLibre.vue', 'src/components/fiche/OngletTheme.vue', 'src/views/IndicateurPage.vue']) {
+      expect(read(path)).toMatch(/class="[^"]*presentation-editorial/)
+    }
     expect(read('src/main.ts')).toContain("'./styles/editorial.css'")
+  })
+
+  it('does not leave unused selectors or duplicate the prototype alias owner', () => {
+    const css = read('src/styles/editorial.css')
+    expect(css).not.toContain('.editorial-reading-surface')
+    expect(css).not.toContain('--paper:')
+    expect(css).not.toContain('--margin-line:')
+    expect(read('src/views/IndicateurPage.vue')).not.toMatch(/\.indicateur-page\s*\{[^}]*background:/)
+    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toContain('--margin-line: var(--editorial-margin-offset)')
   })
 
   it('keeps typography roles and specialized prototype flourishes outside universal tokens', () => {

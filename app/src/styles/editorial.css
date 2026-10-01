@@ -1,24 +1,6 @@
 /* Shared E editorial foundation: visual grammar only, no content semantics. */
 .presentation-editorial {
-  --paper: var(--editorial-paper);
-  --paper-deep: var(--editorial-paper-deep);
-  --ink: var(--editorial-ink);
-  --muted: var(--editorial-muted);
-  --red: var(--editorial-margin);
-  --red-soft: var(--editorial-margin-soft);
-  --margin-line: var(--editorial-reading-width);
-  color: var(--editorial-ink);
-  border-inline-start: var(--editorial-margin-width) solid var(--editorial-margin-soft);
-}
-
-.presentation-editorial .editorial-reading-surface {
+  --surface-primary: var(--editorial-paper);
   background-color: var(--editorial-paper);
-  background-image: linear-gradient(
-    to left,
-    transparent 0,
-    transparent var(--editorial-reading-width),
-    var(--editorial-margin-soft) var(--editorial-reading-width),
-    var(--editorial-margin-soft) calc(var(--editorial-reading-width) + var(--editorial-margin-width)),
-    transparent calc(var(--editorial-reading-width) + var(--editorial-margin-width))
-  );
+  color: var(--editorial-ink);
 }

@@ -22,8 +22,7 @@
   --editorial-muted: #62706c;
   --editorial-margin: #a44f51;
   --editorial-margin-soft: rgb(164 79 81 / 58%);
-  --editorial-margin-width: 1px;
-  --editorial-reading-width: 104px;
+  --editorial-margin-offset: 104px;
   /* ------------------------------------------------------------------------
    * §2 Color — Palette
    * ---------------------------------------------------------------------- */
