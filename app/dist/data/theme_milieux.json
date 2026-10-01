@@ -145,10 +145,12 @@
   "indicator_pages": {
     "artif_par_habitant": {
       "indicator": "artif_par_habitant",
+      "series_dataset_id": "ocsge_artif_etats",
+      "series_publication": "owned",
       "label": "Intensité état",
       "definition": "Surface artificialisée par habitant à chaque état OCS-GE (le stock, jamais le flux).",
       "unit": "m²/hab",
-      "calculation": "Surface artificialisée de l’état divisée par la population du même millésime.",
+      "calculation": "Surface artificialisée de l'état divisée par la population du même millésime.",
       "direction": "low",
       "caveats": "Les millésimes diffèrent par département ; un territoire multi-fenêtres porte les états M2/M3 ; un état sans donnée reste déclaré et manquant sur la trajectoire.",
       "levels": [
@@ -193,6 +195,8 @@
     },
     "conso_enaf_annuel": {
       "indicator": "conso_enaf_annuel",
+      "series_dataset_id": "conso_enaf_annuel",
+      "series_publication": "legacy",
       "label": "Consommation d’ENAF — série annuelle",
       "definition": "Consommation annuelle d’espaces naturels, agricoles et forestiers (le flux annuel).",
       "unit": "ha",

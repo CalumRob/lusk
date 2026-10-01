@@ -1,5 +1,36 @@
 {
   "theme": "mobilite",
+  "comparison_scopes": {
+    "bretagne": {
+      "kind": "communes-bretagne",
+      "label": "communes bretonnes"
+    }
+  },
+  "building_comparison": {
+    "statistic": "mean",
+    "direction": "high"
+  },
+  "service_share_scalar": {
+    "completeness": "dense_complete",
+    "denominator_semantics": "Part des bâtiments du territoire ayant accès au service par le mode déclaré ; la valeur canonique est une fraction 0–1, l’unité publique déclarée reste %."
+  },
+  "indicator_directions": {
+    "share_food_t": "high",
+    "share_food_b": "high",
+    "share_food_c": "high",
+    "share_health_t": "high",
+    "share_health_b": "high",
+    "share_health_c": "high",
+    "share_admin_t": "high",
+    "share_admin_b": "high",
+    "share_admin_c": "high",
+    "share_school_t": "high",
+    "share_school_b": "high",
+    "share_school_c": "high",
+    "share_bank_t": "high",
+    "share_bank_b": "high",
+    "share_bank_c": "high"
+  },
   "label": "Mobilité",
   "subgroups": [
     {
@@ -989,6 +1020,236 @@
         "detail": "t0090",
         "unit": "%"
       }
+    }
+  },
+  "scalar_contracts": {
+    "surface_reseaux_routiers": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "surface_reseaux_routiers",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "offre_tc": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "offre_tc",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "bornes_recharge": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "bornes_recharge",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "places_stationnement_velo_1000": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "places_stationnement_velo_1000",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "places_stationnement_voiture_1000": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "places_stationnement_voiture_1000",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "tot_loss_t": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "tot_loss_t",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "tot_loss_b": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "tot_loss_b",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "avg_tot_car": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "avg_tot_car",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "avg_tot_b": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "avg_tot_b",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "avg_tot_t": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "avg_tot_t",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "avg_div_car": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "avg_div_car",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "avg_div_b": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "avg_div_b",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "avg_div_t": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "avg_div_t",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "iso_alimentation": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "iso_alimentation",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "iso_sante": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "iso_sante",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "iso_administration": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "iso_administration",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "iso_ecole": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "iso_ecole",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "iso_banque": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "iso_banque",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "raccordement_tc": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "raccordement_tc",
+      "missing_status": "not_available",
+      "counts_available": false
     }
   },
   "source_records": {
