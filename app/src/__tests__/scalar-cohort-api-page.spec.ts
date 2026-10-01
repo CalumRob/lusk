@@ -7,7 +7,7 @@ import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { indicateursDemographieFixture, indicateursEconomieFixture, territoiresFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { validerThemeMetadata } from '../payload/validate'
-import { chargerCohorteScalaire } from '../payload/scalarCohort'
+import { chargerCohorteScalaire, indicateursScalairesEnregistres } from '../payload/scalarCohort'
 import { formaterRang } from '../payload/selectors'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
@@ -15,6 +15,8 @@ import IndicateurView from '../views/IndicateurView.vue'
 const economyMetadata = { ...JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_economie.json'), 'utf8')),
   scalar_contracts: ['effectifs_salaries', 'chomage'] }
 const demographyMetadataRaw = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_demographie.json'), 'utf8'))
+const mobilityMetadataRaw = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
+const productionThemeMetadata = { economie: economyMetadata, demographie: demographyMetadataRaw, mobilite: mobilityMetadataRaw }
 // Rank parity reference only: API-selected page tests never load this static fact payload as a fallback.
 const canonicalEconomyFacts = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'indicateurs_economie.json'), 'utf8')) as Array<Record<string, unknown>>
 const canonicalRank = (indicator: string, territoryId: string) => canonicalEconomyFacts.find((fact) =>
@@ -59,6 +61,36 @@ async function mountEconomy(initial = '/indicateurs/economie/effectifs_salaries?
 }
 
 describe('Page indicateur économie - cohorte scalaire API', () => {
+  it('loads each producer-registered scalar page from all current themes through the production cohort adapter', async () => {
+    let pageCount = 0
+    for (const theme of ['economie', 'demographie', 'mobilite'] as const) {
+      const raw = productionThemeMetadata[theme]
+      const registered = indicateursScalairesEnregistres(raw)
+      const metadata = validerThemeMetadata(raw, `theme_${theme}.json`)
+      expect(registered.length).toBe(theme === 'economie' ? 2 : theme === 'demographie' ? 2 : 19)
+      for (const id of registered) {
+        const page = metadata.indicator_pages?.[id]
+        expect(page, `${theme}/${id} is registered without a page`).toBeDefined()
+        if (!page) continue
+        expect(page.family).toBe('scalar')
+        const focal = territoiresFixture.find((territory) => territory.type === 'commune')!
+        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
+          indicator_id: id, territory_type: 'commune', label: page.label, unit: page.unit,
+          direction: page.direction, comparison_facet: page.comparison?.indicator ?? id,
+          completeness: 'sparse', content_version: 'test', observations: [{
+            territory_id: focal.territoire, name: focal.nom, value: 1, status: 'measured',
+            rang_epci: 1, rang_epci_n: 1, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
+            sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }],
+          }],
+        }), { status: 200 })))
+        const facts = await chargerCohorteScalaire(id, theme, page, focal, 'commune', territoiresFixture, {})
+        expect(facts[0]).toMatchObject({ theme, key: id, territoire: focal.territoire, value: 1, rang_epci: 1, rang_epci_n: 1 })
+        pageCount++
+      }
+    }
+    expect(pageCount).toBe(23)
+  })
+
   it('preserves publisher-provided rank and denominator fields without recomputing them', async () => {
     vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(response()), { status: 200 })))
     const page = validerThemeMetadata(economyMetadata, 'theme_economie.json').indicator_pages!.effectifs_salaries!
@@ -194,6 +226,16 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
     const fetcher = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
       if (url === '/data/theme_economie.json') return new Response(JSON.stringify(economyMetadata), { status: 200 })
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify({ ...demographyMetadataRaw,
+        scalar_contracts: ['densite'] }), { status: 200 })
+      if (url.includes('/indicator-cohorts/densite?')) {
+        const page = demographyMetadataRaw.indicator_pages.densite
+        return new Response(JSON.stringify({ ...response(), indicator_id: 'densite', label: page.label,
+          unit: page.unit, direction: page.direction, comparison_facet: 'densite',
+          observations: [{ territory_id: '22001', name: 'Commune A1', value: 42, status: 'measured',
+            rang_epci: 1, rang_epci_n: 1, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
+            sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }] }] }), { status: 200 })
+      }
       return new Response(JSON.stringify(response(url.includes('/chomage?') ? 'chomage' : 'effectifs_salaries')), { status: 200 })
     })
     vi.stubGlobal('fetch', fetcher)
@@ -205,11 +247,11 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
     expect(wrapper.text()).toContain('Part des éco-activités')
     await router.push('/indicateurs/demographie/densite?territoire=22001&niveau=commune')
     await flushPromises()
-    expect(payloadCalls).toContain('indicateurs_demographie')
+    expect(payloadCalls).not.toContain('indicateurs_demographie')
     expect(wrapper.text()).toContain('Densité')
     await router.push('/indicateurs/economie/chomage?territoire=22001&niveau=commune')
     await flushPromises()
-    expect(fetcher.mock.calls.filter(([url]) => String(url).includes('indicator-cohorts'))).toHaveLength(2)
+    expect(fetcher.mock.calls.filter(([url]) => String(url).includes('indicator-cohorts'))).toHaveLength(3)
     expect(wrapper.text()).toContain('Chômage (population active)')
     wrapper.unmount()
   })
