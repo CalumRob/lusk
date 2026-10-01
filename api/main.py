@@ -712,7 +712,11 @@ class ReadRepository:
                             JOIN source_dataset sd ON sd.source_id=os.source_id
                             JOIN source_vintage sv ON sv.source_id=os.source_id
                               AND sv.vintage_id=os.vintage_id
-                            WHERE o.indicator_id LIKE 'share!_%%' ESCAPE '!'
+                            WHERE o.indicator_id = ANY (
+                              SELECT 'share_' || service || '_' || mode
+                              FROM service_registry
+                              CROSS JOIN unnest(ARRAY['t','b','c']::text[]) AS mode
+                            )
                              AND o.territory_type = %s AND t.{condition} = %s
                              AND o.territory_type = ANY(d.allowed_levels)
                            ORDER BY o.indicator_id, o.territory_id, sd.source_id, sv.vintage_id""",

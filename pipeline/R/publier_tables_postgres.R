@@ -167,13 +167,33 @@ configuration_service_postgres <- function() {
 publier_tables_service_depuis_parquet <- function(sortie = "../public/data") {
   config <- configuration_service_postgres()
   donnees <- preparer_tables_service(sortie)
+  economie <- project_economy_scalar_cohort(sortie, donnees$scalar_eligible_territories)
   conn <- do.call(DBI::dbConnect, c(list(drv = RPostgres::Postgres()), config))
   tryCatch({
     access <- publier_tables_postgres(conn, donnees$tables, donnees$versions,
       donnees$access_scope, donnees$building_contract, donnees$building_sources)
     scalar <- publish_service_share_scalars(conn, donnees$scalar_access,
-      donnees$scalar_metadata, donnees$scalar_eligible_territories)
+      donnees$scalar_metadata, donnees$scalar_eligible_territories,
+      additional_projections=list(economie))
     list(access=access, scalar=scalar)
   },
            finally = DBI::dbDisconnect(conn))
+}
+
+project_economy_scalar_cohort <- function(sortie, eligible_territories) {
+  path <- file.path(sortie, "indicateurs_economie.parquet")
+  if (!file.exists(path)) stop("Scalar snapshot incomplet : Parquet canonique économie absent : ", path, call.=FALSE)
+  metadata_path <- file.path("inst", "extdata", "theme-metadata", "theme_economie.json")
+  if (!file.exists(metadata_path)) stop("Économie indicator metadata is unavailable: ", metadata_path, call.=FALSE)
+  metadata <- jsonlite::fromJSON(metadata_path, simplifyVector=FALSE)
+  rows <- nanoparquet::read_parquet(path)
+  project_scalar_indicator_rows(rows, metadata,
+    c("effectifs_salaries", "chomage"), eligible_territories, completeness="sparse")
+}
+
+project_service_scalar_snapshot <- function(donnees, sortie) {
+  service <- project_service_share_scalars(donnees$scalar_access,
+    donnees$scalar_metadata, donnees$scalar_eligible_territories)
+  economy <- project_economy_scalar_cohort(sortie, donnees$scalar_eligible_territories)
+  combine_scalar_projections(service, economy)
 }

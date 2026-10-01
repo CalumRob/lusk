@@ -222,11 +222,111 @@ register_service_share_scalar_publisher <- function(registry, metadata) {
     publish=function(projection, db, version) db$replace(projection, version))
 }
 
-publish_service_share_scalars <- function(con, access, metadata, eligible_territories) {
+publish_service_share_scalars <- function(con, access, metadata, eligible_territories,
+                                          additional_projections=list()) {
   publisher <- register_service_share_scalar_publisher(list(), metadata)
+  if (!is.list(additional_projections)) stop("Additional scalar cohorts must be registered projections", call.=FALSE)
+  project <- publisher$services_essentiels_scalar$project
+  publisher$services_essentiels_scalar$project <- function(canonical) {
+    combine_scalar_projections(project(canonical), additional_projections)
+  }
   db <- scalar_postgres_adapter(con)
   publish_registered_scalar(publisher, "services_essentiels_scalar",
     canonical=list(access=access, eligible_territories=eligible_territories), db=db)
+}
+
+# Project scalar indicators from the canonical indicator Parquet and their
+# metadata-owned descriptors. The caller supplies each indicator's canonical
+# completeness policy; it is never inferred from the observed rows.
+project_scalar_indicator_rows <- function(rows, metadata, indicator_ids,
+    eligible_territories, completeness="sparse") {
+  if (!is.data.frame(rows) || !all(c("territoire", "type", "key", "value", "unit",
+      "vintage_source", "vintage_version", "vintage_date_reference", "vintage_date_publication") %in% names(rows)) ||
+      !is.list(metadata$indicator_pages) || !length(indicator_ids) ||
+      length(completeness) != 1L || !completeness %in% c("sparse", "dense_complete"))
+    stop("Canonical scalar indicator projection is missing contract fields", call.=FALSE)
+  facts_out <- descriptors_out <- provenance_out <- datasets_out <- vintages_out <- list()
+  for (id in indicator_ids) {
+    page <- metadata$indicator_pages[[id]]
+    if (is.null(page) || !identical(as.character(page$indicator), id))
+      stop("Scalar indicator is not declared by canonical metadata: ", id, call.=FALSE)
+    source_ids <- as.character(unlist(page$sources, use.names=FALSE))
+    selected <- rows[rows$key == id & rows$type %in% unlist(page$levels), , drop=FALSE]
+    if (!nrow(selected) || length(source_ids) != 1L)
+      stop("Canonical indicator facts or single-source provenance are unavailable: ", id, call.=FALSE)
+    if (anyNA(selected$unit) || any(unique(as.character(selected$unit)) != as.character(page$unit)))
+      stop("Canonical scalar unit disagrees with declared metadata: ", id, call.=FALSE)
+    selected <- selected[order(selected$type, selected$territoire), , drop=FALSE]
+    facts_out[[id]] <- data.frame(indicator_id=id, territory_id=as.character(selected$territoire),
+      territory_type=as.character(selected$type), value=as.numeric(selected$value),
+      status=ifelse(is.na(selected$value), "not_available", "measured"),
+      support_count=NA_integer_, denominator_count=NA_integer_, stringsAsFactors=FALSE)
+    descriptors_out[[id]] <- data.frame(indicator_id=id, allowed_sources=I(list(source_ids)),
+      label=as.character(page$label), unit=as.character(page$unit), direction=as.character(page$direction),
+      comparison_facet=id, allowed_levels=I(list(as.character(unlist(page$levels)))),
+      denominator_semantics=as.character(page$calculation), completeness=completeness,
+      descriptor_version=scalar_content_version(page), stringsAsFactors=FALSE)
+    provenance_out[[id]] <- unique(data.frame(indicator_id=id, territory_id=as.character(selected$territoire),
+      source_id=source_ids[[1L]], vintage_id=paste(selected$vintage_version, selected$vintage_date_reference, sep="/"),
+      stringsAsFactors=FALSE))
+    datasets_out[[id]] <- unique(data.frame(source_id=source_ids[[1L]], name=as.character(selected$vintage_source),
+      stringsAsFactors=FALSE))
+    vintages_out[[id]] <- unique(data.frame(source_id=source_ids[[1L]],
+      vintage_id=paste(selected$vintage_version, selected$vintage_date_reference, sep="/"),
+      version=as.character(selected$vintage_version), reference_date=as.Date(selected$vintage_date_reference),
+      publication_date=as.Date(selected$vintage_date_publication), stringsAsFactors=FALSE))
+  }
+  projection <- list(facts=do.call(rbind, facts_out), descriptors=do.call(rbind, descriptors_out),
+    provenance=do.call(rbind, provenance_out), datasets=unique(do.call(rbind, datasets_out)),
+    vintages=unique(do.call(rbind, vintages_out)),
+    eligible_territories=eligible_territories[c("territory_id", "territory_type")])
+  validate_scalar_projection(projection$facts, projection$descriptors, projection$eligible_territories)
+  projection
+}
+
+# Assemble the complete table-owned scalar snapshot from independently registered
+# canonical projections.  The physical table and marker are shared, so a caller
+# may not publish a cohort that omits any indicator already present in the
+# committed snapshot.
+combine_scalar_projections <- function(...) {
+  projections <- list(...)
+  if (!length(projections) || !all(vapply(projections, is.list, logical(1))))
+    stop("At least one validated scalar projection is required", call.=FALSE)
+  fields <- c("facts", "descriptors", "provenance", "datasets", "vintages", "eligible_territories")
+  if (any(!vapply(projections, function(p) all(fields %in% names(p)), logical(1))))
+    stop("Scalar cohort projection is incomplete", call.=FALSE)
+  bind <- function(field) do.call(rbind, lapply(projections, `[[`, field))
+  result <- setNames(lapply(fields, bind), fields)
+  # Stable ordering makes content identity independent of registry iteration.
+  order_rows <- function(x, keys) x[do.call(order, x[keys]), , drop=FALSE]
+  result$facts <- order_rows(result$facts, c("indicator_id", "territory_id"))
+  result$descriptors <- order_rows(result$descriptors, "indicator_id")
+  result$provenance <- order_rows(unique(result$provenance), c("indicator_id", "territory_id", "source_id", "vintage_id"))
+  for (key in list("source_id", c("source_id", "vintage_id"))) {
+    frame_name <- if (identical(key, "source_id")) "datasets" else "vintages"
+    frame <- result[[frame_name]]
+    identity <- do.call(paste, c(frame[key], sep="\r"))
+    for (group in split(seq_len(nrow(frame)), identity))
+      if (nrow(unique(frame[group, , drop=FALSE])) > 1L)
+        stop("Scalar cohorts conflict on source/vintage identity", call.=FALSE)
+    result[[frame_name]] <- frame[!duplicated(identity), , drop=FALSE]
+  }
+  result$datasets <- order_rows(result$datasets, "source_id")
+  result$vintages <- order_rows(result$vintages, c("source_id", "vintage_id"))
+  result$eligible_territories <- unique(result$eligible_territories[c("territory_id", "territory_type")])
+  result$eligible_territories <- order_rows(result$eligible_territories, c("territory_type", "territory_id"))
+  for (field in fields) rownames(result[[field]]) <- NULL
+  if (anyDuplicated(result$descriptors$indicator_id) || anyDuplicated(result$facts[c("indicator_id", "territory_id")]))
+    stop("Scalar cohorts contain conflicting indicator or observation ownership", call.=FALSE)
+  validate_scalar_projection(result$facts, result$descriptors, result$eligible_territories)
+  result
+}
+
+assert_complete_scalar_snapshot <- function(published_indicator_ids, projection) {
+  omitted <- setdiff(as.character(published_indicator_ids), as.character(projection$descriptors$indicator_id))
+  if (length(omitted)) stop("Refusing partial scalar snapshot; omitted registered indicators: ",
+    paste(sort(omitted), collapse=", "), call.=FALSE)
+  invisible(TRUE)
 }
 
 register_fixture_scalar_publisher <- function(registry, descriptor, completeness) {
@@ -467,6 +567,10 @@ scalar_postgres_adapter <- function(con) {
         DBI::dbExecute(con, "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
                        params = unname(as.list(v[c("source_id", "vintage_id", "version", "reference_date", "publication_date")])))
       }
+      # The scalar table is one table-owned snapshot. Refuse an incomplete
+      # replacement before deleting anything if it would drop a live cohort.
+      present <- DBI::dbGetQuery(con, "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
+      assert_complete_scalar_snapshot(present, projection)
       DBI::dbExecute(con, "DELETE FROM scalar_observation")
       DBI::dbExecute(con, "DELETE FROM scalar_descriptor_source")
       DBI::dbExecute(con, "DELETE FROM scalar_descriptor")

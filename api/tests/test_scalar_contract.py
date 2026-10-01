@@ -19,6 +19,16 @@ def test_scalar_endpoint_is_named_bounded_and_registered():
     assert "actual_territories" not in marker_sql
 
 
+def test_service_scalar_projection_filters_to_registered_service_indicator_ids():
+    from api.main import ReadRepository
+    import inspect
+
+    source = inspect.getsource(ReadRepository._read)
+    assert "service_registry" in source
+    assert "'share_' || service || '_' || mode" in source
+    assert "CROSS JOIN unnest" in source
+
+
 def test_fresh_and_additive_schema_define_independent_scalar_publication():
     from pathlib import Path
 
