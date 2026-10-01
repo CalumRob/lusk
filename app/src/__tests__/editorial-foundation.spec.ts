@@ -13,10 +13,15 @@ describe('shared E editorial foundation', () => {
     }
   })
 
-  it('applies the same shared paper surface to E, territory, and normal indicator roots', () => {
+  it('keeps the original theme ground visible and reserves original E paper for explicit sheets', () => {
     const css = read('src/styles/editorial.css')
     const sharedSurface = css.match(/\.presentation-editorial\s*\{([^}]*)\}/)?.[1] ?? ''
-    expect(sharedSurface).toContain('background-color: var(--editorial-paper)')
+    const sheet = css.match(/\.editorial-sheet\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(sharedSurface).toContain('background-color: transparent')
+    expect(sharedSurface).not.toContain('background-color: var(--editorial-paper)')
+    expect(sheet).toContain('background-color: var(--editorial-paper)')
+    expect(read('src/styles/tokens.css')).toContain('--editorial-paper: #f1f2ec')
+    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toMatch(/\.cahier\s*\{[^}]*background:\s*transparent/s)
     expect(sharedSurface).not.toContain('--surface-primary')
     expect(sharedSurface).not.toContain('border-inline-start')
     for (const path of ['src/fiche/prototype/VarianteCahierLibre.vue', 'src/components/fiche/OngletTheme.vue', 'src/views/IndicateurPage.vue']) {
@@ -30,7 +35,7 @@ describe('shared E editorial foundation', () => {
     expect(css).not.toContain('.editorial-reading-surface')
     expect(css).not.toContain('--paper:')
     expect(css).not.toContain('--margin-line:')
-    expect(read('src/views/IndicateurPage.vue')).not.toMatch(/\.indicateur-page\s*\{[^}]*background:/)
+    expect(read('src/views/IndicateurPage.vue')).not.toMatch(/\.indicateur-page[^}]*background(?:-color)?:\s*var\(--editorial-paper\)/)
     expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toContain('--margin-line: var(--editorial-margin-offset)')
   })
 

@@ -1016,6 +1016,7 @@ onBeforeUnmount(() => {
   --fine-rule: color-mix(in srgb, var(--cahier-theme) 8%, transparent);
   min-height: 0;
   color: var(--ink);
+  background: transparent;
   font-family: var(--font-body);
 }
 

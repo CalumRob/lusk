@@ -1,11 +1,13 @@
-/* Shared E editorial foundation: visual grammar only, no content semantics. */
+/* Shared E editorial foundation: visual grammar only, no content semantics.
+ * The theme/site owns the ground; only an explicit sheet owns paper. */
 .presentation-editorial {
-  background-color: var(--editorial-paper);
+  background-color: transparent;
   color: var(--editorial-ink);
 }
 
 .editorial-sheet {
   min-width: 0;
+  padding: var(--editorial-page-inset);
   background-color: var(--editorial-paper);
   color: var(--editorial-ink);
 }
