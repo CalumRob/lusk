@@ -13,6 +13,7 @@ import type {
   ThemeMetadata,
 } from './types'
 import { THEMES_CANONIQUES } from './types'
+import { scalarCohortEnabled } from './scalarCohort'
 import {
   PayloadError,
   validerDistributionAccesBatiments,
@@ -627,5 +628,19 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
   } catch {
     throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
   }
-  return validerModeleTerritoire(raw, file, { type, territoire }, { requireAllThemes: true })
+  const model = validerModeleTerritoire(raw, file, { type, territoire }, { requireAllThemes: true })
+  // Registrations are owned by the canonical theme catalogue, and may postdate
+  // the atomic territory snapshot. Reconcile only this readiness metadata here.
+  if (scalarCohortEnabled(import.meta.env)) {
+    await Promise.all(Object.values(model.themes).filter((theme) => theme !== undefined).map(async (theme) => {
+      const metadataUrl = `/data/theme_${theme.theme}.json`
+      let metadataResponse: Response
+      try { metadataResponse = await fetch(metadataUrl) }
+      catch (cause) { throw new PayloadError('fetch', metadataUrl, `Impossible de charger les contrats scalaires : ${cause instanceof Error ? cause.message : String(cause)}`) }
+      if (!metadataResponse.ok) throw new PayloadError('fetch', metadataUrl, `Réponse HTTP ${metadataResponse.status} pour ${metadataUrl}`)
+      const catalogue = await metadataResponse.json() as { scalar_contracts?: unknown }
+      if (catalogue.scalar_contracts !== undefined) theme.metadata.scalar_contracts = catalogue.scalar_contracts
+    }))
+  }
+  return model
 }
