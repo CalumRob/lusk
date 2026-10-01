@@ -207,7 +207,7 @@ const lignesReseaux = computed(
         <!-- The reading slot — the metadata template rendered with the
              resolved row's values, the reading's compact figure and its
              exhaustive source. -->
-        <div v-if="groupe.lecture" class="sous-groupe-lecture">
+        <div v-if="groupe.lecture" class="sous-groupe-lecture editorial-evidence">
           <div class="lecture-ligne">
             <p class="lecture-texte voix-recit">
               <template v-for="(noeud, i) in groupe.lecture.template" :key="i">
@@ -283,7 +283,7 @@ const lignesReseaux = computed(
             </div>
           </div>
 
-          <p v-if="groupe.source" class="lecture-source">
+          <p v-if="groupe.source" class="lecture-source editorial-provenance">
             <span class="lecture-etiquette">Source</span>
             {{ groupe.source }}
           </p>
@@ -310,7 +310,7 @@ const lignesReseaux = computed(
         <!-- The honest absence (the pipeline's declared no-reading states: the
              Milieux M2 = 0, Habitat under the suppression threshold) — never an
              invented reading. A territory WITHOUT its row stays silent. -->
-        <div v-else-if="groupe.lectureIndisponible" class="sous-groupe-lecture">
+        <div v-else-if="groupe.lectureIndisponible" class="sous-groupe-lecture editorial-evidence">
           <p class="lecture-absent" role="note">
             La lecture de ce sous-groupe n’est pas disponible pour ce territoire.
           </p>
@@ -322,7 +322,7 @@ const lignesReseaux = computed(
         <div class="grille-indicateurs">
           <div
             v-if="groupe.figureCompacte"
-            class="figure-compacte"
+            class="figure-compacte editorial-figure"
             :data-famille="groupe.figureCompacte.famille"
           >
             <!-- Le renderer partagé de la grammaire (#371) : un seul sélecteur
@@ -352,7 +352,7 @@ const lignesReseaux = computed(
           <div
             v-for="figure in figuresGrille(groupe)"
             :key="figure.key"
-            class="figure-cellule"
+            class="figure-cellule editorial-figure"
           >
             <FigureCompacte
               :famille="familleFigure(figure.key)"
@@ -420,8 +420,6 @@ const lignesReseaux = computed(
 
 .sous-groupe-titre {
   margin: 0;
-  font: 600 1.1875rem/1.4 var(--font-subsection-title);
-  color: var(--couleur-strong);
 }
 
 .sous-groupe-cadrage {
@@ -435,11 +433,6 @@ const lignesReseaux = computed(
   display: flex;
   flex-direction: column;
   gap: var(--space-3);
-  padding: var(--space-6);
-  border: 1px solid var(--couleur-line);
-  border-radius: var(--radius-lg);
-  background: var(--surface-primary);
-  box-shadow: var(--shadow-subtle);
 }
 
 .lecture-ligne {
@@ -529,12 +522,6 @@ const lignesReseaux = computed(
   color: var(--couleur-strong);
 }
 
-/* The compact figure of the subgroup — the metadata's famille + indicateur,
-   the subgroup's matter rendered first in the grid. */
-.figure-compacte {
-  grid-column: span 2;
-}
-
 /* La passarelle « Explorer » (#409, #468) — le composant partagé
    PassarelleExploration porte le balisage et la typographie ; la rampe du
    thème (posée par l'article) porte sa couleur via les variables du
@@ -562,34 +549,10 @@ const lignesReseaux = computed(
   color: var(--couleur-strong);
 }
 
-@media (max-width: 1024px) {
-  .figure-compacte {
-    grid-column: span 2;
-  }
-}
-
-@media (max-width: 640px) {
-  .figure-compacte {
-    grid-column: 1;
-  }
-}
-
 .grille-indicateurs {
-  display: grid;
-  grid-template-columns: repeat(3, 1fr);
-  gap: var(--space-6) var(--space-8);
-}
-
-@media (max-width: 1024px) {
-  .grille-indicateurs {
-    grid-template-columns: repeat(2, 1fr);
-  }
-}
-
-@media (max-width: 640px) {
-  .grille-indicateurs {
-    grid-template-columns: 1fr;
-  }
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-6);
 }
 
 /* The flagship's snapshot stamp (ADR-0012) — the honest freshness claim,

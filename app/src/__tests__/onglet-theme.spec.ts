@@ -6,14 +6,22 @@ import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
   apercuAvecNAFixture,
+  histoiresEconomieFixture,
   histoiresDemographieFixture,
+  histoiresHabitatFixture,
+  histoiresMilieuxFixture,
+  histoiresMobiliteFixture,
+  indicateursEconomieFixture,
   indicateursDemographieFixture,
+  indicateursHabitatFixture,
+  indicateursMilieuxFixture,
+  indicateursMobiliteFixture,
   metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Histoire, Payload } from '../payload/types'
+import type { Histoire, Payload, Theme } from '../payload/types'
 
 /**
  * OngletTheme — the shared subgroup block (issue #314, parent #308): the
@@ -86,6 +94,50 @@ describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
     expect(wrapper.text()).toContain('Évolution de la population depuis 1968')
     expect(wrapper.text()).toContain('Taille moyenne des ménages')
     expect(wrapper.findAll('.estampille-vintage').length).toBe(4)
+  })
+})
+
+describe('OngletTheme — editorial evidence across published themes and territory levels', () => {
+  const themes: Array<{ theme: Theme; indicateurs: typeof indicateursDemographieFixture; histoires: Histoire[] }> = [
+    { theme: 'demographie', indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture },
+    { theme: 'habitat', indicateurs: indicateursHabitatFixture, histoires: histoiresHabitatFixture },
+    { theme: 'economie', indicateurs: indicateursEconomieFixture, histoires: histoiresEconomieFixture },
+    { theme: 'milieux', indicateurs: indicateursMilieuxFixture, histoires: histoiresMilieuxFixture },
+    { theme: 'mobilite', indicateurs: indicateursMobiliteFixture, histoires: histoiresMobiliteFixture },
+  ]
+  const niveaux = ['22001', '200000001', '22', '53']
+
+  it.each(themes)('$theme keeps its metadata order, evidence, and published facts at each level', async ({ theme, indicateurs, histoires }) => {
+    for (const territoire of niveaux) {
+      const payload: Payload = {
+        ...payloadDemographie,
+        indicateurs,
+        histoires,
+        themeMetadata: { [theme]: metadonneesThemesFixtures[theme] },
+      }
+      const wrapper = mount(OngletTheme, {
+        props: { theme, payload, territoire },
+        global: { stubs: { RouterLink: RouterLinkStub } },
+      })
+      await flushPromises()
+
+      const groups = wrapper.findAll('.sous-groupe')
+      const subgroupsWithRows = metadonneesThemesFixtures[theme].subgroups.filter((group) =>
+        indicateurs.some((row) => row.territoire === territoire && group.indicators.includes(row.key)) ||
+        histoires.some((row) => row.territoire === territoire && row.groupe === group.key),
+      )
+      expect(groups.map((group) => group.attributes('data-groupe')), `${theme} ${territoire}`).toEqual(
+        subgroupsWithRows.map((group) => group.key),
+      )
+      if (groups.length > 0) {
+        expect(wrapper.findAll('.editorial-evidence').length + wrapper.findAll('.editorial-figure').length).toBeGreaterThan(0)
+      }
+      for (const figure of wrapper.findAll('.figure-indicateur')) {
+        expect(figure.attributes('data-clef')).toBeTruthy()
+        expect(figure.text()).not.toContain('undefined')
+      }
+      wrapper.unmount()
+    }
   })
 })
 

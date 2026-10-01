@@ -169,7 +169,7 @@ const lienProvenance = computed(() => {
         <h3 class="sous-groupe-titre editorial-section-heading">{{ groupe('subventions').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
 
-        <div class="programme-subventions">
+        <div class="programme-subventions editorial-evidence">
           <p class="subvention-total">
             {{ formaterMontant(element.subventions.total) }}
             <span class="subvention-annee">en {{ element.subventions.annee }}</span>
@@ -184,7 +184,7 @@ const lienProvenance = computed(() => {
             <button
               v-if="axesReste.length > 0"
               type="button"
-              class="subvention-reveler"
+              class="subvention-reveler editorial-control"
               :aria-expanded="revele"
               @click="revele = !revele"
             >
@@ -200,7 +200,7 @@ const lienProvenance = computed(() => {
           <p v-if="partContexte" class="subvention-contexte">
             {{ partContexteTexte }} {{ libellePartContexte(partContexte.parent) }}
           </p>
-          <p v-if="provenance" class="subvention-provenance">
+          <p v-if="provenance" class="subvention-provenance editorial-provenance">
             Somme des subventions attribuées aux
             <RouterLink :to="lienProvenance" class="subvention-provenance-lien">
               {{ libelleProvenance(provenance.niveau) }}
@@ -245,8 +245,6 @@ const lienProvenance = computed(() => {
 
 .sous-groupe-titre {
   margin: 0;
-  font: 600 1.1875rem/1.4 var(--font-subsection-title);
-  color: var(--theme-programmes-strong);
 }
 
 .sous-groupe-cadrage {
@@ -333,8 +331,6 @@ const lienProvenance = computed(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  background: var(--theme-programmes-soft);
 }
 
 .subvention-total {
