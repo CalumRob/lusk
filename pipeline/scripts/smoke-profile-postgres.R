@@ -28,6 +28,13 @@ tryCatch({
     epci_id=ifelse(is_commune,"E_TEST",NA_character_),
     density_class_code=ifelse(is_commune,"D_TEST",NA_character_),
     density_class_label=ifelse(is_commune,"Test density class",NA_character_))
+  # Include source-supported regional facts even though the standalone
+  # structure_age indicator page currently limits its comparison levels.
+  region_rows <- payload$territoires[payload$territoires$type == "region", , drop=FALSE]
+  if (nrow(region_rows)) reference <- rbind(reference, data.frame(
+    territory_id=as.character(region_rows$territoire), territory_type="region",
+    name=as.character(region_rows$territoire), department_id=NA_character_, epci_id=NA_character_,
+    density_class_code=NA_character_, density_class_label=NA_character_))
   # Give all fixture communes a real, published default cohort and whole-EPCI
   # membership so the serving API exercises its ordinary scope contracts.
   DBI::dbWriteTable(con,"territory_reference",reference,append=TRUE,row.names=FALSE)
@@ -65,7 +72,23 @@ tryCatch({
   dpe_rows$vintage_version <- "2024"
   dpe_rows$vintage_date_reference <- "2024-01-01"
   dpe_rows$vintage_date_publication <- "2026-08-06"
-  habitat <- list(indicateurs=dpe_rows, territoires=payload$territoires)
+  # Exercise the same complete registered-profile publisher with all four
+  # producer-declared Habitat detail families; axes and eligibility come from
+  # metadata and the canonical territory universe, not a renderer vocabulary.
+  housing_ids <- c("mix_logements", "statut", "type", "age_du_bati")
+  housing_rows <- do.call(rbind, lapply(housing_ids, function(id) {
+    page <- habitat_metadata$indicator_pages[[id]]
+    details <- unlist(page$comparison$details, use.names=FALSE)
+    do.call(rbind, lapply(seq_len(nrow(payload$territoires)), function(i) data.frame(
+      territoire=payload$territoires$territoire[[i]], type=payload$territoires$type[[i]],
+      key=id, detail=details, sex=NA_character_, value=seq_along(details)/100,
+      unit=page$unit, n=NA_real_, vintage_source=habitat_metadata$source_records$logements$dataset,
+      vintage_version=habitat_metadata$source_records$logements$vintages[[1L]]$version,
+      vintage_date_reference=habitat_metadata$source_records$logements$vintages[[1L]]$dateReference,
+      vintage_date_publication=habitat_metadata$source_records$logements$vintages[[1L]]$datePublication,
+      stringsAsFactors=FALSE)))
+  }))
+  habitat <- list(indicateurs=rbind(dpe_rows, housing_rows), territoires=payload$territoires)
   scalar_version <- "dpe-scalar-fixture-v1"
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con, "INSERT INTO source_dataset VALUES ('dpe_22','DPE fixture')")
@@ -157,7 +180,10 @@ tryCatch({
     con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages)
   stopifnot(combined$changed, identical(age_after,facts_before),
     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_axis WHERE indicator_id='distribution_dpe' AND axis_name='sex'")$n[[1L]]==0,
-    DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_observation WHERE indicator_id='distribution_dpe'")$n[[1L]]==nrow(dpe_rows),
+     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_observation WHERE indicator_id='distribution_dpe'")$n[[1L]]==nrow(dpe_rows),
+     all(vapply(housing_ids, function(id) DBI::dbGetQuery(con,
+       "SELECT count(*) AS n FROM profile_observation WHERE indicator_id=$1", params=list(id))$n[[1L]]==
+         nrow(housing_rows[housing_rows$key==id,,drop=FALSE]), logical(1))),
     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_axis a JOIN profile_descriptor d USING(indicator_id) WHERE a.indicator_id IN ('structure_age','distribution_dpe') AND a.axis_name='detail' AND (a.unit IS NULL OR a.unit<>d.unit)")$n[[1L]]==0,
     all(vapply(c("voitures_menage","reseaux","reseaux_par_habitant","offre_cyclable"), function(id)
       DBI::dbGetQuery(con,"SELECT count(*) AS n FROM profile_observation WHERE indicator_id=$1",params=list(id))$n[[1L]]==

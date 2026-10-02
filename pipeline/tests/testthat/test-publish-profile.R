@@ -70,6 +70,27 @@ test_that("closed mobility profile projections preserve all canonical details an
   expect_error(project_mobility_profile(canonical, bad_metadata, "offre_cyclable"), "contract is incomplete")
 })
 
+test_that("the four Habitat detail profiles project canonical cells including regional facts", {
+  metadata <- lire_theme_metadata("habitat")
+  root <- pkgload::pkg_path()
+  canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(root, "..", "public", "data"))
+  rows <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_habitat.parquet"))
+  territories <- unique(data.frame(territoire=as.character(rows$territoire), type=as.character(rows$type)))
+  canonical <- list(indicateurs=rows, territoires=territories)
+  for (id in c("mix_logements", "statut", "type", "age_du_bati")) {
+    projection <- project_declared_detail_profile(canonical, metadata, id)
+    expected <- rows[rows$key == id, , drop=FALSE]
+    expect_equal(nrow(projection$facts), nrow(expected))
+    expect_equal(projection$facts$value, expected$value)
+    expect_true(any(projection$facts$status == "measured"))
+    expect_identical(projection$descriptor$levels, c("commune", "epci", "departement", "region"))
+    expect_true("region" %in% projection$facts$territory_type)
+    expect_true(all(projection$axes$unit == "%"))
+    expect_identical(projection$descriptor$comparison_detail,
+      unlist(metadata$indicator_pages[[id]]$comparison$detail, use.names=FALSE))
+  }
+})
+
 test_that("multi-source profile lineage is limited to each current declared producer vintage", {
   metadata <- lire_theme_metadata("mobilite")
   details <- unlist(metadata$indicator_pages$reseaux_par_habitant$comparison$details, use.names=FALSE)

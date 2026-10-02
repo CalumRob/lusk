@@ -180,6 +180,18 @@
       "comparison_facet": "chomage",
       "missing_status": "not_available",
       "counts_available": false
+    },
+    "eco_activites": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "eco_activites",
+      "missing_status": "suppressed",
+      "counts_available": false
     }
   },
   "source_records": {

@@ -195,6 +195,40 @@ def test_mobility_profile_publisher_output_is_served_over_http():
                     assert {source["source_id"] for source in cell["sources"]} == sql_sources[(indicator, cell["detail"])]
             assert client.get(f"/api/territories/commune/{territory}/profiles/distribution_dpe").status_code == 200
             assert client.get(f"/api/territories/commune/{territory}/profiles/structure_age").status_code == 200
+            # Stable indicator reads route all four newly registered Habitat
+            # profiles through their published descriptor and preserve source lineage.
+            for indicator, details in {
+                "mix_logements": ["principales", "secondaires", "vacants"],
+                "statut": ["proprietaire", "hlm", "locataire_prive", "loge_gratuit"],
+                "type": ["maison", "appartement"],
+                "age_du_bati": ["lt1919", "1919_1945", "1946_1970", "1971_1990", "1991_2005", "2006_plus"],
+            }.items():
+                named_housing = client.get(
+                    f"/api/territories/commune/{territory}/indicators/{indicator}")
+                assert named_housing.status_code == 200, named_housing.text
+                housing_profile = named_housing.json()
+                assert housing_profile["indicator"] == indicator
+                assert [cell["detail"] for cell in housing_profile["cells"]] == details
+                assert all(cell["unit"] == "%" for cell in housing_profile["cells"])
+                assert all(cell["status"] == "measured" for cell in housing_profile["cells"])
+                assert all({source["source_id"] for source in cell["sources"]} == {"logements"}
+                           for cell in housing_profile["cells"])
+                housing_comparison = client.post(
+                    f"/api/territories/commune/{territory}/indicators/{indicator}/comparison")
+                assert housing_comparison.status_code == 200, housing_comparison.text
+                comparison_result = housing_comparison.json()["result"]
+                assert comparison_result["source_facet"]["detail"] == housing_profile["comparison_point"]["detail"]
+                assert comparison_result["median"] == next(
+                    cell["value"] for cell in housing_profile["cells"]
+                    if cell["detail"] == housing_profile["comparison_point"]["detail"])
+                assert "focal_value" not in comparison_result
+                empty_housing_comparison = client.post(
+                    f"/api/territories/commune/{territory}/indicators/{indicator}/comparison",
+                    json={"selection": []})
+                assert empty_housing_comparison.status_code == 200, empty_housing_comparison.text
+                assert empty_housing_comparison.json()["result"]["status"] == "unavailable"
+                assert empty_housing_comparison.json()["result"]["median"] is None
+                assert "focal_value" not in empty_housing_comparison.json()["result"]
             habitat = client.get(f"/api/territories/commune/{territory}/themes/habitat/facts")
             assert habitat.status_code == 200, habitat.text
             named_scalar_comparison = client.post(
