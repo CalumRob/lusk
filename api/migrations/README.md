@@ -17,8 +17,10 @@ Migration 011 is additive and limited to the ordered-series/state slice. It
 creates owner-scoped series markers, descriptors, observations, immutable
 provenance revisions and observation-to-revision associations. It does not alter
 or backfill the legacy `ordered_series`, `series_descriptor`, shared source
-tables, or `table_publication`; the live ENAF legacy reader and its
-`VITE_CONSO_ENAF_SERIES_API=1` setting remain unchanged. `schema.sql` carries
+tables, or `table_publication`; the ENAF legacy reader remains unchanged. All
+series readers use the default-off `VITE_OWNED_SERIES_API=1` build gate; the
+older `VITE_CONSO_ENAF_SERIES_API` and `VITE_OCSGE_STATE_SERIES_API` names remain
+backward-compatible aliases for their respective existing consumers. `schema.sql` carries
 the same objects for fresh installs. Apply/test order is after 007/008/010; 009
 is unrelated and must not be applied to this worktree/database by the worker.
 

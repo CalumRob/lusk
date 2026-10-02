@@ -6,6 +6,50 @@ from fastapi import HTTPException
 
 from api.main import ReadRepository, app
 
+def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
+    class Cursor:
+        def __init__(self, rows): self.rows = rows
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+    class Transaction:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+    class Connection:
+        def transaction(self): return Transaction()
+        def execute(self, sql, params=()):
+            if sql.startswith("SET TRANSACTION"): return Cursor([])
+            if "FROM series_dataset_publication" in sql: return Cursor([("prix-v1", "ref-v1", 2, "2026-10-01T00:00:00Z")])
+            if "FROM table_publication" in sql: return Cursor([("ref-v1",)])
+            if "FROM series_dataset_descriptor" in sql:
+                assert params == ("dvf_prix_m2", "prix_m2")
+                return Cursor([("year", ["2021", "2022", "2023", "2024", "2025"], "may_be_missing", "2025",
+                    "Médiane prix au m²", "€/m²", "low", ["commune", "epci", "departement"], "1")])
+            if "SELECT name,territory_type,department_id,epci_id" in sql: return Cursor([("Commune A1", "commune", "22", "epci-a")])
+            if "SELECT t.territory_id FROM territory_reference" in sql: return Cursor([("22001",)])
+            if "FROM series_dataset_observation" in sql:
+                return Cursor([
+                    ("22001", "Commune A1", "commune", "2024", None, "2024", None, "missing",
+                     "rev-2025", "dvf_2025_dep22", "2025", "Étalab", "DVF", "2025", "2025-12-31", "2026-05-18", "hash-2025"),
+                    ("22001", "Commune A1", "commune", "2025", None, "2025", 525.0, "measured",
+                     "rev-2025", "dvf_2025_dep22", "2025", "Étalab", "DVF", "2025", "2025-12-31", "2026-05-18", "hash-2025"),
+                ])
+            raise AssertionError(sql)
+    class Connections:
+        def connection(self):
+            class Context:
+                def __enter__(self): return Connection()
+                def __exit__(self, *args): return False
+            return Context()
+
+    read = ReadRepository(Connections()).read_owned_series(
+        "dvf_prix_m2", "commune", "22001", "prix_m2", "commune", "22", None)
+    assert read["dataset_id"] == "dvf_prix_m2"
+    assert [point["axis"] for point in read["points"]] == ["2024", "2025"]
+    assert [(point["value"], point["status"]) for point in read["points"]] == [(None, "missing"), (525.0, "measured")]
+    assert all(point["observation_period"] == point["axis"] for point in read["points"])
+    assert all(point["provenance"][0]["version"] == "2025" for point in read["points"])
+    assert read["comparison"]["point"] == "2025"
+
 def test_owned_series_migration_is_additive_and_fresh_schema_matches():
     root = Path(__file__).resolve().parents[1]
     migration = (root / "migrations/011_owned_series_publications.sql").read_text()

@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
-import { indicateursMilieuxFixture, territoiresFixture } from '../payload/fixtures'
+import { indicateursHabitatFixture, indicateursMilieuxFixture, territoiresFixture } from '../payload/fixtures'
 import { INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY } from '../payload/indicatorReadModel'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { routes } from '../router'
@@ -15,8 +15,45 @@ afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
 const rawMetadataMilieux = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_milieux.json'), 'utf8'))
 const metadataMilieux = validerThemeMetadata(rawMetadataMilieux, 'theme_milieux.json')
+const rawMetadataHabitat = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_habitat.json'), 'utf8'))
+const metadataHabitat = validerThemeMetadata(rawMetadataHabitat, 'theme_habitat.json')
 
 describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () => {
+  it('mounts prix_m2 through the shared default-off owned-series reader gate', async () => {
+    vi.stubEnv('VITE_OWNED_SERIES_API', '1')
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+      dataset_id: 'dvf_prix_m2', indicator_id: 'prix_m2', axis_kind: 'year', unit: '€/m²',
+      territory: { id: '22001', type: 'commune', name: 'Commune A1' },
+      points: [{ axis: '2024', observation_period: '2024', value: null, status: 'missing', provenance: [] },
+        { axis: '2025', observation_period: '2025', value: 525, status: 'measured', provenance: [] }],
+      scope_series: [{ territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: [
+        { axis: '2024', observation_period: '2024', value: null, status: 'missing', provenance: [] },
+        { axis: '2025', observation_period: '2025', value: 525, status: 'measured', provenance: [] },
+      ] }], comparison: { point: '2025', value: 525, median: 525, rank: 1, ties: 1, comparable_count: 1,
+        direction: 'low', scope: { kind: 'level', territory_type: 'commune', department_id: '22' } },
+    }), { status: 200 }))
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/series-datasets/dvf_prix_m2/territories/commune/22001/prix_m2?scope_level=commune&department_id=22')
+      expect(wrapper.text()).toContain('525')
+      expect(wrapper.text()).toContain('Prix')
+    } finally { wrapper.unmount() }
+  })
   it('waits for delayed metadata before choosing a series route when both API gates are enabled', async () => {
     vi.stubEnv('VITE_OCSGE_STATE_SERIES_API', '1')
     vi.stubEnv('VITE_CONSO_ENAF_SERIES_API', '1')

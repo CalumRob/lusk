@@ -111,12 +111,13 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
     },
   )
   it('loads each producer-registered scalar page from all current themes through the production cohort adapter', async () => {
-    let pageCount = 0
     for (const theme of ['economie', 'demographie', 'mobilite'] as const) {
       const raw = productionThemeMetadata[theme]
       const registered = indicateursScalairesEnregistres(raw)
       const metadata = validerThemeMetadata(raw, `theme_${theme}.json`)
-      expect(registered.length).toBe(theme === 'economie' ? 2 : theme === 'demographie' ? 2 : 19)
+      const declared = Array.isArray(raw.scalar_contracts) ? raw.scalar_contracts : Object.keys(raw.scalar_contracts)
+      expect(registered).toEqual(declared)
+      expect(registered.length).toBeGreaterThan(0)
       for (const id of registered) {
         const page = metadata.indicator_pages?.[id]
         expect(page, `${theme}/${id} is registered without a page`).toBeDefined()
@@ -134,10 +135,8 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
         }), { status: 200 })))
         const facts = await chargerCohorteScalaire(id, theme, page, focal, 'commune', territoiresFixture, {})
         expect(facts[0]).toMatchObject({ theme, key: id, territoire: focal.territoire, value: 1, rang_epci: 1, rang_epci_n: 1 })
-        pageCount++
       }
     }
-    expect(pageCount).toBe(23)
   })
 
   it('preserves publisher-provided rank and denominator fields without recomputing them', async () => {

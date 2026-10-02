@@ -1,12 +1,45 @@
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { orderedSeriesAdapterFor, orderedSeriesFacts } from '../payload/orderedSeriesAdapter'
+import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, orderedSeriesReaderEnabled } from '../payload/orderedSeriesAdapter'
 import { territoiresFixture } from '../payload/fixtures'
 
 const metadataMilieux = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_milieux.json'), 'utf8'))
+const metadataHabitat = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_habitat.json'), 'utf8'))
 
 describe('owned M2/M3 series adapter', () => {
+  it('uses one default-off gate for all series and retains the two old flag aliases', () => {
+    for (const indicator of ['conso_enaf_annuel', 'artif_par_habitant', 'prix_m2']) {
+      expect(orderedSeriesReaderEnabled(indicator, {})).toBe(false)
+      expect(orderedSeriesReaderEnabled(indicator, { VITE_OWNED_SERIES_API: '1' })).toBe(true)
+    }
+    expect(orderedSeriesReaderEnabled('conso_enaf_annuel', { VITE_CONSO_ENAF_SERIES_API: '1' })).toBe(true)
+    expect(orderedSeriesReaderEnabled('artif_par_habitant', { VITE_OCSGE_STATE_SERIES_API: '1' })).toBe(true)
+    expect(orderedSeriesReaderEnabled('prix_m2', { VITE_CONSO_ENAF_SERIES_API: '1', VITE_OCSGE_STATE_SERIES_API: '1' })).toBe(false)
+  })
+  it('registers the metadata-owned prix_m2 dataset and preserves annual point lineage', () => {
+    expect(orderedSeriesAdapterFor('habitat', 'prix_m2')).toEqual({
+      theme: 'habitat', indicator: 'prix_m2', pathIndicator: 'prix_m2',
+    })
+    expect(metadataHabitat.indicator_pages.prix_m2.series_dataset_id).toBe('dvf_prix_m2')
+    expect(metadataHabitat.indicator_pages.prix_m2.series_publication).toBe('owned')
+    const fact = orderedSeriesFacts({
+      dataset_id: 'dvf_prix_m2', indicator_id: 'prix_m2', axis_kind: 'year', unit: '€/m²',
+      territory: { id: '22001', type: 'commune', name: 'Commune A1' },
+      points: [{ axis: '2024', observation_period: '2024', value: null, status: 'missing', provenance: [
+        { revision_id: 'dvf-2025', source_id: 'dvf_2025_dep22', vintage_id: '2025', source_name: 'Etalab',
+          dataset_name: 'DVF', version: '2025', reference_date: '2025-12-31', publication_date: '2026-05-18', revision_hash: 'hash' },
+      ] }], comparison: { point: '2025' },
+    }, 'habitat', territoiresFixture)
+    expect(fact[0]).toMatchObject({ detail: '2024', value: null, observation_status: 'missing',
+      vintage_id: '2025', observation_period: '2024' })
+    expect(fact[0].provenance_revisions?.[0].revision_id).toBe('dvf-2025')
+    const scalarHeadline = { ...fact[0], detail: null, value: 2450, observation_status: 'measured' as const }
+    const merged = mergeOrderedSeriesFacts([scalarHeadline, { ...fact[0], detail: '2024', value: 2000 }], 'prix_m2', fact)
+    expect(merged).toHaveLength(2)
+    expect(merged[0]).toMatchObject({ detail: null, value: 2450 })
+    expect(merged[1]).toMatchObject({ detail: '2024', value: null, observation_status: 'missing' })
+  })
   it('registers a dataset-qualified no-comparison adapter and preserves per-point revisions', () => {
     const adapter = orderedSeriesAdapterFor('milieux', 'artif_par_habitant')
     expect(adapter).toEqual({ theme: 'milieux', indicator: 'artif_par_habitant', pathIndicator: 'artif_par_habitant' })

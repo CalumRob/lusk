@@ -56,10 +56,17 @@ export interface OrderedSeriesAdapter {
 const adapters: readonly OrderedSeriesAdapter[] = [
   { theme: 'milieux', indicator: 'conso_enaf_annuel', pathIndicator: 'conso_enaf_annuel' },
   { theme: 'milieux', indicator: 'artif_par_habitant', pathIndicator: 'artif_par_habitant' },
+  { theme: 'habitat', indicator: 'prix_m2', pathIndicator: 'prix_m2' },
 ]
 
 export function orderedSeriesAdapterFor(theme: string, indicator: string): OrderedSeriesAdapter | null {
   return adapters.find((adapter) => adapter.theme === theme && adapter.indicator === indicator) ?? null
+}
+
+export function orderedSeriesReaderEnabled(indicator: string, env: Record<string, string | undefined>): boolean {
+  return env.VITE_OWNED_SERIES_API === '1' ||
+    (indicator === 'conso_enaf_annuel' && env.VITE_CONSO_ENAF_SERIES_API === '1') ||
+    (indicator === 'artif_par_habitant' && env.VITE_OCSGE_STATE_SERIES_API === '1')
 }
 
 /** Convert an API snapshot to the app's existing fact contract without filling gaps. */
@@ -105,11 +112,20 @@ export function orderedSeriesFacts(
           ? point.comparison_count ?? null : null,
         observation_status: point?.status ?? 'missing',
         observation_period: point?.observation_period ?? null,
-        source_id: point?.source_id ?? null,
-        vintage_id: point?.vintage_id ?? null,
+        source_id: point?.source_id ?? point?.provenance?.map((lineage) => lineage.source_id).join(' · ') ?? null,
+        vintage_id: point?.vintage_id ?? point?.provenance?.map((lineage) => lineage.vintage_id).join(' · ') ?? null,
         provenance_revisions: point?.provenance ?? [],
       })
     }
   }
   return rows
+}
+
+/** Replace trajectory points from the API while retaining any canonical scalar headline. */
+export function mergeOrderedSeriesFacts(
+  existing: readonly Indicateur[],
+  indicator: string,
+  seriesFacts: readonly Indicateur[],
+): Indicateur[] {
+  return [...existing.filter((fact) => fact.key !== indicator || fact.detail == null), ...seriesFacts]
 }
