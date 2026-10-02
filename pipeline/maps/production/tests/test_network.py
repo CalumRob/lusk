@@ -345,7 +345,7 @@ class NetworkPreparationTests(unittest.TestCase):
             osm_path.write_bytes(b"osm source placeholder")
             geovelo_path.write_bytes(b"geovelo source placeholder")
 
-            def build_caches(cache_root, preparations):
+            def build_caches(cache_root, preparations, *, force=False, report=None):
                 for family, preparation in preparations.items():
                     preparation.build(root / f"built-{family}")
                 return {}

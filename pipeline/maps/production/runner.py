@@ -4,6 +4,8 @@ from hashlib import sha256
 import json
 from pathlib import Path
 import struct
+import os
+import tempfile
 from typing import Mapping, Protocol, Sequence
 import zlib
 from time import perf_counter
@@ -96,6 +98,23 @@ def _input_sha256(feature: Mapping, geometry_hashes: dict[int, tuple[str, int]])
     canonical = _canonical_input(feature, geometry_hashes)
     encoded = json.dumps(canonical, sort_keys=True, default=str).encode()
     return sha256(encoded).hexdigest()
+
+
+def _profile_input_sha256(feature: Mapping, profile: Profile,
+                          geometry_hashes: dict[int, tuple[str, int]]) -> str:
+    """Hash only map-ready feature content consumed by the selected profile."""
+    territory = feature["territory"]
+    selected = {
+        "territory": {"kind": territory["kind"], "code": territory["code"]},
+        "mode": feature["mode"],
+        "analytical_geometry": feature.get("analytical_geometry", feature["geometry"]),
+        "region_geometry": feature.get("region_geometry"),
+        "extent": feature.get("extent"),
+    }
+    if profile.name == "inspection":
+        selected["territory"]["name"] = territory["name"]
+        selected["geometry"] = feature.get("geometry")
+    return _input_sha256(selected, geometry_hashes)
 
 
 def _render_identity(recipe: Recipe, scope: str, profiles: Sequence[str],
@@ -266,18 +285,16 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
         cache_manifest = json.loads(cache_manifest_path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         cache_manifest = {"outputs": {}}
-    cached_outputs = cache_manifest.get("outputs", {})
-    next_cached_outputs = {}
+    if not isinstance(cache_manifest, dict) or not isinstance(cache_manifest.get("outputs"), dict):
+        cache_manifest = {"outputs": {}}
+    cached_outputs = {key: value for key, value in cache_manifest["outputs"].items()
+                      if isinstance(key, str) and isinstance(value, dict)}
+    next_cached_outputs = dict(cached_outputs)
     preparation_seconds = 0.0
     prepare_run = getattr(adapter, "prepare_run", None)
     if callable(prepare_run):
         preparation_started = perf_counter()
-        try:
-            prepare_run(recipe, binding, requested_profiles, output_dir, refresh=refresh)
-        except TypeError as error:
-            if "refresh" not in str(error):
-                raise
-            prepare_run(recipe, binding, requested_profiles, output_dir)
+        prepare_run(recipe, binding, requested_profiles, output_dir, refresh=refresh)
         preparation_seconds = perf_counter() - preparation_started
         print(f"[maps] shared source preparation: {preparation_seconds:.1f}s", flush=True)
     outputs = []
@@ -299,7 +316,8 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
             for name in requested_profiles:
                 profile = PROFILES[name]
                 key = f"{feature['territory']['kind']}/{feature['territory']['code']}/{feature['mode']}/{name}"
-                effective_contract = {"input": input_sha256,
+                profile_input_sha256 = _profile_input_sha256(feature, profile, geometry_hashes)
+                effective_contract = {"input": profile_input_sha256,
                                       "recipe": {"name": recipe.name, "version": recipe.version,
                                           "family": recipe.family,
                                           "foundation": {"version": recipe.foundation.version,
@@ -307,11 +325,16 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                                               "geography": recipe.foundation.geography,
                                               "ground": recipe.foundation.ground,
                                               "composition": recipe.foundation.composition}},
-                                      "renderer": renderer_identity,
+                                      "renderer": (adapter.profile_identity(profile, feature)
+                                          if callable(getattr(adapter, "profile_identity", None))
+                                          else renderer_identity),
                                       "profile": {"name": name, "size": profile.size,
                                                   "context": profile.context,
                                                   "furniture": profile.furniture,
                                                   "transparent_outside": profile.transparent_outside}}
+                effective_inputs = getattr(adapter, "effective_input_identity", None)
+                if callable(effective_inputs):
+                    effective_contract["displayed_content"] = effective_inputs(feature, profile)
                 effective_identity = sha256(json.dumps(effective_contract, sort_keys=True,
                     separators=(",", ":")).encode()).hexdigest()
                 previous = cached_outputs.get(key, {})
@@ -321,6 +344,10 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                     and sha256(path.read_bytes()).hexdigest() == previous.get("output_sha256"))
                 render_seconds = 0.0
                 decision = "reused-output" if reusable else "rendered"
+                if reusable:
+                    report_reuse = getattr(adapter, "record_reused_output", None)
+                    if callable(report_reuse):
+                        report_reuse(feature, profile, output_dir)
                 if not reusable:
                     render_started = perf_counter()
                     path = Path(adapter.render(recipe, feature, profile, output_dir))
@@ -338,7 +365,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                 outputs.append({"path": str(path), "bytes": path.stat().st_size,
                     "family": recipe.family, "territory": feature.get("territory"),
                     "mode": feature.get("mode"), "profile": name,
-                    "profile_size": list(profile.size), "input_sha256": input_sha256,
+                    "profile_size": list(profile.size), "input_sha256": profile_input_sha256,
                     "render_identity": render_identity, "output_sha256": output_sha256,
                     "effective_identity": effective_identity, "decision": decision,
                     "render_seconds": round(render_seconds, 3),
@@ -351,11 +378,30 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                     flush=True,
                 )
     elapsed_seconds = perf_counter() - run_started
-    cache_manifest_path.write_text(json.dumps({"outputs": next_cached_outputs},
-        indent=2, sort_keys=True), encoding="utf-8")
+    stage_report = [{"stage": "adapter-preparation-total", "profile": "shared",
+        "decision": "built", "seconds": round(preparation_seconds, 3)}]
+    report_hook = getattr(adapter, "stage_report", None)
+    if callable(report_hook):
+        stage_report.extend(report_hook())
+    fd, temporary_manifest = tempfile.mkstemp(prefix=".production-manifest-", suffix=".tmp", dir=output_dir)
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as stream:
+            json.dump({"outputs": next_cached_outputs}, stream, indent=2, sort_keys=True)
+            stream.flush()
+            os.fsync(stream.fileno())
+        os.replace(temporary_manifest, cache_manifest_path)
+    finally:
+        if os.path.exists(temporary_manifest):
+            os.unlink(temporary_manifest)
     approval_members = sorted(
-        (item["territory"]["kind"], item["territory"]["code"], item["mode"], item["effective_identity"])
-        for item in outputs if item["territory"]["kind"] in {"commune", "region", "epci"}
+        (item["territory"]["kind"], item["territory"]["code"], item["mode"],
+         item["profile"], item["effective_identity"])
+        for item in outputs
+    )
+    approval_pairs_complete = all(
+        {item["profile"] for item in outputs if item["territory"] == feature["territory"]
+         and item["mode"] == feature["mode"]} == {"inspection", "inline"}
+        for features in binding.map_set.layers.values() for feature in features
     )
     manifest = {"recipe": recipe.name, "recipe_version": recipe.version,
                 "foundation_version": recipe.foundation.version, "family": recipe.family,
@@ -363,6 +409,9 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                 "authoritative_inputs": authoritative_inputs,
                 "render_identity": render_identity,
                 "approval_identity": sha256(json.dumps(approval_members, separators=(",", ":")).encode()).hexdigest(),
+                "approval_members": approval_members,
+                "approval_pairs_complete": approval_pairs_complete,
+                "stage_report": stage_report,
                 "scope": scope, "preflight_seconds": round(preflight_seconds, 3),
                 "preparation_seconds": round(preparation_seconds, 3),
                 "input_hash_seconds": round(input_hash_seconds, 3),
@@ -372,7 +421,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                               for name in requested_profiles},
           "preflight_seconds": round(preflight_seconds, 3),
           "preparation_seconds": round(preparation_seconds, 3),
-          "stage_report": [{"stage": "source-preparation", "seconds": round(preparation_seconds, 3)}],
+          "stage_report": stage_report,
           "input_hash_seconds": round(input_hash_seconds, 3),
           "elapsed_seconds": round(elapsed_seconds, 3),
           "checks": ["png-signature", "png-crc", "png-decode", "profile-dimensions",
