@@ -481,18 +481,21 @@ test_that("series smoke cleanup is limited to owned RESTRICT schema drops", {
     "owned series smoke schema")
 })
 test_that("owned raccordement publisher projects focal curve and a distinct named median reference", {
-  metadata <- list(owned_series_routes=list(raccordement_courbe=list(
-    dataset_id="raccordement_curve",active_read_route=TRUE,axis_kind="duration_minute",
-    axis_values=c(0,15,30,45,60,90,120,180,240,300,360),
-    reference_indicator="raccordement_reference",reference_id="commune_bretonne_mediane",
-    reference_label="Commune bretonne médiane",reference_role="analytical_reference",
-    reference_statistic="median_routed_communes",source_id="matrice_temps_mairies")),
-    indicator_pages=list(raccordement_courbe=list(comparison=list(detail="t0090"),label="Courbe raccordement",
-      levels=c("commune","epci","departement"))),
+  axis_keys <- paste0("t",sprintf("%04d",c(0,15,30,45,60,90,120,180,240,300,360)))
+  metadata <- list(theme="mobilite",owned_series_routes=list(raccordement_courbe=list(
+     dataset_id="raccordement_curve",theme_id="mobilite",active_read_route=TRUE,axis_kind="duration_minute",
+     axis_values=c(0,15,30,45,60,90,120,180,240,300,360),
+     reference_indicator="raccordement_reference",reference=list(id="commune_bretonne_mediane",
+       label="Commune bretonne médiane",role="analytical_reference",statistic="median_routed_communes"),
+     source_id="matrice_temps_mairies")),
+    indicator_pages=list(raccordement_courbe=list(indicator="raccordement_courbe",unit="%",direction="high",
+      comparison=list(detail="t0090",details=axis_keys),label="Courbe raccordement",sources="matrice_temps_mairies",
+      trajectory=list(reference=list(indicator="raccordement_reference",territoire="53",
+        label="Commune bretonne médiane")),levels=c("commune","epci","departement"))),
     source_records=list(matrice_temps_mairies=list(dataset="Matrice de temps",vintages=list(list(
       id="matrice_temps_mairies",version="2026-09-16",dateReference="2026-08-25",
       datePublication="2026-08-26")))))
-  keys <- paste0("t",sprintf("%04d",metadata$owned_series_routes$raccordement_courbe$axis_values))
+  keys <- axis_keys
   rows <- function(key, values, territory, type) data.frame(key=key,theme="mobilite",detail=keys,
     type=type,territoire=territory,value=values,unit="%",vintage_source="Fixture matrix",
     vintage_version="2026-09-16",vintage_date_reference=as.Date("2026-08-25"),

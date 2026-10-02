@@ -1085,7 +1085,17 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     if profiles is None:
         profiles, profile_version = focal_profiles(conn, territory_type, territory_id,
             theme_id=theme_id, indicator_id=indicator_id)
-    if not scalar_descriptors and not profiles:
+    owned_descriptors=[]
+    if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
+        has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
+        has_route=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
+        if has_theme and has_route:
+            owned_descriptors=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
+                WHERE theme_id=%s AND active_read_route AND (%s::text IS NULL OR indicator_id=%s)
+                ORDER BY indicator_id""",(theme_id,indicator_id,indicator_id)).fetchall()
+    if not scalar_descriptors and not profiles and not owned_descriptors:
         raise HTTPException(404, "No published facts for this theme")
     reference = conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
@@ -1151,8 +1161,18 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 "rank": rank, "rank_size": len(values) if rank is not None else None,
                 "comparison_sources": sources})
     profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id)
+    for dataset_id,owned_indicator in owned_descriptors:
+        result=_owned_series_comparison_result(conn,(dataset_id,theme_id),territory_type,
+            territory_id,owned_indicator,selection)
+        results.append(result["result"])
+    owned_markers=[]
+    for dataset_id,_owned_indicator in owned_descriptors:
+        owner=conn.execute("SELECT content_version FROM series_dataset_publication WHERE dataset_id=%s",
+                           (dataset_id,)).fetchone()
+        if not owner or not owner[0]: raise HTTPException(503,"Owned-series publication is unavailable")
+        owned_markers.append(owner[0])
     return {"contract": "theme-comparison-v1", "complete_theme": False, "theme_id": theme_id,
-        "content_version": scalar_marker[0] if scalar_marker else None,
+        "content_version": scalar_marker[0] if scalar_marker else (owned_markers[0] if owned_markers else None),
         "reference_content_version": reference[0],
         "selection": None if selection is None else [
             {"territory_type": level, "territory_id": code} for level, code in selection],
@@ -1292,6 +1312,195 @@ def declared_profile(
                               for _level,detail,sex,value,status in rows]}
 
 
+def _owned_series_route(conn, indicator_id):
+    exists = conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]
+    if not exists:
+        return None
+    declared = conn.execute("SELECT 1 FROM series_dataset_descriptor WHERE indicator_id=%s LIMIT 1",
+                            (indicator_id,)).fetchone()
+    if not declared:
+        return None
+    column = conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+        WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor'
+          AND column_name='active_read_route')""").fetchone()[0]
+    if not column:
+        raise HTTPException(503, "Owned-series active publication route is not declared")
+    routes = conn.execute("""SELECT dataset_id,theme_id FROM series_dataset_descriptor
+        WHERE indicator_id=%s AND active_read_route""", (indicator_id,)).fetchall()
+    if len(routes) != 1:
+        raise HTTPException(503, "Owned-series active publication route is not declared")
+    return routes[0]
+
+
+def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indicator_id):
+    """Read one active owned series, its focal points and named references in the caller snapshot."""
+    marker = conn.execute("""SELECT p.content_version,p.reference_content_version,p.row_count,p.published_at,
+        t.content_version FROM series_dataset_publication p CROSS JOIN table_publication t
+        WHERE p.dataset_id=%s AND t.table_name='territory_reference'""", (dataset_id,)).fetchone()
+    if not marker or marker[1] != marker[4]:
+        raise HTTPException(503, "Owned-series publication is stale or unavailable")
+    descriptor = conn.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,label,unit,
+        direction,descriptor_version,allowed_levels,comparison_point,theme_id
+        FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s AND active_read_route""",
+        (dataset_id,indicator_id)).fetchone()
+    if not descriptor:
+        raise HTTPException(503, "Owned-series active publication route is not declared")
+    if territory_type not in descriptor[8]:
+        raise HTTPException(422, "Owned series is not declared for this territory level")
+    focal = conn.execute("SELECT name,territory_type FROM territory_reference WHERE territory_id=%s",
+                         (territory_id,)).fetchone()
+    if not focal:
+        raise HTTPException(404, "Focal territory not found")
+    if focal[1] != territory_type:
+        raise HTTPException(422, "Focal territory type does not match route")
+    facts = conn.execute("""SELECT o.axis_value,o.observation_period,o.value,o.status,o.missing_reason,
+        p.provenance_revision_id,p.source_id,p.vintage_id,p.source_name,p.dataset_name,p.source_version,
+        p.reference_date,p.publication_date,p.revision_hash
+        FROM series_dataset_observation o LEFT JOIN series_observation_provenance a
+        USING(dataset_id,indicator_id,territory_id,axis_value)
+        LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
+        WHERE o.dataset_id=%s AND o.indicator_id=%s AND o.territory_id=%s
+        ORDER BY array_position(%s::text[],o.axis_value),p.provenance_revision_id""",
+        (dataset_id,indicator_id,territory_id,list(descriptor[1]))).fetchall()
+    references = conn.execute("""SELECT r.reference_id,d.reference_label,d.reference_role,d.reference_statistic,
+        r.axis_value,r.observation_period,r.value,r.status,r.missing_reason,p.provenance_revision_id,
+        p.source_id,p.vintage_id,p.source_name,p.dataset_name,p.source_version,p.reference_date,p.publication_date,
+        p.revision_hash,d.required
+        FROM series_named_reference_descriptor d LEFT JOIN series_named_reference r
+          USING(dataset_id,indicator_id,reference_id)
+        LEFT JOIN series_named_reference_provenance a USING(dataset_id,indicator_id,reference_id,axis_value)
+        LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
+        WHERE d.dataset_id=%s AND d.indicator_id=%s
+        ORDER BY d.reference_id,array_position(%s::text[],r.axis_value),p.provenance_revision_id""",
+        (dataset_id,indicator_id,list(descriptor[1]))).fetchall()
+    row_count = conn.execute("""SELECT (SELECT count(*) FROM series_dataset_observation WHERE dataset_id=%s) +
+        (SELECT count(*) FROM series_named_reference WHERE dataset_id=%s)""",(dataset_id,dataset_id)).fetchone()[0]
+    if row_count != marker[2]:
+        raise HTTPException(503, "Owned series marker row count does not match its facts")
+    if not facts:
+        raise HTTPException(503, "Owned series focal curve is incomplete")
+    def lineage(row, offset):
+        if row[offset] is None:
+            raise HTTPException(503, "Owned series provenance is incomplete")
+        return {"revision_id":row[offset],"source_id":row[offset+1],"vintage_id":row[offset+2],
+            "source_name":row[offset+3],"dataset_name":row[offset+4],"version":row[offset+5],
+            "reference_date":row[offset+6],"publication_date":row[offset+7],"revision_hash":row[offset+8]}
+    points=[]
+    for axis in descriptor[1]:
+        matching=[row for row in facts if row[0]==axis]
+        if not matching:
+            if descriptor[3]=="dense_complete":
+                raise HTTPException(503,"Owned series declared axis point is missing")
+            points.append({"axis":axis,"observation_period":None,"value":None,"status":"missing",
+                "missing_reason":None,"provenance":[]})
+            continue
+        row=matching[0]
+        points.append({"axis":row[0],"observation_period":row[1],"value":row[2],"status":row[3],
+            "missing_reason":row[4],"provenance":[lineage(item,5) for item in matching]})
+    reference_groups={}
+    required_ids=set()
+    for row in references:
+        rid,label,role,statistic,axis,period,value,status,reason=row[:9]
+        if row[18]: required_ids.add(rid)
+        if axis is None:
+            if row[18]: raise HTTPException(503,"Required owned named reference is empty")
+            continue
+        if axis not in descriptor[1]:
+            raise HTTPException(503,"Owned named reference contains an undeclared axis")
+        group=reference_groups.setdefault(rid,{"id":rid,"label":label,"role":role,
+            "statistic":statistic,"unit":descriptor[5],"points":[]})
+        point=next((item for item in group["points"] if item["axis"]==axis),None)
+        if point is None:
+            point={"axis":axis,"observation_period":period,"value":value,"status":status,
+                "missing_reason":reason,"provenance":[]}
+            group["points"].append(point)
+        point["provenance"].append(lineage(row,9))
+    for rid in required_ids:
+        group=reference_groups.get(rid)
+        if not group or (descriptor[3]=="dense_complete" and
+            [point["axis"] for point in group["points"]] != list(descriptor[1])):
+            raise HTTPException(503,"Required owned named reference is incomplete")
+    return {"dataset_id":dataset_id,"publication_id":marker[0],"reference_content_version":marker[1],
+        "published_at":marker[3],"territory":{"id":territory_id,"type":territory_type,"name":focal[0]},
+        "indicator_id":indicator_id,"theme_id":descriptor[10],"axis_kind":descriptor[0],
+        "axis_values":descriptor[1],"axis_numeric_values":descriptor[2],"completeness":descriptor[3],
+        "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
+        "descriptor_version":descriptor[7],"comparison_point":descriptor[9],"points":points,"scope_series":[],
+        "named_references":list(reference_groups.values()),"availability":"complete" if all(
+            point["status"]=="measured" for point in points) else "incomplete"}
+
+
+def _owned_series_comparison_result(conn, route, territory_type, territory_id, indicator_id, selection):
+    dataset_id, theme_id = route
+    marker=conn.execute("""SELECT p.content_version,p.reference_content_version,t.content_version
+        FROM series_dataset_publication p LEFT JOIN table_publication t ON t.table_name='territory_reference'
+        WHERE p.dataset_id=%s""",(dataset_id,)).fetchone()
+    if not marker or not marker[0] or marker[1]!=marker[2]:
+        raise HTTPException(503,"Owned-series publication is unavailable or stale")
+    descriptor=conn.execute("""SELECT comparison_point,label,unit,direction,allowed_levels,
+        descriptor_version,axis_values FROM series_dataset_descriptor
+        WHERE dataset_id=%s AND indicator_id=%s AND active_read_route""",(dataset_id,indicator_id)).fetchone()
+    if not descriptor:
+        raise HTTPException(503,"Owned-series active publication route is not declared")
+    point,label,unit,direction,levels,version,axes=descriptor
+    if territory_type not in levels:
+        raise HTTPException(422,"Indicator is not declared for this territory level")
+    cohort_type,members,scope=_comparison_cohort(conn,territory_type,territory_id,selection)
+    if cohort_type not in levels:
+        raise HTTPException(422,"Indicator comparison is not declared for this cohort level")
+    if not point or point not in axes or direction not in ("high","low"):
+        return {"contract":"indicator-comparison-v1","complete_theme":False,"indicator_id":indicator_id,
+            "theme_id":theme_id,"shape":"series","content_version":marker[0],
+            "reference_content_version":marker[2],"selection":None if selection is None else [
+                {"territory_type":level,"territory_id":code} for level,code in selection],
+            "scope":{**scope,"member_count":len(members)} if scope else None,
+            "result":{"indicator_id":indicator_id,"label":label,"unit":unit,"direction":direction,
+                "descriptor_version":version,"source_facet":point,"status":"unavailable",
+                "reason":"unsupported_comparison_contract","selected_member_count":len(members),
+                "eligible_count":0,"median":None,"rank":None,"comparison_sources":[]}}
+    ids=list(dict.fromkeys([*members,territory_id]))
+    rows=conn.execute("""SELECT o.territory_id,o.value,o.status,p.source_id,p.vintage_id,p.source_name,
+        p.dataset_name,p.source_version,p.reference_date,p.publication_date,p.revision_hash
+        FROM series_dataset_observation o LEFT JOIN series_observation_provenance a
+          USING(dataset_id,indicator_id,territory_id,axis_value)
+        LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
+        WHERE o.dataset_id=%s AND o.indicator_id=%s AND o.axis_value=%s
+          AND o.territory_type=%s AND o.territory_id=ANY(%s)
+        ORDER BY o.territory_id,p.provenance_revision_id""",
+        (dataset_id,indicator_id,point,cohort_type,ids)).fetchall()
+    if any(row[3] is None for row in rows):
+        raise HTTPException(503,"Owned series comparison provenance is incomplete")
+    values=[(row[0],float(row[1])) for row in rows if row[0] in members and row[2]=="measured" and row[1] is not None]
+    focal=next((row for row in rows if row[0]==territory_id),None)
+    focal_value=float(focal[1]) if focal and focal[2]=="measured" and focal[1] is not None else None
+    enough=len(values)>=2
+    better=(sum(v>focal_value if direction=="high" else v<focal_value for _,v in values)
+        if focal_value is not None else None)
+    sources=[]; seen=set()
+    for row in rows:
+        if row[0] not in members: continue
+        key=(row[3],row[4])
+        if key not in seen:
+            seen.add(key); sources.append({"source_id":row[3],"vintage_id":row[4],"source_name":row[5],
+                "dataset_name":row[6],"version":row[7],"reference_date":row[8],
+                "publication_date":row[9],"revision_hash":row[10]})
+    return {"contract":"indicator-comparison-v1","complete_theme":False,"indicator_id":indicator_id,
+        "theme_id":theme_id,"shape":"series","content_version":marker[0],
+        "reference_content_version":marker[2],"selection":None if selection is None else [
+          {"territory_type":level,"territory_id":code} for level,code in selection],
+        "scope":{**scope,"member_count":len(members)} if scope else None,
+        "result":{"indicator_id":indicator_id,"label":label,"unit":unit,"direction":direction,
+          "descriptor_version":version,"source_facet":point,"statistic":"median",
+          "status":"available" if enough else "unavailable",
+          "reason":None if enough else ("fewer_than_two_comparable_values" if values else "no_selected_comparable_values"),
+          "selected_member_count":len(members),"eligible_count":len(values),
+          "missing_count":max(0,len(members)-len(values)),
+          "median":median([v for _,v in values]) if enough else None,
+          "rank":better+1 if enough and territory_id in members and better is not None else None,
+          "rank_size":len(values) if enough and territory_id in members and better is not None else None,
+          "comparison_sources":sources}}
+
+
 @app.get("/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
 def scalar_observation(
     territory_type: Literal["commune", "epci", "departement", "region"],
@@ -1317,92 +1526,12 @@ def scalar_observation(
                 if conn.execute("SELECT to_regclass(%s)", (table,)).fetchone()[0] and conn.execute(
                         f"SELECT 1 FROM {table} WHERE indicator_id=%s", (indicator_id,)).fetchone():
                     shape_rows.append((table, shape))
-            owned_table = conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]
-            owned_route_column = (conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
-                WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor'
-                  AND column_name='active_read_route')""").fetchone()[0] if owned_table else False)
-            owned = (conn.execute(
-                "SELECT dataset_id FROM series_dataset_descriptor WHERE indicator_id=%s AND active_read_route",
-                (indicator_id,)).fetchall() if owned_route_column else [])
-            any_owned = (conn.execute("SELECT 1 FROM series_dataset_descriptor WHERE indicator_id=%s LIMIT 1",
-                                      (indicator_id,)).fetchone() if owned_table else None)
-            if len(owned) > 1 or (not owned and len(shape_rows) > 1):
+            owned = _owned_series_route(conn,indicator_id)
+            if owned:
+                return _owned_series_snapshot(conn,owned[0],territory_type,territory_id,indicator_id)
+            if len(shape_rows) > 1:
                 raise HTTPException(503, "Indicator has ambiguous published storage shapes")
             shape = shape_rows[0][1] if shape_rows else None
-            if any_owned and not owned:
-                raise HTTPException(503, "Owned-series active publication route is not declared")
-            if owned:
-                dataset_id = owned[0][0]
-                marker = conn.execute("""SELECT p.content_version,p.reference_content_version,p.row_count,p.published_at,
-                    t.content_version FROM series_dataset_publication p CROSS JOIN table_publication t
-                    WHERE p.dataset_id=%s AND t.table_name='territory_reference'""", (dataset_id,)).fetchone()
-                if not marker or marker[1] != marker[4]:
-                    raise HTTPException(503, "Owned-series publication is stale or unavailable")
-                descriptor = conn.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,label,unit,direction,descriptor_version
-                    FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s AND active_read_route""",
-                    (dataset_id,indicator_id)).fetchone()
-                focal = conn.execute("SELECT name,territory_type FROM territory_reference WHERE territory_id=%s",
-                                     (territory_id,)).fetchone()
-                if not descriptor or not focal or focal[1] != territory_type:
-                    raise HTTPException(404, "Owned indicator or focal territory is unavailable")
-                facts = conn.execute("""SELECT o.axis_value,o.observation_period,o.value,o.status,
-                    p.provenance_revision_id,p.source_id,p.vintage_id,p.source_name,p.dataset_name,p.source_version,
-                    p.reference_date,p.publication_date,p.revision_hash
-                    FROM series_dataset_observation o LEFT JOIN series_observation_provenance a
-                    USING(dataset_id,indicator_id,territory_id,axis_value)
-                    LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
-                    WHERE o.dataset_id=%s AND o.indicator_id=%s AND o.territory_id=%s
-                    ORDER BY array_position(%s::text[],o.axis_value),p.provenance_revision_id""",
-                    (dataset_id,indicator_id,territory_id,list(descriptor[1]))).fetchall()
-                refs = conn.execute("""SELECT r.reference_id,r.reference_label,r.reference_role,r.reference_statistic,r.axis_value,
-                    r.observation_period,r.value,r.status,p.provenance_revision_id,p.source_id,p.vintage_id,
-                    p.source_name,p.dataset_name,p.source_version,p.reference_date,p.publication_date,p.revision_hash
-                    FROM series_named_reference r LEFT JOIN series_named_reference_provenance a
-                    USING(dataset_id,indicator_id,reference_id,axis_value)
-                    LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
-                    WHERE r.dataset_id=%s AND r.indicator_id=%s
-                    ORDER BY r.reference_id,array_position(%s::text[],r.axis_value),p.provenance_revision_id""",
-                    (dataset_id,indicator_id,list(descriptor[1]))).fetchall()
-                row_count = conn.execute("""SELECT
-                    (SELECT count(*) FROM series_dataset_observation WHERE dataset_id=%s) +
-                    (SELECT count(*) FROM series_named_reference WHERE dataset_id=%s)""",
-                    (dataset_id,dataset_id)).fetchone()[0]
-                if row_count != marker[2]:
-                    raise HTTPException(503,"Owned series marker row count does not match its facts")
-                if not facts or len({row[0] for row in facts}) != len(descriptor[1]) or not refs:
-                    raise HTTPException(503, "Owned series or named reference is incomplete")
-                def lineage(row, offset):
-                    if row[offset] is None:
-                        raise HTTPException(503, "Owned series provenance is incomplete")
-                    return {"revision_id":row[offset],"source_id":row[offset+1],"vintage_id":row[offset+2],
-                        "source_name":row[offset+3],"dataset_name":row[offset+4],"version":row[offset+5],
-                        "reference_date":row[offset+6],"publication_date":row[offset+7],"revision_hash":row[offset+8]}
-                points=[]
-                for axis in descriptor[1]:
-                    matching=[row for row in facts if row[0]==axis]
-                    if not matching: raise HTTPException(503,"Owned series duration point is missing")
-                    row=matching[0]
-                    points.append({"axis":row[0],"observation_period":row[1],"value":row[2],"status":row[3],
-                        "provenance":[lineage(item,4) for item in matching]})
-                reference_groups={}
-                for row in refs:
-                    item=reference_groups.setdefault(row[0],{"id":row[0],"label":row[1],"role":row[2],
-                        "statistic":row[3],"points":[]})
-                    ref_point=next((point for point in item["points"] if point["axis"]==row[4]),None)
-                    if ref_point is None:
-                        ref_point={"axis":row[4],"observation_period":row[5],"value":row[6],"status":row[7],"provenance":[]}
-                        item["points"].append(ref_point)
-                    ref_point["provenance"].append(lineage(row,8))
-                if any([point["axis"] for point in reference["points"]] != list(descriptor[1])
-                       for reference in reference_groups.values()):
-                    raise HTTPException(503,"Owned named reference is incomplete")
-                return {"dataset_id":dataset_id,"publication_id":marker[0],"reference_content_version":marker[1],
-                    "published_at":marker[3],"territory":{"id":territory_id,"type":territory_type,"name":focal[0]},
-                    "indicator_id":indicator_id,"axis_kind":descriptor[0],"axis_values":descriptor[1],
-                    "axis_numeric_values":descriptor[2],"completeness":descriptor[3],"label":descriptor[4],"unit":descriptor[5],
-                    "direction":descriptor[6],"descriptor_version":descriptor[7],"points":points,
-                    "named_references":list(reference_groups.values()),"scope_series":[],
-                    "availability":"complete" if all(p["status"]=="measured" for p in points) else "incomplete"}
             if shape is None:
                 raise HTTPException(404, "Indicator descriptor is unavailable")
             if shape == "profile":
@@ -1510,7 +1639,18 @@ def theme_facts(
                        AND o.territory_type=ANY(d.allowed_levels) ORDER BY d.indicator_id""",
                      (theme_id, territory_id, territory_type)).fetchall()
             profiles, profile_version = focal_profiles(conn, territory_type, territory_id, theme_id=theme_id)
-            if not rows and not profiles:
+            owned_series=[]
+            if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
+                has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+                    WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
+                has_route=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+                    WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
+                if has_theme and has_route:
+                    routes=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
+                        WHERE theme_id=%s AND active_read_route ORDER BY indicator_id""",(theme_id,)).fetchall()
+                    owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator)
+                                  for dataset_id,indicator in routes]
+            if not rows and not profiles and not owned_series:
                 raise HTTPException(404, "No published facts for this theme and territory")
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
                 profiles=profiles, profile_version=profile_version)
@@ -1518,9 +1658,11 @@ def theme_facts(
            "value","status","support_count","denominator_count","sources")
     payload = {"contract":"theme-facts-v1","complete_theme":False,"theme_id":theme_id,
        "territory":{"territory_id":territory[0],"name":territory[1],"territory_type":territory[2]},
-       "content_version":marker[0] if marker else None,
-       "reference_content_version":comparison["reference_content_version"],
-       "profile_content_version":profile_version,"profiles":profiles,
+        "content_version":marker[0] if marker else comparison["content_version"],
+        "owned_series_content_versions":[item["publication_id"] for item in owned_series],
+        "reference_content_version":comparison["reference_content_version"],
+        "profile_content_version":profile_version,"profiles":profiles,
+        "series":owned_series,
        "facts":[dict(zip(names,row)) for row in rows],
        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
                              "profile_comparisons":comparison["profile_comparisons"]}}
@@ -1693,6 +1835,10 @@ def indicator_comparison_only(
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            active_owned=_owned_series_route(conn,indicator_id)
+            if active_owned:
+                return _owned_series_comparison_result(conn,active_owned,territory_type,
+                    territory_id,indicator_id,selection)
             shapes = []
             for table, shape in (("scalar_descriptor", "scalar"),
                                  ("profile_descriptor", "profile"),
@@ -1705,11 +1851,6 @@ def indicator_comparison_only(
                         shapes.append((table, shape))
             if len(shapes) > 1:
                 raise HTTPException(503, "Indicator has ambiguous published storage shapes")
-            owned_table = conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]
-            owned = (conn.execute("SELECT 1 FROM series_dataset_descriptor WHERE indicator_id=%s LIMIT 1",
-                                   (indicator_id,)).fetchone() if owned_table else None)
-            if owned:
-                raise HTTPException(503, "Owned-series active publication route is not declared")
             if not shapes:
                 raise HTTPException(404, "Indicator descriptor is unavailable")
             shape = shapes[0][1]
