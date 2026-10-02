@@ -3,17 +3,26 @@
 import { describe, expect, it } from 'vitest'
 
 import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
+import FigureCompacte from '../components/fiche/FigureCompacte.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
   apercuAvecNAFixture,
+  histoiresEconomieFixture,
   histoiresDemographieFixture,
+  histoiresHabitatFixture,
+  histoiresMilieuxFixture,
+  histoiresMobiliteFixture,
+  indicateursEconomieFixture,
   indicateursDemographieFixture,
+  indicateursHabitatFixture,
+  indicateursMilieuxFixture,
+  indicateursMobiliteFixture,
   metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Histoire, Payload } from '../payload/types'
+import type { Histoire, Payload, Theme } from '../payload/types'
 
 /**
  * OngletTheme — the shared subgroup block (issue #314, parent #308): the
@@ -53,7 +62,10 @@ describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
   it('renders the theme overline from the metadata label', async () => {
     const wrapper = await monter('22001')
 
+    expect(wrapper.classes()).toContain('presentation-editorial')
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Démographie')
+    expect(wrapper.find('.sous-groupe').classes()).toContain('editorial-sheet')
+    expect(wrapper.find('.sous-groupe-titre').classes()).toContain('editorial-section-heading')
   })
 
   it('renders the metadata subgroup — label and framing', async () => {
@@ -61,7 +73,7 @@ describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
 
     const sousGroupe = wrapper.find('.sous-groupe[data-groupe="trajectoire-demographique"]')
     expect(sousGroupe.exists()).toBe(true)
-    expect(wrapper.find('.sous-groupe-titre').text()).toBe(
+    expect(wrapper.find('.sous-groupe-titre').text().replace(/^\d+/, '')).toBe(
       'État et dynamique de la population',
     )
     expect(wrapper.find('.sous-groupe-cadrage').text()).toContain('sa densité')
@@ -83,6 +95,72 @@ describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
     expect(wrapper.text()).toContain('Évolution de la population depuis 1968')
     expect(wrapper.text()).toContain('Taille moyenne des ménages')
     expect(wrapper.findAll('.estampille-vintage').length).toBe(4)
+  })
+})
+
+describe('OngletTheme — editorial evidence across published themes and territory levels', () => {
+  const themes: Array<{ theme: Theme; indicateurs: typeof indicateursDemographieFixture; histoires: Histoire[] }> = [
+    { theme: 'demographie', indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture },
+    { theme: 'habitat', indicateurs: indicateursHabitatFixture, histoires: histoiresHabitatFixture },
+    { theme: 'economie', indicateurs: indicateursEconomieFixture, histoires: histoiresEconomieFixture },
+    { theme: 'milieux', indicateurs: indicateursMilieuxFixture, histoires: histoiresMilieuxFixture },
+    { theme: 'mobilite', indicateurs: indicateursMobiliteFixture, histoires: histoiresMobiliteFixture },
+  ]
+  const niveaux = ['22001', '200000001', '22', '53']
+
+  it.each(themes)('$theme keeps its metadata order, evidence, and published facts at each level', async ({ theme, indicateurs, histoires }) => {
+    for (const territoire of niveaux) {
+      const payload: Payload = {
+        ...payloadDemographie,
+        indicateurs,
+        histoires,
+        themeMetadata: { [theme]: metadonneesThemesFixtures[theme] },
+      }
+      const wrapper = mount(OngletTheme, {
+        props: { theme, payload, territoire },
+        global: { stubs: { RouterLink: RouterLinkStub } },
+      })
+      await flushPromises()
+
+      const groups = wrapper.findAll('.sous-groupe')
+      const subgroupsWithRows = metadonneesThemesFixtures[theme].subgroups.filter((group) =>
+        indicateurs.some((row) => row.territoire === territoire && group.indicators.includes(row.key)) ||
+        histoires.some((row) => row.territoire === territoire && row.groupe === group.key),
+      )
+      expect(groups.map((group) => group.attributes('data-groupe')), `${theme} ${territoire}`).toEqual(
+        subgroupsWithRows.map((group) => group.key),
+      )
+      expect(groups.map((group) => group.find('.editorial-section-index').text())).toEqual(
+        groups.map((_, index) => String(index + 1).padStart(2, '0')),
+      )
+      if (groups.length > 0) {
+        expect(wrapper.findAll('.editorial-evidence').length + wrapper.findAll('.editorial-figure').length).toBeGreaterThan(0)
+      }
+      const figures = wrapper.findAllComponents(FigureCompacte)
+      for (const figure of wrapper.findAll('.figure-indicateur')) {
+        expect(figure.classes()).toContain('editorial-figure')
+        expect(figure.classes()).not.toContain('carte-figure')
+      }
+      for (const figure of figures) {
+        const key = figure.props('clef')
+        const expectedRows = indicateurs.filter((row) => row.territoire === territoire && row.key === key)
+        expect(figure.props('lignes')).toEqual(expectedRows)
+        expect(figure.element.parentElement?.textContent).not.toContain('undefined')
+      }
+      for (const group of metadonneesThemesFixtures[theme].subgroups) {
+        const renderedGroup = wrapper.find(`[data-groupe="${group.key}"]`)
+        const hasFact = indicateurs.some((row) => row.territoire === territoire && group.indicators.includes(row.key))
+        const hasStory = histoires.some((row) => row.territoire === territoire && row.groupe === group.key)
+        if (!hasFact && !hasStory) expect(renderedGroup.exists()).toBe(false)
+        if (renderedGroup.exists()) {
+          const sourceRow = histoires.find((row) => row.territoire === territoire && row.groupe === group.key && 'vintage_source' in row)
+          if (sourceRow && 'vintage_source' in sourceRow && renderedGroup.find('.lecture-source').exists()) {
+            expect(renderedGroup.find('.lecture-source').text()).toContain(sourceRow.vintage_source)
+          }
+        }
+      }
+      wrapper.unmount()
+    }
   })
 })
 

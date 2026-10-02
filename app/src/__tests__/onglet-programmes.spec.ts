@@ -3,6 +3,7 @@ import { mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import BlocProgrammes from '../components/fiche/BlocProgrammes.vue'
+import { formaterMontant } from '../fiche/programmesAffichage'
 import {
   indicateursProgrammesFixture,
   metadonneesThemesFixtures,
@@ -56,14 +57,35 @@ function montage(payload: Payload, territoire: string) {
 }
 
 describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
+  it.each(['22001', '200000001', '22', '53'])('rend les faits publiés propres au niveau %s', (territoire) => {
+    const wrapper = montage(payloadPlein, territoire)
+    const total = indicateursProgrammesFixture.find(
+      (row) => row.territoire === territoire && row.key === 'subventions_annuelles',
+    )
+    const subventions = wrapper.find('.subvention-total')
+
+    if (!total) {
+      expect(subventions.exists()).toBe(false)
+      return
+    }
+    expect(subventions.exists()).toBe(true)
+    expect(subventions.text()).toContain(formaterMontant(total.value!))
+    expect(subventions.text()).toContain(total.dimension)
+    expect(wrapper.find('.subvention-vintage').text()).toContain(total.vintage_source)
+  })
+
   it('porte l\u2019overline publiée et les sous-groupes du canon (jamais un vocabulaire app-side)', () => {
     const wrapper = montage(payloadPlein, '22001')
 
+    expect(wrapper.find('article').classes()).toContain('presentation-editorial')
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Programmes et subventions')
-    const titres = wrapper.findAll('.sous-groupe-titre').map((t) => t.text())
+    const titres = wrapper.findAll('.sous-groupe-titre').map((t) => t.text().replace(/^\d+/, ''))
     expect(titres).toEqual(['Programmes et contrats', 'Subventions attribuées'])
     expect(wrapper.find('[data-groupe="couverture"]').exists()).toBe(true)
     expect(wrapper.find('[data-groupe="subventions"]').exists()).toBe(true)
+    expect(wrapper.findAll('.editorial-sheet')).toHaveLength(2)
+    expect(wrapper.findAll('.editorial-section-heading')).toHaveLength(2)
+    expect(wrapper.findAll('.editorial-section-index').map((index) => index.text())).toEqual(['01', '02'])
   })
 
   it('rend les badges avec leurs voix honnêtes — lauréate, couverte, portage nommé', () => {
@@ -202,7 +224,7 @@ describe('BlocProgrammes — l\u2019absence honnête', () => {
     const wrapper = montage(payloadVide, '22001')
 
     expect(wrapper.text()).toContain('Aucun programme référencé.')
-    expect(wrapper.findAll('.sous-groupe-titre').map((t) => t.text())).toEqual([
+    expect(wrapper.findAll('.sous-groupe-titre').map((t) => t.text().replace(/^\d+/, ''))).toEqual([
       'Programmes et contrats',
     ])
   })

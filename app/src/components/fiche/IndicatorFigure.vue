@@ -38,6 +38,7 @@ const props = defineProps<{
   theme: Theme
   /** The territory name used by the approved raccordement sentence (#487). */
   nomTerritoire?: string
+  editorial?: boolean
 }>()
 
 const premiere = computed(() => props.lignes[0] ?? null)
@@ -128,8 +129,8 @@ const segments = computed<Segment[]>(() => {
 
 <template>
   <figure
-    class="figure-indicateur carte-figure"
-    :class="[large ? 'figure-indicateur--large' : null, accentClasse]"
+    class="figure-indicateur"
+    :class="[editorial ? 'editorial-figure' : 'carte-figure', large ? 'figure-indicateur--large' : null, editorial ? null : accentClasse]"
     :data-clef="clef"
   >
     <div v-if="multi" class="figure-indicateur-decomposition">
@@ -161,15 +162,15 @@ const segments = computed<Segment[]>(() => {
     </div>
 
     <div v-else class="figure-indicateur-valeur">
-      <span class="valeur-numerique">{{ valeur ?? '—' }}</span>
+      <span class="valeur-numerique editorial-value">{{ valeur ?? '—' }}</span>
       <span v-if="unite && valeur" class="valeur-unite">{{ unite }}</span>
     </div>
 
     <p v-if="phrase" class="figure-indicateur-prose">{{ phrase }}</p>
-    <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
+    <figcaption class="figure-indicateur-libelle editorial-label">{{ libelle }}</figcaption>
     <p v-if="premiere?.rider" class="figure-indicateur-rider">{{ premiere.rider }}</p>
     <PuceRang v-if="puce && !multi" :puce="puce" />
-    <p v-if="vintage" class="estampille-vintage">{{ vintage }}</p>
+    <p v-if="vintage" class="estampille-vintage editorial-provenance">{{ vintage }}</p>
   </figure>
 </template>
 

@@ -28,6 +28,7 @@ const props = defineProps<{
   libelle: string
   labelsDetail?: Record<string, string>
   theme: Theme
+  editorial?: boolean
 }>()
 
 const bandes = computed(() => bandesPyramideSexuee(props.lignes, props.labelsDetail))
@@ -43,7 +44,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 </script>
 
 <template>
-  <figure class="figure-indicateur figure-pyramide-age carte-figure" :data-clef="clef">
+  <figure class="figure-indicateur figure-pyramide-age" :class="editorial ? 'editorial-figure' : 'carte-figure'" :data-clef="clef">
     <div class="legende-pyramide" aria-hidden="true">
       <span class="legende-pyramide-hommes">Hommes</span>
       <span class="legende-pyramide-femmes">Femmes</span>
@@ -65,8 +66,8 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
       </div>
     </div>
 
-    <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
-    <p v-if="vintage" class="estampille-vintage">{{ vintage }}</p>
+    <figcaption class="figure-indicateur-libelle editorial-label">{{ libelle }}</figcaption>
+    <p v-if="vintage" class="estampille-vintage editorial-provenance">{{ vintage }}</p>
   </figure>
 </template>
 

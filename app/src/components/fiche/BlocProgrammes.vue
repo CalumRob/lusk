@@ -50,6 +50,11 @@ const props = defineProps<{
 // la forme ; un thème rendu implique sa métadonnée, #313).
 const metadata = computed(() => props.payload.themeMetadata?.programmes ?? null)
 
+function indexGroupe(key: string): string {
+  const index = metadata.value?.subgroups.findIndex((sousGroupe) => sousGroupe.key === key) ?? -1
+  return index < 0 ? '' : String(index + 1).padStart(2, '0')
+}
+
 function groupe(key: string): { label: string; framing: string } {
   const g = metadata.value?.subgroups.find((sousGroupe) => sousGroupe.key === key)
   if (!g) throw new Error(`Sous-groupe « ${key} » absent des métadonnées « programmes »`)
@@ -113,12 +118,12 @@ const lienProvenance = computed(() => {
        pour un thème présent, #313 ; dans le chargement progressif du magasin,
        les faits peuvent atterrir un instant avant elle — on attend, jamais un
        titre inventé ni un crash de rendu). -->
-  <article v-if="metadata" class="onglet-theme onglet-theme--programmes bloc-programmes">
+  <article v-if="metadata" class="onglet-theme presentation-editorial onglet-theme--programmes bloc-programmes">
     <p class="onglet-theme-overline">{{ metadata?.label ?? '' }}</p>
 
     <template v-if="elementVide">
-      <section class="sous-groupe" data-groupe="couverture">
-        <h3 class="sous-groupe-titre">{{ groupe('couverture').label }}</h3>
+      <section class="sous-groupe editorial-sheet" data-groupe="couverture">
+        <h3 class="sous-groupe-titre editorial-section-heading"><span class="editorial-section-index" aria-hidden="true">{{ indexGroupe('couverture') }}</span>{{ groupe('couverture').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
         <p class="programmes-vide">Aucun programme référencé.</p>
       </section>
@@ -130,10 +135,10 @@ const lienProvenance = computed(() => {
            source par badge. -->
       <section
         v-if="element.badges.length > 0"
-        class="sous-groupe"
+        class="sous-groupe editorial-sheet"
         data-groupe="couverture"
       >
-        <h3 class="sous-groupe-titre">{{ groupe('couverture').label }}</h3>
+        <h3 class="sous-groupe-titre editorial-section-heading"><span class="editorial-section-index" aria-hidden="true">{{ indexGroupe('couverture') }}</span>{{ groupe('couverture').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
 
         <ul class="programmes-badges">
@@ -163,13 +168,13 @@ const lienProvenance = computed(() => {
            zéro inventé, jamais une figure vide. -->
       <section
         v-if="element.subventions"
-        class="sous-groupe"
+        class="sous-groupe editorial-sheet"
         data-groupe="subventions"
       >
-        <h3 class="sous-groupe-titre">{{ groupe('subventions').label }}</h3>
+        <h3 class="sous-groupe-titre editorial-section-heading"><span class="editorial-section-index" aria-hidden="true">{{ indexGroupe('subventions') }}</span>{{ groupe('subventions').label }}</h3>
         <p class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
 
-        <div class="programme-subventions">
+        <div class="programme-subventions editorial-evidence">
           <p class="subvention-total">
             {{ formaterMontant(element.subventions.total) }}
             <span class="subvention-annee">en {{ element.subventions.annee }}</span>
@@ -184,7 +189,7 @@ const lienProvenance = computed(() => {
             <button
               v-if="axesReste.length > 0"
               type="button"
-              class="subvention-reveler"
+              class="subvention-reveler editorial-control"
               :aria-expanded="revele"
               @click="revele = !revele"
             >
@@ -200,7 +205,7 @@ const lienProvenance = computed(() => {
           <p v-if="partContexte" class="subvention-contexte">
             {{ partContexteTexte }} {{ libellePartContexte(partContexte.parent) }}
           </p>
-          <p v-if="provenance" class="subvention-provenance">
+          <p v-if="provenance" class="subvention-provenance editorial-provenance">
             Somme des subventions attribuées aux
             <RouterLink :to="lienProvenance" class="subvention-provenance-lien">
               {{ libelleProvenance(provenance.niveau) }}
@@ -245,8 +250,6 @@ const lienProvenance = computed(() => {
 
 .sous-groupe-titre {
   margin: 0;
-  font: 600 1.1875rem/1.4 var(--font-subsection-title);
-  color: var(--theme-programmes-strong);
 }
 
 .sous-groupe-cadrage {
@@ -333,9 +336,6 @@ const lienProvenance = computed(() => {
   display: flex;
   flex-direction: column;
   gap: var(--space-2);
-  padding: var(--space-3) var(--space-4);
-  border-left: 3px solid var(--theme-programmes-line);
-  background: var(--theme-programmes-soft);
 }
 
 .subvention-total {

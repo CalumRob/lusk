@@ -21,6 +21,7 @@ const props = defineProps<{
   libelle: string
   labelsDetail?: Record<string, string>
   theme: Theme
+  editorial?: boolean
 }>()
 
 interface Part {
@@ -59,7 +60,7 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 </script>
 
 <template>
-  <figure class="figure-indicateur figure-composition-dpe carte-figure" :data-clef="clef">
+  <figure class="figure-indicateur figure-composition-dpe" :class="editorial ? 'editorial-figure' : 'carte-figure'" :data-clef="clef">
     <div
       v-if="parts.length > 0"
       class="barre-segmentee barre-dpe"
@@ -89,8 +90,8 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
       </li>
     </ul>
 
-    <figcaption class="figure-indicateur-libelle">{{ libelle }}</figcaption>
-    <p v-if="vintage" class="estampille-vintage">{{ vintage }}</p>
+    <figcaption class="figure-indicateur-libelle editorial-label">{{ libelle }}</figcaption>
+    <p v-if="vintage" class="estampille-vintage editorial-provenance">{{ vintage }}</p>
   </figure>
 </template>
 

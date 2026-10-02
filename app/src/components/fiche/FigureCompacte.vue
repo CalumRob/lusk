@@ -44,6 +44,8 @@ const props = defineProps<{
   nom?: string
   large?: boolean
   signe?: boolean
+  /** The editorial fiche owns a paper-flow figure, not the shared card shell. */
+  editorial?: boolean
 }>()
 
 type Corps =
@@ -79,6 +81,7 @@ const corps = computed<Corps>(() => {
     :libelle="libelle"
     :labels-detail="labelsDetail"
     :theme="theme"
+    :editorial="editorial"
   />
   <FigureCompositionDpe
     v-else-if="corps === 'composition-dpe'"
@@ -87,6 +90,7 @@ const corps = computed<Corps>(() => {
     :libelle="libelle"
     :labels-detail="labelsDetail"
     :theme="theme"
+    :editorial="editorial"
   />
   <FigureCompositionPyramide
     v-else-if="corps === 'composition-pyramide'"
@@ -95,6 +99,7 @@ const corps = computed<Corps>(() => {
     :libelle="libelle"
     :labels-detail="labelsDetail"
     :theme="theme"
+    :editorial="editorial"
   />
   <FigureTrajectoire
     v-else-if="corps === 'trajectoire'"
@@ -103,6 +108,7 @@ const corps = computed<Corps>(() => {
     :libelle="libelle"
     :labels-detail="labelsDetail"
     :theme="theme"
+    :editorial="editorial"
     :trajectory="trajectory"
     :reference="reference"
     :reference-label="referenceLabel"
@@ -118,5 +124,6 @@ const corps = computed<Corps>(() => {
     :signe="signe"
     :nom-territoire="nom"
     :theme="theme"
+    :editorial="editorial"
   />
 </template>
