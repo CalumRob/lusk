@@ -5,7 +5,7 @@ test_that("scalar publisher validates registered canonical fixture facts", {
   facts <- data.frame(indicator_id="fixture_scalar", territory_id="22001",
     territory_type="commune", value=fixture_fact$value[[1L]], status="measured", support_count=1L,
     denominator_count=1L)
-  descriptors <- data.frame(indicator_id="fixture_scalar", allowed_sources=I(list("fixture")), label="Fixture",
+  descriptors <- data.frame(indicator_id="fixture_scalar", theme_id="demographie", allowed_sources=I(list("fixture")), label="Fixture",
     unit="count", direction="high", comparison_facet=NA_character_,
     allowed_levels=I(list("commune")), denominator_semantics="units",
     completeness="sparse", descriptor_version="1")
@@ -56,6 +56,7 @@ test_that("services scalar projection keeps all fifteen canonical indicator iden
   expect_equal(nrow(projection$facts), 30L)
   expect_setequal(unique(projection$facts$indicator_id), keys)
   expect_equal(nrow(projection$descriptors), 15L)
+  expect_true(all(projection$descriptors$theme_id == metadata$theme))
   expect_true(all(projection$descriptors$unit == "%"))
   expect_equal(projection$facts$value,
     access$value[order(access$indicator_id, access$territory_id)])
@@ -79,6 +80,11 @@ test_that("services scalar projection keeps all fifteen canonical indicator iden
     paste(changed_contract$service_share_scalar$denominator_semantics, "version 2")
   expect_false(identical(scalar_content_version(projection), scalar_content_version(
     project_service_share_scalars(access, changed_contract, eligible))))
+  changed_theme <- metadata
+  changed_theme$theme <- "habitat"
+  changed_theme_projection <- project_service_share_scalars(access, changed_theme, eligible)
+  expect_false(identical(projection$descriptors$descriptor_version,
+    changed_theme_projection$descriptors$descriptor_version))
   invalid_source <- access
   invalid_source$source_id[[1L]] <- "undeclared_source"
   expect_error(project_service_share_scalars(invalid_source, metadata, eligible),
@@ -416,7 +422,7 @@ test_that("registered publisher versions independently, retries DB-behind-local,
   facts <- data.frame(indicator_id="fixture_scalar", territory_id="22001",
     territory_type="commune", value=0, status="measured", support_count=1L,
     denominator_count=1L)
-  descriptors <- data.frame(indicator_id="fixture_scalar", allowed_sources=I(list(c("fixture", "fixture_secondary"))), label="Fixture",
+  descriptors <- data.frame(indicator_id="fixture_scalar", theme_id="demographie", allowed_sources=I(list(c("fixture", "fixture_secondary"))), label="Fixture",
     unit="count", direction="high", comparison_facet=NA_character_,
     allowed_levels=I(list("commune")), denominator_semantics="units",
     completeness="sparse", descriptor_version="1")

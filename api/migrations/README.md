@@ -34,6 +34,16 @@ or a serving database. Production migration and OCS-GE API deployment/flag are
 separate serial operator gates; never disable the live ENAF flag as part of this
 slice.
 
+# Migration 012: scalar theme identity
+
+Migration 012 adds nullable `scalar_descriptor.theme_id` for compatibility with
+existing snapshots. It intentionally does not infer/backfill theme membership;
+the next normal scalar publication writes the value from each canonical
+`theme_<theme>.json` descriptor and includes it in descriptor/table content
+identity. Selected-theme scalar reads exclude legacy NULL identities. Fresh
+`schema.sql` requires a valid theme key. This additive migration does not activate
+a fiche consumer or authorize any live database application.
+
 The OCS-GE publisher requires canonical `indicateurs_milieux.parquet` to carry
 producer-emitted `state_role` and `source_components` columns. A stale artifact
 is rejected before the smoke script opens its disposable schema; do not

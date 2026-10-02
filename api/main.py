@@ -24,6 +24,18 @@ class Rank(BaseModel):
     size: int
 
 
+class ThemeTerritorySelection(BaseModel):
+    territory_type: Literal["commune", "epci", "departement", "region"]
+    territory_id: str = Field(min_length=1, max_length=32)
+
+
+class ThemeComparisonRequest(BaseModel):
+    theme_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    # Match the existing typed building-selection boundary, which accommodates
+    # the whole published territory universe rather than a 500-territory subset.
+    selection: list[ThemeTerritorySelection] = Field(max_length=1500)
+
+
 class ModeComparison(BaseModel):
     value: float | None
     median: float | None
@@ -1046,6 +1058,128 @@ def scalar_observation(
             if row is None:
                 raise HTTPException(404, "Declared scalar observation is unavailable")
     return dict(zip((column.name for column in cursor.description), row))
+
+
+@app.get("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
+def theme_scalar_facts(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    territory_id: str = Path(min_length=1, max_length=32),
+    theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Compact focal scalar-family read; intentionally not a complete theme payload."""
+    with repository.connections.connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            marker = conn.execute("""SELECT s.content_version,s.reference_content_version,
+                 t.content_version FROM table_publication s LEFT JOIN table_publication t
+                 ON t.table_name='territory_reference' WHERE s.table_name='scalar_observation'""").fetchone()
+            if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
+                raise HTTPException(503, "Scalar publication is unavailable or incompatible")
+            territory = conn.execute("""SELECT territory_id,name,territory_type FROM territory_reference
+                WHERE territory_id=%s AND territory_type=%s""", (territory_id, territory_type)).fetchone()
+            if not territory:
+                raise HTTPException(404, "Territory not found")
+            rows = conn.execute("""SELECT d.indicator_id,d.label,d.unit,d.direction,d.comparison_facet,
+                 d.descriptor_version,o.value,o.status,o.support_count,o.denominator_count,
+                 COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,'name',sd.name,
+                   'vintage_id',os.vintage_id,'version',sv.version,'reference_date',sv.reference_date,
+                   'publication_date',sv.publication_date) ORDER BY os.source_id,os.vintage_id)
+                   FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
+                   JOIN source_vintage sv USING(source_id,vintage_id)
+                   WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
+                 FROM scalar_descriptor d JOIN scalar_observation o USING(indicator_id)
+                 WHERE d.theme_id=%s AND o.territory_id=%s AND o.territory_type=%s
+                   AND o.territory_type=ANY(d.allowed_levels) ORDER BY d.indicator_id""",
+                 (theme_id, territory_id, territory_type)).fetchall()
+            if not rows:
+                raise HTTPException(404, "No published scalar facts for this theme and territory")
+    names=("indicator_id","label","unit","direction","comparison_facet","descriptor_version",
+           "value","status","support_count","denominator_count","sources")
+    return {"contract":"scalar-family-v1","complete_theme":False,"theme_id":theme_id,
+      "territory":{"territory_id":territory[0],"name":territory[1],"territory_type":territory[2]},
+      "content_version":marker[0],"reference_content_version":marker[2],
+      "facts":[dict(zip(names,row)) for row in rows]}
+
+
+@app.post("/api/territories/{territory_type}/{territory_id}/themes/comparison")
+def theme_scalar_comparison(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    request: ThemeComparisonRequest,
+    territory_id: str = Path(min_length=1, max_length=32),
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Request-scoped scalar statistics over exactly the explicitly selected communes."""
+    selected=[(item.territory_type,item.territory_id) for item in request.selection]
+    with repository.connections.connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            marker=conn.execute("""SELECT s.content_version,s.reference_content_version,t.content_version
+              FROM table_publication s LEFT JOIN table_publication t ON t.table_name='territory_reference'
+              WHERE s.table_name='scalar_observation'""").fetchone()
+            if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
+                raise HTTPException(503,"Scalar publication is unavailable or incompatible")
+            focal=conn.execute("SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=%s",
+                               (territory_id,)).fetchone()
+            if not focal: raise HTTPException(404,"Focal territory not found")
+            if focal[1] != territory_type: raise HTTPException(422,"Focal territory type does not match route")
+            refs=[dict(zip(("territoire","type","departement","epci"),row)) for row in conn.execute(
+              "SELECT territory_id,territory_type,department_id,epci_id FROM territory_reference").fetchall()]
+            try: members=resolve_commune_members(refs,selected,max_members=len(refs)) if selected else ()
+            except ComparisonInputError as exc: raise HTTPException(422,str(exc)) from exc
+            descriptors=conn.execute("""SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
+              FROM scalar_descriptor WHERE theme_id=%s ORDER BY indicator_id""",(request.theme_id,)).fetchall()
+            if not descriptors:
+                raise HTTPException(404, "No published scalar descriptors for this theme")
+            fact_rows=conn.execute("""SELECT o.indicator_id,o.territory_id,o.territory_type,o.value,o.status,
+              o.support_count,o.denominator_count,
+              COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,'name',sd.name,
+                'vintage_id',os.vintage_id,'version',sv.version,'reference_date',sv.reference_date,
+                'publication_date',sv.publication_date) ORDER BY os.source_id,os.vintage_id)
+                FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
+                JOIN source_vintage sv USING(source_id,vintage_id)
+                WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
+              FROM scalar_observation o JOIN scalar_descriptor d USING(indicator_id)
+              WHERE d.theme_id=%s AND ((o.territory_type='commune' AND o.territory_id=ANY(%s))
+                OR (o.territory_id=%s AND o.territory_type=%s)) ORDER BY o.indicator_id,o.territory_id""",
+              (request.theme_id,list(members),territory_id,territory_type)).fetchall()
+            facts_by_indicator={}
+            for row in fact_rows: facts_by_indicator.setdefault(row[0],[]).append(row)
+            result=[]
+            for indicator,label,unit,direction,facet,levels,descriptor_version in descriptors:
+                if (not facet or facet != indicator or direction not in ("high","low") or
+                    "commune" not in levels or territory_type != "commune"):
+                    result.append({"indicator_id":indicator,"status":"unavailable","reason":"unsupported_comparison_contract"})
+                    continue
+                rows=facts_by_indicator.get(indicator,[])
+                peer_rows=[(r[1],r[3],r[4],r[5],r[6],r[7]) for r in rows if r[2]=="commune" and r[1] in members]
+                values=[float(row[1]) for row in peer_rows if row[2]=="measured" and row[1] is not None]
+                focal_row=next(((r[3],r[4]) for r in rows if r[1]==territory_id and r[2]==territory_type),None)
+                fv=float(focal_row[0]) if focal_row and focal_row[1]=="measured" and focal_row[0] is not None else None
+                # A rank is within the selected group, not an insertion position
+                # for a focal territory that the visitor did not select.
+                rank=(1+sum((v>fv if direction=="high" else v<fv) for v in values)) if (
+                    values and fv is not None and territory_id in members) else None
+                comparison_sources=[]
+                seen_sources=set()
+                for row in peer_rows:
+                    for source in row[5] or []:
+                        key=(source.get("source_id"),source.get("vintage_id"))
+                        if key not in seen_sources:
+                            seen_sources.add(key)
+                            comparison_sources.append(source)
+                result.append({"indicator_id":indicator,"label":label,"unit":unit,"direction":direction,
+                  "statistic":"median",
+                  "descriptor_version":descriptor_version,"status":"available" if values else "unavailable",
+                  "reason":None if values else "no_selected_comparable_values","selected_member_count":len(members),
+                  "eligible_count":len(values),"missing_count":max(0,len(members)-len(values)),
+                  "focal_value":fv,"focal_in_selection":territory_id in members,
+                  "median":median(values) if values else None,"rank":rank,
+                  "rank_size":len(values) if rank is not None else None,
+                  "comparison_sources":comparison_sources})
+    return {"contract":"scalar-family-v1","complete_theme":False,"theme_id":request.theme_id,
+      "content_version":marker[0],"reference_content_version":marker[2],
+      "selection":[{"territory_type":t,"territory_id":i} for t,i in selected],"results":result}
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/indicator-cohorts/{indicator_id}")

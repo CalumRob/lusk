@@ -4,7 +4,7 @@
 validate_scalar_projection <- function(facts, descriptors, eligible_territories = NULL) {
   required_facts <- c("indicator_id", "territory_id", "territory_type", "value",
                       "status", "support_count", "denominator_count")
-  required_descriptors <- c("indicator_id", "allowed_sources", "label", "unit", "direction",
+  required_descriptors <- c("indicator_id", "theme_id", "allowed_sources", "label", "unit", "direction",
                             "comparison_facet", "allowed_levels", "denominator_semantics",
                             "completeness", "descriptor_version")
   if (!is.data.frame(facts) || !all(required_facts %in% names(facts)) ||
@@ -20,9 +20,10 @@ validate_scalar_projection <- function(facts, descriptors, eligible_territories 
     stop("Invalid or missing scalar identity/key fields", call. = FALSE)
   allowed <- lapply(descriptors$allowed_levels, as.character)
   allowed_sources <- lapply(descriptors$allowed_sources, as.character)
-  if (anyNA(descriptors[c("indicator_id", "label", "unit", "direction",
+  if (anyNA(descriptors[c("indicator_id", "theme_id", "label", "unit", "direction",
                           "denominator_semantics", "completeness", "descriptor_version")]) ||
       any(!grepl("^[a-z][a-z0-9_]{0,95}$", descriptors$indicator_id)) ||
+      any(!grepl("^[a-z][a-z0-9_]{0,63}$", descriptors$theme_id)) ||
       any(!nzchar(trimws(descriptors$label))) ||
       any(!nzchar(descriptors$unit)) || any(!nzchar(descriptors$denominator_semantics)) ||
       any(!nzchar(descriptors$descriptor_version)) ||
@@ -155,13 +156,16 @@ project_service_share_scalars <- function(access, metadata, eligible_territories
         length(unique(rows$label)) != 1L || rows$label[[1L]] != metadata$indicator_labels[[id]] ||
         length(unique(rows$direction)) != 1L || rows$direction[[1L]] != metadata$indicator_directions[[id]])
       stop("Canonical service scalar descriptor is inconsistent", call.=FALSE)
-    data.frame(indicator_id=id, allowed_sources=I(list(sources)),
+    theme_id <- as.character(metadata$theme)
+    if (length(theme_id) != 1L || is.na(theme_id) || !grepl("^[a-z][a-z0-9_]{0,63}$", theme_id))
+      stop("Canonical theme identity is missing for service scalar metadata", call.=FALSE)
+    data.frame(indicator_id=id, theme_id=theme_id, allowed_sources=I(list(sources)),
       label=as.character(rows$label[[1L]]), unit=as.character(rows$unit[[1L]]),
       direction=as.character(rows$direction[[1L]]),
       comparison_facet=id, allowed_levels=I(list(unique(as.character(rows$territory_type)))),
       denominator_semantics=scalar_contract$denominator_semantics,
       completeness=scalar_contract$completeness, descriptor_version=scalar_content_version(list(
-        indicator_id=id,
+         indicator_id=id, theme_id=theme_id,
         label=metadata$indicator_labels[[id]], direction=metadata$indicator_directions[[id]],
         source=sources, levels=unique(as.character(rows$territory_type)), unit=unique(as.character(rows$unit)),
         scalar_contract=scalar_contract)),
@@ -271,11 +275,14 @@ project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
       territory_type=as.character(selected$territory_type), value=as.numeric(selected$value),
       status=ifelse(is.na(selected$value), missing, "measured"),
       support_count=support, denominator_count=support, stringsAsFactors=FALSE)
-    descriptors_out[[id]] <- data.frame(indicator_id=id, allowed_sources=I(list(source_ids)),
+    theme_id <- as.character(metadata$theme)
+    if (length(theme_id) != 1L || is.na(theme_id) || !grepl("^[a-z][a-z0-9_]{0,63}$", theme_id))
+      stop("Canonical theme identity is missing for scalar metadata: ", id, call.=FALSE)
+    descriptors_out[[id]] <- data.frame(indicator_id=id, theme_id=theme_id, allowed_sources=I(list(source_ids)),
       label=as.character(page$label), unit=as.character(page$unit), direction=as.character(page$direction),
       comparison_facet=as.character(policy$comparison_facet), allowed_levels=I(list(levels)),
       denominator_semantics=as.character(page$calculation), completeness=completeness,
-      descriptor_version=scalar_content_version(list(page=page, scalar_contract=policy)), stringsAsFactors=FALSE)
+      descriptor_version=scalar_content_version(list(theme=theme_id, page=page, scalar_contract=policy)), stringsAsFactors=FALSE)
     if (length(source_ids) == 1L) {
       provenance_out[[id]] <- unique(data.frame(indicator_id=id, territory_id=as.character(selected$territory_id),
         source_id=source_ids[[1L]], vintage_id=paste(selected$source_version, selected$reference_date, sep="/"),
@@ -626,7 +633,7 @@ scalar_postgres_adapter <- function(con) {
         d <- descriptors[i, , drop = FALSE]
         levels <- as.character(d$allowed_levels[[1L]])
         array_sql <- paste0("ARRAY[", paste(vapply(levels, quote_value, character(1)), collapse=","), "]::text[]")
-        fields <- c("indicator_id", "label", "unit", "direction",
+        fields <- c("indicator_id", "theme_id", "label", "unit", "direction",
                     "comparison_facet", "denominator_semantics", "completeness", "descriptor_version")
         values <- vapply(fields, function(field) quote_value(d[[field]][[1L]]), character(1))
         sql <- paste0("INSERT INTO scalar_descriptor(", paste(fields, collapse=","), ",allowed_levels) VALUES (",

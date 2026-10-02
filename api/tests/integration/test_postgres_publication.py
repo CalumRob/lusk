@@ -217,7 +217,7 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
             for mode_index, (mode_code, mode) in enumerate(mode_codes.items()):
                 indicator = f"share_{service}_{mode_code}"
                 direction = "low" if service == "food" and mode_code == "c" else "high"
-                descriptors.append((indicator, f"{service} {mode}", "%", direction,
+                descriptors.append((indicator, "mobilite", f"{service} {mode}", "%", direction,
                     indicator, ["commune", "epci", "departement", "region"],
                     "fixture service access share", "dense_complete", "desc-v1"))
                 for territory_type, ids in levels.items():
@@ -235,7 +235,7 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
                         source_rows.append((indicator, territory_id, "fixture", "v2026"))
         executemany("INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", legacy_rows)
         connection.execute("UPDATE table_publication SET row_count=%s WHERE table_name='essential_service_access'", (len(legacy_rows),))
-        executemany("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)", descriptors)
+        executemany("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", descriptors)
         executemany("INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES (%s,'fixture')", [(d[0],) for d in descriptors])
         executemany("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES (%s,%s,%s,%s,%s)", scalar_rows)
         executemany("INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id) VALUES (%s,%s,%s,%s)", source_rows)
@@ -402,7 +402,7 @@ def test_scalar_services_reads_match_tracked_canonical_parquet_facts(canonical_d
                 "INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)",
                 legacy_rows)
             cur.executemany(
-                "INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s)",
+                "INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,'mobilite',%s,%s,%s,%s,%s,%s,%s,%s)",
                 descriptor_rows)
             cur.executemany("INSERT INTO scalar_descriptor_source(indicator_id,source_id) VALUES (%s,%s)",
                             descriptor_sources)
@@ -457,6 +457,57 @@ def test_scalar_services_reads_match_tracked_canonical_parquet_facts(canonical_d
         pool.close()
 
 
+def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(canonical_db_env):
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    selected = [{"territory_type": "commune", "territory_id": f"large{i:04d}"}
+                for i in range(1202)]
+    with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as conn:
+        with conn.transaction():
+            with conn.cursor() as cur:
+                cur.executemany("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES (%s,'commune',%s)",
+                                [(row["territory_id"], row["territory_id"]) for row in selected])
+            conn.execute("INSERT INTO source_dataset VALUES ('large_fixture','Large fixture')")
+            conn.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('large_fixture','v1','2026')")
+            conn.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,
+                allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES
+                ('large_scalar','demographie','Large scalar','count','high','large_scalar',
+                 ARRAY['commune'],'fixture count','sparse','large-v1')""")
+            conn.execute("INSERT INTO scalar_descriptor_source VALUES ('large_scalar','large_fixture')")
+            conn.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('large_scalar','large0000','commune',7,'measured')")
+            conn.execute("INSERT INTO scalar_observation_source VALUES ('large_scalar','large0000','large_fixture','v1')")
+            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',1202)")
+            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','large-v1',1,'large-ref-v1')")
+    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1, open=True,
+                          kwargs={"autocommit": True})
+    previous = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    try:
+        with TestClient(main.app) as client:
+            response = client.post("/api/territories/commune/large0000/themes/comparison",
+                                   json={"theme_id": "demographie", "selection": selected})
+            excessive = client.post("/api/territories/commune/large0000/themes/comparison",
+                                    json={"theme_id": "demographie", "selection": [selected[0]] * 1501})
+        assert response.status_code == 200, response.text
+        result = response.json()["results"][0]
+        assert result["selected_member_count"] == 1202
+        assert result["eligible_count"] == 1 and result["missing_count"] == 1201
+        assert result["median"] == 7 and result["rank"] == 1 and result["rank_size"] == 1
+        assert "observations" not in response.json() and "scope_series" not in response.json()
+        assert excessive.status_code == 422
+        assert excessive.json()["detail"][0]["type"] == "too_long"
+        assert excessive.json()["detail"][0]["ctx"]["max_length"] == 1500
+    finally:
+        if previous is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous
+        pool.close()
+
+
 def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
     import psycopg
     from fastapi.testclient import TestClient
@@ -466,22 +517,31 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as connection:
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29001','commune','Alpha')")
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29002','commune','Beta')")
+        connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29003','commune','Gamma')")
+        connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('E1','epci','Intercommunalité')")
+        connection.execute("UPDATE territory_reference SET epci_id='E1' WHERE territory_id='29002'")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture','Fixture source')")
         connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture','v2026','2026')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_secondary','Secondary source')")
         connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture_secondary','v2025','2025')")
         with connection.transaction():
-            connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high','fixture_scalar',ARRAY['commune'],'buildings','sparse','d1')")
+            connection.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','demographie','Fixture scalar','count','high','fixture_scalar',ARRAY['commune'],'buildings','sparse','d1')")
+            connection.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('other_theme_scalar','habitat','Other theme scalar','count','high','other_theme_scalar',ARRAY['commune'],'buildings','sparse','other-v1')")
             connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture'),('fixture_scalar','fixture_secondary')")
+            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('other_theme_scalar','fixture')")
         with connection.transaction():
             connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,support_count,denominator_count) VALUES ('fixture_scalar','29001','commune',0,'measured',0,0)")
             connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29001','fixture','v2026')")
             connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29001','fixture_secondary','v2025')")
+            connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,support_count,denominator_count) VALUES ('fixture_scalar','29002','commune',2,'measured',1,1)")
+            connection.execute("INSERT INTO scalar_observation_source VALUES ('fixture_scalar','29002','fixture','v2026')")
+            connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,support_count,denominator_count) VALUES ('other_theme_scalar','29001','commune',99,'measured',1,1)")
+            connection.execute("INSERT INTO scalar_observation_source VALUES ('other_theme_scalar','29001','fixture','v2026')")
         with pytest.raises(psycopg.errors.ForeignKeyViolation):
             with connection.transaction():
                 connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='fixture_scalar' AND source_id='fixture'")
         with connection.transaction():
-            connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('unreferenced_fixture','Unreferenced fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
+            connection.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('unreferenced_fixture','demographie','Unreferenced fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
             connection.execute("INSERT INTO scalar_descriptor_source VALUES ('unreferenced_fixture','fixture'),('unreferenced_fixture','fixture_secondary')")
         # A non-last source can be removed without involving the observed
         # fixture's provenance; the remaining declared source keeps the
@@ -491,11 +551,11 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
             with connection.transaction():
                 connection.execute("DELETE FROM scalar_descriptor_source WHERE indicator_id='unreferenced_fixture' AND source_id='fixture'")
         with connection.transaction():
-            connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('cascade_fixture','Cascade fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
+            connection.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('cascade_fixture','demographie','Cascade fixture','count','high',NULL,ARRAY['commune'],'buildings','sparse','d1')")
             connection.execute("INSERT INTO scalar_descriptor_source VALUES ('cascade_fixture','fixture')")
         connection.execute("DELETE FROM scalar_descriptor WHERE indicator_id='cascade_fixture'")
-        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v1',2)")
-        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','fixture-v1',1,'territory-v1')")
+        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','territory-v1',4)")
+        connection.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','fixture-v1',3,'territory-v1')")
         # Zero is measured; null is legal only with typed unavailability.
         with pytest.raises(psycopg.errors.CheckViolation):
             connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','29001','commune',NULL,'measured')")
@@ -529,6 +589,13 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
             response = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
             cohort = client.get("/api/territories/commune/29001/indicator-cohorts/fixture_scalar?scope_level=commune")
             unavailable = client.get("/api/territories/epci/29001/indicators/fixture_scalar")
+            focal = client.get("/api/territories/commune/29001/themes/demographie/facts")
+            empty_comparison = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[]})
+            selected_comparison = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"29002"}]})
+            overlap_comparison = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"epci","territory_id":"E1"},{"territory_type":"commune","territory_id":"29002"}]})
+            focal_selected = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"29001"}]})
+            unknown_selection = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"99999"}]})
+            unknown_theme = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"unknown_theme","selection":[]})
         assert response.status_code == 200, response.text
         body = response.json()
         assert body["value"] == 0
@@ -539,11 +606,42 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert cohort.status_code == 200, cohort.text
         cohort_rows = cohort.json()["observations"]
         assert [(row["territory_id"], row["value"], row["status"]) for row in cohort_rows] == [
-            ("29001", 0, "measured"), ("29002", None, "not_published")]
+            ("29001", 0, "measured"), ("29002", 2, "measured"), ("29003", None, "not_published")]
         assert {source["version"] for source in cohort_rows[0]["sources"]} == {"2026", "2025"}
-        assert cohort_rows[1]["sources"] == []
+        assert cohort_rows[1]["sources"]
+        assert cohort_rows[2]["sources"] == []
+        assert focal.status_code == 200 and focal.json()["complete_theme"] is False
+        assert [fact["indicator_id"] for fact in focal.json()["facts"]] == ["fixture_scalar"]
+        assert empty_comparison.status_code == 200
+        assert empty_comparison.json()["selection"] == []
+        assert empty_comparison.json()["results"][0]["eligible_count"] == 0
+        assert empty_comparison.json()["results"][0]["focal_in_selection"] is False
+        assert empty_comparison.json()["results"][0]["rank"] is None
+        assert empty_comparison.json()["results"][0]["rank_size"] is None
+        assert selected_comparison.status_code == 200, selected_comparison.text
+        selected_result = selected_comparison.json()["results"][0]
+        assert [row["indicator_id"] for row in selected_comparison.json()["results"]] == [
+            "fixture_scalar", "unreferenced_fixture"]
+        assert all(row["indicator_id"] != "other_theme_scalar" for row in selected_comparison.json()["results"])
+        assert selected_result["eligible_count"] == 1 and selected_result["median"] == 2
+        assert selected_result["statistic"] == "median"
+        assert selected_result["focal_value"] == 0
+        assert selected_result["rank"] is None and selected_result["rank_size"] is None
+        assert "observations" not in selected_result
+        assert selected_result["comparison_sources"] == [{"source_id":"fixture","name":"Fixture source",
+          "vintage_id":"v2026","version":"2026","reference_date":None,"publication_date":None}]
+        assert overlap_comparison.status_code == 200, overlap_comparison.text
+        assert overlap_comparison.json()["results"][0]["selected_member_count"] == 1
+        assert overlap_comparison.json()["results"][0]["eligible_count"] == 1
+        assert focal_selected.status_code == 200
+        assert focal_selected.json()["results"][0]["focal_in_selection"] is True
+        assert focal_selected.json()["results"][0]["median"] == 0
+        assert focal_selected.json()["results"][0]["rank"] == 1
+        assert focal_selected.json()["results"][0]["rank_size"] == 1
+        assert unknown_selection.status_code == 422
+        assert unknown_theme.status_code == 404
         assert unavailable.status_code == 404
-        absent_fact = client.get("/api/territories/commune/29002/indicators/fixture_scalar")
+        absent_fact = client.get("/api/territories/commune/29003/indicators/fixture_scalar")
         assert absent_fact.status_code == 404
         with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
             publisher.execute("UPDATE table_publication SET content_version='territory-v2' WHERE table_name='territory_reference'")
@@ -556,8 +654,6 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         compatible_rebind = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert compatible_rebind.status_code == 200
         with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
-            publisher.execute("DELETE FROM territory_reference WHERE territory_id='29002'")
-            publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29003','commune','Gamma')")
             publisher.execute("UPDATE table_publication SET content_version='territory-v3' WHERE table_name='territory_reference'")
         incompatible_reference = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert incompatible_reference.status_code == 503
@@ -828,6 +924,7 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
                 );
             """)
             connection.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
+            connection.execute((api_root / "migrations/012_scalar_theme_identity.sql").read_text(encoding="utf-8"))
             names = {row[0] for row in connection.execute("SELECT tablename FROM pg_tables WHERE schemaname=current_schema()").fetchall()}
             assert {"scalar_descriptor", "scalar_descriptor_source", "scalar_observation", "scalar_observation_source"} <= names
             assert connection.execute("SELECT count(*) FROM territory_reference").fetchone()[0] == 0
@@ -835,7 +932,7 @@ def test_shared_scalar_additive_migration_rehearsal(db_env):
             connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_source','Fixture source')")
             connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture_source','v2026','2026')")
             with connection.transaction():
-                connection.execute("INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','Fixture scalar','count','high',NULL,ARRAY['commune'],'fixture count','sparse','fixture-descriptor-v1')")
+                connection.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES ('fixture_scalar','demographie','Fixture scalar','count','high',NULL,ARRAY['commune'],'fixture count','sparse','fixture-descriptor-v1')")
                 connection.execute("INSERT INTO scalar_descriptor_source VALUES ('fixture_scalar','fixture_source')")
             with connection.transaction():
                 connection.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('fixture_scalar','fixture-01','commune',3.5,'measured')")
