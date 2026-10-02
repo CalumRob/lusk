@@ -135,7 +135,11 @@
     "distribution_dpe": { "indicator": "distribution_dpe", "label": "Distribution des étiquettes DPE (A à G)", "definition": "Répartition des diagnostics de performance énergétique du territoire par étiquette, de A à G.", "unit": "%", "calculation": "Part de chaque étiquette parmi les diagnostics disponibles du territoire.", "direction": "low", "caveats": "La base DPE surreprésente les logements vendus ou loués ; la comparaison entre territoires porte sur la part de passoires thermiques (F/G), jamais sur les étiquettes une à une.", "levels": ["commune", "epci", "departement"], "sources": ["dpe_22"], "family": "distribution", "distribution": { "signature": ["A", "B", "C", "D", "E", "F", "G"] }, "comparison": { "indicator": "part_passoires", "label": "Part de passoires thermiques", "unit": "%", "direction": "low" } }
   },
   "profile_contracts": {
-    "distribution_dpe": { "completeness": "dense_complete", "support_count_field": "n", "suppressed_below": 30, "missing_status": "not_available", "zero_support_status": "not_available" }
+    "distribution_dpe": { "completeness": "dense_complete", "support_count_field": "n", "suppressed_below": 30, "missing_status": "not_available", "zero_support_status": "not_available" },
+    "mix_logements": { "completeness": "dense_complete", "allowed_levels": ["commune", "epci", "departement", "region"], "denominator_semantics": "logements", "detail_units": { "principales": "%", "secondaires": "%", "vacants": "%" } },
+    "statut": { "completeness": "dense_complete", "allowed_levels": ["commune", "epci", "departement", "region"], "denominator_semantics": "residences_principales", "detail_units": { "proprietaire": "%", "hlm": "%", "locataire_prive": "%", "loge_gratuit": "%" } },
+    "type": { "completeness": "dense_complete", "allowed_levels": ["commune", "epci", "departement", "region"], "denominator_semantics": "residences_principales", "detail_units": { "maison": "%", "appartement": "%" } },
+    "age_du_bati": { "completeness": "dense_complete", "allowed_levels": ["commune", "epci", "departement", "region"], "denominator_semantics": "residences_principales", "detail_units": { "lt1919": "%", "1919_1945": "%", "1946_1970": "%", "1971_1990": "%", "1991_2005": "%", "2006_plus": "%" } }
   },
   "scalar_contracts": {
     "part_passoires": {
