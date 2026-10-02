@@ -1250,6 +1250,28 @@
       "comparison_facet": "raccordement_tc",
       "missing_status": "not_available",
       "counts_available": false
+    },
+    "bornes_ev_par_station_service": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "bornes_ev_par_station_service",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
+    "stationnement_velo_par_voiture": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "stationnement_velo_par_voiture",
+      "missing_status": "not_available",
+      "counts_available": false
     }
   },
   "source_records": {

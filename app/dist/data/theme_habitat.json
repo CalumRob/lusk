@@ -352,6 +352,8 @@
     },
     "prix_m2": {
       "indicator": "prix_m2",
+      "series_dataset_id": "dvf_prix_m2",
+      "series_publication": "owned",
       "label": "Médiane prix au m²",
       "definition": "Prix médian déclaré au mètre carré des ventes de maisons et d’appartements, par millésime DVF.",
       "unit": "€/m²",
@@ -450,6 +452,23 @@
         "unit": "%",
         "direction": "low"
       }
+    }
+  },
+  "scalar_contracts": {
+    "part_passoires": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "part_passoires",
+      "missing_status": "suppressed",
+      "counts_available": true,
+      "support_count_field": "support",
+      "suppressed_below": 30,
+      "zero_support_status": "not_available"
     }
   },
   "source_records": {
