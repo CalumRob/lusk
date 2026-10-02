@@ -4,6 +4,8 @@ from __future__ import annotations
 import json
 from hashlib import sha256
 import platform
+import base64
+import numpy as np
 from pathlib import Path
 from typing import Mapping
 from time import perf_counter
@@ -50,6 +52,9 @@ SAMPLE_TERRITORIES = (("commune", "35238"), ("region", "53"), ("epci", "24350074
 MAP_CRS = QgsCoordinateReferenceSystem("EPSG:2154")
 OSM_PREPARATION_VERSION = 1
 GEOVELO_PREPARATION_VERSION = 1
+SHARED_NETWORK_RENDER_VERSION = 1
+INSPECTION_NETWORK_RENDER_VERSION = 1
+INLINE_NETWORK_RENDER_VERSION = 1
 NETWORK_LINE_WIDTH_MM = "0.36"
 NETWORK_OPACITY = 0.98
 
@@ -450,6 +455,7 @@ def prepare_network_cache(
     project: QgsProject | None = None,
     cache_root: str | Path | None = None,
     families: tuple[str, ...] = ("osm", "geovelo"),
+    *, force: bool = False, report: list | None = None,
 ) -> dict[str, dict[str, Path]]:
     """Prepare or reuse the independently versioned OSM and Geovelo families."""
     raw_dir = Path(raw_dir)
@@ -496,7 +502,7 @@ def prepare_network_cache(
             validate=lambda paths: _validate_flatgeobuf(paths, "Geovelo"),
         )
     root = Path(cache_root) if cache_root is not None else _cache_root(raw_dir)
-    return prepare_network_source_families(root, preparations)
+    return prepare_network_source_families(root, preparations, force=force, report=report)
 
 
 def _eligible_osm_modes(source, modes, request_rect: QgsRectangle | None = None):
@@ -641,7 +647,8 @@ def prepare_osm_layers(project: QgsProject, source, modes, marks,
 
 def _prepare_network_layers(project: QgsProject, features, raw_dir: Path,
                             family_config: Mapping,
-                            cache_root: Path | None = None) -> dict[str, list[QgsVectorLayer]]:
+                            cache_root: Path | None = None, *, force: bool = False,
+                            report: list | None = None) -> dict[str, list[QgsVectorLayer]]:
     """Load cached, indexed source layers once for all outputs in this run."""
     features = tuple(features)
     if not features:
@@ -653,7 +660,7 @@ def _prepare_network_layers(project: QgsProject, features, raw_dir: Path,
             ("geovelo", "bike" in modes),
         ) if needed
     )
-    prepared = prepare_network_cache(raw_dir, project, cache_root, families)
+    prepared = prepare_network_cache(raw_dir, project, cache_root, families, force=force, report=report)
 
     def indexed_layer(path: Path, name: str, colour: str) -> QgsVectorLayer:
         layer = QgsVectorLayer(str(path), name, "ogr")
@@ -711,6 +718,9 @@ class NetworkAdapter:
         self._ground_cache = {}
         self._shared_ground = None
         self._network_layers = {}
+        self._stage_events = []
+        self._stage_validity = {}
+        self._refresh = False
 
     def render_identity(self) -> Mapping:
         """Identify runtime code/assets and the versions that affect rendering."""
@@ -736,6 +746,39 @@ class NetworkAdapter:
                 "python": platform.python_version(),
             },
         }
+
+    def profile_identity(self, profile, feature: Mapping | None = None) -> Mapping:
+        """Fine-grained contract identity, separate from broad provenance."""
+        root = Path(__file__).parent
+        from map_ground import INLINE_MASK_RENDER_VERSION, SHARED_GROUND_RENDER_VERSION
+        shared = [root / "assets" / "texture" / "qgis-hub-paper-texture-cc0.jpg"]
+        config = json.loads(self.family_config_path.read_text(encoding="utf-8"))
+        mode = feature.get("mode") if feature else None
+        mark_names = ({"bike": ("bike-protected", "bike-shared"),
+                       "car": ("car",), "walk": ("walk",)}.get(mode)
+                      if mode else tuple(config["marks"]))
+        scoped = {"marks": {key: config["marks"][key] for key in mark_names},
+                  "scope": config["scope"],
+                  "shared_ground_version": SHARED_GROUND_RENDER_VERSION,
+                  "shared_network_render_version": SHARED_NETWORK_RENDER_VERSION}
+        if profile.name == "inspection":
+            shared.extend([root / "inspection_plate.py", root / "assets" / "north-arrow" / "NorthArrow_11.svg"])
+            shared.extend((root / "assets" / "fonts").glob("*.woff2"))
+            shared.append(root / "network-palette.json")
+            scoped["inspection_network_render_version"] = INSPECTION_NETWORK_RENDER_VERSION
+            scoped["inspection"] = config["inspection"].get(mode, config["inspection"])
+        else:
+            scoped["inline_mask_version"] = INLINE_MASK_RENDER_VERSION
+            scoped["inline_network_render_version"] = INLINE_NETWORK_RENDER_VERSION
+            scoped["inline"] = {key: value for key, value in network_recipe().foundation.composition.items()
+                                 if key == "inline"}
+        digest = sha256(json.dumps(scoped, sort_keys=True, separators=(",", ":")).encode())
+        for path in sorted(shared):
+            digest.update(path.relative_to(root).as_posix().encode())
+            digest.update(path.read_bytes())
+        return {"profile_contract_sha256": digest.hexdigest(), "runtime": {
+            "qgis": Qgis.QGIS_VERSION, "qt": QT_VERSION_STR,
+            "pyqt": PYQT_VERSION_STR, "python": platform.python_version()}}
 
     def input_identity(self) -> Mapping:
         """Record source-file versions used for context, ground, and network marks."""
@@ -812,11 +855,13 @@ class NetworkAdapter:
         from map_ground import discover_ocsge_sources
         discover_ocsge_sources(self.raw_dir)
 
-    def prepare_run(self, recipe: Recipe, binding: Binding, profiles, output_dir: Path) -> None:
+    def prepare_run(self, recipe: Recipe, binding: Binding, profiles, output_dir: Path, *, refresh: bool = False) -> None:
         """Load source providers and reusable family layers once for this run."""
         from map_ground import prepare_shared_ground
 
         project = QgsProject.instance()
+        self._stage_events = []
+        self._stage_validity = {}
         project.clear()
         project.setCrs(MAP_CRS)
         features = tuple(
@@ -830,14 +875,60 @@ class NetworkAdapter:
         for feature in features[1:]:
             combined_extent.combineExtentWith(QgsRectangle(feature["extent"]))
         assets = Path(__file__).with_name("assets")
+        context_started = perf_counter()
         self._shared_ground = prepare_shared_ground(
             project, self.raw_dir, combined_extent, assets,
             include_ocsge="inspection" in profiles,
         )
+        self._stage_events.append({"stage": "context-and-provider-load", "profile": "shared",
+            "decision": "built", "seconds": round(perf_counter() - context_started, 3)})
         self._network_layers = _prepare_network_layers(
-            project, features, self.raw_dir, self.family_config, self.cache_root
+            project, features, self.raw_dir, self.family_config, self.cache_root,
+            force=refresh, report=self._stage_events
         )
         self._ground_cache.clear()
+        self._refresh = refresh
+
+    def stage_report(self):
+        return list(self._stage_events)
+
+    def record_reused_output(self, feature, profile, output_dir):
+        identity = self._ground_id(feature, profile)
+        if identity in self._stage_validity:
+            self._stage_events.append({"stage": "territory-ground", "profile": profile.name,
+                "identity": identity, "decision": "reused" if self._stage_validity[identity] else "missing-cache",
+                "seconds": 0.0})
+            return
+        stage = Path(output_dir) / ".stage-cache" / "ground" / identity
+        prepared = self._read_ground_stage(stage, profile.size)
+        self._stage_validity[identity] = prepared is not None
+        self._stage_events.append({"stage": "territory-ground", "profile": profile.name,
+            "identity": identity, "decision": "reused" if prepared else "missing-cache",
+            "seconds": 0.0})
+
+    def effective_input_identity(self, feature: Mapping, profile) -> Mapping:
+        """Fingerprint only source facts that intersect this map and profile."""
+        digest = sha256()
+        extent = QgsRectangle(feature["extent"])
+        request = QgsFeatureRequest().setFilterRect(extent)
+        for layer in self._network_layers.get(feature["mode"], ()):
+            digest.update(layer.name().encode("utf-8"))
+            for item in layer.getFeatures(request):
+                geometry = bytes(item.geometry().asWkb())
+                digest.update(geometry)
+        ground = self._shared_ground
+        context = ground.context_geometry.intersection(QgsGeometry.fromRect(extent))
+        digest.update(bytes(context.asWkb()))
+        if profile.name == "inspection":
+            for layer in ground.ocsge_layers:
+                digest.update(layer.name().encode("utf-8"))
+                for item in layer.getFeatures(request):
+                    digest.update(bytes(item.geometry().asWkb()))
+                    digest.update(json.dumps([item["code_cs"], item["code_us"]], default=str).encode())
+            metadata = self.raw_dir.parent.parent / "inst" / "extdata" / "theme-metadata"
+            for name in ("theme_mobilite.json", "theme_milieux.json"):
+                digest.update((metadata / name).read_bytes())
+        return {"visible_content_sha256": digest.hexdigest()}
 
     def render(self, recipe: Recipe, feature: Mapping, profile, output_dir: Path) -> Path:
         from inspection_plate import compose_inspection
@@ -849,14 +940,27 @@ class NetworkAdapter:
         if self._shared_ground is None or not self._network_layers:
             raise RuntimeError("NetworkAdapter.prepare_run must complete before rendering outputs")
         territory = feature["territory"]
-        cache_key = (territory["kind"], territory["code"], profile.name, profile.size)
+        ground_id = self._ground_id(feature, profile)
+        cache_key = ground_id
         prepared = self._ground_cache.get(cache_key)
         if prepared is None:
-            prepared = prepare_ground(
-                project, feature, profile.size[0], self._shared_ground,
-                include_ocsge=profile.name == "inspection",
-            )
+            stage = output_dir / ".stage-cache" / "ground" / ground_id
+            prepared = None if self._refresh else self._read_ground_stage(stage, profile.size)
+            if prepared is None:
+                started = perf_counter()
+                prepared = prepare_ground(project, feature, profile.size[0], self._shared_ground,
+                    include_ocsge=profile.name == "inspection")
+                self._write_ground_stage(stage, prepared)
+                decision = "built"
+                seconds = round(perf_counter() - started, 3)
+            else:
+                decision, seconds = "reused", 0.0
+            self._stage_events.append({"stage": "territory-ground", "profile": profile.name,
+                "identity": ground_id, "decision": decision, "seconds": seconds})
             self._ground_cache[cache_key] = prepared
+        else:
+            self._stage_events.append({"stage": "territory-ground", "profile": profile.name,
+                "identity": ground_id, "decision": "shared-in-run", "seconds": 0.0})
         network_layers = self._network_layers[feature["mode"]]
         networks = render_layers(
             project, prepared.extent, network_layers, QColor(0, 0, 0, 0), profile.size[0]
@@ -883,6 +987,59 @@ class NetworkAdapter:
         if not image.save(str(path), "PNG"):
             raise RuntimeError(f"Could not save production map: {path}")
         return path
+
+    def _ground_id(self, feature, profile):
+        digest = sha256()
+        for name in ("geometry", "analytical_geometry", "region_geometry"):
+            geometry = feature.get(name)
+            digest.update(name.encode() + (bytes(geometry.asWkb()) if geometry else b""))
+        extent = feature["extent"]
+        digest.update(json.dumps([[extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()], profile.name,
+            profile.size, profile.furniture, profile.context], default=str).encode())
+        digest.update(bytes(self._shared_ground.context_geometry.intersection(
+            QgsGeometry.fromRect(extent)).asWkb()))
+        digest.update(json.dumps(self.profile_identity(profile, feature), sort_keys=True).encode())
+        if profile.name == "inspection":
+            for layer in self._shared_ground.ocsge_layers:
+                for item in layer.getFeatures(QgsFeatureRequest().setFilterRect(feature["extent"])):
+                    digest.update(bytes(item.geometry().asWkb()))
+                    digest.update(json.dumps([item["code_cs"], item["code_us"]], default=str).encode())
+        return digest.hexdigest()
+
+    def _write_ground_stage(self, directory, prepared):
+        directory.mkdir(parents=True, exist_ok=True)
+        files = {}
+        for name in ("ground", "boundaries", "territory_border"):
+            path = directory / f"{name}.png"
+            if not getattr(prepared, name).save(str(path), "PNG"):
+                raise RuntimeError(f"Could not persist ground stage: {path}")
+            files[path.name] = sha256(path.read_bytes()).hexdigest()
+        mask = directory / "land-mask.npy"
+        np.save(mask, prepared.land_mask)
+        files[mask.name] = sha256(mask.read_bytes()).hexdigest()
+        manifest = {"files": files, "outside": base64.b64encode(bytes(prepared.outside_land.asWkb())).decode(),
+            "extent": [prepared.extent.xMinimum(), prepared.extent.yMinimum(),
+                       prepared.extent.xMaximum(), prepared.extent.yMaximum()]}
+        (directory / "manifest.json").write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
+
+    def _read_ground_stage(self, directory, size):
+        from map_ground import PreparedGround
+        try:
+            manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+            paths = {name: directory / name for name in manifest["files"]}
+            if any(not path.is_file() or sha256(path.read_bytes()).hexdigest() != manifest["files"][name]
+                   for name, path in paths.items()):
+                return None
+            images = {name[:-4]: QImage(str(path)) for name, path in paths.items() if name.endswith(".png")}
+            if any(image.isNull() or image.width() != size[0] or image.height() != size[1]
+                   for image in images.values()):
+                return None
+            geom = QgsGeometry()
+            geom.fromWkb(base64.b64decode(manifest["outside"]))
+            return PreparedGround(images["ground"], images["boundaries"], images["territory_border"],
+                geom, np.load(paths["land-mask.npy"], allow_pickle=False), QgsRectangle(*manifest["extent"]))
+        except (OSError, ValueError, KeyError, TypeError):
+            return None
 
     def validate(self, path: Path, feature: Mapping, profile) -> None:
         image = QImage(str(path))
