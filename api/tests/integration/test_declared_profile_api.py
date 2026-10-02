@@ -186,6 +186,7 @@ def test_declared_profile_postgres_api_contract(installation):
                 # Rehearse expansion over a populated age profile and unchanged
                 # marker, not only a fresh empty schema.
                 conn.execute((schema_file.parent / 'migrations/013_profile_optional_axis.sql').read_text(encoding='utf-8'))
+                conn.execute((schema_file.parent / 'migrations/014_profile_axis_units.sql').read_text(encoding='utf-8'))
 
         scoped = reader_dsn + ("&" if "?" in reader_dsn else "?") + "options=" + __import__('urllib.parse').parse.quote(f"-csearch_path={schema}")
         pool = ConnectionPool(conninfo=scoped, min_size=0, max_size=1, open=True, kwargs={"autocommit": True})
