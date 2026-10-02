@@ -171,6 +171,17 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
                 pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_curve'")
                 pub.execute("INSERT INTO series_named_reference_descriptor(dataset_id,indicator_id,reference_id,reference_label,reference_role,reference_statistic,required,reference_indicator_id,active_read_route) VALUES('raccordement_curve','raccordement_courbe','conflicting_reference','Other reference','analytical_reference','other_statistic',false,'raccordement_reference',true)")
         assert pub.execute("SELECT count(*) FROM series_named_reference_descriptor WHERE reference_indicator_id='raccordement_reference' AND active_read_route").fetchone()==(1,)
+        # Prove the theme default comparison is available from the owned curve
+        # alone, independently of scalar/profile publication.
+        pub.execute("UPDATE scalar_descriptor SET theme_id='other_theme' WHERE indicator_id='fixture_scalar'")
+        with TestClient(app) as client:
+            owned_only_theme=client.get("/api/territories/commune/35238/themes/mobilite/facts")
+        assert owned_only_theme.status_code==200,owned_only_theme.text
+        owned_only_curve=next(result for result in owned_only_theme.json()["default_comparison"]["results"]
+            if result["indicator_id"]=="raccordement_courbe")
+        assert owned_only_curve["median"]==.5 and owned_only_curve["rank"]==1
+        assert owned_only_curve["source_facet"]=="t0090"
+        pub.execute("UPDATE scalar_descriptor SET theme_id='mobilite' WHERE indicator_id='fixture_scalar'")
         with TestClient(app) as client:
             theme=client.get("/api/territories/commune/35238/themes/mobilite/facts")
             comparison=client.post("/api/territories/commune/35238/indicators/raccordement_courbe/comparison",
