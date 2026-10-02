@@ -109,7 +109,10 @@ false, for example:
 ```
 
 The comparison response describes one metric per declared facet, not a
-territory-by-fact dump. Profile scalar dependencies are checked against their
+territory-by-fact dump. Both dedicated theme and indicator comparison
+responses omit `focal_value` and other focal observations. Rank calculation may
+use the focal value internally; the separately acquired focal payload owns that
+observation. Legacy comparison endpoint shapes remain unchanged. Profile scalar dependencies are checked against their
 exact required scalar publication version in the same snapshot. Profile-only
 themes do not require an unrelated scalar publication. Stale reference,
 profile, or declared scalar dependency versions fail closed.

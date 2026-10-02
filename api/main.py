@@ -1487,11 +1487,22 @@ def theme_comparison_only(
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             result = _theme_comparison_snapshot(
                 conn, territory_type, territory_id, theme_id, selected)
-            return {key: result[key] for key in (
+            response = {key: result[key] for key in (
                 "contract", "complete_theme", "theme_id", "content_version",
                 "reference_content_version", "selection", "scope", "results",
                 "profile_content_version", "profile_comparisons",
             )}
+            response["results"] = [_comparison_result_without_focal_value(row)
+                                   for row in response["results"]]
+            response["profile_comparisons"] = [
+                _comparison_result_without_focal_value(row)
+                for row in response["profile_comparisons"]]
+            return response
+
+
+def _comparison_result_without_focal_value(result):
+    """Serialize a dedicated comparison result without repeating a focal fact."""
+    return {key: value for key, value in result.items() if key != "focal_value"}
 
 
 def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id, selection):
@@ -1636,8 +1647,10 @@ def indicator_comparison_only(
             if focal[0] != territory_type:
                 raise HTTPException(422, "Focal territory type does not match route")
             if shape == "series":
-                return _series_comparison_snapshot(conn, territory_type, territory_id,
-                                                   indicator_id, selection)
+                comparison = _series_comparison_snapshot(conn, territory_type, territory_id,
+                                                         indicator_id, selection)
+                comparison["result"] = _comparison_result_without_focal_value(comparison["result"])
+                return comparison
             if shape == "scalar":
                 descriptor = conn.execute(
                     "SELECT theme_id,allowed_levels FROM scalar_descriptor WHERE indicator_id=%s",
@@ -1669,6 +1682,7 @@ def indicator_comparison_only(
                     result["source_facet_indicator_id"] = source_facet
             else:
                 result["source_facet"] = indicator_id
+            result = _comparison_result_without_focal_value(result)
             return {"contract": "indicator-comparison-v1", "complete_theme": False,
                 "indicator_id": indicator_id, "shape": shape,
                 "content_version": comparison["content_version"],

@@ -424,9 +424,10 @@ def test_declared_profile_postgres_api_contract(installation):
             with psycopg.connect(publisher_dsn, autocommit=True) as conn:
                 conn.execute(f'SET search_path TO "{schema}"')
                 conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-fixture-v1',4,'ref-v1')")
-            detail_named = client.get(f"/api/territories/commune/{territory}/indicators/structure_age")
-            assert detail_named.status_code == 200, detail_named.text
-            assert detail_named.json()["default_comparison"]["results"][0]["median"] == pytest.approx(.4)
+                detail_named = client.get(f"/api/territories/commune/{territory}/indicators/structure_age")
+                assert detail_named.status_code == 200, detail_named.text
+                assert detail_named.json()["default_comparison"]["results"][0]["median"] == pytest.approx(.4)
+                assert detail_named.json()["default_comparison"]["results"][0]["focal_value"] == pytest.approx(.2)
             assert peer not in detail_named.text
             detail_comparison_url = f"/api/territories/commune/{territory}/themes/demographie/comparison"
             overlap = client.post(detail_comparison_url, json={"theme_id":"demographie","selection":[
@@ -444,7 +445,7 @@ def test_declared_profile_postgres_api_contract(installation):
                 {"territory_type":"commune","territory_id":peer}]})
             outside_result = next(row for row in outside_focal.json()["profile_comparisons"]
                                   if row["indicator"] == "structure_age")
-            assert outside_result["focal_value"] == pytest.approx(.2)
+            assert "focal_value" not in outside_result
             assert outside_result["focal_in_selection"] is False
             assert outside_result["status"] == "unavailable"
             assert outside_result["median"] is None

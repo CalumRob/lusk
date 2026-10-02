@@ -135,6 +135,8 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             assert mixed["scope"]["member_count"] == default_scope["member_count"]
             assert "facts" not in mixed and "profiles" not in mixed and "cells" not in mixed
             assert all("value" not in row and "cells" not in row for row in mixed["profile_comparisons"])
+            assert all("focal_value" not in row for row in mixed["results"])
+            assert all("focal_value" not in row for row in mixed["profile_comparisons"])
             mixed_by_id = {row["indicator"]: row for row in mixed["profile_comparisons"]}
             assert {row["median"] for row in mixed_by_id.values()} == {
                 profiles[indicator]["cells"][next(i for i, c in enumerate(profiles[indicator]["cells"])
@@ -173,6 +175,7 @@ def test_mobility_profile_publisher_output_is_served_over_http():
                 assert result["denominator_semantics"] == profiles[indicator]["denominator_semantics"]
                 assert result["median"] == focal_cell["value"]
                 assert named.json()["profile_content_version"] == sql_marker
+                assert "focal_value" not in result
                 assert "profile_comparisons" not in named.json() and "cells" not in result
             http_cells = {(indicator, cell["detail"], cell["sex"] or ""): (cell["value"], cell["status"])
                           for indicator, profile in profiles.items() if indicator in expected_counts
@@ -203,6 +206,7 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             assert named_scalar_result["median"] == .5
             assert named_scalar_result["unit"] == "%"
             assert named_scalar_result["rank"] == 1
+            assert "focal_value" not in named_scalar_result
             assert {source["source_id"] for source in named_scalar_result["comparison_sources"]} == {"dpe_22"}
             assert "results" not in named_scalar_comparison.json()
             assert "profiles" not in named_scalar_comparison.json() and "facts" not in named_scalar_comparison.json()
@@ -234,6 +238,7 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             assert detail_result["median"] == .5
             assert {source["source_id"] for source in detail_result["comparison_sources"]} == {"osm_reseaux"}
             assert "cells" not in detail_result and "profiles" not in named_detail.json()
+            assert "focal_value" not in detail_result
 
             named_dpe = client.post(
                 f"/api/territories/commune/{territory}/indicators/distribution_dpe/comparison")
@@ -248,6 +253,7 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             assert named_dpe.json()["scalar_content_version"] == "dpe-scalar-fixture-v1"
             assert {source["source_id"] for source in dpe_result["comparison_sources"]} == {"dpe_22"}
             assert "results" not in named_dpe.json() and "cells" not in dpe_result
+            assert "focal_value" not in dpe_result
             named_dpe_outside = client.post(
                 f"/api/territories/commune/{territory}/indicators/distribution_dpe/comparison",
                 json={"selection": [{"territory_type": "commune", "territory_id": outside_id}]})
@@ -270,10 +276,21 @@ def test_mobility_profile_publisher_output_is_served_over_http():
                 f"/api/territories/commune/{territory}/themes/habitat/comparison",
                 json={"theme_id": "habitat", "selection": []})
             assert dpe_only_comparison.status_code == 200, dpe_only_comparison.text
+            assert all("focal_value" not in row for row in dpe_only_comparison.json()["results"])
+            assert all("focal_value" not in row for row in dpe_only_comparison.json()["profile_comparisons"])
             dpe_empty = next(row for row in dpe_only_comparison.json()["profile_comparisons"]
                              if row["indicator"] == "distribution_dpe")
             assert dpe_empty["status"] == "unavailable" and dpe_empty["median"] is None
             assert dpe_empty["comparison_sources"] == []
+            habitat_comparison = client.post(
+                f"/api/territories/commune/{territory}/themes/habitat/comparison",
+                json={"theme_id": "habitat"})
+            assert habitat_comparison.status_code == 200, habitat_comparison.text
+            habitat_comparison_body = habitat_comparison.json()
+            assert habitat_comparison_body["results"][0]["median"] == .5
+            assert habitat_comparison_body["profile_comparisons"][0]["median"] == .5
+            assert all("focal_value" not in row for row in habitat_comparison_body["results"])
+            assert all("focal_value" not in row for row in habitat_comparison_body["profile_comparisons"])
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)

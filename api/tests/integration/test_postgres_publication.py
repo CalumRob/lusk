@@ -794,6 +794,7 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             assert named_result['rank'] == 2
             assert named_result['unit'] == 'ha'
             assert named_result['comparison_sources'][0]['source_id'] == 'series_fixture'
+            assert 'focal_value' not in named_result
             assert 'points' not in named_comparison.json() and 'scope_series' not in named_comparison.json()
             assert named_empty.status_code == 200 and named_empty.json()['result']['median'] is None
             assert named_empty.json()['scope']['member_count'] == 0
@@ -813,6 +814,7 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             assert sparse_default.json()['result']['rank'] is None
             assert sparse_default.json()['result']['rank_size'] is None
             assert sparse_default.json()['result']['rank_ties'] is None
+            assert 'focal_value' not in sparse_default.json()['result']
             assert sparse_empty.status_code == 200
             assert sparse_empty.json()['result']['reason'] == 'no_selected_comparable_values'
             assert sparse_empty.json()['result']['eligible_count'] == 0
@@ -833,6 +835,7 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             assert sparse_two.json()['result']['rank'] == 2
             assert sparse_two.json()['result']['rank_size'] == 2
             assert sparse_two.json()['result']['rank_ties'] == 1
+            assert 'focal_value' not in sparse_two.json()['result']
             with psycopg.connect(scoped_publish, autocommit=True) as publisher:
                 publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id)
                     VALUES ('fixture_sparse','59703','commune','2024','2024',3,'measured','series_fixture','v1')""")
@@ -845,6 +848,7 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             assert sparse_outside.json()['result']['median'] == 2.5
             assert sparse_outside.json()['result']['focal_in_selection'] is False
             assert sparse_outside.json()['result']['rank'] is None
+            assert 'focal_value' not in sparse_outside.json()['result']
         finally:
             if previous is None:
                 main.app.dependency_overrides.pop(main.get_repository, None)
