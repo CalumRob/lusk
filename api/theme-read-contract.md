@@ -51,10 +51,11 @@ distribution:
   evidence come from that scalar descriptor/observations.
 - A detail facet reads only its declared `(detail_key, sex_key)` coordinate.
   A profile with no sex axis uses the physical empty `sex_key` and returns
-  `sex: null`; no artificial sex dimension is added. Current homogeneous
-  profile units come from the profile descriptor. When per-detail units are
-  published, the reader consumes the focal declared cell's unit for that exact
-  detail (never a hardcoded conversion or presentation literal).
+  `sex: null`; no artificial sex dimension is added. A per-detail profile gets
+  its comparison unit from that exact `profile_axis` coordinate and carries the
+  producer-declared denominator semantics. Required mixed-unit coordinates
+  fail closed when a unit is absent. Legacy homogeneous profiles may fall back
+  to the descriptor unit only when an axis unit is absent or agrees with it.
 - Profile comparisons follow the established two-comparable-member
   availability rule. With fewer than two measured members, the result retains
   counts/focal context and is typed unavailable; it does not invent a mean or

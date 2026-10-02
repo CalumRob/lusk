@@ -958,7 +958,17 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
             (cohort_type, read_ids, [p["indicator"] for p in external]),
         ).fetchall()
     detail_rows = []
+    detail_contracts = {}
     if details:
+        detail_contracts = {row[0]: row for row in conn.execute(
+            """SELECT d.indicator_id,d.comparison_detail,d.comparison_sex,d.unit,
+                      d.denominator_semantics,d.descriptor_version,d.detail_units_required,a.unit
+               FROM profile_descriptor d LEFT JOIN profile_axis a
+                 ON a.indicator_id=d.indicator_id AND a.axis_name='detail'
+                  AND a.axis_key=d.comparison_detail
+               WHERE d.indicator_id=ANY(%s)""",
+            ([p["indicator"] for p in details],),
+        ).fetchall()}
         detail_rows = conn.execute(
             """SELECT d.indicator_id,o.territory_id,o.value,o.status,
                       COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,
@@ -1006,6 +1016,7 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
             "profile_descriptor_version": profile.get("descriptor_version"),
             "scalar_descriptor_version": profile.get("scalar_descriptor_version"),
             "required_scalar_version": profile.get("required_scalar_version"),
+            "denominator_semantics": profile.get("denominator_semantics"),
             "status": "available" if enough else "unavailable",
             "reason": None if enough else "fewer_than_two_comparable_values",
             "selected_member_count": len(members), "eligible_count": len(values),
@@ -1037,11 +1048,21 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         if not point or point.get("direction") not in ("high", "low"):
             raise HTTPException(503, "Profile detail comparison point is invalid")
         detail, sex = point["detail"], point.get("sex")
+        contract = detail_contracts.get(profile["indicator"])
+        if not contract or contract[1] != detail or contract[2] != sex:
+            raise HTTPException(503, "Profile comparison point does not match its published descriptor")
+        if contract[6]:
+            if not contract[7] or not str(contract[7]).strip():
+                raise HTTPException(503, "Profile comparison unit is unavailable")
+            unit = contract[7]
+        else:
+            if not contract[3] or (contract[7] is not None and contract[7] != contract[3]):
+                raise HTTPException(503, "Legacy profile comparison unit is incompatible")
+            unit = contract[7] if contract[7] is not None else contract[3]
         cell = next((c for c in profile["cells"] if c["detail"] == detail and c.get("sex") == sex), None)
         if cell is None:
             raise HTTPException(503, "Profile comparison cell is unavailable")
         normalized = [(r[1], r[2], r[3], r[4]) for r in detail_by_profile.get(profile["indicator"], [])]
-        unit = point.get("unit", cell.get("unit", profile["unit"]))
         output.append(summary(profile, {"detail": detail, "sex": sex}, unit,
                               point["direction"], normalized))
     return output
