@@ -486,8 +486,7 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
      dataset_id="raccordement_curve",indicator_id="raccordement_courbe",theme_id="mobilite",
      active_read_route=TRUE,reference_read_route=TRUE,axis_kind="duration_minute",
      axis_values=c(0,15,30,45,60,90,120,180,240,300,360),
-     observation_period_contract=list(kind="snapshot_date",source="raccordement_recipe_date_mesure",
-       expected_date="2026-09-16"),
+      observation_period_contract=list(kind="snapshot_date",source="raccordement_recipe_date_mesure"),
      comparison_contract=list(statistic="median",scope="default_group"),
      reference_indicator="raccordement_reference",reference=list(id="commune_bretonne_mediane",
         label="Commune bretonne médiane",role="analytical_reference",statistic="median_routed_communes"),
@@ -512,7 +511,8 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
     rows("raccordement_reference",seq(.05,.95,length.out=11),"53","region"))
   vintages <- data.frame(id="matrice_temps_mairies",source="Fixture matrix",version="2026-09-18",
     date_reference=as.Date("2026-08-25"),date_publication=as.Date("2026-08-26"))
-  projection <- project_raccordement_owned_series(canonical,vintages,metadata)
+  projection <- project_raccordement_owned_series(canonical,vintages,metadata,
+    producer_contract=list(date_mesure="2026-09-16"))
   expect_no_error(validate_owned_series_projection(projection))
   expect_equal(projection$descriptor$axis_kind,"duration_minute")
   expect_true(projection$descriptor$active_read_route)
@@ -524,25 +524,33 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
   expect_equal(projection$named_reference$value,seq(.05,.95,length.out=11))
   expect_equal(unique(projection$points$observation_period),"2026-09-16")
   expect_equal(unique(projection$named_reference$observation_period),"2026-09-16")
+  changed_recipe <- project_raccordement_owned_series(
+    transform(canonical, observation_period="2026-09-17"),vintages,metadata,
+    producer_contract=list(date_mesure="2026-09-17"))
+  expect_equal(unique(changed_recipe$points$observation_period),"2026-09-17")
+  expect_error(project_raccordement_owned_series(canonical,vintages,metadata,
+    producer_contract=list(date_mesure="2026-09-17")),"observation period")
   expect_equal(projection$named_reference_descriptors$reference_indicator_id,"raccordement_reference")
   expect_true(projection$named_reference_descriptors$active_read_route)
   expect_equal(projection$descriptor$comparison_statistic,"median")
   expect_equal(projection$descriptor$comparison_scope,"default_group")
-  expect_identical(metadata$owned_series_routes$raccordement_courbe$observation_period_contract$expected_date,
-    RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure)
   expect_false("territory_id" %in% names(projection$named_reference))
   expect_true(all(projection$named_reference$reference_id=="commune_bretonne_mediane"))
   missing_identity <- metadata; missing_identity$indicator_pages$raccordement_courbe$indicator <- NULL
-  expect_error(project_raccordement_owned_series(canonical,vintages,missing_identity),
+  expect_error(project_raccordement_owned_series(canonical,vintages,missing_identity,
+    producer_contract=list(date_mesure="2026-09-16")),
     "metadata contract")
   invalid_identity <- metadata; invalid_identity$owned_series_routes$raccordement_courbe$indicator_id <- "other_curve"
-  expect_error(project_raccordement_owned_series(canonical,vintages,invalid_identity),
+  expect_error(project_raccordement_owned_series(canonical,vintages,invalid_identity,
+    producer_contract=list(date_mesure="2026-09-16")),
     "metadata contract")
   missing_reference_route <- metadata
   missing_reference_route$owned_series_routes$raccordement_courbe$reference_indicator <- NULL
-  expect_error(project_raccordement_owned_series(canonical,vintages,missing_reference_route),
+  expect_error(project_raccordement_owned_series(canonical,vintages,missing_reference_route,
+    producer_contract=list(date_mesure="2026-09-16")),
     "metadata contract")
   wrong_period <- canonical; wrong_period$observation_period[1] <- "2026-08-25"
-  expect_error(project_raccordement_owned_series(wrong_period,vintages,metadata),
+  expect_error(project_raccordement_owned_series(wrong_period,vintages,metadata,
+    producer_contract=list(date_mesure="2026-09-16")),
     "observation period")
 })

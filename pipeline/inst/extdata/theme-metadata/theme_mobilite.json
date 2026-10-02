@@ -314,8 +314,7 @@
       },
       "observation_period_contract": {
         "kind": "snapshot_date",
-        "source": "raccordement_recipe_date_mesure",
-        "expected_date": "2026-09-16"
+        "source": "raccordement_recipe_date_mesure"
       },
       "reference": {
         "id": "commune_bretonne_mediane",

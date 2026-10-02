@@ -293,7 +293,7 @@ project_prix_m2_owned_series <- function(indicators, vintages, metadata) {
   result
 }
 
-project_raccordement_owned_series <- function(indicators,vintages,metadata) {
+project_raccordement_owned_series <- function(indicators,vintages,metadata,producer_contract) {
   declaration <- metadata$owned_series_routes$raccordement_courbe
   page <- metadata$indicator_pages$raccordement_courbe
   route_key <- "raccordement_courbe"
@@ -311,7 +311,8 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata) {
       !nzchar(reference_contract$statistic %||% "") ||
       !identical(declaration$observation_period_contract$kind,"snapshot_date") ||
       !identical(declaration$observation_period_contract$source,"raccordement_recipe_date_mesure") ||
-      !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",declaration$observation_period_contract$expected_date %||% "") ||
+       !is.list(producer_contract) ||
+       !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",producer_contract$date_mesure %||% "") ||
       !identical(declaration$comparison_contract$statistic,"median") ||
       !identical(declaration$comparison_contract$scope,"default_group"))
     stop("Raccordement duration/reference metadata contract is incomplete",call.=FALSE)
@@ -367,7 +368,7 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata) {
   if (length(unique(raw$observation_period))!=1L ||
       !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",raw$observation_period[[1L]]) ||
       !identical(as.character(raw$observation_period[[1L]]),
-        as.character(declaration$observation_period_contract$expected_date)))
+         as.character(producer_contract$date_mesure)))
     stop("Canonical raccordement observation period violates its producer snapshot-date contract",call.=FALSE)
   source_record <- metadata$source_records[[source_id]]
   if (is.null(source_record$dataset) || !nzchar(source_record$dataset))
@@ -561,9 +562,9 @@ register_prix_m2_owned_publisher <- function(registry, metadata) {
   registry
 }
 
-register_raccordement_owned_publisher <- function(registry,metadata) {
+register_raccordement_owned_publisher <- function(registry,metadata,producer_contract=RECETTE_MATRICE_TEMPS_MAIRIES) {
   registry <- register_series_publisher(registry,"raccordement_courbe_owned",
-    project=function(canonical) project_raccordement_owned_series(canonical$mobilite$indicateurs,canonical$vintages,metadata),
+    project=function(canonical) project_raccordement_owned_series(canonical$mobilite$indicateurs,canonical$vintages,metadata,producer_contract),
     publish=function(projection,db,version) db$replace_dataset(projection,version))
   registry$raccordement_courbe_owned$owned <- TRUE
   registry
