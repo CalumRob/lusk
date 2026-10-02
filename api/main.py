@@ -1318,16 +1318,91 @@ def scalar_observation(
                         f"SELECT 1 FROM {table} WHERE indicator_id=%s", (indicator_id,)).fetchone():
                     shape_rows.append((table, shape))
             owned_table = conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]
+            owned_route_column = (conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor'
+                  AND column_name='active_read_route')""").fetchone()[0] if owned_table else False)
             owned = (conn.execute(
-                "SELECT dataset_id FROM series_dataset_descriptor WHERE indicator_id=%s LIMIT 1",
-                (indicator_id,)).fetchone() if owned_table else None)
-            if len(shape_rows) > 1 or (owned and shape_rows):
+                "SELECT dataset_id FROM series_dataset_descriptor WHERE indicator_id=%s AND active_read_route",
+                (indicator_id,)).fetchall() if owned_route_column else [])
+            any_owned = (conn.execute("SELECT 1 FROM series_dataset_descriptor WHERE indicator_id=%s LIMIT 1",
+                                      (indicator_id,)).fetchone() if owned_table else None)
+            if len(owned) > 1 or (not owned and len(shape_rows) > 1):
                 raise HTTPException(503, "Indicator has ambiguous published storage shapes")
             shape = shape_rows[0][1] if shape_rows else None
-            if owned:
-                # Publication ownership alone is insufficient to route a read;
-                # the publisher must declare the active serving route.
+            if any_owned and not owned:
                 raise HTTPException(503, "Owned-series active publication route is not declared")
+            if owned:
+                dataset_id = owned[0][0]
+                marker = conn.execute("""SELECT p.content_version,p.reference_content_version,p.row_count,p.published_at,
+                    t.content_version FROM series_dataset_publication p CROSS JOIN table_publication t
+                    WHERE p.dataset_id=%s AND t.table_name='territory_reference'""", (dataset_id,)).fetchone()
+                if not marker or marker[1] != marker[4]:
+                    raise HTTPException(503, "Owned-series publication is stale or unavailable")
+                descriptor = conn.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,label,unit,direction,descriptor_version
+                    FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s AND active_read_route""",
+                    (dataset_id,indicator_id)).fetchone()
+                focal = conn.execute("SELECT name,territory_type FROM territory_reference WHERE territory_id=%s",
+                                     (territory_id,)).fetchone()
+                if not descriptor or not focal or focal[1] != territory_type:
+                    raise HTTPException(404, "Owned indicator or focal territory is unavailable")
+                facts = conn.execute("""SELECT o.axis_value,o.observation_period,o.value,o.status,
+                    p.provenance_revision_id,p.source_id,p.vintage_id,p.source_name,p.dataset_name,p.source_version,
+                    p.reference_date,p.publication_date,p.revision_hash
+                    FROM series_dataset_observation o LEFT JOIN series_observation_provenance a
+                    USING(dataset_id,indicator_id,territory_id,axis_value)
+                    LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
+                    WHERE o.dataset_id=%s AND o.indicator_id=%s AND o.territory_id=%s
+                    ORDER BY array_position(%s::text[],o.axis_value),p.provenance_revision_id""",
+                    (dataset_id,indicator_id,territory_id,list(descriptor[1]))).fetchall()
+                refs = conn.execute("""SELECT r.reference_id,r.reference_label,r.reference_role,r.reference_statistic,r.axis_value,
+                    r.observation_period,r.value,r.status,p.provenance_revision_id,p.source_id,p.vintage_id,
+                    p.source_name,p.dataset_name,p.source_version,p.reference_date,p.publication_date,p.revision_hash
+                    FROM series_named_reference r LEFT JOIN series_named_reference_provenance a
+                    USING(dataset_id,indicator_id,reference_id,axis_value)
+                    LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
+                    WHERE r.dataset_id=%s AND r.indicator_id=%s
+                    ORDER BY r.reference_id,array_position(%s::text[],r.axis_value),p.provenance_revision_id""",
+                    (dataset_id,indicator_id,list(descriptor[1]))).fetchall()
+                row_count = conn.execute("""SELECT
+                    (SELECT count(*) FROM series_dataset_observation WHERE dataset_id=%s) +
+                    (SELECT count(*) FROM series_named_reference WHERE dataset_id=%s)""",
+                    (dataset_id,dataset_id)).fetchone()[0]
+                if row_count != marker[2]:
+                    raise HTTPException(503,"Owned series marker row count does not match its facts")
+                if not facts or len({row[0] for row in facts}) != len(descriptor[1]) or not refs:
+                    raise HTTPException(503, "Owned series or named reference is incomplete")
+                def lineage(row, offset):
+                    if row[offset] is None:
+                        raise HTTPException(503, "Owned series provenance is incomplete")
+                    return {"revision_id":row[offset],"source_id":row[offset+1],"vintage_id":row[offset+2],
+                        "source_name":row[offset+3],"dataset_name":row[offset+4],"version":row[offset+5],
+                        "reference_date":row[offset+6],"publication_date":row[offset+7],"revision_hash":row[offset+8]}
+                points=[]
+                for axis in descriptor[1]:
+                    matching=[row for row in facts if row[0]==axis]
+                    if not matching: raise HTTPException(503,"Owned series duration point is missing")
+                    row=matching[0]
+                    points.append({"axis":row[0],"observation_period":row[1],"value":row[2],"status":row[3],
+                        "provenance":[lineage(item,4) for item in matching]})
+                reference_groups={}
+                for row in refs:
+                    item=reference_groups.setdefault(row[0],{"id":row[0],"label":row[1],"role":row[2],
+                        "statistic":row[3],"points":[]})
+                    ref_point=next((point for point in item["points"] if point["axis"]==row[4]),None)
+                    if ref_point is None:
+                        ref_point={"axis":row[4],"observation_period":row[5],"value":row[6],"status":row[7],"provenance":[]}
+                        item["points"].append(ref_point)
+                    ref_point["provenance"].append(lineage(row,8))
+                if any([point["axis"] for point in reference["points"]] != list(descriptor[1])
+                       for reference in reference_groups.values()):
+                    raise HTTPException(503,"Owned named reference is incomplete")
+                return {"dataset_id":dataset_id,"publication_id":marker[0],"reference_content_version":marker[1],
+                    "published_at":marker[3],"territory":{"id":territory_id,"type":territory_type,"name":focal[0]},
+                    "indicator_id":indicator_id,"axis_kind":descriptor[0],"axis_values":descriptor[1],
+                    "axis_numeric_values":descriptor[2],"completeness":descriptor[3],"label":descriptor[4],"unit":descriptor[5],
+                    "direction":descriptor[6],"descriptor_version":descriptor[7],"points":points,
+                    "named_references":list(reference_groups.values()),"scope_series":[],
+                    "availability":"complete" if all(p["status"]=="measured" for p in points) else "incomplete"}
             if shape is None:
                 raise HTTPException(404, "Indicator descriptor is unavailable")
             if shape == "profile":

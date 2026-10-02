@@ -293,6 +293,80 @@ project_prix_m2_owned_series <- function(indicators, vintages, metadata) {
   result
 }
 
+project_raccordement_owned_series <- function(indicators,vintages,metadata) {
+  declaration <- metadata$owned_series_routes$raccordement_courbe
+  page <- metadata$indicator_pages$raccordement_courbe
+  if (is.null(declaration) || is.null(page) || !isTRUE(declaration$active_read_route) ||
+      !identical(declaration$axis_kind,"duration_minute") ||
+      !identical(declaration$reference_role,"analytical_reference") ||
+      !identical(declaration$reference_statistic,"median_routed_communes"))
+    stop("Raccordement duration/reference metadata contract is incomplete",call.=FALSE)
+  minutes <- as.integer(unlist(declaration$axis_values,use.names=FALSE))
+  axes <- paste0("t",sprintf("%04d",minutes))
+  if (!length(axes) || anyNA(minutes) || anyDuplicated(minutes) || any(diff(minutes)<=0))
+    stop("Raccordement duration axis must be explicitly ordered",call.=FALSE)
+  keys <- c("raccordement_courbe","raccordement_reference")
+  raw <- indicators[!is.na(indicators$key) & indicators$key %in% keys,,drop=FALSE]
+  if (!nrow(raw) || anyNA(raw[c("theme","key","detail","type","territoire","unit","vintage_source","vintage_version","vintage_date_reference","vintage_date_publication")]) ||
+      any(raw$theme!="mobilite") || any(raw$unit!="%") || any(!raw$detail %in% axes))
+    stop("Canonical raccordement rows are incomplete or outside declared duration axis",call.=FALSE)
+  focal_all <- raw[raw$key=="raccordement_courbe",,drop=FALSE]
+  reference <- raw[raw$key==declaration$reference_indicator,,drop=FALSE]
+  allowed_levels <- as.character(unlist(page$levels,use.names=FALSE))
+  if (any(!focal_all$type %in% c(allowed_levels,"region")) ||
+      anyDuplicated(focal_all[c("territoire","type","detail")]) || anyDuplicated(reference$detail))
+    stop("Canonical raccordement focal/reference identities are invalid",call.=FALSE)
+  excluded <- focal_all[!focal_all$type %in% allowed_levels,,drop=FALSE]
+  focal <- focal_all[focal_all$type %in% allowed_levels,,drop=FALSE]
+  for (id in unique(focal$territoire)) if (!setequal(as.character(focal$detail[focal$territoire==id]),axes))
+    stop("Canonical focal raccordement curve is missing a declared point",call.=FALSE)
+  if (!setequal(as.character(reference$detail),axes) || length(unique(reference$territoire))!=1L)
+    stop("Canonical named raccordement reference is incomplete",call.=FALSE)
+  source_id <- as.character(declaration$source_id)
+  vr <- vintages[as.character(vintages$id)==source_id,,drop=FALSE]
+  if (nrow(vr)!=1L || length(unique(raw$vintage_version))!=1L ||
+      as.character(vr$version[[1L]])!=as.character(raw$vintage_version[[1L]]) ||
+      as.character(vr$date_reference[[1L]])!=as.character(raw$vintage_date_reference[[1L]]) ||
+      as.character(vr$date_publication[[1L]])!=as.character(raw$vintage_date_publication[[1L]]))
+    stop("Canonical raccordement source vintage does not match vintage artifact",call.=FALSE)
+  source_record <- metadata$source_records[[source_id]]
+  dataset_name <- source_record$dataset %||% "Matrice de temps mairie à mairie"
+  version <- as.character(vr$version[[1L]])
+  reference_date <- as.Date(vr$date_reference[[1L]])
+  publication_date <- as.Date(vr$date_publication[[1L]])
+  source_name <- as.character(vr$source[[1L]])
+  hash <- series_revision_hash(source_id,version,source_name,dataset_name,version,
+    as.character(reference_date),as.character(publication_date))
+  revision_id <- paste0(source_id,"-",version,"-",substr(hash,1L,16L))
+  provenance <- data.frame(provenance_revision_id=revision_id,source_id=source_id,vintage_id=version,
+    source_name=source_name,dataset_name=dataset_name,source_version=version,
+    reference_date=reference_date,publication_date=publication_date,revision_hash=hash,stringsAsFactors=FALSE)
+  make_points <- function(rows) data.frame(dataset_id=declaration$dataset_id,indicator_id="raccordement_courbe",
+    territory_id=as.character(rows$territoire),territory_type=as.character(rows$type),axis_value=as.character(rows$detail),
+    observation_period=version,value=as.numeric(rows$value),status=ifelse(is.na(rows$value),"missing","measured"),stringsAsFactors=FALSE)
+  points <- make_points(focal)
+  ref <- data.frame(dataset_id=declaration$dataset_id,indicator_id="raccordement_courbe",
+    reference_id=declaration$reference_id,reference_label=declaration$reference_label,
+    reference_role=declaration$reference_role,reference_statistic=declaration$reference_statistic,
+    axis_value=as.character(reference$detail),
+    observation_period=version,value=as.numeric(reference$value),
+    status=ifelse(is.na(reference$value),"missing","measured"),stringsAsFactors=FALSE)
+  descriptor <- list(dataset_id=declaration$dataset_id,indicator_id="raccordement_courbe",
+    axis_kind="duration_minute",axis_values=axes,axis_numeric_values=minutes,
+    completeness="dense_complete",comparison_point=as.character(page$comparison$detail),
+    label=page$label,unit="%",direction="high",allowed_levels=allowed_levels,
+    descriptor_version="1",active_read_route=TRUE)
+  projection <- list(dataset_id=declaration$dataset_id,points=points,descriptor=descriptor,
+    provenance=provenance,point_provenance=data.frame(dataset_id=points$dataset_id,indicator_id=points$indicator_id,
+      territory_id=points$territory_id,axis_value=points$axis_value,provenance_revision_id=revision_id),
+    named_reference=ref,named_reference_provenance=data.frame(dataset_id=ref$dataset_id,indicator_id=ref$indicator_id,
+      reference_id=ref$reference_id,axis_value=ref$axis_value,provenance_revision_id=revision_id),
+    dataset_name=dataset_name,vintage=vr,excluded=list(not_eligible=list(
+      policy="indicator_page_levels",row_count=nrow(excluded),rows=excluded[c("territoire","type","detail")])))
+  validate_owned_series_projection(projection)
+  projection
+}
+
 series_revision_hash <- function(...) {
   text <- paste(..., collapse="\x1f")
   if (requireNamespace("digest", quietly=TRUE)) digest::digest(text, algo="sha256", serialize=FALSE)
@@ -324,6 +398,11 @@ validate_owned_series_projection <- function(projection) {
     identical(axes, axes[order(as.integer(axes))]) else identical(d$axis_kind, "state_role") &&
     identical(axes, c("M2", "M3"))
   if (identical(d$axis_kind,"declared_detail")) valid_axis <- !anyNA(axes) && length(axes)>0L
+  if (identical(d$axis_kind,"duration_minute")) valid_axis <- !anyNA(axes) &&
+    all(grepl("^t[0-9]{4}$",axes)) && !is.null(d$axis_numeric_values) &&
+    identical(as.integer(d$axis_numeric_values),as.integer(d$axis_numeric_values[order(d$axis_numeric_values)])) &&
+    length(d$axis_numeric_values)==length(axes) &&
+    identical(axes,paste0("t",sprintf("%04d",as.integer(d$axis_numeric_values))))
   if (length(d$dataset_id)!=1L || is.na(d$dataset_id) || !nzchar(d$dataset_id) ||
       length(d$indicator_id)!=1L || is.na(d$indicator_id) || !nzchar(d$indicator_id) ||
       !length(axes) || anyDuplicated(axes) || !valid_axis ||
@@ -332,7 +411,7 @@ validate_owned_series_projection <- function(projection) {
       any(!d$allowed_levels %in% c("commune","epci","departement","region")) ||
       (is.null(d$comparison_point) && d$direction!="none") ||
       (!is.null(d$comparison_point) && (!d$comparison_point %in% axes || !d$direction %in% c("high","low"))))
-    stop("Invalid owned series descriptor axes, ownership, levels or comparison", call.=FALSE)
+    stop("Invalid owned series descriptor axes, ownership, levels or comparison: ",paste(d$dataset_id,d$indicator_id,d$axis_kind,d$completeness,d$comparison_point,d$direction,paste(d$allowed_levels,collapse=","),valid_axis,sep=" | "),call.=FALSE)
   if (!nrow(points) || anyNA(points[required_points[c(1:6,8)]]) ||
       any(points$dataset_id!=d$dataset_id) || any(points$indicator_id!=d$indicator_id) ||
       any(!points$territory_type %in% d$allowed_levels) || any(!points$axis_value %in% axes) ||
@@ -368,6 +447,26 @@ validate_owned_series_projection <- function(projection) {
   point_keys <- paste(points$dataset_id,points$indicator_id,points$territory_id,points$axis_value,sep="\x1f")
   link_keys <- paste(links$dataset_id,links$indicator_id,links$territory_id,links$axis_value,sep="\x1f")
   if (!all(point_keys %in% link_keys)) stop("Every observation requires at least one provenance revision",call.=FALSE)
+  if (!is.null(projection$named_reference)) {
+    refs <- projection$named_reference; ref_links <- projection$named_reference_provenance
+    fields <- c("dataset_id","indicator_id","reference_id","reference_label","reference_role","reference_statistic","axis_value","observation_period","value","status")
+    link_fields <- c("dataset_id","indicator_id","reference_id","axis_value","provenance_revision_id")
+    if (!identical(d$axis_kind,"duration_minute") || !all(fields %in% names(refs)) ||
+        !all(link_fields %in% names(ref_links)) || !nrow(refs) ||
+        anyNA(refs[fields[c(1:8,10)]]) || any(refs$dataset_id!=d$dataset_id) ||
+        any(refs$indicator_id!=d$indicator_id) || any(!refs$axis_value %in% axes) ||
+        any(refs$reference_role!="analytical_reference") ||
+        any(refs$reference_statistic!="median_routed_communes") ||
+        any((refs$status=="measured")!=!is.na(refs$value)) ||
+        any(!is.na(refs$value)&!is.finite(refs$value)) ||
+        any(!ref_links$provenance_revision_id %in% provenance$provenance_revision_id))
+      stop("Invalid owned named-reference projection",call.=FALSE)
+    for (reference_id in unique(refs$reference_id)) if (!setequal(refs$axis_value[refs$reference_id==reference_id],axes))
+      stop("Named reference is missing a declared duration point",call.=FALSE)
+    rk <- paste(refs$dataset_id,refs$indicator_id,refs$reference_id,refs$axis_value,sep="\x1f")
+    lk <- paste(ref_links$dataset_id,ref_links$indicator_id,ref_links$reference_id,ref_links$axis_value,sep="\x1f")
+    if (!all(rk %in% lk)) stop("Every named reference point requires provenance",call.=FALSE)
+  }
   invisible(projection)
 }
 
@@ -394,6 +493,14 @@ register_prix_m2_owned_publisher <- function(registry, metadata) {
       canonical$vintages,metadata),
     publish=function(projection,db,version) db$replace_dataset(projection,version))
   registry$prix_m2_owned$owned <- TRUE
+  registry
+}
+
+register_raccordement_owned_publisher <- function(registry,metadata) {
+  registry <- register_series_publisher(registry,"raccordement_courbe_owned",
+    project=function(canonical) project_raccordement_owned_series(canonical$mobilite$indicateurs,canonical$vintages,metadata),
+    publish=function(projection,db,version) db$replace_dataset(projection,version))
+  registry$raccordement_courbe_owned$owned <- TRUE
   registry
 }
 
@@ -433,19 +540,25 @@ owned_series_postgres_adapter <- function(con) {
         }
       }
       DBI::dbExecute(con,"DELETE FROM series_dataset_publication WHERE dataset_id=$1",params=list(dataset_id))
+      published_count <- nrow(projection$points) + if (is.null(projection$named_reference)) 0L else nrow(projection$named_reference)
       DBI::dbExecute(con,"INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count,published_at) VALUES($1,$2,$3,$4,now())",
-        params=list(dataset_id,version,reference$content_version[[1L]],nrow(projection$points)))
+        params=list(dataset_id,version,reference$content_version[[1L]],published_count))
       array_literal <- function(x) paste0("{",paste0('"',gsub('"','\\\\"',as.character(x),fixed=TRUE),'"',collapse=","),"}")
-      DBI::dbExecute(con,"INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version) VALUES($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10::text[],$11)",
+      numeric_axis <- if (is.null(d$axis_numeric_values)) NA_character_ else paste0("{",paste(d$axis_numeric_values,collapse=","),"}")
+      DBI::dbExecute(con,"INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,axis_numeric_values) VALUES($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10::text[],$11,$12,$13::integer[])",
         params=list(dataset_id,d$indicator_id,d$axis_kind,array_literal(d$axis_values),d$completeness,
           d$comparison_point %||% NA_character_,d$label,d$unit,d$direction,
-          array_literal(d$allowed_levels),d$descriptor_version))
+          array_literal(d$allowed_levels),d$descriptor_version,isTRUE(d$active_read_route),numeric_axis))
       point_columns <- c("dataset_id","indicator_id","territory_id","territory_type","axis_value",
         "observation_period","value","status")
       optional_columns <- intersect(c("state_role"),names(projection$points))
       DBI::dbWriteTable(con,"series_dataset_observation",projection$points[
         c(point_columns,optional_columns)],append=TRUE,row.names=FALSE)
       DBI::dbWriteTable(con,"series_observation_provenance",projection$point_provenance,append=TRUE,row.names=FALSE)
+      if (!is.null(projection$named_reference)) {
+        DBI::dbWriteTable(con,"series_named_reference",projection$named_reference,append=TRUE,row.names=FALSE)
+        DBI::dbWriteTable(con,"series_named_reference_provenance",projection$named_reference_provenance,append=TRUE,row.names=FALSE)
+      }
     })
 }
 
@@ -521,26 +634,35 @@ read_conso_enaf_series_projection <- function(sortie = "../public/data",
 # Milieux and Habitat. Canonical Parquet and pinned metadata own each projection.
 read_owned_series_projections <- function(sortie="../public/data",
     metadata_path="inst/extdata/theme-metadata/theme_milieux.json",
-    habitat_metadata_path="inst/extdata/theme-metadata/theme_habitat.json") {
+    habitat_metadata_path="inst/extdata/theme-metadata/theme_habitat.json",
+    mobility_metadata_path="inst/extdata/theme-metadata/theme_mobilite.json") {
   paths <- c(indicators=file.path(sortie,"indicateurs_milieux.parquet"),
     histories=file.path(sortie,"histoires_milieux.parquet"),
     habitat_indicators=file.path(sortie,"indicateurs_habitat.parquet"),
     vintages=file.path(sortie,"vintages.parquet"), metadata=metadata_path, habitat_metadata=habitat_metadata_path)
+  mobility_path <- file.path(sortie,"indicateurs_mobilite.parquet")
+  if (file.exists(mobility_path) && file.exists(mobility_metadata_path))
+    paths <- c(paths,mobility_indicators=mobility_path,mobility_metadata=mobility_metadata_path)
   read_stable_series_artifacts(paths,function(input) {
     canonical <- list(indicateurs=nanoparquet::read_parquet(input[["indicators"]]),
       histoires=nanoparquet::read_parquet(input[["histories"]]),
       habitat=list(indicateurs=nanoparquet::read_parquet(input[["habitat_indicators"]])),
+      mobilite=list(indicateurs=if("mobility_indicators" %in% names(input)) nanoparquet::read_parquet(input[["mobility_indicators"]]) else data.frame()),
       vintages=nanoparquet::read_parquet(input[["vintages"]]))
     metadata <- jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE)
     habitat_metadata <- jsonlite::read_json(input[["habitat_metadata"]],simplifyVector=FALSE)
-    registry <- register_owned_series_publishers(list(),metadata,habitat_metadata)
+     registry <- register_owned_series_publishers(list(),metadata,habitat_metadata)
+     mobility_metadata <- if("mobility_metadata" %in% names(input)) jsonlite::read_json(input[["mobility_metadata"]],simplifyVector=FALSE) else NULL
+     if(!is.null(mobility_metadata)) registry <- register_raccordement_owned_publisher(registry,mobility_metadata)
     projections <- lapply(registry,function(publisher) publisher$project(canonical))
     lapply(projections,validate_owned_series_projection)
     # Reporting-only exclusion metadata belongs to the reader result, not the
     # owned projection whose serialized identity is the publication version.
     enaf <- project_conso_enaf_series_from_artifacts(canonical$indicateurs,
       canonical$vintages,metadata)
-    attr(projections,"excluded") <- list(conso_enaf_annuel_owned=enaf$excluded)
+     excluded <- list(conso_enaf_annuel_owned=enaf$excluded)
+     if(!is.null(projections$raccordement_courbe_owned)) excluded$raccordement_courbe_owned <- projections$raccordement_courbe_owned$excluded
+     attr(projections,"excluded") <- excluded
     projections
   })
 }

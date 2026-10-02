@@ -480,3 +480,38 @@ test_that("series smoke cleanup is limited to owned RESTRICT schema drops", {
   expect_error(series_smoke_schema_cleanup_sql(function(parts) paste0('"', parts, '"'), "public"),
     "owned series smoke schema")
 })
+test_that("owned raccordement publisher projects focal curve and a distinct named median reference", {
+  metadata <- list(owned_series_routes=list(raccordement_courbe=list(
+    dataset_id="raccordement_curve",active_read_route=TRUE,axis_kind="duration_minute",
+    axis_values=c(0,15,30,45,60,90,120,180,240,300,360),
+    reference_indicator="raccordement_reference",reference_id="commune_bretonne_mediane",
+    reference_label="Commune bretonne médiane",reference_role="analytical_reference",
+    reference_statistic="median_routed_communes",source_id="matrice_temps_mairies")),
+    indicator_pages=list(raccordement_courbe=list(comparison=list(detail="t0090"),label="Courbe raccordement",
+      levels=c("commune","epci","departement"))),
+    source_records=list(matrice_temps_mairies=list(dataset="Matrice de temps",vintages=list(list(
+      id="matrice_temps_mairies",version="2026-09-16",dateReference="2026-08-25",
+      datePublication="2026-08-26")))))
+  keys <- paste0("t",sprintf("%04d",metadata$owned_series_routes$raccordement_courbe$axis_values))
+  rows <- function(key, values, territory, type) data.frame(key=key,theme="mobilite",detail=keys,
+    type=type,territoire=territory,value=values,unit="%",vintage_source="Fixture matrix",
+    vintage_version="2026-09-16",vintage_date_reference=as.Date("2026-08-25"),
+    vintage_date_publication=as.Date("2026-08-26"),stringsAsFactors=FALSE)
+  canonical <- rbind(rows("raccordement_courbe",seq(.1,1,length.out=11),"35238","commune"),
+    rows("raccordement_courbe",rep(NA_real_,11),"29001","commune"),
+    rows("raccordement_reference",seq(.05,.95,length.out=11),"53","region"))
+  vintages <- data.frame(id="matrice_temps_mairies",source="Fixture matrix",version="2026-09-16",
+    date_reference=as.Date("2026-08-25"),date_publication=as.Date("2026-08-26"))
+  projection <- project_raccordement_owned_series(canonical,vintages,metadata)
+  expect_no_error(validate_owned_series_projection(projection))
+  expect_equal(projection$descriptor$axis_kind,"duration_minute")
+  expect_true(projection$descriptor$active_read_route)
+  rennes <- projection$points[projection$points$territory_id=="35238",]
+  unavailable <- projection$points[projection$points$territory_id=="29001",]
+  expect_equal(rennes$value,seq(.1,1,length.out=11))
+  expect_true(all(unavailable$status=="missing"))
+  expect_true(all(is.na(unavailable$value)))
+  expect_equal(projection$named_reference$value,seq(.05,.95,length.out=11))
+  expect_false("territory_id" %in% names(projection$named_reference))
+  expect_true(all(projection$named_reference$reference_id=="commune_bretonne_mediane"))
+})
