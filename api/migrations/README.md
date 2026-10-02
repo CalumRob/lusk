@@ -124,3 +124,16 @@ Back up profile tables/marker before a live operation; rollback after publishing
 one-axis data requires restoring that backup and the prior API, not dropping
 columns over newly published coordinates. No live application is authorized by
 the implementation PR.
+
+# Migration 015 — owned duration series and named analytical references
+
+Migration 015 adds an explicitly producer-declared active indicator route, a
+numeric duration axis paired with ordered public detail keys, and a typed named
+reference family under the existing owned-series publication marker. Named
+reference points have no territory foreign key and reuse immutable series
+provenance revisions. The row-count marker includes territorial and named
+reference facts. Existing owned descriptors default to an inactive route and
+remain available through their explicit dataset URLs. Fresh installs carry the
+same schema in `schema.sql`. The guarded integration test exercises migration
+015 over a populated pre-015 schema as well as the fresh schema; it does not
+apply the migration to a serving database.

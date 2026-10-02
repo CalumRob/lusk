@@ -298,6 +298,37 @@
     "raccordement_courbe": false,
     "raccordement_reference": false
   },
+  "owned_series_routes": {
+    "raccordement_courbe": {
+      "dataset_id": "raccordement_courbe",
+      "indicator_id": "raccordement_courbe",
+      "theme_id": "mobilite",
+      "active_read_route": true,
+      "axis_kind": "duration_minute",
+      "axis_values": ["0", "15", "30", "45", "60", "90", "120", "180", "240", "300", "360"],
+      "reference_indicator": "raccordement_reference",
+      "reference_read_route": true,
+      "comparison_contract": {
+        "statistic": "median",
+        "scope": "default_group"
+      },
+      "observation_period_contract": {
+        "kind": "snapshot_date",
+        "source": "raccordement_recipe_date_mesure"
+      },
+      "reference": {
+        "id": "commune_bretonne_mediane",
+        "label": "Commune bretonne médiane",
+        "role": "analytical_reference",
+        "statistic": "median_routed_communes"
+      },
+      "reference_id": "commune_bretonne_mediane",
+      "reference_label": "Commune bretonne médiane",
+      "reference_role": "analytical_reference",
+      "reference_statistic": "median_routed_communes",
+      "source_id": "matrice_temps_mairies"
+    }
+  },
   "indicator_pages": {
     "voitures_menage": { "indicator": "voitures_menage", "label": "Voitures par ménage", "definition": "Répartition des ménages selon le nombre de voitures possédées.", "unit": "%", "calculation": "Parts publiées par le pipeline.", "direction": "high", "caveats": "Les catégories décrivent les ménages recensés.", "levels": ["commune", "epci", "departement"], "sources": ["rp_logement_princ"], "family": "composition", "composition": { "parts": ["sans_voiture", "une_voiture", "deux_plus"] }, "comparison": { "details": ["sans_voiture", "une_voiture", "deux_plus"], "detail": "sans_voiture", "unit": "%", "labels": { "sans_voiture": "Ménages sans voiture", "une_voiture": "Ménages avec 1 voiture", "deux_plus": "Ménages avec 2 voitures ou plus" } } },
     "offre_cyclable": { "indicator": "offre_cyclable", "label": "L’offre cyclable", "definition": "Répartition de l’offre cyclable entre aménagements protégés et partagés.", "unit": "km", "calculation": "Longueurs publiées par le pipeline.", "direction": "high", "caveats": "La longueur dépend de la couverture du réseau publié.", "levels": ["commune", "epci", "departement"], "sources": ["osm_reseaux"], "family": "composition", "composition": { "parts": ["protege_longueur", "partage_longueur"] }, "comparison": { "details": ["protege_longueur", "protege_km_1000", "partage_longueur", "partage_km_1000", "total_longueur"], "detail": "total_longueur", "unit": "km", "labels": { "protege_longueur": "Longueur protégée", "protege_km_1000": "Protégé par habitant", "partage_longueur": "Longueur partagée", "partage_km_1000": "Partagé par habitant", "total_longueur": "Longueur totale" } } },
