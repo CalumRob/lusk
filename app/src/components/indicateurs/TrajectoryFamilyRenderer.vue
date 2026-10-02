@@ -86,7 +86,7 @@ const ariaDescription = computed(() => {
 })
 </script>
 <template>
-  <figure class="family-renderer trajectory-renderer" data-renderer="trajectory" :data-state="dispatch.status" aria-label="Repères de trajectoire">
+  <figure class="family-renderer trajectory-renderer editorial-figure" data-renderer="trajectory" :data-state="dispatch.status" aria-label="Repères de trajectoire">
     <svg v-if="modele && modele.etapes.length" viewBox="0 0 600 160" role="img" :aria-label="ariaDescription">
       <title>Trajectoire complète</title>
       <desc>{{ ariaDescription }}</desc>
@@ -94,15 +94,15 @@ const ariaDescription = computed(() => {
         <line v-for="tick in ticksY" :key="`grid-${tick.label}`" :x1="X_GAUCHE" :x2="X_DROITE" :y1="yDe(tick.value)" :y2="yDe(tick.value)" />
       </g>
       <g class="trajectoire-axes" aria-hidden="true">
-        <text class="trajectoire-axe-y-label" :x="X_GAUCHE" y="14">{{ axisLabels.y }}</text>
-        <text v-for="tick in ticksY" :key="`y-label-${tick.label}`" class="trajectoire-axe-y-tick" :x="X_GAUCHE - 8" :y="yDe(tick.value) + 4" text-anchor="end">{{ tick.label }}</text>
+        <text class="trajectoire-axe-y-label" data-editorial-label :x="X_GAUCHE" y="14">{{ axisLabels.y }}</text>
+        <text v-for="tick in ticksY" :key="`y-label-${tick.label}`" class="trajectoire-axe-y-tick" data-editorial-value :x="X_GAUCHE - 8" :y="yDe(tick.value) + 4" text-anchor="end">{{ tick.label }}</text>
         <line class="trajectoire-axe-vertical" :x1="X_GAUCHE" :x2="X_GAUCHE" :y1="Y_HAUT" :y2="Y_BAS" />
         <line class="trajectoire-axe-base" :x1="X_GAUCHE" :x2="X_DROITE" :y1="Y_BAS" :y2="Y_BAS" />
         <g v-for="tick in ticks" :key="tick.detail" class="trajectoire-tick" :class="{ 'trajectoire-tick--wide': tick.mobile === false }" :data-detail="tick.detail">
           <line class="trajectoire-tick-marque" :x1="xDuDetail(tick.detail) ?? 0" :x2="xDuDetail(tick.detail) ?? 0" :y1="Y_BAS" :y2="Y_BAS + 5" />
-          <text class="trajectoire-axe-x-tick" :x="xDuDetail(tick.detail) ?? 0" y="130" text-anchor="middle">{{ tick.label }}</text>
+          <text class="trajectoire-axe-x-tick" data-editorial-label :x="xDuDetail(tick.detail) ?? 0" y="130" text-anchor="middle">{{ tick.label }}</text>
         </g>
-        <text class="trajectoire-axe-x-label" :x="(X_GAUCHE + X_DROITE) / 2" y="151" text-anchor="middle">{{ axisLabels.x }}</text>
+        <text class="trajectoire-axe-x-label" data-editorial-label :x="(X_GAUCHE + X_DROITE) / 2" y="151" text-anchor="middle">{{ axisLabels.x }}</text>
       </g>
       <g v-for="etape in modele.etapes" :key="etape.detail" :data-etape="etape.detail" :data-etat="etape.mediane === null ? 'sans-valeur' : 'valeurs'">
         <line v-if="etape.min !== null && etape.max !== null" class="trajectoire-etalement" :x1="xDe(etape.x)" :x2="xDe(etape.x)" :y1="yDe(etape.max)" :y2="yDe(etape.min)" /><circle v-if="etape.mediane !== null" class="trajectoire-mediane-point" :cx="xDe(etape.x)" :cy="yDe(etape.mediane)" r="4"><title>{{ `${etape.label} · médiane ${formaterValeur({ value: etape.mediane, unit: dispatch.facet.unit })} ${dispatch.facet.unit}` }}</title></circle>
@@ -124,7 +124,7 @@ const ariaDescription = computed(() => {
       </span>
     </div>
     <p v-if="marqueur" class="visually-hidden">Repère : {{ marqueur.label }} à {{ marqueur.detailLabel }}.</p>
-    <figcaption>Détail (actif) : {{ libelleActif }} · le détail pilote la carte, les extrêmes et le tableau ; le chemin complet reste visible.<span v-if="modele?.referenceLabel"> · Référence : {{ modele.referenceLabel }}</span><span v-if="sansValeur.length"> · {{ sansValeur.map((etape) => etape.label).join(', ') }} : aucune valeur à ce niveau.</span></figcaption>
+     <figcaption class="editorial-provenance">Détail (actif) : {{ libelleActif }} · le détail pilote la carte, les extrêmes et le tableau ; le chemin complet reste visible.<span v-if="modele?.referenceLabel"> · Référence : {{ modele.referenceLabel }}</span><span v-if="sansValeur.length"> · {{ sansValeur.map((etape) => etape.label).join(', ') }} : aucune valeur à ce niveau.</span></figcaption>
     <slot :dispatch="dispatch" />
   </figure>
 </template>
@@ -133,9 +133,7 @@ const ariaDescription = computed(() => {
   box-sizing: border-box;
   margin: 0;
   padding: var(--space-2) 0 0;
-  background: var(--surface-primary);
-  border: 1px solid var(--border-default);
-  border-radius: 12px;
+  background: transparent;
 }
 
 .trajectory-renderer svg {
@@ -158,14 +156,14 @@ const ariaDescription = computed(() => {
 
 .trajectory-renderer text {
   font-size: 12px;
-  fill: var(--text-secondary);
+  fill: var(--editorial-muted);
 }
 
 .trajectoire-axe-y-label,
 .trajectoire-axe-y-tick,
 .trajectoire-axe-x-tick,
 .trajectoire-axe-x-label {
-  fill: var(--text-secondary);
+  fill: var(--editorial-muted);
 }
 
 .trajectoire-axe-y-label,
@@ -217,8 +215,8 @@ const ariaDescription = computed(() => {
   flex-wrap: wrap;
   gap: var(--space-2) var(--space-4);
   margin: 0 0 var(--space-1);
-  color: var(--text-secondary);
-  font-size: 12px;
+  color: var(--editorial-muted);
+  font: var(--text-caption);
 }
 
 .trajectoire-legende-item {
@@ -248,7 +246,7 @@ const ariaDescription = computed(() => {
 
 .trajectory-renderer figcaption {
   margin-top: var(--space-1);
-  color: var(--text-secondary);
+  color: var(--editorial-muted);
 }
 
 .trajectory-renderer .visually-hidden {
