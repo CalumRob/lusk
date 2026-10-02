@@ -176,6 +176,26 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env,
             assert named_scalar.json()['value'] == 0.3
             assert '29002' not in named_scalar.text
             assert named_scalar.json()['indicator_id'] == 'part_passoires'
+            counts.update(connections=0, transactions=0)
+            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(CountedPool())
+            scalar_comparison = client.post(
+                '/api/territories/commune/29001/indicators/part_passoires/comparison')
+            assert scalar_comparison.status_code == 200, scalar_comparison.text
+            assert counts == {"connections": 1, "transactions": 1}
+            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+            assert scalar_comparison.json()['result']['median'] == 0.2
+            assert scalar_comparison.json()['result']['unit'] == '%'
+            assert scalar_comparison.json()['result']['comparison_sources'][0]['source_id'] == 'dpe'
+            counts.update(connections=0, transactions=0)
+            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(CountedPool())
+            profile_comparison = client.post(
+                '/api/territories/commune/29001/indicators/distribution_dpe/comparison',
+                json={'selection': [{'territory_type':'commune','territory_id':'29002'}]})
+            assert profile_comparison.status_code == 200, profile_comparison.text
+            assert counts == {"connections": 1, "transactions": 1}
+            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+            assert profile_comparison.json()['result']['source_facet_indicator_id'] == 'part_passoires'
+            assert profile_comparison.json()['result']['required_scalar_version'] == 'scalar-v1'
             comparison_url = '/api/territories/commune/29001/themes/comparison'
             selection = {'theme_id': 'habitat', 'selection': [{'territory_type': 'commune', 'territory_id': '29002'}]}
             compared = client.post(comparison_url, json=selection)
@@ -206,11 +226,13 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env,
             assert client.get(url).status_code == 503
             assert client.get('/api/territories/commune/29001/profiles/distribution_dpe').status_code == 503
             assert client.post(comparison_url, json=selection).status_code == 503
+            assert client.post('/api/territories/commune/29001/indicators/distribution_dpe/comparison').status_code == 503
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as conn:
                 conn.execute("UPDATE table_publication SET content_version='scalar-v1' WHERE table_name='scalar_observation'")
                 conn.execute("DELETE FROM profile_observation_source WHERE territory_id='29001' AND detail_key='A'")
             assert client.get(url).status_code == 503
             assert client.get('/api/territories/commune/29001/profiles/distribution_dpe').status_code == 503
+            assert client.post('/api/territories/commune/29001/indicators/distribution_dpe/comparison').status_code == 503
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as conn:
                 conn.execute("INSERT INTO profile_observation_source VALUES ('distribution_dpe','29001','A','','dpe','v1')")
                 conn.execute("DELETE FROM profile_observation WHERE territory_id='29001' AND detail_key='G'")

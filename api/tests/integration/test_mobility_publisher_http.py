@@ -161,6 +161,19 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             assert all(row["focal_in_selection"] is False and row["rank"] is None
                        for row in outside.json()["profile_comparisons"])
             assert outside.json()["scope"]["member_count"] == 1
+            for indicator, detail in comparison_details.items():
+                named = client.post(
+                    f"/api/territories/commune/{territory}/indicators/{indicator}/comparison")
+                assert named.status_code == 200, named.text
+                result = named.json()["result"]
+                focal_cell = next(cell for cell in profiles[indicator]["cells"] if cell["detail"] == detail)
+                assert named.json()["indicator_id"] == indicator
+                assert result["source_facet"] == {"detail": detail, "sex": None}
+                assert result["unit"] == focal_cell["unit"]
+                assert result["denominator_semantics"] == profiles[indicator]["denominator_semantics"]
+                assert result["median"] == focal_cell["value"]
+                assert named.json()["profile_content_version"] == sql_marker
+                assert "profile_comparisons" not in named.json() and "cells" not in result
             http_cells = {(indicator, cell["detail"], cell["sex"] or ""): (cell["value"], cell["status"])
                           for indicator, profile in profiles.items() if indicator in expected_counts
                           for cell in profile["cells"]}
@@ -181,6 +194,70 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             assert client.get(f"/api/territories/commune/{territory}/profiles/structure_age").status_code == 200
             habitat = client.get(f"/api/territories/commune/{territory}/themes/habitat/facts")
             assert habitat.status_code == 200, habitat.text
+            named_scalar_comparison = client.post(
+                f"/api/territories/commune/{territory}/indicators/part_passoires/comparison")
+            assert named_scalar_comparison.status_code == 200, named_scalar_comparison.text
+            named_scalar_result = named_scalar_comparison.json()["result"]
+            assert named_scalar_result["indicator_id"] == "part_passoires"
+            assert named_scalar_result["source_facet"] == "part_passoires"
+            assert named_scalar_result["median"] == .5
+            assert named_scalar_result["unit"] == "%"
+            assert named_scalar_result["rank"] == 1
+            assert {source["source_id"] for source in named_scalar_result["comparison_sources"]} == {"dpe_22"}
+            assert "results" not in named_scalar_comparison.json()
+            assert "profiles" not in named_scalar_comparison.json() and "facts" not in named_scalar_comparison.json()
+            named_scalar_empty = client.post(
+                f"/api/territories/commune/{territory}/indicators/part_passoires/comparison",
+                json={"selection": []})
+            assert named_scalar_empty.status_code == 200, named_scalar_empty.text
+            assert named_scalar_empty.json()["scope"]["member_count"] == 0
+            assert named_scalar_empty.json()["result"]["median"] is None
+            assert named_scalar_empty.json()["result"]["status"] == "unavailable"
+            outside_scalar = client.post(
+                f"/api/territories/commune/{territory}/indicators/part_passoires/comparison",
+                json={"selection": [{"territory_type": "commune", "territory_id": outside_id}]})
+            assert outside_scalar.status_code == 200, outside_scalar.text
+            assert outside_scalar.json()["result"]["focal_in_selection"] is False
+            assert outside_scalar.json()["result"]["rank"] is None
+
+            named_detail = client.post(
+                f"/api/territories/commune/{territory}/indicators/offre_cyclable/comparison",
+                json={"selection": [{"territory_type": "epci", "territory_id": "E_TEST"},
+                                    {"territory_type": "commune", "territory_id": territory}]})
+            assert named_detail.status_code == 200, named_detail.text
+            detail_result = named_detail.json()["result"]
+            assert named_detail.json()["indicator_id"] == "offre_cyclable"
+            assert named_detail.json()["shape"] == "profile"
+            assert detail_result["source_facet"] == {"detail": "total_longueur", "sex": None}
+            assert detail_result["unit"] == "km"
+            assert detail_result["denominator_semantics"] == profiles["offre_cyclable"]["denominator_semantics"]
+            assert detail_result["median"] == .5
+            assert {source["source_id"] for source in detail_result["comparison_sources"]} == {"osm_reseaux"}
+            assert "cells" not in detail_result and "profiles" not in named_detail.json()
+
+            named_dpe = client.post(
+                f"/api/territories/commune/{territory}/indicators/distribution_dpe/comparison")
+            assert named_dpe.status_code == 200, named_dpe.text
+            dpe_result = named_dpe.json()["result"]
+            assert named_dpe.json()["indicator_id"] == "distribution_dpe"
+            assert dpe_result["source_facet"] == "part_passoires"
+            assert dpe_result["source_facet_indicator_id"] == "part_passoires"
+            assert dpe_result["source_facet_label"] == "Passoires"
+            assert dpe_result["median"] == .5
+            assert dpe_result["required_scalar_version"] == "dpe-scalar-fixture-v1"
+            assert named_dpe.json()["scalar_content_version"] == "dpe-scalar-fixture-v1"
+            assert {source["source_id"] for source in dpe_result["comparison_sources"]} == {"dpe_22"}
+            assert "results" not in named_dpe.json() and "cells" not in dpe_result
+            named_dpe_outside = client.post(
+                f"/api/territories/commune/{territory}/indicators/distribution_dpe/comparison",
+                json={"selection": [{"territory_type": "commune", "territory_id": outside_id}]})
+            assert named_dpe_outside.status_code == 200, named_dpe_outside.text
+            assert named_dpe_outside.json()["result"]["focal_in_selection"] is False
+            assert named_dpe_outside.json()["result"]["rank"] is None
+            assert client.post(
+                f"/api/territories/commune/{territory}/indicators/no_such_indicator/comparison").status_code == 404
+            assert client.post(
+                f"/api/territories/epci/{territory}/indicators/offre_cyclable/comparison").status_code == 422
             dpe_facet = next(row for row in habitat.json()["default_comparison"]["profile_comparisons"]
                              if row["indicator"] == "distribution_dpe")
             assert dpe_facet["facet"] == "part_passoires"

@@ -23,6 +23,16 @@ read-surface contract for the incremental scalar/profile work under #627 and
   It does not include focal fact/profile-cell blobs or per-peer profile arrays.
   The JSON body includes matching `theme_id` and an optional typed `selection`
   array of `{territory_type, territory_id}`.
+- `POST /api/territories/{type}/{id}/indicators/{indicator}/comparison` accepts
+  the same optional typed `selection`, without requiring the caller to know the
+  indicator's theme or storage shape. Omitted body/selection uses the default;
+  `selection: []` is empty. It resolves the published scalar, profile, or
+  legacy-series descriptor and returns one compact result for only that
+  indicator. Profile results identify their producer-declared `source_facet`;
+  an external-scalar profile also names `source_facet_indicator_id` and its
+  checked scalar publication version. A series without a declared comparable
+  point returns typed `unsupported_comparison_contract` rather than an inferred
+  statistic.
 - The older `/profiles/{indicator}` and `/themes/comparison` routes remain
   compatibility paths with their existing response shapes.
 
@@ -75,6 +85,24 @@ Example (abbreviated comparison-only response):
   "profile_comparisons": [{"indicator": "distribution_dpe",
     "facet": "part_passoires", "unit": "%", "statistic": "median",
     "eligible_count": 40, "median": 0.23, "rank": 12}]
+}
+```
+
+The indicator-scoped form wraps exactly one result and keeps theme completeness
+false, for example:
+
+```json
+{
+  "contract": "indicator-comparison-v1",
+  "complete_theme": false,
+  "indicator_id": "offre_cyclable",
+  "shape": "profile",
+  "scope": {"kind": "density_class", "density_class_code": "D1",
+            "territory_type": "commune", "member_count": 42},
+  "result": {"indicator_id": "offre_cyclable",
+    "source_facet": {"detail": "total_longueur", "sex": null},
+    "unit": "km", "denominator_semantics": "<published-denominator-semantics>",
+    "statistic": "median", "eligible_count": 40, "median": 12.4}
 }
 ```
 

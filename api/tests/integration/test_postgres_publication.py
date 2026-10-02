@@ -709,11 +709,13 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             publisher.execute(schema_path.read_text(encoding="utf-8"))
             publisher.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
             publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
-            publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id) VALUES ('59701','commune','Series focal','22','e1'),('59702','commune','Series peer','22','e1'),('59703','commune','Series tie','22','e2'),('53','region','Series region',NULL,NULL)")
+            publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label) VALUES ('59701','commune','Series focal','22','e1','D1','Dense'),('59702','commune','Series peer','22','e1','D1','Dense'),('59703','commune','Series tie','22','e2','D1','Dense'),('53','region','Series region',NULL,NULL,NULL,NULL)")
             publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('series_fixture','Series fixture')")
             publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('series_fixture','v1','2026-01','2025-01-01','2026-02-01')")
             publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
                 VALUES ('fixture_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune','region'],'Fixture annual','ha','low','series_fixture','v1','d1')""")
+            publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('fixture_unranked','year',ARRAY['2024'],'may_be_missing',NULL,ARRAY['commune'],'Unranked series','ha','none','series_fixture','v1','d1')""")
             publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
                 ('fixture_annual','59701','commune','2022','2022',0,'measured','series_fixture','v1'),
                 ('fixture_annual','59701','commune','2024','2024',2,'measured','series_fixture','v1'),
@@ -745,6 +747,11 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
                 invalid_department = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&department_id=99')
                 invalid_epci = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=missing')
                 mismatched_epci = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e2')
+                named_comparison = client.post('/api/territories/commune/59701/indicators/fixture_annual/comparison')
+                named_empty = client.post('/api/territories/commune/59701/indicators/fixture_annual/comparison', json={'selection': []})
+                named_outside = client.post('/api/territories/commune/59701/indicators/fixture_annual/comparison',
+                    json={'selection': [{'territory_type': 'commune', 'territory_id': '59702'}]})
+                named_unsupported = client.post('/api/territories/commune/59701/indicators/fixture_unranked/comparison')
             assert response.status_code == 200, response.text
             body = response.json()
             assert [point['axis'] for point in body['points']] == ['2022', '2023', '2024']
@@ -768,6 +775,25 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             assert invalid_department.status_code == 422
             assert invalid_epci.status_code == 422
             assert mismatched_epci.status_code == 422
+            assert named_comparison.status_code == 200, named_comparison.text
+            named_result = named_comparison.json()['result']
+            assert named_comparison.json()['shape'] == 'series'
+            assert named_result['indicator_id'] == 'fixture_annual'
+            assert named_result['facet'] == '2024'
+            assert named_result['median'] == 2
+            assert named_result['rank'] == 2
+            assert named_result['unit'] == 'ha'
+            assert named_result['comparison_sources'][0]['source_id'] == 'series_fixture'
+            assert 'points' not in named_comparison.json() and 'scope_series' not in named_comparison.json()
+            assert named_empty.status_code == 200 and named_empty.json()['result']['median'] is None
+            assert named_empty.json()['scope']['member_count'] == 0
+            assert named_outside.status_code == 200
+            assert named_outside.json()['result']['focal_in_selection'] is False
+            assert named_outside.json()['result']['rank'] is None
+            assert named_unsupported.status_code == 200, named_unsupported.text
+            assert named_unsupported.json()['result']['status'] == 'unavailable'
+            assert named_unsupported.json()['result']['reason'] == 'unsupported_comparison_contract'
+            assert named_unsupported.json()['result']['facet'] is None
         finally:
             if previous is None:
                 main.app.dependency_overrides.pop(main.get_repository, None)
