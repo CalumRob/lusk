@@ -36,6 +36,26 @@ test_that("dense one-axis profiles compare a declared detail without fabricating
   expect_error(validate_declared_profile(facts, bad, axes), "comparison facet")
 })
 
+test_that("closed mobility profile projections preserve all canonical details and per-detail units", {
+  metadata <- lire_theme_metadata("mobilite")
+  details <- unlist(metadata$indicator_pages$offre_cyclable$comparison$details, use.names=FALSE)
+  territories <- data.frame(territoire=c("35238","35238","35238","35238","35238"),
+    type="commune", stringsAsFactors=FALSE)
+  rows <- data.frame(territoire="35238", type="commune", key="offre_cyclable",
+    detail=details, sex=NA_character_, value=c(1,2,3,4,5), unit=unname(unlist(metadata$profile_contracts$offre_cyclable$detail_units)[details]),
+    vintage_source="OpenStreetMap fixture", vintage_version="2026-08", vintage_date_reference="2026-08-05",
+    vintage_date_publication="2026-08-06", stringsAsFactors=FALSE)
+  canonical <- list(indicateurs=rows, territoires=territories)
+  profile <- project_mobility_profile(canonical, metadata, "offre_cyclable")
+  expect_identical(profile$facts$detail, details)
+  expect_identical(profile$axes$unit, c("km", "km / 1 000 hab", "km", "km / 1 000 hab", "km"))
+  expect_equal(profile$facts$value, c(1,2,3,4,5))
+  expect_identical(profile$descriptor$source, "osm_reseaux")
+  expect_match(profile$descriptor$denominator_semantics, "population")
+  rows$unit[2] <- "km"
+  expect_error(project_mobility_profile(list(indicateurs=rows,territoires=territories), metadata, "offre_cyclable"), "undeclared unit")
+})
+
 test_that("structure_age projection uses canonical fixture and descriptor order", {
   metadata <- lire_theme_metadata("demographie")
   canonical <- compute_payload(load_fixture())$indicateurs

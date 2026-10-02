@@ -3,7 +3,8 @@
 validate_declared_profile <- function(facts, descriptor, axes, eligible_territories = NULL) {
   required <- c("territory_id", "territory_type", "detail", "sex", "value", "status")
   if (!is.data.frame(facts) || !setequal(names(facts), required) ||
-      !is.data.frame(axes) || !setequal(names(axes), c("axis_name", "axis_key", "label", "ordinal")))
+      !is.data.frame(axes) || !all(c("axis_name", "axis_key", "label", "ordinal") %in% names(axes)) ||
+      any(!names(axes) %in% c("axis_name", "axis_key", "label", "ordinal", "unit")))
     stop("Profile projection has invalid contract columns", call. = FALSE)
   if (anyNA(facts[c("territory_id", "territory_type", "detail", "sex", "status")]) ||
       any(!facts$territory_type %in% descriptor$levels) || any(!facts$status %in% c("measured", "not_available", "suppressed", "unsupported")) ||
@@ -18,6 +19,8 @@ validate_declared_profile <- function(facts, descriptor, axes, eligible_territor
       !identical(as.integer(sexes$ordinal), seq_along(descriptor$sexes) - 1L) ||
       anyDuplicated(axes[c("axis_name", "axis_key")]) || anyDuplicated(axes[c("axis_name", "ordinal")]))
     stop("Profile axes differ from declared metadata", call. = FALSE)
+  if ("unit" %in% names(details) && (anyNA(details$unit) || any(!nzchar(details$unit))))
+    stop("Profile detail units must be declared", call.=FALSE)
   scalar_facet <- !is.null(descriptor$comparison_scalar)
   if ((!scalar_facet && (length(descriptor$comparison_detail) != 1L || is.na(descriptor$comparison_detail) ||
       !descriptor$comparison_detail %in% details$axis_key ||
@@ -156,6 +159,67 @@ project_dpe_profile <- function(canonical, metadata, scalar_version) {
        datasets=datasets, eligible_territories=eligible)
 }
 
+# Project a closed metadata-declared list/composition profile from canonical
+# indicator rows. No values or source decisions are calculated here.
+project_mobility_profile <- function(canonical, metadata, indicator) {
+  page <- metadata$indicator_pages[[indicator]]
+  contract <- metadata$profile_contracts[[indicator]]
+  rows <- canonical$indicateurs
+  if (is.null(page) || is.null(contract) || is.null(contract$detail_units))
+    stop("Mobility profile contract is incomplete", call.=FALSE)
+  details <- unlist(page$comparison$details, use.names=FALSE)
+  labels <- unlist(metadata$detail_labels[[indicator]], use.names=TRUE)
+  units <- unlist(contract$detail_units, use.names=TRUE)
+  sources <- unlist(page$sources, use.names=FALSE)
+  if (!identical(names(labels), details) || !identical(names(units), details) ||
+      !setequal(names(units), details) || !length(sources))
+    stop("Mobility profile axes, units or source are undeclared", call.=FALSE)
+  rows <- rows[rows$key == indicator & rows$type %in% unlist(page$levels),,drop=FALSE]
+  if (!nrow(rows) || any(!rows$detail %in% details) || any(!is.na(rows$sex)) ||
+      !all(c("vintage_source","vintage_version","vintage_date_reference","vintage_date_publication") %in% names(rows)))
+    stop("Canonical mobility profile rows do not match declared axes or provenance", call.=FALSE)
+  if ("unit" %in% names(rows) && any(rows$unit != unname(units[rows$detail])))
+    stop("Canonical mobility profile contains an undeclared unit", call.=FALSE)
+  facts <- data.frame(territory_id=rows$territoire, territory_type=rows$type,
+    detail=rows$detail, sex="", value=rows$value,
+    status=ifelse(is.na(rows$value), "not_available", "measured"), stringsAsFactors=FALSE)
+  axes <- data.frame(axis_name="detail", axis_key=details, label=unname(labels[details]),
+    ordinal=seq_along(details)-1L, stringsAsFactors=FALSE)
+  axes$unit <- unname(units[details])
+  descriptor <- list(indicator_id=indicator, theme_id=metadata$theme, levels=unlist(page$levels),
+    details=details, sexes=character(), label=page$label, unit=page$unit, source=sources,
+    comparison_detail=page$comparison$detail, comparison_sex=NA_character_,
+    comparison_direction=page$direction, denominator_semantics=contract$denominator_semantics)
+  eligible <- unique(data.frame(territory_id=canonical$territoires$territoire[canonical$territoires$type %in% descriptor$levels],
+    territory_type=canonical$territoires$type[canonical$territoires$type %in% descriptor$levels], stringsAsFactors=FALSE))
+  validate_declared_profile(facts, descriptor, axes, eligible)
+  # Source identity remains metadata-owned; canonical vintage columns supply
+  # the row-level vintage and human-readable dataset identity.
+  records <- metadata$source_records
+  if (is.null(records) || any(!sources %in% names(records))) stop("Mobility source records are incomplete", call.=FALSE)
+  datasets <- do.call(rbind, lapply(sources, function(source) data.frame(source_id=source,
+    name=if (source == sources[[1L]]) rows$vintage_source[[1L]] else records[[source]]$dataset,
+    stringsAsFactors=FALSE)))
+  vintages <- do.call(rbind, lapply(sources, function(source) {
+    if (source == sources[[1L]]) return(unique(data.frame(source_id=source,
+      vintage_id=paste(rows$vintage_version,rows$vintage_date_reference,sep="/"), version=rows$vintage_version,
+      reference_date=as.Date(rows$vintage_date_reference), publication_date=as.Date(rows$vintage_date_publication), stringsAsFactors=FALSE)))
+    declared <- records[[source]]$vintages
+    do.call(rbind, lapply(declared, function(v) data.frame(source_id=source, vintage_id=v$id, version=v$version,
+      reference_date=as.Date(v$dateReference), publication_date=as.Date(v$datePublication), stringsAsFactors=FALSE)))
+  }))
+  if (anyDuplicated(datasets$source_id) || anyNA(vintages)) stop("Mobility source vintage metadata is invalid", call.=FALSE)
+  provenance <- do.call(rbind, lapply(sources, function(source) {
+    vids <- vintages$vintage_id[vintages$source_id == source]
+    do.call(rbind, lapply(vids, function(vintage_id) data.frame(indicator_id=indicator,
+      territory_id=facts$territory_id, detail_key=facts$detail, sex_key=facts$sex,
+      source_id=source, vintage_id=vintage_id, stringsAsFactors=FALSE)))
+  }))
+  descriptor$descriptor_version <- profile_content_version(list(descriptor, axes, contract))
+  list(facts=facts, axes=axes, descriptor=descriptor, provenance=provenance,
+    vintages=vintages, datasets=datasets, eligible_territories=eligible)
+}
+
 profile_content_version <- function(projection) {
   path <- tempfile("profile-version-")
   on.exit(unlink(path), add = TRUE)
@@ -278,16 +342,19 @@ profile_postgres_adapter <- function(con) {
         params=unname(as.list(projection$vintages[i,])))
       d <- projection$descriptor
       levels_sql <- paste(as.character(DBI::dbQuoteString(con, as.character(d$levels))), collapse=",")
-      DBI::dbExecute(con, paste0("INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction,theme_id,comparison_scalar,required_scalar_version) VALUES($1,$2,$3,ARRAY[",
+      DBI::dbExecute(con, paste0("INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction,theme_id,comparison_scalar,required_scalar_version,denominator_semantics) VALUES($1,$2,$3,ARRAY[",
         levels_sql,
-        "]::text[],'dense_complete',$4,$5,$6,$7,$8,$9,$10)"),
+        "]::text[],'dense_complete',$4,$5,$6,$7,$8,$9,$10,$11)"),
         params=list(d$indicator_id, d$label, d$unit, d$descriptor_version,
           d$comparison_detail, d$comparison_sex, d$comparison_direction, d$theme_id,
           if (is.null(d$comparison_scalar)) NA_character_ else d$comparison_scalar,
-          if (is.null(d$required_scalar_version)) NA_character_ else d$required_scalar_version))
+          if (is.null(d$required_scalar_version)) NA_character_ else d$required_scalar_version,
+          if (is.null(d$denominator_semantics)) NA_character_ else d$denominator_semantics))
       for (source_id in d$source) DBI::dbExecute(con,
         "INSERT INTO profile_descriptor_source(indicator_id,source_id) VALUES($1,$2)", params=list(d$indicator_id,source_id))
-      DBI::dbWriteTable(con,"profile_axis",transform(projection$axes,indicator_id=d$indicator_id),append=TRUE,row.names=FALSE)
+      axes <- projection$axes
+      if (!"unit" %in% names(axes)) axes$unit <- NA_character_
+      DBI::dbWriteTable(con,"profile_axis",transform(axes,indicator_id=d$indicator_id),append=TRUE,row.names=FALSE)
       obs <- projection$facts
       names(obs)[names(obs)=="detail"] <- "detail_key"
       names(obs)[names(obs)=="sex"] <- "sex_key"
@@ -318,11 +385,16 @@ publier_structure_age_profile_postgres <- function(payload, metadata) {
 # Explicit complete snapshot; not wired to a live target until publication is
 # authorised. scalar_version is the verified canonical shared scalar token.
 publier_declared_profiles_postgres <- function(demography, demography_metadata,
-    habitat, habitat_metadata, scalar_version, con = NULL) {
+    habitat, habitat_metadata, scalar_version, con = NULL, mobilite = NULL, mobilite_metadata = NULL) {
   owned <- is.null(con)
   if (owned) con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
   if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
   registry <- register_structure_age_profile_publisher(list(), demography_metadata)
-  publish_registered_profile(registry, "structure_age", demography, profile_postgres_adapter(con),
-    additional_projections=list(project_dpe_profile(habitat, habitat_metadata, scalar_version)))
+  additional <- list(project_dpe_profile(habitat, habitat_metadata, scalar_version))
+  if (!is.null(mobilite) || !is.null(mobilite_metadata)) {
+    if (is.null(mobilite) || is.null(mobilite_metadata)) stop("Canonical mobility payload and metadata must be supplied together", call.=FALSE)
+    additional <- c(additional, lapply(c("voitures_menage","reseaux","reseaux_par_habitant","offre_cyclable"),
+      function(id) project_mobility_profile(mobilite, mobilite_metadata, id)))
+  }
+  publish_registered_profile(registry, "structure_age", demography, profile_postgres_adapter(con), additional_projections=additional)
 }

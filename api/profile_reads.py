@@ -4,7 +4,7 @@ from fastapi import HTTPException
 
 def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicator_id=None, include_cells=True):
     descriptors = conn.execute("""SELECT indicator_id,label,unit,allowed_levels,descriptor_version,
-        comparison_detail,comparison_sex,comparison_direction,comparison_scalar,required_scalar_version
+        comparison_detail,comparison_sex,comparison_direction,comparison_scalar,required_scalar_version,denominator_semantics
         FROM profile_descriptor WHERE (%s::text IS NULL OR theme_id=%s)
           AND (%s::text IS NULL OR indicator_id=%s) AND %s=ANY(allowed_levels)
         ORDER BY indicator_id""", (theme_id, theme_id, indicator_id, indicator_id, territory_type)).fetchall()
@@ -33,7 +33,7 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
         return [{'indicator': d[0], 'comparison_scalar': d[8]} for d in descriptors if d[8]], marker[0]
     ids = [d[0] for d in descriptors]
     axes_by_id = {}
-    for row in conn.execute("""SELECT indicator_id,axis_name,axis_key,label,ordinal FROM profile_axis
+    for row in conn.execute("""SELECT indicator_id,axis_name,axis_key,label,ordinal,unit FROM profile_axis
         WHERE indicator_id=ANY(%s) ORDER BY indicator_id,axis_name,ordinal""", (ids,)).fetchall():
         axes_by_id.setdefault(row[0], []).append(row[1:])
     cells_by_id = {}
@@ -65,10 +65,10 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
             raise HTTPException(503, 'Profile publication is incomplete')
         if any(not row[4] for row in rows):
             raise HTTPException(503, 'Profile cell provenance is unavailable')
-        profiles.append({'indicator': d[0], 'label': d[1], 'unit': d[2], 'descriptor_version': d[4],
+        profiles.append({'indicator': d[0], 'label': d[1], 'unit': d[2], 'denominator_semantics': d[10], 'descriptor_version': d[4],
             'content_version': marker[0], 'comparison_scalar': d[8], 'required_scalar_version': d[9],
             'comparison_point': None if d[8] else {'detail': d[5], 'sex': d[6], 'direction': d[7]},
-            'axes': [{'name': name, 'key': key, 'label': label, 'order': order} for name,key,label,order in axes],
+            'axes': [{'name': name, 'key': key, 'label': label, 'order': order, 'unit': unit} for name,key,label,order,unit in axes],
             'cells': [{'detail': detail, 'sex': sex or None, 'value': cells[(detail,sex)][2],
                        'status': cells[(detail,sex)][3], 'sources': cells[(detail,sex)][4]} for detail,sex in expected]})
     return profiles, marker[0]
