@@ -196,6 +196,11 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
                             access_scope = service$access_scope,
                             building_contract = service$building_contract,
                             building_sources = service$building_sources)
+    # BPE is a separately constrained evidence family (four classes plus the
+    # registered TYPEQU universe), not a scalar/profile row in the shared
+    # serving table projection. Publish it through its registered owner using
+    # the same explicit operator connection and the canonical output snapshot.
+    publish_bpe_profiles_from_canonical(sortie, connexion_service)
   }
   # Le rapport du run réussi, écrit après la publication — il décrit un run
   # complet. Le diagnostic de couverture (issue #233) y voyage quand le thème

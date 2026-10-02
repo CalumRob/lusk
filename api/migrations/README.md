@@ -1,3 +1,22 @@
+# Migration 016: bounded BPE profile evidence
+
+Migration 016 adds a dedicated, registered `bpe_profile_evidence` publication;
+it does not put BPE class counts into the median-only declared-profile shape.
+The descriptor records the projection version, four-class closed axis, actual
+TYPEQU registry file identity/hash, complete-universe count, and the existing
+`mobilite_snapshot` source/vintage. Facts are dense by territory across the four
+declared classes, partition the registered universe exactly, and carry at most
+one producer-selected exemplar per nonzero class. Zero classes require all
+exemplar fields to be NULL. The publication marker is reference-versioned to
+`territory_reference` and all writes are one publisher transaction. Fresh
+installs carry the same tables and deferred validation trigger in `schema.sql`.
+
+The migration is additive: it preserves current marker rows and adds one
+allow-listed marker. Rehearse it after the current building/profile/series
+schema migrations (including 008 and 015) against both a fresh schema and a
+populated disposable rehearsal schema. Do not apply it to the serving database
+as part of a code change; production rollout remains operator-managed.
+
 # Migration 010: building ramp floating-point correction
 
 The original 008 trigger compared the R-published `double precision` quantile

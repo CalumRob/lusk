@@ -23,6 +23,7 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
     migrations = [api_root / f"migrations/{name}" for name in (
         "004_shared_scalar.sql", "006_declared_profile.sql",
         "007_ordered_series.sql", "008_building_evidence_contract.sql",
+        "016_bpe_profile_evidence.sql",
     )]
     schema = "it_migration_chain_" + uuid.uuid4().hex[:16]
     scoped = _dsn_with_schema(publish_dsn, schema)
@@ -75,6 +76,7 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
                 "WHERE table_name IN ('declared_profile','ordered_series') ORDER BY table_name"
             ).fetchall()
             connection.execute(migrations[3].read_text(encoding="utf-8"))
+            connection.execute(migrations[4].read_text(encoding="utf-8"))
 
             assert connection.execute(
                 "SELECT table_name,content_version,reference_content_version FROM table_publication "
@@ -89,7 +91,8 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
                 WHERE n.nspname=current_schema() AND t.relname='table_publication'
                   AND c.conname='table_publication_table_name_check'
             """).fetchone()[0]
-            for marker in ('declared_profile', 'ordered_series', 'building_ramp', 'building_grid'):
+            for marker in ('declared_profile', 'ordered_series', 'building_ramp', 'building_grid',
+                           'bpe_profile_evidence'):
                 assert marker in check
             with pytest.raises(psycopg.errors.CheckViolation):
                 with connection.transaction():
@@ -113,6 +116,12 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
                 WHERE table_schema=current_schema() AND table_name IN
                   ('building_evidence_descriptor','building_evidence_descriptor_source')
             """).fetchone()[0] == 2
+            assert connection.execute("""
+                SELECT count(*) FROM information_schema.tables
+                WHERE table_schema=current_schema() AND table_name IN
+                  ('bpe_profile_evidence_descriptor','bpe_profile_class_axis',
+                   'bpe_profile_evidence','bpe_profile_evidence_source')
+            """).fetchone()[0] == 4
 
             # Fresh install declares the same allowable publication names and
             # keeps profile/series reference requirements after adding buildings.
