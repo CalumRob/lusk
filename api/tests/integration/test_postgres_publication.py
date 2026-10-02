@@ -520,6 +520,7 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29003','commune','Gamma')")
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('E1','epci','Intercommunalité')")
         connection.execute("UPDATE territory_reference SET epci_id='E1' WHERE territory_id='29002'")
+        connection.execute("UPDATE territory_reference SET density_class_code='D1',density_class_label='Dense' WHERE territory_type='commune' AND territory_id IN ('29001','29002')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture','Fixture source')")
         connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture','v2026','2026')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_secondary','Secondary source')")
@@ -611,6 +612,7 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert cohort_rows[1]["sources"]
         assert cohort_rows[2]["sources"] == []
         assert focal.status_code == 200 and focal.json()["complete_theme"] is False
+        assert focal.json()["default_comparison"]["results"][0]["median"] == 1
         assert [fact["indicator_id"] for fact in focal.json()["facts"]] == ["fixture_scalar"]
         assert empty_comparison.status_code == 200
         assert empty_comparison.json()["selection"] == []
@@ -707,11 +709,13 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             publisher.execute(schema_path.read_text(encoding="utf-8"))
             publisher.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
             publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
-            publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id) VALUES ('59701','commune','Series focal','22','e1'),('59702','commune','Series peer','22','e1'),('59703','commune','Series tie','22','e2'),('53','region','Series region',NULL,NULL)")
+            publisher.execute("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label) VALUES ('59701','commune','Series focal','22','e1','D1','Dense'),('59702','commune','Series peer','22','e1','D1','Dense'),('59703','commune','Series tie','22','e2','D1','Dense'),('53','region','Series region',NULL,NULL,NULL,NULL)")
             publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('series_fixture','Series fixture')")
             publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('series_fixture','v1','2026-01','2025-01-01','2026-02-01')")
             publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
                 VALUES ('fixture_annual','year',ARRAY['2022','2023','2024'],'may_be_missing','2024',ARRAY['commune','region'],'Fixture annual','ha','low','series_fixture','v1','d1')""")
+            publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('fixture_unranked','year',ARRAY['2024'],'may_be_missing',NULL,ARRAY['commune'],'Unranked series','ha','none','series_fixture','v1','d1')""")
             publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
                 ('fixture_annual','59701','commune','2022','2022',0,'measured','series_fixture','v1'),
                 ('fixture_annual','59701','commune','2024','2024',2,'measured','series_fixture','v1'),
@@ -722,13 +726,19 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
                 VALUES ('territory_reference','territory-series-v1',4)
                 ON CONFLICT (table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count""")
             publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-v1',5,'territory-series-v1')")
+            publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('fixture_sparse','year',ARRAY['2024'],'may_be_missing','2024',ARRAY['commune'],'Fixture sparse','ha','low','series_fixture','v1','d1')""")
+            publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
+                ('fixture_sparse','59701','commune','2024','2024',4,'measured','series_fixture','v1'),
+                ('fixture_sparse','59702','commune','2024','2024',NULL,'missing','series_fixture','v1')""")
+            publisher.execute("UPDATE table_publication SET content_version='series-v2',row_count=7 WHERE table_name='ordered_series'")
             with pytest.raises(psycopg.errors.CheckViolation):
                 with publisher.transaction():
                     publisher.execute("UPDATE ordered_series SET value=99 WHERE territory_id='59701' AND axis_value='2024'")
                     publisher.execute("UPDATE table_publication SET content_version='partial' WHERE table_name='ordered_series'")
                     publisher.execute("INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES ('fixture_annual','59701','commune','2023','2023',NULL,'measured','series_fixture','v1')")
             assert publisher.execute("SELECT value FROM ordered_series WHERE territory_id='59701' AND axis_value='2024'").fetchone()[0] == 2
-            assert publisher.execute("SELECT content_version FROM table_publication WHERE table_name='ordered_series'").fetchone()[0] == 'series-v1'
+            assert publisher.execute("SELECT content_version FROM table_publication WHERE table_name='ordered_series'").fetchone()[0] == 'series-v2'
 
         pool = ConnectionPool(conninfo=scoped_read, min_size=0, max_size=2, open=True,
                           kwargs={"autocommit": True})
@@ -743,6 +753,15 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
                 invalid_department = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&department_id=99')
                 invalid_epci = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=missing')
                 mismatched_epci = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e2')
+                named_comparison = client.post('/api/territories/commune/59701/indicators/fixture_annual/comparison')
+                named_empty = client.post('/api/territories/commune/59701/indicators/fixture_annual/comparison', json={'selection': []})
+                named_outside = client.post('/api/territories/commune/59701/indicators/fixture_annual/comparison',
+                    json={'selection': [{'territory_type': 'commune', 'territory_id': '59702'}]})
+                named_unsupported = client.post('/api/territories/commune/59701/indicators/fixture_unranked/comparison')
+                sparse_default = client.post('/api/territories/commune/59701/indicators/fixture_sparse/comparison')
+                sparse_empty = client.post('/api/territories/commune/59701/indicators/fixture_sparse/comparison', json={'selection': []})
+                sparse_singleton = client.post('/api/territories/commune/59701/indicators/fixture_sparse/comparison',
+                    json={'selection': [{'territory_type': 'commune', 'territory_id': '59701'}]})
             assert response.status_code == 200, response.text
             body = response.json()
             assert [point['axis'] for point in body['points']] == ['2022', '2023', '2024']
@@ -766,6 +785,70 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
             assert invalid_department.status_code == 422
             assert invalid_epci.status_code == 422
             assert mismatched_epci.status_code == 422
+            assert named_comparison.status_code == 200, named_comparison.text
+            named_result = named_comparison.json()['result']
+            assert named_comparison.json()['shape'] == 'series'
+            assert named_result['indicator_id'] == 'fixture_annual'
+            assert named_result['facet'] == '2024'
+            assert named_result['median'] == 2
+            assert named_result['rank'] == 2
+            assert named_result['unit'] == 'ha'
+            assert named_result['comparison_sources'][0]['source_id'] == 'series_fixture'
+            assert 'focal_value' not in named_result
+            assert 'points' not in named_comparison.json() and 'scope_series' not in named_comparison.json()
+            assert named_empty.status_code == 200 and named_empty.json()['result']['median'] is None
+            assert named_empty.json()['scope']['member_count'] == 0
+            assert named_outside.status_code == 200
+            assert named_outside.json()['result']['focal_in_selection'] is False
+            assert named_outside.json()['result']['rank'] is None
+            assert named_unsupported.status_code == 200, named_unsupported.text
+            assert named_unsupported.json()['result']['status'] == 'unavailable'
+            assert named_unsupported.json()['result']['reason'] == 'unsupported_comparison_contract'
+            assert named_unsupported.json()['result']['facet'] is None
+            assert sparse_default.status_code == 200, sparse_default.text
+            assert sparse_default.json()['result']['status'] == 'unavailable'
+            assert sparse_default.json()['result']['reason'] == 'fewer_than_two_comparable_values'
+            assert sparse_default.json()['result']['eligible_count'] == 1
+            assert sparse_default.json()['result']['selected_member_count'] == 3
+            assert sparse_default.json()['result']['median'] is None
+            assert sparse_default.json()['result']['rank'] is None
+            assert sparse_default.json()['result']['rank_size'] is None
+            assert sparse_default.json()['result']['rank_ties'] is None
+            assert 'focal_value' not in sparse_default.json()['result']
+            assert sparse_empty.status_code == 200
+            assert sparse_empty.json()['result']['reason'] == 'no_selected_comparable_values'
+            assert sparse_empty.json()['result']['eligible_count'] == 0
+            assert sparse_empty.json()['result']['median'] is None
+            assert sparse_singleton.status_code == 200
+            assert sparse_singleton.json()['result']['reason'] == 'fewer_than_two_comparable_values'
+            assert sparse_singleton.json()['result']['eligible_count'] == 1
+            assert sparse_singleton.json()['result']['rank'] is None
+            with psycopg.connect(scoped_publish, autocommit=True) as publisher:
+                publisher.execute("""UPDATE ordered_series SET value=2,status='measured'
+                    WHERE indicator_id='fixture_sparse' AND territory_id='59702' AND axis_value='2024'""")
+                publisher.execute("UPDATE table_publication SET content_version='series-v3' WHERE table_name='ordered_series'")
+            sparse_two = client.post('/api/territories/commune/59701/indicators/fixture_sparse/comparison')
+            assert sparse_two.status_code == 200, sparse_two.text
+            assert sparse_two.json()['result']['status'] == 'available'
+            assert sparse_two.json()['result']['eligible_count'] == 2
+            assert sparse_two.json()['result']['median'] == 3
+            assert sparse_two.json()['result']['rank'] == 2
+            assert sparse_two.json()['result']['rank_size'] == 2
+            assert sparse_two.json()['result']['rank_ties'] == 1
+            assert 'focal_value' not in sparse_two.json()['result']
+            with psycopg.connect(scoped_publish, autocommit=True) as publisher:
+                publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id)
+                    VALUES ('fixture_sparse','59703','commune','2024','2024',3,'measured','series_fixture','v1')""")
+                publisher.execute("UPDATE table_publication SET content_version='series-v4',row_count=8 WHERE table_name='ordered_series'")
+            sparse_outside = client.post('/api/territories/commune/59701/indicators/fixture_sparse/comparison',
+                json={'selection': [{'territory_type': 'commune', 'territory_id': '59702'},
+                                    {'territory_type': 'commune', 'territory_id': '59703'}]})
+            assert sparse_outside.status_code == 200, sparse_outside.text
+            assert sparse_outside.json()['result']['status'] == 'available'
+            assert sparse_outside.json()['result']['median'] == 2.5
+            assert sparse_outside.json()['result']['focal_in_selection'] is False
+            assert sparse_outside.json()['result']['rank'] is None
+            assert 'focal_value' not in sparse_outside.json()['result']
         finally:
             if previous is None:
                 main.app.dependency_overrides.pop(main.get_repository, None)

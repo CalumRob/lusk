@@ -16,7 +16,8 @@ def test_legacy_null_unit_falls_back_but_required_per_detail_unit_fails_closed(c
 
     territory = "unit-legacy-focal"
     with psycopg.connect(canonical_db_env["publish_dsn"]) as conn:
-        conn.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES (%s,'commune','Focal')", (territory,))
+        conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,
+            density_class_code,density_class_label) VALUES (%s,'commune','Focal','D-UNIT','Unit fixture')""", (territory,))
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','units-ref',1)")
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','units-scalar',0,'units-ref')")
         conn.execute("INSERT INTO source_dataset VALUES ('unit-fixture','Unit fixture')")

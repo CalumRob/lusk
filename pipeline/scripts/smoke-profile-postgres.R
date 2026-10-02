@@ -22,10 +22,14 @@ tryCatch({
   metadata <- jsonlite::fromJSON("inst/extdata/theme-metadata/theme_demographie.json",simplifyVector=FALSE)
   projection <- project_structure_age_profile(payload,metadata)
   territories <- projection$eligible_territories
+  is_commune <- territories$territory_type == "commune"
   reference <- data.frame(territory_id=territories$territory_id,territory_type=territories$territory_type,
-    name=territories$territory_id,department_id=NA_character_,epci_id=NA_character_,
-    density_class_code=NA_character_,density_class_label=NA_character_)
-  # Fixture reference identities need valid type-to-scope values only for this test.
+    name=territories$territory_id,department_id=NA_character_,
+    epci_id=ifelse(is_commune,"E_TEST",NA_character_),
+    density_class_code=ifelse(is_commune,"D_TEST",NA_character_),
+    density_class_label=ifelse(is_commune,"Test density class",NA_character_))
+  # Give all fixture communes a real, published default cohort and whole-EPCI
+  # membership so the serving API exercises its ordinary scope contracts.
   DBI::dbWriteTable(con,"territory_reference",reference,append=TRUE,row.names=FALSE)
   reference_version <- "profile-reference-fixture-v1"
   DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference',$1,$2)",
@@ -123,7 +127,26 @@ tryCatch({
         shQuote(test_file, type="cmd")), stdout="", stderr="")
     }
     assert_http_parity <- function() {
-      status <- run_http_parity(schema, mobility_territories$territoire[[1L]])
+      # Briefly extend the private reference only while serving the HTTP
+      # contract. Restore its exact publisher universe before any subsequent
+      # no-op/retry publication assertion.
+      http_reference_version <- paste0(reference_version,"-http")
+      DBI::dbWithTransaction(con, {
+        DBI::dbExecute(con,"INSERT INTO territory_reference(territory_id,territory_type,name) VALUES('E_TEST','epci','Fixture EPCI')")
+        DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1,row_count=row_count+1 WHERE table_name='territory_reference'",
+          params=list(http_reference_version))
+        DBI::dbExecute(con,"UPDATE table_publication SET reference_content_version=$1 WHERE table_name IN ('scalar_observation','declared_profile')",
+          params=list(http_reference_version))
+      })
+      status <- tryCatch(run_http_parity(schema, mobility_territories$territoire[[1L]]), finally={
+        DBI::dbWithTransaction(con, {
+          DBI::dbExecute(con,"DELETE FROM territory_reference WHERE territory_id='E_TEST' AND territory_type='epci'")
+          DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1,row_count=row_count-1 WHERE table_name='territory_reference'",
+            params=list(reference_version))
+          DBI::dbExecute(con,"UPDATE table_publication SET reference_content_version=$1 WHERE table_name IN ('scalar_observation','declared_profile')",
+            params=list(reference_version))
+        })
+      })
       if (!identical(status, 0L)) stop("Publisher-to-HTTP parity test failed", call.=FALSE)
       cat("Guarded publisher-to-HTTP TestClient parity: PASS\n")
     }
