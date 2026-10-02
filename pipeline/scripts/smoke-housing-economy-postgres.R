@@ -109,6 +109,7 @@ tryCatch({
     expected_core <- expected_rows[names(actual_core)]
     rownames(actual_core) <- rownames(expected_core) <- NULL
     stopifnot(isTRUE(all.equal(actual_core, expected_core, check.attributes=FALSE)),
+      identical(as.numeric(actual$value), as.numeric(expected_rows$value)),
       nrow(actual)==nrow(expected$facts),
       all(actual$source_id == expected$descriptor$source[[1L]]),
       identical(as.character(actual$source_name), expected_rows$source_name),
