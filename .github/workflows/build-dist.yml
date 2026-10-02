@@ -57,22 +57,20 @@ jobs:
 
       - name: Build (vue-tsc + vite → app/dist, payload copié dans dist/data)
         # #596: Pi app release reads the published structure_age profile.
-        # #597: the CONSOENAF Page d'indicateur reads the published ordered series.
-        # #598: OCS-GE states use their independent owned publication and metadata.
-        # State rollback: disable only VITE_OCSGE_STATE_SERIES_API and rebuild.
-        # Series rollback: set VITE_CONSO_ENAF_SERIES_API to '0', rebuild and
-        # manually install the static shell. Leave the structure-age flag enabled.
+        # #597/#598/#627: ENAF, OCS-GE and Habitat annual series share one reader gate.
+        # Legacy VITE_CONSO_ENAF_SERIES_API and VITE_OCSGE_STATE_SERIES_API names
+        # remain accepted by the app for older build configurations. Set this
+        # shared flag to '0' and rebuild to roll the three readers back together.
         # Before installing on the Pi, confirm backup/recovery readiness and
         # preserve the exact pre-cutover shell. Inspect the checkout first:
         # never blindly pull from the timer or overwrite a stale/dirty checkout,
         # operator Compose, or private environment. Restore the saved shell and
-        # rebuild with the series flag off to roll the consumer back. Install
+        # rebuild with the shared series flag off to roll the consumer back. Install
         # shell assets separately from data; retain nginx's data alias for the
         # remaining static consumers.
         env:
-          VITE_CONSO_ENAF_SERIES_API: '1'
+          VITE_OWNED_SERIES_API: '1'
           VITE_STRUCTURE_AGE_PROFILE_API: '1'
-          VITE_OCSGE_STATE_SERIES_API: '1'
         run: npm run build
 
       - name: Commit du dist (skip si inchangé)

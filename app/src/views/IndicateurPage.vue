@@ -23,7 +23,7 @@ import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicat
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
 import { PayloadError, validerThemeMetadata } from '@/payload/validate'
-import { orderedSeriesAdapterFor, orderedSeriesFacts, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
+import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, orderedSeriesReaderEnabled, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
 import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
 import type { Indicateur, ThemeMetadata } from '@/payload/types'
@@ -58,9 +58,7 @@ const orderedSeriesAdapter = computed(() => {
   if (!page) return null
   const datasetId = page?.series_dataset_id
   const publicationMode = page?.series_publication
-  const enabled = publicationMode === 'owned'
-    ? import.meta.env.VITE_OCSGE_STATE_SERIES_API === '1'
-    : import.meta.env.VITE_CONSO_ENAF_SERIES_API === '1'
+  const enabled = orderedSeriesReaderEnabled(indicator.value, import.meta.env as Record<string, string | undefined>)
   return enabled ? { ...adapter, datasetId, publicationMode } : null
 })
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
@@ -326,7 +324,7 @@ const payload = computed(() => {
   const apiFacts = serieLecture.value && page
     ? orderedSeriesFacts(serieLecture.value, adapter.theme, base.territoires).map((fact) => ({ ...fact, unit: page.unit }))
     : []
-  return { ...base, indicateurs: [...base.indicateurs.filter((fact) => fact.key !== adapter.indicator), ...apiFacts] }
+  return { ...base, indicateurs: mergeOrderedSeriesFacts(base.indicateurs, adapter.indicator, apiFacts) }
 })
 const erreur = computed(() => {
   if (erreurManifesteModeles.value) return erreurManifesteModeles.value

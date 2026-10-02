@@ -31,6 +31,40 @@ test_that("annual series preserves declared gaps and source vintage", {
   expect_equal(comparison$comparable_count, 3L)
 })
 
+test_that("owned prix_m2 projects annual canonical facts with their effective row lineage", {
+  payload <- payload_habitat()
+  metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_habitat.json"), simplifyVector=FALSE)
+  vintages <- vintages_habitat()
+  projection <- project_prix_m2_owned_series(payload$indicateurs, vintages, metadata)
+  raw <- payload$indicateurs[payload$indicateurs$key == "prix_m2" & !is.na(payload$indicateurs$detail) &
+    payload$indicateurs$type %in% c("commune", "epci", "departement"), , drop=FALSE]
+  expect_identical(projection$descriptor$axis_values, as.character(unlist(metadata$indicator_pages$prix_m2$comparison$details)))
+  expect_setequal(projection$points$territory_type, c("commune", "epci", "departement"))
+  for (i in seq_len(nrow(raw))) {
+    fact <- raw[i,]
+    point <- projection$points[projection$points$territory_id == fact$territoire &
+      projection$points$axis_value == as.character(fact$detail),]
+    expect_equal(nrow(point), 1L)
+    expect_equal(point$value, fact$value)
+    expect_identical(point$status, if (is.na(fact$value)) "missing" else "measured")
+    links <- projection$point_provenance[projection$point_provenance$territory_id == fact$territoire &
+      projection$point_provenance$axis_value == as.character(fact$detail),]
+    expect_true(nrow(links) >= 1L)
+    lineage <- projection$provenance[match(links$provenance_revision_id, projection$provenance$provenance_revision_id),]
+    expect_true(all(lineage$source_id == "dvf_2025_dep22"))
+    expect_true(all(lineage$source_version == as.character(fact$vintage_version)))
+  }
+  expect_true(any(projection$points$status == "missing"))
+  expect_true(all(!is.na(projection$points$observation_period)))
+  expect_false(anyNA(projection$points$axis_value))
+  pooled <- payload$indicateurs[payload$indicateurs$key == "prix_m2" & is.na(payload$indicateurs$detail) &
+    payload$indicateurs$territoire == "22001",]
+  expect_equal(nrow(pooled),1L)
+  expect_equal(pooled$value,525)
+  expect_identical(projection$descriptor$dataset_id, metadata$indicator_pages$prix_m2$series_dataset_id)
+  expect_identical(projection$descriptor$comparison_point, "2025")
+})
+
 test_that("owned series publication retries, rebinds and replaces only its dataset", {
   points <- data.frame(dataset_id="enaf", indicator_id="conso_enaf_annuel",
     territory_id="22001", territory_type="commune", axis_value="2024",
@@ -299,26 +333,37 @@ test_that("owned series CLI validates before connecting and enforces explicit pu
 
 test_that("production owned-series reader and check route project both canonical fixture units", {
   payload <- compute_payload(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  habitat <- payload_habitat()
+  habitat_vintages <- vintages_habitat()
+  all_vintages <- unique(rbind(vintages_milieux(), habitat_vintages))
   sortie <- tempfile("owned-series-canonical-"); dir.create(sortie)
   on.exit(unlink(sortie,recursive=TRUE))
   nanoparquet::write_parquet(payload$indicateurs,file.path(sortie,"indicateurs_milieux.parquet"))
   nanoparquet::write_parquet(payload$histoires,file.path(sortie,"histoires_milieux.parquet"))
-  nanoparquet::write_parquet(vintages_milieux(),file.path(sortie,"vintages.parquet"))
+  nanoparquet::write_parquet(habitat$indicateurs,file.path(sortie,"indicateurs_habitat.parquet"))
+  nanoparquet::write_parquet(all_vintages,file.path(sortie,"vintages.parquet"))
   metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
-  projections <- read_owned_series_projections(sortie,metadata_path)
+  habitat_metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_habitat.json")
+  projections <- read_owned_series_projections(sortie,metadata_path,habitat_metadata_path)
   metadata <- jsonlite::read_json(metadata_path,simplifyVector=FALSE)
+  habitat_metadata <- jsonlite::read_json(habitat_metadata_path,simplifyVector=FALSE)
   expect_setequal(vapply(projections,function(p) p$descriptor$dataset_id,character(1)),
     vapply(list(metadata$indicator_pages$conso_enaf_annuel,
-      metadata$indicator_pages$artif_par_habitant),function(p) p$series_dataset_id,character(1)))
+      metadata$indicator_pages$artif_par_habitant, habitat_metadata$indicator_pages$prix_m2),
+      function(p) p$series_dataset_id,character(1)))
   expect_equal(vapply(projections,function(p) nrow(p$points),integer(1)),
-    c(conso_enaf_annuel_owned=196L,artif_par_habitant_owned=28L))
+    c(conso_enaf_annuel_owned=196L,artif_par_habitant_owned=28L,
+      prix_m2_owned=sum(habitat$indicateurs$key=="prix_m2" & !is.na(habitat$indicateurs$detail) &
+        habitat$indicateurs$type %in% c("commune","epci","departement"))))
   producer <- project_conso_enaf_series_from_artifacts(payload$indicateurs,
     vintages_milieux(),metadata)
+  prix_producer <- project_prix_m2_owned_series(habitat$indicateurs,habitat_vintages,habitat_metadata)
   canonical_files <- list(indicateurs=nanoparquet::read_parquet(file.path(sortie,"indicateurs_milieux.parquet")),
     vintages=nanoparquet::read_parquet(file.path(sortie,"vintages.parquet")))
   established <- owned_conso_enaf_projection(canonical_files,metadata)
   expect_identical(scalar_content_version(projections$conso_enaf_annuel_owned),
     scalar_content_version(established))
+  expect_identical(scalar_content_version(projections$prix_m2_owned),scalar_content_version(prix_producer))
   expect_equal(attr(projections,"excluded")$conso_enaf_annuel_owned$region$row_count,
     producer$excluded$region$row_count)
   connect <- function() stop("check route must not connect")

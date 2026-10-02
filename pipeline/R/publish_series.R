@@ -226,6 +226,73 @@ project_artif_m2m3_projection <- function(indicators, histories, vintages, metad
   result
 }
 
+project_prix_m2_owned_series <- function(indicators, vintages, metadata) {
+  page <- metadata$indicator_pages$prix_m2
+  if (is.null(page) || is.null(page$series_dataset_id) || page$series_publication != "owned")
+    stop("prix_m2 owned-series identity is missing from metadata", call.=FALSE)
+  axis <- as.character(unlist(page$comparison$details, use.names=FALSE))
+  levels <- as.character(unlist(page$levels, use.names=FALSE))
+  raw_all <- indicators[!is.na(indicators$key) & indicators$key == "prix_m2", , drop=FALSE]
+  raw <- raw_all[!is.na(raw_all$detail) & raw_all$type %in% levels, , drop=FALSE]
+  if (!nrow(raw) || !all(c("territoire", "type", "detail", "value", "vintage_source", "vintage_version",
+      "vintage_date_reference", "vintage_date_publication") %in% names(raw)))
+    stop("Canonical prix_m2 annual facts or lineage fields are missing", call.=FALSE)
+  if (any(!as.character(raw$detail) %in% axis) || anyNA(raw[c("territoire", "type", "detail", "vintage_version",
+      "vintage_date_publication")]) || anyDuplicated(raw[c("territoire", "type", "detail")]))
+    stop("Canonical prix_m2 annual facts have invalid axes or duplicate keys", call.=FALSE)
+  if (!is.data.frame(vintages) || !all(c("id", "source", "version", "date_reference", "date_publication") %in% names(vintages)))
+    stop("Canonical Habitat vintages are incomplete", call.=FALSE)
+  source_default <- as.character(unlist(page$sources, use.names=FALSE))
+  if (!length(source_default) || anyNA(source_default) || any(!nzchar(source_default)))
+    stop("prix_m2 source metadata is incomplete", call.=FALSE)
+  references <- if ("source_reference" %in% names(raw)) as.character(raw$source_reference) else rep(NA_character_, nrow(raw))
+  references[is.na(references) | !nzchar(references)] <- source_default[[1L]]
+  source_records <- metadata$source_records
+  all_vintages <- unlist(lapply(source_records, function(record) record$vintages), recursive=FALSE)
+  declared <- do.call(rbind, lapply(all_vintages, function(v) data.frame(id=as.character(v$id),
+    version=as.character(v$version), reference_date=as.character(v$dateReference),
+    stringsAsFactors=FALSE)))
+  points <- data.frame(dataset_id=page$series_dataset_id, indicator_id="prix_m2",
+    territory_id=as.character(raw$territoire), territory_type=as.character(raw$type),
+    axis_value=as.character(raw$detail), observation_period=as.character(raw$detail), value=raw$value,
+    status=ifelse(is.na(raw$value), "missing", "measured"), stringsAsFactors=FALSE)
+  revisions <- list(); links <- list()
+  for (i in seq_len(nrow(raw))) {
+    source_id <- references[[i]]
+    canonical <- vintages[as.character(vintages$id) == source_id,,drop=FALSE]
+    pinned <- declared[declared$id == source_id,,drop=FALSE]
+    if (nrow(canonical) != 1L || nrow(pinned) != 1L || as.character(canonical$version[[1L]]) != pinned$version[[1L]] ||
+        as.character(canonical$date_reference[[1L]]) != pinned$reference_date[[1L]] ||
+        as.character(canonical$version[[1L]]) != as.character(raw$vintage_version[[i]]) ||
+        as.character(canonical$date_reference[[1L]]) != as.character(raw$vintage_date_reference[[i]]) ||
+        as.character(canonical$date_publication[[1L]]) != as.character(raw$vintage_date_publication[[i]]) ||
+        as.character(canonical$source[[1L]]) != as.character(raw$vintage_source[[i]]))
+      stop("Canonical prix_m2 point lineage differs from its effective source vintage: ", source_id, call.=FALSE)
+    source_record <- source_records[[source_id]]
+    if (is.null(source_record$dataset) || !nzchar(source_record$dataset))
+      stop("prix_m2 source dataset metadata is incomplete: ", source_id, call.=FALSE)
+    hash <- series_revision_hash(source_id, canonical$version[[1L]], canonical$source[[1L]], source_record$dataset,
+      canonical$version[[1L]], canonical$date_reference[[1L]], canonical$date_publication[[1L]])
+    revision_id <- paste0(source_id, "-", canonical$version[[1L]], "-", substr(hash, 1L, 16L))
+    revisions[[revision_id]] <- data.frame(provenance_revision_id=revision_id, source_id=source_id,
+      vintage_id=as.character(canonical$version[[1L]]), source_name=as.character(canonical$source[[1L]]),
+      dataset_name=as.character(source_record$dataset), source_version=as.character(canonical$version[[1L]]),
+      reference_date=as.Date(canonical$date_reference[[1L]]), publication_date=as.Date(canonical$date_publication[[1L]]),
+      revision_hash=hash, stringsAsFactors=FALSE)
+    links[[length(links)+1L]] <- data.frame(dataset_id=page$series_dataset_id, indicator_id="prix_m2",
+      territory_id=as.character(raw$territoire[[i]]), axis_value=as.character(raw$detail[[i]]),
+      provenance_revision_id=revision_id, stringsAsFactors=FALSE)
+  }
+  descriptor <- list(dataset_id=page$series_dataset_id, indicator_id="prix_m2", axis_kind="year", axis_values=axis,
+    completeness="may_be_missing", comparison_point=as.character(page$comparison$detail), label=page$label,
+    unit=page$unit, direction=page$direction, allowed_levels=levels,
+    descriptor_version=as.character(page$descriptor_version %||% "1"))
+  result <- list(dataset_id=page$series_dataset_id, points=points, descriptor=descriptor,
+    provenance=do.call(rbind, revisions), point_provenance=unique(do.call(rbind, links)))
+  validate_owned_series_projection(result)
+  result
+}
+
 series_revision_hash <- function(...) {
   text <- paste(..., collapse="\x1f")
   if (requireNamespace("digest", quietly=TRUE)) digest::digest(text, algo="sha256", serialize=FALSE)
@@ -321,9 +388,20 @@ register_artif_m2m3_owned_publisher <- function(registry, metadata) {
   registry
 }
 
-register_owned_series_publishers <- function(registry, metadata) {
+register_prix_m2_owned_publisher <- function(registry, metadata) {
+  registry <- register_series_publisher(registry,"prix_m2_owned",
+    project=function(canonical) project_prix_m2_owned_series(canonical$habitat$indicateurs,
+      canonical$vintages,metadata),
+    publish=function(projection,db,version) db$replace_dataset(projection,version))
+  registry$prix_m2_owned$owned <- TRUE
+  registry
+}
+
+register_owned_series_publishers <- function(registry, metadata, habitat_metadata=NULL) {
   registry <- register_conso_enaf_owned_publisher(registry,metadata)
-  register_artif_m2m3_owned_publisher(registry,metadata)
+  registry <- register_artif_m2m3_owned_publisher(registry,metadata)
+  if (!is.null(habitat_metadata)) registry <- register_prix_m2_owned_publisher(registry,habitat_metadata)
+  registry
 }
 
 owned_series_postgres_adapter <- function(con) {
@@ -439,19 +517,23 @@ read_conso_enaf_series_projection <- function(sortie = "../public/data",
   })
 }
 
-# Read one fingerprinted snapshot for both registered owned projections. The
-# four canonical inputs and pinned descriptor are the only publication inputs.
+# Read one fingerprinted snapshot for the registered owned projections across
+# Milieux and Habitat. Canonical Parquet and pinned metadata own each projection.
 read_owned_series_projections <- function(sortie="../public/data",
-    metadata_path="inst/extdata/theme-metadata/theme_milieux.json") {
+    metadata_path="inst/extdata/theme-metadata/theme_milieux.json",
+    habitat_metadata_path="inst/extdata/theme-metadata/theme_habitat.json") {
   paths <- c(indicators=file.path(sortie,"indicateurs_milieux.parquet"),
     histories=file.path(sortie,"histoires_milieux.parquet"),
-    vintages=file.path(sortie,"vintages.parquet"), metadata=metadata_path)
+    habitat_indicators=file.path(sortie,"indicateurs_habitat.parquet"),
+    vintages=file.path(sortie,"vintages.parquet"), metadata=metadata_path, habitat_metadata=habitat_metadata_path)
   read_stable_series_artifacts(paths,function(input) {
     canonical <- list(indicateurs=nanoparquet::read_parquet(input[["indicators"]]),
       histoires=nanoparquet::read_parquet(input[["histories"]]),
+      habitat=list(indicateurs=nanoparquet::read_parquet(input[["habitat_indicators"]])),
       vintages=nanoparquet::read_parquet(input[["vintages"]]))
     metadata <- jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE)
-    registry <- register_owned_series_publishers(list(),metadata)
+    habitat_metadata <- jsonlite::read_json(input[["habitat_metadata"]],simplifyVector=FALSE)
+    registry <- register_owned_series_publishers(list(),metadata,habitat_metadata)
     projections <- lapply(registry,function(publisher) publisher$project(canonical))
     lapply(projections,validate_owned_series_projection)
     # Reporting-only exclusion metadata belongs to the reader result, not the
@@ -479,7 +561,7 @@ dispatch_owned_series_cli <- function(mode, projections, connect,
   }
   if (!length(projections) || any(!vapply(projections,function(p) {
     tryCatch({validate_owned_series_projection(p); TRUE},error=function(e) FALSE)
-  },logical(1)))) stop("Both owned series projections must validate before publication",call.=FALSE)
+  },logical(1)))) stop("All owned series projections must validate before publication",call.=FALSE)
   versions <- lapply(projections,scalar_content_version)
   if (mode=="check") return(list(projections=projections,versions=versions))
   connection <- connect()
