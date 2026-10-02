@@ -8,7 +8,7 @@ facts <- nanoparquet::read_parquet(file.path(data_dir, "indicateurs_mobilite.par
 territories <- nanoparquet::read_parquet(file.path(data_dir, "territoires.parquet"))
 vintages <- nanoparquet::read_parquet(file.path(data_dir, "vintages.parquet"))
 metadata <- lire_theme_metadata("mobilite")
-canonical <- list(indicateurs=facts, territoires=territories)
+canonical <- list(indicateurs=facts, territoires=territories, source_vintages=vintages)
 expected_rows <- c(voitures_menage=3801L, reseaux=3801L,
   reseaux_par_habitant=3801L, offre_cyclable=6335L)
 profiles <- lapply(names(expected_rows), function(id) project_mobility_profile(canonical, metadata, id))
@@ -25,6 +25,26 @@ scalar_projection <- project_scalar_canonical_rows(scalar_rows, metadata,
 stopifnot(nrow(scalar_projection$descriptors) == 21L,
   setequal(scalar_projection$descriptors$indicator_id, names(metadata$scalar_contracts)))
 stopifnot(identical(vapply(profiles, function(p) nrow(p$facts), integer(1)), expected_rows))
+for (id in names(profiles)) {
+  profile <- profiles[[id]]
+  expected <- facts[facts$key == id & facts$type %in% unlist(metadata$indicator_pages[[id]]$levels), , drop=FALSE]
+  key <- function(territory, type, detail, sex="") paste(type, territory, detail, ifelse(is.na(sex), "", sex), sep="\r")
+  expected_key <- key(expected$territoire, expected$type, expected$detail, expected$sex)
+  actual_key <- key(profile$facts$territory_id, profile$facts$territory_type, profile$facts$detail, profile$facts$sex)
+  stopifnot(setequal(actual_key, expected_key), !anyDuplicated(actual_key))
+  matched <- match(actual_key, expected_key)
+  stopifnot(isTRUE(all.equal(profile$facts$value, expected$value[matched])),
+    identical(profile$facts$status, ifelse(is.na(expected$value[matched]), "not_available", "measured")),
+    identical(as.character(profile$axes$unit), as.character(unlist(metadata$profile_contracts[[id]]$detail_units, use.names=TRUE)[profile$axes$axis_key])))
+  primary <- as.character(metadata$sources[[id]])
+  dependencies <- if (id == "reseaux_par_habitant") setdiff(as.character(unlist(metadata$indicator_pages[[id]]$sources, use.names=FALSE)), primary) else character()
+  stopifnot(setequal(unique(profile$provenance$source_id), c(primary, dependencies)),
+    nrow(profile$provenance) == nrow(profile$facts) * (1L + length(dependencies)))
+  primary_vintage <- vintages[vintages$id == primary, , drop=FALSE]
+  stopifnot(nrow(primary_vintage) == 1L,
+    all(profile$provenance$vintage_id[profile$provenance$source_id == primary] ==
+      paste(primary_vintage$version, primary_vintage$date_reference, sep="/")))
+}
 rennes <- function(id) {
   p <- profiles[[id]]
   observed <- p$facts[p$facts$territory_id == "35238", c("detail", "value")]

@@ -90,8 +90,27 @@ tryCatch({
       stringsAsFactors=FALSE)))
   }))
   mobility_payload <- list(indicateurs=mobility_rows, territoires=mobility_territories)
+  mobility_vintages <- do.call(rbind, lapply(unique(unlist(lapply(c("voitures_menage","reseaux","reseaux_par_habitant","offre_cyclable"), function(id)
+    unlist(mobility_metadata$indicator_pages[[id]]$sources, use.names=FALSE)))), function(source) {
+      v <- mobility_metadata$source_records[[source]]$vintages[[1L]]
+      data.frame(id=source, source=mobility_metadata$source_records[[source]]$dataset, version=v$version,
+        date_reference=v$dateReference, date_publication=v$datePublication, stringsAsFactors=FALSE)
+    }))
   combined <- publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata)
+    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages)
+  read_user <- Sys.getenv("LUSK_TEST_READ_USER", unset="")
+  read_dsn <- Sys.getenv("LUSK_TEST_READ_DSN", unset="")
+  if (nzchar(read_user) || nzchar(read_dsn)) {
+    stopifnot(nzchar(read_user), nzchar(read_dsn), identical(Sys.getenv("LUSK_TEST_DATABASE_PREFIX"), "lusk_it_"),
+      identical(Sys.getenv("LUSK_TEST_DATABASE_NAME"), config$DATABASE), read_user != config$USER)
+    DBI::dbExecute(con, paste0("GRANT USAGE ON SCHEMA ", DBI::dbQuoteIdentifier(con, schema), " TO ", DBI::dbQuoteIdentifier(con, read_user)))
+    DBI::dbExecute(con, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ", DBI::dbQuoteIdentifier(con, schema), " TO ", DBI::dbQuoteIdentifier(con, read_user)))
+    status <- system2("python", c("-m", "pytest", "-q", "--rootdir=..", "../api/tests/integration/test_mobility_publisher_http.py"),
+      env=c("PYTHONPATH=..", paste0("LUSK_PROFILE_HTTP_SCHEMA=", schema), paste0("LUSK_PROFILE_HTTP_TERRITORY=", mobility_territories$territoire[[1L]])),
+      stdout="", stderr="")
+    if (!identical(status, 0L)) stop("Publisher-to-HTTP parity test failed", call.=FALSE)
+    cat("Guarded publisher-to-HTTP TestClient parity: PASS\n")
+  } else cat("Publisher-to-HTTP TestClient parity: SKIPPED (explicit read-only test DSN/role not configured)\n")
   age_after <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,detail_key,sex_key,value,status FROM profile_observation WHERE indicator_id='structure_age' ORDER BY territory_type,territory_id,detail_key,sex_key")
   stopifnot(combined$changed, identical(age_after,facts_before),
     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_axis WHERE indicator_id='distribution_dpe' AND axis_name='sex'")$n[[1L]]==0,
@@ -101,14 +120,14 @@ tryCatch({
         nrow(mobility_rows[mobility_rows$key==id,,drop=FALSE]), logical(1))),
     DBI::dbGetQuery(con,"SELECT count(*) AS n FROM profile_axis WHERE indicator_id='offre_cyclable' AND axis_name='detail'")$n[[1L]]==5,
     !publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-      con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata)$changed)
+      con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages)$changed)
   combined_marker <- DBI::dbGetQuery(con, "SELECT * FROM table_publication WHERE table_name='declared_profile'")
   age_only <- try(publish_registered_profile(registry,"structure_age",payload,adapter),silent=TRUE)
   stopifnot(inherits(age_only,"try-error"),
     identical(combined_marker,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='declared_profile'")))
   DBI::dbExecute(con, "UPDATE table_publication SET content_version='stale-scalar' WHERE table_name='scalar_observation'")
   stale <- try(publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata),silent=TRUE)
+    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages),silent=TRUE)
   stopifnot(inherits(stale,"try-error"),
     identical(combined_marker,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='declared_profile'")))
   cat("DPE complete-snapshot entrypoint, structure-age preservation, no fake axis, retry and scalar pin: PASS\n")

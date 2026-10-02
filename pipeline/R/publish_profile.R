@@ -19,7 +19,7 @@ validate_declared_profile <- function(facts, descriptor, axes, eligible_territor
       !identical(as.integer(sexes$ordinal), seq_along(descriptor$sexes) - 1L) ||
       anyDuplicated(axes[c("axis_name", "axis_key")]) || anyDuplicated(axes[c("axis_name", "ordinal")]))
     stop("Profile axes differ from declared metadata", call. = FALSE)
-  if ("unit" %in% names(details) && (anyNA(details$unit) || any(!nzchar(details$unit))))
+  if (!"unit" %in% names(details) || anyNA(details$unit) || any(!nzchar(details$unit)))
     stop("Profile detail units must be declared", call.=FALSE)
   scalar_facet <- !is.null(descriptor$comparison_scalar)
   if ((!scalar_facet && (length(descriptor$comparison_detail) != 1L || is.na(descriptor$comparison_detail) ||
@@ -70,8 +70,8 @@ project_structure_age_profile <- function(indicateurs, metadata, territoires = N
   labels <- unlist(metadata$detail_labels$structure_age, use.names = TRUE)
   if (!setequal(names(labels), details)) stop("structure_age detail labels mismatch", call. = FALSE)
   axes <- rbind(
-    data.frame(axis_name = "detail", axis_key = details, label = unname(labels[details]), ordinal = seq_along(details) - 1L),
-    data.frame(axis_name = "sex", axis_key = sexes, label = sexes, ordinal = seq_along(sexes) - 1L)
+    data.frame(axis_name = "detail", axis_key = details, label = unname(labels[details]), ordinal = seq_along(details) - 1L, unit=page$unit),
+    data.frame(axis_name = "sex", axis_key = sexes, label = sexes, ordinal = seq_along(sexes) - 1L, unit=page$unit)
   )
   facts <- indicateurs[indicateurs$key == "structure_age" & indicateurs$type %in% unlist(page$levels), , drop = FALSE]
   projected <- data.frame(territory_id = facts$territoire, territory_type = facts$type,
@@ -86,7 +86,7 @@ project_structure_age_profile <- function(indicateurs, metadata, territoires = N
     label = page$label, unit = page$unit, source = unlist(page$sources),
     comparison_detail = page$comparison$detail,
     comparison_sex = page$comparison$sex,
-    comparison_direction = page$direction)
+    comparison_direction = page$direction, completeness = "dense_complete")
   eligible <- NULL
   if (!is.null(territoires)) eligible <- unique(data.frame(
     territory_id = territoires$territoire[territoires$type %in% descriptor$levels],
@@ -139,11 +139,12 @@ project_dpe_profile <- function(canonical, metadata, scalar_version) {
   status[!is.na(support) & support == 0] <- policy$zero_support_status
   facts <- data.frame(territory_id=rows$territoire, territory_type=rows$type, detail=rows$detail,
     sex="", value=rows$value, status=status, stringsAsFactors=FALSE)
-  axes <- data.frame(axis_name="detail", axis_key=details, label=unname(labels[details]), ordinal=seq_along(details)-1L)
+  axes <- data.frame(axis_name="detail", axis_key=details, label=unname(labels[details]), ordinal=seq_along(details)-1L, unit=page$unit)
   descriptor <- list(indicator_id=page$indicator, theme_id=metadata$theme, levels=unlist(page$levels),
     details=details, sexes=character(), label=page$label, unit=page$unit, source=source_ids,
     comparison_detail=NA_character_, comparison_sex=NA_character_, comparison_direction=page$comparison$direction,
-    comparison_scalar=page$comparison$indicator, required_scalar_version=scalar_version)
+    comparison_scalar=page$comparison$indicator, required_scalar_version=scalar_version,
+    completeness=policy$completeness)
   eligible <- unique(data.frame(territory_id=territories$territoire[territories$type %in% descriptor$levels],
     territory_type=territories$type[territories$type %in% descriptor$levels], stringsAsFactors=FALSE))
   validate_declared_profile(facts, descriptor, axes, eligible)
@@ -161,11 +162,14 @@ project_dpe_profile <- function(canonical, metadata, scalar_version) {
 
 # Project a closed metadata-declared list/composition profile from canonical
 # indicator rows. No values or source decisions are calculated here.
-project_mobility_profile <- function(canonical, metadata, indicator) {
+project_mobility_profile <- function(canonical, metadata, indicator, source_vintages = canonical$source_vintages) {
   page <- metadata$indicator_pages[[indicator]]
   contract <- metadata$profile_contracts[[indicator]]
   rows <- canonical$indicateurs
-  if (is.null(page) || is.null(contract) || is.null(contract$detail_units))
+  if (is.null(page) || is.null(contract) || is.null(contract$detail_units) ||
+      !identical(contract$completeness, "dense_complete") || !is.character(contract$denominator_semantics) ||
+      length(contract$denominator_semantics) != 1L || is.na(contract$denominator_semantics) ||
+      !nzchar(contract$denominator_semantics))
     stop("Mobility profile contract is incomplete", call.=FALSE)
   details <- unlist(page$comparison$details, use.names=FALSE)
   labels <- unlist(metadata$detail_labels[[indicator]], use.names=TRUE)
@@ -178,7 +182,8 @@ project_mobility_profile <- function(canonical, metadata, indicator) {
   if (!nrow(rows) || any(!rows$detail %in% details) || any(!is.na(rows$sex)) ||
       !all(c("vintage_source","vintage_version","vintage_date_reference","vintage_date_publication") %in% names(rows)))
     stop("Canonical mobility profile rows do not match declared axes or provenance", call.=FALSE)
-  if ("unit" %in% names(rows) && any(rows$unit != unname(units[rows$detail])))
+  if (!"unit" %in% names(rows) || anyNA(rows$unit) || any(!nzchar(as.character(rows$unit))) ||
+      any(as.character(rows$unit) != unname(units[rows$detail])))
     stop("Canonical mobility profile contains an undeclared unit", call.=FALSE)
   facts <- data.frame(territory_id=rows$territoire, territory_type=rows$type,
     detail=rows$detail, sex="", value=rows$value,
@@ -189,32 +194,57 @@ project_mobility_profile <- function(canonical, metadata, indicator) {
   descriptor <- list(indicator_id=indicator, theme_id=metadata$theme, levels=unlist(page$levels),
     details=details, sexes=character(), label=page$label, unit=page$unit, source=sources,
     comparison_detail=page$comparison$detail, comparison_sex=NA_character_,
-    comparison_direction=page$direction, denominator_semantics=contract$denominator_semantics)
+    comparison_direction=page$direction, completeness=contract$completeness,
+    denominator_semantics=contract$denominator_semantics)
   eligible <- unique(data.frame(territory_id=canonical$territoires$territoire[canonical$territoires$type %in% descriptor$levels],
     territory_type=canonical$territoires$type[canonical$territoires$type %in% descriptor$levels], stringsAsFactors=FALSE))
   validate_declared_profile(facts, descriptor, axes, eligible)
   # Source identity remains metadata-owned; canonical vintage columns supply
   # the row-level vintage and human-readable dataset identity.
+  if (!is.data.frame(source_vintages) || !all(c("id", "source", "version", "date_reference", "date_publication") %in% names(source_vintages)))
+    stop("Canonical Mobility source vintages are required", call.=FALSE)
+  if (any(!sources %in% source_vintages$id) || anyDuplicated(source_vintages[c("id", "version", "date_reference")]))
+    stop("Missing or duplicate canonical Mobility source vintage", call.=FALSE)
+  primary <- as.character(unlist(metadata$sources[[indicator]], use.names=FALSE))
+  if (length(primary) != 1L || !primary %in% sources) stop("Mobility primary source is not declared", call.=FALSE)
   records <- metadata$source_records
   if (is.null(records) || any(!sources %in% names(records))) stop("Mobility source records are incomplete", call.=FALSE)
-  datasets <- do.call(rbind, lapply(sources, function(source) data.frame(source_id=source,
-    name=if (source == sources[[1L]]) rows$vintage_source[[1L]] else records[[source]]$dataset,
-    stringsAsFactors=FALSE)))
-  vintages <- do.call(rbind, lapply(sources, function(source) {
-    if (source == sources[[1L]]) return(unique(data.frame(source_id=source,
-      vintage_id=paste(rows$vintage_version,rows$vintage_date_reference,sep="/"), version=rows$vintage_version,
-      reference_date=as.Date(rows$vintage_date_reference), publication_date=as.Date(rows$vintage_date_publication), stringsAsFactors=FALSE)))
+  row_primary <- match(paste(rows$vintage_version, rows$vintage_date_reference, rows$vintage_date_publication,
+      rows$vintage_source, sep="\r"),
+    paste(source_vintages$version, source_vintages$date_reference, source_vintages$date_publication,
+      source_vintages$source, sep="\r"))
+  if (anyNA(row_primary) || any(source_vintages$id[row_primary] != primary))
+    stop("Canonical Mobility freshness stamp disagrees with primary source vintage", call.=FALSE)
+  primary_vintages <- source_vintages[row_primary, , drop=FALSE]
+  secondary <- setdiff(sources, primary)
+  secondary_rows <- lapply(secondary, function(source) {
     declared <- records[[source]]$vintages
-    do.call(rbind, lapply(declared, function(v) data.frame(source_id=source, vintage_id=v$id, version=v$version,
-      reference_date=as.Date(v$dateReference), publication_date=as.Date(v$datePublication), stringsAsFactors=FALSE)))
-  }))
-  if (anyDuplicated(datasets$source_id) || anyNA(vintages)) stop("Mobility source vintage metadata is invalid", call.=FALSE)
-  provenance <- do.call(rbind, lapply(sources, function(source) {
-    vids <- vintages$vintage_id[vintages$source_id == source]
-    do.call(rbind, lapply(vids, function(vintage_id) data.frame(indicator_id=indicator,
-      territory_id=facts$territory_id, detail_key=facts$detail, sex_key=facts$sex,
-      source_id=source, vintage_id=vintage_id, stringsAsFactors=FALSE)))
-  }))
+    if (is.null(declared) || length(declared) != 1L) stop("Mobility secondary source must declare one current vintage", call.=FALSE)
+    declared_version <- as.character(declared[[1L]]$version)
+    declared_reference <- as.character(declared[[1L]]$dateReference)
+    candidates <- source_vintages[source_vintages$id == source & as.character(source_vintages$version) == declared_version &
+      as.character(source_vintages$date_reference) == declared_reference, , drop=FALSE]
+    if (nrow(candidates) != 1L) stop("Canonical current secondary source vintage is missing or ambiguous", call.=FALSE)
+    candidates
+  })
+  current <- unique(rbind(primary_vintages, if (length(secondary_rows)) do.call(rbind, secondary_rows) else primary_vintages[0,,drop=FALSE]))
+  datasets <- unique(data.frame(source_id=as.character(current$id), name=as.character(current$source), stringsAsFactors=FALSE))
+  if (anyDuplicated(datasets$source_id)) stop("Mobility canonical source maps to conflicting dataset names", call.=FALSE)
+  vintages <- data.frame(source_id=current$id, vintage_id=paste(current$version, current$date_reference, sep="/"),
+    version=as.character(current$version), reference_date=as.Date(current$date_reference),
+    publication_date=as.Date(current$date_publication), stringsAsFactors=FALSE)
+  if (anyNA(vintages) || any(!nzchar(datasets$name))) stop("Mobility source vintage metadata is invalid", call.=FALSE)
+  provenance <- do.call(rbind, lapply(unique(facts$detail), function(detail) data.frame(indicator_id=indicator,
+    territory_id=facts$territory_id[facts$detail == detail], detail_key=detail,
+    sex_key=facts$sex[facts$detail == detail], source_id=primary,
+    vintage_id=paste(rows$vintage_version[rows$detail == detail], rows$vintage_date_reference[rows$detail == detail], sep="/"), stringsAsFactors=FALSE)))
+  # reseaux_par_habitant is computed from the OSM network and population carried
+  # by the stationnement-velo input; the other closed profiles have one producer.
+  dependencies <- if (identical(indicator, "reseaux_par_habitant")) setdiff(sources, primary) else character()
+  if (length(dependencies)) provenance <- rbind(provenance, do.call(rbind, lapply(dependencies, function(source)
+    data.frame(indicator_id=indicator, territory_id=facts$territory_id, detail_key=facts$detail,
+      sex_key=facts$sex, source_id=source, vintage_id=vintages$vintage_id[vintages$source_id == source],
+      stringsAsFactors=FALSE))))
   descriptor$descriptor_version <- profile_content_version(list(descriptor, axes, contract))
   list(facts=facts, axes=axes, descriptor=descriptor, provenance=provenance,
     vintages=vintages, datasets=datasets, eligible_territories=eligible)
@@ -342,10 +372,12 @@ profile_postgres_adapter <- function(con) {
         params=unname(as.list(projection$vintages[i,])))
       d <- projection$descriptor
       levels_sql <- paste(as.character(DBI::dbQuoteString(con, as.character(d$levels))), collapse=",")
+      if (is.null(d$completeness) || !identical(d$completeness, "dense_complete"))
+        stop("Profile completeness contract is missing or unsupported", call.=FALSE)
       DBI::dbExecute(con, paste0("INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction,theme_id,comparison_scalar,required_scalar_version,denominator_semantics) VALUES($1,$2,$3,ARRAY[",
         levels_sql,
-        "]::text[],'dense_complete',$4,$5,$6,$7,$8,$9,$10,$11)"),
-        params=list(d$indicator_id, d$label, d$unit, d$descriptor_version,
+        "]::text[],$4,$5,$6,$7,$8,$9,$10,$11,$12)"),
+        params=list(d$indicator_id, d$label, d$unit, d$completeness, d$descriptor_version,
           d$comparison_detail, d$comparison_sex, d$comparison_direction, d$theme_id,
           if (is.null(d$comparison_scalar)) NA_character_ else d$comparison_scalar,
           if (is.null(d$required_scalar_version)) NA_character_ else d$required_scalar_version,
@@ -385,7 +417,8 @@ publier_structure_age_profile_postgres <- function(payload, metadata) {
 # Explicit complete snapshot; not wired to a live target until publication is
 # authorised. scalar_version is the verified canonical shared scalar token.
 publier_declared_profiles_postgres <- function(demography, demography_metadata,
-    habitat, habitat_metadata, scalar_version, con = NULL, mobilite = NULL, mobilite_metadata = NULL) {
+    habitat, habitat_metadata, scalar_version, con = NULL, mobilite = NULL, mobilite_metadata = NULL,
+    mobilite_vintages = NULL) {
   owned <- is.null(con)
   if (owned) con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
   if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
@@ -393,8 +426,9 @@ publier_declared_profiles_postgres <- function(demography, demography_metadata,
   additional <- list(project_dpe_profile(habitat, habitat_metadata, scalar_version))
   if (!is.null(mobilite) || !is.null(mobilite_metadata)) {
     if (is.null(mobilite) || is.null(mobilite_metadata)) stop("Canonical mobility payload and metadata must be supplied together", call.=FALSE)
+    if (is.null(mobilite_vintages)) stop("Canonical Mobility source vintages must be supplied", call.=FALSE)
     additional <- c(additional, lapply(c("voitures_menage","reseaux","reseaux_par_habitant","offre_cyclable"),
-      function(id) project_mobility_profile(mobilite, mobilite_metadata, id)))
+      function(id) project_mobility_profile(mobilite, mobilite_metadata, id, mobilite_vintages)))
   }
   publish_registered_profile(registry, "structure_age", demography, profile_postgres_adapter(con), additional_projections=additional)
 }
