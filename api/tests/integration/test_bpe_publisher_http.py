@@ -80,6 +80,29 @@ second<-run_bpe_publication_cli("publish",canonical_dir,con,opt_in="1")
 stopifnot(first$changed, !second$changed,
  first$row_count==nrow(first$projection$facts),
  all(first$projection$facts$territoire %in% refs$territory_id))
+# Exercise an insert failure after the publisher has started replacing rows.
+# The registered publisher's transaction must restore the old complete marker/facts.
+before_rows<-DBI::dbGetQuery(con,"SELECT count(*) AS n FROM bpe_profile_evidence")$n[[1]]
+before_marker<-DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='bpe_profile_evidence'")$content_version[[1]]
+DBI::dbExecute(con,"CREATE FUNCTION reject_bpe_test_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced rollback regression'; END $$")
+DBI::dbExecute(con,"CREATE TRIGGER reject_bpe_test_insert BEFORE INSERT ON bpe_profile_evidence FOR EACH ROW EXECUTE FUNCTION reject_bpe_test_insert()")
+changed_facts<-first$projection$facts
+groups<-split(seq_len(nrow(changed_facts)),paste(changed_facts$type,changed_facts$territoire,sep="::"))
+rollback_indices<-Filter(function(i) sum(changed_facts$nombre_typequ[i]>0)>=2,groups)[[1]]
+positive_indices<-rollback_indices[changed_facts$nombre_typequ[rollback_indices]>0]
+changed_facts$nombre_typequ[positive_indices[[1]]]<-changed_facts$nombre_typequ[positive_indices[[1]]]+1L
+changed_facts$nombre_typequ[positive_indices[[2]]]<-changed_facts$nombre_typequ[positive_indices[[2]]]-1L
+vintages<-nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
+rollback_failed<-tryCatch({
+ publish_registered_bpe_profiles(list(projection=changed_facts,
+  registry_path=file.path("inst","extdata",BPE_TYPEQU_ARTEFACT_FICHIER),vintages=vintages),con)
+ FALSE
+},error=function(e) TRUE)
+DBI::dbExecute(con,"DROP TRIGGER reject_bpe_test_insert ON bpe_profile_evidence")
+DBI::dbExecute(con,"DROP FUNCTION reject_bpe_test_insert()")
+after_rows<-DBI::dbGetQuery(con,"SELECT count(*) AS n FROM bpe_profile_evidence")$n[[1]]
+after_marker<-DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='bpe_profile_evidence'")$content_version[[1]]
+stopifnot(rollback_failed, before_rows==after_rows, identical(before_marker,after_marker))
 expected<-first$projection$facts
 target_density<-refs$density_class_code[match("35238",refs$territory_id)]
 members<-refs$territory_id[refs$territory_type=="commune" & refs$density_class_code==target_density]
@@ -88,8 +111,16 @@ expected_means<-lapply(names(PROFILS_ACCES_BPE),function(k) {
  list(detail=k,mean=mean(z$nombre_typequ),eligible_count=nrow(z))
 })
 names(expected_means)<-NULL
+target_epci<-refs$epci[match("35238",refs$territory_id)]
+custom_members<-unique(c("35238",refs$territory_id[refs$territory_type=="commune" & refs$epci==target_epci]))
+custom_means<-lapply(names(PROFILS_ACCES_BPE),function(k) {
+ z<-expected[expected$type=="commune" & expected$territoire %in% custom_members & expected$profil==k,]
+ list(detail=k,mean=mean(z$nombre_typequ),eligible_count=nrow(z))
+})
+names(custom_means)<-NULL
 jsonlite::write_json(list(focal=expected[expected$territoire=="35238" & expected$type=="commune",],
  expected_means=expected_means,ref_version=ref_version,row_count=nrow(expected),
+ custom_epci=target_epci,custom_means=custom_means,rollback_verified=rollback_failed,
  universe_count=first$projection$descriptor$universe_count,
  universe_sha256=first$projection$descriptor$universe_sha256,
  vintage=list(vintage_id=first$projection$descriptor$source$vintage_id[[1]],
@@ -143,6 +174,14 @@ DBI::dbDisconnect(con)
                 theme = client.get("/api/territories/commune/35238/themes/mobilite/facts")
                 comparison = client.post("/api/territories/commune/35238/indicators/bpe_access_profile/comparison",
                     json={"selection": []})
+                custom_selection = [
+                    {"territory_type": "commune", "territory_id": "35238"},
+                    {"territory_type": "epci", "territory_id": expected["custom_epci"]},
+                ]
+                custom = client.post("/api/territories/commune/35238/indicators/bpe_access_profile/comparison",
+                    json={"selection": custom_selection})
+                singleton = client.post("/api/territories/commune/35238/indicators/bpe_access_profile/comparison",
+                    json={"selection": [{"territory_type": "commune", "territory_id": "35238"}]})
             assert focal.status_code == 200, focal.text
             body = focal.json()
             assert body["shape"] == "bpe_profile_evidence"
@@ -180,6 +219,30 @@ DBI::dbDisconnect(con)
             assert "focal_value" not in comp and "classes" not in comp
             assert all("exemplar" not in r and "count" not in r for r in comp["results"])
             assert all(r["status"] == "unavailable" and r["mean"] is None for r in comp["results"])
+            assert custom.status_code == 200, custom.text
+            custom_body = custom.json()
+            assert custom_body["selection"] == custom_selection
+            assert "focal_value" not in custom_body and "classes" not in custom_body
+            assert all("exemplar" not in r and "count" not in r for r in custom_body["results"])
+            custom_actual = {r["detail"]: r for r in custom_body["results"]}
+            for expected_mean in expected["custom_means"]:
+                row = custom_actual[expected_mean["detail"]]
+                assert row["mean"] == pytest.approx(expected_mean["mean"])
+                assert row["statistic"] == "mean"
+                assert row["eligible_count"] == expected_mean["eligible_count"]
+            assert singleton.status_code == 200, singleton.text
+            assert all(r["status"] == "unavailable" and r["mean"] is None
+                       and r["rank"] is None and r["eligible_count"] == 1
+                       for r in singleton.json()["results"])
+
+            # A stale territory-reference marker must fail closed, not serve facts
+            # that cannot be proven to share the caller's publication snapshot.
+            pub.execute("UPDATE table_publication SET content_version='stale-reference-version' WHERE table_name='territory_reference'")
+            with TestClient(app) as client:
+                stale = client.get("/api/territories/commune/35238/indicators/bpe_access_profile")
+            assert stale.status_code == 503, stale.text
+            pub.execute("UPDATE table_publication SET content_version=%s WHERE table_name='territory_reference'",
+                        (expected["ref_version"],))
         finally:
             app.dependency_overrides.pop(get_repository, None)
             pool.cache_clear()
