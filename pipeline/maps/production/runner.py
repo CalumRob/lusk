@@ -247,7 +247,7 @@ def preflight(recipe: Recipe, binding: Binding, scope: str, profiles: Sequence[s
 
 def run_production(recipe: Recipe, binding: Binding, scope: str,
                    requested_profiles: Sequence[str], adapter: FamilyAdapter,
-                   output_dir: str | Path) -> RunResult:
+                   output_dir: str | Path, *, refresh: bool = False) -> RunResult:
     """Validate first; render each feature/profile and return checked evidence."""
     run_started = perf_counter()
     preflight_started = perf_counter()
@@ -260,11 +260,24 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
         recipe, scope, requested_profiles, renderer_identity, authoritative_inputs
     )
     output_dir = Path(output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    cache_manifest_path = output_dir / ".production-manifest.json"
+    try:
+        cache_manifest = json.loads(cache_manifest_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        cache_manifest = {"outputs": {}}
+    cached_outputs = cache_manifest.get("outputs", {})
+    next_cached_outputs = {}
     preparation_seconds = 0.0
     prepare_run = getattr(adapter, "prepare_run", None)
     if callable(prepare_run):
         preparation_started = perf_counter()
-        prepare_run(recipe, binding, requested_profiles, output_dir)
+        try:
+            prepare_run(recipe, binding, requested_profiles, output_dir, refresh=refresh)
+        except TypeError as error:
+            if "refresh" not in str(error):
+                raise
+            prepare_run(recipe, binding, requested_profiles, output_dir)
         preparation_seconds = perf_counter() - preparation_started
         print(f"[maps] shared source preparation: {preparation_seconds:.1f}s", flush=True)
     outputs = []
@@ -285,9 +298,33 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
             )
             for name in requested_profiles:
                 profile = PROFILES[name]
-                render_started = perf_counter()
-                path = Path(adapter.render(recipe, feature, profile, output_dir))
-                render_seconds = perf_counter() - render_started
+                key = f"{feature['territory']['kind']}/{feature['territory']['code']}/{feature['mode']}/{name}"
+                effective_contract = {"input": input_sha256,
+                                      "recipe": {"name": recipe.name, "version": recipe.version,
+                                          "family": recipe.family,
+                                          "foundation": {"version": recipe.foundation.version,
+                                              "framing": recipe.foundation.framing,
+                                              "geography": recipe.foundation.geography,
+                                              "ground": recipe.foundation.ground,
+                                              "composition": recipe.foundation.composition}},
+                                      "renderer": renderer_identity,
+                                      "profile": {"name": name, "size": profile.size,
+                                                  "context": profile.context,
+                                                  "furniture": profile.furniture,
+                                                  "transparent_outside": profile.transparent_outside}}
+                effective_identity = sha256(json.dumps(effective_contract, sort_keys=True,
+                    separators=(",", ":")).encode()).hexdigest()
+                previous = cached_outputs.get(key, {})
+                path = Path(previous.get("path", "")) if previous.get("path") else None
+                reusable = (not refresh and previous.get("effective_identity") == effective_identity
+                    and path is not None and path.is_file()
+                    and sha256(path.read_bytes()).hexdigest() == previous.get("output_sha256"))
+                render_seconds = 0.0
+                decision = "reused-output" if reusable else "rendered"
+                if not reusable:
+                    render_started = perf_counter()
+                    path = Path(adapter.render(recipe, feature, profile, output_dir))
+                    render_seconds = perf_counter() - render_started
                 if not path.is_file() or path.stat().st_size == 0:
                     raise ValueError(f"renderer did not produce a nonempty artifact: {path}")
                 validation_started = perf_counter()
@@ -295,12 +332,15 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                 adapter.validate(path, feature, profile)
                 validation_seconds = perf_counter() - validation_started
                 output_sha256 = sha256(path.read_bytes()).hexdigest()
+                next_cached_outputs[key] = {"path": str(path), "effective_identity": effective_identity,
+                                            "output_sha256": output_sha256}
                 artifact_number += 1
                 outputs.append({"path": str(path), "bytes": path.stat().st_size,
                     "family": recipe.family, "territory": feature.get("territory"),
                     "mode": feature.get("mode"), "profile": name,
                     "profile_size": list(profile.size), "input_sha256": input_sha256,
                     "render_identity": render_identity, "output_sha256": output_sha256,
+                    "effective_identity": effective_identity, "decision": decision,
                     "render_seconds": round(render_seconds, 3),
                     "validation_seconds": round(validation_seconds, 3)})
                 print(
@@ -311,11 +351,18 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                     flush=True,
                 )
     elapsed_seconds = perf_counter() - run_started
+    cache_manifest_path.write_text(json.dumps({"outputs": next_cached_outputs},
+        indent=2, sort_keys=True), encoding="utf-8")
+    approval_members = sorted(
+        (item["territory"]["kind"], item["territory"]["code"], item["mode"], item["effective_identity"])
+        for item in outputs if item["territory"]["kind"] in {"commune", "region", "epci"}
+    )
     manifest = {"recipe": recipe.name, "recipe_version": recipe.version,
                 "foundation_version": recipe.foundation.version, "family": recipe.family,
                 "renderer_identity": renderer_identity,
                 "authoritative_inputs": authoritative_inputs,
                 "render_identity": render_identity,
+                "approval_identity": sha256(json.dumps(approval_members, separators=(",", ":")).encode()).hexdigest(),
                 "scope": scope, "preflight_seconds": round(preflight_seconds, 3),
                 "preparation_seconds": round(preparation_seconds, 3),
                 "input_hash_seconds": round(input_hash_seconds, 3),
@@ -325,6 +372,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                               for name in requested_profiles},
           "preflight_seconds": round(preflight_seconds, 3),
           "preparation_seconds": round(preparation_seconds, 3),
+          "stage_report": [{"stage": "source-preparation", "seconds": round(preparation_seconds, 3)}],
           "input_hash_seconds": round(input_hash_seconds, 3),
           "elapsed_seconds": round(elapsed_seconds, 3),
           "checks": ["png-signature", "png-crc", "png-decode", "profile-dimensions",

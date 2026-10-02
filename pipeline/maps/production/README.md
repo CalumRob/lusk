@@ -30,6 +30,15 @@ and carry a black Gaussian cut-out shadow (6 px radius, σ 3 px, 25% opacity,
 analytical cut-outs such as Redon's. Inspection styling is unchanged. Production
 code does not import or execute the prototype or review scripts.
 
+`run_production(..., refresh=True)` deliberately bypasses persistent output reuse
+and asks adapters that support it to rebuild preparation. Default runs reuse an
+output only when its effective feature/recipe/profile identity matches the
+manifest and its bytes still match the recorded SHA-256; missing, changed, or
+corrupt files are rendered again. The returned outputs record `decision` and
+`effective_identity`; QA includes a preparation-stage timing report, and the
+manifest includes an approval identity derived from the effective identities
+of its representative outputs.
+
 At run preparation, context communes are selected from the local
 `communes_limites.geojson` (Admin Express COG) source; rendering does not call the
 Geo API. Eligible network geometry is prepared into spatially indexed

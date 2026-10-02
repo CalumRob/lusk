@@ -49,6 +49,32 @@ class FixtureAdapter:
 
 
 class ContractTests(unittest.TestCase):
+    def test_public_run_reuses_verified_output_across_runs_and_repairs_corruption(self):
+        class Counting(FixtureAdapter):
+            def __init__(self):
+                super().__init__()
+                self.renders = 0
+            def render(self, recipe, feature, profile, output_dir):
+                self.renders += 1
+                return super().render(recipe, feature, profile, output_dir)
+
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        feature = {"geometry": "polygon", "territory": {"kind": "test", "code": "1"}, "mode": "test"}
+        binding = Binding("fixture", MapSet({"shape": [feature]}))
+        with TemporaryDirectory() as directory:
+            adapter = Counting()
+            cold = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            warm = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            self.assertEqual(adapter.renders, 1)
+            self.assertEqual(warm.outputs[0]["decision"], "reused-output")
+            Path(warm.outputs[0]["path"]).write_bytes(b"corrupt")
+            repaired = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            self.assertEqual(adapter.renders, 2)
+            self.assertEqual(repaired.outputs[0]["decision"], "rendered")
+            refreshed = run_production(recipe, binding, "representative", ["inline"], adapter, directory, refresh=True)
+            self.assertEqual(adapter.renders, 3)
+            self.assertEqual(refreshed.outputs[0]["decision"], "rendered")
+
     def test_production_runner_invokes_the_shared_preparation_hook_once(self):
         class PreparingAdapter(FixtureAdapter):
             def __init__(self):
