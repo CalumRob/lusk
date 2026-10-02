@@ -23,6 +23,19 @@ test_that("dense profile validator rejects incomplete, duplicate, and undeclared
   expect_error(validate_declared_profile(facts, bad_facet, axes), "comparison facet")
 })
 
+test_that("dense one-axis profiles compare a declared detail without fabricating a sex axis", {
+  facts <- data.frame(territory_id=c("x","x"), territory_type="commune",
+    detail=c("protected","shared"), sex="", value=c(2,3), status="measured")
+  axes <- data.frame(axis_name="detail", axis_key=c("protected","shared"),
+    label=c("Protected","Shared"), ordinal=0:1)
+  descriptor <- list(levels="commune", details=c("protected","shared"), sexes=character(),
+    comparison_detail="protected", comparison_sex=NA_character_, comparison_direction="high")
+  expect_invisible(validate_declared_profile(facts, descriptor, axes))
+  expect_error(validate_declared_profile(facts[-1,,drop=FALSE], descriptor, axes), "missing coordinates")
+  bad <- descriptor; bad$comparison_sex <- "F"
+  expect_error(validate_declared_profile(facts, bad, axes), "comparison facet")
+})
+
 test_that("structure_age projection uses canonical fixture and descriptor order", {
   metadata <- lire_theme_metadata("demographie")
   canonical <- compute_payload(load_fixture())$indicateurs

@@ -21,8 +21,9 @@ validate_declared_profile <- function(facts, descriptor, axes, eligible_territor
   scalar_facet <- !is.null(descriptor$comparison_scalar)
   if ((!scalar_facet && (length(descriptor$comparison_detail) != 1L || is.na(descriptor$comparison_detail) ||
       !descriptor$comparison_detail %in% details$axis_key ||
-      length(descriptor$comparison_sex) != 1L || is.na(descriptor$comparison_sex) ||
-      !descriptor$comparison_sex %in% sexes$axis_key)) ||
+      (length(descriptor$sexes) && (length(descriptor$comparison_sex) != 1L || is.na(descriptor$comparison_sex) ||
+       !descriptor$comparison_sex %in% sexes$axis_key)) ||
+      (!length(descriptor$sexes) && !is.na(descriptor$comparison_sex)))) ||
       (scalar_facet && (!is.na(descriptor$comparison_detail) || !is.na(descriptor$comparison_sex) ||
         !grepl("^[a-z][a-z0-9_]{0,95}$", descriptor$comparison_scalar) ||
         length(descriptor$required_scalar_version) != 1L || is.na(descriptor$required_scalar_version) ||
