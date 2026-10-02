@@ -86,6 +86,15 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env)
             assert legacy.status_code == 200, legacy.text
             assert legacy.json()['comparison']['indicator'] == 'part_passoires'
             assert legacy.json()['comparison']['values'][0]['value'] == 0.3
+            # The stable indicator-name URL resolves the producer-declared shape;
+            # callers do not need a separate profile URL or a key allowlist.
+            named_profile = client.get('/api/territories/commune/29001/indicators/distribution_dpe')
+            assert named_profile.status_code == 200, named_profile.text
+            assert named_profile.json()['indicator'] == 'distribution_dpe'
+            assert [cell['detail'] for cell in named_profile.json()['cells']] == list('ABCDEFG')
+            named_scalar = client.get('/api/territories/commune/29001/indicators/part_passoires')
+            assert named_scalar.status_code == 200, named_scalar.text
+            assert named_scalar.json()['indicator_id'] == 'part_passoires'
             comparison_url = '/api/territories/commune/29001/themes/comparison'
             selection = {'theme_id': 'habitat', 'selection': [{'territory_type': 'commune', 'territory_id': '29002'}]}
             compared = client.post(comparison_url, json=selection)

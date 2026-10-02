@@ -1035,7 +1035,49 @@ def scalar_observation(
     indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
-    """Read one declared scalar and its lineage/version from one DB snapshot."""
+    """Read a named indicator using its declared published storage shape.
+
+    This is the stable indicator-name URL.  Shape choice comes from producer
+    descriptors, not from the caller or a maintained list of indicator keys.
+    The scalar branch below remains unchanged for existing scalar consumers.
+    """
+    with repository.connections.connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            shapes = []
+            for descriptor_table, shape in (("scalar_descriptor", "scalar"),
+                                             ("profile_descriptor", "profile"),
+                                             ("series_descriptor", "series")):
+                table_exists = conn.execute("SELECT to_regclass(%s)",
+                                            (descriptor_table,)).fetchone()[0]
+                if table_exists and conn.execute(
+                        f"SELECT 1 FROM {descriptor_table} WHERE indicator_id=%s",
+                        (indicator_id,)).fetchone():
+                    shapes.append(shape)
+            if len(shapes) > 1:
+                # Ownership/publication metadata must choose one serving route;
+                # table presence alone cannot safely prefer an owned series.
+                raise HTTPException(503, "Indicator has ambiguous published storage shapes")
+            shape = shapes[0] if shapes else None
+    if shape == "profile":
+        return declared_profile(territory_type, territory_id, indicator_id,
+                                "bretagne", None, repository)
+    if shape == "series":
+        return repository.read_series(territory_type, territory_id, indicator_id,
+                                      territory_type)
+    if shape is None:
+        # If an indicator exists only in an owned-series descriptor, do not
+        # infer that route from observation/table presence. The publication
+        # contract needs an explicit active-route declaration first.
+        with repository.connections.connection() as conn:
+            with conn.transaction():
+                owned = conn.execute(
+                    "SELECT 1 FROM series_dataset_descriptor WHERE indicator_id=%s LIMIT 1",
+                    (indicator_id,)).fetchone()
+        if owned:
+            raise HTTPException(503, "Owned-series active publication route is not declared")
+        raise HTTPException(404, "Indicator descriptor is unavailable")
+    # `scalar` remains the compatibility implementation below.
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
@@ -1087,7 +1129,11 @@ def theme_facts(
     theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
-    """Compact focal facts/profiles; intentionally not a complete theme payload."""
+    """Compact published focal facts/profiles.
+
+    This endpoint deliberately reports its coverage per published shape; a
+    scalar/profile subset must never be mistaken for a complete theme model.
+    """
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
