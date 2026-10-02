@@ -195,7 +195,7 @@ project_mobility_profile <- function(canonical, metadata, indicator, source_vint
     details=details, sexes=character(), label=page$label, unit=page$unit, source=sources,
     comparison_detail=page$comparison$detail, comparison_sex=NA_character_,
     comparison_direction=page$direction, completeness=contract$completeness,
-    denominator_semantics=contract$denominator_semantics)
+    denominator_semantics=contract$denominator_semantics, detail_units_required=TRUE)
   eligible <- unique(data.frame(territory_id=canonical$territoires$territoire[canonical$territoires$type %in% descriptor$levels],
     territory_type=canonical$territoires$type[canonical$territoires$type %in% descriptor$levels], stringsAsFactors=FALSE))
   validate_declared_profile(facts, descriptor, axes, eligible)
@@ -374,14 +374,15 @@ profile_postgres_adapter <- function(con) {
       levels_sql <- paste(as.character(DBI::dbQuoteString(con, as.character(d$levels))), collapse=",")
       if (is.null(d$completeness) || !identical(d$completeness, "dense_complete"))
         stop("Profile completeness contract is missing or unsupported", call.=FALSE)
-      DBI::dbExecute(con, paste0("INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction,theme_id,comparison_scalar,required_scalar_version,denominator_semantics) VALUES($1,$2,$3,ARRAY[",
+      DBI::dbExecute(con, paste0("INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction,theme_id,comparison_scalar,required_scalar_version,denominator_semantics,detail_units_required) VALUES($1,$2,$3,ARRAY[",
         levels_sql,
-        "]::text[],$4,$5,$6,$7,$8,$9,$10,$11,$12)"),
+        "]::text[],$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)"),
         params=list(d$indicator_id, d$label, d$unit, d$completeness, d$descriptor_version,
           d$comparison_detail, d$comparison_sex, d$comparison_direction, d$theme_id,
           if (is.null(d$comparison_scalar)) NA_character_ else d$comparison_scalar,
           if (is.null(d$required_scalar_version)) NA_character_ else d$required_scalar_version,
-          if (is.null(d$denominator_semantics)) NA_character_ else d$denominator_semantics))
+          if (is.null(d$denominator_semantics)) NA_character_ else d$denominator_semantics,
+          if (is.null(d$detail_units_required)) FALSE else isTRUE(d$detail_units_required)))
       for (source_id in d$source) DBI::dbExecute(con,
         "INSERT INTO profile_descriptor_source(indicator_id,source_id) VALUES($1,$2)", params=list(d$indicator_id,source_id))
       axes <- projection$axes

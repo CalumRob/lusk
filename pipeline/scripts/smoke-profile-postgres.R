@@ -135,6 +135,7 @@ tryCatch({
   stopifnot(combined$changed, identical(age_after,facts_before),
     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_axis WHERE indicator_id='distribution_dpe' AND axis_name='sex'")$n[[1L]]==0,
     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_observation WHERE indicator_id='distribution_dpe'")$n[[1L]]==nrow(dpe_rows),
+    DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_axis a JOIN profile_descriptor d USING(indicator_id) WHERE a.indicator_id IN ('structure_age','distribution_dpe') AND a.axis_name='detail' AND (a.unit IS NULL OR a.unit<>d.unit)")$n[[1L]]==0,
     all(vapply(c("voitures_menage","reseaux","reseaux_par_habitant","offre_cyclable"), function(id)
       DBI::dbGetQuery(con,"SELECT count(*) AS n FROM profile_observation WHERE indicator_id=$1",params=list(id))$n[[1L]]==
         nrow(mobility_rows[mobility_rows$key==id,,drop=FALSE]), logical(1))),

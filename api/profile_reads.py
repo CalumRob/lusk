@@ -4,7 +4,7 @@ from fastapi import HTTPException
 
 def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicator_id=None, include_cells=True):
     descriptors = conn.execute("""SELECT indicator_id,label,unit,allowed_levels,descriptor_version,
-        comparison_detail,comparison_sex,comparison_direction,comparison_scalar,required_scalar_version,denominator_semantics
+        comparison_detail,comparison_sex,comparison_direction,comparison_scalar,required_scalar_version,denominator_semantics,detail_units_required
         FROM profile_descriptor WHERE (%s::text IS NULL OR theme_id=%s)
           AND (%s::text IS NULL OR indicator_id=%s) AND %s=ANY(allowed_levels)
         ORDER BY indicator_id""", (theme_id, theme_id, indicator_id, indicator_id, territory_type)).fetchall()
@@ -59,8 +59,22 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
         if d[8] is None and (d[5] not in details or (d[6] not in sexes if sexes else d[6] is not None)):
             raise HTTPException(503, 'Profile comparison point is invalid')
         rows = cells_by_id.get(d[0], [])
-        detail_units = {a[1]: a[4] for a in axes if a[0] == 'detail'}
-        if any(unit is None or not str(unit).strip() for unit in detail_units.values()):
+        detail_units = {}
+        for axis_name, key, _label, _order, unit in axes:
+            if axis_name != 'detail':
+                continue
+            if d[11]:
+                if unit is None or not str(unit).strip():
+                    raise HTTPException(503, 'Profile detail units are unavailable')
+                detail_units[key] = unit
+            else:
+                # Legacy homogeneous profiles predate per-axis units. Their
+                # descriptor unit is the contract; migration 014 backfills it,
+                # and this fallback also handles older NULL-unit snapshots.
+                if not d[2] or (unit is not None and unit != d[2]):
+                    raise HTTPException(503, 'Legacy profile unit contract is incompatible')
+                detail_units[key] = unit if unit is not None else d[2]
+        if set(detail_units) != set(details):
             raise HTTPException(503, 'Profile detail units are unavailable')
         expected = [(detail, sex) for detail in details for sex in (sexes or [''])]
         cells = {(r[0], r[1]): r for r in rows}
@@ -68,12 +82,12 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
             raise HTTPException(503, 'Profile publication is incomplete')
         if any(not row[4] for row in rows):
             raise HTTPException(503, 'Profile cell provenance is unavailable')
-        comparison_axis = next((a for a in axes if a[0] == 'detail' and a[1] == d[5]), None)
-        comparison_unit = comparison_axis[4] if comparison_axis else d[2]
+        comparison_unit = detail_units.get(d[5], d[2])
         profiles.append({'indicator': d[0], 'label': d[1], 'unit': d[2], 'denominator_semantics': d[10], 'descriptor_version': d[4],
             'content_version': marker[0], 'comparison_scalar': d[8], 'required_scalar_version': d[9],
             'comparison_point': None if d[8] else {'detail': d[5], 'sex': d[6], 'direction': d[7], 'unit': comparison_unit},
-            'axes': [{'name': name, 'key': key, 'label': label, 'order': order, 'unit': unit} for name,key,label,order,unit in axes],
+            'axes': [{'name': name, 'key': key, 'label': label, 'order': order,
+                      'unit': detail_units[key] if name == 'detail' else unit} for name,key,label,order,unit in axes],
             'cells': [{'detail': detail, 'sex': sex or None, 'unit': detail_units[detail], 'denominator_semantics': d[10], 'value': cells[(detail,sex)][2],
                        'status': cells[(detail,sex)][3], 'sources': cells[(detail,sex)][4]} for detail,sex in expected]})
     return profiles, marker[0]

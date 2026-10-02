@@ -20,6 +20,7 @@ CREATE TABLE profile_descriptor (
     label text NOT NULL, unit text NOT NULL, allowed_levels text[] NOT NULL,
     completeness text NOT NULL CHECK (completeness = 'dense_complete'),
     descriptor_version text NOT NULL, comparison_detail text, denominator_semantics text,
+    detail_units_required boolean NOT NULL DEFAULT false,
     comparison_sex text, comparison_direction text NOT NULL CHECK(comparison_direction IN ('high','low','none')),
     theme_id text CHECK (theme_id ~ '^[a-z][a-z0-9_]{0,63}$'),
     comparison_scalar text, required_scalar_version text,
