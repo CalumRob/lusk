@@ -114,21 +114,22 @@ async function monter(
 
 describe('TerritoireView — modèle atomique par territoire', () => {
   beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('API not configured in tests'))))
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllEnvs(); vi.unstubAllGlobals() })
   it('keeps the building figures without exposing an interactive peer selector', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
       vi.fn(async () => modeleAvecContextesComparaison()))
     await flushPromises()
+    expect(wrapper.find('.presentation-editorial').exists()).toBe(true)
+    expect(wrapper.find('.commutateur-proto').exists()).toBe(false)
+    expect(wrapper.classes()).toContain('fiche--mobilite-editoriale')
     expect(wrapper.find('#building-peer-search').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Choisir les territoires du groupe comparé')
     wrapper.unmount()
   })
   it('requests initial building figures and never displays static JSON figures when the API fails', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
     const fetchApi = vi.fn().mockRejectedValue(new Error('API indisponible'))
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
       vi.fn(async () => modeleAvecContextesComparaison()))
     await flushPromises()
     expect(fetchApi.mock.calls.some(([url]) => String(url) ===
@@ -175,8 +176,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       url.includes('/building-access?') ? figure : reponseAccesApi('commune', '22001', context.scope.kind, context.scope.label),
     }))
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
     await flushPromises()
+    expect(wrapper.find('.presentation-editorial').exists()).toBe(true)
+    expect(wrapper.find('.commutateur-proto').exists()).toBe(false)
     const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
     expect(section.find('.access-ramp-evidence').exists()).toBe(true)
     expect(section.find('.bivariate-evidence').exists()).toBe(true)
@@ -187,13 +190,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it.each([
     ['epci', '242200715'], ['departement', '22'], ['region', '53'],
   ] as const)('requests initial %s building figures without a static fallback', async (type, code) => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       `../public/data/modeles-lecture/territoires/${type}/${code}.json`), 'utf8'))
     const model = validerModeleTerritoire(published, `${type}/${code}.json`, { type, territoire: code })
     const fetchApi = vi.fn().mockRejectedValue(new Error('API indisponible'))
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
+    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite`, vi.fn(async () => model))
     expect(fetchApi.mock.calls.some(([url]) => String(url) ===
       `/api/territories/${type}/${code}/building-access`)).toBe(true)
     const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
@@ -562,6 +564,23 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       '/territoire/commune/29002?theme=mobilite&comparaison=inconnu&variant=E',
     )
     expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite', variant: 'E' })
+  })
+
+  it('removes only the obsolete variant query in production and preserves comparison and unrelated URL state', async () => {
+    vi.stubEnv('DEV', false)
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci&lecture=partage',
+      vi.fn(async () => modeleAvecContextesComparaison()),
+    )
+    await flushPromises()
+
+    expect(router.currentRoute.value.query).toEqual({
+      theme: 'mobilite',
+      comparaison: 'epci',
+      lecture: 'partage',
+    })
+    expect(wrapper.find('.presentation-editorial').exists()).toBe(true)
+    wrapper.unmount()
   })
 
   it.each(['densite', 'epci', 'bretagne'] as const)(

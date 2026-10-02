@@ -27,6 +27,7 @@ import ContexteSwitcher from '@/components/fiche/ContexteSwitcher.vue'
 import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
+import ProductionMobilite from '@/fiche/mobilite/ProductionMobilite.vue'
 // [PROTOTYPE #499 — JETABLE] le registre des variantes de lecture — dev seul.
 import {
   CommutateurPrototype,
@@ -216,11 +217,14 @@ const classesFond = computed(() =>
 const variante = computed(() => varianteDeUrl(route.query.variant))
 const prototypeActif = import.meta.env.DEV
 const scalarCohortActif = scalarCohortEnabled(import.meta.env)
+const productionMobilite = computed(() => selection.value === 'mobilite' && variante.value === null)
 /** [PROTOTYPE #531/#552] Cahier variants own the editorial Mobilité surface. */
 const prototypeCahierMobilite = computed(
   () => prototypeActif && ['D', 'E'].includes(variante.value?.clef ?? '') && selection.value === 'mobilite',
 )
-const prototypeAccesApi = computed(() => prototypeCahierMobilite.value && variante.value?.clef === 'E')
+const mobiliteEditorialeActive = computed(() => productionMobilite.value ||
+  (prototypeCahierMobilite.value && variante.value?.clef === 'E'))
+const prototypeAccesApi = mobiliteEditorialeActive
 const accesApi = ref<MobiliteAccessFacts | null>(null)
 const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
 const relancerAccesApi = ref(0)
@@ -301,7 +305,7 @@ watch([prototypeAccesApi, typeRoute, idRoute, () => resolutionComparaison.value?
 function rechargerBuilding(): void { retryBuilding.value += 1 }
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
-    !prototypeCahierMobilite.value ||
+    !(prototypeCahierMobilite.value || productionMobilite.value) ||
     chargementFiche.value ||
     !payloadPourRendu.value ||
     !typeValide.value
@@ -312,20 +316,20 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
     resolutionComparaison.value?.contexte ?? undefined,
   )
   if (!facts) return null
-  const withBuilding = prototypeAccesApi.value
+  const withBuilding = mobiliteEditorialeActive.value
     ? { ...facts, mobility: { ...facts.mobility,
       accessRamp: buildingStatus.value === 'ready' ? buildingFacts.value?.mobility.accessRamp ?? null : null,
       buildingDistribution: buildingStatus.value === 'ready' ? buildingFacts.value?.mobility.buildingDistribution ?? null : null,
     } }
     : facts
-  const contentFacts = prototypeAccesApi.value && statutAccesApi.value === 'ready' && accesApi.value
+  const contentFacts = mobiliteEditorialeActive.value && statutAccesApi.value === 'ready' && accesApi.value
     ? { ...withBuilding, mobility: { ...withBuilding.mobility, access: accesApi.value } }
     : withBuilding
   return resolveMobiliteThemeContent(contentFacts)
 })
 const paginationCahier = computed(() =>
   payloadPourRendu.value && contenuMobilite.value
-    ? cahierPaginationFor(payloadPourRendu.value, contenuMobilite.value, variante.value?.clef === 'E')
+    ? cahierPaginationFor(payloadPourRendu.value, contenuMobilite.value, mobiliteEditorialeActive.value)
     : null,
 )
 function choisirOnglet(slug: SlugOnglet): void {
@@ -350,6 +354,13 @@ watch(
   { immediate: true },
 )
 
+watch(() => route.query.variant, (variant) => {
+  if (import.meta.env.DEV || variant === undefined) return
+  const query = { ...route.query }
+  delete query.variant
+  router.replace({ query })
+}, { immediate: true })
+
 watch(
   resolutionComparaison,
   (resolution) => {
@@ -366,7 +377,12 @@ watch(
 <template>
   <section
     class="fiche"
-    :class="[classesFond, { 'fiche--prototype': prototypeActif, 'fiche--prototype-d': prototypeCahierMobilite }]"
+    :class="[classesFond, {
+      'fiche--prototype': prototypeActif,
+      'fiche--prototype-d': prototypeCahierMobilite,
+      'fiche--mobilite-editoriale': productionMobilite,
+      'presentation-editorial': mobiliteEditorialeActive,
+    }]"
     :aria-busy="chargementFiche ? 'true' : 'false'"
   >
     <div class="fiche-en-tete-surface">
@@ -460,16 +476,29 @@ watch(
             <!-- [PROTOTYPE #531] D replaces only the Mobilité body; the fiche
                  identity header, theme tabs, background and tabpanel stay owned
                  by this shell. -->
-            <component
-              :is="variante.composant"
-              v-if="prototypeCahierMobilite && contenuMobilite && paginationCahier && variante"
+            <ProductionMobilite
+              v-if="productionMobilite && contenuMobilite && paginationCahier"
               :content="contenuMobilite"
               :pagination="paginationCahier"
-               :comparison-options="variante.clef === 'E' ? optionsComparaison : []"
-                 :access-status="variante.clef === 'E' ? statutAccesApi : undefined"
-                 :retry-access="rechargerAccesApi"
-                 :building-status="variante.clef === 'E' ? buildingStatus : undefined"
-                 :retry-building="rechargerBuilding"
+              :comparison-options="optionsComparaison"
+              :access-status="statutAccesApi"
+              :retry-access="rechargerAccesApi"
+              :building-status="buildingStatus"
+              :retry-building="rechargerBuilding"
+            />
+            <p v-else-if="productionMobilite" class="fiche-chargement-contenu" role="status">
+              Chargement du contenu de Mobilité…
+            </p>
+            <component
+              :is="variante.composant"
+              v-else-if="prototypeCahierMobilite && contenuMobilite && paginationCahier && variante"
+              :content="contenuMobilite"
+              :pagination="paginationCahier"
+              :comparison-options="variante.clef === 'E' ? optionsComparaison : []"
+              :access-status="variante.clef === 'E' ? statutAccesApi : undefined"
+              :retry-access="rechargerAccesApi"
+              :building-status="variante.clef === 'E' ? buildingStatus : undefined"
+              :retry-building="rechargerBuilding"
             />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation
@@ -501,7 +530,7 @@ watch(
     </template>
 
     <!-- [PROTOTYPE #499] le commutateur fixe du bas — dev uniquement. -->
-    <CommutateurPrototype v-if="prototypeActif && CommutateurPrototype" />
+    <CommutateurPrototype v-if="prototypeActif && variante && CommutateurPrototype" />
   </section>
 </template>
 
@@ -692,6 +721,10 @@ watch(
   max-width: var(--content-max-width);
   margin-inline: auto;
   padding: var(--space-6) var(--grid-margin-mobile) var(--space-12);
+}
+
+.fiche--mobilite-editoriale .fiche-contenu {
+  max-width: 1640px;
 }
 
 /* [PROTOTYPE #499] la place du commutateur fixe du bas. */
