@@ -57,19 +57,20 @@ jobs:
 
       - name: Build (vue-tsc + vite → app/dist, payload copié dans dist/data)
         # #596: Pi app release reads the published structure_age profile.
-        # #597/#598/#627: ENAF, OCS-GE and Habitat annual series share one reader gate.
-        # Legacy VITE_CONSO_ENAF_SERIES_API and VITE_OCSGE_STATE_SERIES_API names
-        # remain accepted by the app for older build configurations. Set this
-        # shared flag to '0' and rebuild to roll the three readers back together.
+        # #597/#598: keep the already enabled ENAF and OCS-GE readers on their
+        # existing aliases. The generic VITE_OWNED_SERIES_API gate is reserved
+        # for a later all-series cutover and stays unset until Habitat prix_m2
+        # has an authorized, verified owned-series publication.
         # Before installing on the Pi, confirm backup/recovery readiness and
         # preserve the exact pre-cutover shell. Inspect the checkout first:
         # never blindly pull from the timer or overwrite a stale/dirty checkout,
         # operator Compose, or private environment. Restore the saved shell and
-        # rebuild with the shared series flag off to roll the consumer back. Install
+        # rebuild with the relevant legacy alias off to roll back that reader. Install
         # shell assets separately from data; retain nginx's data alias for the
         # remaining static consumers.
         env:
-          VITE_OWNED_SERIES_API: '1'
+          VITE_CONSO_ENAF_SERIES_API: '1'
+          VITE_OCSGE_STATE_SERIES_API: '1'
           VITE_STRUCTURE_AGE_PROFILE_API: '1'
         run: npm run build
 
