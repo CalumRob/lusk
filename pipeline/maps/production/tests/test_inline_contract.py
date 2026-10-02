@@ -4,6 +4,7 @@ import gc
 import shutil
 import tempfile
 import unittest
+from unittest.mock import patch
 from pathlib import Path
 import sys
 
@@ -144,6 +145,86 @@ class InlineProfileContractTests(unittest.TestCase):
         self.assertEqual(inline.pixelColor(682, 452).alpha(), 0)
         self.assertEqual(inline.pixelColor(750, 450).alpha(), 0)
 
+    def test_visible_network_source_change_invalidates_only_affected_map_content(self):
+        root = Path(tempfile.mkdtemp(prefix="lusk-effective-network-"))
+        self.__class__.fixture_dirs.append(root)
+        raw = root / "pipeline" / "data" / "raw"
+        raw.mkdir(parents=True)
+        metadata = root / "pipeline" / "inst" / "extdata" / "theme-metadata"
+        metadata.mkdir(parents=True)
+        self._write_source_metadata(metadata)
+        (metadata.parent / "epci_geo_api.json").write_text(json.dumps({"labels": []}), encoding="utf-8")
+        self._write_osm(raw / "bretagne-latest.gpkg")
+        (raw / "france-20260807.parquet").write_bytes(b"unused bike source")
+        self._write_communes(raw / "communes_limites.geojson")
+        self._write_ocsge(raw / "extracted" / "ocsge")
+        feature = {"territory": {"kind": "epci", "code": "fixture", "name": "Fixture"},
+            "mode": "car", "geometry": QgsGeometry.fromWkt("POLYGON ((0 0,80 0,80 100,0 100,0 0))"),
+            "analytical_geometry": QgsGeometry.fromWkt("POLYGON ((0 0,80 0,80 100,0 100,0 0))"),
+            "region_geometry": QgsGeometry.fromWkt("POLYGON ((-10 -10,80 -10,80 110,-10 110,-10 -10))"),
+            "extent": QgsRectangle(-10, -10, 110, 110)}
+        binding = Binding("network", MapSet({"network-outputs": (feature,)}))
+        output = root / "outputs"
+        def run(source=raw):
+            QgsProject.instance().clear()
+            adapter = NetworkAdapter(source, cache_root=root / ("network-cache-" + source.parent.name))
+            result = run_production(network_recipe(), binding, "representative", ("inspection", "inline"),
+                adapter, output)
+            del adapter
+            QgsProject.instance().clear()
+            gc.collect()
+            return result
+        try:
+            cold = run()
+            self.assertTrue(any(item["stage"] == "territory-ground" for item in cold.qa["stage_report"]), cold.qa["stage_report"])
+            warm = run()
+            self.assertEqual({item["decision"] for item in warm.outputs}, {"reused-output"})
+            self.assertTrue(any(item["stage"] == "territory-ground" and item["decision"] == "reused"
+                for item in warm.qa["stage_report"]), (cold.qa["stage_report"], warm.qa["stage_report"]))
+            outside_raw = self._raw_variant(root / "outside", car_y=80, base=raw, outside_extra=True)
+            outside = run(outside_raw)
+            self.assertEqual({item["decision"] for item in outside.outputs}, {"reused-output"})
+            changed_raw = self._raw_variant(root / "changed", car_y=55, base=raw)
+            changed = run(changed_raw)
+            self.assertEqual({item["decision"] for item in changed.outputs}, {"rendered"})
+            self.assertNotEqual(changed.manifest["approval_identity"], outside.manifest["approval_identity"])
+            citations_raw = self._raw_variant(root / "citations", car_y=55, base=raw)
+            metadata_path = citations_raw.parent.parent / "inst" / "extdata" / "theme-metadata" / "theme_mobilite.json"
+            citation_payload = json.loads(metadata_path.read_text(encoding="utf-8"))
+            citation_payload["source_records"]["osm_reseaux"]["publisher"] = "Changed citation"
+            metadata_path.write_text(json.dumps(citation_payload), encoding="utf-8")
+            citations = run(citations_raw)
+            decisions = {item["profile"]: item["decision"] for item in citations.outputs}
+            self.assertEqual(decisions, {"inspection": "rendered", "inline": "reused-output"})
+            self.assertNotEqual(citations.manifest["approval_identity"], changed.manifest["approval_identity"])
+            ocs_raw = self._raw_variant(root / "ocsge", car_y=55, base=raw)
+            ocs_dir = ocs_raw / "extracted" / "ocsge"
+            shutil.rmtree(ocs_dir)
+            self._write_ocsge(ocs_dir, x_offset=5)
+            ocs_changed = run(ocs_raw)
+            decisions = {item["profile"]: item["decision"] for item in ocs_changed.outputs}
+            self.assertEqual(decisions, {"inspection": "rendered", "inline": "reused-output"})
+            with patch("map_ground.INLINE_MASK_RENDER_VERSION", 2):
+                mask_changed = run(ocs_raw)
+            decisions = {item["profile"]: item["decision"] for item in mask_changed.outputs}
+            self.assertEqual(decisions, {"inspection": "reused-output", "inline": "rendered"})
+        finally:
+            QgsProject.instance().clear()
+
+    def _raw_variant(self, directory, car_y, base, outside_extra=False):
+        directory = directory / "pipeline" / "data" / "raw"
+        directory.mkdir(parents=True)
+        self._write_osm(directory / "bretagne-latest.gpkg", car_y=car_y, outside_extra=outside_extra)
+        shutil.copy2(base / "france-20260807.parquet", directory / "france-20260807.parquet")
+        shutil.copy2(base / "communes_limites.geojson", directory / "communes_limites.geojson")
+        shutil.copytree(base / "extracted", directory / "extracted")
+        metadata = directory.parent.parent / "inst" / "extdata" / "theme-metadata"
+        metadata.mkdir(parents=True)
+        original_metadata = base.parent.parent / "inst" / "extdata"
+        shutil.copy2(original_metadata / "epci_geo_api.json", metadata.parent / "epci_geo_api.json")
+        shutil.copytree(original_metadata / "theme-metadata", metadata, dirs_exist_ok=True)
+        return directory
+
     def _write_source_metadata(self, directory):
         (directory / "theme_mobilite.json").write_text(json.dumps({
             "source_records": {
@@ -157,13 +238,16 @@ class InlineProfileContractTests(unittest.TestCase):
             }
         }), encoding="utf-8")
 
-    def _write_osm(self, path):
+    def _write_osm(self, path, car_y=80, outside_extra=False):
         layer = QgsVectorLayer(
             "LineString?crs=EPSG:2154&field=highway:string&field=other_tags:string",
             "OSM fixture", "memory",
         )
         features = []
-        for highway, y in (("primary", 80), ("footway", 70)):
+        roads = [("primary", car_y), ("footway", 70)]
+        if outside_extra:
+            roads.append(("primary", 500))
+        for highway, y in roads:
             feature = QgsFeature(layer.fields())
             feature.setAttributes([highway, None])
             feature.setGeometry(QgsGeometry.fromPolylineXY([QgsPointXY(5, y), QgsPointXY(75, y)]))
@@ -191,11 +275,13 @@ class InlineProfileContractTests(unittest.TestCase):
         )
         self.assertEqual(result[0], QgsVectorFileWriter.NoError, result)
 
-    def _write_ocsge(self, directory):
+    def _write_ocsge(self, directory, x_offset=0):
         directory.mkdir(parents=True)
         for department in ("22", "29", "35", "56"):
             name = f"artif_2025_{department}"
             path = directory / f"{name}.gpkg"
+            if path.exists():
+                path.unlink()
             layer = QgsVectorLayer(
                 "MultiPolygon?crs=EPSG:2154&field=code_cs:string&field=code_us:string",
                 f"OCS-GE {department}", "memory",
@@ -203,7 +289,7 @@ class InlineProfileContractTests(unittest.TestCase):
             feature = QgsFeature(layer.fields())
             feature.setAttributes(["CS2.1.1.1", None])
             geometry = QgsGeometry.fromWkt(
-                "POLYGON ((20 40,40 40,40 60,20 60,20 40))"
+                f"POLYGON (({20+x_offset} 40,{40+x_offset} 40,{40+x_offset} 60,{20+x_offset} 60,{20+x_offset} 40))"
             )
             geometry.convertToMultiType()
             feature.setGeometry(geometry)
@@ -214,6 +300,8 @@ class InlineProfileContractTests(unittest.TestCase):
         options = QgsVectorFileWriter.SaveVectorOptions()
         options.driverName = "GPKG"
         options.layerName = layer_name
+        if path.exists():
+            path.unlink()
         result = QgsVectorFileWriter.writeAsVectorFormatV3(
             layer, str(path), QgsProject.instance().transformContext(), options
         )

@@ -53,6 +53,9 @@ INLINE_SHADOW_BLUR_RADIUS_PX = 6
 INLINE_SHADOW_SIGMA_PX = 3.0
 INLINE_SHADOW_OFFSET_Y_PX = 2
 INLINE_SHADOW_OPACITY = 0.25
+# Bump when the corresponding algorithms change (profile-specific cache contract).
+SHARED_GROUND_RENDER_VERSION = 1
+INLINE_MASK_RENDER_VERSION = 1
 TEXTURE_FILENAME = "qgis-hub-paper-texture-cc0.jpg"
 CONTEXT_DEPARTMENTS = (
     "14", "22", "29", "35", "44", "49", "50", "53", "56", "61", "72", "79", "85"

@@ -1,5 +1,6 @@
 """Render and validate the complete 18-artifact representative map set."""
 from pathlib import Path
+import argparse
 import json
 import sys
 
@@ -14,6 +15,9 @@ from runner import run_production  # noqa: E402
 app = QgsApplication([], False)
 app.initQgis()
 try:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--refresh", action="store_true", help="bypass output and derived-stage caches")
+    args = parser.parse_args()
     raw = root / "pipeline/data/raw"
     binding = build_representative_map_set(raw)
     result = run_production(
@@ -23,6 +27,7 @@ try:
         ("inspection", "inline"),
         NetworkAdapter(raw),
         root / "pipeline/maps/production/output",
+        refresh=args.refresh,
     )
     expected = {
         (kind, code, mode, profile)
@@ -38,6 +43,8 @@ try:
     assert result.qa["status"] == "passed"
     assert result.qa["artifact_count"] == 18
     assert result.qa["profile_counts"] == {"inspection": 9, "inline": 9}
+    assert result.manifest["approval_pairs_complete"] is True
+    assert len(result.manifest["approval_members"]) == 18
     output_dir = root / "pipeline/maps/production/output"
     for name, evidence in (("manifest.json", result.manifest), ("qa.json", result.qa)):
         (output_dir / name).write_text(
