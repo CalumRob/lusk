@@ -520,6 +520,7 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29003','commune','Gamma')")
         connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('E1','epci','Intercommunalité')")
         connection.execute("UPDATE territory_reference SET epci_id='E1' WHERE territory_id='29002'")
+        connection.execute("UPDATE territory_reference SET density_class_code='D1',density_class_label='Dense' WHERE territory_type='commune' AND territory_id IN ('29001','29002')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture','Fixture source')")
         connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('fixture','v2026','2026')")
         connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('fixture_secondary','Secondary source')")
@@ -611,6 +612,7 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert cohort_rows[1]["sources"]
         assert cohort_rows[2]["sources"] == []
         assert focal.status_code == 200 and focal.json()["complete_theme"] is False
+        assert focal.json()["default_comparison"]["results"][0]["median"] == 1
         assert [fact["indicator_id"] for fact in focal.json()["facts"]] == ["fixture_scalar"]
         assert empty_comparison.status_code == 200
         assert empty_comparison.json()["selection"] == []

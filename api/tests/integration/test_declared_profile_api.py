@@ -41,7 +41,8 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env)
     from api import main
 
     with psycopg.connect(canonical_db_env['publish_dsn']) as conn:
-        conn.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('29001','commune','Focal'),('29002','commune','Peer')")
+        conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,density_class_code,density_class_label)
+            VALUES ('29001','commune','Focal','D1','Dense'),('29002','commune','Peer','D1','Dense')""")
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-v1',2)")
         conn.execute("INSERT INTO source_dataset VALUES ('dpe','DPE fixture')")
         conn.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('dpe','v1','2024')")
@@ -82,6 +83,7 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env)
             assert {axis['name'] for axis in profile['axes']} == {'detail'}
             assert profile['comparison_scalar'] == 'part_passoires'
             assert 'comparison' not in profile and '29002' not in response.text
+            assert body['default_comparison']['results'][0]['median'] == 0.2
             legacy = client.get('/api/territories/commune/29001/profiles/distribution_dpe')
             assert legacy.status_code == 200, legacy.text
             assert legacy.json()['comparison']['indicator'] == 'part_passoires'
@@ -173,10 +175,25 @@ def test_declared_profile_postgres_api_contract(installation):
             role = '"' + reader_role.replace('"', '""') + '"'
             conn.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {role}')
             conn.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {role}')
-            conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id)
-                VALUES (%s,'commune','Focal','29','E1'),(%s,'commune','Peer','29','E1'),
-                       (%s,'commune','Other department','22','E2')""", (territory, peer, territory + 'x'))
+            conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,
+                density_class_code,density_class_label)
+                VALUES (%s,'commune','Focal','29','E1','D1','Dense'),
+                       (%s,'commune','Peer','29','E1','D1','Dense'),
+                       (%s,'commune','Other department','22','E2','D2','Rural')""", (territory, peer, territory + 'x'))
             conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-v1',3)")
+            conn.execute("BEGIN")
+            conn.execute("INSERT INTO source_dataset VALUES ('indicator_fixture','Indicator fixture')")
+            conn.execute("INSERT INTO source_vintage VALUES ('indicator_fixture','v1','2026',NULL,NULL)")
+            conn.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,
+                allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES
+                ('habitat_fixture','habitat','Habitat fixture','%','high','habitat_fixture',ARRAY['commune'],
+                'fixture','sparse','scalar-fixture-v1')""")
+            conn.execute("INSERT INTO scalar_descriptor_source VALUES ('habitat_fixture','indicator_fixture')")
+            for tid, value in ((territory, .2), (peer, .6), (territory + 'x', .9)):
+                conn.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('habitat_fixture',%s,'commune',%s,'measured')", (tid,value))
+                conn.execute("INSERT INTO scalar_observation_source VALUES ('habitat_fixture',%s,'indicator_fixture','v1')", (tid,))
+            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-fixture-v1',3,'ref-v1')")
+            conn.execute("COMMIT")
             conn.execute("""INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction) VALUES
                 ('structure_age','Structure par âge','%',ARRAY['commune'],'dense_complete','fixture-v1','15-29','F','high')""")
             conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal) VALUES
@@ -225,6 +242,21 @@ def test_declared_profile_postgres_api_contract(installation):
                     {"territory_id": peer, "name": "Peer", "value": .6, "status": "measured"}]}
             assert body["sources"] == [{"source_id":"age_detail","name":"INSEE fixture","version":"2023",
                 "reference_date":"2023-01-01","publication_date":None}]
+            comparison_url = f"/api/territories/commune/{territory}/themes/habitat/comparison"
+            default_comparison = client.post(comparison_url, json={"theme_id":"habitat"})
+            assert default_comparison.status_code == 200, default_comparison.text
+            default_body = default_comparison.json()
+            assert default_body["results"][0]["median"] == pytest.approx(.4)
+            assert default_body["results"][0]["eligible_count"] == 2
+            assert default_body["results"][0]["rank"] == 2
+            assert default_body["scope"] == {"kind":"density_class","density_class_code":"D1",
+                "territory_type":"commune","member_count":2}
+            assert "facts" not in default_body and "cells" not in default_body
+            no_comparison = client.post(comparison_url, json={"theme_id":"habitat","selection":[]})
+            assert no_comparison.status_code == 200, no_comparison.text
+            assert no_comparison.json()["results"][0]["median"] is None
+            assert no_comparison.json()["results"][0]["eligible_count"] == 0
+            assert no_comparison.json()["scope"]["member_count"] == 0
             for scope, valid_id, invalid_ids in (
                 ("departement", "29", ("22", "999")),
                 ("epci", "E1", ("E2", "missing")),

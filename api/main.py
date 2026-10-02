@@ -34,7 +34,8 @@ class ThemeComparisonRequest(BaseModel):
     theme_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
     # Match the existing typed building-selection boundary, which accommodates
     # the whole published territory universe rather than a 500-territory subset.
-    selection: list[ThemeTerritorySelection] = Field(max_length=1500)
+    # Omitted means the published default cohort; an explicit [] means none.
+    selection: list[ThemeTerritorySelection] | None = Field(default=None, max_length=1500)
 
 
 class ModeComparison(BaseModel):
@@ -1163,11 +1164,26 @@ def theme_facts(
                 raise HTTPException(404, "No published scalar facts for this theme and territory")
     names=("indicator_id","label","unit","direction","comparison_facet","descriptor_version",
            "value","status","support_count","denominator_count","sources")
-    return {"contract":"theme-facts-v1","complete_theme":False,"theme_id":theme_id,
-      "territory":{"territory_id":territory[0],"name":territory[1],"territory_type":territory[2]},
-      "content_version":marker[0],"reference_content_version":marker[2],
-      "profile_content_version":profile_version,"profiles":profiles,
-      "facts":[dict(zip(names,row)) for row in rows]}
+    payload = {"contract":"theme-facts-v1","complete_theme":False,"theme_id":theme_id,
+       "territory":{"territory_id":territory[0],"name":territory[1],"territory_type":territory[2]},
+       "content_version":marker[0],"reference_content_version":marker[2],
+       "profile_content_version":profile_version,"profiles":profiles,
+       "facts":[dict(zip(names,row)) for row in rows]}
+    # The default cohort is part of the focal theme request. The comparison
+    # reader pins its own repeatable-read snapshot; matching all publication
+    # tokens ensures both payloads describe the same committed projections.
+    if rows:
+        comparison = theme_comparison(territory_type,
+            ThemeComparisonRequest(theme_id=theme_id, selection=None), territory_id, repository)
+        if (comparison["content_version"] != marker[0]
+                or comparison["reference_content_version"] != marker[2]
+                or comparison["profile_content_version"] != profile_version):
+            raise HTTPException(503, "Theme facts changed during the read; retry")
+        payload["default_comparison"] = {
+            "results": comparison["results"],
+            "profile_comparisons": comparison["profile_comparisons"],
+        }
+    return payload
 
 
 @app.post("/api/territories/{territory_type}/{territory_id}/themes/comparison")
@@ -1178,7 +1194,7 @@ def theme_comparison(
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Request-scoped scalar statistics over exactly the explicitly selected communes."""
-    selected=[(item.territory_type,item.territory_id) for item in request.selection]
+    selected=[(item.territory_type,item.territory_id) for item in request.selection or []]
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
@@ -1187,16 +1203,40 @@ def theme_comparison(
               WHERE s.table_name='scalar_observation'""").fetchone()
             if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
                 raise HTTPException(503,"Scalar publication is unavailable or incompatible")
-            focal=conn.execute("SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=%s",
+            focal=conn.execute("SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id=%s",
                                (territory_id,)).fetchone()
             if not focal: raise HTTPException(404,"Focal territory not found")
             if focal[1] != territory_type: raise HTTPException(422,"Focal territory type does not match route")
             profile_comparisons, profile_version = focal_profiles(conn, territory_type, territory_id,
                 theme_id=request.theme_id, include_cells=False)
-            refs=[dict(zip(("territoire","type","departement","epci"),row)) for row in conn.execute(
-              "SELECT territory_id,territory_type,department_id,epci_id FROM territory_reference").fetchall()]
-            try: members=resolve_commune_members(refs,selected,max_members=len(refs)) if selected else ()
-            except ComparisonInputError as exc: raise HTTPException(422,str(exc)) from exc
+            refs=[dict(zip(("territoire","type","departement","epci","densite"),row)) for row in conn.execute(
+              "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference").fetchall()]
+            if request.selection is None:
+                if territory_type == "commune":
+                    cohort_type = "commune"
+                    density = focal[2]
+                    if not density:
+                        raise HTTPException(503, "Published default density class is unavailable")
+                    default_scope = {"kind":"density_class","density_class_code":density,
+                                     "territory_type":"commune"}
+                    members = tuple(sorted(r[0] for r in conn.execute(
+                        "SELECT territory_id FROM territory_reference WHERE territory_type='commune' AND density_class_code=%s",
+                        (density,)).fetchall()))
+                elif territory_type in ("epci", "departement"):
+                    cohort_type = territory_type
+                    default_scope = {"kind":"same_level","territory_type":territory_type}
+                    members = tuple(sorted(r[0] for r in conn.execute(
+                        "SELECT territory_id FROM territory_reference WHERE territory_type=%s",
+                        (territory_type,)).fetchall()))
+                else:
+                    cohort_type = territory_type
+                    default_scope = None
+                    members = ()
+            else:
+                cohort_type = "commune"
+                default_scope = {"kind":"explicit_selection"}
+                try: members=resolve_commune_members(refs,selected,max_members=len(refs)) if selected else ()
+                except ComparisonInputError as exc: raise HTTPException(422,str(exc)) from exc
             descriptors=conn.execute("""SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
               FROM scalar_descriptor WHERE theme_id=%s ORDER BY indicator_id""",(request.theme_id,)).fetchall()
             if not descriptors:
@@ -1210,19 +1250,19 @@ def theme_comparison(
                 JOIN source_vintage sv USING(source_id,vintage_id)
                 WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
               FROM scalar_observation o JOIN scalar_descriptor d USING(indicator_id)
-              WHERE d.theme_id=%s AND ((o.territory_type='commune' AND o.territory_id=ANY(%s))
-                OR (o.territory_id=%s AND o.territory_type=%s)) ORDER BY o.indicator_id,o.territory_id""",
-              (request.theme_id,list(members),territory_id,territory_type)).fetchall()
+               WHERE d.theme_id=%s AND ((o.territory_type=%s AND o.territory_id=ANY(%s))
+                 OR (o.territory_id=%s AND o.territory_type=%s)) ORDER BY o.indicator_id,o.territory_id""",
+               (request.theme_id,cohort_type,list(members),territory_id,territory_type)).fetchall()
             facts_by_indicator={}
             for row in fact_rows: facts_by_indicator.setdefault(row[0],[]).append(row)
             result=[]
             for indicator,label,unit,direction,facet,levels,descriptor_version in descriptors:
                 if (not facet or facet != indicator or direction not in ("high","low") or
-                    "commune" not in levels or territory_type != "commune"):
+                    cohort_type not in levels):
                     result.append({"indicator_id":indicator,"status":"unavailable","reason":"unsupported_comparison_contract"})
                     continue
                 rows=facts_by_indicator.get(indicator,[])
-                peer_rows=[(r[1],r[3],r[4],r[5],r[6],r[7]) for r in rows if r[2]=="commune" and r[1] in members]
+                peer_rows=[(r[1],r[3],r[4],r[5],r[6],r[7]) for r in rows if r[2]==cohort_type and r[1] in members]
                 values=[float(row[1]) for row in peer_rows if row[2]=="measured" and row[1] is not None]
                 focal_row=next(((r[3],r[4]) for r in rows if r[1]==territory_id and r[2]==territory_type),None)
                 fv=float(focal_row[0]) if focal_row and focal_row[1]=="measured" and focal_row[0] is not None else None
@@ -1248,9 +1288,29 @@ def theme_comparison(
                   "rank_size":len(values) if rank is not None else None,
                   "comparison_sources":comparison_sources})
     return {"contract":"theme-comparison-v1","complete_theme":False,"theme_id":request.theme_id,
-      "content_version":marker[0],"reference_content_version":marker[2],
-      "selection":[{"territory_type":t,"territory_id":i} for t,i in selected],"results":result,
-      "profile_content_version":profile_version,"profile_comparisons":profile_comparisons}
+       "content_version":marker[0],"reference_content_version":marker[2],
+       "selection":[{"territory_type":t,"territory_id":i} for t,i in selected],"results":result,
+       "scope":{**default_scope,"member_count":len(members)} if default_scope else None,
+       "profile_content_version":profile_version,"profile_comparisons":profile_comparisons}
+
+
+@app.post("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/comparison")
+def theme_comparison_only(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
+    territory_id: str = Path(min_length=1, max_length=32),
+    request: ThemeComparisonRequest = ...,
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Return only scoped comparison statistics, without focal fact payloads."""
+    if request.theme_id != theme_id:
+        raise HTTPException(422, "Body theme_id must match the comparison route")
+    result = theme_comparison(territory_type, request, territory_id, repository)
+    return {key: result[key] for key in (
+        "contract", "complete_theme", "theme_id", "content_version",
+        "reference_content_version", "selection", "scope", "results",
+        "profile_content_version", "profile_comparisons",
+    )}
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/indicator-cohorts/{indicator_id}")
