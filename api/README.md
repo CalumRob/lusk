@@ -436,8 +436,11 @@ checks the complete eligible territory-ID/type set before rebinding that token;
 equal identity sets can be rebound without changing scalar content, while any
 added, removed, or type-changed eligible identity leaves the old token in place
 and the reader unavailable pending a coherent republish. Scalar reads fail with 503 if
-either marker is missing, the versions differ, or either marker row count no
-longer matches its committed table. This exact-version compatibility token is
+either marker is missing or the versions differ. Complete row parity is checked
+by the transactional publisher before committing its marker; bounded HTTP reads
+do not scan the entire reference/fact tables to recount them on every request.
+Dense profile reads additionally check the focal coordinate set and each cell's
+lineage. This exact-version compatibility token is
 the cross-table identity strategy; readers never blend a scalar snapshot with
 a newer territorial reference and return 404 only for an absent row in a
 validated compatible snapshot.
