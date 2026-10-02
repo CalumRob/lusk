@@ -32,7 +32,9 @@ read-surface contract for the incremental scalar/profile work under #627 and
   an external-scalar profile also names `source_facet_indicator_id` and its
   checked scalar publication version. A series without a declared comparable
   point returns typed `unsupported_comparison_contract` rather than an inferred
-  statistic.
+  statistic. Named series comparisons do not publish a median or rank until at
+  least two selected members have a measured value at the declared point; an
+  empty selection and a one-measure cohort remain typed unavailable.
 - The older `/profiles/{indicator}` and `/themes/comparison` routes remain
   compatibility paths with their existing response shapes.
 

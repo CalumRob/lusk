@@ -1561,6 +1561,7 @@ def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id
     better = (sum(value > focal_value if direction == "high" else value < focal_value
                   for _, value in values) if focal_value is not None else None)
     ties = sum(value == focal_value for _, value in values) if focal_value is not None else None
+    enough = len(values) >= 2
     sources, seen = [], set()
     for row in rows:
         if row[0] not in members:
@@ -1573,14 +1574,15 @@ def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id
     result = {"indicator_id": indicator_id, "label": label, "facet": point,
         "source_facet": point,
         "unit": unit, "direction": direction, "descriptor_version": version,
-        "statistic": "median", "status": "available" if values else "unavailable",
-        "reason": None if values else "no_selected_comparable_values",
+        "statistic": "median", "status": "available" if enough else "unavailable",
+        "reason": None if enough else (
+            "fewer_than_two_comparable_values" if values else "no_selected_comparable_values"),
         "selected_member_count": len(members), "eligible_count": len(values),
         "focal_value": focal_value, "focal_in_selection": territory_id in members,
-        "median": median([value for _, value in values]) if values else None,
-        "rank": better + 1 if better is not None and territory_id in members else None,
-        "rank_size": len(values) if better is not None and territory_id in members else None,
-        "rank_ties": ties if better is not None and territory_id in members else None,
+        "median": median([value for _, value in values]) if enough else None,
+        "rank": better + 1 if enough and better is not None and territory_id in members else None,
+        "rank_size": len(values) if enough and better is not None and territory_id in members else None,
+        "rank_ties": ties if enough and better is not None and territory_id in members else None,
         "comparison_sources": sources}
     return {"contract": "indicator-comparison-v1", "complete_theme": False,
         "indicator_id": indicator_id, "shape": "series", "content_version": marker[0],
