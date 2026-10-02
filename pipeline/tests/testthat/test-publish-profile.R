@@ -1,6 +1,6 @@
 test_that("dense profile validator rejects incomplete, duplicate, and undeclared cells", {
   axes <- data.frame(axis_name = c("detail", "detail", "sex", "sex"),
-    axis_key = c("a", "b", "F", "M"), label = c("A", "B", "Femmes", "Hommes"), ordinal = c(0L,1L,0L,1L))
+    axis_key = c("a", "b", "F", "M"), label = c("A", "B", "Femmes", "Hommes"), ordinal = c(0L,1L,0L,1L), unit="%")
   descriptor <- list(levels = "commune", details = c("a", "b"), sexes = c("F", "M"),
     comparison_detail = "a", comparison_sex = "F", comparison_direction = "high")
   facts <- expand.grid(territory_id = "x", territory_type = "commune", detail = c("a", "b"), sex = c("F", "M"), stringsAsFactors = FALSE)
@@ -21,6 +21,107 @@ test_that("dense profile validator rejects incomplete, duplicate, and undeclared
   bad_facet <- descriptor
   bad_facet$comparison_direction <- "none"
   expect_error(validate_declared_profile(facts, bad_facet, axes), "comparison facet")
+})
+
+test_that("dense one-axis profiles compare a declared detail without fabricating a sex axis", {
+  facts <- data.frame(territory_id=c("x","x"), territory_type="commune",
+    detail=c("protected","shared"), sex="", value=c(2,3), status="measured")
+  axes <- data.frame(axis_name="detail", axis_key=c("protected","shared"),
+    label=c("Protected","Shared"), ordinal=0:1, unit="km")
+  descriptor <- list(levels="commune", details=c("protected","shared"), sexes=character(),
+    comparison_detail="protected", comparison_sex=NA_character_, comparison_direction="high")
+  expect_invisible(validate_declared_profile(facts, descriptor, axes))
+  expect_error(validate_declared_profile(facts[-1,,drop=FALSE], descriptor, axes), "missing coordinates")
+  bad <- descriptor; bad$comparison_sex <- "F"
+  expect_error(validate_declared_profile(facts, bad, axes), "comparison facet")
+})
+
+test_that("closed mobility profile projections preserve all canonical details and per-detail units", {
+  metadata <- lire_theme_metadata("mobilite")
+  details <- unlist(metadata$indicator_pages$offre_cyclable$comparison$details, use.names=FALSE)
+  territories <- data.frame(territoire=c("35238","35238","35238","35238","35238"),
+    type="commune", stringsAsFactors=FALSE)
+  rows <- data.frame(territoire="35238", type="commune", key="offre_cyclable",
+    detail=details, sex=NA_character_, value=c(1,2,3,4,5), unit=unname(unlist(metadata$profile_contracts$offre_cyclable$detail_units)[details]),
+    vintage_source=metadata$source_records$osm_reseaux$dataset, vintage_version="2026-08", vintage_date_reference="2026-08-05",
+    vintage_date_publication="2026-08-06", stringsAsFactors=FALSE)
+  canonical_vintages <- data.frame(id="osm_reseaux", source=metadata$source_records$osm_reseaux$dataset,
+    version="2026-08", date_reference="2026-08-05", date_publication="2026-08-06")
+  canonical <- list(indicateurs=rows, territoires=territories, source_vintages=canonical_vintages)
+  profile <- project_mobility_profile(canonical, metadata, "offre_cyclable")
+  expect_identical(profile$facts$detail, details)
+  expect_identical(profile$axes$unit, c("km", "km / 1 000 hab", "km", "km / 1 000 hab", "km"))
+  expect_equal(profile$facts$value, c(1,2,3,4,5))
+  expect_identical(profile$descriptor$source, "osm_reseaux")
+  expect_match(profile$descriptor$denominator_semantics, "population")
+  historical <- rbind(canonical_vintages, transform(canonical_vintages, version="old", date_reference="2025-01-01", date_publication="2025-01-02"))
+  historical$id[2] <- "historic-unused"
+  expanded <- project_mobility_profile(list(indicateurs=rows,territoires=territories,source_vintages=historical), metadata, "offre_cyclable")
+  expect_equal(nrow(expanded$vintages), 1L)
+  expect_true(all(expanded$provenance$vintage_id == "2026-08/2026-08-05"))
+  rows$unit[2] <- "km"
+  expect_error(project_mobility_profile(list(indicateurs=rows,territoires=territories,source_vintages=canonical_vintages), metadata, "offre_cyclable"), "undeclared unit")
+  rows$unit[2] <- NA_character_
+  expect_error(project_mobility_profile(list(indicateurs=rows,territoires=territories,source_vintages=canonical_vintages), metadata, "offre_cyclable"), "undeclared unit")
+  rows$unit[2] <- "km / 1 000 hab"
+  bad_vintages <- canonical_vintages; bad_vintages$source <- "wrong dataset"
+  expect_error(project_mobility_profile(list(indicateurs=rows,territoires=territories,source_vintages=bad_vintages), metadata, "offre_cyclable"), "freshness stamp")
+  bad_metadata <- metadata; bad_metadata$profile_contracts$offre_cyclable$completeness <- "sparse"
+  expect_error(project_mobility_profile(canonical, bad_metadata, "offre_cyclable"), "contract is incomplete")
+})
+
+test_that("multi-source profile lineage is limited to each current declared producer vintage", {
+  metadata <- lire_theme_metadata("mobilite")
+  details <- unlist(metadata$indicator_pages$reseaux_par_habitant$comparison$details, use.names=FALSE)
+  units <- unlist(metadata$profile_contracts$reseaux_par_habitant$detail_units, use.names=TRUE)
+  rows <- data.frame(territoire="35238", type="commune", key="reseaux_par_habitant",
+    detail=details, sex=NA_character_, value=1:3, unit=unname(units[details]),
+    vintage_source=metadata$source_records$osm_reseaux$dataset, vintage_version="2026-08",
+    vintage_date_reference="2026-08-05", vintage_date_publication="2026-08-06")
+  territories <- data.frame(territoire="35238", type="commune")
+  vintages <- do.call(rbind, lapply(c("osm_reseaux", "stationnement-velo"), function(id) {
+    v <- metadata$source_records[[id]]$vintages[[1]]
+    data.frame(id=id, source=metadata$source_records[[id]]$dataset, version=v$version,
+      date_reference=v$dateReference, date_publication=v$datePublication)
+  }))
+  vintages <- rbind(vintages, data.frame(id="historic-unused", source="unused", version="old",
+    date_reference="2020-01-01", date_publication="2020-01-02"))
+  profile <- project_mobility_profile(list(indicateurs=rows, territoires=territories), metadata,
+    "reseaux_par_habitant", vintages)
+  expect_setequal(unique(profile$provenance$source_id), c("osm_reseaux", "stationnement-velo"))
+  expect_equal(nrow(profile$vintages), 2L)
+  expect_false(any(profile$provenance$source_id == "historic-unused"))
+  invalid_vintages <- vintages[vintages$id != "stationnement-velo", , drop=FALSE]
+  expect_error(project_mobility_profile(list(indicateurs=rows, territoires=territories), metadata,
+    "reseaux_par_habitant", invalid_vintages), "Missing or duplicate")
+})
+
+test_that("primary multi-vintage facts retain only their matching territory vintage associations", {
+  metadata <- lire_theme_metadata("mobilite")
+  details <- unlist(metadata$indicator_pages$offre_cyclable$comparison$details, use.names=FALSE)
+  units <- unlist(metadata$profile_contracts$offre_cyclable$detail_units, use.names=TRUE)
+  rows <- do.call(rbind, lapply(c("35238", "35239"), function(territory) {
+    old <- territory == "35239"
+    data.frame(territoire=territory, type="commune", key="offre_cyclable", detail=details,
+      sex=NA_character_, value=seq_along(details), unit=unname(units[details]),
+      vintage_source="Canonical OSM title",
+      vintage_version=if (old) "2025-08" else "2026-08",
+      vintage_date_reference=if (old) "2025-08-05" else "2026-08-05",
+      vintage_date_publication=if (old) "2025-08-06" else "2026-08-06", stringsAsFactors=FALSE)
+  }))
+  territories <- data.frame(territoire=c("35238", "35239"), type="commune")
+  vintage <- data.frame(id="osm_reseaux", source="Canonical OSM title",
+    version=c("2026-08", "2025-08"), date_reference=c("2026-08-05", "2025-08-05"),
+    date_publication=c("2026-08-06", "2025-08-06"))
+  profile <- project_mobility_profile(list(indicateurs=rows, territoires=territories), metadata,
+    "offre_cyclable", vintage)
+  for (territory in territories$territoire) {
+    expected_vintage <- if (territory == "35238") "2026-08/2026-08-05" else "2025-08/2025-08-05"
+    associations <- profile$provenance[profile$provenance$territory_id == territory, ]
+    expect_equal(unique(associations$vintage_id), expected_vintage)
+    expect_equal(nrow(associations), length(details))
+  }
+  expect_equal(nrow(profile$vintages), 2L)
 })
 
 test_that("structure_age projection uses canonical fixture and descriptor order", {
