@@ -484,7 +484,10 @@ CREATE TABLE series_dataset_descriptor (
  axis_values text[] NOT NULL CHECK(cardinality(axis_values)>0),
  axis_numeric_values integer[],
  completeness text NOT NULL CHECK(completeness IN ('dense_complete','may_be_missing')),
- comparison_point text, label text NOT NULL, unit text NOT NULL,
+  comparison_point text, label text NOT NULL, unit text NOT NULL,
+  comparison_statistic text CHECK(comparison_statistic IS NULL OR comparison_statistic='median'),
+  comparison_scope text CHECK(comparison_scope IS NULL OR comparison_scope='default_group'),
+  observation_period_kind text CHECK(observation_period_kind IS NULL OR observation_period_kind IN ('snapshot_date','unknown')),
  direction text NOT NULL CHECK(direction IN ('high','low','none')),
  allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
  descriptor_version text NOT NULL, active_read_route boolean NOT NULL DEFAULT false,
@@ -514,10 +517,14 @@ CREATE TABLE series_observation_provenance (
   CREATE TABLE series_named_reference_descriptor (
    dataset_id text NOT NULL, indicator_id text NOT NULL, reference_id text NOT NULL,
    reference_label text NOT NULL, reference_role text NOT NULL CHECK(reference_role='analytical_reference'),
-   reference_statistic text NOT NULL CHECK(length(trim(reference_statistic))>0),
-   required boolean NOT NULL DEFAULT true,
-   PRIMARY KEY(dataset_id,indicator_id,reference_id),
-   FOREIGN KEY(dataset_id,indicator_id) REFERENCES series_dataset_descriptor(dataset_id,indicator_id) ON DELETE CASCADE);
+    reference_statistic text NOT NULL CHECK(length(trim(reference_statistic))>0),
+    required boolean NOT NULL DEFAULT true,
+    reference_indicator_id text NOT NULL CHECK(reference_indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
+    active_read_route boolean NOT NULL DEFAULT false,
+    PRIMARY KEY(dataset_id,indicator_id,reference_id),
+    FOREIGN KEY(dataset_id,indicator_id) REFERENCES series_dataset_descriptor(dataset_id,indicator_id) ON DELETE CASCADE);
+ CREATE UNIQUE INDEX series_named_reference_one_active_route
+  ON series_named_reference_descriptor(reference_indicator_id) WHERE active_read_route;
   CREATE TABLE series_named_reference (
    dataset_id text NOT NULL, indicator_id text NOT NULL, reference_id text NOT NULL,
  axis_value text NOT NULL, observation_period text NOT NULL, value double precision,
@@ -574,12 +581,16 @@ BEGIN
  ELSIF NEW.axis_kind='declared_detail' AND cardinality(NEW.axis_values)<>cardinality(ARRAY(SELECT DISTINCT unnest(NEW.axis_values))) THEN
   RAISE EXCEPTION 'declared detail axis contains duplicates';
   END IF;
-   IF NEW.axis_kind='duration_minute' AND (NEW.axis_numeric_values IS NULL OR cardinality(NEW.axis_numeric_values)<>cardinality(NEW.axis_values)
+  IF NEW.axis_kind='duration_minute' AND (NEW.axis_numeric_values IS NULL OR cardinality(NEW.axis_numeric_values)<>cardinality(NEW.axis_values)
      OR EXISTS(SELECT 1 FROM unnest(NEW.axis_numeric_values) a WHERE a IS NULL OR a<0 OR a>9999)
      OR NEW.axis_values IS DISTINCT FROM ARRAY(SELECT 't'||lpad(a::text,4,'0') FROM unnest(NEW.axis_numeric_values) WITH ORDINALITY x(a,n) ORDER BY n)
      OR NEW.axis_numeric_values IS DISTINCT FROM ARRAY(SELECT a FROM unnest(NEW.axis_numeric_values) a ORDER BY a)
     OR cardinality(NEW.axis_numeric_values)<>cardinality(ARRAY(SELECT DISTINCT unnest(NEW.axis_numeric_values)))) THEN
     RAISE EXCEPTION 'duration axis numeric minutes do not match declared detail keys';
+  END IF;
+  IF NEW.active_read_route AND NEW.axis_kind='duration_minute' AND
+     (NEW.observation_period_kind IS NULL OR NEW.comparison_statistic IS NULL OR NEW.comparison_scope IS NULL) THEN
+    RAISE EXCEPTION 'active duration route requires declared comparison and observation-period semantics';
   END IF;
   IF EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=NEW.dataset_id
     AND o.indicator_id=NEW.indicator_id AND NOT o.axis_value=ANY(NEW.axis_values)) THEN
@@ -667,7 +678,26 @@ DECLARE actual_rows bigint; actual_descriptors bigint; BEGIN
   IF EXISTS(SELECT 1 FROM series_named_reference_descriptor d WHERE d.dataset_id=NEW.dataset_id AND d.required
     AND NOT EXISTS(SELECT 1 FROM series_named_reference r WHERE
       (r.dataset_id,r.indicator_id,r.reference_id)=(d.dataset_id,d.indicator_id,d.reference_id))) THEN
-   RAISE EXCEPTION 'required named reference is missing';
+    RAISE EXCEPTION 'required named reference is missing';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_named_reference_descriptor d WHERE d.dataset_id=NEW.dataset_id
+    AND d.active_read_route AND NOT d.required) THEN
+    RAISE EXCEPTION 'active analytical-reference route must be required';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id
+    AND d.axis_kind='duration_minute' AND d.active_read_route AND d.observation_period_kind='snapshot_date'
+    AND (EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=d.dataset_id
+       AND o.indicator_id=d.indicator_id AND o.observation_period !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+      OR EXISTS(SELECT 1 FROM series_named_reference r WHERE r.dataset_id=d.dataset_id
+       AND r.indicator_id=d.indicator_id AND r.observation_period !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))) THEN
+    RAISE EXCEPTION 'duration snapshot-date observations must carry an ISO date period';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_named_reference_descriptor d JOIN series_dataset_descriptor s USING(dataset_id,indicator_id)
+    WHERE d.dataset_id=NEW.dataset_id AND d.active_read_route
+      AND (SELECT count(DISTINCT r.axis_value) FROM series_named_reference r WHERE
+        (r.dataset_id,r.indicator_id,r.reference_id)=(d.dataset_id,d.indicator_id,d.reference_id)
+        AND r.axis_value=ANY(s.axis_values))<>cardinality(s.axis_values)) THEN
+    RAISE EXCEPTION 'active analytical-reference route is missing declared axis points';
   END IF;
   IF EXISTS(SELECT 1 FROM series_named_reference_descriptor d JOIN series_dataset_descriptor s USING(dataset_id,indicator_id)
     WHERE d.dataset_id=NEW.dataset_id AND d.required AND s.axis_kind='duration_minute'

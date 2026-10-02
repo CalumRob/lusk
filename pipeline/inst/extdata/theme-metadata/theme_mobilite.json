@@ -301,11 +301,22 @@
   "owned_series_routes": {
     "raccordement_courbe": {
       "dataset_id": "raccordement_courbe",
+      "indicator_id": "raccordement_courbe",
       "theme_id": "mobilite",
       "active_read_route": true,
       "axis_kind": "duration_minute",
       "axis_values": ["0", "15", "30", "45", "60", "90", "120", "180", "240", "300", "360"],
       "reference_indicator": "raccordement_reference",
+      "reference_read_route": true,
+      "comparison_contract": {
+        "statistic": "median",
+        "scope": "default_group"
+      },
+      "observation_period_contract": {
+        "kind": "snapshot_date",
+        "source": "raccordement_recipe_date_mesure",
+        "expected_date": "2026-09-16"
+      },
       "reference": {
         "id": "commune_bretonne_mediane",
         "label": "Commune bretonne médiane",

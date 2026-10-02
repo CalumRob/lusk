@@ -47,6 +47,14 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             ('22001','commune','Other class','22','243500140','D2'),
             ('243500139','epci','EPCI one','35',NULL,NULL)""")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',1)")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('scalar_observation','fixture-scalar-v1',4,'fixture-ref-v1')")
+        pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('fixture_scalar_source','Fixture scalar source')")
+        pub.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES('fixture_scalar_source','v1','v1','2026-01-01','2026-01-02')")
+        with pub.transaction():
+            pub.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES('fixture_scalar','mobilite','Fixture scalar','%','high','fixture_scalar',ARRAY['commune'],'fixture denominator','dense_complete','1')")
+            pub.execute("INSERT INTO scalar_descriptor_source VALUES('fixture_scalar','fixture_scalar_source')")
+            pub.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES('fixture_scalar','35238','commune',0.6,'measured'),('fixture_scalar','35001','commune',0.5,'measured'),('fixture_scalar','35002','commune',0.4,'measured'),('fixture_scalar','22001','commune',0.99,'measured')")
+            pub.execute("INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id) VALUES('fixture_scalar','35238','fixture_scalar_source','v1'),('fixture_scalar','35001','fixture_scalar_source','v1'),('fixture_scalar','35002','fixture_scalar_source','v1'),('fixture_scalar','22001','fixture_scalar_source','v1')")
         role=os.environ.get("LUSK_TEST_READ_USER",urlsplit(os.environ["LUSK_TEST_READ_DSN"]).username)
         assert role and re.fullmatch(r"[A-Za-z0-9_$-]+",role)
         pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"')
@@ -61,7 +69,9 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         pool.cache_clear()
         with TestClient(app) as client:
             before_publication=client.get("/api/territories/commune/35238/indicators/raccordement_courbe")
+            before_reference=client.get("/api/territories/commune/35238/indicators/raccordement_reference")
         assert before_publication.status_code==404
+        assert before_reference.status_code==404
         import pandas as pd
         axes=["t0000","t0015","t0030","t0045","t0060","t0090","t0120","t0180","t0240","t0300","t0360"]
         fixture=[]
@@ -73,14 +83,20 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
                                            [("raccordement_reference","53","region",[.02,.08,.16,.24,.33,.45,.59,.72,.82,.9,.96])]):
             for axis,value in zip(axes,values):
                 fixture.append({"key":key,"theme":"mobilite","detail":axis,"type":kind,"territoire":territory,
-                    "value":value,"unit":"%","rider":None,"vintage_source":"fixture matrix","vintage_version":"2026-09-16",
+                    "value":value,"unit":"%","rider":None,"observation_period":"2026-09-16",
+                    "vintage_source":"fixture matrix","vintage_version":"2026-09-18",
                     "vintage_date_reference":"2026-08-25","vintage_date_publication":"2026-08-26"})
         canonical={"mobilite":{"indicateurs":pd.DataFrame(fixture)},"vintages":pd.DataFrame([
-            {"id":"matrice_temps_mairies","source":"fixture matrix","version":"2026-09-16",
+            {"id":"matrice_temps_mairies","source":"fixture matrix","version":"2026-09-18",
              "date_reference":"2026-08-25","date_publication":"2026-08-26"}])}
         metadata={"theme":"mobilite","owned_series_routes":{"raccordement_courbe":{"dataset_id":"raccordement_curve",
-            "theme_id":"mobilite","active_read_route":True,"axis_kind":"duration_minute","axis_values":[0,15,30,45,60,90,120,180,240,300,360],
+            "indicator_id":"raccordement_courbe","theme_id":"mobilite","active_read_route":True,
+                "reference_read_route":True,"axis_kind":"duration_minute","axis_values":[0,15,30,45,60,90,120,180,240,300,360],
+                "observation_period_contract":{"kind":"snapshot_date","source":"raccordement_recipe_date_mesure","expected_date":"2026-09-16"},
+                "comparison_contract":{"statistic":"median","scope":"default_group"},
             "reference_indicator":"raccordement_reference","reference_id":"commune_bretonne_mediane",
+            "reference_label":"Commune bretonne médiane","reference_role":"analytical_reference",
+            "reference_statistic":"median_routed_communes",
             "reference":{"id":"commune_bretonne_mediane","label":"Commune bretonne médiane",
                 "role":"analytical_reference","statistic":"median_routed_communes"},"source_id":"matrice_temps_mairies"}},
             "indicator_pages":{"raccordement_courbe":{"indicator":"raccordement_courbe","unit":"%","direction":"high",
@@ -97,7 +113,13 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             payload_path.write_text(json.dumps({"indicators":fixture,"vintages":canonical["vintages"].to_dict("records")}),encoding="utf-8")
             metadata_path.write_text(json.dumps(metadata,ensure_ascii=False),encoding="utf-8")
             script=Path(directory)/"publish.R"
-            script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; payload<-jsonlite::read_json(args[[2]],simplifyVector=TRUE); metadata<-jsonlite::read_json(args[[3]],simplifyVector=FALSE); schema<-args[[4]];\nsource(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\ncanonical<-list(mobilite=list(indicateurs=as.data.frame(payload$indicators)),vintages=as.data.frame(payload$vintages));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata); adapter<-owned_series_postgres_adapter(con); result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(result$changed); retry<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(!retry$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
+            script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; payload<-jsonlite::read_json(args[[2]],simplifyVector=TRUE); metadata<-jsonlite::read_json(args[[3]],simplifyVector=FALSE); schema<-args[[4]];\nsource(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\ncanonical<-list(mobilite=list(indicateurs=as.data.frame(payload$indicators)),vintages=as.data.frame(payload$vintages));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata); adapter<-owned_series_postgres_adapter(con);
+ bad_identity<-metadata; bad_identity$indicator_pages$raccordement_courbe$indicator<-NULL;
+ stopifnot(inherits(try(project_raccordement_owned_series(canonical$mobilite$indicateurs,canonical$vintages,bad_identity),silent=TRUE),"try-error"));
+ bad_period<-canonical; bad_period$mobilite$indicateurs$observation_period[[1]]<-"2026-08-25";
+ stopifnot(inherits(try(project_raccordement_owned_series(bad_period$mobilite$indicateurs,bad_period$vintages,metadata),silent=TRUE),"try-error"));
+     stopifnot(nrow(adapter$dataset_marker("raccordement_curve"))==0);
+ result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(result$changed); retry<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(!retry$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
             env=os.environ.copy(); env["PGPASSFILE"]=str(Path(os.environ["APPDATA"])/"PostgreSQL/pgpass.conf")
             env["R_LIBS_USER"]=str(Path(os.environ["LOCALAPPDATA"])/"R/cache/R/renv/library/pipeline-d149995d/windows/R-4.4/x86_64-w64-mingw32")
             completed=subprocess.run(["Rscript",str(script),str(root),str(payload_path),str(metadata_path),schema],cwd=root/"pipeline",env=env,capture_output=True,text=True)
@@ -123,7 +145,32 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         assert body["named_references"][0]["id"]=="commune_bretonne_mediane"
         assert body["named_references"][0]["statistic"]=="median_routed_communes"
         assert [p["value"] for p in body["named_references"][0]["points"]]==[.02,.08,.16,.24,.33,.45,.59,.72,.82,.9,.96]
+        assert all(p["observation_period"]=="2026-09-16" for p in body["points"])
+        assert all(p["observation_period"]=="2026-09-16" for p in body["named_references"][0]["points"])
+        assert all(p["provenance"][0]["version"]=="2026-09-18" for p in body["points"])
         assert all(p["provenance"][0]["source_id"]=="matrice_temps_mairies" for p in body["points"])
+        with TestClient(app) as client:
+            named_reference=client.get("/api/territories/commune/35238/indicators/raccordement_reference")
+            wrong_reference_context=client.get("/api/territories/epci/35238/indicators/raccordement_reference")
+            reference_comparison=client.post("/api/territories/commune/35238/indicators/raccordement_reference/comparison",
+                json={"selection":[{"territory_type":"commune","territory_id":"35001"}]})
+        assert named_reference.status_code==200,named_reference.text
+        named=named_reference.json()
+        assert named["reference"]=={"id":"commune_bretonne_mediane","label":"Commune bretonne médiane",
+            "role":"analytical_reference","statistic":"median_routed_communes","required":True}
+        assert "territory" not in named and len(named["points"])==11
+        assert all(p["observation_period"]=="2026-09-16" for p in named["points"])
+        assert all(p["provenance"][0]["version"]=="2026-09-18" for p in named["points"])
+        assert wrong_reference_context.status_code==422
+        assert reference_comparison.status_code==200
+        assert reference_comparison.json()["result"]["reason"]=="analytical_reference_has_no_focal_or_cohort_comparison"
+        assert "focal_value" not in reference_comparison.json()["result"]
+        assert "points" not in reference_comparison.json()
+        with pytest.raises(psycopg.errors.UniqueViolation):
+            with pub.transaction():
+                pub.execute("UPDATE series_dataset_publication SET published_at=transaction_timestamp() WHERE dataset_id='raccordement_curve'")
+                pub.execute("INSERT INTO series_named_reference_descriptor(dataset_id,indicator_id,reference_id,reference_label,reference_role,reference_statistic,required,reference_indicator_id,active_read_route) VALUES('raccordement_curve','raccordement_courbe','conflicting_reference','Other reference','analytical_reference','other_statistic',false,'raccordement_reference',true)")
+        assert pub.execute("SELECT count(*) FROM series_named_reference_descriptor WHERE reference_indicator_id='raccordement_reference' AND active_read_route").fetchone()==(1,)
         with TestClient(app) as client:
             theme=client.get("/api/territories/commune/35238/themes/mobilite/facts")
             comparison=client.post("/api/territories/commune/35238/indicators/raccordement_courbe/comparison",
@@ -143,7 +190,16 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
                 json={"theme_id":"mobilite","selection":[]})
         assert theme.status_code==200,theme.text
         assert len(theme.json()["series"])==1 and len(theme.json()["series"][0]["points"])==11
-        assert theme.json()["default_comparison"]["results"][0]["median"]==.5
+        assert next(result for result in theme.json()["default_comparison"]["results"]
+            if result["indicator_id"]=="fixture_scalar")["median"]==.5
+        curve_default=next(result for result in theme.json()["default_comparison"]["results"]
+            if result["indicator_id"]=="raccordement_courbe")
+        assert curve_default["source_facet"]=="t0090"
+        assert curve_default["statistic"]=="median" and curve_default["unit"]=="%"
+        assert curve_default["selected_member_count"]==3 and curve_default["eligible_count"]==3
+        assert curve_default["median"]==.5 and curve_default["rank"]==1
+        assert all(source["source_id"]=="matrice_temps_mairies" for source in curve_default["comparison_sources"])
+        assert "owned_content_version" in curve_default
         assert comparison.status_code==200,comparison.text
         assert comparison.json()["scope"]["member_count"]==3
         assert comparison.json()["result"]["median"]==.5
@@ -199,6 +255,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         metadata=json.loads(metadata_file.read_text(encoding="utf-8"))
         route=metadata["owned_series_routes"]["raccordement_courbe"]
         canonical_dataset_id=route["dataset_id"]
+        expected_observation_period=route["observation_period_contract"]["expected_date"]
         page=metadata["indicator_pages"]["raccordement_courbe"]
         axes=[f"t{int(value):04d}" for value in route["axis_values"]]
         canonical_indicators=pd.read_parquet(canonical_files["indicateurs_mobilite"])
@@ -208,6 +265,8 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         raw_reference=canonical_indicators[canonical_indicators.key==route["reference_indicator"]].copy()
         expected_curve=raw_curve[raw_curve.type.isin(page["levels"])].copy()
         excluded_curve=raw_curve[~raw_curve.type.isin(page["levels"])].copy()
+        expected_curve["observation_period"]=expected_observation_period
+        raw_reference["observation_period"]=expected_observation_period
         expected_curve["axis_value"]=expected_curve.detail.astype(str)
         raw_reference["axis_value"]=raw_reference.detail.astype(str)
         assert len(excluded_curve)==11 and set(excluded_curve.type)=={"region"}
@@ -238,7 +297,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
                     (len(territory_records),))
         with tempfile.TemporaryDirectory() as directory:
             canonical_script=Path(directory)/"publish_canonical.R"
-            canonical_script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; data_dir<-args[[2]]; metadata_path<-args[[3]]; schema<-args[[4]];\nsource(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\nmetadata<-jsonlite::read_json(metadata_path,simplifyVector=FALSE); canonical<-list(mobilite=list(indicateurs=nanoparquet::read_parquet(file.path(data_dir,"indicateurs_mobilite.parquet"))),vintages=nanoparquet::read_parquet(file.path(data_dir,"vintages.parquet")));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata); result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,owned_series_postgres_adapter(con)); stopifnot(result$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
+            canonical_script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; data_dir<-args[[2]]; metadata_path<-args[[3]]; schema<-args[[4]];\nsource(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\nmetadata<-jsonlite::read_json(metadata_path,simplifyVector=FALSE); source(file.path(root,"pipeline/R/artefact_raccordement.R")); stopifnot(metadata$owned_series_routes$raccordement_courbe$observation_period_contract$expected_date==RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure); indicators<-nanoparquet::read_parquet(file.path(data_dir,"indicateurs_mobilite.parquet")); if(!"observation_period" %in% names(indicators)) indicators$observation_period[!is.na(indicators$key) & indicators$key %in% c("raccordement_courbe","raccordement_reference")]<-RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure; canonical<-list(mobilite=list(indicateurs=indicators),vintages=nanoparquet::read_parquet(file.path(data_dir,"vintages.parquet")));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata); result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,owned_series_postgres_adapter(con)); stopifnot(result$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
             env=os.environ.copy(); env["PGPASSFILE"]=str(Path(os.environ["APPDATA"])/"PostgreSQL/pgpass.conf")
             env["R_LIBS_USER"]=str(Path(os.environ["LOCALAPPDATA"])/"R/cache/R/renv/library/pipeline-d149995d/windows/R-4.4/x86_64-w64-mingw32")
             completed=subprocess.run(["Rscript",str(canonical_script),str(root),str(canonical_dir),str(metadata_file),schema],
@@ -258,7 +317,8 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         for row in sql_curve:
             territory,level,axis,period,value,status,reason,source_id,vintage_id,source_name,dataset_name,source_version,ref_date,pub_date,revision_hash=row
             raw=expected_map[(territory,level,axis)]
-            assert period==str(vintage.version) and source_id==route["source_id"] and vintage_id==str(vintage.version)
+            assert str(raw.observation_period)==expected_observation_period
+            assert period==expected_observation_period and source_id==route["source_id"] and vintage_id==str(vintage.version)
             assert source_name==str(vintage.source) and dataset_name==source_record["dataset"]
             assert source_version==str(vintage.version) and str(ref_date)==str(vintage.date_reference) and str(pub_date)==str(vintage.date_publication)
             assert revision_hash and len(revision_hash) in (32,64)
@@ -281,7 +341,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             rid,label,role,statistic,axis,period,value,status,reason,source_id,vintage_id,source_name,dataset_name,source_version,ref_date,pub_date,revision_hash=row
             raw=expected_ref[axis]
             assert (rid,label,role,statistic)==(reference_contract["id"],reference_contract["label"],reference_contract["role"],reference_contract["statistic"])
-            assert period==str(vintage.version) and source_id==route["source_id"] and vintage_id==str(vintage.version)
+            assert period==expected_observation_period and source_id==route["source_id"] and vintage_id==str(vintage.version)
             assert status==("missing" if pd.isna(raw.value) else "measured")
             assert value==(None if pd.isna(raw.value) else float(raw.value))
             assert reason is None
@@ -291,10 +351,14 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             assert revision_hash in linked_revisions
         assert pub.execute("SELECT count(*) FROM series_dataset_observation WHERE territory_type='region'").fetchone()==(0,)
         descriptor=pub.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,comparison_point,
-            unit,direction,allowed_levels,active_read_route,theme_id FROM series_dataset_descriptor
+            unit,direction,allowed_levels,active_read_route,theme_id,comparison_statistic,comparison_scope,
+            observation_period_kind
+            FROM series_dataset_descriptor
             WHERE dataset_id=%s AND indicator_id=%s""",(canonical_dataset_id,page["indicator"])).fetchone()
         assert descriptor==("duration_minute",axes,[int(value) for value in route["axis_values"]],
-            "dense_complete",page["comparison"]["detail"],page["unit"],page["direction"],page["levels"],True,metadata["theme"])
+            "dense_complete",page["comparison"]["detail"],page["unit"],page["direction"],page["levels"],True,
+            metadata["theme"],route["comparison_contract"]["statistic"],route["comparison_contract"]["scope"],
+            route["observation_period_contract"]["kind"])
         with TestClient(app) as client:
             canonical_http=client.get("/api/territories/commune/35238/indicators/raccordement_courbe")
         assert canonical_http.status_code==200,canonical_http.text
@@ -306,6 +370,13 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             "missing" if pd.isna(value) else "measured" for value in ren_expected.value]
         assert [point["missing_reason"] for point in canonical_http.json()["points"]]==[
             None if pd.isna(row.rider) else str(row.rider) for row in ren_expected.itertuples()]
+        assert [point["observation_period"] for point in canonical_http.json()["points"]]==[
+            expected_observation_period]*len(axes)
+        with TestClient(app) as client:
+            canonical_reference=client.get("/api/territories/commune/35238/indicators/raccordement_reference")
+        assert canonical_reference.status_code==200
+        assert [point["observation_period"] for point in canonical_reference.json()["points"]]==[
+            expected_observation_period]*len(axes)
         pub.execute("UPDATE table_publication SET content_version='stale-reference-v1' WHERE table_name='territory_reference'")
         with TestClient(app) as client:
             stale=client.get("/api/territories/commune/35238/indicators/raccordement_courbe")

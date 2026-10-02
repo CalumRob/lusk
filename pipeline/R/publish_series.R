@@ -296,12 +296,24 @@ project_prix_m2_owned_series <- function(indicators, vintages, metadata) {
 project_raccordement_owned_series <- function(indicators,vintages,metadata) {
   declaration <- metadata$owned_series_routes$raccordement_courbe
   page <- metadata$indicator_pages$raccordement_courbe
-  indicator_id <- as.character(page$indicator %||% "raccordement_courbe")
+  route_key <- "raccordement_courbe"
+  indicator_id <- as.character(page$indicator %||% NA_character_)
   reference_contract <- declaration$reference
-  if (is.null(declaration) || is.null(page) || is.null(reference_contract) || !isTRUE(declaration$active_read_route) ||
+  if (is.null(declaration) || is.null(page) || is.null(reference_contract) ||
+      length(indicator_id)!=1L || is.na(indicator_id) || !nzchar(indicator_id) ||
+      !identical(indicator_id,route_key) || !identical(as.character(declaration$indicator_id),indicator_id) ||
+      !isTRUE(declaration$active_read_route) ||
+      !isTRUE(declaration$reference_read_route) ||
+      !nzchar(as.character(declaration$reference_indicator %||% "")) ||
       !identical(declaration$axis_kind,"duration_minute") ||
       !identical(reference_contract$role,"analytical_reference") ||
-      !nzchar(reference_contract$id %||% "") || !nzchar(reference_contract$statistic %||% ""))
+      !nzchar(reference_contract$id %||% "") || !nzchar(reference_contract$label %||% "") ||
+      !nzchar(reference_contract$statistic %||% "") ||
+      !identical(declaration$observation_period_contract$kind,"snapshot_date") ||
+      !identical(declaration$observation_period_contract$source,"raccordement_recipe_date_mesure") ||
+      !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",declaration$observation_period_contract$expected_date %||% "") ||
+      !identical(declaration$comparison_contract$statistic,"median") ||
+      !identical(declaration$comparison_contract$scope,"default_group"))
     stop("Raccordement duration/reference metadata contract is incomplete",call.=FALSE)
   minutes <- as.integer(unlist(declaration$axis_values,use.names=FALSE))
   axes <- paste0("t",sprintf("%04d",minutes))
@@ -315,7 +327,8 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata) {
     stop("Raccordement route axes, theme or source differ from the indicator producer contract",call.=FALSE)
   keys <- c(indicator_id,as.character(declaration$reference_indicator))
   raw <- indicators[!is.na(indicators$key) & indicators$key %in% keys,,drop=FALSE]
-  if (!nrow(raw) || anyNA(raw[c("theme","key","detail","type","territoire","unit","vintage_source","vintage_version","vintage_date_reference","vintage_date_publication")]) ||
+  if (!nrow(raw) || !"observation_period" %in% names(raw) ||
+      anyNA(raw[c("theme","key","detail","type","territoire","unit","vintage_source","vintage_version","vintage_date_reference","vintage_date_publication","observation_period")]) ||
       any(raw$theme!=declaration$theme_id) || any(raw$unit!=page$unit) || any(!raw$detail %in% axes))
     stop("Canonical raccordement rows are incomplete or outside declared duration axis",call.=FALSE)
   focal_all <- raw[raw$key==indicator_id,,drop=FALSE]
@@ -329,7 +342,11 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata) {
       reference$type[[1L]]!="region" || (nzchar(declared_reference_territory) &&
         as.character(reference$territoire[[1L]])!=declared_reference_territory) ||
       !identical(as.character(declaration$reference_indicator),as.character(page$trajectory$reference$indicator)) ||
-      !identical(as.character(reference_contract$label),as.character(page$trajectory$reference$label)))
+      !identical(as.character(reference_contract$label),as.character(page$trajectory$reference$label)) ||
+      !identical(as.character(reference_contract$id),as.character(declaration$reference_id)) ||
+      !identical(as.character(reference_contract$label),as.character(declaration$reference_label)) ||
+      !identical(as.character(reference_contract$role),as.character(declaration$reference_role)) ||
+      !identical(as.character(reference_contract$statistic),as.character(declaration$reference_statistic)))
     stop("Canonical reference artifact does not match its producer reference locator",call.=FALSE)
   excluded <- focal_all[!focal_all$type %in% allowed_levels,,drop=FALSE]
   focal <- focal_all[focal_all$type %in% allowed_levels,,drop=FALSE]
@@ -347,6 +364,11 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata) {
       length(unique(raw$vintage_source))!=1L || length(unique(raw$vintage_date_reference))!=1L ||
       length(unique(raw$vintage_date_publication))!=1L)
     stop("Canonical raccordement source vintage does not match vintage artifact",call.=FALSE)
+  if (length(unique(raw$observation_period))!=1L ||
+      !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",raw$observation_period[[1L]]) ||
+      !identical(as.character(raw$observation_period[[1L]]),
+        as.character(declaration$observation_period_contract$expected_date)))
+    stop("Canonical raccordement observation period violates its producer snapshot-date contract",call.=FALSE)
   source_record <- metadata$source_records[[source_id]]
   if (is.null(source_record$dataset) || !nzchar(source_record$dataset))
     stop("Raccordement source dataset metadata is incomplete",call.=FALSE)
@@ -363,16 +385,17 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata) {
     reference_date=reference_date,publication_date=publication_date,revision_hash=hash,stringsAsFactors=FALSE)
   make_points <- function(rows) data.frame(dataset_id=declaration$dataset_id,indicator_id=indicator_id,
     territory_id=as.character(rows$territoire),territory_type=as.character(rows$type),axis_value=as.character(rows$detail),
-    observation_period=version,value=as.numeric(rows$value),status=ifelse(is.na(rows$value),"missing","measured"),
+     observation_period=as.character(rows$observation_period),value=as.numeric(rows$value),status=ifelse(is.na(rows$value),"missing","measured"),
     missing_reason=as.character(rows$rider %||% NA_character_),stringsAsFactors=FALSE)
   points <- make_points(focal)
   reference_descriptor <- data.frame(dataset_id=declaration$dataset_id,indicator_id=indicator_id,
     reference_id=reference_contract$id,reference_label=reference_contract$label,
     reference_role=reference_contract$role,reference_statistic=reference_contract$statistic,
-    required=TRUE,stringsAsFactors=FALSE)
+    required=TRUE,reference_indicator_id=as.character(declaration$reference_indicator),
+    active_read_route=isTRUE(declaration$reference_read_route),stringsAsFactors=FALSE)
   ref <- data.frame(dataset_id=declaration$dataset_id,indicator_id=indicator_id,
     reference_id=reference_contract$id,axis_value=as.character(reference$detail),
-    observation_period=version,value=as.numeric(reference$value),
+     observation_period=as.character(reference$observation_period),value=as.numeric(reference$value),
     status=ifelse(is.na(reference$value),"missing","measured"),
     missing_reason=as.character(reference$rider %||% NA_character_),stringsAsFactors=FALSE)
   descriptor <- list(dataset_id=declaration$dataset_id,indicator_id=indicator_id,
@@ -380,7 +403,10 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata) {
     completeness="dense_complete",comparison_point=as.character(page$comparison$detail),
     label=as.character(page$label),unit=as.character(page$unit),direction=as.character(page$direction),allowed_levels=allowed_levels,
     descriptor_version="1",active_read_route=isTRUE(declaration$active_read_route),
-    theme_id=as.character(declaration$theme_id))
+    theme_id=as.character(declaration$theme_id),
+    comparison_statistic=as.character(declaration$comparison_contract$statistic),
+    comparison_scope=as.character(declaration$comparison_contract$scope),
+    observation_period_kind=as.character(declaration$observation_period_contract$kind))
   projection <- list(dataset_id=declaration$dataset_id,points=points,descriptor=descriptor,
     provenance=provenance,point_provenance=data.frame(dataset_id=points$dataset_id,indicator_id=points$indicator_id,
       territory_id=points$territory_id,axis_value=points$axis_value,provenance_revision_id=revision_id),
@@ -478,7 +504,7 @@ validate_owned_series_projection <- function(projection) {
     refs <- projection$named_reference; ref_links <- projection$named_reference_provenance
     ref_descriptors <- projection$named_reference_descriptors
     fields <- c("dataset_id","indicator_id","reference_id","axis_value","observation_period","value","status")
-    descriptor_fields <- c("dataset_id","indicator_id","reference_id","reference_label","reference_role","reference_statistic","required")
+    descriptor_fields <- c("dataset_id","indicator_id","reference_id","reference_label","reference_role","reference_statistic","required","reference_indicator_id","active_read_route")
     link_fields <- c("dataset_id","indicator_id","reference_id","axis_value","provenance_revision_id")
     if (!identical(d$axis_kind,"duration_minute") || !all(fields %in% names(refs)) ||
         !all(descriptor_fields %in% names(ref_descriptors)) ||
@@ -584,10 +610,11 @@ owned_series_postgres_adapter <- function(con) {
         params=list(dataset_id,version,reference$content_version[[1L]],published_count))
       array_literal <- function(x) paste0("{",paste0('"',gsub('"','\\\\"',as.character(x),fixed=TRUE),'"',collapse=","),"}")
       numeric_axis <- if (is.null(d$axis_numeric_values)) NA_character_ else paste0("{",paste(d$axis_numeric_values,collapse=","),"}")
-       DBI::dbExecute(con,"INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,axis_numeric_values,theme_id) VALUES($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10::text[],$11,$12,$13::integer[],$14)",
+       DBI::dbExecute(con,"INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,axis_numeric_values,theme_id,comparison_statistic,comparison_scope,observation_period_kind) VALUES($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10::text[],$11,$12,$13::integer[],$14,$15,$16,$17)",
         params=list(dataset_id,d$indicator_id,d$axis_kind,array_literal(d$axis_values),d$completeness,
           d$comparison_point %||% NA_character_,d$label,d$unit,d$direction,
-          array_literal(d$allowed_levels),d$descriptor_version,isTRUE(d$active_read_route),numeric_axis,d$theme_id %||% NA_character_))
+          array_literal(d$allowed_levels),d$descriptor_version,isTRUE(d$active_read_route),numeric_axis,d$theme_id %||% NA_character_,
+          d$comparison_statistic %||% NA_character_,d$comparison_scope %||% NA_character_,d$observation_period_kind %||% NA_character_))
       point_columns <- c("dataset_id","indicator_id","territory_id","territory_type","axis_value",
         "observation_period","value","status")
       optional_columns <- intersect(c("state_role","missing_reason"),names(projection$points))
