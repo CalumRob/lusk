@@ -105,13 +105,33 @@ tryCatch({
       identical(Sys.getenv("LUSK_TEST_DATABASE_NAME"), config$DATABASE), read_user != config$USER)
     DBI::dbExecute(con, paste0("GRANT USAGE ON SCHEMA ", DBI::dbQuoteIdentifier(con, schema), " TO ", DBI::dbQuoteIdentifier(con, read_user)))
     DBI::dbExecute(con, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ", DBI::dbQuoteIdentifier(con, schema), " TO ", DBI::dbQuoteIdentifier(con, read_user)))
-    status <- system2("python", c("-m", "pytest", "-q", "--rootdir=..", "../api/tests/integration/test_mobility_publisher_http.py"),
-      env=c("PYTHONPATH=..", paste0("LUSK_PROFILE_HTTP_SCHEMA=", schema), paste0("LUSK_PROFILE_HTTP_TERRITORY=", mobility_territories$territoire[[1L]])),
-      stdout="", stderr="")
-    if (!identical(status, 0L)) stop("Publisher-to-HTTP parity test failed", call.=FALSE)
-    cat("Guarded publisher-to-HTTP TestClient parity: PASS\n")
+    run_http_parity <- function(schema, territory) {
+      python <- Sys.which("python")
+      if (!nzchar(python)) stop("Python executable is unavailable", call.=FALSE)
+      keys <- c("PYTHONPATH", "LUSK_PROFILE_HTTP_SCHEMA", "LUSK_PROFILE_HTTP_TERRITORY")
+      previous <- Sys.getenv(keys, unset=NA_character_)
+      on.exit({
+        for (i in seq_along(keys)) {
+          if (is.na(previous[[i]])) Sys.unsetenv(keys[[i]])
+          else do.call(Sys.setenv, setNames(list(previous[[i]]), keys[[i]]))
+        }
+      }, add=TRUE)
+      root <- normalizePath("..", winslash="/", mustWork=TRUE)
+      test_file <- normalizePath("../api/tests/integration/test_mobility_publisher_http.py", winslash="/", mustWork=TRUE)
+      Sys.setenv(PYTHONPATH=root, LUSK_PROFILE_HTTP_SCHEMA=schema, LUSK_PROFILE_HTTP_TERRITORY=territory)
+      system2(python, c("-m", "pytest", "-q", shQuote(paste0("--rootdir=", root), type="cmd"),
+        shQuote(test_file, type="cmd")), stdout="", stderr="")
+    }
+    assert_http_parity <- function() {
+      status <- run_http_parity(schema, mobility_territories$territoire[[1L]])
+      if (!identical(status, 0L)) stop("Publisher-to-HTTP parity test failed", call.=FALSE)
+      cat("Guarded publisher-to-HTTP TestClient parity: PASS\n")
+    }
+    assert_http_parity()
   } else cat("Publisher-to-HTTP TestClient parity: SKIPPED (explicit read-only test DSN/role not configured)\n")
   age_after <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,detail_key,sex_key,value,status FROM profile_observation WHERE indicator_id='structure_age' ORDER BY territory_type,territory_id,detail_key,sex_key")
+  no_op <- publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
+    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages)
   stopifnot(combined$changed, identical(age_after,facts_before),
     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_axis WHERE indicator_id='distribution_dpe' AND axis_name='sex'")$n[[1L]]==0,
     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_observation WHERE indicator_id='distribution_dpe'")$n[[1L]]==nrow(dpe_rows),
@@ -119,9 +139,22 @@ tryCatch({
       DBI::dbGetQuery(con,"SELECT count(*) AS n FROM profile_observation WHERE indicator_id=$1",params=list(id))$n[[1L]]==
         nrow(mobility_rows[mobility_rows$key==id,,drop=FALSE]), logical(1))),
     DBI::dbGetQuery(con,"SELECT count(*) AS n FROM profile_axis WHERE indicator_id='offre_cyclable' AND axis_name='detail'")$n[[1L]]==5,
-    !publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-      con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages)$changed)
+    !no_op$changed)
   combined_marker <- DBI::dbGetQuery(con, "SELECT * FROM table_publication WHERE table_name='declared_profile'")
+  if (exists("assert_http_parity")) assert_http_parity()
+  combined_facts <- DBI::dbGetQuery(con, "SELECT indicator_id,territory_id,territory_type,detail_key,sex_key,value,status FROM profile_observation ORDER BY indicator_id,territory_type,territory_id,detail_key,sex_key")
+  DBI::dbExecute(con, "CREATE FUNCTION reject_combined_profile_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'combined profile fixture failure'; END $$")
+  DBI::dbExecute(con, "CREATE TRIGGER reject_combined_profile BEFORE INSERT ON profile_observation FOR EACH ROW EXECUTE FUNCTION reject_combined_profile_insert()")
+  changed_mobility <- mobility_payload
+  changed_mobility$indicateurs$value[[1L]] <- changed_mobility$indicateurs$value[[1L]] + 1
+  failed_combined <- try(publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
+    con=con, mobilite=changed_mobility, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages), silent=TRUE)
+  DBI::dbExecute(con, "DROP TRIGGER reject_combined_profile ON profile_observation")
+  DBI::dbExecute(con, "DROP FUNCTION reject_combined_profile_insert()")
+  stopifnot(inherits(failed_combined, "try-error"),
+    identical(combined_marker, DBI::dbGetQuery(con, "SELECT * FROM table_publication WHERE table_name='declared_profile'")),
+    identical(combined_facts, DBI::dbGetQuery(con, "SELECT indicator_id,territory_id,territory_type,detail_key,sex_key,value,status FROM profile_observation ORDER BY indicator_id,territory_type,territory_id,detail_key,sex_key")))
+  if (exists("assert_http_parity")) assert_http_parity()
   age_only <- try(publish_registered_profile(registry,"structure_age",payload,adapter),silent=TRUE)
   stopifnot(inherits(age_only,"try-error"),
     identical(combined_marker,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='declared_profile'")))
