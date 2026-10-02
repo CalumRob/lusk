@@ -20,6 +20,13 @@
 # Local cartographic prototype exports — keep available for development, but
 # do not include them in the repository until their publication contract lands.
 /pipeline/maps/
+!/pipeline/maps/
+/pipeline/maps/*
+!/pipeline/maps/production/
+!/pipeline/maps/production/**
+/pipeline/maps/production/output/
+/pipeline/maps/production/**/__pycache__/
+/pipeline/maps/production/**/*.pyc
 
 # Windows/agent safety scripts (worktree/data guards) — versioned
 !/scripts/

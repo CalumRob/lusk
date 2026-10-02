@@ -1,0 +1,44 @@
+{
+  "family": "network",
+  "version": 1,
+  "scope": {
+    "analytical_departments": ["22", "29", "35", "56"]
+  },
+  "marks": {
+    "car": "#A94562",
+    "walk": "#448FA6",
+    "bike-protected": "#2E6171",
+    "bike-shared": "#8C4C9E"
+  },
+  "inspection": {
+    "car": {
+      "title_runs": [
+        { "text": "Réseau ", "colour": "#273A37", "opacity": 0.55, "solid": false },
+        { "text": "automobile", "mark": "car", "opacity": 1.0, "solid": true }
+      ],
+      "footer": [
+        "Voies non retenues : ",
+        "Accès privés ou explicitement restreints, allées de parking et voies réservées aux bus."
+      ]
+    },
+    "walk": {
+      "title_runs": [
+        { "text": "Réseau ", "colour": "#273A37", "opacity": 0.55, "solid": false },
+        { "text": "piéton", "mark": "walk", "opacity": 1.0, "solid": true }
+      ],
+      "footer": [
+        "Voies retenues : ",
+        "Chemins, escaliers, trottoirs, accès piéton, rues résidentielles, limitation à 30km/h."
+      ]
+    },
+    "bike": {
+      "title_runs": [
+        { "text": "Réseau cyclable ", "colour": "#273A37", "opacity": 0.55, "solid": false },
+        { "text": "protégé", "mark": "bike-protected", "opacity": 1.0, "solid": true },
+        { "text": " / ", "colour": "#273A37", "opacity": 0.55, "solid": false },
+        { "text": "partagé", "mark": "bike-shared", "opacity": 1.0, "solid": true }
+      ],
+      "footer": null
+    }
+  }
+}
