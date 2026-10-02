@@ -31,7 +31,9 @@ class ThemeTerritorySelection(BaseModel):
 
 class ThemeComparisonRequest(BaseModel):
     theme_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
-    selection: list[ThemeTerritorySelection] = Field(max_length=500)
+    # Match the existing typed building-selection boundary, which accommodates
+    # the whole published territory universe rather than a 500-territory subset.
+    selection: list[ThemeTerritorySelection] = Field(max_length=1500)
 
 
 class ModeComparison(BaseModel):
@@ -1127,6 +1129,8 @@ def theme_scalar_comparison(
             except ComparisonInputError as exc: raise HTTPException(422,str(exc)) from exc
             descriptors=conn.execute("""SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
               FROM scalar_descriptor WHERE theme_id=%s ORDER BY indicator_id""",(request.theme_id,)).fetchall()
+            if not descriptors:
+                raise HTTPException(404, "No published scalar descriptors for this theme")
             fact_rows=conn.execute("""SELECT o.indicator_id,o.territory_id,o.territory_type,o.value,o.status,
               o.support_count,o.denominator_count,
               COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,'name',sd.name,
@@ -1152,7 +1156,10 @@ def theme_scalar_comparison(
                 values=[float(row[1]) for row in peer_rows if row[2]=="measured" and row[1] is not None]
                 focal_row=next(((r[3],r[4]) for r in rows if r[1]==territory_id and r[2]==territory_type),None)
                 fv=float(focal_row[0]) if focal_row and focal_row[1]=="measured" and focal_row[0] is not None else None
-                rank=(1+sum((v>fv if direction=="high" else v<fv) for v in values)) if fv is not None else None
+                # A rank is within the selected group, not an insertion position
+                # for a focal territory that the visitor did not select.
+                rank=(1+sum((v>fv if direction=="high" else v<fv) for v in values)) if (
+                    values and fv is not None and territory_id in members) else None
                 comparison_sources=[]
                 seen_sources=set()
                 for row in peer_rows:
@@ -1162,6 +1169,7 @@ def theme_scalar_comparison(
                             seen_sources.add(key)
                             comparison_sources.append(source)
                 result.append({"indicator_id":indicator,"label":label,"unit":unit,"direction":direction,
+                  "statistic":"median",
                   "descriptor_version":descriptor_version,"status":"available" if values else "unavailable",
                   "reason":None if values else "no_selected_comparable_values","selected_member_count":len(members),
                   "eligible_count":len(values),"missing_count":max(0,len(members)-len(values)),

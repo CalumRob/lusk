@@ -123,6 +123,15 @@ The API now has two additive, non-activated read boundaries:
   rows are read in one SQL query; unsupported facet/direction/grain contracts
   report comparison unavailable rather than inventing a statistic.
 
+The scalar-family contract explicitly identifies its statistic as `median`;
+it does not apply that rule to building-weighted means or other evidence
+families. A rank is returned only when the measured focal territory actually
+belongs to the selected group. An empty selection has no rank or rank size;
+a measured focal outside the group retains its value but has no group rank.
+The request uses the existing typed-selection safety bound of 1,500 submitted
+territories, accommodating an explicit selection of the published universe.
+An unknown or not-yet-published scalar theme returns 404, not an empty success.
+
 Theme membership is owned by canonical pipeline `theme_<theme>.json` metadata
 and persisted as `scalar_descriptor.theme_id`; it participates in descriptor and
 table content identity. Fresh schema requires a valid key. Additive migration
@@ -135,8 +144,9 @@ carry `complete_theme: false` and no frontend consumer is switched. The current
 shared scalar snapshot includes Services essentiels plus the existing
 metadata-declared ordinary scalar projections for Économie/Emploi, Démographie,
 Mobilité and Habitat. Remaining theme facts include declared profiles (e.g.
-DPE and mobility profiles), demographic/housing historical series, Milieux
-annual and multi-year state facts, sparse programme/grant evidence, and theme
+DPE and mobility profiles), housing price series and the source facts used by
+demographic/housing readings, Milieux annual and multi-year state facts,
+sparse programme/grant evidence, and theme
 metadata/lecture context. Scalar comparison is currently supported only for
 self-facet, commune-eligible, high/low-direction descriptors. Non-commune
 measure-grain comparisons and other statistic contracts remain unavailable.
