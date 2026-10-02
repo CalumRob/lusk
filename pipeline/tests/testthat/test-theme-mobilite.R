@@ -2927,6 +2927,7 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
   expect_true(all(racc_ind$vintage_version == "2026-09-16"))
 
   courbe_ind <- ind[ind$key == "raccordement_courbe", ]
+  expect_true(all(courbe_ind$observation_period == RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure))
   expect_equal(sum(courbe_ind$territoire == "22001"), grille_n)
   grille_attendue <- grille_raccordement()
   expect_setequal(courbe_ind$detail[courbe_ind$territoire == "22001"],
@@ -2942,6 +2943,7 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
   expect_true(all(is.na(courbe_ind$rang_epci)) && all(is.na(courbe_ind$rang_reg)))
 
   reference_ind <- ind[ind$key == "raccordement_reference", ]
+  expect_true(all(reference_ind$observation_period == RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure))
   expect_setequal(unique(reference_ind$territoire), "53")
   expect_equal(nrow(reference_ind), grille_n)
 })

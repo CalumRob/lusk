@@ -1083,6 +1083,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     dplyr::left_join(racc_courbes, by = c("code", "detail")) %>%
     dplyr::mutate(key = "raccordement_courbe", unit = "%") %>%
     dplyr::select(code, key, detail, value, unit)
+  raccordement_courbe$observation_period <- as.character(
+    racc$entrees$recette$date_mesure)
 
   # la RÉFÉRENCE médiane bretonne : les mêmes marques de grille, portées par
   # la seule ligne régionale (la multiplicité NA de la table déclarative
@@ -1096,6 +1098,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
             racc$calcul$reference$minute)],
     unit = "%"
   )
+  raccordement_reference$observation_period <- as.character(
+    racc$entrees$recette$date_mesure)
 
   # l'assemblage : les onze clés + leurs rangs (le détail NA des clés
   # scalaires joint sur le détail NA des rangs partagés) + les tampons de la
@@ -1154,7 +1158,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
       "rang_epci", "rang_dep", "rang_reg",
       "rang_epci_n", "rang_dep_n", "rang_reg_n",
       "vintage_source", "vintage_version",
-       "vintage_date_reference", "vintage_date_publication", "rider"
+       "vintage_date_reference", "vintage_date_publication", "rider",
+       "observation_period"
     )))
 }
 
