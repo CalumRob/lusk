@@ -464,7 +464,7 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
     from api import main
 
     selected = [{"territory_type": "commune", "territory_id": f"large{i:04d}"}
-                for i in range(501)]
+                for i in range(1202)]
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as conn:
         with conn.transaction():
             with conn.cursor() as cur:
@@ -479,7 +479,7 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
             conn.execute("INSERT INTO scalar_descriptor_source VALUES ('large_scalar','large_fixture')")
             conn.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('large_scalar','large0000','commune',7,'measured')")
             conn.execute("INSERT INTO scalar_observation_source VALUES ('large_scalar','large0000','large_fixture','v1')")
-            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',501)")
+            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',1202)")
             conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','large-v1',1,'large-ref-v1')")
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1, open=True,
                           kwargs={"autocommit": True})
@@ -489,12 +489,17 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
         with TestClient(main.app) as client:
             response = client.post("/api/territories/commune/large0000/themes/comparison",
                                    json={"theme_id": "demographie", "selection": selected})
+            excessive = client.post("/api/territories/commune/large0000/themes/comparison",
+                                    json={"theme_id": "demographie", "selection": [selected[0]] * 1501})
         assert response.status_code == 200, response.text
         result = response.json()["results"][0]
-        assert result["selected_member_count"] == 501
-        assert result["eligible_count"] == 1 and result["missing_count"] == 500
+        assert result["selected_member_count"] == 1202
+        assert result["eligible_count"] == 1 and result["missing_count"] == 1201
         assert result["median"] == 7 and result["rank"] == 1 and result["rank_size"] == 1
         assert "observations" not in response.json() and "scope_series" not in response.json()
+        assert excessive.status_code == 422
+        assert excessive.json()["detail"][0]["type"] == "too_long"
+        assert excessive.json()["detail"][0]["ctx"]["max_length"] == 1500
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
