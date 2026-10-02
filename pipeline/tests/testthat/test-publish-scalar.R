@@ -189,7 +189,8 @@ test_that("complete scalar snapshots combine service and economy cohorts determi
 
 test_that("economy scalar projector retains canonical units, levels, and source vintages", {
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_economie.json"), simplifyVector=FALSE)
-  canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_economie.parquet"))
+  canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(pkgload::pkg_path(), "..", "public", "data"))
+  canonical <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_economie.parquet"))
   ids <- names(metadata$scalar_contracts)
   eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type)))
@@ -200,7 +201,17 @@ test_that("economy scalar projector retains canonical units, levels, and source 
     reference_date=as.character(canonical$vintage_date_reference),
     publication_date=as.character(canonical$vintage_date_publication))
   projection <- project_scalar_canonical_rows(rows, metadata, ids, eligible)
-  expect_setequal(projection$descriptors$indicator_id, c("effectifs_salaries","chomage"))
+  expect_setequal(projection$descriptors$indicator_id, c("effectifs_salaries","chomage","eco_activites"))
+  eco_policy <- metadata$scalar_contracts$eco_activites
+  eco <- projection$facts[projection$facts$indicator_id == "eco_activites", , drop=FALSE]
+  expect_false(eco_policy$counts_available)
+  expect_true(all(is.na(eco$support_count) & is.na(eco$denominator_count)))
+  expect_true(all(eco$status[is.na(eco$value)] == "suppressed"))
+  expect_true(all(eco$status[!is.na(eco$value)] == "measured"))
+  eco_canonical <- canonical[canonical$key == "eco_activites", , drop=FALSE]
+  eco_expected <- eco_canonical[match(eco$territory_id, as.character(eco_canonical$territoire)), , drop=FALSE]
+  expect_equal(eco$value, as.numeric(eco_expected$value))
+  expect_identical(eco$status, ifelse(is.na(eco_expected$value), "suppressed", "measured"))
   expect_equal(projection$descriptors$unit[match(ids, projection$descriptors$indicator_id)],
     unname(vapply(ids, function(id) metadata$indicator_pages[[id]]$unit, character(1))))
   expect_equal(projection$descriptors$direction[match(c("effectifs_salaries","chomage"), projection$descriptors$indicator_id)],
@@ -242,7 +253,7 @@ test_that("housing DPE scalar retains producer denominator and suppression", {
   expect_true("region" %in% projection$descriptors$allowed_levels[[1L]])
   inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
   snapshot <- project_service_scalar_snapshot(inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
-  expect_equal(nrow(snapshot$descriptors), 42L)
+  expect_equal(nrow(snapshot$descriptors), 43L)
   expect_true(all(c("effectifs_salaries", "chomage", "densite", "taille_menages", "part_passoires") %in%
     snapshot$descriptors$indicator_id))
   expect_true(all(c("distribution_dpe", "part_passoires") %in% names(metadata$indicator_pages)))
@@ -414,7 +425,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
   expect_true(all(c(ids, "effectifs_salaries", "chomage", "densite", "taille_menages",
     "evolution_1968", "part_passoires") %in% snapshot$descriptors$indicator_id))
-  expect_equal(nrow(snapshot$descriptors), 42L)
+  expect_equal(nrow(snapshot$descriptors), 43L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
 })
 
