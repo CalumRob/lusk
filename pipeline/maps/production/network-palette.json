@@ -1,0 +1,10 @@
+{
+  "provenance": "Approved selected-CS inspection ground, ported from build_ground_review.py; source class colours from E:/lusk-hero/visual-class-map-paper.csv (used-class subset only).",
+  "classes": {
+    "CS1.2.2": {"visual_class": "paper_water", "source_colour": "#5B9EC2", "approved_colour": "#D2DBDD", "treatment": "neutral-water"},
+    "CS2.1.1.1": {"visual_class": "paper_deciduous", "source_colour": "#6F8D62", "approved_colour": "#3E614B", "opacity": 0.45, "treatment": "woodland"},
+    "CS2.1.1.2": {"visual_class": "paper_conifer", "source_colour": "#4F765F", "approved_colour": "#3E614B", "opacity": 0.45, "treatment": "woodland"},
+    "CS2.1.1.3": {"visual_class": "paper_mixed", "source_colour": "#8B9560", "approved_colour": "#3E614B", "opacity": 0.45, "treatment": "woodland"},
+    "CS2.2.1": {"visual_class": "paper_grass", "source_colour": "#A3AD69", "approved_colour": "#3E614B", "opacity": 0.45, "treatment": "only-where-US6.3"}
+  }
+}
