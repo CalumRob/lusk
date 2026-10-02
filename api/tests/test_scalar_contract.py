@@ -252,6 +252,7 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
             self.queries.append(sql)
             if "table_publication" in sql: return Cursor([("profile-v1", 4, "ref-v1", "ref-v2" if self.stale else "ref-v1")])
             if "FROM territory_reference WHERE territory_id" in sql: return Cursor([(self.membership,)])
+            if "SELECT comparison_scalar FROM profile_descriptor" in sql: return Cursor([(None,)])
             if "profile_descriptor" in sql:
                 return Cursor([("Structure par âge", "%", ["commune"], "dense_complete", "d1",
                     "outside" if self.bad_facet else "<15", "F", "sideways" if self.bad_direction else "high")])

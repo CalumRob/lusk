@@ -11,23 +11,28 @@ validate_declared_profile <- function(facts, descriptor, axes, eligible_territor
     stop("Invalid profile identity, level, value or status", call. = FALSE)
   details <- axes[axes$axis_name == "detail", , drop = FALSE]
   sexes <- axes[axes$axis_name == "sex", , drop = FALSE]
-  if (!setequal(unique(axes$axis_name), c("detail", "sex")) ||
+  if (!setequal(unique(axes$axis_name), c("detail", if (length(descriptor$sexes)) "sex")) ||
       !identical(as.character(details$axis_key), as.character(descriptor$details)) ||
       !identical(as.character(sexes$axis_key), as.character(descriptor$sexes)) ||
       !identical(as.integer(details$ordinal), seq_along(descriptor$details) - 1L) ||
       !identical(as.integer(sexes$ordinal), seq_along(descriptor$sexes) - 1L) ||
       anyDuplicated(axes[c("axis_name", "axis_key")]) || anyDuplicated(axes[c("axis_name", "ordinal")]))
     stop("Profile axes differ from declared metadata", call. = FALSE)
-  if (length(descriptor$comparison_detail) != 1L || is.na(descriptor$comparison_detail) ||
+  scalar_facet <- !is.null(descriptor$comparison_scalar)
+  if ((!scalar_facet && (length(descriptor$comparison_detail) != 1L || is.na(descriptor$comparison_detail) ||
       !descriptor$comparison_detail %in% details$axis_key ||
       length(descriptor$comparison_sex) != 1L || is.na(descriptor$comparison_sex) ||
-      !descriptor$comparison_sex %in% sexes$axis_key ||
+      !descriptor$comparison_sex %in% sexes$axis_key)) ||
+      (scalar_facet && (!is.na(descriptor$comparison_detail) || !is.na(descriptor$comparison_sex) ||
+        !grepl("^[a-z][a-z0-9_]{0,95}$", descriptor$comparison_scalar) ||
+        length(descriptor$required_scalar_version) != 1L || is.na(descriptor$required_scalar_version) ||
+        !nzchar(descriptor$required_scalar_version))) ||
       length(descriptor$comparison_direction) != 1L ||
       !descriptor$comparison_direction %in% c("high", "low"))
     stop("Profile comparison facet differs from declared axes or direction", call. = FALSE)
   key <- paste(facts$territory_type, facts$territory_id, facts$detail, facts$sex, sep = "\r")
   if (anyDuplicated(key)) stop("Duplicate profile coordinate", call. = FALSE)
-  if (any(!facts$detail %in% descriptor$details) || any(!facts$sex %in% descriptor$sexes))
+  if (any(!facts$detail %in% descriptor$details) || any(!facts$sex %in% if (length(descriptor$sexes)) descriptor$sexes else ""))
     stop("Undeclared profile coordinate", call. = FALSE)
   universe <- unique(paste(facts$territory_type, facts$territory_id, sep = "\r"))
   if (!is.null(eligible_territories)) {
@@ -41,7 +46,7 @@ validate_declared_profile <- function(facts, descriptor, axes, eligible_territor
   }
   for (territory in universe) {
     rows <- facts[paste(facts$territory_type, facts$territory_id, sep = "\r") == territory, , drop = FALSE]
-    expected <- expand.grid(detail = descriptor$details, sex = descriptor$sexes, stringsAsFactors = FALSE)
+    expected <- expand.grid(detail = descriptor$details, sex = if (length(descriptor$sexes)) descriptor$sexes else "", stringsAsFactors = FALSE)
     if (!setequal(paste(rows$detail, rows$sex), paste(expected$detail, expected$sex)))
       stop("Dense profile has missing coordinates", call. = FALSE)
   }
@@ -72,7 +77,8 @@ project_structure_age_profile <- function(indicateurs, metadata, territoires = N
     # suppression/unsupported reason. NA therefore has the declared
     # not_available meaning; do not infer finer-grained status distinctions.
     status = ifelse(is.na(facts$value), "not_available", "measured"), stringsAsFactors = FALSE)
-  descriptor <- list(levels = unlist(page$levels), details = details, sexes = sexes,
+  descriptor <- list(indicator_id = page$indicator, theme_id = metadata$theme,
+    levels = unlist(page$levels), details = details, sexes = sexes,
     label = page$label, unit = page$unit, source = unlist(page$sources),
     comparison_detail = page$comparison$detail,
     comparison_sex = page$comparison$sex,
@@ -104,6 +110,51 @@ project_structure_age_profile <- function(indicateurs, metadata, territoires = N
     vintages = vintages, datasets = datasets, eligible_territories = eligible)
 }
 
+project_dpe_profile <- function(canonical, metadata, scalar_version) {
+  page <- metadata$indicator_pages$distribution_dpe
+  policy <- metadata$profile_contracts$distribution_dpe
+  if (is.null(page) || is.null(policy) || !identical(policy$completeness, "dense_complete") ||
+      is.null(page$comparison$indicator) || is.null(page$distribution$signature) ||
+      length(scalar_version) != 1L || is.na(scalar_version) || !nzchar(scalar_version))
+    stop("DPE profile and scalar dependency must be declared", call.=FALSE)
+  rows <- canonical$indicateurs
+  territories <- canonical$territoires
+  details <- unlist(page$distribution$signature, use.names=FALSE)
+  labels <- unlist(metadata$detail_labels[[page$indicator]], use.names=TRUE)
+  source_ids <- unlist(page$sources, use.names=FALSE)
+  if (!setequal(names(labels), details) || length(source_ids) != 1L)
+    stop("DPE axes or source identity is not declared", call.=FALSE)
+  rows <- rows[rows$key == page$indicator & rows$type %in% unlist(page$levels), , drop=FALSE]
+  if (!nrow(rows) || any(!is.na(rows$sex)) || any(rows$unit != page$unit) ||
+      !all(c("vintage_source","vintage_version","vintage_date_reference","vintage_date_publication") %in% names(rows)))
+    stop("Canonical DPE facts do not match declared one-axis profile", call.=FALSE)
+  if (!policy$support_count_field %in% names(rows)) stop("DPE support field is missing", call.=FALSE)
+  support <- rows[[policy$support_count_field]]
+  status <- ifelse(is.na(rows$value), policy$missing_status, "measured")
+  status[!is.na(support) & support > 0 & support < policy$suppressed_below] <- "suppressed"
+  status[!is.na(support) & support == 0] <- policy$zero_support_status
+  facts <- data.frame(territory_id=rows$territoire, territory_type=rows$type, detail=rows$detail,
+    sex="", value=rows$value, status=status, stringsAsFactors=FALSE)
+  axes <- data.frame(axis_name="detail", axis_key=details, label=unname(labels[details]), ordinal=seq_along(details)-1L)
+  descriptor <- list(indicator_id=page$indicator, theme_id=metadata$theme, levels=unlist(page$levels),
+    details=details, sexes=character(), label=page$label, unit=page$unit, source=source_ids,
+    comparison_detail=NA_character_, comparison_sex=NA_character_, comparison_direction=page$comparison$direction,
+    comparison_scalar=page$comparison$indicator, required_scalar_version=scalar_version)
+  eligible <- unique(data.frame(territory_id=territories$territoire[territories$type %in% descriptor$levels],
+    territory_type=territories$type[territories$type %in% descriptor$levels], stringsAsFactors=FALSE))
+  validate_declared_profile(facts, descriptor, axes, eligible)
+  vintage_ids <- paste(rows$vintage_version, rows$vintage_date_reference, sep="/")
+  datasets <- unique(data.frame(source_id=source_ids, name=rows$vintage_source, stringsAsFactors=FALSE))
+  if (nrow(datasets) != 1L) stop("DPE source maps to conflicting names", call.=FALSE)
+  vintages <- unique(data.frame(source_id=source_ids, vintage_id=vintage_ids, version=rows$vintage_version,
+    reference_date=as.Date(rows$vintage_date_reference), publication_date=as.Date(rows$vintage_date_publication)))
+  provenance <- data.frame(indicator_id=page$indicator, territory_id=facts$territory_id,
+    detail_key=facts$detail, sex_key=facts$sex, source_id=source_ids, vintage_id=vintage_ids)
+  descriptor$descriptor_version <- profile_content_version(list(descriptor, axes, policy))
+  list(facts=facts, axes=axes, descriptor=descriptor, provenance=provenance, vintages=vintages,
+       datasets=datasets, eligible_territories=eligible)
+}
+
 profile_content_version <- function(projection) {
   path <- tempfile("profile-version-")
   on.exit(unlink(path), add = TRUE)
@@ -119,26 +170,32 @@ register_profile_publisher <- function(registry, name, project, publish) {
   registry
 }
 
-publish_registered_profile <- function(registry, name, canonical, db) {
+publish_registered_profile <- function(registry, name, canonical, db, additional_projections = list()) {
   publisher <- registry[[name]]
   if (is.null(publisher)) stop("Unregistered profile publisher", call.=FALSE)
   projection <- publisher$project(canonical)
-  validate_declared_profile(projection$facts, projection$descriptor,
-    projection$axes, projection$eligible_territories)
-  provenance <- projection$provenance
+  profiles <- c(list(projection), additional_projections)
+  ids <- vapply(profiles, function(p) p$descriptor$indicator_id, character(1))
+  if (anyDuplicated(ids)) stop("Duplicate profile snapshot identity", call.=FALSE)
+  for (profile in profiles) {
+  validate_declared_profile(profile$facts, profile$descriptor,
+    profile$axes, profile$eligible_territories)
+  provenance <- profile$provenance
   provenance_fields <- c("indicator_id", "territory_id", "detail_key", "sex_key", "source_id", "vintage_id")
-  fact_keys <- paste("structure_age", projection$facts$territory_id, projection$facts$detail,
-    projection$facts$sex, sep="\r")
+  fact_keys <- paste(profile$descriptor$indicator_id, profile$facts$territory_id, profile$facts$detail,
+    profile$facts$sex, sep="\r")
   provenance_keys <- if (is.data.frame(provenance) && all(provenance_fields %in% names(provenance)))
     paste(provenance$indicator_id, provenance$territory_id, provenance$detail_key, provenance$sex_key, sep="\r") else character()
   if (!is.data.frame(provenance) || !setequal(names(provenance), provenance_fields) ||
       anyNA(provenance[provenance_fields]) || anyDuplicated(provenance[provenance_fields]) ||
-      any(provenance$source_id != projection$descriptor$source[[1L]]) ||
+      any(!provenance$source_id %in% profile$descriptor$source) ||
       !setequal(fact_keys, provenance_keys) ||
       any(!paste(provenance$source_id, provenance$vintage_id) %in%
-          paste(projection$vintages$source_id, projection$vintages$vintage_id)) ||
-      any(!provenance$source_id %in% projection$datasets$source_id))
+          paste(profile$vintages$source_id, profile$vintages$vintage_id)) ||
+      any(!provenance$source_id %in% profile$datasets$source_id))
     stop("Invalid or incomplete profile provenance associations", call.=FALSE)
+  }
+  if (length(profiles) > 1L) projection <- list(profiles=profiles[order(ids)])
   version <- profile_content_version(projection)
   db$transaction({
     if (is.function(db$lock)) db$lock()
@@ -148,7 +205,16 @@ publish_registered_profile <- function(registry, name, canonical, db) {
         (all(c("row_count", "actual_rows") %in% names(reference)) &&
          reference$row_count[[1L]] != reference$actual_rows[[1L]]))
       stop("Territory reference has no committed publication marker", call.=FALSE)
-    db$validate_territories(projection$eligible_territories, projection$descriptor)
+    for (profile in profiles) {
+      db$validate_territories(profile$eligible_territories, profile$descriptor)
+      if (!is.null(profile$descriptor$comparison_scalar)) {
+        scalar <- db$marker("scalar_observation")
+        if (!nrow(scalar) || !identical(as.character(scalar$content_version[[1L]]), profile$descriptor$required_scalar_version) ||
+            !identical(as.character(scalar$reference_content_version[[1L]]), as.character(reference$content_version[[1L]])))
+          stop("Profile scalar dependency is stale or incompatible", call.=FALSE)
+        db$validate_scalar_facet(profile$descriptor)
+      }
+    }
     marker <- db$marker("declared_profile")
     changed <- !(nrow(marker) && identical(as.character(marker$content_version[[1L]]), version))
     reference_changed <- !changed && "reference_content_version" %in% names(marker) &&
@@ -176,6 +242,17 @@ profile_postgres_adapter <- function(con) {
       "SELECT p.content_version,p.row_count,(SELECT count(*) FROM territory_reference) AS actual_rows FROM table_publication p WHERE p.table_name='territory_reference'"),
     set_reference_version = function(version) DBI::dbExecute(con,
       "UPDATE table_publication SET reference_content_version=$1 WHERE table_name='declared_profile'", params=list(version)),
+    validate_scalar_facet = function(descriptor) {
+      facet <- DBI::dbGetQuery(con, "SELECT unit,direction,allowed_levels,comparison_facet FROM scalar_descriptor WHERE indicator_id=$1",
+        params=list(descriptor$comparison_scalar))
+      levels <- DBI::dbGetQuery(con, "SELECT unnest(allowed_levels) AS level FROM scalar_descriptor WHERE indicator_id=$1",
+        params=list(descriptor$comparison_scalar))$level
+      if (!nrow(facet) || facet$unit[[1L]] != descriptor$unit ||
+          facet$direction[[1L]] != descriptor$comparison_direction ||
+          !all(descriptor$levels %in% levels) ||
+          facet$comparison_facet[[1L]] != descriptor$comparison_scalar)
+        stop("Profile scalar facet descriptor is incompatible", call.=FALSE)
+    },
     validate_territories = function(territories, descriptor) {
       actual <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type FROM territory_reference")
       actual <- actual[actual$territory_type %in% unlist(descriptor$levels, use.names=FALSE), , drop=FALSE]
@@ -184,37 +261,47 @@ profile_postgres_adapter <- function(con) {
         stop("Profile eligible territory universe differs from committed reference", call.=FALSE)
     },
     replace = function(projection, version) {
+      profiles <- if (!is.null(projection$profiles)) projection$profiles else list(projection)
+      ids <- vapply(profiles, function(p) p$descriptor$indicator_id, character(1))
+      existing <- DBI::dbGetQuery(con, "SELECT indicator_id FROM profile_descriptor")$indicator_id
+      if (any(!existing %in% ids)) stop("Complete profile snapshot would discard an existing profile", call.=FALSE)
+      DBI::dbExecute(con, "DELETE FROM profile_observation")
+      DBI::dbExecute(con, "DELETE FROM profile_descriptor_source")
+      DBI::dbExecute(con, "DELETE FROM profile_descriptor")
+      for (projection in profiles) {
       for (i in seq_len(nrow(projection$datasets))) DBI::dbExecute(con,
         "INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
         params=unname(as.list(projection$datasets[i,])))
       for (i in seq_len(nrow(projection$vintages))) DBI::dbExecute(con,
         "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
         params=unname(as.list(projection$vintages[i,])))
-      DBI::dbExecute(con, "DELETE FROM profile_observation")
-      DBI::dbExecute(con, "DELETE FROM profile_descriptor_source")
-      DBI::dbExecute(con, "DELETE FROM profile_descriptor")
       d <- projection$descriptor
       levels_sql <- paste(as.character(DBI::dbQuoteString(con, as.character(d$levels))), collapse=",")
-      DBI::dbExecute(con, paste0("INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction) VALUES($1,$2,$3,ARRAY[",
+      DBI::dbExecute(con, paste0("INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction,theme_id,comparison_scalar,required_scalar_version) VALUES($1,$2,$3,ARRAY[",
         levels_sql,
-        "]::text[],'dense_complete',$4,$5,$6,$7)"),
-        params=list("structure_age", d$label, d$unit, d$descriptor_version,
-          d$comparison_detail, d$comparison_sex, d$comparison_direction))
-      DBI::dbExecute(con, "INSERT INTO profile_descriptor_source(indicator_id,source_id) VALUES('structure_age',$1)", params=list(d$source[[1L]]))
-      DBI::dbWriteTable(con,"profile_axis",transform(projection$axes,indicator_id="structure_age"),append=TRUE,row.names=FALSE)
+        "]::text[],'dense_complete',$4,$5,$6,$7,$8,$9,$10)"),
+        params=list(d$indicator_id, d$label, d$unit, d$descriptor_version,
+          d$comparison_detail, d$comparison_sex, d$comparison_direction, d$theme_id,
+          if (is.null(d$comparison_scalar)) NA_character_ else d$comparison_scalar,
+          if (is.null(d$required_scalar_version)) NA_character_ else d$required_scalar_version))
+      for (source_id in d$source) DBI::dbExecute(con,
+        "INSERT INTO profile_descriptor_source(indicator_id,source_id) VALUES($1,$2)", params=list(d$indicator_id,source_id))
+      DBI::dbWriteTable(con,"profile_axis",transform(projection$axes,indicator_id=d$indicator_id),append=TRUE,row.names=FALSE)
       obs <- projection$facts
       names(obs)[names(obs)=="detail"] <- "detail_key"
       names(obs)[names(obs)=="sex"] <- "sex_key"
-      DBI::dbWriteTable(con,"profile_observation",transform(obs,indicator_id="structure_age"),append=TRUE,row.names=FALSE)
+      obs$sex_axis_name <- if (length(d$sexes)) "sex" else NA_character_
+      DBI::dbWriteTable(con,"profile_observation",transform(obs,indicator_id=d$indicator_id),append=TRUE,row.names=FALSE)
       DBI::dbWriteTable(con,"profile_observation_source",projection$provenance,append=TRUE,row.names=FALSE)
       actual_rows <- DBI::dbGetQuery(con,
-        "SELECT count(*) AS n FROM profile_observation WHERE indicator_id='structure_age'")$n[[1L]]
+        "SELECT count(*) AS n FROM profile_observation WHERE indicator_id=$1", params=list(d$indicator_id))$n[[1L]]
       if (actual_rows != nrow(projection$facts))
         stop("Published profile row count differs from validated projection", call.=FALSE)
+      }
       reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
       if (!nrow(reference)) stop("Territory reference publication is unavailable", call.=FALSE)
       DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('declared_profile',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",
-        params=list(version,nrow(projection$facts),reference$content_version[[1L]]))
+        params=list(version,sum(vapply(profiles,function(p) nrow(p$facts),integer(1))),reference$content_version[[1L]]))
     })
 }
 
@@ -225,4 +312,16 @@ publier_structure_age_profile_postgres <- function(payload, metadata) {
     registry <- register_structure_age_profile_publisher(list(), metadata)
     publish_registered_profile(registry, "structure_age", payload, profile_postgres_adapter(con))
   }, finally = DBI::dbDisconnect(con))
+}
+
+# Explicit complete snapshot; not wired to a live target until publication is
+# authorised. scalar_version is the verified canonical shared scalar token.
+publier_declared_profiles_postgres <- function(demography, demography_metadata,
+    habitat, habitat_metadata, scalar_version, con = NULL) {
+  owned <- is.null(con)
+  if (owned) con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
+  if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
+  registry <- register_structure_age_profile_publisher(list(), demography_metadata)
+  publish_registered_profile(registry, "structure_age", demography, profile_postgres_adapter(con),
+    additional_projections=list(project_dpe_profile(habitat, habitat_metadata, scalar_version)))
 }

@@ -19,8 +19,14 @@ CREATE TABLE profile_descriptor (
     indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
     label text NOT NULL, unit text NOT NULL, allowed_levels text[] NOT NULL,
     completeness text NOT NULL CHECK (completeness = 'dense_complete'),
-    descriptor_version text NOT NULL, comparison_detail text NOT NULL,
-    comparison_sex text NOT NULL, comparison_direction text NOT NULL CHECK(comparison_direction IN ('high','low','none'))
+    descriptor_version text NOT NULL, comparison_detail text,
+    comparison_sex text, comparison_direction text NOT NULL CHECK(comparison_direction IN ('high','low','none')),
+    theme_id text CHECK (theme_id ~ '^[a-z][a-z0-9_]{0,63}$'),
+    comparison_scalar text, required_scalar_version text,
+    CONSTRAINT profile_comparison_contract CHECK (
+      (comparison_scalar IS NULL AND required_scalar_version IS NULL AND comparison_detail IS NOT NULL)
+      OR (comparison_scalar IS NOT NULL AND comparison_scalar ~ '^[a-z][a-z0-9_]{0,95}$' AND comparison_detail IS NULL AND comparison_sex IS NULL
+          AND required_scalar_version IS NOT NULL AND length(required_scalar_version)>0))
 );
 CREATE TABLE profile_axis (
     indicator_id text NOT NULL REFERENCES profile_descriptor(indicator_id) ON DELETE CASCADE,
@@ -34,11 +40,13 @@ CREATE TABLE profile_observation (
     territory_id text NOT NULL, territory_type text NOT NULL,
     detail_key text NOT NULL, sex_key text NOT NULL,
     detail_axis_name text NOT NULL DEFAULT 'detail' CHECK(detail_axis_name='detail'),
-    sex_axis_name text NOT NULL DEFAULT 'sex' CHECK(sex_axis_name='sex'),
+    sex_axis_name text DEFAULT 'sex' CHECK(sex_axis_name='sex'),
     value double precision, status text NOT NULL CHECK (status IN ('measured','not_available','suppressed','unsupported')),
     PRIMARY KEY (indicator_id, territory_id, detail_key, sex_key),
     FOREIGN KEY (indicator_id,detail_axis_name,detail_key) REFERENCES profile_axis(indicator_id,axis_name,axis_key),
     FOREIGN KEY (indicator_id,sex_axis_name,sex_key) REFERENCES profile_axis(indicator_id,axis_name,axis_key),
+    CONSTRAINT profile_optional_sex_coordinate CHECK (
+      (sex_key='' AND sex_axis_name IS NULL) OR (sex_key<>'' AND sex_axis_name='sex' AND sex_axis_name IS NOT NULL)),
     CHECK ((status='measured') = (value IS NOT NULL)),
     CHECK (value IS NULL OR value NOT IN ('Infinity'::double precision, '-Infinity'::double precision, 'NaN'::double precision))
 );
@@ -135,6 +143,10 @@ BEGIN
       SELECT 1 FROM territory_reference t WHERE t.territory_id=NEW.territory_id
         AND t.territory_type=NEW.territory_type) THEN
     RAISE EXCEPTION 'profile descriptor/territory level mismatch';
+  END IF;
+  IF (NEW.sex_axis_name IS NOT NULL) <> EXISTS (
+      SELECT 1 FROM profile_axis a WHERE a.indicator_id=NEW.indicator_id AND a.axis_name='sex') THEN
+    RAISE EXCEPTION 'profile second axis mismatch';
   END IF;
   RETURN NEW;
 END $$;

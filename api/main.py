@@ -12,6 +12,7 @@ from typing import Literal
 from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from psycopg_pool import ConnectionPool
+from api.profile_reads import focal_profiles
 
 from api.building_comparison import (
     ComparisonInputError, pooled_peer_distribution, resolve_commune_members,
@@ -905,7 +906,7 @@ def health() -> dict[str, str]:
 def declared_profile(
     territory_type: Literal["commune", "epci", "departement"],
     territory_id: str = Path(min_length=1, max_length=32),
-    indicator_id: Literal["structure_age"] = Path(),
+    indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
     comparison_scope: Literal["bretagne", "departement", "epci"] = Query(default="bretagne"),
     comparison_scope_id: str | None = Query(default=None, min_length=1, max_length=32),
     repository: ReadRepository = Depends(get_repository),
@@ -942,6 +943,25 @@ def declared_profile(
                 (indicator_id,)).fetchone()
             if descriptor is None or territory_type not in descriptor[2]:
                 raise HTTPException(404, "Declared profile is unavailable")
+            scalar_facet = conn.execute("SELECT comparison_scalar FROM profile_descriptor WHERE indicator_id=%s",
+                                        (indicator_id,)).fetchone()
+            if scalar_facet and scalar_facet[0]:
+                profiles, _ = focal_profiles(conn, territory_type, territory_id, indicator_id=indicator_id)
+                profile = profiles[0]
+                department_id = comparison_scope_id if comparison_scope == 'departement' else None
+                epci_id = comparison_scope_id if comparison_scope == 'epci' else None
+                peers = conn.execute("""SELECT t.territory_id,t.name,o.value,o.status FROM scalar_observation o
+                    JOIN territory_reference t USING(territory_id) WHERE o.indicator_id=%s AND o.territory_type=%s
+                      AND (%s::text IS NULL OR t.department_id=%s) AND (%s::text IS NULL OR t.epci_id=%s)
+                    ORDER BY t.name,t.territory_id LIMIT %s""", (scalar_facet[0], territory_type,
+                    department_id, department_id, epci_id, epci_id, MAX_TERRITORY_SEARCH_SCAN+1)).fetchall()
+                if len(peers) > MAX_TERRITORY_SEARCH_SCAN or not any(p[0] == territory_id for p in peers):
+                    raise HTTPException(503, 'Profile comparison scope is unavailable')
+                profile['comparison'] = {'indicator': scalar_facet[0], 'direction': descriptor[7],
+                    'scope': comparison_scope, 'scope_id': comparison_scope_id,
+                    'values': [{'territory_id': tid, 'name': name, 'value': value, 'status': status}
+                               for tid,name,value,status in peers]}
+                return profile
             if (not descriptor[5] or not descriptor[6] or descriptor[7] not in ("high", "low")):
                 raise HTTPException(503, "Profile comparison descriptor is invalid")
             department_id = comparison_scope_id if comparison_scope == "departement" else None
@@ -1061,13 +1081,13 @@ def scalar_observation(
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
-def theme_scalar_facts(
+def theme_facts(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str = Path(min_length=1, max_length=32),
     theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
-    """Compact focal scalar-family read; intentionally not a complete theme payload."""
+    """Compact focal facts/profiles; intentionally not a complete theme payload."""
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
@@ -1092,18 +1112,20 @@ def theme_scalar_facts(
                  WHERE d.theme_id=%s AND o.territory_id=%s AND o.territory_type=%s
                    AND o.territory_type=ANY(d.allowed_levels) ORDER BY d.indicator_id""",
                  (theme_id, territory_id, territory_type)).fetchall()
-            if not rows:
+            profiles, profile_version = focal_profiles(conn, territory_type, territory_id, theme_id=theme_id)
+            if not rows and not profiles:
                 raise HTTPException(404, "No published scalar facts for this theme and territory")
     names=("indicator_id","label","unit","direction","comparison_facet","descriptor_version",
            "value","status","support_count","denominator_count","sources")
-    return {"contract":"scalar-family-v1","complete_theme":False,"theme_id":theme_id,
+    return {"contract":"theme-facts-v1","complete_theme":False,"theme_id":theme_id,
       "territory":{"territory_id":territory[0],"name":territory[1],"territory_type":territory[2]},
       "content_version":marker[0],"reference_content_version":marker[2],
+      "profile_content_version":profile_version,"profiles":profiles,
       "facts":[dict(zip(names,row)) for row in rows]}
 
 
 @app.post("/api/territories/{territory_type}/{territory_id}/themes/comparison")
-def theme_scalar_comparison(
+def theme_comparison(
     territory_type: Literal["commune", "epci", "departement", "region"],
     request: ThemeComparisonRequest,
     territory_id: str = Path(min_length=1, max_length=32),
@@ -1123,6 +1145,8 @@ def theme_scalar_comparison(
                                (territory_id,)).fetchone()
             if not focal: raise HTTPException(404,"Focal territory not found")
             if focal[1] != territory_type: raise HTTPException(422,"Focal territory type does not match route")
+            profile_comparisons, profile_version = focal_profiles(conn, territory_type, territory_id,
+                theme_id=request.theme_id, include_cells=False)
             refs=[dict(zip(("territoire","type","departement","epci"),row)) for row in conn.execute(
               "SELECT territory_id,territory_type,department_id,epci_id FROM territory_reference").fetchall()]
             try: members=resolve_commune_members(refs,selected,max_members=len(refs)) if selected else ()
@@ -1177,9 +1201,10 @@ def theme_scalar_comparison(
                   "median":median(values) if values else None,"rank":rank,
                   "rank_size":len(values) if rank is not None else None,
                   "comparison_sources":comparison_sources})
-    return {"contract":"scalar-family-v1","complete_theme":False,"theme_id":request.theme_id,
+    return {"contract":"theme-comparison-v1","complete_theme":False,"theme_id":request.theme_id,
       "content_version":marker[0],"reference_content_version":marker[2],
-      "selection":[{"territory_type":t,"territory_id":i} for t,i in selected],"results":result}
+      "selection":[{"territory_type":t,"territory_id":i} for t,i in selected],"results":result,
+      "profile_content_version":profile_version,"profile_comparisons":profile_comparisons}
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/indicator-cohorts/{indicator_id}")

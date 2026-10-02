@@ -111,6 +111,41 @@ reads require no new table or browser credential.
 
 ## First selected-theme scalar acquisition batch (#627)
 
+### Declared-profile extension: DPE (unactivated)
+
+The same theme facts read now includes focal-only `profiles` and a separate
+`profile_content_version`. Profile cells carry their own source/vintage links,
+ordered closed axes and typed availability. Theme membership is producer-owned
+`profile_descriptor.theme_id`, never an API list. `complete_theme` remains false:
+this addition is not complete Habitat coverage or a fiche cutover. The additive
+unactivated contracts are `theme-facts-v1` and `theme-comparison-v1`.
+
+`distribution_dpe` has one detail axis and no sex axis. Its comparison names
+`part_passoires`, already in the theme scalar results; the comparison read adds
+`profile_comparisons` and its profile version, not peer DPE bins. The profile
+descriptor pins the exact required `scalar_observation` version. Both theme
+reads and the existing declared-profile route validate that pin, facet unit,
+direction, allowed levels and reference compatibility in the same read-only
+REPEATABLE READ transaction. A scalar refresh makes DPE unavailable until the
+complete profile snapshot is refreshed; structure-age has no such scalar pin.
+
+`publier_declared_profiles_postgres(demography, demography_metadata, habitat,
+habitat_metadata, scalar_version, con)` is the explicit complete-snapshot
+publication entrypoint. The version argument must be the verified canonical
+shared scalar token, not a guessed freshness date. It composes both profiles,
+checks dependencies and preserves age cells. An old age-only publish fails
+before committing if it would discard another published profile. No new live
+target, consumer flag, schema application, publication or deployment is enabled
+by this change. Automated DPE refresh wiring, canonical publication parity and
+complete fiche integration remain release gates under #627.
+
+Fresh DDL and migration 013 represent an absent second axis with an empty
+physical coordinate key and NULL axis reference, retaining the existing
+composite observation/provenance keys. No fake `sex` axis row is created; the
+HTTP cell has `sex: null`. Constraints and the existing row trigger distinguish
+this from a declared second-axis coordinate. Dense completeness and per-cell
+provenance are enforced by the publisher and checked by the focal reader.
+
 The API now has two additive, non-activated read boundaries:
 
 - `GET /api/territories/{type}/{id}/themes/{theme}/facts` returns only the
@@ -401,8 +436,11 @@ checks the complete eligible territory-ID/type set before rebinding that token;
 equal identity sets can be rebound without changing scalar content, while any
 added, removed, or type-changed eligible identity leaves the old token in place
 and the reader unavailable pending a coherent republish. Scalar reads fail with 503 if
-either marker is missing, the versions differ, or either marker row count no
-longer matches its committed table. This exact-version compatibility token is
+either marker is missing or the versions differ. Complete row parity is checked
+by the transactional publisher before committing its marker; bounded HTTP reads
+do not scan the entire reference/fact tables to recount them on every request.
+Dense profile reads additionally check the focal coordinate set and each cell's
+lineage. This exact-version compatibility token is
 the cross-table identity strategy; readers never blend a scalar snapshot with
 a newer territorial reference and return 404 only for an absent row in a
 validated compatible snapshot.

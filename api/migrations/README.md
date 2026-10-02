@@ -105,3 +105,22 @@ backup (or explicitly recreate the relation from that backup), then restore
 owner/grants and validate the active per-table publication path. The removed
 historical row is not a reversible marker. No live Pi DDL is authorized by this
 change; API Compose deployment remains a separate owner-controlled action.
+# Migration 013 — profile optional second axis and scalar dependency
+
+Apply only after migration 012 and separate operator approval. This expand-only
+DDL leaves existing profile facts, axes, provenance and publication markers
+untouched. It adds producer-owned theme identity and an optional scalar-facet
+dependency token, relaxes the mandatory sex-axis reference for genuine one-axis
+profiles, and strengthens the coordinate trigger. NULL `theme_id` on legacy
+descriptors keeps them out of theme reads until a canonical republish; the old
+structure-age reader remains available.
+
+Rehearse against a disposable populated profile snapshot before applying live:
+`test_declared_profile_postgres_api_contract[upgrade]` uses the schema at
+298831504f1a755d0f83fe919e9999616c98e8ce, inserts age facts and its marker, applies
+013, then proves the original HTTP response and stale-reference refusal. Fresh
+install uses `schema.sql`. Do not deploy the new API ahead of this migration.
+Back up profile tables/marker before a live operation; rollback after publishing
+one-axis data requires restoring that backup and the prior API, not dropping
+columns over newly published coordinates. No live application is authorized by
+the implementation PR.
