@@ -1639,7 +1639,7 @@ def _bpe_profile_publication(conn):
     marker = conn.execute("""SELECT p.content_version,p.reference_content_version,r.content_version,
         d.descriptor_version,d.allowed_levels,d.completeness,d.classification_id,d.universe_count,
         d.universe_sha256,d.registry_filename,d.registry_semantic_effect,d.source_id,sd.name,sv.version,
-        sv.reference_date,sv.publication_date,d.indicator_id
+        sv.reference_date,sv.publication_date,d.indicator_id,p.row_count
       FROM table_publication p JOIN table_publication r ON r.table_name='territory_reference'
       JOIN bpe_profile_evidence_descriptor d ON d.singleton
       JOIN source_dataset sd ON sd.source_id=d.source_id
@@ -1647,6 +1647,9 @@ def _bpe_profile_publication(conn):
       WHERE p.table_name='bpe_profile_evidence'""").fetchone()
     if not marker or not marker[0] or marker[1] != marker[2]:
         raise HTTPException(503, "BPE profile publication is unavailable or incompatible")
+    published_rows = conn.execute("SELECT count(*) FROM bpe_profile_evidence").fetchone()[0]
+    if int(published_rows) != int(marker[17]):
+        raise HTTPException(503, "BPE profile row count differs from its publication marker")
     return marker
 
 
@@ -1706,8 +1709,8 @@ def _bpe_profile_snapshot(conn, territory_type, territory_id, *, default_compari
         raise HTTPException(404,"Complete BPE classification evidence is unavailable for this territory")
     if (sum(int(r[3]) for r in rows) != int(marker[7])
             or any(int(r[4]) != int(marker[7]) for r in rows)
-            or any(r[11] != marker[11] or r[13] != marker[13]
-                   or r[14] != marker[14] or r[15] != marker[15] for r in rows)):
+            or any(r[10] != marker[11] or r[11] != marker[12] or r[12] != marker[13]
+                   or r[13] != marker[14] or r[14] != marker[15] for r in rows)):
         raise HTTPException(503,"BPE class rows do not match their universe or source descriptor")
     sources = [{"source_id":marker[11],"name":marker[12],"version":marker[13],
                 "reference_date":marker[14].isoformat() if marker[14] else None,
