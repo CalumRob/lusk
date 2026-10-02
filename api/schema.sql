@@ -478,6 +478,9 @@ CREATE TABLE series_dataset_publication (
  content_version text NOT NULL, reference_content_version text NOT NULL,
  row_count bigint NOT NULL CHECK(row_count>0), published_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE series_dataset_descriptor (
+  absence_semantics text NOT NULL DEFAULT 'unavailable'
+    CHECK (absence_semantics IN ('unavailable','no_record')),
+  comparison_levels text[],
  dataset_id text NOT NULL REFERENCES series_dataset_publication(dataset_id) ON DELETE CASCADE,
  indicator_id text NOT NULL CHECK(indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
  axis_kind text NOT NULL CHECK(axis_kind IN ('year','state_role','declared_detail','duration_minute')),
@@ -495,6 +498,11 @@ CREATE TABLE series_dataset_descriptor (
  PRIMARY KEY(dataset_id,indicator_id),
  CHECK(comparison_point IS NULL OR (comparison_point=ANY(axis_values) AND direction IN ('high','low'))),
  CHECK(comparison_point IS NOT NULL OR direction='none'));
+ ALTER TABLE series_dataset_descriptor ADD CONSTRAINT series_absence_contract
+   CHECK (absence_semantics <> 'no_record' OR completeness='may_be_missing');
+ ALTER TABLE series_dataset_descriptor ADD CONSTRAINT series_comparison_levels_contract
+   CHECK (comparison_levels IS NULL OR
+     (cardinality(comparison_levels)>0 AND comparison_levels <@ allowed_levels));
  CREATE UNIQUE INDEX series_dataset_one_active_route ON series_dataset_descriptor(indicator_id) WHERE active_read_route;
 CREATE TABLE series_dataset_observation (
  dataset_id text NOT NULL, indicator_id text NOT NULL,

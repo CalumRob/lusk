@@ -11,9 +11,22 @@ if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets"
                                                 "--scalar-fixture-check", "--scalar-fixture-publish",
                                                 "--series-fixture-check", "--series-fixture-publish",
                                                 "--series-check", "--series-publish",
-                                                "--owned-series-check", "--owned-series-publish")) {
-  stop("Usage: Rscript scripts/publish-serving-tables.R --check|--publish|--targets|--scalar-fixture-check|--scalar-fixture-publish|--series-fixture-check|--series-fixture-publish|--series-check|--series-publish|--owned-series-check|--owned-series-publish (from pipeline/)",
+                                                "--owned-series-check", "--owned-series-publish",
+                                                "--programme-series-check", "--programme-series-publish")) {
+  stop("Usage: Rscript scripts/publish-serving-tables.R --check|--publish|--targets|--scalar-fixture-check|--scalar-fixture-publish|--series-fixture-check|--series-fixture-publish|--series-check|--series-publish|--owned-series-check|--owned-series-publish|--programme-series-check|--programme-series-publish (from pipeline/)",
        call. = FALSE)
+}
+if (args[[1L]] %in% c("--programme-series-check","--programme-series-publish")) {
+  mode <- if (args[[1L]]=="--programme-series-check") "check" else "publish"
+  projections <- read_programme_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")))
+  connect <- function() do.call(DBI::dbConnect,
+    c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
+  result <- dispatch_owned_series_cli(mode,projections,connect)
+  for (name in names(projections)) {
+    projection <- projections[[name]]
+    cat(name, nrow(projection$points), "canonical observations; version", result$versions[[name]], "\n")
+  }
+  quit(status=0L)
 }
 if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   mode <- if (args[[1L]]=="--owned-series-check") "check" else "publish"

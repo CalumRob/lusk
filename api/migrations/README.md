@@ -137,3 +137,32 @@ remain available through their explicit dataset URLs. Fresh installs carry the
 same schema in `schema.sql`. The guarded integration test exercises migration
 015 over a populated pre-015 schema as well as the fresh schema; it does not
 apply the migration to a serving database.
+
+# Migration 017 — declared source absence for owned series
+
+Migration 017 adds a constrained `absence_semantics` declaration to the shared
+owned-series descriptor. Existing publications default to `unavailable` and keep
+their fail-closed response when focal observations are absent. Only a producer
+declaring `no_record` with `may_be_missing` completeness permits a successful
+empty focal acquisition; no zero or false observation is fabricated. A stale,
+missing or row-count-inconsistent publication still fails closed.
+
+The canonical programme HTTP acceptance test rehearses the migration over
+populated descriptors/facts and confirms unchanged markers, row counts and
+legacy absence behavior. Fresh schema carries the same constraints. Migration
+017 also adds optional `comparison_levels`, constrained to a nonempty subset
+of focal `allowed_levels`. The annual-grant producer preserves region focal
+facts without authorizing region comparisons. Legacy descriptors fall back to
+their original allowed-level comparison behavior; readers tolerate a pre-017
+descriptor until the separately approved migration/publication occurs.
+Migration
+016 is reserved independently for the BPE batch; 017 has no BPE dependency.
+Apply each reviewed migration only after its serving backup/upgrade rehearsal
+and separate approval. This source change applies no serving DDL.
+
+The programme annual-grant publisher has explicit `--programme-series-check`
+and `--programme-series-publish` modes in `publish-serving-tables.R`. Check
+does not connect to PostgreSQL; publish retains the existing owned-series
+opt-in and cron exclusion. It currently publishes only the annual-grant slice,
+not all programme facts and not a complete fiche theme. Grant domains,
+memberships and matching-year parent context remain tracked under #627.

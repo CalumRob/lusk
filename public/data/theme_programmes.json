@@ -98,6 +98,15 @@
   "indicator_pages": {
     "subventions_annuelles": {
       "indicator": "subventions_annuelles",
+      "series_dataset_id": "subventions_annuelles",
+      "serving_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "may_be_missing",
+      "absence_semantics": "no_record",
       "label": "Subventions régionales attribuées",
       "definition": "Total annuel des subventions attribuées par la Région Bretagne au territoire, toutes politiques confondues (données SCDL).",
       "unit": "€",
@@ -115,6 +124,8 @@
       "family": "scalar",
       "comparison": {
         "dimension": "2025",
+        "statistic": "median",
+        "scope": "default_group",
         "dimensions": [
           "2025"
         ]

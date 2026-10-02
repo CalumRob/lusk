@@ -1352,7 +1352,8 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
     if not marker or marker[1] != marker[4]:
         raise HTTPException(503, "Owned-series publication is stale or unavailable")
     descriptor = conn.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,label,unit,
-        direction,descriptor_version,allowed_levels,comparison_point,theme_id,observation_period_kind
+        direction,descriptor_version,allowed_levels,comparison_point,theme_id,observation_period_kind,
+        COALESCE(to_jsonb(series_dataset_descriptor)->>'absence_semantics','unavailable')
         FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s AND active_read_route""",
         (dataset_id,indicator_id)).fetchone()
     if not descriptor:
@@ -1389,7 +1390,8 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
         (SELECT count(*) FROM series_named_reference WHERE dataset_id=%s)""",(dataset_id,dataset_id)).fetchone()[0]
     if row_count != marker[2]:
         raise HTTPException(503, "Owned series marker row count does not match its facts")
-    if not facts:
+    no_record = not facts and descriptor[12] == "no_record" and descriptor[3] == "may_be_missing"
+    if not facts and not no_record:
         raise HTTPException(503, "Owned series focal curve is incomplete")
     def lineage(row, offset):
         if row[offset] is None:
@@ -1399,6 +1401,8 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
             "reference_date":row[offset+6],"publication_date":row[offset+7],"revision_hash":row[offset+8]}
     points=[]
     for axis in descriptor[1]:
+        if no_record:
+            break
         matching=[row for row in facts if row[0]==axis]
         if not matching:
             if descriptor[3]=="dense_complete":
@@ -1440,7 +1444,7 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
         "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
         "descriptor_version":descriptor[7],"comparison_point":descriptor[9],"points":points,"scope_series":[],
         "observation_period_kind":descriptor[11],
-        "named_references":list(reference_groups.values()),"availability":"complete" if all(
+        "named_references":list(reference_groups.values()),"availability":"no_record" if no_record else "complete" if all(
             point["status"]=="measured" for point in points) else "incomplete"}
 
 
@@ -1553,7 +1557,9 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         d.comparison_scope,p.content_version,
         p.reference_content_version,t.content_version,o.territory_id,o.value,o.status,
         v.source_id,v.vintage_id,v.source_name,v.dataset_name,v.source_version,v.reference_date,
-        v.publication_date,v.revision_hash
+        v.publication_date,v.revision_hash,
+        CASE WHEN to_jsonb(d)->>'comparison_levels' IS NULL THEN d.allowed_levels
+          ELSE ARRAY(SELECT jsonb_array_elements_text(to_jsonb(d)->'comparison_levels')) END
         FROM series_dataset_descriptor d
         JOIN series_dataset_publication p USING(dataset_id)
         LEFT JOIN table_publication t ON t.table_name='territory_reference'
@@ -1582,7 +1588,8 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         if territory_type not in levels:
             raise HTTPException(422,"Indicator is not declared for this territory level")
         valid=bool(point and point in axes and direction in ("high","low") and
-            statistic=="median" and comparison_scope=="default_group" and cohort_type in levels)
+            statistic=="median" and comparison_scope=="default_group" and
+            territory_type in first[26] and cohort_type in first[26])
         observations=[r for r in matching if r[15] is not None]
         if valid and any(r[18] is None for r in observations):
             raise HTTPException(503,"Owned series comparison provenance is incomplete")
