@@ -74,6 +74,7 @@ CREATE TABLE profile_observation_source (
 );
 CREATE TABLE scalar_descriptor (
     indicator_id text PRIMARY KEY CHECK (indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
+    theme_id text NOT NULL CHECK (theme_id ~ '^[a-z][a-z0-9_]{0,63}$'),
     label text NOT NULL CHECK (length(label) BETWEEN 1 AND 200),
     unit text NOT NULL,
     direction text NOT NULL CHECK (direction IN ('high', 'low', 'none')),

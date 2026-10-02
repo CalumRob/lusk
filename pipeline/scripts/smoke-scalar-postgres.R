@@ -68,7 +68,7 @@ tryCatch({
   first <- publish_registered_scalar(registry, "smoke", NULL, adapter)
   marker <- DBI::dbGetQuery(connection, "SELECT content_version, row_count, reference_content_version FROM table_publication WHERE table_name='scalar_observation'")
   stopifnot(first$changed, marker$row_count[[1L]] == nrow(projection$facts))
-  actual <- DBI::dbGetQuery(connection, "SELECT o.territory_id,o.value,o.status,d.label,d.descriptor_version,p.content_version,(SELECT count(*) FROM scalar_observation_source s WHERE s.indicator_id=o.indicator_id AND s.territory_id=o.territory_id) AS source_count FROM scalar_observation o JOIN scalar_descriptor d USING(indicator_id) CROSS JOIN table_publication p WHERE p.table_name='scalar_observation' AND o.indicator_id='densite' ORDER BY o.territory_id LIMIT 1")
+  actual <- DBI::dbGetQuery(connection, "SELECT o.territory_id,o.value,o.status,d.theme_id,d.label,d.descriptor_version,p.content_version,(SELECT count(*) FROM scalar_observation_source s WHERE s.indicator_id=o.indicator_id AND s.territory_id=o.territory_id) AS source_count FROM scalar_observation o JOIN scalar_descriptor d USING(indicator_id) CROSS JOIN table_publication p WHERE p.table_name='scalar_observation' AND o.indicator_id='densite' ORDER BY o.territory_id LIMIT 1")
   actual_sources <- DBI::dbGetQuery(connection, "SELECT os.source_id,os.vintage_id,sv.version FROM scalar_observation_source os JOIN source_vintage sv USING(source_id,vintage_id) WHERE os.indicator_id='densite' AND os.territory_id=$1 ORDER BY os.source_id", params=list(actual$territory_id[[1L]]))
   expected <- projection$facts[order(projection$facts$territory_id), , drop=FALSE][1L, , drop=FALSE]
   expected_sources <- projection$provenance[projection$provenance$territory_id == expected$territory_id[[1L]], , drop=FALSE]
@@ -79,6 +79,7 @@ tryCatch({
     identical(actual$territory_id[[1L]], expected$territory_id[[1L]]),
     identical(actual$value[[1L]], expected$value[[1L]]),
     identical(actual$status[[1L]], expected$status[[1L]]),
+    identical(actual$theme_id[[1L]], projection$descriptors$theme_id[match("densite", projection$descriptors$indicator_id)]),
     identical(actual$label[[1L]], projection$descriptors$label[[1L]]),
     identical(actual$descriptor_version[[1L]], projection$descriptors$descriptor_version[[1L]]),
     setequal(actual_sources$source_id, projection$descriptors$allowed_sources[[1L]]),
