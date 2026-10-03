@@ -60,6 +60,14 @@ PROFILS_ACCES_BPE <- c(
   "inaccessible-20-minutes" = "Inaccessible ou presque en 20 minutes"
 )
 
+# Comparator semantics belong to the BPE classification contract, not to an
+# API/renderer copy. These directions are consumed by both reading facts and
+# the registered evidence publisher.
+DIRECTIONS_PROFILS_ACCES_BPE <- c(
+  "acces-pied-tc" = "high", "velo-compense" = "high",
+  "voiture-requise" = "low", "inaccessible-20-minutes" = "low"
+)
+
 SEUIL_PROFIL_ACCES_BPE <- 0.25
 
 # verifier_triptyque_acces_bpe ---------------------------------------------------
