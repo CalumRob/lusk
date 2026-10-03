@@ -137,3 +137,15 @@ remain available through their explicit dataset URLs. Fresh installs carry the
 same schema in `schema.sql`. The guarded integration test exercises migration
 015 over a populated pre-015 schema as well as the fresh schema; it does not
 apply the migration to a serving database.
+
+# Migration 020 — selected demographic reading facts
+
+Migration 020 adds one constrained typed table for the already-selected
+Démographie history rows, an independently versioned descriptor/provenance pin,
+and the reference dependency on its publication marker. It does not store the
+history row as JSON, recalculate rates in SQL, or publish a candidate pool.
+`smoke-demographic-reading-postgres.R` applies the actual migration over a
+populated territory-reference marker in its guarded disposable schema, then
+publishes all 1,268 canonical Parquet rows and verifies commune/EPCI HTTP output
+against the incumbent `histoires_demographie.json`. No serving database is
+modified by this worker migration rehearsal.

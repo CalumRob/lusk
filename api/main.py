@@ -1075,7 +1075,7 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
 
 
 def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
-                               *, indicator_id=None, profiles=None, profile_version=None):
+                               *, indicator_id=None, profiles=None, profile_version=None, has_readings=False):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
     scalar_descriptors = conn.execute(
         """SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
@@ -1095,7 +1095,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             owned_descriptors=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
                 WHERE theme_id=%s AND active_read_route AND (%s::text IS NULL OR indicator_id=%s)
                 ORDER BY indicator_id""",(theme_id,indicator_id,indicator_id)).fetchall()
-    if not scalar_descriptors and not profiles and not owned_descriptors:
+    if not scalar_descriptors and not profiles and not owned_descriptors and not has_readings:
         raise HTTPException(404, "No published facts for this theme")
     reference = conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
@@ -1780,10 +1780,43 @@ def theme_facts(
                         WHERE theme_id=%s AND active_read_route ORDER BY indicator_id""",(theme_id,)).fetchall()
                     owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator)
                                   for dataset_id,indicator in routes]
-            if not rows and not profiles and not owned_series:
+            if not rows and not profiles and not owned_series and theme_id != "demographie":
                 raise HTTPException(404, "No published facts for this theme and territory")
+            readings = []
+            reading_version = None
+            if theme_id == "demographie":
+                reading_marker = conn.execute("""SELECT p.content_version,p.row_count,
+                    p.reference_content_version,t.content_version,d.descriptor_version,
+                    d.source_id,sd.name,sv.vintage_id,sv.version,sv.reference_date,sv.publication_date
+                    ,d.rate_unit
+                    FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+                    JOIN demographic_reading_descriptor d ON d.singleton
+                    JOIN source_dataset sd ON sd.source_id=d.source_id
+                    JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+                    WHERE p.table_name='demographic_typed_reading'""").fetchone()
+                if (not reading_marker or not reading_marker[0] or reading_marker[1] <= 0 or
+                        reading_marker[2] != reading_marker[3]):
+                    raise HTTPException(503, "Demographic reading publication is unavailable or incompatible")
+                reading_rows = conn.execute("""SELECT groupe,story_key,salience_reason,periode,
+                    solde_naturel,solde_migratoire,taux_solde_naturel,taux_solde_migratoire,
+                    classification,status,source_id,vintage_id
+                    FROM demographic_typed_reading WHERE territory_id=%s AND territory_type=%s
+                    ORDER BY groupe""", (territory_id, territory_type)).fetchall()
+                if not reading_rows:
+                    raise HTTPException(404, "No selected demographic reading for this territory")
+                reading_version = reading_marker[0]
+                reading_names = ("groupe","story_key","salience_reason","periode","solde_naturel",
+                    "solde_migratoire","taux_solde_naturel","taux_solde_migratoire","classification",
+                    "status","source_id","vintage_id")
+                provenance = {"source_id":reading_marker[5],"source_name":reading_marker[6],
+                    "vintage_id":reading_marker[7],"source_version":reading_marker[8],
+                    "source_reference_date":reading_marker[9],"source_publication_date":reading_marker[10]}
+                readings = [{**dict(zip(reading_names,row)),"provenance":provenance}
+                    for row in reading_rows]
+                for reading in readings:
+                    reading["rate_unit"] = reading_marker[11]
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
-                profiles=profiles, profile_version=profile_version)
+                profiles=profiles, profile_version=profile_version, has_readings=bool(readings))
     names=("indicator_id","label","unit","direction","comparison_facet","descriptor_version",
            "value","status","support_count","denominator_count","sources")
     payload = {"contract":"theme-facts-v1","complete_theme":False,"theme_id":theme_id,
@@ -1792,6 +1825,7 @@ def theme_facts(
         "owned_series_content_versions":[item["publication_id"] for item in owned_series],
         "reference_content_version":comparison["reference_content_version"],
         "profile_content_version":profile_version,"profiles":profiles,
+        "readings":readings,"reading_content_version":reading_version,
         "series":owned_series,
        "facts":[dict(zip(names,row)) for row in rows],
        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],

@@ -445,11 +445,12 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^(scalar_it|profile_it|series_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
+      !grepl("^(scalar_it|profile_it|series_it|reading_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
   tables <- c("series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
-    "series_named_reference_descriptor", "series_dataset_descriptor",
+     "demographic_typed_reading", "demographic_reading_descriptor",
+     "series_named_reference_descriptor", "series_dataset_descriptor",
     "series_dataset_publication", "series_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
     "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
     "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
@@ -492,6 +493,12 @@ profile_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   serving_smoke_schema_cleanup_sql(quote_identifier, schema)
 }
 
+reading_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
+  if (length(schema) != 1L || !grepl("^reading_it_[A-Za-z0-9_]+$", schema))
+    stop("Cleanup requires an owned reading smoke schema", call. = FALSE)
+  serving_smoke_schema_cleanup_sql(quote_identifier, schema)
+}
+
 series_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (length(schema) != 1L || !grepl("^series_it_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned series smoke schema", call. = FALSE)
@@ -502,6 +509,7 @@ series_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
 cleanup_serving_smoke_schema <- function(connection, schema, kind) {
   expected_schema <- switch(kind, scalar="^scalar_it_[A-Za-z0-9_]+$",
     profile="^profile_it_[A-Za-z0-9_]+$",
+    reading="^reading_it_[A-Za-z0-9_]+$",
     building="^it_building_publisher_[A-Za-z0-9_]+$",
     series="^series_it_[A-Za-z0-9_]+$", NULL)
   if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||
