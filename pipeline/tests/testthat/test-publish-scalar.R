@@ -253,7 +253,7 @@ test_that("housing DPE scalar retains producer denominator and suppression", {
   expect_true("region" %in% projection$descriptors$allowed_levels[[1L]])
   inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
   snapshot <- project_service_scalar_snapshot(inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
-  expect_equal(nrow(snapshot$descriptors), 43L)
+  expect_equal(nrow(snapshot$descriptors), 44L)
   expect_true(all(c("effectifs_salaries", "chomage", "densite", "taille_menages", "part_passoires") %in%
     snapshot$descriptors$indicator_id))
   expect_true(all(c("distribution_dpe", "part_passoires") %in% names(metadata$indicator_pages)))
@@ -305,12 +305,18 @@ test_that("demography scalars are projected from the canonical producer into ful
   expect_true(all(lineage$vintage_id == paste(expected$vintage_version, expected$vintage_date_reference, sep="/")))
   retained_service <- snapshot$projection$facts[snapshot$projection$facts$indicator_id %in% original_service$descriptors$indicator_id, , drop=FALSE]
   rownames(retained_service) <- NULL
-  expect_equal(retained_service, original_service$facts)
+  retained_without_denominator <- retained_service[setdiff(names(retained_service), "denominator_count")]
+  original_without_denominator <- original_service$facts[setdiff(names(original_service$facts), "denominator_count")]
+  expect_equal(retained_without_denominator, original_without_denominator)
+  mobility_canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_mobilite.parquet"))
+  nb <- mobility_canonical[mobility_canonical$key == "nb_buildings", c("territoire", "value"), drop=FALSE]
+  expect_equal(retained_service$denominator_count,
+    as.integer(nb$value[match(retained_service$territory_id, nb$territoire)]))
 })
 
 test_that("mobility scalar cohort preserves all declared ordinary canonical scalar facts in complete snapshots", {
   canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_mobilite.parquet"))
-  ids <- c("surface_reseaux_routiers", "offre_tc", "bornes_recharge",
+  ids <- c("nb_buildings", "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
     "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
     "tot_loss_t", "tot_loss_b", "avg_tot_car", "avg_tot_b", "avg_tot_t",
     "avg_div_car", "avg_div_b", "avg_div_t", "iso_alimentation", "iso_sante",
@@ -332,7 +338,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     expect_true(all(actual$support_count %in% NA_integer_))
     expect_true(all(actual$denominator_count %in% NA_integer_))
   }
-  source_by_id <- c(surface_reseaux_routiers="ocsge_reseaux_routiers", offre_tc="korrigo",
+  source_by_id <- c(nb_buildings="mobilite_snapshot", surface_reseaux_routiers="ocsge_reseaux_routiers", offre_tc="korrigo",
     bornes_recharge="bornes-recharges", places_stationnement_velo_1000="stationnement-velo",
     places_stationnement_voiture_1000="osm_reseaux", tot_loss_t="mobilite_snapshot",
     tot_loss_b="mobilite_snapshot", avg_tot_car="mobilite_snapshot", avg_tot_b="mobilite_snapshot",
@@ -425,7 +431,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
   expect_true(all(c(ids, "effectifs_salaries", "chomage", "densite", "taille_menages",
     "evolution_1968", "part_passoires") %in% snapshot$descriptors$indicator_id))
-  expect_equal(nrow(snapshot$descriptors), 43L)
+  expect_equal(nrow(snapshot$descriptors), 44L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
 })
 
