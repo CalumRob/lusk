@@ -436,6 +436,25 @@ validate_owned_series_projection <- function(projection) {
       !is.list(projection$descriptor) || !is.data.frame(projection$provenance) ||
       !is.data.frame(projection$point_provenance)) stop("Owned series projection is incomplete", call.=FALSE)
   d <- projection$descriptor; points <- projection$points; provenance <- projection$provenance
+  if (!is.null(d$absence_semantics) &&
+      (length(d$absence_semantics)!=1L || is.na(d$absence_semantics) ||
+       !d$absence_semantics %in% c("unavailable","no_record") ||
+       (d$absence_semantics=="no_record" && d$completeness!="may_be_missing")))
+    stop("Invalid owned series source absence contract",call.=FALSE)
+  if (!is.null(d$comparison_levels) &&
+      (!length(d$comparison_levels) || anyNA(d$comparison_levels) ||
+       anyDuplicated(d$comparison_levels) || any(!d$comparison_levels %in% d$allowed_levels)))
+    stop("Owned series comparison levels must be a declared subset of focal levels",call.=FALSE)
+  if (!is.null(projection$context_parent_policy)) {
+    policy <- projection$context_parent_policy
+    if (!is.data.frame(policy) || !setequal(names(policy),c("dataset_id","indicator_id","focal_level","parent_level")) ||
+        !nrow(policy) || anyNA(policy) || any(policy$dataset_id!=d$dataset_id) ||
+        any(policy$indicator_id!=d$indicator_id) || anyDuplicated(policy$focal_level) ||
+        any(!policy$focal_level %in% d$allowed_levels) || any(!policy$parent_level %in% d$allowed_levels) ||
+        any(!((policy$focal_level=="commune" & policy$parent_level=="epci") |
+              (policy$focal_level %in% c("epci","departement") & policy$parent_level=="region"))))
+      stop("Invalid owned series hierarchical context policy",call.=FALSE)
+  }
   required_descriptor <- c("dataset_id","indicator_id","axis_kind","axis_values","completeness",
     "comparison_point","label","unit","direction","allowed_levels","descriptor_version")
   required_points <- c("dataset_id","indicator_id","territory_id","territory_type","axis_value",
@@ -615,7 +634,15 @@ owned_series_postgres_adapter <- function(con) {
         params=list(dataset_id,d$indicator_id,d$axis_kind,array_literal(d$axis_values),d$completeness,
           d$comparison_point %||% NA_character_,d$label,d$unit,d$direction,
           array_literal(d$allowed_levels),d$descriptor_version,isTRUE(d$active_read_route),numeric_axis,d$theme_id %||% NA_character_,
-          d$comparison_statistic %||% NA_character_,d$comparison_scope %||% NA_character_,d$observation_period_kind %||% NA_character_))
+           d$comparison_statistic %||% NA_character_,d$comparison_scope %||% NA_character_,d$observation_period_kind %||% NA_character_))
+      if (!is.null(d$absence_semantics)) DBI::dbExecute(con,
+        "UPDATE series_dataset_descriptor SET absence_semantics=$1 WHERE dataset_id=$2 AND indicator_id=$3",
+        params=list(d$absence_semantics,dataset_id,d$indicator_id))
+      if (!is.null(d$comparison_levels)) DBI::dbExecute(con,
+        "UPDATE series_dataset_descriptor SET comparison_levels=$1::text[] WHERE dataset_id=$2 AND indicator_id=$3",
+        params=list(array_literal(d$comparison_levels),dataset_id,d$indicator_id))
+      if (!is.null(projection$context_parent_policy)) DBI::dbWriteTable(con,
+        "series_context_parent_policy",projection$context_parent_policy,append=TRUE,row.names=FALSE)
       point_columns <- c("dataset_id","indicator_id","territory_id","territory_type","axis_value",
         "observation_period","value","status")
       optional_columns <- intersect(c("state_role","missing_reason"),names(projection$points))
