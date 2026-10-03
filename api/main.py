@@ -809,7 +809,7 @@ def search_territories(
 def initial_building_access(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str,
-    comparison: Literal["bretagne", "densite", "epci"] = Query(default="bretagne"),
+    comparison: Literal["bretagne", "densite", "epci"] = Query(default="densite"),
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Initial view; non-commune comparisons use same-level peer territories."""
