@@ -5,6 +5,7 @@ from functools import lru_cache
 import hashlib
 import json
 import os
+from contextlib import nullcontext
 import unicodedata
 from statistics import median
 from typing import Literal
@@ -478,10 +479,12 @@ class ReadRepository:
                         "candidates": search_territory_rows(entries, query, limit)}
 
     def read_building_initial(self, territory_type: str, territory_id: str,
-                              comparison_mode: str | None = None) -> dict:
+                              comparison_mode: str | None = None, *, connection=None) -> dict:
         """Read canonical focal facts and same-level published default peers."""
-        with self.connections.connection() as connection:
-            with connection.transaction():
+        owns_connection = connection is None
+        connection_context = self.connections.connection() if owns_connection else nullcontext(connection)
+        with connection_context as connection:
+            with (connection.transaction() if owns_connection else nullcontext()):
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 publication = _building_publication(connection.execute(
                     """SELECT table_name, content_version FROM table_publication
@@ -595,10 +598,12 @@ class ReadRepository:
                 }
 
     def read_building(self, territory_type: str, territory_id: str,
-                      selected: tuple[tuple[str, str], ...]) -> dict:
+                      selected: tuple[tuple[str, str], ...], *, connection=None) -> dict:
         # The reference, publication marker and selected rows share one MVCC view.
-        with self.connections.connection() as connection:
-            with connection.transaction():
+        owns_connection = connection is None
+        connection_context = self.connections.connection() if owns_connection else nullcontext(connection)
+        with connection_context as connection:
+            with (connection.transaction() if owns_connection else nullcontext()):
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 publication = _building_publication(connection.execute(
                     """SELECT table_name, content_version FROM table_publication
@@ -1784,6 +1789,19 @@ def theme_facts(
                 raise HTTPException(404, "No published facts for this theme and territory")
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
                 profiles=profiles, profile_version=profile_version)
+            building_access = None
+            if theme_id == "mobilite":
+                try:
+                    building_access = repository.read_building_initial(
+                        territory_type, territory_id,
+                        "densite" if territory_type == "commune" else None,
+                        connection=conn)
+                except HTTPException as exc:
+                    # Older installations can serve the existing theme facts
+                    # before the additive registered building publication is
+                    # installed. Keep that pre-existing theme contract intact.
+                    if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
+                        raise
     names=("indicator_id","label","unit","direction","comparison_facet","descriptor_version",
            "value","status","support_count","denominator_count","sources")
     payload = {"contract":"theme-facts-v1","complete_theme":False,"theme_id":theme_id,
@@ -1791,11 +1809,13 @@ def theme_facts(
         "content_version":marker[0] if marker else comparison["content_version"],
         "owned_series_content_versions":[item["publication_id"] for item in owned_series],
         "reference_content_version":comparison["reference_content_version"],
-        "profile_content_version":profile_version,"profiles":profiles,
-        "series":owned_series,
+       "profile_content_version":profile_version,"profiles":profiles,
+       "series":owned_series,
        "facts":[dict(zip(names,row)) for row in rows],
        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
                              "profile_comparisons":comparison["profile_comparisons"]}}
+    if building_access is not None:
+        payload["building_access"] = building_access
     return payload
 
 
@@ -1844,6 +1864,46 @@ def theme_comparison_only(
             response["profile_comparisons"] = [
                 _comparison_result_without_focal_value(row)
                 for row in response["profile_comparisons"]]
+            if theme_id == "mobilite":
+                if selected is None:
+                    try:
+                        building = repository.read_building_initial(
+                            territory_type, territory_id,
+                            "densite" if territory_type == "commune" else None,
+                            connection=conn)
+                    except HTTPException as exc:
+                        if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
+                            raise
+                    else:
+                        response["building_access"] = {
+                            "scope": building["scope"],
+                            "ramp": building["peer_ramp"],
+                            "distribution": building["peer_distribution"],
+                        }
+                elif not selected:
+                    response["building_access"] = {
+                        "scope": {"kind": "custom", "member_count": 0},
+                        "ramp": None, "distribution": None,
+                    }
+                else:
+                    building = repository.read_building(
+                        territory_type, territory_id, tuple(selected), connection=conn)
+                    try:
+                        member_ids = resolve_commune_members(
+                            building["reference"], tuple(selected),
+                            max_members=len(building["reference"]))
+                        ramp = weighted_peer_ramp(
+                            building["ramp_rows"], member_ids,
+                            max_members=len(building["reference"]))
+                        distribution = pooled_peer_distribution(
+                            building["grid_rows"], member_ids,
+                            max_members=len(building["reference"]))
+                    except ComparisonInputError as exc:
+                        raise HTTPException(503, "Incomplete building-access publication") from exc
+                    response["building_access"] = {
+                        "scope": {"kind": "custom", "member_count": len(member_ids)},
+                        "ramp": ramp, "distribution": distribution,
+                    }
             return response
 
 

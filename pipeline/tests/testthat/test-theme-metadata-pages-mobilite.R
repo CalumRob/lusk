@@ -13,7 +13,7 @@
 # scalaire qui gonfle ou fond en silence.
 
 PAGES_SCALAIRES_MOBILITE <- c(
-  "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
+  "nb_buildings", "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
   "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
   "bornes_ev_par_station_service", "stationnement_velo_par_voiture",
   "tot_loss_t", "tot_loss_b",

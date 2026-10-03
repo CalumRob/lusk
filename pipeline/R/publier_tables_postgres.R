@@ -227,6 +227,7 @@ project_service_scalar_snapshot <- function(donnees, sortie) {
   mobility <- project_mobility_scalar_cohort(sortie, donnees$scalar_eligible_territories)
   housing <- project_housing_scalar_cohort(sortie, donnees$scalar_eligible_territories)
   additional <- list(economy, demography, mobility, housing)
-  list(projection=assemble_scalar_snapshot(service, additional),
+  projection <- attach_essential_service_denominators(assemble_scalar_snapshot(service, additional))
+  list(projection=projection,
     additional_projections=additional)
 }

@@ -208,11 +208,31 @@ publish_service_share_scalars <- function(con, access, metadata, eligible_territ
   if (!is.list(additional_projections)) stop("Additional scalar cohorts must be registered projections", call.=FALSE)
   project <- publisher$services_essentiels_scalar$project
   publisher$services_essentiels_scalar$project <- function(canonical) {
-    assemble_scalar_snapshot(project(canonical), additional_projections)
+    attach_essential_service_denominators(
+      assemble_scalar_snapshot(project(canonical), additional_projections))
   }
   db <- scalar_postgres_adapter(con)
   publish_registered_scalar(publisher, "services_essentiels_scalar",
     canonical=list(access=access, eligible_territories=eligible_territories), db=db)
+}
+
+attach_essential_service_denominators <- function(projection) {
+  service_rows <- grepl("^share_", projection$facts$indicator_id)
+  if (!any(service_rows)) return(projection)
+  building_rows <- projection$facts[projection$facts$indicator_id == "nb_buildings", , drop=FALSE]
+  if (!nrow(building_rows) || anyDuplicated(building_rows$territory_id) ||
+      any(building_rows$status == "measured" & (is.na(building_rows$value) |
+        building_rows$value < 0 | building_rows$value != floor(building_rows$value))))
+    stop("Canonical nb_buildings facts have invalid measured denominators", call.=FALSE)
+  denominator <- building_rows$value[match(projection$facts$territory_id[service_rows], building_rows$territory_id)]
+  unavailable_denominator <- is.na(denominator)
+  service_fact_status <- projection$facts$status[service_rows]
+  service_fact_value <- projection$facts$value[service_rows]
+  if (any(unavailable_denominator & service_fact_status == "measured" & !is.na(service_fact_value)))
+    stop("Measured essential-service fact has no canonical nb_buildings denominator", call.=FALSE)
+  projection$facts$denominator_count[service_rows] <- as.integer(denominator)
+  validate_scalar_projection(projection$facts, projection$descriptors, projection$eligible_territories)
+  projection
 }
 
 # Shared canonical fact-to-serving projection. Fixture-only completeness is
