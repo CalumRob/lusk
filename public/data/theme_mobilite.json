@@ -12,7 +12,7 @@
   },
   "service_share_scalar": {
     "completeness": "dense_complete",
-    "denominator_semantics": "Part des bâtiments du territoire ayant accès au service par le mode déclaré ; la valeur canonique est une fraction 0–1, l’unité publique déclarée reste %."
+    "denominator_semantics": "Part des bâtiments du territoire ayant accès au service par le mode déclaré, rapportée au nombre de bâtiments résidentiels analysés publié sous nb_buildings ; la valeur canonique est une fraction 0–1, l’unité publique déclarée reste %."
   },
   "indicator_directions": {
     "share_food_t": "high",
@@ -371,7 +371,68 @@
     "raccordement_courbe": false,
     "raccordement_reference": false
   },
+  "owned_series_routes": {
+    "raccordement_courbe": {
+      "dataset_id": "raccordement_courbe",
+      "indicator_id": "raccordement_courbe",
+      "theme_id": "mobilite",
+      "active_read_route": true,
+      "axis_kind": "duration_minute",
+      "axis_values": [
+        "0",
+        "15",
+        "30",
+        "45",
+        "60",
+        "90",
+        "120",
+        "180",
+        "240",
+        "300",
+        "360"
+      ],
+      "reference_indicator": "raccordement_reference",
+      "reference_read_route": true,
+      "comparison_contract": {
+        "statistic": "median",
+        "scope": "default_group"
+      },
+      "observation_period_contract": {
+        "kind": "snapshot_date",
+        "source": "raccordement_recipe_date_mesure"
+      },
+      "reference": {
+        "id": "commune_bretonne_mediane",
+        "label": "Commune bretonne médiane",
+        "role": "analytical_reference",
+        "statistic": "median_routed_communes"
+      },
+      "reference_id": "commune_bretonne_mediane",
+      "reference_label": "Commune bretonne médiane",
+      "reference_role": "analytical_reference",
+      "reference_statistic": "median_routed_communes",
+      "source_id": "matrice_temps_mairies"
+    }
+  },
   "indicator_pages": {
+    "nb_buildings": {
+      "indicator": "nb_buildings",
+      "label": "Bâtiments résidentiels analysés",
+      "definition": "Nombre de bâtiments résidentiels analysés dans le snapshot Mobilité pour le territoire.",
+      "unit": "bâtiments",
+      "calculation": "Dénombrement publié par le pipeline à partir du snapshot Mobilité.",
+      "direction": "high",
+      "caveats": "Ce total appartient au snapshot Mobilité et peut différer des dénominateurs propres aux rampes et grilles bâtimentières.",
+      "levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "mobilite_snapshot"
+      ],
+      "family": "scalar"
+    },
     "voitures_menage": {
       "indicator": "voitures_menage",
       "label": "Voitures par ménage",
@@ -437,14 +498,18 @@
       "comparison": {
         "details": [
           "protege_longueur",
+          "protege_km_1000",
           "partage_longueur",
+          "partage_km_1000",
           "total_longueur"
         ],
         "detail": "total_longueur",
         "unit": "km",
         "labels": {
           "protege_longueur": "Longueur protégée",
+          "protege_km_1000": "Protégé par habitant",
           "partage_longueur": "Longueur partagée",
+          "partage_km_1000": "Partagé par habitant",
           "total_longueur": "Longueur totale"
         }
       }
@@ -520,7 +585,7 @@
           "c_km_1000"
         ],
         "detail": "b_km_1000",
-        "unit": "km / 1 000 hab.",
+        "unit": "km / 1 000 hab",
         "labels": {
           "t_km_1000": "Longueur — à pied",
           "b_km_1000": "Longueur — à vélo",
@@ -1022,7 +1087,59 @@
       }
     }
   },
+  "profile_contracts": {
+    "voitures_menage": {
+      "completeness": "dense_complete",
+      "denominator_semantics": "Ménages recensés du territoire",
+      "detail_units": {
+        "sans_voiture": "%",
+        "une_voiture": "%",
+        "deux_plus": "%"
+      }
+    },
+    "reseaux": {
+      "completeness": "dense_complete",
+      "denominator_semantics": "Longueur géométrique des réseaux du territoire, chaque géométrie comptée une fois",
+      "detail_units": {
+        "t_longueur": "km",
+        "b_longueur": "km",
+        "c_longueur": "km"
+      }
+    },
+    "reseaux_par_habitant": {
+      "completeness": "dense_complete",
+      "denominator_semantics": "Longueur du réseau divisée par la population du territoire, pour 1 000 habitants",
+      "detail_units": {
+        "t_km_1000": "km / 1 000 hab.",
+        "b_km_1000": "km / 1 000 hab.",
+        "c_km_1000": "km / 1 000 hab."
+      }
+    },
+    "offre_cyclable": {
+      "completeness": "dense_complete",
+      "denominator_semantics": "Longueurs Geovelo protégée, partagée et totale; les composantes par habitant sont divisées par la population, pour 1 000 habitants",
+      "detail_units": {
+        "protege_longueur": "km",
+        "protege_km_1000": "km / 1 000 hab",
+        "partage_longueur": "km",
+        "partage_km_1000": "km / 1 000 hab",
+        "total_longueur": "km"
+      }
+    }
+  },
   "scalar_contracts": {
+    "nb_buildings": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "nb_buildings",
+      "missing_status": "not_available",
+      "counts_available": false
+    },
     "surface_reseaux_routiers": {
       "allowed_levels": [
         "commune",
