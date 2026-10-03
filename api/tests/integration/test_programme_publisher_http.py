@@ -295,6 +295,10 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
             collection_before = pub.execute("SELECT indicator_id,content_version,row_count FROM observed_collection_publication ORDER BY indicator_id").fetchall()
             with pytest.raises(psycopg.errors.RaiseException):
                 with pub.transaction():
+                    pub.execute("UPDATE observed_collection_publication SET row_count=row_count+1,published_at=transaction_timestamp() WHERE indicator_id='subventions_par_domaine'")
+            assert pub.execute("SELECT indicator_id,content_version,row_count FROM observed_collection_publication ORDER BY indicator_id").fetchall() == collection_before
+            with pytest.raises(psycopg.errors.RaiseException):
+                with pub.transaction():
                     pub.execute("UPDATE observed_collection_publication SET content_version='invalid-contract',published_at=transaction_timestamp() WHERE indicator_id='subventions_par_domaine'")
                     pub.execute("UPDATE observed_collection_category SET source_id='acv' WHERE indicator_id='subventions_par_domaine'")
             assert pub.execute("SELECT indicator_id,content_version,row_count FROM observed_collection_publication ORDER BY indicator_id").fetchall() == collection_before
