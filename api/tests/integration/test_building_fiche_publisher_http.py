@@ -26,6 +26,43 @@ def _assert_canonical_equal(actual, expected):
         assert actual == expected
 
 
+class _ConnectionProbe:
+    def __init__(self, connection, statements):
+        self._connection = connection
+        self.statements = statements
+
+    def execute(self, query, *args, **kwargs):
+        self.statements.append(str(query))
+        return self._connection.execute(query, *args, **kwargs)
+
+    def transaction(self, *args, **kwargs):
+        return self._connection.transaction(*args, **kwargs)
+
+    def __getattr__(self, name):
+        return getattr(self._connection, name)
+
+
+class _ConnectionProbePool:
+    def __init__(self, pool):
+        self.pool = pool
+        self.statements = []
+
+    def connection(self):
+        pool = self.pool
+        probe_pool = self
+
+        class Context:
+            def __enter__(self):
+                self.context = pool.connection()
+                self.connection = self.context.__enter__()
+                return _ConnectionProbe(self.connection, probe_pool.statements)
+
+            def __exit__(self, *args):
+                return self.context.__exit__(*args)
+
+        return Context()
+
+
 def test_registered_canonical_building_publisher_reaches_fiche_http():
     schema = os.getenv("LUSK_BUILDING_FICHE_HTTP_SCHEMA")
     territory = os.getenv("LUSK_BUILDING_FICHE_HTTP_TERRITORY", "35238")
@@ -48,12 +85,16 @@ def test_registered_canonical_building_publisher_reaches_fiche_http():
                              urlencode(query, doseq=True), parts.fragment))
     pool = ConnectionPool(conninfo=scoped_dsn, min_size=1, max_size=1, open=True,
                           kwargs={"autocommit": True})
+    probe_pool = _ConnectionProbePool(pool)
     previous = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(probe_pool)
     try:
         with TestClient(main.app) as client:
+            start = len(probe_pool.statements)
             focal_response = client.get(
                 f"/api/territories/commune/{territory}/themes/mobilite/facts")
+            fact_statements = probe_pool.statements[start:]
+            assert sum(statement.startswith("SET TRANSACTION") for statement in fact_statements) == 1
             assert focal_response.status_code == 200, focal_response.text
             focal = focal_response.json()
             assert "building_access" in focal, "theme facts omit the registered building publication"
@@ -93,6 +134,22 @@ def test_registered_canonical_building_publisher_reaches_fiche_http():
             assert nb["sources"][0]["version"] == expected["nb_buildings"]["source_version"]
             assert nb["sources"][0]["reference_date"] == expected["nb_buildings"]["reference_date"]
             assert nb["sources"][0]["publication_date"] == expected["nb_buildings"]["publication_date"]
+            service_reference = focal["service_reference"]
+            assert service_reference["territory"] == {
+                "territory_id": expected["service_reference"]["territory_id"],
+                "territory_type": expected["service_reference"]["territory_type"],
+                "name": expected["service_reference"]["name"],
+            }
+            for key in ("indicator_id", "label", "unit", "value", "status"):
+                _assert_canonical_equal(service_reference[key], expected["service_reference"][key])
+            assert service_reference["sources"] == [{
+                "source_id": expected["service_reference"]["source_id"],
+                "name": expected["service_reference"]["source_name"],
+                "vintage_id": f"{expected['service_reference']['version']}/{expected['service_reference']['reference_date']}",
+                "version": expected["service_reference"]["version"],
+                "reference_date": expected["service_reference"]["reference_date"],
+                "publication_date": expected["service_reference"]["publication_date"],
+            }]
             share_facts = [fact for fact in focal["facts"] if fact["indicator_id"].startswith("share_")]
             assert share_facts and all(
                 fact["denominator_count"] == nb["value"]
@@ -103,13 +160,17 @@ def test_registered_canonical_building_publisher_reaches_fiche_http():
             assert expected["building_count_parity"]["snapshot"] == nb["value"]
             assert expected["building_count_parity"]["snapshot"] != expected["building_count_parity"]["ramp"]
 
+            comparison_start = len(probe_pool.statements)
             comparison_response = client.post(
                 f"/api/territories/commune/{territory}/themes/mobilite/comparison",
                 json={"theme_id": "mobilite"})
+            comparison_statements = probe_pool.statements[comparison_start:]
+            assert sum(statement.startswith("SET TRANSACTION") for statement in comparison_statements) == 1
             assert comparison_response.status_code == 200, comparison_response.text
             comparison = comparison_response.json()
             assert "building_access" in comparison, "theme comparison omits building evidence"
             peer = comparison["building_access"]
+            assert "service_reference" not in comparison
             assert peer["scope"] == building["scope"]
             _assert_canonical_equal(peer["ramp"], expected["peer_ramp"])
             _assert_canonical_equal(peer["distribution"]["cells"], expected["peer_grid"]["cells"])

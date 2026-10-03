@@ -230,12 +230,32 @@ tryCatch({
   nb_row <- read_canonical("indicateurs_mobilite")
   nb_row <- nb_row[nb_row$key=="nb_buildings" & nb_row$territoire==building_territory,,drop=FALSE]
   stopifnot(nrow(nb_row)==1L)
+  regional_reference_rows <- read_canonical("territoires")
+  regional_reference_rows <- regional_reference_rows[regional_reference_rows$type=="region",,drop=FALSE]
+  stopifnot(nrow(regional_reference_rows)==1L)
+  regional_nb <- read_canonical("indicateurs_mobilite")
+  regional_nb <- regional_nb[regional_nb$key=="nb_buildings" &
+    regional_nb$territoire==regional_reference_rows$territoire[[1L]] &
+    regional_nb$type=="region",,drop=FALSE]
+  stopifnot(nrow(regional_nb)==1L, !is.na(regional_nb$value[[1L]]))
   building_manifest$nb_buildings <- list(value=nb_row$value[[1L]],unit=nb_row$unit[[1L]],
     label=as.character(mobility_metadata$indicator_labels$nb_buildings),
     source_id=as.character(mobility_metadata$sources$nb_buildings),
     source_version=as.character(nb_row$vintage_version[[1L]]),
     reference_date=as.character(nb_row$vintage_date_reference[[1L]]),
     publication_date=as.character(nb_row$vintage_date_publication[[1L]]))
+  building_manifest$service_reference <- list(
+    territory_id=as.character(regional_reference_rows$territoire[[1L]]),
+    territory_type=as.character(regional_reference_rows$type[[1L]]),
+    name=as.character(regional_reference_rows$nom[[1L]]),
+    indicator_id="nb_buildings",
+    label=as.character(mobility_metadata$indicator_pages$nb_buildings$label),
+    unit=as.character(regional_nb$unit[[1L]]),value=regional_nb$value[[1L]],status="measured",
+    source_id=as.character(mobility_metadata$sources$nb_buildings),
+    source_name=as.character(regional_nb$vintage_source[[1L]]),
+    version=as.character(regional_nb$vintage_version[[1L]]),
+    reference_date=as.character(regional_nb$vintage_date_reference[[1L]]),
+    publication_date=as.character(regional_nb$vintage_date_publication[[1L]]))
   building_manifest$building_count_parity <- list(
     snapshot=as.integer(nb_row$value[[1L]]),
     ramp=as.integer(unique(ramp$total_buildings[ramp$territory_id==building_territory & ramp$territory_type=="commune"])),

@@ -14,6 +14,7 @@ from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from psycopg_pool import ConnectionPool
 from api.profile_reads import focal_profiles
+from api.observed_collections import collection_descriptors, collection_snapshot, collection_comparison
 
 from api.building_comparison import (
     ComparisonInputError, pooled_peer_distribution, resolve_commune_members,
@@ -485,7 +486,8 @@ class ReadRepository:
         connection_context = self.connections.connection() if owns_connection else nullcontext(connection)
         with connection_context as connection:
             with (connection.transaction() if owns_connection else nullcontext()):
-                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                if owns_connection:
+                    connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 publication = _building_publication(connection.execute(
                     """SELECT table_name, content_version FROM table_publication
                        WHERE table_name IN ('territory_reference', 'building_ramp', 'building_grid')"""
@@ -604,7 +606,8 @@ class ReadRepository:
         connection_context = self.connections.connection() if owns_connection else nullcontext(connection)
         with connection_context as connection:
             with (connection.transaction() if owns_connection else nullcontext()):
-                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                if owns_connection:
+                    connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 publication = _building_publication(connection.execute(
                     """SELECT table_name, content_version FROM table_publication
                        WHERE table_name IN ('territory_reference', 'building_ramp', 'building_grid')"""
@@ -1100,7 +1103,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             owned_descriptors=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
                 WHERE theme_id=%s AND active_read_route AND (%s::text IS NULL OR indicator_id=%s)
                 ORDER BY indicator_id""",(theme_id,indicator_id,indicator_id)).fetchall()
-    if not scalar_descriptors and not profiles and not owned_descriptors:
+    collections = collection_descriptors(conn,indicator_id=indicator_id,theme_id=theme_id)
+    if not scalar_descriptors and not profiles and not owned_descriptors and not collections:
         raise HTTPException(404, "No published facts for this theme")
     reference = conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
@@ -1171,9 +1175,13 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
          for dataset_id,owned_indicator in owned_descriptors],
         territory_type,territory_id,selection,cohort=(cohort_type,members,scope))
     results.extend(owned_results)
+    collection_results = [collection_comparison(conn,descriptor,territory_type,territory_id,cohort_type,members)
+                          for descriptor in collections]
+    results.extend(collection_results)
     return {"contract": "theme-comparison-v1", "complete_theme": False, "theme_id": theme_id,
         "content_version": scalar_marker[0] if scalar_marker else (
-            next(iter(owned_markers.values()))[1] if owned_markers else None),
+            next(iter(owned_markers.values()))[1] if owned_markers else collection_results[0]["content_version"] if collection_results else None),
+        "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
         "reference_content_version": reference[0],
         "selection": None if selection is None else [
             {"territory_type": level, "territory_id": code} for level, code in selection],
@@ -1349,6 +1357,47 @@ def _owned_series_route(conn, indicator_id):
     return None
 
 
+def _owned_series_context(conn, dataset_id, indicator_id, territory_type, territory_id, points):
+    """Only the declared matching-period parent facts, in the caller snapshot."""
+    if not conn.execute("SELECT to_regclass('series_context_parent_policy')").fetchone()[0]:
+        return {}
+    policies = dict(conn.execute("""SELECT focal_level,parent_level FROM series_context_parent_policy
+        WHERE dataset_id=%s AND indicator_id=%s""", (dataset_id,indicator_id)).fetchall())
+    if not policies:
+        return {}
+    parent_level = policies.get(territory_type)
+    if not parent_level or not points:
+        return {"context": None}
+    if parent_level == "epci":
+        parents = conn.execute("""SELECT p.territory_id,p.territory_type,p.name
+            FROM territory_reference f JOIN territory_reference p ON p.territory_id=f.epci_id
+            WHERE f.territory_id=%s AND p.territory_type=%s""", (territory_id,parent_level)).fetchall()
+    else:
+        parents = conn.execute("SELECT territory_id,territory_type,name FROM territory_reference WHERE territory_type=%s",
+                               (parent_level,)).fetchall()
+    if len(parents) > 1:
+        raise HTTPException(503,"Series context parent reference is ambiguous")
+    if not parents:
+        return {"context": None}
+    parent_id,parent_type,parent_name = parents[0]
+    axes = [point["axis"] for point in points]
+    rows = conn.execute("""SELECT o.axis_value,o.observation_period,o.value,o.status,
+        json_agg(json_build_object('revision_id',v.provenance_revision_id,'source_id',v.source_id,
+          'vintage_id',v.vintage_id,'source_name',v.source_name,'dataset_name',v.dataset_name,
+          'version',v.source_version,'reference_date',v.reference_date,'publication_date',v.publication_date,
+          'revision_hash',v.revision_hash) ORDER BY v.provenance_revision_id)
+        FROM series_dataset_observation o JOIN series_observation_provenance p
+          USING(dataset_id,indicator_id,territory_id,axis_value)
+        JOIN series_provenance_revision v USING(provenance_revision_id)
+        WHERE o.dataset_id=%s AND o.indicator_id=%s AND o.territory_id=%s
+          AND o.axis_value=ANY(%s) AND o.observation_period=o.axis_value
+        GROUP BY o.axis_value,o.observation_period,o.value,o.status ORDER BY o.axis_value""",
+        (dataset_id,indicator_id,parent_id,axes)).fetchall()
+    return {"context": {"parent":{"id":parent_id,"type":parent_type,"name":parent_name},
+        "points":[{"axis":axis,"observation_period":period,"value":value,"status":status,"provenance":sources}
+                  for axis,period,value,status,sources in rows]}}
+
+
 def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indicator_id):
     """Read one active owned series, its focal points and named references in the caller snapshot."""
     marker = conn.execute("""SELECT p.content_version,p.reference_content_version,p.row_count,p.published_at,
@@ -1357,7 +1406,8 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
     if not marker or marker[1] != marker[4]:
         raise HTTPException(503, "Owned-series publication is stale or unavailable")
     descriptor = conn.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,label,unit,
-        direction,descriptor_version,allowed_levels,comparison_point,theme_id,observation_period_kind
+        direction,descriptor_version,allowed_levels,comparison_point,theme_id,observation_period_kind,
+        COALESCE(to_jsonb(series_dataset_descriptor)->>'absence_semantics','unavailable')
         FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s AND active_read_route""",
         (dataset_id,indicator_id)).fetchone()
     if not descriptor:
@@ -1394,7 +1444,8 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
         (SELECT count(*) FROM series_named_reference WHERE dataset_id=%s)""",(dataset_id,dataset_id)).fetchone()[0]
     if row_count != marker[2]:
         raise HTTPException(503, "Owned series marker row count does not match its facts")
-    if not facts:
+    no_record = not facts and descriptor[12] == "no_record" and descriptor[3] == "may_be_missing"
+    if not facts and not no_record:
         raise HTTPException(503, "Owned series focal curve is incomplete")
     def lineage(row, offset):
         if row[offset] is None:
@@ -1404,6 +1455,8 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
             "reference_date":row[offset+6],"publication_date":row[offset+7],"revision_hash":row[offset+8]}
     points=[]
     for axis in descriptor[1]:
+        if no_record:
+            break
         matching=[row for row in facts if row[0]==axis]
         if not matching:
             if descriptor[3]=="dense_complete":
@@ -1445,7 +1498,8 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
         "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
         "descriptor_version":descriptor[7],"comparison_point":descriptor[9],"points":points,"scope_series":[],
         "observation_period_kind":descriptor[11],
-        "named_references":list(reference_groups.values()),"availability":"complete" if all(
+        **_owned_series_context(conn,dataset_id,indicator_id,territory_type,territory_id,points),
+        "named_references":list(reference_groups.values()),"availability":"no_record" if no_record else "complete" if all(
             point["status"]=="measured" for point in points) else "incomplete"}
 
 
@@ -1558,7 +1612,9 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         d.comparison_scope,p.content_version,
         p.reference_content_version,t.content_version,o.territory_id,o.value,o.status,
         v.source_id,v.vintage_id,v.source_name,v.dataset_name,v.source_version,v.reference_date,
-        v.publication_date,v.revision_hash
+        v.publication_date,v.revision_hash,
+        CASE WHEN to_jsonb(d)->>'comparison_levels' IS NULL THEN d.allowed_levels
+          ELSE ARRAY(SELECT jsonb_array_elements_text(to_jsonb(d)->'comparison_levels')) END
         FROM series_dataset_descriptor d
         JOIN series_dataset_publication p USING(dataset_id)
         LEFT JOIN table_publication t ON t.table_name='territory_reference'
@@ -1587,7 +1643,8 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         if territory_type not in levels:
             raise HTTPException(422,"Indicator is not declared for this territory level")
         valid=bool(point and point in axes and direction in ("high","low") and
-            statistic=="median" and comparison_scope=="default_group" and cohort_type in levels)
+            statistic=="median" and comparison_scope=="default_group" and
+            territory_type in first[26] and cohort_type in first[26])
         observations=[r for r in matching if r[15] is not None]
         if valid and any(r[18] is None for r in observations):
             raise HTTPException(503,"Owned series comparison provenance is incomplete")
@@ -1664,6 +1721,11 @@ def scalar_observation(
                 if owned[2]:
                     return _owned_named_reference_snapshot(conn,owned,territory_type,territory_id,indicator_id)
                 return _owned_series_snapshot(conn,owned[0],territory_type,territory_id,indicator_id)
+            collections = collection_descriptors(conn,indicator_id=indicator_id)
+            if collections:
+                if shape_rows:
+                    raise HTTPException(503,"Indicator has ambiguous collection/storage declarations")
+                return collection_snapshot(conn,collections[0],territory_type,territory_id)
             if len(shape_rows) > 1:
                 raise HTTPException(503, "Indicator has ambiguous published storage shapes")
             shape = shape_rows[0][1] if shape_rows else None
@@ -1731,6 +1793,39 @@ def scalar_observation(
             return dict(zip((column.name for column in cursor.description), row))
 
 
+def _mobility_service_reference_snapshot(conn):
+    """Return only the registered regional building-count fact consumed by services."""
+    marker = conn.execute("""SELECT s.content_version,s.reference_content_version,t.content_version
+        FROM table_publication s LEFT JOIN table_publication t
+          ON t.table_name='territory_reference'
+        WHERE s.table_name='scalar_observation'""").fetchone()
+    if not marker or not marker[0] or marker[1] != marker[2]:
+        raise HTTPException(503, "Mobility service reference publication is unavailable")
+    rows = conn.execute("""SELECT t.territory_id,t.territory_type,t.name,
+          d.indicator_id,d.label,d.unit,o.value,o.status,
+          COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,'name',sd.name,
+            'vintage_id',os.vintage_id,'version',sv.version,'reference_date',sv.reference_date,
+            'publication_date',sv.publication_date) ORDER BY os.source_id,os.vintage_id)
+            FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
+            JOIN source_vintage sv USING(source_id,vintage_id)
+            WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
+        FROM territory_reference t JOIN scalar_observation o
+          ON o.territory_id=t.territory_id AND o.territory_type=t.territory_type
+        JOIN scalar_descriptor d USING(indicator_id)
+        WHERE t.territory_type='region' AND d.theme_id='mobilite'
+          AND d.indicator_id='nb_buildings'""").fetchall()
+    if len(rows) != 1:
+        raise HTTPException(503, "Registered regional Mobility service denominator is unavailable")
+    territory_id, territory_type, name, indicator_id, label, unit, value, status, sources = rows[0]
+    if status != "measured" or value is None or not sources:
+        raise HTTPException(503, "Registered regional Mobility service denominator is unavailable")
+    return {"territory": {"territory_id": territory_id, "territory_type": territory_type,
+                          "name": name},
+            "indicator_id": indicator_id, "label": label, "unit": unit,
+            "value": value, "status": status, "sources": sources,
+            "content_version": marker[0]}
+
+
 @app.get("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
 def theme_facts(
     territory_type: Literal["commune", "epci", "departement", "region"],
@@ -1785,11 +1880,15 @@ def theme_facts(
                         WHERE theme_id=%s AND active_read_route ORDER BY indicator_id""",(theme_id,)).fetchall()
                     owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator)
                                   for dataset_id,indicator in routes]
-            if not rows and not profiles and not owned_series:
+            collections = [collection_snapshot(conn,descriptor,territory_type,territory_id)
+                           for descriptor in collection_descriptors(conn,theme_id=theme_id)
+                           if territory_type in descriptor["allowed_levels"]]
+            if not rows and not profiles and not owned_series and not collections:
                 raise HTTPException(404, "No published facts for this theme and territory")
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
                 profiles=profiles, profile_version=profile_version)
             building_access = None
+            service_reference = None
             if theme_id == "mobilite":
                 try:
                     building_access = repository.read_building_initial(
@@ -1802,6 +1901,11 @@ def theme_facts(
                     # installed. Keep that pre-existing theme contract intact.
                     if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
                         raise
+                service_contract = conn.execute("""SELECT EXISTS(
+                    SELECT 1 FROM scalar_descriptor WHERE theme_id='mobilite'
+                      AND indicator_id LIKE 'share_%')""").fetchone()[0]
+                if service_contract:
+                    service_reference = _mobility_service_reference_snapshot(conn)
     names=("indicator_id","label","unit","direction","comparison_facet","descriptor_version",
            "value","status","support_count","denominator_count","sources")
     payload = {"contract":"theme-facts-v1","complete_theme":False,"theme_id":theme_id,
@@ -1809,13 +1913,16 @@ def theme_facts(
         "content_version":marker[0] if marker else comparison["content_version"],
         "owned_series_content_versions":[item["publication_id"] for item in owned_series],
         "reference_content_version":comparison["reference_content_version"],
-       "profile_content_version":profile_version,"profiles":profiles,
-       "series":owned_series,
+        "profile_content_version":profile_version,"profiles":profiles,
+        "series":owned_series,
+        "collections":collections,
        "facts":[dict(zip(names,row)) for row in rows],
        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
                              "profile_comparisons":comparison["profile_comparisons"]}}
     if building_access is not None:
         payload["building_access"] = building_access
+    if service_reference is not None:
+        payload["service_reference"] = service_reference
     return payload
 
 
@@ -2032,6 +2139,20 @@ def indicator_comparison_only(
                         territory_id,indicator_id,selection)
                 return _owned_series_comparison_result(conn,active_owned,territory_type,
                     territory_id,indicator_id,selection)
+            collections = collection_descriptors(conn,indicator_id=indicator_id)
+            if collections:
+                focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",(territory_id,)).fetchone()
+                if not focal:
+                    raise HTTPException(404,"Focal territory not found")
+                if focal[0]!=territory_type:
+                    raise HTTPException(422,"Focal territory type does not match route")
+                cohort_type,members,scope = _comparison_cohort(conn,territory_type,territory_id,selection)
+                result = collection_comparison(conn,collections[0],territory_type,territory_id,cohort_type,members)
+                return {"contract":"indicator-comparison-v1","complete_theme":False,"indicator_id":indicator_id,
+                    "theme_id":collections[0]["theme_id"],"shape":"observed_collection",
+                    "content_version":result["content_version"],"reference_content_version":result["reference_content_version"],
+                    "selection":None if selection is None else [{"territory_type":level,"territory_id":code} for level,code in selection],
+                    "scope":{**scope,"member_count":len(members)} if scope else None,"result":result}
             shapes = []
             for table, shape in (("scalar_descriptor", "scalar"),
                                  ("profile_descriptor", "profile"),

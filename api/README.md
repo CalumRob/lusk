@@ -418,6 +418,35 @@ done
 ```
 # Shared scalar publication contract (#594)
 
+## Bounded Programmes acquisition (#627)
+
+The stable indicator endpoint serves `subventions_annuelles` as an owned year
+series, `subventions_par_domaine` as a sparse observed year/detail collection,
+and `couverture_programmes` as sparse anchored membership. An omitted domain or
+membership is no record, never a fabricated zero/false. ORT preserves the actual
+row reference date and null publication date; a label's ORT rider remains on that
+label. Commune reads include covering EPCI contracts; aggregate reads include
+complete named relevant anchors and source-supported category counts. No peer
+grant datasets are sent with these focal facts.
+
+Annual `context` contains only the declared parent's matching-year points and
+their provenance (commune→EPCI, EPCI/département→region; none for region). Missing
+or nonpositive totals do not authorize a context share. The consumer must not
+substitute another year. Domain grants retain their producer-declared comparison
+year/category; numeric comparisons use ordinary medians with the established
+same-density default and typed, deduplicated custom selection. Membership remains
+explicitly non-comparable. Comparison-only responses contain selected-group
+results and compatibility tokens, not focal entries, relationships, points or
+parent context.
+
+Programmes theme facts assemble available owned series and `collections` in the
+same caller MVCC snapshot. `complete_theme` stays false: this bounded batch is
+not six-theme fiche activation, serving publication or a public deployment.
+See migrations 017/018 and their explicit check/publish operator modes in
+`migrations/README.md`.
+
+## Shared scalar owners
+
 R/Parquet remains authoritative. A scalar publisher registers a stable name,
 projects canonical facts and declared descriptors, validates them with
 `validate_scalar_projection()`, and replaces facts plus the independent
