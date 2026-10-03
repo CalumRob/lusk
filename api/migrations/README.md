@@ -155,14 +155,47 @@ of focal `allowed_levels`. The annual-grant producer preserves region focal
 facts without authorizing region comparisons. Legacy descriptors fall back to
 their original allowed-level comparison behavior; readers tolerate a pre-017
 descriptor until the separately approved migration/publication occurs.
-Migration
-016 is reserved independently for the BPE batch; 017 has no BPE dependency.
+Migration 017 also adds the owned-series `series_context_parent_policy` relation.
+Only producer-declared commune→EPCI and EPCI/département→region parent links
+are supported. The reader returns bounded parent points with the focal period,
+never a substitute year or the whole parent dataset. Region has no parent;
+comparison-only reads omit this unchanged context. Pre-017 acquisitions do not
+claim the new context contract.
+Migration 016 is reserved independently for the BPE batch; 017 has no BPE dependency.
 Apply each reviewed migration only after its serving backup/upgrade rehearsal
 and separate approval. This source change applies no serving DDL.
 
 The programme annual-grant publisher has explicit `--programme-series-check`
 and `--programme-series-publish` modes in `publish-serving-tables.R`. Check
 does not connect to PostgreSQL; publish retains the existing owned-series
-opt-in and cron exclusion. It currently publishes only the annual-grant slice,
-not all programme facts and not a complete fiche theme. Grant domains,
-memberships and matching-year parent context remain tracked under #627.
+opt-in and cron exclusion. These modes remain annual-only compatibility entrypoints.
+
+# Migration 018 — typed sparse observed collections
+
+Dense profiles cannot express observed commune/year/domain grants without
+inventing zero cells; annual series cannot express the categorical domain
+coordinate. Programme membership has no year coordinate and must preserve its
+anchor, label rider and per-row nullable publication clock. Migration 018 therefore
+adds two constrained grains, `period_detail_observation` and `anchored_membership`,
+with a shared registered descriptor/category/publication relation. There is no
+generic EAV/JSON fact store or one table per indicator. FKs, coordinate/anchor
+checks and deferred publication validation bind facts to their own typed family,
+source and territory reference. Replacements and markers commit per collection;
+all registered projections validate before the first write and retries are no-ops.
+
+`--programme-check` reads stable canonical Parquets, invokes the existing
+programme producer and validates all three registered keys without a DB
+connection. `--programme-publish` requires `LUSK_PUBLISH_PROGRAMMES=1`, rejects
+cron, and publishes annual totals plus both observed collections. Each owner
+commits independently; retry reconciles a partial failed command without
+replacing unrelated families. This does not wire publication into an ordinary
+pipeline run, activate full-theme coverage or authorize serving DDL/deployment.
+
+The guarded canonical publisher-to-HTTP test independently compares all **791
+annual totals, 2,378 domain grants and 253 membership anchors** with the incumbent
+producer projection, including source stamps/riders. It checks four focal levels,
+named relationships/counts, row-specific ORT clocks, matching-year parents,
+selected/empty/singleton/mixed overlapping comparisons, no-record states,
+no-op retries and rollback. It rehearses migration 018 over populated annual
+series/reference owners and republishes collections through the registered R path.
+Apply 017 then 018 only after the separately reviewed serving rehearsal/backup.

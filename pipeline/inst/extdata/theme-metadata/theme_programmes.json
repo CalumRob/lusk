@@ -95,6 +95,20 @@
     }
   },
   "param_labels": {},
+  "observed_collection_contracts": {
+    "subventions_par_domaine": {"kind": "period_detail", "completeness": "observed_sparse"},
+    "couverture_programmes": {
+      "kind": "anchored_membership", "completeness": "observed_sparse", "unit": "adhésion",
+      "levels": ["commune", "epci", "departement", "region"],
+      "categories": {
+        "ACV": {"source": "acv", "anchor_levels": ["commune"], "clock": "dataset", "rider_label": "convention valant ORT"},
+        "PVD": {"source": "pvd", "anchor_levels": ["commune"], "clock": "dataset", "rider_label": "convention valant ORT"},
+        "CRTE": {"source": "crte", "anchor_levels": ["epci"], "clock": "dataset"},
+        "Territoires d'industrie": {"source": "territoires_industrie", "anchor_levels": ["epci"], "clock": "dataset"},
+        "ORT": {"source": "ort", "anchor_levels": ["commune", "epci"], "clock": "row_reference"}
+      }
+    }
+  },
   "indicator_pages": {
     "subventions_annuelles": {
       "indicator": "subventions_annuelles",
@@ -102,6 +116,7 @@
       "serving_levels": ["commune", "epci", "departement", "region"],
       "completeness": "may_be_missing",
       "absence_semantics": "no_record",
+      "context_parent_levels": {"commune": "epci", "epci": "region", "departement": "region"},
       "label": "Subventions régionales attribuées",
       "definition": "Total annuel des subventions attribuées par la Région Bretagne au territoire, toutes politiques confondues (données SCDL).",
       "unit": "€",

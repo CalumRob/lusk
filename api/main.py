@@ -13,6 +13,7 @@ from fastapi import Depends, FastAPI, HTTPException, Path, Query
 from pydantic import BaseModel, Field
 from psycopg_pool import ConnectionPool
 from api.profile_reads import focal_profiles
+from api.observed_collections import collection_descriptors, collection_snapshot, collection_comparison
 
 from api.building_comparison import (
     ComparisonInputError, pooled_peer_distribution, resolve_commune_members,
@@ -1095,7 +1096,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             owned_descriptors=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
                 WHERE theme_id=%s AND active_read_route AND (%s::text IS NULL OR indicator_id=%s)
                 ORDER BY indicator_id""",(theme_id,indicator_id,indicator_id)).fetchall()
-    if not scalar_descriptors and not profiles and not owned_descriptors:
+    collections = collection_descriptors(conn,indicator_id=indicator_id,theme_id=theme_id)
+    if not scalar_descriptors and not profiles and not owned_descriptors and not collections:
         raise HTTPException(404, "No published facts for this theme")
     reference = conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
@@ -1166,9 +1168,13 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
          for dataset_id,owned_indicator in owned_descriptors],
         territory_type,territory_id,selection,cohort=(cohort_type,members,scope))
     results.extend(owned_results)
+    collection_results = [collection_comparison(conn,descriptor,territory_type,territory_id,cohort_type,members)
+                          for descriptor in collections]
+    results.extend(collection_results)
     return {"contract": "theme-comparison-v1", "complete_theme": False, "theme_id": theme_id,
         "content_version": scalar_marker[0] if scalar_marker else (
-            next(iter(owned_markers.values()))[1] if owned_markers else None),
+            next(iter(owned_markers.values()))[1] if owned_markers else collection_results[0]["content_version"] if collection_results else None),
+        "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
         "reference_content_version": reference[0],
         "selection": None if selection is None else [
             {"territory_type": level, "territory_id": code} for level, code in selection],
@@ -1344,6 +1350,47 @@ def _owned_series_route(conn, indicator_id):
     return None
 
 
+def _owned_series_context(conn, dataset_id, indicator_id, territory_type, territory_id, points):
+    """Only the declared matching-period parent facts, in the caller snapshot."""
+    if not conn.execute("SELECT to_regclass('series_context_parent_policy')").fetchone()[0]:
+        return {}
+    policies = dict(conn.execute("""SELECT focal_level,parent_level FROM series_context_parent_policy
+        WHERE dataset_id=%s AND indicator_id=%s""", (dataset_id,indicator_id)).fetchall())
+    if not policies:
+        return {}
+    parent_level = policies.get(territory_type)
+    if not parent_level or not points:
+        return {"context": None}
+    if parent_level == "epci":
+        parents = conn.execute("""SELECT p.territory_id,p.territory_type,p.name
+            FROM territory_reference f JOIN territory_reference p ON p.territory_id=f.epci_id
+            WHERE f.territory_id=%s AND p.territory_type=%s""", (territory_id,parent_level)).fetchall()
+    else:
+        parents = conn.execute("SELECT territory_id,territory_type,name FROM territory_reference WHERE territory_type=%s",
+                               (parent_level,)).fetchall()
+    if len(parents) > 1:
+        raise HTTPException(503,"Series context parent reference is ambiguous")
+    if not parents:
+        return {"context": None}
+    parent_id,parent_type,parent_name = parents[0]
+    axes = [point["axis"] for point in points]
+    rows = conn.execute("""SELECT o.axis_value,o.observation_period,o.value,o.status,
+        json_agg(json_build_object('revision_id',v.provenance_revision_id,'source_id',v.source_id,
+          'vintage_id',v.vintage_id,'source_name',v.source_name,'dataset_name',v.dataset_name,
+          'version',v.source_version,'reference_date',v.reference_date,'publication_date',v.publication_date,
+          'revision_hash',v.revision_hash) ORDER BY v.provenance_revision_id)
+        FROM series_dataset_observation o JOIN series_observation_provenance p
+          USING(dataset_id,indicator_id,territory_id,axis_value)
+        JOIN series_provenance_revision v USING(provenance_revision_id)
+        WHERE o.dataset_id=%s AND o.indicator_id=%s AND o.territory_id=%s
+          AND o.axis_value=ANY(%s) AND o.observation_period=o.axis_value
+        GROUP BY o.axis_value,o.observation_period,o.value,o.status ORDER BY o.axis_value""",
+        (dataset_id,indicator_id,parent_id,axes)).fetchall()
+    return {"context": {"parent":{"id":parent_id,"type":parent_type,"name":parent_name},
+        "points":[{"axis":axis,"observation_period":period,"value":value,"status":status,"provenance":sources}
+                  for axis,period,value,status,sources in rows]}}
+
+
 def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indicator_id):
     """Read one active owned series, its focal points and named references in the caller snapshot."""
     marker = conn.execute("""SELECT p.content_version,p.reference_content_version,p.row_count,p.published_at,
@@ -1444,6 +1491,7 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
         "label":descriptor[4],"unit":descriptor[5],"direction":descriptor[6],
         "descriptor_version":descriptor[7],"comparison_point":descriptor[9],"points":points,"scope_series":[],
         "observation_period_kind":descriptor[11],
+        **_owned_series_context(conn,dataset_id,indicator_id,territory_type,territory_id,points),
         "named_references":list(reference_groups.values()),"availability":"no_record" if no_record else "complete" if all(
             point["status"]=="measured" for point in points) else "incomplete"}
 
@@ -1666,6 +1714,11 @@ def scalar_observation(
                 if owned[2]:
                     return _owned_named_reference_snapshot(conn,owned,territory_type,territory_id,indicator_id)
                 return _owned_series_snapshot(conn,owned[0],territory_type,territory_id,indicator_id)
+            collections = collection_descriptors(conn,indicator_id=indicator_id)
+            if collections:
+                if shape_rows:
+                    raise HTTPException(503,"Indicator has ambiguous collection/storage declarations")
+                return collection_snapshot(conn,collections[0],territory_type,territory_id)
             if len(shape_rows) > 1:
                 raise HTTPException(503, "Indicator has ambiguous published storage shapes")
             shape = shape_rows[0][1] if shape_rows else None
@@ -1787,7 +1840,10 @@ def theme_facts(
                         WHERE theme_id=%s AND active_read_route ORDER BY indicator_id""",(theme_id,)).fetchall()
                     owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator)
                                   for dataset_id,indicator in routes]
-            if not rows and not profiles and not owned_series:
+            collections = [collection_snapshot(conn,descriptor,territory_type,territory_id)
+                           for descriptor in collection_descriptors(conn,theme_id=theme_id)
+                           if territory_type in descriptor["allowed_levels"]]
+            if not rows and not profiles and not owned_series and not collections:
                 raise HTTPException(404, "No published facts for this theme and territory")
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
                 profiles=profiles, profile_version=profile_version)
@@ -1800,6 +1856,7 @@ def theme_facts(
         "reference_content_version":comparison["reference_content_version"],
         "profile_content_version":profile_version,"profiles":profiles,
         "series":owned_series,
+        "collections":collections,
        "facts":[dict(zip(names,row)) for row in rows],
        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
                              "profile_comparisons":comparison["profile_comparisons"]}}
@@ -1979,6 +2036,20 @@ def indicator_comparison_only(
                         territory_id,indicator_id,selection)
                 return _owned_series_comparison_result(conn,active_owned,territory_type,
                     territory_id,indicator_id,selection)
+            collections = collection_descriptors(conn,indicator_id=indicator_id)
+            if collections:
+                focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",(territory_id,)).fetchone()
+                if not focal:
+                    raise HTTPException(404,"Focal territory not found")
+                if focal[0]!=territory_type:
+                    raise HTTPException(422,"Focal territory type does not match route")
+                cohort_type,members,scope = _comparison_cohort(conn,territory_type,territory_id,selection)
+                result = collection_comparison(conn,collections[0],territory_type,territory_id,cohort_type,members)
+                return {"contract":"indicator-comparison-v1","complete_theme":False,"indicator_id":indicator_id,
+                    "theme_id":collections[0]["theme_id"],"shape":"observed_collection",
+                    "content_version":result["content_version"],"reference_content_version":result["reference_content_version"],
+                    "selection":None if selection is None else [{"territory_type":level,"territory_id":code} for level,code in selection],
+                    "scope":{**scope,"member_count":len(members)} if scope else None,"result":result}
             shapes = []
             for table, shape in (("scalar_descriptor", "scalar"),
                                  ("profile_descriptor", "profile"),

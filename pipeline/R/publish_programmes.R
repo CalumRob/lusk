@@ -4,12 +4,12 @@ read_programme_serving_inputs <- function(sortie="../public/data",
     metadata_path="inst/extdata/theme-metadata/theme_programmes.json") {
   paths <- c(membres=file.path(sortie,"programmes_membres.parquet"),
     subventions=file.path(sortie,"programmes_subventions.parquet"),
-    vintages=file.path(sortie,"vintages.parquet"), metadata=metadata_path)
+    vintages=file.path(sortie,"vintages.parquet"),territoires=file.path(sortie,"territoires.parquet"), metadata=metadata_path)
   read_stable_series_artifacts(paths, function(input) list(
     canonical=list(programmes=list(
       membres=nanoparquet::read_parquet(input[["membres"]]),
       subventions=nanoparquet::read_parquet(input[["subventions"]])),
-      vintages=nanoparquet::read_parquet(input[["vintages"]])),
+      vintages=nanoparquet::read_parquet(input[["vintages"]]),territoires=nanoparquet::read_parquet(input[["territoires"]])),
     metadata=jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE)))
 }
 
@@ -64,6 +64,9 @@ project_annual_grants_owned_series <- function(canonical, metadata) {
       comparison_statistic=page$comparison$statistic,comparison_scope=page$comparison$scope,
       absence_semantics=page$absence_semantics,
       descriptor_version=as.character(page$descriptor_version %||% "1")),
+    context_parent_policy=data.frame(dataset_id=page$series_dataset_id,indicator_id=page$indicator,
+      focal_level=names(page$context_parent_levels),
+      parent_level=unlist(page$context_parent_levels,use.names=FALSE)),
     provenance=data.frame(provenance_revision_id=revision_id,source_id=source_id,
       vintage_id=as.character(vintage$version[[1L]]),source_name=as.character(vintage$source[[1L]]),
       dataset_name=source_record$dataset,source_version=as.character(vintage$version[[1L]]),

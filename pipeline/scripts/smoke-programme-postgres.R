@@ -2,19 +2,25 @@
 # Invoked by the guarded Python HTTP acceptance test in its own disposable schema.
 pkgload::load_all(".", quiet=TRUE)
 args <- commandArgs(TRUE)
-stopifnot(length(args)==1L, grepl("^it_[a-f0-9]{20}$", args[[1L]]),
+stopifnot(length(args) %in% c(1L,2L), grepl("^it_[a-f0-9]{20}$", args[[1L]]),
+  length(args)==1L || identical(args[[2L]],"--collections-only"),
   identical(Sys.getenv("LUSK_TEST_DATABASE_PREFIX"), "lusk_it_"),
   grepl("^lusk_it_[A-Za-z0-9_]+$", Sys.getenv("LUSK_TEST_DATABASE_NAME")),
   identical(Sys.getenv("LUSK_PROFILE_TEST_DATABASE"), Sys.getenv("LUSK_TEST_DATABASE_NAME")))
 con <- DBI::dbConnect(RPostgres::Postgres(), host=Sys.getenv("LUSK_PROFILE_TEST_HOST"),
   port=as.integer(Sys.getenv("LUSK_PROFILE_TEST_PORT")),
   dbname=Sys.getenv("LUSK_PROFILE_TEST_DATABASE"), user=Sys.getenv("LUSK_PROFILE_TEST_USER"))
-tryCatch({
+run_smoke <- function() tryCatch({
   identity <- DBI::dbGetQuery(con, "SELECT current_database() AS database,current_user AS username")
   stopifnot(identical(identity$database[[1L]], Sys.getenv("LUSK_TEST_DATABASE_NAME")),
     identical(identity$username[[1L]], Sys.getenv("LUSK_PROFILE_TEST_USER")))
   DBI::dbExecute(con, paste("SET search_path TO", DBI::dbQuoteIdentifier(con, args[[1L]])))
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR")
+  if (length(args)==2L) {
+    inputs <- read_programme_serving_inputs(canonical_dir)
+    publish_registered_observed_collections(inputs$canonical,inputs$metadata,con)
+    return(invisible(TRUE))
+  }
   reference <- preparer_tables_service(canonical_dir)$tables$territory_reference
   DBI::dbWriteTable(con, "territory_reference", reference, append=TRUE, row.names=FALSE)
   DBI::dbExecute(con,
@@ -26,6 +32,10 @@ tryCatch({
   result <- publish_registered_series(registry, "subventions_annuelles_owned", inputs$canonical, adapter)
   retry <- publish_registered_series(registry, "subventions_annuelles_owned", inputs$canonical, adapter)
   stopifnot(result$changed, !retry$changed)
+  observed <- publish_registered_observed_collections(inputs$canonical,inputs$metadata,con)
+  observed_retry <- publish_registered_observed_collections(inputs$canonical,inputs$metadata,con)
+  stopifnot(all(vapply(observed,function(result) result$changed,logical(1))),
+    !any(vapply(observed_retry,function(result) result$changed,logical(1))))
   marker <- adapter$dataset_marker("subventions_annuelles")
   inconsistent <- inputs$canonical
   inconsistent$programmes$subventions$vintage_version[[1L]] <- "stale-input"
@@ -40,3 +50,4 @@ tryCatch({
     identical(marker,adapter$dataset_marker("subventions_annuelles")))
   cat("Canonical annual grant registered publication and unchanged retry passed\n")
 }, finally=DBI::dbDisconnect(con))
+run_smoke()

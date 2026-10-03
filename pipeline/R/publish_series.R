@@ -445,6 +445,16 @@ validate_owned_series_projection <- function(projection) {
       (!length(d$comparison_levels) || anyNA(d$comparison_levels) ||
        anyDuplicated(d$comparison_levels) || any(!d$comparison_levels %in% d$allowed_levels)))
     stop("Owned series comparison levels must be a declared subset of focal levels",call.=FALSE)
+  if (!is.null(projection$context_parent_policy)) {
+    policy <- projection$context_parent_policy
+    if (!is.data.frame(policy) || !setequal(names(policy),c("dataset_id","indicator_id","focal_level","parent_level")) ||
+        !nrow(policy) || anyNA(policy) || any(policy$dataset_id!=d$dataset_id) ||
+        any(policy$indicator_id!=d$indicator_id) || anyDuplicated(policy$focal_level) ||
+        any(!policy$focal_level %in% d$allowed_levels) || any(!policy$parent_level %in% d$allowed_levels) ||
+        any(!((policy$focal_level=="commune" & policy$parent_level=="epci") |
+              (policy$focal_level %in% c("epci","departement") & policy$parent_level=="region"))))
+      stop("Invalid owned series hierarchical context policy",call.=FALSE)
+  }
   required_descriptor <- c("dataset_id","indicator_id","axis_kind","axis_values","completeness",
     "comparison_point","label","unit","direction","allowed_levels","descriptor_version")
   required_points <- c("dataset_id","indicator_id","territory_id","territory_type","axis_value",
@@ -631,6 +641,8 @@ owned_series_postgres_adapter <- function(con) {
       if (!is.null(d$comparison_levels)) DBI::dbExecute(con,
         "UPDATE series_dataset_descriptor SET comparison_levels=$1::text[] WHERE dataset_id=$2 AND indicator_id=$3",
         params=list(array_literal(d$comparison_levels),dataset_id,d$indicator_id))
+      if (!is.null(projection$context_parent_policy)) DBI::dbWriteTable(con,
+        "series_context_parent_policy",projection$context_parent_policy,append=TRUE,row.names=FALSE)
       point_columns <- c("dataset_id","indicator_id","territory_id","territory_type","axis_value",
         "observation_period","value","status")
       optional_columns <- intersect(c("state_role","missing_reason"),names(projection$points))
