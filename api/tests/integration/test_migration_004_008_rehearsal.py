@@ -120,7 +120,9 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
             fresh_names = set(re.findall(r"'([a-z_]+)'", re.search(
                 r"CREATE TABLE table_publication.*?CHECK\s*\(table_name IN\s*\((.*?)\)\)",
                 fresh_sql, re.S).group(1)))
-            assert set(re.findall(r"'([a-z_]+)'", check)) == fresh_names
+            # Migration 020 is an additive owner beyond the cumulative 004–008
+            # fixture; all older names remain exact, plus its declared table.
+            assert set(re.findall(r"'([a-z_]+)'", check)) | {"demographic_typed_reading"} == fresh_names
             for marker in ('declared_profile', 'ordered_series'):
                 with pytest.raises(psycopg.errors.CheckViolation):
                     with connection.transaction():

@@ -62,6 +62,59 @@ def test_canonical_demographic_reading_is_readable_over_http():
                 assert reading["provenance"]["source_version"] == "2023"
                 assert reading["provenance"]["source_reference_date"] == "2023-01-01"
                 assert reading["status"] == "measured"
+
+            with pool.connection() as conn:
+                density, epci = conn.execute("SELECT density_class_code,epci_id FROM territory_reference "
+                    "WHERE territory_id='35238' AND territory_type='commune'").fetchone()
+                density_members = conn.execute("SELECT territory_id,name FROM territory_reference "
+                    "WHERE territory_type='commune' AND density_class_code=%s ORDER BY name,territory_id",
+                    (density,)).fetchall()
+                epci_members = conn.execute("SELECT territory_id,name FROM territory_reference "
+                    "WHERE territory_type='commune' AND epci_id=%s ORDER BY name,territory_id",(epci,)).fetchall()
+            expected_by_id = {row["territoire"]:row for row in expected
+                              if row["theme"]=="demographie" and row["type"]=="commune"}
+            default = client.post("/api/territories/commune/35238/themes/demographie/comparison",
+                                  json={"theme_id":"demographie"})
+            assert default.status_code == 200, default.text
+            default_cloud = default.json()["reading_cloud"]
+            assert default_cloud["status"] == "available"
+            assert default_cloud["scope"]["kind"] == "density_class"
+            assert [point["territory"]["territory_id"] for point in default_cloud["points"]] == [
+                row[0] for row in density_members]
+            for point in default_cloud["points"]:
+                old = expected_by_id[point["territory"]["territory_id"]]
+                assert point["territory"]["name"] == next(name for code,name in density_members if code==old["territoire"])
+                assert point["periode"] == old["periode"]
+                assert point["taux_solde_naturel"] == old["taux_solde_naturel"]
+                assert point["taux_solde_migratoire"] == old["taux_solde_migratoire"]
+                assert set(point) == {"territory","periode","taux_solde_naturel","taux_solde_migratoire"}
+            assert default_cloud["rate_unit"] == "‰/an"
+            assert default_cloud["source"]["version"] == "2023"
+
+            empty = client.post("/api/territories/commune/35238/themes/demographie/comparison",
+                json={"theme_id":"demographie","selection":[]})
+            assert empty.status_code == 200, empty.text
+            assert empty.json()["reading_cloud"]["status"] == "unavailable"
+            assert empty.json()["reading_cloud"]["points"] == []
+            singleton = client.post("/api/territories/commune/35238/themes/demographie/comparison",
+                json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"35238"}]})
+            assert singleton.status_code == 200, singleton.text
+            singleton_cloud = singleton.json()["reading_cloud"]
+            assert len(singleton_cloud["points"]) == 1
+            assert singleton_cloud["points"][0]["territory"]["territory_id"] == "35238"
+
+            mixed = client.post("/api/territories/commune/35238/themes/demographie/comparison",
+                json={"theme_id":"demographie","selection":[
+                    {"territory_type":"epci","territory_id":epci},
+                    {"territory_type":"commune","territory_id":"35238"}]})
+            assert mixed.status_code == 200, mixed.text
+            mixed_body = mixed.json()
+            mixed_cloud = mixed_body["reading_cloud"]
+            assert len(mixed_cloud["points"]) == len(set(code for code,_ in epci_members))
+            assert {point["territory"]["territory_id"] for point in mixed_cloud["points"]} == {
+                code for code,_ in epci_members}
+            assert "focal_value" not in mixed_body
+            assert all("focal_value" not in result for result in mixed_body["results"])
     finally:
         if prior is None:
             main.app.dependency_overrides.pop(main.get_repository, None)

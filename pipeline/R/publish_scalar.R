@@ -449,7 +449,9 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
   tables <- c("series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
-     "demographic_typed_reading", "demographic_reading_descriptor",
+     "series_context_parent_policy", "demographic_typed_reading", "demographic_reading_descriptor",
+     "period_detail_observation", "anchored_membership", "observed_collection_category",
+     "observed_collection_descriptor", "observed_collection_publication",
      "series_named_reference_descriptor", "series_dataset_descriptor",
     "series_dataset_publication", "series_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
     "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
@@ -467,7 +469,9 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "assert_building_descriptor_publication()", "assert_current_dataset_complete(integer)",
     "validate_series_dataset_descriptor()", "validate_series_dataset_observation()",
     "validate_series_dataset_publication()", "validate_series_observation_provenance()",
-    "validate_series_named_reference()", "validate_series_named_reference_provenance()",
+     "validate_series_named_reference()", "validate_series_named_reference_provenance()",
+     "validate_observed_collection_write()", "validate_anchored_membership()",
+     "validate_period_detail_observation()", "validate_observed_collection_publication()",
     "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
     "validate_ordered_series()")
   c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
