@@ -892,8 +892,9 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                       "stationnement_velo_communes",
                          "offre_cyclable_communes", "offre_territoires",
                          "tot_loss_territoires", "moyennes_acces_territoires",
-                          "matrice_profils_acces_bpe",
-                           "profils_acces_bpe",
+                           "matrice_profils_acces_bpe",
+                            "profils_acces_bpe_univers",
+                            "profils_acces_bpe",
                            "distribution_acces_batiments",
                            "rampe_acces_batiments",
                            "distribution_acces_batiments_comparaisons",
@@ -936,6 +937,9 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   expect_true(file.exists(file.path(sortie, "offre_cyclable_communes.rds")))
   expect_true(file.exists(file.path(sortie, "offre_territoires.rds")))
   expect_true(file.exists(file.path(sortie, "matrice_profils_acces_bpe.rds")))
+  expect_equal(nrow(res$profils_acces_bpe_univers),
+               nrow(dplyr::distinct(res$matrice_profils_acces_bpe,
+                                    territoire, type, typequ)))
   expect_true(file.exists(file.path(sortie, "profils_acces_bpe.rds")))
 })
 

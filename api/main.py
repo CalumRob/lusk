@@ -1639,13 +1639,14 @@ def _bpe_profile_publication(conn):
     marker = conn.execute("""SELECT p.content_version,p.reference_content_version,r.content_version,
         d.descriptor_version,d.allowed_levels,d.completeness,d.classification_id,d.universe_count,
         d.universe_sha256,d.registry_filename,d.registry_semantic_effect,d.source_id,sd.name,sv.version,
-        sv.reference_date,sv.publication_date,d.indicator_id,p.row_count
+        sv.reference_date,sv.publication_date,d.indicator_id,p.row_count,d.membership_sha256
       FROM table_publication p JOIN table_publication r ON r.table_name='territory_reference'
       JOIN bpe_profile_evidence_descriptor d ON d.singleton
       JOIN source_dataset sd ON sd.source_id=d.source_id
       JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
       WHERE p.table_name='bpe_profile_evidence'""").fetchone()
-    if not marker or not marker[0] or marker[1] != marker[2]:
+    if (not marker or not marker[0] or marker[1] != marker[2]
+            or not marker[18] or len(marker[18]) != 64):
         raise HTTPException(503, "BPE profile publication is unavailable or incompatible")
     published_rows = conn.execute("SELECT count(*) FROM bpe_profile_evidence").fetchone()[0]
     if int(published_rows) != int(marker[17]):
@@ -1724,7 +1725,8 @@ def _bpe_profile_snapshot(conn, territory_type, territory_id, *, default_compari
       "content_version":marker[0],"reference_content_version":marker[2],
       "descriptor":{"version":marker[3],"allowed_levels":marker[4],"completeness":marker[5],
         "classification_id":marker[6],"universe_count":marker[7],"universe_sha256":marker[8],
-        "registry_filename":marker[9],"registry_semantic_effect":marker[10]},
+        "registry_filename":marker[9],"registry_semantic_effect":marker[10],
+        "membership_sha256":marker[18]},
       "classes":evidence,"sources":sources}
     if default_comparison:
         payload["default_comparison"]=_bpe_profile_comparison(conn,territory_type,territory_id,None)

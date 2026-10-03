@@ -20,6 +20,7 @@ CREATE TABLE bpe_profile_evidence_descriptor (
   universe_sha256 text NOT NULL CHECK(universe_sha256 ~ '^[0-9a-f]{64}$'),
   registry_filename text NOT NULL CHECK(length(trim(registry_filename))>0),
   registry_semantic_effect text NOT NULL CHECK(length(trim(registry_semantic_effect))>0),
+  membership_sha256 text NOT NULL CHECK(membership_sha256 ~ '^[0-9a-f]{64}$'),
   source_id text NOT NULL REFERENCES source_dataset(source_id),
   vintage_id text NOT NULL,
   FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)

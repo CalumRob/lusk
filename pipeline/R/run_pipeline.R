@@ -35,8 +35,12 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
                           sortie = "public/data",
                           mode = c("full", "cron"),
                           noms_epci_geo_api = lire_noms_epci_geo_api(),
-                          connexion_service = NULL) {
+                          connexion_service = NULL,
+                          publier_bpe = FALSE) {
   mode <- match.arg(mode)
+  if (isTRUE(publier_bpe) && is.null(connexion_service)) {
+    stop("Explicit BPE publication requires the service connection.", call.=FALSE)
+  }
   if (!is.null(connexion_service) && !identical(theme$theme, "mobilite")) {
     stop("La publication SQL de service exige le thème Mobilité.", call. = FALSE)
   }
@@ -196,11 +200,11 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
                             access_scope = service$access_scope,
                             building_contract = service$building_contract,
                             building_sources = service$building_sources)
-    # BPE is a separately constrained evidence family (four classes plus the
-    # registered TYPEQU universe), not a scalar/profile row in the shared
-    # serving table projection. Publish it through its registered owner using
-    # the same explicit operator connection and the canonical output snapshot.
-    publish_bpe_profiles_from_canonical(sortie, connexion_service)
+    # BPE is independently opt-in; connecting the unrelated service publisher
+    # must not imply publication of this separately owned evidence family.
+    if (isTRUE(publier_bpe)) {
+      publier_bpe_si_optin(publier_bpe, sortie, connexion_service)
+    }
   }
   # Le rapport du run réussi, écrit après la publication — il décrit un run
   # complet. Le diagnostic de couverture (issue #233) y voyage quand le thème

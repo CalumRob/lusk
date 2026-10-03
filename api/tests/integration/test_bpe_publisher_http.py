@@ -18,12 +18,13 @@ pytestmark = pytest.mark.integration
 def test_canonical_registered_bpe_publisher_is_read_through_http():
     required = ("LUSK_TEST_PUBLISH_DSN", "LUSK_TEST_READ_DSN", "LUSK_TEST_READ_USER",
                 "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX",
-                "LUSK_TEST_CANONICAL_DATA_DIR")
+                "LUSK_TEST_CANONICAL_DATA_DIR", "LUSK_TEST_BPE_MATRIX_RDS")
     if not all(os.getenv(key) for key in required):
         pytest.skip("requires approved guarded PostgreSQL publisher/read DSNs and canonical data")
     assert os.environ["LUSK_TEST_DATABASE_PREFIX"] == "lusk_it_"
     assert os.environ["LUSK_TEST_DATABASE_NAME"].startswith("lusk_it_")
     assert Path(os.environ["LUSK_TEST_CANONICAL_DATA_DIR"], "profils_acces_bpe.parquet").is_file()
+    assert Path(os.environ["LUSK_TEST_BPE_MATRIX_RDS"]).is_file()
 
     psycopg = pytest.importorskip("psycopg")
     from fastapi.testclient import TestClient
@@ -61,6 +62,17 @@ def test_canonical_registered_bpe_publisher_is_read_through_http():
         # invokes the actual publisher entry point, then performs a true no-op retry.
         script = r'''args<-commandArgs(TRUE); schema<-args[[1]]
 pkgload::load_all(normalizePath(".")); canonical_dir<-Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR")
+source_matrix_path<-Sys.getenv("LUSK_TEST_BPE_MATRIX_RDS")
+stopifnot(nzchar(source_matrix_path),file.exists(source_matrix_path))
+source_matrix<-readRDS(source_matrix_path)
+membership<-source_matrix |>
+ dplyr::distinct(territoire,type,typequ) |>
+ dplyr::arrange(type,territoire,typequ)
+tmp_canonical<-file.path(tempdir(),"canonical-bpe-proof")
+dir.create(tmp_canonical,showWarnings=FALSE,recursive=TRUE)
+file.copy(file.path(canonical_dir,c("profils_acces_bpe.parquet","vintages.parquet","territoires.parquet")),tmp_canonical,overwrite=TRUE)
+nanoparquet::write_parquet(membership,file.path(tmp_canonical,"profils_acces_bpe_univers.parquet"))
+canonical_dir<-tmp_canonical
 con<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),
  host=Sys.getenv("LUSK_PROFILE_TEST_HOST"),port=as.integer(Sys.getenv("LUSK_PROFILE_TEST_PORT")),
  user=Sys.getenv("LUSK_PROFILE_TEST_USER"))
@@ -93,9 +105,11 @@ positive_indices<-rollback_indices[changed_facts$nombre_typequ[rollback_indices]
 changed_facts$nombre_typequ[positive_indices[[1]]]<-changed_facts$nombre_typequ[positive_indices[[1]]]+1L
 changed_facts$nombre_typequ[positive_indices[[2]]]<-changed_facts$nombre_typequ[positive_indices[[2]]]-1L
 vintages<-nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
+membership<-nanoparquet::read_parquet(file.path(canonical_dir,"profils_acces_bpe_univers.parquet"))
 rollback_failed<-tryCatch({
  publish_registered_bpe_profiles(list(projection=changed_facts,
-  registry_path=file.path("inst","extdata",BPE_TYPEQU_ARTEFACT_FICHIER),vintages=vintages),con)
+  registry_path=file.path("inst","extdata",BPE_TYPEQU_ARTEFACT_FICHIER),vintages=vintages,
+  universe_membership=membership),con)
  FALSE
 },error=function(e) TRUE)
 DBI::dbExecute(con,"DROP TRIGGER reject_bpe_test_insert ON bpe_profile_evidence")
@@ -104,6 +118,25 @@ after_rows<-DBI::dbGetQuery(con,"SELECT count(*) AS n FROM bpe_profile_evidence"
 after_marker<-DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='bpe_profile_evidence'")$content_version[[1]]
 stopifnot(rollback_failed, before_rows==after_rows, identical(before_marker,after_marker))
 expected<-first$projection$facts
+independent_counts<-source_matrix |>
+ dplyr::count(territoire,type,profil,profil_libelle,name="nombre_typequ")
+independent_grid<-tidyr::crossing(
+ dplyr::distinct(source_matrix,territoire,type),
+ tibble::tibble(profil=names(PROFILS_ACCES_BPE),profil_libelle=unname(PROFILS_ACCES_BPE))) |>
+ dplyr::left_join(independent_counts,by=c("territoire","type","profil","profil_libelle")) |>
+ dplyr::mutate(nombre_typequ=dplyr::coalesce(as.integer(nombre_typequ),0L))
+stopifnot(identical(sort(paste(expected$territoire,expected$type,expected$profil,expected$nombre_typequ)),
+ sort(paste(independent_grid$territoire,independent_grid$type,independent_grid$profil,independent_grid$nombre_typequ))))
+positive<-expected[expected$nombre_typequ>0,c("territoire","type","profil","exemplar_typequ","exemplar_c","exemplar_b","exemplar_t")]
+source_exemplars<-source_matrix |>
+ dplyr::select(territoire,type,typequ,source_profil=profil,source_c=c,source_b=b,source_t=t)
+checked_exemplars<-dplyr::left_join(positive,source_exemplars,
+ by=c("territoire","type","exemplar_typequ"="typequ"))
+stopifnot(nrow(checked_exemplars)==nrow(positive),!anyNA(checked_exemplars$source_profil),
+ all(checked_exemplars$profil==checked_exemplars$source_profil),
+ all(checked_exemplars$exemplar_c==checked_exemplars$source_c),
+ all(checked_exemplars$exemplar_b==checked_exemplars$source_b),
+ all(checked_exemplars$exemplar_t==checked_exemplars$source_t))
 target_density<-refs$density_class_code[match("35238",refs$territory_id)]
 members<-refs$territory_id[refs$territory_type=="commune" & refs$density_class_code==target_density]
 expected_means<-lapply(names(PROFILS_ACCES_BPE),function(k) {
@@ -123,6 +156,7 @@ jsonlite::write_json(list(focal=expected[expected$territoire=="35238" & expected
  custom_epci=target_epci,custom_means=custom_means,rollback_verified=rollback_failed,
  universe_count=first$projection$descriptor$universe_count,
  universe_sha256=first$projection$descriptor$universe_sha256,
+ membership_sha256=first$projection$descriptor$membership_sha256,
  vintage=list(vintage_id=first$projection$descriptor$source$vintage_id[[1]],
   reference_date=first$projection$descriptor$source$reference_date[[1]],
   publication_date=first$projection$descriptor$source$publication_date[[1]])),
@@ -187,6 +221,7 @@ DBI::dbDisconnect(con)
             assert body["shape"] == "bpe_profile_evidence"
             assert body["descriptor"]["universe_count"] == expected["universe_count"]
             assert body["descriptor"]["universe_sha256"] == expected["universe_sha256"]
+            assert body["descriptor"]["membership_sha256"] == expected["membership_sha256"]
             assert len(body["classes"]) == 4
             observed = {row["profil"]: row for row in expected["focal"]}
             for row in body["classes"]:

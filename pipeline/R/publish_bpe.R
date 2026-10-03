@@ -4,7 +4,7 @@
 BPE_EVIDENCE_TABLE <- "bpe_profile_evidence"
 
 project_bpe_profile_evidence <- function(projection, registry_path,
-                                         vintages) {
+                                         vintages, universe_membership) {
   if (!is.data.frame(projection) ||
       !all(c("territoire", "type", "profil", "profil_libelle", "nombre_typequ",
              "exemplar_typequ", "exemplar_libelle", "exemplar_c", "exemplar_b",
@@ -15,6 +15,15 @@ project_bpe_profile_evidence <- function(projection, registry_path,
   codes <- as.character(registry$TYPEQU)
   registry_labels <- stats::setNames(as.character(registry$Libelle_TYPEQU),codes)
   if (anyDuplicated(codes) || !length(codes)) stop("Invalid TYPEQU universe", call.=FALSE)
+  if (!is.data.frame(universe_membership) ||
+      !all(c("territoire", "type", "typequ") %in% names(universe_membership)) ||
+      anyDuplicated(universe_membership[c("territoire", "type", "typequ")]) ||
+      anyNA(universe_membership[c("territoire", "type", "typequ")]) ||
+      any(!nzchar(as.character(universe_membership$territoire))) ||
+      any(!as.character(universe_membership$type) %in%
+          c("commune", "epci", "departement", "region")) ||
+      any(!as.character(universe_membership$typequ) %in% codes))
+    stop("BPE source TYPEQU membership is missing, duplicated or unknown", call.=FALSE)
   vintage <- vintages[as.character(vintages$id) == "mobilite_snapshot", , drop=FALSE]
   if (nrow(vintage) != 1L) stop("Canonical mobilite_snapshot vintage is required", call.=FALSE)
   if (any(!as.character(projection$profil) %in% names(PROFILS_ACCES_BPE)) ||
@@ -29,7 +38,16 @@ project_bpe_profile_evidence <- function(projection, registry_path,
     stop("BPE projection has invalid keys, levels or counts", call.=FALSE)
   }
   groups <- split(projection, paste(projection$type, projection$territoire, sep="\r"))
+  projected_groups <- unique(paste(projection$type, projection$territoire, sep="\r"))
+  membership_groups <- unique(paste(universe_membership$type, universe_membership$territoire, sep="\r"))
+  if (!setequal(projected_groups, membership_groups))
+    stop("BPE projected territories differ from source TYPEQU membership", call.=FALSE)
   complete <- lapply(groups, function(g) {
+    members <- universe_membership[
+      as.character(universe_membership$type) == as.character(g$type[[1L]]) &
+        as.character(universe_membership$territoire) == as.character(g$territoire[[1L]]), , drop=FALSE]
+    if (nrow(members) != length(codes) || !setequal(as.character(members$typequ), codes))
+      stop("BPE source TYPEQU membership does not match the registered universe", call.=FALSE)
     if (sum(g$nombre_typequ) != length(codes))
       stop("BPE class counts do not cover the registered TYPEQU universe", call.=FALSE)
     missing <- setdiff(names(PROFILS_ACCES_BPE), as.character(g$profil))
@@ -74,8 +92,18 @@ project_bpe_profile_evidence <- function(projection, registry_path,
     label=unname(PROFILS_ACCES_BPE), ordinal=seq_along(PROFILS_ACCES_BPE)-1L,
     direction=unname(DIRECTIONS_PROFILS_ACCES_BPE[names(PROFILS_ACCES_BPE)]),
     stringsAsFactors=FALSE)
+  membership_canonical <- data.frame(
+    territoire=as.character(universe_membership$territoire),
+    type=as.character(universe_membership$type),
+    typequ=as.character(universe_membership$typequ), stringsAsFactors=FALSE)
+  membership_canonical <- membership_canonical[
+    order(membership_canonical$type,membership_canonical$territoire,
+          membership_canonical$typequ),,drop=FALSE]
+  rownames(membership_canonical) <- NULL
+  membership_hash <- paste(as.character(openssl::sha256(
+    serialize(membership_canonical,NULL))),collapse="")
   descriptor_version <- paste(as.character(openssl::sha256(serialize(
-    list(axes, length(codes), registry_hash, source), NULL))), collapse="")
+    list(axes, length(codes), registry_hash, membership_hash, source), NULL))), collapse="")
   list(facts=facts, axes=axes, descriptor=list(
     descriptor_version=descriptor_version,
     allowed_levels=c("commune", "epci", "departement", "region"),
@@ -83,7 +111,7 @@ project_bpe_profile_evidence <- function(projection, registry_path,
     universe_count=length(codes), universe_sha256=registry_hash,
     registry_filename=basename(registry_path),
     registry_semantic_effect="TYPEQU membership and canonical French labels used by the BPE classifier",
-    source=source
+    source=source, membership_sha256=membership_hash
   ))
 }
 
@@ -92,7 +120,8 @@ register_bpe_profile_publisher <- function(registry) {
     stop("Invalid or duplicate BPE publisher registration", call.=FALSE)
   registry$bpe_profile_evidence <- list(
     project=function(canonical) project_bpe_profile_evidence(
-      canonical$projection, canonical$registry_path, canonical$vintages),
+      canonical$projection, canonical$registry_path, canonical$vintages,
+      canonical$universe_membership),
     publish=function(projection, db, version) {
       d <- projection$descriptor; src <- d$source
       existing <- DBI::dbGetQuery(db,
@@ -134,11 +163,11 @@ register_bpe_profile_publisher <- function(registry) {
       DBI::dbExecute(db, "DELETE FROM bpe_profile_evidence")
       DBI::dbExecute(db, "DELETE FROM bpe_profile_class_axis")
       DBI::dbExecute(db, "DELETE FROM bpe_profile_evidence_descriptor")
-      DBI::dbExecute(db, "INSERT INTO bpe_profile_evidence_descriptor(singleton,indicator_id,descriptor_version,allowed_levels,completeness,classification_id,universe_count,universe_sha256,registry_filename,registry_semantic_effect,source_id,vintage_id) VALUES(true,'bpe_access_profile',$1,ARRAY[$2,$3,$4,$5]::text[],$6,$7,$8,$9,$10,$11,$12,$13)",
+       DBI::dbExecute(db, "INSERT INTO bpe_profile_evidence_descriptor(singleton,indicator_id,descriptor_version,allowed_levels,completeness,classification_id,universe_count,universe_sha256,registry_filename,registry_semantic_effect,membership_sha256,source_id,vintage_id) VALUES(true,'bpe_access_profile',$1,ARRAY[$2,$3,$4,$5]::text[],$6,$7,$8,$9,$10,$11,$12,$13,$14)",
         params=list(d$descriptor_version,d$allowed_levels[[1L]],d$allowed_levels[[2L]],
           d$allowed_levels[[3L]],d$allowed_levels[[4L]],d$completeness,d$classification_id,
-          d$universe_count,d$universe_sha256,d$registry_filename,d$registry_semantic_effect,
-          src$source_id,src$vintage_id))
+           d$universe_count,d$universe_sha256,d$registry_filename,d$registry_semantic_effect,
+           d$membership_sha256,src$source_id,src$vintage_id))
       DBI::dbWriteTable(db,"bpe_profile_class_axis",projection$axes,append=TRUE,row.names=FALSE)
       facts <- projection$facts
       keep <- c("territory_id","territory_type","class_key","class_label","class_count",
@@ -177,9 +206,16 @@ publish_bpe_profiles_from_canonical <- function(canonical_dir, db,
   canonical <- list(
     projection=nanoparquet::read_parquet(paths[[1L]]),
     vintages=nanoparquet::read_parquet(paths[[2L]]),
+    universe_membership=nanoparquet::read_parquet(file.path(canonical_dir,"profils_acces_bpe_univers.parquet")),
     registry_path=registry_path
   )
   publish_registered_bpe_profiles(canonical, db)
+}
+
+publier_bpe_si_optin <- function(publier_bpe, canonical_dir, db) {
+  if (!isTRUE(publier_bpe)) return(invisible(NULL))
+  if (is.null(db)) stop("BPE publication requires an explicit service connection", call.=FALSE)
+  publish_bpe_profiles_from_canonical(canonical_dir, db)
 }
 
 run_bpe_publication_cli <- function(action=c("check","publish"),
@@ -191,10 +227,12 @@ run_bpe_publication_cli <- function(action=c("check","publish"),
   result <- project_bpe_profile_evidence(
     nanoparquet::read_parquet(file.path(canonical_dir,"profils_acces_bpe.parquet")),
     registry_path,
-    nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet")))
+    nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet")),
+    nanoparquet::read_parquet(file.path(canonical_dir,"profils_acces_bpe_univers.parquet")))
   if (action == "check") return(list(valid=TRUE,rows=nrow(result$facts),universe_count=result$descriptor$universe_count))
   if (!identical(opt_in,"1")) stop("BPE publication requires LUSK_PUBLISH_BPE=1",call.=FALSE)
   if (is.null(db)) stop("A guarded publisher connection is required",call.=FALSE)
   publish_registered_bpe_profiles(list(projection=result$facts,registry_path=registry_path,
-    vintages=nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))),db)
+    vintages=nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet")),
+    universe_membership=nanoparquet::read_parquet(file.path(canonical_dir,"profils_acces_bpe_univers.parquet"))),db)
 }
