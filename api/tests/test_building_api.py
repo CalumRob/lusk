@@ -183,6 +183,23 @@ def test_initial_building_access_uses_exact_default_rows_and_explicit_scope():
     assert response.json()["peer_ramp"][0]["accessible_types"] == 1.5
 
 
+def test_initial_building_access_defaults_commune_to_its_density_class():
+    class DefaultRepository:
+        def read_building_initial(self, territory_type, territory_id, comparison):
+            assert (territory_type, territory_id, comparison) == ("commune", "A", "densite")
+            return {"publication_id": "v1", "territory": {"id": "A", "type": "commune", "name": "A"},
+                    "scope": {"kind": "communes-densite", "comparison_mode": comparison},
+                    "ramp": [], "peer_ramp": None, "distribution": [], "peer_distribution": None}
+
+    app.dependency_overrides[get_repository] = DefaultRepository
+    try:
+        response = TestClient(app).get("/api/territories/commune/A/building-access")
+    finally:
+        app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    assert response.json()["scope"]["kind"] == "communes-densite"
+
+
 def test_initial_building_access_rejects_arbitrary_comparison_scope():
     app.dependency_overrides[get_repository] = lambda: object()
     try:
