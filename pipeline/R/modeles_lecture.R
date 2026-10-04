@@ -756,10 +756,7 @@ construire_modele_territoire <- function(payload, metadata, territoire,
       profils_cibles <- profils[as.character(profils$territoire) == territoire,
                                 , drop = FALSE]
       if (nrow(profils_cibles) > 0L) {
-        directions_profils <- c(
-          "acces-pied-tc" = "high", "velo-compense" = "high",
-          "voiture-requise" = "low", "inaccessible-20-minutes" = "low"
-        )
+        directions_profils <- DIRECTIONS_PROFILS_ACCES_BPE
         faits_profils <- lapply(names(directions_profils), function(profil) {
           valeurs <- vapply(codes_avec_profils, function(code) {
             lignes <- profils[

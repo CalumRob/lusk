@@ -2,11 +2,11 @@ BEGIN;
 CREATE UNIQUE INDEX territory_reference_id_type_unique ON territory_reference(territory_id,territory_type);
 ALTER TABLE table_publication DROP CONSTRAINT shared_fact_publication_requires_reference;
 ALTER TABLE table_publication ADD CONSTRAINT shared_fact_publication_requires_reference
- CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading') OR reference_content_version IS NOT NULL);
+ CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence') OR reference_content_version IS NOT NULL);
 ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check;
 ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check CHECK(table_name IN (
  'territory_reference','service_registry','essential_service_access','building_ramp','building_grid',
-  'scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading'));
+  'scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence'));
 CREATE TABLE demographic_reading_descriptor (
   singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
   descriptor_version text NOT NULL,
