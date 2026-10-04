@@ -2065,6 +2065,7 @@ def theme_facts(
                            if territory_type in descriptor["allowed_levels"]]
             readings = []
             reading_version = None
+            reading_availability = None
             if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat"):
                 raise HTTPException(404, "No published facts for this theme and territory")
             readings = []
@@ -2143,6 +2144,51 @@ def theme_facts(
                             "part_abc","n_dpe","status","source_id","vintage_id"),row),provenance=provenance) for row in habitat_rows]
                         if not readings: raise HTTPException(404,"No selected reading for this territory")
                         reading_version=selected_marker[0]
+            elif theme_id == "economie":
+                installed=conn.execute("SELECT to_regclass('economy_typed_reading')").fetchone()[0]
+                if not installed:
+                    raise HTTPException(503,"Economy reading publication is unavailable")
+                if installed:
+                    selected_marker=conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
+                        t.content_version,e.content_version,e.row_count,e.reference_content_version
+                        FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+                        JOIN table_publication e ON e.table_name='economy_activity_evidence'
+                        WHERE p.table_name='economy_typed_reading'""").fetchone()
+                    if not selected_marker:
+                        raise HTTPException(503,"Economy reading publication is unavailable")
+                    if (selected_marker[0]!=selected_marker[4] or selected_marker[1]<1 or
+                        selected_marker[2]!=selected_marker[3] or selected_marker[6]!=selected_marker[3] or
+                        selected_marker[5]<0):
+                        raise HTTPException(503,"Economy reading publication is unavailable or incompatible")
+                    reading_rows=conn.execute("""SELECT groupe,story_key,salience_reason,status,source_id,vintage_id
+                        FROM economy_typed_reading WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",
+                        (territory_id,territory_type)).fetchall()
+                    reading_availability = "available" if reading_rows else "unsupported"
+                    reading_source_id=reading_rows[0][4] if reading_rows else None
+                    source=conn.execute("""SELECT sd.name,v.version,v.reference_date,v.publication_date
+                        FROM source_vintage v JOIN source_dataset sd USING(source_id)
+                        WHERE v.source_id=%s AND v.vintage_id=%s""",
+                        (reading_source_id,reading_rows[0][5])).fetchone() if reading_rows else None
+                    if reading_rows and (not source or any(row[4]!=reading_source_id or row[5]!=reading_rows[0][5] for row in reading_rows)):
+                        raise HTTPException(503,"Economy reading provenance is incompatible")
+                    provenance=({"source_id":reading_source_id,"source_name":source[0],"vintage_id":reading_rows[0][5],
+                        "source_version":source[1],"source_reference_date":source[2],"source_publication_date":source[3]}
+                        if reading_rows else None)
+                    evidence=conn.execute("""SELECT groupe,rank,activity_code,activity_label,lq,establishment_count,park_share,source_id,vintage_id
+                        FROM economy_activity_evidence WHERE territory_id=%s AND territory_type=%s ORDER BY groupe,rank""",
+                        (territory_id,territory_type)).fetchall()
+                    by_group={}
+                    for row in evidence:
+                        if row[7]!=reading_source_id or row[8]!=reading_rows[0][5]:
+                            raise HTTPException(503,"Economy activity evidence provenance is incompatible")
+                        by_group.setdefault(row[0],[]).append({"rank":row[1],"activity_code":row[2],"activity_label":row[3],
+                            "lq":row[4],"n":row[5],"part_parc":row[6]})
+                    if any([item["rank"] for item in items] != list(range(1,len(items)+1)) for items in by_group.values()) or any(
+                        row[3]=="measured" and not by_group.get(row[0]) for row in reading_rows):
+                        raise HTTPException(503,"Economy activity evidence is incomplete")
+                    readings=[{"groupe":row[0],"story_key":row[1],"salience_reason":row[2],"status":row[3],
+                        "activities":by_group.get(row[0],[]),"provenance":provenance} for row in reading_rows]
+                    reading_version=selected_marker[0]
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
                 profiles=profiles, profile_version=profile_version, has_readings=bool(readings))
             building_access = None
@@ -2172,7 +2218,7 @@ def theme_facts(
         "owned_series_content_versions":[item["publication_id"] for item in owned_series],
         "reference_content_version":comparison["reference_content_version"],
         "profile_content_version":profile_version,"profiles":profiles,
-        "readings":readings,"reading_content_version":reading_version,
+        "readings":readings,"reading_content_version":reading_version,"reading_availability":reading_availability,
         "series":owned_series,
         "series":owned_series,"bpe_profile_evidence":bpe_profile,
         "collections":collections,

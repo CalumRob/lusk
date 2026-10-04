@@ -175,7 +175,14 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data") {
     scalar <- publish_service_share_scalars(conn, donnees$scalar_access,
       donnees$scalar_metadata, donnees$scalar_eligible_territories,
       additional_projections=snapshot$additional_projections)
-    list(access=access, scalar=scalar)
+    history_path <- file.path(sortie,"histoires_economie.parquet")
+    vintage_path <- file.path(sortie,"vintages.parquet")
+    if (!file.exists(history_path) || !file.exists(vintage_path)) stop("Canonical economy reading inputs are unavailable",call.=FALSE)
+    economy_input <- list(histories=nanoparquet::read_parquet(history_path),vintages=nanoparquet::read_parquet(vintage_path),
+      metadata=lire_theme_metadata("economie"))
+    economy_input$content_version <- economy_reading_content_version(economy_input$histories,economy_input$vintages,economy_input$metadata)
+    economy_reading <- publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_input,conn)
+    list(access=access, scalar=scalar, economy_reading=economy_reading)
   },
            finally = DBI::dbDisconnect(conn))
 }

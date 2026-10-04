@@ -7,6 +7,8 @@ project_typed_reading_facts <- function(histories, theme) {
       "taux_solde_migratoire", "classification"),
     habitat = c("territoire", "type", "theme", "groupe", "story_key", "salience_reason",
       "classification", "part_passoires", "part_abc", "n_dpe"),
+    economie = c("territoire", "type", "theme", "groupe", "story_key", "salience_reason",
+      unlist(lapply(seq_len(5L), function(rank) paste0("top", rank, "_", c("activity_code", "activity_label", "lq", "n", "part_parc"))), use.names=FALSE)),
     milieux = c("territoire", "type", "theme", "groupe", "story_key", "salience_reason",
       "periode_pop", "periode_artif", "delta_population", "taux_variation_population",
       "artif_m2_par_habitant", "artif_m3_par_habitant", "trajectoire_artif_par_habitant", "classification"),
@@ -20,9 +22,62 @@ project_typed_reading_facts <- function(histories, theme) {
       any(!rows$type %in% c("commune", "epci", "departement", "region")) ||
       anyDuplicated(rows[c("territoire", "type", "groupe")]))
     stop("Invalid or duplicate selected reading identity for ", theme, call.=FALSE)
+  if (theme == "economie") for (rank in seq_len(5L)) {
+    code <- rows[[paste0("top",rank,"_activity_code")]]
+    label <- rows[[paste0("top",rank,"_activity_label")]]
+    lq <- rows[[paste0("top",rank,"_lq")]]
+    count <- rows[[paste0("top",rank,"_n")]]
+    park <- rows[[paste0("top",rank,"_part_parc")]]
+    present <- !is.na(code)
+    if (any(present & (is.na(label) | is.na(lq) | !is.finite(lq) | lq < 0 | is.na(count) | count < 0 |
+        (!is.na(park) & (!is.finite(park) | park < 0 | park > 1)))) ||
+        any(!present & (!is.na(label) | !is.na(lq) | !is.na(count) | !is.na(park))))
+      stop("Invalid sparse activity evidence in canonical economy reading",call.=FALSE)
+  }
+  if(theme=="economie") for(i in seq_len(nrow(rows))) {
+    populated <- vapply(seq_len(5L),function(rank) !is.na(rows[[paste0("top",rank,"_activity_code")]][[i]]),logical(1))
+    if(any(diff(as.integer(populated))>0L)) stop("Canonical economy activity slots are not producer-ordered sparse ranks",call.=FALSE)
+  }
   names(rows)[names(rows) == "territoire"] <- "territory_id"
   names(rows)[names(rows) == "type"] <- "territory_type"
   rows
+}
+
+# The canonical economy history already contains the producer-ranked top five.
+# Normalize those populated slots without sorting or manufacturing zero rows.
+project_economy_reading <- function(histories, vintages, metadata) {
+  facts <- project_typed_reading_facts(histories, "economie")
+  source_id <- metadata$sources$eco_activites
+  subgroup_readings <- lapply(metadata$subgroups,function(group) group$reading$story_key)
+  declared_groups <- vapply(metadata$subgroups,`[[`,character(1),"key")
+  if(is.null(source_id) || length(source_id)!=1L || is.null(metadata$subgroups) ||
+     any(!facts$groupe %in% declared_groups) || any(!facts$story_key %in% unlist(subgroup_readings,use.names=FALSE)))
+    stop("Economy reading identities are not declared by producer theme metadata",call.=FALSE)
+  for(i in seq_len(nrow(facts))) {
+    selected <- metadata$subgroups[[match(facts$groupe[[i]],declared_groups)]]$reading
+    if(is.null(selected) || !identical(facts$story_key[[i]],selected$story_key))
+      stop("Economy selected reading disagrees with its producer subgroup declaration",call.=FALSE)
+  }
+  source <- vintages[vintages$id == source_id, , drop=FALSE]
+  if (nrow(source) != 1L || anyNA(source[c("id", "source", "version")]) ||
+      any(!nzchar(as.character(source$id))) || any(!nzchar(as.character(source$source))) ||
+      any(!nzchar(as.character(source$version))) || length(source$id) != 1L)
+    stop("Canonical vintage manifest has no unique economy source clock/identity", call.=FALSE)
+  facts$status <- ifelse(is.na(facts$top1_activity_code), "unavailable", "measured")
+  facts$source_id <- as.character(source$id[[1L]])
+  # Keep the registered scalar vintage identity stable even when the manifest
+  # has no reference date; NULL dates remain NULL in source_vintage.
+  reference <- source$date_reference[[1L]]
+  facts$vintage_id <- paste(as.character(source$version[[1L]]),
+    if (is.na(reference)) "NA" else as.character(reference), sep="/")
+  facts
+}
+
+economy_reading_content_version <- function(histories,vintages,metadata) {
+  source_id <- metadata$sources$eco_activites
+  source <- vintages[vintages$id==source_id,,drop=FALSE]
+  if(nrow(source)!=1L) stop("Canonical vintage manifest has no unique economy source clock",call.=FALSE)
+  scalar_content_version(list(facts=project_economy_reading(histories,vintages,metadata),source=source,metadata=metadata))
 }
 
 project_demographic_reading <- function(histories, territories, vintages, metadata) {
@@ -251,4 +306,51 @@ register_habitat_reading_publisher <- function(registry) {
   register_typed_reading_publisher(registry,"habitat",
     function(input) project_habitat_reading(input$histories,input$vintages,input$metadata),
     function(db,projection,input) publish_selected_reading_family(db,projection,input,"habitat"))
+}
+
+register_economy_reading_publisher <- function(registry) {
+  register_typed_reading_publisher(registry,"economie",
+    function(input) project_economy_reading(input$histories,input$vintages,input$metadata),
+    function(db,projection,input) publish_economy_reading_family(db,projection,input))
+}
+
+publish_economy_reading_family <- function(con, facts, canonical) {
+  reference_version <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version
+  if(length(reference_version)!=1L || is.na(reference_version) || !nzchar(reference_version))
+    stop("Published territory reference is required for economy readings",call.=FALSE)
+  registered <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type FROM territory_reference")
+  fact_territories <- unique(facts[c("territory_id","territory_type")])
+  if(any(!paste(fact_territories$territory_id,fact_territories$territory_type) %in% paste(registered$territory_id,registered$territory_type)))
+    stop("Economy reading contains a territory absent from the registered territory reference",call.=FALSE)
+  version <- canonical$content_version
+  expected_count <- nrow(facts)
+  unchanged <- FALSE
+  DBI::dbWithTransaction(con, {
+    marker <- DBI::dbGetQuery(con,"SELECT p.content_version,p.row_count,p.reference_content_version,e.content_version AS evidence_version,e.row_count AS evidence_count,e.reference_content_version AS evidence_reference FROM table_publication p LEFT JOIN table_publication e ON e.table_name='economy_activity_evidence' WHERE p.table_name='economy_typed_reading'")
+    if(nrow(marker)==1L && identical(as.character(marker$content_version[[1L]]),version) && marker$row_count[[1L]]==expected_count &&
+       identical(as.character(marker$reference_content_version[[1L]]),as.character(reference_version[[1L]])) &&
+       identical(as.character(marker$evidence_version[[1L]]),version) &&
+       identical(as.integer(marker$evidence_count[[1L]]),as.integer(DBI::dbGetQuery(con,"SELECT count(*) AS n FROM economy_activity_evidence")$n[[1L]])) &&
+       identical(as.character(marker$evidence_reference[[1L]]),as.character(reference_version[[1L]]))) unchanged <- TRUE
+    if (!unchanged) {
+    DBI::dbExecute(con,"DELETE FROM economy_activity_evidence")
+    DBI::dbExecute(con,"DELETE FROM economy_typed_reading")
+    DBI::dbWriteTable(con,"economy_typed_reading",facts[c("territory_id","territory_type","groupe","story_key","salience_reason","status","source_id","vintage_id")],append=TRUE,row.names=FALSE)
+    evidence <- do.call(rbind,lapply(seq_len(5L),function(rank) {
+      code <- facts[[paste0("top",rank,"_activity_code")]]
+      keep <- !is.na(code)
+    data.frame(territory_id=facts$territory_id[keep],territory_type=facts$territory_type[keep],groupe=facts$groupe[keep],
+        rank=rank,activity_code=code[keep],activity_label=facts[[paste0("top",rank,"_activity_label")]][keep],
+        lq=facts[[paste0("top",rank,"_lq")]][keep],establishment_count=facts[[paste0("top",rank,"_n")]][keep],
+        park_share=facts[[paste0("top",rank,"_part_parc")]][keep],source_id=facts$source_id[keep],vintage_id=facts$vintage_id[keep],stringsAsFactors=FALSE)
+    }))
+    DBI::dbWriteTable(con,"economy_activity_evidence",evidence,append=TRUE,row.names=FALSE)
+    count <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM economy_typed_reading")$n[[1L]]
+    evidence_count <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM economy_activity_evidence")$n[[1L]]
+    if(count != expected_count || evidence_count != nrow(evidence)) stop("Economy reading publication row counts do not match",call.=FALSE)
+    DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('economy_typed_reading',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",params=list(version,count,reference_version[[1L]]))
+    DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('economy_activity_evidence',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",params=list(version,evidence_count,reference_version[[1L]]))
+    }
+  })
+  invisible(list(content_version=version,row_count=expected_count,changed=!unchanged))
 }

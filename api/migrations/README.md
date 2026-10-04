@@ -173,7 +173,18 @@ history row as JSON, recalculate rates in SQL, or publish a candidate pool.
 populated territory-reference marker in its guarded disposable schema, then
 publishes all 1,268 canonical Parquet rows and verifies commune/EPCI HTTP output
 against the incumbent `histoires_demographie.json`. No serving database is
-modified by this worker migration rehearsal.
+ modified by this worker migration rehearsal.
+
+# Migration 021 — selected Economy reading and ordered activity evidence
+
+Migration 021 adds typed Economy reading identity/status rows and a separate
+sparse, rank-keyed activity evidence table. The registered R projection consumes
+the canonical selected history and preserves populated top-five producer order;
+it does not derive a new top-five or turn absent slots into zeroes. Each table
+has a compatible marker, and the Economy theme facts reader fails closed for
+missing/stale publication dependencies. Region territories with no canonical
+reading row report `unsupported`; the reader does not invent a region reading.
+Fresh installs carry the additive tables/markers in `schema.sql`.
 # Migration 017 — declared source absence for owned series
 
 Migration 017 adds a constrained `absence_semantics` declaration to the shared
