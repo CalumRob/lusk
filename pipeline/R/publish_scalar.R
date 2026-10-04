@@ -469,15 +469,16 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
   tables <- c("series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
-    "series_context_parent_policy", "demographic_typed_reading", "demographic_reading_descriptor",
+    "series_context_parent_policy", "habitat_typed_reading",
+    "selected_reading_publication", "selected_reading_descriptor", "demographic_typed_reading", "demographic_reading_descriptor",
+    "period_detail_observation", "anchored_membership", "observed_collection_category",
+    "observed_collection_descriptor", "observed_collection_publication",
     "series_named_reference_descriptor", "series_dataset_descriptor",
     "series_dataset_publication", "series_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
     "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
     "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
     "scalar_descriptor", "building_ramp", "building_grid", "building_evidence_descriptor_source",
     "building_evidence_descriptor", "essential_service_access", "service_registry",
-    "anchored_membership", "period_detail_observation", "observed_collection_category",
-    "observed_collection_descriptor", "observed_collection_publication",
     "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
     "table_publication")
   functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_combined_smoke_value()", "reject_smoke_ramp()",

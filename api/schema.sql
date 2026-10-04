@@ -3,13 +3,13 @@
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
         'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading')),
+        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading') OR reference_content_version IS NOT NULL)
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -807,6 +807,28 @@ CREATE TABLE demographic_typed_reading (
   CHECK (taux_solde_naturel IS NULL OR taux_solde_naturel NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)),
   CHECK (taux_solde_migratoire IS NULL OR taux_solde_migratoire NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))
 );
+CREATE TABLE selected_reading_descriptor (
+  theme_id text PRIMARY KEY CHECK(theme_id IN ('habitat')),
+  descriptor_version text NOT NULL, source_id text NOT NULL REFERENCES source_dataset(source_id),
+  vintage_id text NOT NULL, linked_content_version text NOT NULL,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+CREATE TABLE selected_reading_publication (
+  theme_id text PRIMARY KEY REFERENCES selected_reading_descriptor(theme_id) ON DELETE CASCADE,
+  content_version text NOT NULL, reference_content_version text NOT NULL,
+  row_count integer NOT NULL CHECK(row_count>0), published_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE habitat_typed_reading (
+  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
+  groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL,
+  classification text, part_passoires double precision, part_abc double precision, n_dpe bigint,
+  status text NOT NULL CHECK(status IN ('measured','suppressed','unavailable')),
+  source_id text NOT NULL, vintage_id text NOT NULL,
+  PRIMARY KEY(territory_id,territory_type,groupe),
+  FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+  CHECK ((status='measured') = (classification IS NOT NULL AND part_passoires IS NOT NULL AND part_abc IS NOT NULL AND n_dpe IS NOT NULL)),
+  CHECK (status <> 'suppressed' OR (part_passoires IS NULL AND part_abc IS NULL)),
+  CHECK (part_passoires IS NULL OR part_passoires BETWEEN 0 AND 1), CHECK(part_abc IS NULL OR part_abc BETWEEN 0 AND 1),
+  CHECK(n_dpe IS NULL OR n_dpe>=0));
 -- Sparse period/detail facts have real year coordinates, not dense profile zeros.
 CREATE TABLE observed_collection_publication (
   indicator_id text PRIMARY KEY CHECK(indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),

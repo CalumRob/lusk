@@ -7,8 +7,6 @@ project_typed_reading_facts <- function(histories, theme) {
       "taux_solde_migratoire", "classification"),
     habitat = c("territoire", "type", "theme", "groupe", "story_key", "salience_reason",
       "classification", "part_passoires", "part_abc", "n_dpe"),
-    economie = c("territoire", "type", "theme", "groupe", "story_key", "salience_reason",
-      unlist(lapply(seq_len(5), function(i) paste0("top", i, c("_activity_code", "_activity_label", "_lq", "_n", "_part_parc"))), use.names=FALSE)),
     milieux = c("territoire", "type", "theme", "groupe", "story_key", "salience_reason",
       "periode_pop", "periode_artif", "delta_population", "taux_variation_population",
       "artif_m2_par_habitant", "artif_m3_par_habitant", "trajectoire_artif_par_habitant", "classification"),
@@ -48,6 +46,27 @@ project_demographic_reading <- function(histories, territories, vintages, metada
   unit <- sub("^.*\\(([^()]*)\\)$", "\\1", label)
   if (identical(unit,label) || !nzchar(unit)) stop("Theme metadata has no typed demographic rate unit",call.=FALSE)
   attr(facts,"rate_unit") <- unit
+  facts
+}
+
+project_habitat_reading <- function(histories,vintages,metadata) {
+  facts <- project_typed_reading_facts(histories,"habitat")
+  source_key <- metadata$sources$part_passoires
+  threshold <- metadata$scalar_contracts$part_passoires$suppressed_below
+  if (is.null(source_key) || !nzchar(source_key)) stop("Habitat metadata has no DPE source",call.=FALSE)
+  if (length(threshold) != 1L || !is.numeric(threshold) || is.na(threshold) || threshold < 0)
+    stop("Habitat metadata has no valid DPE suppression threshold",call.=FALSE)
+  vintage <- vintages[vintages[["id"]] == source_key,,drop=FALSE]
+  if(nrow(vintage)!=1L || anyNA(vintage[c("id","source","version","date_publication")]))
+    stop("Canonical vintage manifest has no unique Habitat DPE source clock",call.=FALSE)
+  facts$source_id <- vintage[["id"]][[1L]]
+  # Match the registered DPE profile's vintage coordinate. A NULL reference
+  # date is source-owned and is represented as NA, never filled from elsewhere.
+  facts$vintage_id <- paste(vintage[["version"]][[1L]],
+    ifelse(is.na(vintage[["date_reference"]][[1L]]),"NA",as.character(vintage[["date_reference"]][[1L]])),sep="/")
+  facts$status <- ifelse(!is.na(facts$n_dpe) & facts$n_dpe < threshold,"suppressed",
+    ifelse(is.na(facts$classification)|is.na(facts$part_passoires)|is.na(facts$part_abc)|is.na(facts$n_dpe),"unavailable","measured"))
+  attr(facts,"vintage") <- vintage
   facts
 }
 
@@ -107,4 +126,70 @@ publish_demographic_reading <- function(con, projection, canonical) {
     }
   })
   invisible(list(content_version=version,row_count=nrow(facts),changed=!unchanged))
+}
+
+publish_selected_reading_family <- function(con, facts, canonical, theme) {
+  vintage <- attr(facts,"vintage"); reference_version <- DBI::dbGetQuery(con,
+    "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version
+  if(length(reference_version)!=1L || is.na(reference_version) || !nzchar(reference_version))
+    stop("Published territory reference is required for selected readings",call.=FALSE)
+  if (theme != "habitat") stop("Unsupported selected-reading family",call.=FALSE)
+  dependency <- DBI::dbGetQuery(con,"SELECT p.content_version,p.reference_content_version,
+    s.content_version AS scalar_version,d.required_scalar_version,dps.source_id
+    FROM table_publication p JOIN profile_descriptor d ON d.indicator_id='distribution_dpe'
+    JOIN profile_descriptor_source dps ON dps.indicator_id=d.indicator_id
+    JOIN table_publication s ON s.table_name='scalar_observation'
+    WHERE p.table_name='declared_profile'")
+  if (nrow(dependency)!=1L || is.na(dependency$reference_content_version[[1L]]) ||
+      !identical(as.character(dependency$required_scalar_version[[1L]]),as.character(dependency$scalar_version[[1L]])) ||
+      !identical(as.character(dependency$source_id[[1L]]),as.character(vintage[["id"]][[1L]])))
+    stop("Habitat readings require compatible registered scalar and DPE profile publications",call.=FALSE)
+  bound <- DBI::dbGetQuery(con,"SELECT DISTINCT os.territory_id,so.territory_type,os.source_id,os.vintage_id
+    FROM scalar_observation_source os JOIN scalar_observation so USING(indicator_id,territory_id)
+    WHERE os.indicator_id='part_passoires'")
+  if (!nrow(bound)) stop("Registered DPE profile has no source bindings",call.=FALSE)
+  for (i in seq_len(nrow(facts))) {
+    matches <- bound[bound$territory_id==facts$territory_id[[i]] & bound$territory_type==facts$territory_type[[i]],,drop=FALSE]
+    if (nrow(matches)!=1L) stop("DPE profile source binding is missing or ambiguous for Habitat reading: ",
+      facts$territory_type[[i]]," ",facts$territory_id[[i]]," (",nrow(matches)," matches)",call.=FALSE)
+    facts$source_id[[i]] <- matches$source_id[[1L]]
+    facts$vintage_id[[i]] <- matches$vintage_id[[1L]]
+  }
+  version <- canonical$content_version; count <- nrow(facts)
+  linked_version <- paste(canonical$linked_content_version,dependency$content_version[[1L]],
+    dependency$scalar_version[[1L]],dependency$reference_content_version[[1L]],sep="-")
+  target <- "habitat_typed_reading"
+  marker <- DBI::dbGetQuery(con,"SELECT p.content_version,p.row_count,p.reference_content_version,
+    d.descriptor_version,d.source_id,d.vintage_id,d.linked_content_version FROM selected_reading_publication p
+    JOIN selected_reading_descriptor d USING(theme_id) WHERE p.theme_id=$1",params=list(theme))
+  if(nrow(marker)==1L && identical(as.character(marker$content_version[[1L]]),version) &&
+     marker$row_count[[1L]]==count && identical(as.character(marker$reference_content_version[[1L]]),as.character(reference_version[[1L]])) &&
+     identical(as.character(marker$descriptor_version[[1L]]),version) &&
+     identical(as.character(marker$source_id[[1L]]),as.character(vintage$id[[1L]])) &&
+      identical(as.character(marker$vintage_id[[1L]]),as.character(facts$vintage_id[[1L]])) &&
+      identical(as.character(marker$linked_content_version[[1L]]),as.character(linked_version)))
+    return(invisible(list(content_version=version,row_count=count,changed=FALSE)))
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con,paste("DELETE FROM",target))
+    if(theme=="habitat") {
+      facts <- facts[c("territory_id","territory_type","groupe","story_key","salience_reason","classification",
+        "part_passoires","part_abc","n_dpe","status","source_id","vintage_id")]
+      DBI::dbWriteTable(con,target,facts,append=TRUE,row.names=FALSE)
+    }
+    DBI::dbExecute(con,"INSERT INTO selected_reading_descriptor(theme_id,descriptor_version,source_id,vintage_id,linked_content_version)
+      VALUES($1,$2,$3,$4,$5) ON CONFLICT(theme_id) DO UPDATE SET descriptor_version=EXCLUDED.descriptor_version,
+      source_id=EXCLUDED.source_id,vintage_id=EXCLUDED.vintage_id,linked_content_version=EXCLUDED.linked_content_version",
+      params=list(theme,version,vintage[["id"]][[1L]],facts$vintage_id[[1L]],linked_version))
+    DBI::dbExecute(con,"INSERT INTO selected_reading_publication(theme_id,content_version,reference_content_version,row_count,published_at)
+      VALUES($1,$2,$3,$4,now()) ON CONFLICT(theme_id) DO UPDATE SET content_version=EXCLUDED.content_version,
+      reference_content_version=EXCLUDED.reference_content_version,row_count=EXCLUDED.row_count,published_at=now()",
+      params=list(theme,version,reference_version[[1L]],count))
+  })
+  invisible(list(content_version=version,row_count=count,changed=TRUE))
+}
+
+register_habitat_reading_publisher <- function(registry) {
+  register_typed_reading_publisher(registry,"habitat",
+    function(input) project_habitat_reading(input$histories,input$vintages,input$metadata),
+    function(db,projection,input) publish_selected_reading_family(db,projection,input,"habitat"))
 }

@@ -21,6 +21,7 @@ tryCatch({
   ddl <- paste(readLines("../api/schema.sql",warn=FALSE),collapse="\n")
   for (statement in split_postgres_sql(ddl)) DBI::dbExecute(con,statement)
   # Rehearse the additive 020 migration over an already-populated reference marker.
+  DBI::dbExecute(con,"DROP TABLE habitat_typed_reading,selected_reading_publication,selected_reading_descriptor")
   DBI::dbExecute(con,"DROP TABLE demographic_typed_reading,demographic_reading_descriptor")
   DBI::dbExecute(con,"DROP INDEX territory_reference_id_type_unique")
   DBI::dbExecute(con,"ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check")
@@ -73,7 +74,7 @@ tryCatch({
   on.exit(for(i in seq_along(keys)) if(is.na(old[[i]])) Sys.unsetenv(keys[[i]]) else do.call(Sys.setenv,setNames(list(old[[i]]),keys[[i]])),add=TRUE)
   Sys.setenv(LUSK_READING_HTTP_SCHEMA=schema,PYTHONPATH=normalizePath("..",winslash="/",mustWork=TRUE))
   test<-normalizePath("../api/tests/integration/test_reading_publisher_http.py",winslash="/",mustWork=TRUE)
-  status<-system2(Sys.which("python"),c("-m","pytest","-q",shQuote(test,type="cmd")),stdout="",stderr="")
+  status<-system2(Sys.which("python"),c("-m","pytest","-q",shQuote(test,type="cmd"),"-k","demographic"),stdout="",stderr="")
   if(!identical(status,0L)) stop("Canonical demographic publisher-to-HTTP parity failed",call.=FALSE)
-  cat("Canonical demographic typed readings:",nrow(actual),"rows; commune 35238 and EPCI 200068120 canonical JSON → registered R publisher → guarded PostgreSQL → HTTP: PASS\n")
+  cat("Canonical demographic typed readings: ",nrow(actual)," rows; canonical JSON → registered R publisher → guarded PostgreSQL → HTTP: PASS\n",sep="")
 },finally={if(created) cleanup_serving_smoke_schema(con,schema,"reading");DBI::dbDisconnect(con)})
