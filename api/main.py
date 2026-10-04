@@ -2108,11 +2108,13 @@ def theme_facts(
                     selected_marker = conn.execute("""SELECT p.content_version,p.reference_content_version,
                         t.content_version,p.row_count,d.descriptor_version,d.source_id,sd.name,sv.vintage_id,
                         sv.version,sv.reference_date,sv.publication_date,d.linked_content_version,
-                        dp.content_version,sp.content_version,dp.reference_content_version,pd.required_scalar_version
+                        dp.content_version,sp.content_version,dp.reference_content_version,pd.required_scalar_version,
+                        st.content_version,st.row_count,st.reference_content_version
                         FROM selected_reading_publication p JOIN selected_reading_descriptor d USING(theme_id)
                         JOIN table_publication t ON t.table_name='territory_reference'
                         JOIN table_publication dp ON dp.table_name='declared_profile'
                         JOIN table_publication sp ON sp.table_name='scalar_observation'
+                        JOIN table_publication st ON st.table_name='selected_reading'
                         JOIN profile_descriptor pd ON pd.indicator_id='distribution_dpe'
                         JOIN source_dataset sd ON sd.source_id=d.source_id
                         JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
@@ -2125,14 +2127,13 @@ def theme_facts(
                         if (selected_marker[0]!=selected_marker[4] or selected_marker[1]!=selected_marker[2] or
                             not selected_marker[11] or selected_marker[3]<1 or
                             selected_marker[15] != selected_marker[13] or
-                            not selected_marker[11].endswith(f"-{selected_marker[12]}-{selected_marker[13]}-{selected_marker[14]}")):
+                            not selected_marker[11].endswith(f"-{selected_marker[12]}-{selected_marker[13]}-{selected_marker[14]}") or
+                            selected_marker[16] != selected_marker[0] or selected_marker[17] != selected_marker[3] or
+                            selected_marker[18] != selected_marker[1]):
                             raise HTTPException(503,"Selected reading publication is unavailable or incompatible")
                         provenance={"source_id":selected_marker[5],"source_name":selected_marker[6],
                             "vintage_id":selected_marker[7],"source_version":selected_marker[8],
                             "source_reference_date":selected_marker[9],"source_publication_date":selected_marker[10]}
-                        published_count=conn.execute("SELECT count(*) FROM habitat_typed_reading").fetchone()[0]
-                        if published_count!=selected_marker[3]:
-                            raise HTTPException(503,"Selected habitat reading publication is incomplete")
                         habitat_rows=conn.execute("""SELECT groupe,story_key,salience_reason,classification,
                             part_passoires,part_abc,n_dpe,status,source_id,vintage_id FROM habitat_typed_reading
                             WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",(territory_id,territory_type)).fetchall()

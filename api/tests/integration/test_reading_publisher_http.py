@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+from contextlib import contextmanager
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
@@ -145,8 +147,27 @@ def test_canonical_habitat_reading_is_readable_over_http():
     from psycopg_pool import ConnectionPool
     pool = ConnectionPool(conninfo=scoped_dsn, min_size=1, max_size=1, open=True,
                           kwargs={"autocommit": True})
+    executed_sql = []
+
+    class RecordingConnection:
+        def __init__(self, connection):
+            self._connection = connection
+
+        def execute(self, query, *args, **kwargs):
+            executed_sql.append(" ".join(str(query).lower().split()))
+            return self._connection.execute(query, *args, **kwargs)
+
+        def __getattr__(self, name):
+            return getattr(self._connection, name)
+
+    class RecordingPool:
+        @contextmanager
+        def connection(self):
+            with pool.connection() as connection:
+                yield RecordingConnection(connection)
+
     prior = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(RecordingPool())
     try:
         with pool.connection() as conn:
             assert conn.execute("SELECT current_database(),current_user").fetchone() == (
@@ -194,6 +215,8 @@ def test_canonical_habitat_reading_is_readable_over_http():
             assert suppressed["part_passoires"] is None and suppressed["part_abc"] is None
             absent = client.get("/api/territories/commune/99999/themes/habitat/facts")
             assert absent.status_code == 404
+        assert not any(re.search(r"\bselect\s+count\s*\(\s*\*\s*\)\s+from\s+habitat_typed_reading\b", sql)
+                       for sql in executed_sql), executed_sql
     finally:
         if prior is None:
             main.app.dependency_overrides.pop(main.get_repository, None)

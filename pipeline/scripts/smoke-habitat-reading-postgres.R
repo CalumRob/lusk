@@ -56,9 +56,51 @@ tryCatch({
   registry <- register_habitat_reading_publisher(list())
   result <- publish_registered_typed_reading(registry,"habitat",canonical,con)
   marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM selected_reading_publication WHERE theme_id='habitat'")
+  generic_marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='selected_reading'")
+  stored_rows <- DBI::dbGetQuery(con,"SELECT * FROM habitat_typed_reading ORDER BY territory_type,territory_id,groupe")
+  profile_binding <- DBI::dbGetQuery(con,"SELECT territory_id,source_id,vintage_id FROM profile_observation_source
+    WHERE indicator_id='distribution_dpe' ORDER BY territory_id,detail_key,sex_key LIMIT 1")
+  DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+    SELECT source_id,vintage_id || '-review-probe','review-probe',reference_date,publication_date
+    FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
+    params=list(profile_binding$source_id[[1L]],profile_binding$vintage_id[[1L]]))
+  DBI::dbExecute(con,"UPDATE profile_observation_source SET vintage_id=$1
+    WHERE indicator_id='distribution_dpe' AND territory_id=$2 AND source_id=$3 AND vintage_id=$4",
+    params=list(paste0(profile_binding$vintage_id[[1L]],"-review-probe"),profile_binding$territory_id[[1L]],
+      profile_binding$source_id[[1L]],profile_binding$vintage_id[[1L]]))
+  mismatch <- try(publish_registered_typed_reading(registry,"habitat",canonical,con),silent=TRUE)
+  stopifnot(inherits(mismatch,"try-error"))
+  DBI::dbExecute(con,"UPDATE profile_observation_source SET vintage_id=$1
+    WHERE indicator_id='distribution_dpe' AND territory_id=$2 AND source_id=$3 AND vintage_id=$4",
+    params=list(profile_binding$vintage_id[[1L]],profile_binding$territory_id[[1L]],profile_binding$source_id[[1L]],
+      paste0(profile_binding$vintage_id[[1L]],"-review-probe")))
+  DBI::dbExecute(con,"DELETE FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
+    params=list(profile_binding$source_id[[1L]],paste0(profile_binding$vintage_id[[1L]],"-review-probe")))
+  stopifnot(identical(marker,DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM selected_reading_publication WHERE theme_id='habitat'")),
+    identical(generic_marker,DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='selected_reading'")),
+    identical(stored_rows,DBI::dbGetQuery(con,"SELECT * FROM habitat_typed_reading ORDER BY territory_type,territory_id,groupe")))
+  DBI::dbExecute(con,"CREATE FUNCTION reject_habitat_reading_row() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN IF NEW.territory_id = current_setting('lusk.review_skip_territory',true) THEN RETURN NULL; END IF; RETURN NEW; END $$")
+  DBI::dbExecute(con,"CREATE TRIGGER review_skip_habitat_row BEFORE INSERT ON habitat_typed_reading
+    FOR EACH ROW EXECUTE FUNCTION reject_habitat_reading_row()")
+  DBI::dbGetQuery(con,"SELECT set_config('lusk.review_skip_territory',$1,false)",params=list(histories$territoire[[1L]]))
+  bad_count_input <- canonical
+  bad_count_input$content_version <- paste0(canonical$content_version,"-count-probe")
+  bad_count_publish <- try(publish_registered_typed_reading(registry,"habitat",bad_count_input,con),silent=TRUE)
+  DBI::dbExecute(con,"DROP TRIGGER review_skip_habitat_row ON habitat_typed_reading")
+  DBI::dbExecute(con,"DROP FUNCTION reject_habitat_reading_row()")
+  stopifnot(inherits(bad_count_publish,"try-error"),identical(marker,
+    DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM selected_reading_publication WHERE theme_id='habitat'")),
+    identical(generic_marker,DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='selected_reading'")),
+    identical(stored_rows,DBI::dbGetQuery(con,"SELECT * FROM habitat_typed_reading ORDER BY territory_type,territory_id,groupe")))
+  count_noop <- publish_registered_typed_reading(registry,"habitat",canonical,con)
+  stopifnot(!count_noop$changed,identical(marker,
+    DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM selected_reading_publication WHERE theme_id='habitat'")),
+    identical(generic_marker,DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='selected_reading'")))
   retry <- publish_registered_typed_reading(registry,"habitat",canonical,con)
   stopifnot(result$changed,!retry$changed,identical(marker,
     DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM selected_reading_publication WHERE theme_id='habitat'")))
+  stopifnot(identical(generic_marker,DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='selected_reading'")))
   failed_input <- canonical
   measured <- project_habitat_reading(failed_input$histories,vintages,habitat_metadata)
   measured_index <- which(measured$status=="measured")[[1L]]
@@ -99,5 +141,13 @@ tryCatch({
   }
   expect_unavailable("declared_profile","DELETE FROM table_publication WHERE table_name='declared_profile'")
   expect_unavailable("scalar_observation","UPDATE table_publication SET content_version='deliberately-stale' WHERE table_name='scalar_observation'")
+  count_marker <- DBI::dbGetQuery(con,"SELECT row_count FROM table_publication WHERE table_name='selected_reading'")$row_count[[1L]]
+  DBI::dbExecute(con,"UPDATE table_publication SET row_count=row_count+1 WHERE table_name='selected_reading'")
+  Sys.setenv(LUSK_HABITAT_EXPECT_UNAVAILABLE="1")
+  count_status <- tryCatch(system2(Sys.which("python"),c("-m","pytest","-q",shQuote(test,type="cmd"),"-k","habitat"),stdout="",stderr=""),finally={
+    DBI::dbExecute(con,"UPDATE table_publication SET row_count=$1 WHERE table_name='selected_reading'",params=list(count_marker))
+    Sys.unsetenv("LUSK_HABITAT_EXPECT_UNAVAILABLE")
+  })
+  if(!identical(count_status,0L)) stop("Incorrect selected-reading marker count did not fail closed",call.=FALSE)
   cat("Canonical Habitat typed readings:",nrow(actual)," rows; registered scalar/profile dependencies, canonical Parquet → HTTP: PASS\n")
 },finally={if(created) cleanup_serving_smoke_schema(con,schema,"reading");DBI::dbDisconnect(con)})
