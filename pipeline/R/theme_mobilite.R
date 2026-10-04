@@ -610,6 +610,9 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     tot_loss_territoires = tot_loss_territoires,
     moyennes_acces_territoires = moyennes_acces_territoires,
     matrice_profils_acces_bpe = matrice_profils_acces_bpe,
+      profils_acces_bpe_univers = matrice_profils_acces_bpe %>%
+        dplyr::distinct(territoire, type, typequ) %>%
+        dplyr::arrange(type, territoire, typequ),
       profils_acces_bpe = profils_acces_bpe,
       distribution_acces_batiments = distribution_acces_batiments,
       rampe_acces_batiments = rampe_acces_batiments,
