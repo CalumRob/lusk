@@ -129,6 +129,25 @@ def _profile_foundation(recipe: Recipe, profile: Profile) -> Mapping:
             "composition": {"inspection": composition.get("inspection")}}
 
 
+def _effective_identity_for(recipe, adapter, renderer_identity, feature, profile,
+                            geometry_hashes=None):
+    geometry_hashes = geometry_hashes if geometry_hashes is not None else {}
+    contract = {"input": _profile_input_sha256(feature, profile, geometry_hashes),
+        "recipe": {"name": recipe.name, "version": recipe.version,
+            "family": recipe.family, "foundation": _profile_foundation(recipe, profile),
+            "shared_foundation": {"framing": recipe.foundation.framing,
+                                  "geography": recipe.foundation.geography}},
+        "renderer": (adapter.profile_identity(profile, feature, recipe)
+            if callable(getattr(adapter, "profile_identity", None)) else renderer_identity),
+        "profile": {"name": profile.name, "size": profile.size,
+            "context": profile.context, "furniture": profile.furniture,
+            "transparent_outside": profile.transparent_outside}}
+    effective_inputs = getattr(adapter, "effective_input_identity", None)
+    if callable(effective_inputs):
+        contract["displayed_content"] = effective_inputs(feature, profile)
+    return sha256(json.dumps(contract, sort_keys=True, separators=(",", ":")).encode()).hexdigest()
+
+
 def _render_identity(recipe: Recipe, scope: str, profiles: Sequence[str],
                      renderer_identity: Mapping, authoritative_inputs: Mapping) -> str:
     if not isinstance(renderer_identity, Mapping) or not renderer_identity:
@@ -278,18 +297,31 @@ def preflight(recipe: Recipe, binding: Binding, scope: str, profiles: Sequence[s
         profile_preflight(recipe, binding, tuple(profiles))
     else:
         adapter.preflight(recipe, binding)
+    scoped_preflight = getattr(adapter, "preflight_scope", None)
+    if callable(scoped_preflight):
+        scoped_preflight(recipe, binding, scope, tuple(profiles))
 
 
 def run_production(recipe: Recipe, binding: Binding, scope: str,
                    requested_profiles: Sequence[str], adapter: FamilyAdapter,
-                   output_dir: str | Path, *, refresh: bool = False) -> RunResult:
+                   output_dir: str | Path, *, refresh: bool = False,
+                   approval: Mapping | None = None) -> RunResult:
     """Validate first; render each feature/profile and return checked evidence."""
     run_started = perf_counter()
     preflight_started = perf_counter()
     preflight(recipe, binding, scope, requested_profiles, adapter)
+    renderer_identity = adapter.render_identity()
+    if scope == "full":
+        # A missing human record is rejected before output directories, shared
+        # preparation, or any render work can be scheduled.
+        if not approval:
+            raise ValueError("full production requires explicit human approval")
+        if set(requested_profiles) != {"inspection", "inline"}:
+            raise ValueError("full production approval requires both inspection and inline profiles")
+        if approval.get("human_approved") is not True:
+            raise ValueError("approval record must explicitly record human_approved=true")
     preflight_seconds = perf_counter() - preflight_started
     print(f"[maps] input preflight: {preflight_seconds:.1f}s", flush=True)
-    renderer_identity = adapter.render_identity()
     authoritative_inputs = adapter.input_identity()
     render_identity = _render_identity(
         recipe, scope, requested_profiles, renderer_identity, authoritative_inputs
@@ -324,7 +356,19 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
         prepare_run(recipe, binding, requested_profiles, output_dir, refresh=refresh)
         preparation_seconds = perf_counter() - preparation_started
         print(f"[maps] shared source preparation: {preparation_seconds:.1f}s", flush=True)
+    if scope == "full":
+        approval_members = getattr(adapter, "current_approval_members", None)
+        if not callable(approval_members):
+            raise ValueError("network adapter cannot establish the current representative review set")
+        current_members = approval_members(recipe, binding, tuple(requested_profiles), renderer_identity)
+        from approval import require_approval
+        require_approval({"scope": "representative", "approval_pairs_complete": True,
+            "recipe": recipe.name, "recipe_version": recipe.version,
+            "foundation_version": recipe.foundation.version,
+            "renderer_identity": renderer_identity, "approval_members": current_members}, approval)
     outputs = []
+    failures = []
+    expected_outputs = []
     identity_report = []
     artifact_total = sum(len(features) for features in binding.map_set.layers.values()) * len(requested_profiles)
     artifact_number = 0
@@ -344,6 +388,8 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
             for name in requested_profiles:
                 profile = PROFILES[name]
                 key = f"{feature['territory']['kind']}/{feature['territory']['code']}/{feature['mode']}/{name}"
+                expected_outputs.append({"key": key, "territory": feature["territory"],
+                    "mode": feature["mode"], "profile": name})
                 profile_input_started = perf_counter()
                 profile_input_sha256 = _profile_input_sha256(feature, profile, geometry_hashes)
                 identity_report.append({"stage": "profile-input-identity", "profile": name,
@@ -391,31 +437,48 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                 expected = (Path(expected_path(feature, profile, output_dir)).resolve()
                     if callable(expected_path) else None)
                 cache_validation_started = perf_counter()
-                reusable = (not refresh and previous.get("effective_identity") == effective_identity
-                    and path is not None and path.is_file()
-                    and (expected is None and path.resolve().parent == output_dir.resolve()
-                         or expected is not None and path.resolve() == expected)
-                    and sha256(path.read_bytes()).hexdigest() == previous.get("output_sha256"))
+                try:
+                    reusable = (not refresh and previous.get("effective_identity") == effective_identity
+                        and path is not None and path.is_file()
+                        and (expected is None and path.resolve().parent == output_dir.resolve()
+                             or expected is not None and path.resolve() == expected)
+                        and sha256(path.read_bytes()).hexdigest() == previous.get("output_sha256"))
+                except OSError:
+                    reusable = False
                 identity_report.append({"stage": "output-cache-verification", "profile": name,
                     "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
                     "mode": feature["mode"], "decision": "reused" if reusable else "miss",
                     "seconds": round(perf_counter() - cache_validation_started, 6)})
                 render_seconds = 0.0
                 decision = "reused-output" if reusable else "rendered"
-                if reusable:
-                    report_reuse = getattr(adapter, "record_reused_output", None)
-                    if callable(report_reuse):
-                        report_reuse(feature, profile, output_dir, recipe)
-                if not reusable:
-                    render_started = perf_counter()
-                    path = Path(adapter.render(recipe, feature, profile, output_dir))
-                    render_seconds = perf_counter() - render_started
-                if not path.is_file() or path.stat().st_size == 0:
-                    raise ValueError(f"renderer did not produce a nonempty artifact: {path}")
-                validation_started = perf_counter()
-                _png_contract(path, profile)
-                adapter.validate(path, feature, profile)
-                validation_seconds = perf_counter() - validation_started
+                try:
+                    if reusable:
+                        report_reuse = getattr(adapter, "record_reused_output", None)
+                        if callable(report_reuse):
+                            report_reuse(feature, profile, output_dir, recipe)
+                    if not reusable:
+                        render_started = perf_counter()
+                        path = Path(adapter.render(recipe, feature, profile, output_dir))
+                        render_seconds = perf_counter() - render_started
+                    if not path.is_file() or path.stat().st_size == 0:
+                        raise ValueError(f"renderer did not produce a nonempty artifact: {path}")
+                    validation_started = perf_counter()
+                    _png_contract(path, profile)
+                    adapter.validate(path, feature, profile)
+                    validation_seconds = perf_counter() - validation_started
+                except Exception as error:
+                    systemic = isinstance(error, (MemoryError, SystemError, OSError))
+                    classifier = getattr(adapter, "is_systemic_failure", None)
+                    if callable(classifier):
+                        systemic = systemic or bool(classifier(error))
+                    if systemic:
+                        raise RuntimeError(f"systemic production failure at {key}: {error}") from error
+                    failures.append({"key": key, "territory": feature.get("territory"),
+                        "mode": feature.get("mode"), "profile": name,
+                        "error": f"{type(error).__name__}: {error}"})
+                    next_cached_outputs.pop(key, None)
+                    print(f"[maps] FAILED {key}: {error}", flush=True)
+                    continue
                 output_sha256 = sha256(path.read_bytes()).hexdigest()
                 next_cached_outputs[key] = {"path": str(path), "effective_identity": effective_identity,
                                             "output_sha256": output_sha256}
@@ -445,7 +508,10 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
     fd, temporary_manifest = tempfile.mkstemp(prefix=".production-manifest-", suffix=".tmp", dir=output_dir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump({"outputs": next_cached_outputs}, stream, indent=2, sort_keys=True)
+            json.dump({"outputs": next_cached_outputs, "expected_outputs": expected_outputs,
+                "failures": failures,
+                "status": "passed" if not failures and len(outputs) == artifact_total else "incomplete"},
+                stream, indent=2, sort_keys=True)
             stream.flush()
             os.fsync(stream.fileno())
         os.replace(temporary_manifest, cache_manifest_path)
@@ -470,12 +536,30 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                 "approval_identity": sha256(json.dumps(approval_members, separators=(",", ":")).encode()).hexdigest(),
                 "approval_members": approval_members,
                 "approval_pairs_complete": approval_pairs_complete,
+                "expected_outputs": expected_outputs, "failures": failures,
                 "stage_report": stage_report,
                 "scope": scope, "preflight_seconds": round(preflight_seconds, 3),
                 "preparation_seconds": round(preparation_seconds, 3),
                 "input_hash_seconds": round(input_hash_seconds, 3),
                 "elapsed_seconds": round(elapsed_seconds, 3), "outputs": outputs}
-    qa = {"status": "passed", "artifact_count": len(outputs),
+    automated_status = "passed" if not failures and len(outputs) == artifact_total else "incomplete"
+    risk_keys = {("epci", "243500741", "car", "inspection"),
+        ("epci", "243500741", "car", "inline"),
+        ("epci", "243500741", "bike", "inline"),
+        ("region", "53", "car", "inspection"),
+        ("region", "53", "car", "inline")}
+    spot_check = [{"territory": item["territory"], "mode": item["mode"],
+        "profile": item["profile"], "path": item["path"],
+        "effective_identity": item["effective_identity"],
+        "output_sha256": item["output_sha256"]}
+        for item in outputs if (item["territory"]["kind"], item["territory"]["code"],
+            item["mode"], item["profile"]) in risk_keys]
+    qa = {"status": automated_status,
+          "production_status": ("awaiting-human-spot-check" if automated_status == "passed" else "incomplete"),
+          "human_spot_check": {"status": "pending" if automated_status == "passed" else "not-ready",
+              "review_set": spot_check, "outcome": None},
+          "artifact_count": len(outputs), "expected_artifact_count": artifact_total,
+          "expected_outputs": expected_outputs, "failures": failures,
           "profile_counts": {name: sum(item["profile"] == name for item in outputs)
                               for name in requested_profiles},
           "preflight_seconds": round(preflight_seconds, 3),

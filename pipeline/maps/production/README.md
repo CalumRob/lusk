@@ -111,6 +111,7 @@ Run the fixture suites from the repository root with QGIS-enabled Python:
 ```text
 python -m unittest pipeline.maps.production.tests.test_contract pipeline.maps.production.tests.test_network_cache pipeline.maps.production.tests.test_network -v
 python -m unittest pipeline.maps.production.tests.test_inline_contract -v
+python -m unittest pipeline.maps.production.tests.test_approval -v
 ```
 
 `tests/render_rennes_car.py` is the bounded car-pair visual/alpha contract check.
@@ -123,4 +124,41 @@ QGIS/Qt/Python runtime; it also lists authoritative source paths and file
 versions plus a SHA-256 per rendered artifact. Render/QA timings and preparation
 progress are printed during execution. Outputs and source caches remain ignored
 local pipeline artifacts, never application publication assets. This representative
-check does not implement #611's approval-gated full batch or retries.
+
+## Approval-gated full network batch
+
+The complete inventory is derived by `build_full_map_set()` from the current
+map-ready commune file, configured analytical departments, and pinned EPCI
+labels/membership metadata. It is not inferred from existing image files. In
+the current source snapshot this resolves to 1,202 communes, 61 EPCIs, 4
+departments and Bretagne (1,268 territories), 3 modes and 2 profiles; counts
+are observations from that input inventory, not literals in the builder.
+
+Before running either batch, acquire the exact coverage frame separately and
+offline-render from its local validated generation:
+
+```text
+python pipeline/maps/production/prepare_mainland_context.py --scope representative
+python pipeline/maps/production/tests/render_representative.py
+python pipeline/maps/production/record_network_approval.py --manifest pipeline/maps/production/output/manifest.json --qa pipeline/maps/production/output/qa.json --reviewer NAME --outcome approved --output pipeline/maps/production/output/human-approval.json
+python pipeline/maps/production/prepare_mainland_context.py --scope full
+python pipeline/maps/production/run_full_network.py --approval pipeline/maps/production/output/human-approval.json
+```
+
+The reviewer must open the representative pair for all three territories and
+modes before recording approval. The resulting record is bound to each of the
+18 current effective visible-input/profile identities and the recipe,
+foundation and renderer identity. The full runner re-prepares the shared
+inputs, recomputes those identities from the representative subset of the full
+binding, and rejects a stale record before scheduling any map render. Do not
+edit or synthesize approval JSON. The full context preparation derives one
+frame from the full inventory; the WFS contract fails if that complete result
+exceeds supported single-response capacity rather than truncating or paging.
+
+Batch QA writes `full-manifest.json` and `full-qa.json` including the complete
+expected matrix and per-output failures. Successful unchanged files remain
+reusable on retry; missing, corrupt, changed or failed files are rebuilt and
+validated. `status=passed` is automated QA only; `production_status` remains
+`awaiting-human-spot-check` until the listed high-risk files have been visually
+reviewed and `record_spot_check.py` records the affirmative human outcome.
+Nothing in this workflow publishes assets to the application or Cloudflare.

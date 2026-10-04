@@ -373,6 +373,7 @@ class NetworkPreparationTests(unittest.TestCase):
     def test_network_scope_comes_from_family_config_not_shared_foundation(self):
         from network import (
             NetworkAdapter,
+            build_full_map_set,
             build_representative_map_set,
             network_recipe,
         )
@@ -446,6 +447,59 @@ class NetworkPreparationTests(unittest.TestCase):
         self.assertAlmostEqual(region["geometry"].boundingBox().xMaximum(), 30)
         self.assertAlmostEqual(epci["analytical_geometry"].boundingBox().xMaximum(), 30)
         self.assertAlmostEqual(epci["geometry"].boundingBox().xMaximum(), 50)
+
+    def test_full_inventory_is_derived_from_authoritative_communes_and_pinned_epci_metadata(self):
+        from network import NetworkAdapter, build_full_map_set
+        from runner import Binding, MapSet
+        project = QgsProject.instance()
+        project.clear()
+        root = Path(tempfile.mkdtemp(prefix="lusk-full-inventory-"))
+        self.__class__.fixture_dirs.append(root)
+        raw = root / "pipeline" / "data" / "raw"
+        raw.mkdir(parents=True)
+        metadata = root / "pipeline" / "inst" / "extdata"
+        metadata.mkdir(parents=True)
+        (metadata / "epci_geo_api.json").write_text(json.dumps({"labels": [
+            {"code": "epci-a", "nom": "A"}, {"code": "epci-b", "nom": "B"}]}), encoding="utf-8")
+        communes = QgsVectorLayer(
+            "MultiPolygon?crs=EPSG:2154&field=code_insee:string&field=nom_officiel:string"
+            "&field=code_insee_du_departement:string&field=code_insee_de_la_region:string"
+            "&field=codes_siren_des_epci:string", "inventory fixture", "memory")
+        rows = (("22001", "One", "22", "53", "epci-a", 0),
+                ("22002", "Two", "22", "53", "epci-a/epci-b", 20),
+                ("29001", "Outside analytical department", "29", "53", "epci-b", 40))
+        features = []
+        for code, name, department, region, epcis, x in rows:
+            feature = QgsFeature(communes.fields())
+            feature.setAttributes([code, name, department, region, epcis])
+            geometry = QgsGeometry.fromWkt(
+                f"POLYGON (({x} 0,{x+10} 0,{x+10} 10,{x} 10,{x} 0))")
+            geometry.convertToMultiType()
+            feature.setGeometry(geometry)
+            features.append(feature)
+        communes.dataProvider().addFeatures(features)
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = "GeoJSON"
+        result = QgsVectorFileWriter.writeAsVectorFormatV3(
+            communes, str(raw / "communes_limites.geojson"), project.transformContext(), options)
+        self.assertEqual(result[0], QgsVectorFileWriter.NoError, result)
+        binding = build_full_map_set(raw, project,
+            family_config={"scope": {"analytical_departments": ["22"]}})
+        adapter = NetworkAdapter(raw)
+        adapter.family_config = {"scope": {"analytical_departments": ["22"]}}
+        adapter.preflight_scope(None, binding, "full", ("inspection", "inline"))
+        items = binding.map_set.layers["network-outputs"]
+        territories = {(item["territory"]["kind"], item["territory"]["code"])
+                       for item in items}
+        self.assertEqual(territories, {("commune", "22001"), ("commune", "22002"),
+            ("epci", "epci-a"), ("epci", "epci-b"), ("departement", "22"), ("region", "53")})
+        self.assertEqual(len(items), len(territories) * len({item["mode"] for item in items}))
+        epci_b = next(item for item in items if item["territory"]["code"] == "epci-b")
+        self.assertEqual(epci_b["geometry"].boundingBox().xMaximum(), 50)
+        self.assertEqual(epci_b["analytical_geometry"].boundingBox().xMaximum(), 30)
+        incomplete = Binding("network", MapSet({"network-outputs": items[:-1]}))
+        with self.assertRaisesRegex(ValueError, "does not cover exactly"):
+            adapter.preflight_scope(None, incomplete, "full", ("inspection", "inline"))
 
     def test_land_context_uses_selected_communes_from_local_admin_express(self):
         project = QgsProject.instance()

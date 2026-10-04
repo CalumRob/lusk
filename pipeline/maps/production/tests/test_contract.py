@@ -247,8 +247,27 @@ class ContractTests(unittest.TestCase):
                 return path
         recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
         binding = Binding("fixture", MapSet({"shape": [{"geometry": "polygon", "territory": {"kind":"test", "code":"1"}, "mode":"test"}]}))
-        with TemporaryDirectory() as directory, self.assertRaisesRegex(ValueError, "not a PNG"):
-            run_production(recipe, binding, "representative", ["inline"], Invalid(), directory)
+        with TemporaryDirectory() as directory:
+            result = run_production(recipe, binding, "representative", ["inline"], Invalid(), directory)
+        self.assertEqual(result.qa["status"], "incomplete")
+        self.assertIn("not a PNG", result.qa["failures"][0]["error"])
+        self.assertEqual(len(result.manifest["expected_outputs"]), 1)
+
+    def test_wrong_sized_png_is_a_batch_failure_not_a_pass(self):
+        class WrongSize(FixtureAdapter):
+            def render(self, recipe, feature, profile, output_dir):
+                output_dir.mkdir(parents=True, exist_ok=True)
+                path = output_dir / "wrong-size.png"
+                png(path, 800, 900, rgba=True, transparent=True)
+                return path
+        recipe = Recipe("fixture", 1, Foundation("v1"), "fixture")
+        binding = Binding("fixture", MapSet({"fixture": [{"geometry": "poly",
+            "territory": {"kind": "fixture", "code": "1"}, "mode": "car"}]}))
+        with TemporaryDirectory() as directory:
+            result = run_production(recipe, binding, "representative", ["inline"],
+                                    WrongSize(), directory)
+        self.assertEqual(result.qa["status"], "incomplete")
+        self.assertIn("dimensions", result.qa["failures"][0]["error"])
 
 
 if __name__ == "__main__":
