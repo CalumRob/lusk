@@ -1100,6 +1100,7 @@ def test_profile_and_series_migration_chain_matches_fresh_schema():
             chain.execute((api_root / "migrations/004_shared_scalar.sql").read_text(encoding="utf-8"))
             chain.execute(profile_migration.read_text(encoding="utf-8"))
             chain.execute((api_root / "migrations/007_ordered_series.sql").read_text(encoding="utf-8"))
+            chain.execute((api_root / "migrations/020_demographic_typed_reading.sql").read_text(encoding="utf-8"))
 
             # Both publication markers must reference the same committed territory snapshot.
             chain.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('reconcile','commune','Reconcile')")

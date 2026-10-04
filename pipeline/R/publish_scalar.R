@@ -465,20 +465,21 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^(scalar_it|profile_it|series_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
+      !grepl("^(scalar_it|profile_it|series_it|reading_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
   tables <- c("series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
-    "series_context_parent_policy", "series_named_reference_descriptor", "series_dataset_descriptor",
+    "series_context_parent_policy", "habitat_typed_reading",
+    "selected_reading_publication", "selected_reading_descriptor", "demographic_typed_reading", "demographic_reading_descriptor",
+    "period_detail_observation", "anchored_membership", "observed_collection_category",
+    "observed_collection_descriptor", "observed_collection_publication",
+    "series_named_reference_descriptor", "series_dataset_descriptor",
     "series_dataset_publication", "series_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
     "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
+    "bpe_profile_evidence_source", "bpe_profile_evidence", "bpe_profile_class_axis", "bpe_profile_evidence_descriptor",
     "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
     "scalar_descriptor", "building_ramp", "building_grid", "building_evidence_descriptor_source",
     "building_evidence_descriptor", "essential_service_access", "service_registry",
-     "anchored_membership", "period_detail_observation", "observed_collection_category",
-     "observed_collection_descriptor", "observed_collection_publication",
-     "bpe_profile_evidence_source", "bpe_profile_evidence", "bpe_profile_class_axis",
-     "bpe_profile_evidence_descriptor",
     "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
     "table_publication")
   functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_combined_smoke_value()", "reject_smoke_ramp()",
@@ -489,8 +490,11 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "assert_building_dataset_complete(integer, integer)", "assert_building_fact_source()",
     "assert_building_descriptor_publication()", "assert_current_dataset_complete(integer)",
     "validate_series_dataset_descriptor()", "validate_series_dataset_observation()",
-    "validate_series_dataset_publication()", "validate_series_observation_provenance()",
-    "validate_series_named_reference()", "validate_series_named_reference_provenance()",
+     "validate_series_dataset_publication()", "validate_series_observation_provenance()",
+     "assert_bpe_profile_evidence_complete()",
+     "validate_series_named_reference()", "validate_series_named_reference_provenance()",
+     "validate_observed_collection_write()", "validate_anchored_membership()",
+     "validate_period_detail_observation()", "validate_observed_collection_publication()",
     "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
     "validate_ordered_series()", "validate_anchored_membership()",
      "validate_period_detail_observation()", "validate_observed_collection_write()",
@@ -518,6 +522,12 @@ profile_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   serving_smoke_schema_cleanup_sql(quote_identifier, schema)
 }
 
+reading_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
+  if (length(schema) != 1L || !grepl("^reading_it_[A-Za-z0-9_]+$", schema))
+    stop("Cleanup requires an owned reading smoke schema", call. = FALSE)
+  serving_smoke_schema_cleanup_sql(quote_identifier, schema)
+}
+
 series_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (length(schema) != 1L || !grepl("^series_it_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned series smoke schema", call. = FALSE)
@@ -528,6 +538,7 @@ series_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
 cleanup_serving_smoke_schema <- function(connection, schema, kind) {
   expected_schema <- switch(kind, scalar="^scalar_it_[A-Za-z0-9_]+$",
     profile="^profile_it_[A-Za-z0-9_]+$",
+    reading="^reading_it_[A-Za-z0-9_]+$",
     building="^it_building_publisher_[A-Za-z0-9_]+$",
     series="^series_it_[A-Za-z0-9_]+$", NULL)
   if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||

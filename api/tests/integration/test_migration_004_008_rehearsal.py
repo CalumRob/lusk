@@ -25,6 +25,7 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
         "007_ordered_series.sql", "008_building_evidence_contract.sql",
         "016_bpe_profile_evidence.sql",
     )]
+    migration_020 = api_root / "migrations/020_demographic_typed_reading.sql"
     schema = "it_migration_chain_" + uuid.uuid4().hex[:16]
     scoped = _dsn_with_schema(publish_dsn, schema)
     created = False
@@ -187,7 +188,21 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
             fresh_names = set(re.findall(r"'([a-z_]+)'", re.search(
                 r"CREATE TABLE table_publication.*?CHECK\s*\(table_name IN\s*\((.*?)\)\)",
                 fresh_sql, re.S).group(1)))
-            assert set(re.findall(r"'([a-z_]+)'", check)) == fresh_names
+            # Apply 020 over populated earlier-family markers; their versions
+            # must survive while the new markers converge to fresh-install DDL.
+            connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('dpe_22','DPE')")
+            connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version,publication_date) VALUES ('dpe_22','dpe_22','fixture','2026-01-01')")
+            connection.execute(migration_020.read_text(encoding="utf-8"))
+            prior_after_020 = connection.execute(
+                "SELECT table_name,content_version,reference_content_version FROM table_publication "
+                "WHERE table_name IN ('declared_profile','ordered_series') ORDER BY table_name"
+            ).fetchall()
+            assert prior_after_020 == profile_series_before
+            check_020 = connection.execute("""SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
+                JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
+                WHERE n.nspname=current_schema() AND t.relname='table_publication'
+                  AND c.conname='table_publication_table_name_check'""").fetchone()[0]
+            assert set(re.findall(r"'([a-z_]+)'", check_020)) == fresh_names
             for marker in ('declared_profile', 'ordered_series'):
                 with pytest.raises(psycopg.errors.CheckViolation):
                     with connection.transaction():
