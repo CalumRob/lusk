@@ -154,3 +154,73 @@ def test_canonical_housing_profiles_are_served_at_each_declared_level():
         else:
             main.app.dependency_overrides[main.get_repository] = previous
         pool.close()
+
+
+def test_pooled_price_scalar_is_registered_and_theme_http_matches_canonical():
+    schema = os.environ.get("LUSK_HOUSING_HTTP_SCHEMA")
+    manifest_path = os.environ.get("LUSK_HOUSING_PRICE_MANIFEST")
+    read_dsn = os.environ.get("LUSK_TEST_READ_DSN")
+    if not schema or not manifest_path or not read_dsn:
+        pytest.skip("invoked by guarded smoke-housing-economy-postgres.R")
+    pytest.importorskip("psycopg_pool")
+    from psycopg_pool import ConnectionPool
+
+    with open(manifest_path, encoding="utf-8") as file:
+        expected = json.load(file)
+    parts = urlsplit(read_dsn)
+    query = parse_qs(parts.query, keep_blank_values=True)
+    query["options"] = [f"-csearch_path={schema}"]
+    scoped = urlunsplit((parts.scheme, parts.netloc, parts.path,
+                         urlencode(query, doseq=True), parts.fragment))
+    pool = ConnectionPool(conninfo=scoped, min_size=1, max_size=1, open=True,
+                          kwargs={"autocommit": True})
+    previous = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    try:
+        with pool.connection() as conn:
+            assert conn.execute("SELECT current_database(),current_user").fetchone() == (
+                os.environ["LUSK_TEST_DATABASE_NAME"], os.environ["LUSK_TEST_READ_USER"])
+            descriptor = conn.execute("SELECT label,unit,direction,comparison_facet,allowed_levels "
+                                      "FROM scalar_descriptor WHERE indicator_id='prix_m2'").fetchone()
+            assert descriptor == ("Médiane prix au m²", "€/m²", "low", "prix_m2",
+                                  ["commune", "epci", "departement", "region"])
+            count = conn.execute("SELECT count(*) FROM scalar_observation WHERE indicator_id='prix_m2'").fetchone()[0]
+            assert count == 1268
+        with TestClient(main.app) as client:
+            for item in expected[:5]:
+                response = client.get(f"/api/territories/{item['territory_type']}/{item['territory_id']}/themes/habitat/facts")
+                assert response.status_code == 200, response.text
+                fact = next(row for row in response.json()["facts"] if row["indicator_id"] == "prix_m2")
+                assert fact["unit"] == item["unit"]
+                assert fact["status"] == item["status"]
+                assert fact["support_count"] == item["support"]
+                if item["value"] is None:
+                    assert fact["value"] is None
+                else:
+                    assert math.isclose(fact["value"], item["value"], rel_tol=1e-14, abs_tol=1e-14)
+                assert fact["sources"] == [item["source"]]
+            rennes = next(x for x in expected if x["territory_id"] == "35238")
+            assert math.isclose(rennes["value"], 3819.4444444444443, rel_tol=1e-14)
+            empty = client.post("/api/territories/commune/35238/indicators/prix_m2/comparison", json={"selection": []})
+            assert empty.status_code == 200 and empty.json()["result"]["status"] == "unavailable"
+            assert "focal_value" not in empty.json()["result"]
+            singleton = client.post("/api/territories/commune/35238/indicators/prix_m2/comparison",
+                                    json={"selection": [{"territory_type":"commune","territory_id":"35238"}]})
+            assert singleton.status_code == 200
+            assert singleton.json()["result"]["selected_member_count"] == 1
+            assert math.isclose(singleton.json()["result"]["median"], rennes["value"], rel_tol=1e-14)
+            assert "focal_value" not in singleton.json()["result"]
+            comparison = expected[5]["comparison"]
+            mixed = client.post("/api/territories/commune/35238/indicators/prix_m2/comparison", json={
+                "selection": [{"territory_type":"epci","territory_id":comparison["epci_id"]},
+                              {"territory_type":"commune","territory_id":comparison["commune_id"]}]})
+            assert mixed.status_code == 200, mixed.text
+            assert mixed.json()["result"]["selected_member_count"] == comparison["selected_member_count"]
+            assert math.isclose(mixed.json()["result"]["median"], comparison["median"], rel_tol=1e-14)
+            assert "focal_value" not in mixed.json()["result"]
+    finally:
+        if previous is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous
+        pool.close()

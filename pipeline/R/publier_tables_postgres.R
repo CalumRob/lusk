@@ -190,6 +190,9 @@ project_theme_scalar_cohort <- function(sortie, eligible_territories, theme) {
   rows <- nanoparquet::read_parquet(path)
   ids <- names(metadata$scalar_contracts)
   if (!length(ids)) stop("Theme producer has no declared scalar serving contracts: ", theme, call.=FALSE)
+  # Scalar observations have no detail coordinate. Select that producer grain
+  # before projecting the canonical rows into the coordinate-free contract.
+  rows <- rows[is.na(rows$detail), , drop=FALSE]
   rows <- data.frame(territory_id=as.character(rows$territoire),
     territory_type=as.character(rows$type), indicator_id=as.character(rows$key),
     value=as.numeric(rows$value), unit=as.character(rows$unit),
