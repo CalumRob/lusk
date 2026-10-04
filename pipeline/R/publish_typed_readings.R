@@ -31,9 +31,10 @@ project_demographic_reading <- function(histories, territories, vintages, metada
   names(reference) <- c("territory_id", "territory_type")
   if (anyDuplicated(reference) || anyDuplicated(facts[c("territory_id", "territory_type", "groupe")]))
     stop("Duplicate identity in demographic reading/reference projection", call.=FALSE)
-  if (any(!paste(facts$territory_id, facts$territory_type) %in%
-          paste(reference$territory_id, reference$territory_type)))
-    stop("Demographic reading identity is absent from the canonical territory reference", call.=FALSE)
+  fact_territories <- unique(facts[c("territory_id","territory_type")])
+  if (!setequal(paste(fact_territories$territory_id,fact_territories$territory_type),
+                paste(reference$territory_id,reference$territory_type)))
+    stop("Demographic reading identities must exactly match the canonical territory reference",call.=FALSE)
   source <- vintages[vintages$id == "serie_historique", , drop=FALSE]
   if (nrow(source) != 1L || anyNA(source[c("id", "source", "version", "date_reference", "date_publication")]))
     stop("The canonical vintage manifest has no unique demographic source clock", call.=FALSE)
@@ -93,11 +94,15 @@ publish_demographic_reading <- function(con, projection, canonical) {
   facts <- facts[c("territory_id","territory_type","groupe","story_key","salience_reason","periode",
     "solde_naturel","solde_migratoire","taux_solde_naturel","taux_solde_migratoire",
     "classification","status","source_id","vintage_id")]
-  if (nrow(facts) != 1268L) stop("Unexpected canonical demographic reading row count", call.=FALSE)
   reference_version <- DBI::dbGetQuery(con,
     "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version
   if (length(reference_version) != 1L || is.na(reference_version) || !nzchar(reference_version))
     stop("Published territory reference is required for demographic readings", call.=FALSE)
+  registered_territories <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type FROM territory_reference")
+  fact_territories <- unique(facts[c("territory_id","territory_type")])
+  if (!setequal(paste(fact_territories$territory_id,fact_territories$territory_type),
+      paste(registered_territories$territory_id,registered_territories$territory_type)))
+    stop("Demographic reading territory identities do not match the registered territory reference",call.=FALSE)
   version <- canonical$content_version
   unchanged <- FALSE
   DBI::dbWithTransaction(con, {
