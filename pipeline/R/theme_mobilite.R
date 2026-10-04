@@ -610,6 +610,9 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
     tot_loss_territoires = tot_loss_territoires,
     moyennes_acces_territoires = moyennes_acces_territoires,
     matrice_profils_acces_bpe = matrice_profils_acces_bpe,
+      profils_acces_bpe_univers = matrice_profils_acces_bpe %>%
+        dplyr::distinct(territoire, type, typequ) %>%
+        dplyr::arrange(type, territoire, typequ),
       profils_acces_bpe = profils_acces_bpe,
       distribution_acces_batiments = distribution_acces_batiments,
       rampe_acces_batiments = rampe_acces_batiments,
@@ -1083,6 +1086,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     dplyr::left_join(racc_courbes, by = c("code", "detail")) %>%
     dplyr::mutate(key = "raccordement_courbe", unit = "%") %>%
     dplyr::select(code, key, detail, value, unit)
+  raccordement_courbe$observation_period <- as.character(
+    racc$entrees$recette$date_mesure)
 
   # la RÉFÉRENCE médiane bretonne : les mêmes marques de grille, portées par
   # la seule ligne régionale (la multiplicité NA de la table déclarative
@@ -1096,6 +1101,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
             racc$calcul$reference$minute)],
     unit = "%"
   )
+  raccordement_reference$observation_period <- as.character(
+    racc$entrees$recette$date_mesure)
 
   # l'assemblage : les onze clés + leurs rangs (le détail NA des clés
   # scalaires joint sur le détail NA des rangs partagés) + les tampons de la
@@ -1154,7 +1161,8 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
       "rang_epci", "rang_dep", "rang_reg",
       "rang_epci_n", "rang_dep_n", "rang_reg_n",
       "vintage_source", "vintage_version",
-       "vintage_date_reference", "vintage_date_publication", "rider"
+       "vintage_date_reference", "vintage_date_publication", "rider",
+       "observation_period"
     )))
 }
 

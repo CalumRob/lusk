@@ -190,6 +190,9 @@ project_theme_scalar_cohort <- function(sortie, eligible_territories, theme) {
   rows <- nanoparquet::read_parquet(path)
   ids <- names(metadata$scalar_contracts)
   if (!length(ids)) stop("Theme producer has no declared scalar serving contracts: ", theme, call.=FALSE)
+  # Scalar observations have no detail coordinate. Select that producer grain
+  # before projecting the canonical rows into the coordinate-free contract.
+  rows <- rows[is.na(rows$detail), , drop=FALSE]
   rows <- data.frame(territory_id=as.character(rows$territoire),
     territory_type=as.character(rows$type), indicator_id=as.character(rows$key),
     value=as.numeric(rows$value), unit=as.character(rows$unit),
@@ -227,6 +230,7 @@ project_service_scalar_snapshot <- function(donnees, sortie) {
   mobility <- project_mobility_scalar_cohort(sortie, donnees$scalar_eligible_territories)
   housing <- project_housing_scalar_cohort(sortie, donnees$scalar_eligible_territories)
   additional <- list(economy, demography, mobility, housing)
-  list(projection=assemble_scalar_snapshot(service, additional),
+  projection <- attach_essential_service_denominators(assemble_scalar_snapshot(service, additional))
+  list(projection=projection,
     additional_projections=additional)
 }

@@ -162,7 +162,7 @@ project_dpe_profile <- function(canonical, metadata, scalar_version) {
 
 # Project a closed metadata-declared list/composition profile from canonical
 # indicator rows. No values or source decisions are calculated here.
-project_mobility_profile <- function(canonical, metadata, indicator, source_vintages = canonical$source_vintages) {
+project_declared_detail_profile <- function(canonical, metadata, indicator, source_vintages = canonical$source_vintages) {
   page <- metadata$indicator_pages[[indicator]]
   contract <- metadata$profile_contracts[[indicator]]
   rows <- canonical$indicateurs
@@ -178,7 +178,8 @@ project_mobility_profile <- function(canonical, metadata, indicator, source_vint
   if (!identical(names(labels), details) || !identical(names(units), details) ||
       !setequal(names(units), details) || !length(sources))
     stop("Mobility profile axes, units or source are undeclared", call.=FALSE)
-  rows <- rows[rows$key == indicator & rows$type %in% unlist(page$levels),,drop=FALSE]
+  levels <- if (!is.null(contract$allowed_levels)) unlist(contract$allowed_levels, use.names=FALSE) else unlist(page$levels, use.names=FALSE)
+  rows <- rows[rows$key == indicator & rows$type %in% levels,,drop=FALSE]
   if (!nrow(rows) || any(!rows$detail %in% details) || any(!is.na(rows$sex)) ||
       !all(c("vintage_source","vintage_version","vintage_date_reference","vintage_date_publication") %in% names(rows)))
     stop("Canonical mobility profile rows do not match declared axes or provenance", call.=FALSE)
@@ -191,7 +192,7 @@ project_mobility_profile <- function(canonical, metadata, indicator, source_vint
   axes <- data.frame(axis_name="detail", axis_key=details, label=unname(labels[details]),
     ordinal=seq_along(details)-1L, stringsAsFactors=FALSE)
   axes$unit <- unname(units[details])
-  descriptor <- list(indicator_id=indicator, theme_id=metadata$theme, levels=unlist(page$levels),
+  descriptor <- list(indicator_id=indicator, theme_id=metadata$theme, levels=levels,
     details=details, sexes=character(), label=page$label, unit=page$unit, source=sources,
     comparison_detail=page$comparison$detail, comparison_sex=NA_character_,
     comparison_direction=page$direction, completeness=contract$completeness,
@@ -201,8 +202,19 @@ project_mobility_profile <- function(canonical, metadata, indicator, source_vint
   validate_declared_profile(facts, descriptor, axes, eligible)
   # Source identity remains metadata-owned; canonical vintage columns supply
   # the row-level vintage and human-readable dataset identity.
+  if (is.null(source_vintages)) {
+    records <- metadata$source_records[sources]
+    source_vintages <- do.call(rbind, lapply(sources, function(id) {
+      record <- records[[id]]
+      if (is.null(record) || is.null(record$vintages)) stop("Declared profile source vintage metadata is incomplete", call.=FALSE)
+      do.call(rbind, lapply(record$vintages, function(v) data.frame(id=id,
+        source=as.character(record$dataset), version=as.character(v$version),
+        date_reference=as.character(v$dateReference), date_publication=as.character(v$datePublication),
+        stringsAsFactors=FALSE)))
+    }))
+  }
   if (!is.data.frame(source_vintages) || !all(c("id", "source", "version", "date_reference", "date_publication") %in% names(source_vintages)))
-    stop("Canonical Mobility source vintages are required", call.=FALSE)
+    stop("Canonical declared profile source vintages are required", call.=FALSE)
   if (any(!sources %in% source_vintages$id) || anyDuplicated(source_vintages[c("id", "version", "date_reference")]))
     stop("Missing or duplicate canonical Mobility source vintage", call.=FALSE)
   primary <- as.character(unlist(metadata$sources[[indicator]], use.names=FALSE))
@@ -249,6 +261,10 @@ project_mobility_profile <- function(canonical, metadata, indicator, source_vint
   list(facts=facts, axes=axes, descriptor=descriptor, provenance=provenance,
     vintages=vintages, datasets=datasets, eligible_territories=eligible)
 }
+
+# Mobility profiles retain their historic caller while sharing the validated
+# producer-declared detail projection with other themes.
+project_mobility_profile <- project_declared_detail_profile
 
 profile_content_version <- function(projection) {
   path <- tempfile("profile-version-")
@@ -425,6 +441,9 @@ publier_declared_profiles_postgres <- function(demography, demography_metadata,
   if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
   registry <- register_structure_age_profile_publisher(list(), demography_metadata)
   additional <- list(project_dpe_profile(habitat, habitat_metadata, scalar_version))
+  housing_ids <- c("mix_logements", "statut", "type", "age_du_bati")
+  additional <- c(additional, lapply(housing_ids, function(id)
+    project_declared_detail_profile(habitat, habitat_metadata, id)))
   if (!is.null(mobilite) || !is.null(mobilite_metadata)) {
     if (is.null(mobilite) || is.null(mobilite_metadata)) stop("Canonical mobility payload and metadata must be supplied together", call.=FALSE)
     if (is.null(mobilite_vintages)) stop("Canonical Mobility source vintages must be supplied", call.=FALSE)

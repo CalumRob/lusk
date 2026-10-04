@@ -37,9 +37,11 @@ test_that("owned prix_m2 projects annual canonical facts with their effective ro
   vintages <- vintages_habitat()
   projection <- project_prix_m2_owned_series(payload$indicateurs, vintages, metadata)
   raw <- payload$indicateurs[payload$indicateurs$key == "prix_m2" & !is.na(payload$indicateurs$detail) &
-    payload$indicateurs$type %in% c("commune", "epci", "departement"), , drop=FALSE]
+    payload$indicateurs$type %in% c("commune", "epci", "departement", "region"), , drop=FALSE]
   expect_identical(projection$descriptor$axis_values, as.character(unlist(metadata$indicator_pages$prix_m2$comparison$details)))
-  expect_setequal(projection$points$territory_type, c("commune", "epci", "departement"))
+  expect_setequal(projection$points$territory_type, c("commune", "epci", "departement", "region"))
+  expect_setequal(projection$descriptor$comparison_levels,c("commune", "epci", "departement"))
+  expect_true(projection$descriptor$active_read_route)
   for (i in seq_len(nrow(raw))) {
     fact <- raw[i,]
     point <- projection$points[projection$points$territory_id == fact$territoire &
@@ -219,7 +221,9 @@ test_that("owned ENAF projection preserves its canonical facts and immutable pro
     vintages=nanoparquet::read_parquet(file.path(root,"vintages.parquet"))), metadata)
   expect_invisible(validate_owned_series_projection(projection))
   expect_identical(projection$descriptor$dataset_id,"conso_enaf_annuel")
-  expect_equal(nrow(projection$points),17710L)
+  expect_equal(nrow(projection$points),17724L)
+  expect_equal(sum(projection$points$territory_type=="region"),14L)
+  expect_setequal(projection$descriptor$comparison_levels,c("commune", "epci", "departement"))
   expect_true(all(projection$points$dataset_id=="conso_enaf_annuel"))
   expect_equal(nrow(projection$point_provenance),nrow(projection$points))
   expect_identical(projection$provenance$source_name,
@@ -352,9 +356,9 @@ test_that("production owned-series reader and check route project both canonical
       metadata$indicator_pages$artif_par_habitant, habitat_metadata$indicator_pages$prix_m2),
       function(p) p$series_dataset_id,character(1)))
   expect_equal(vapply(projections,function(p) nrow(p$points),integer(1)),
-    c(conso_enaf_annuel_owned=196L,artif_par_habitant_owned=28L,
+    c(conso_enaf_annuel_owned=210L,artif_par_habitant_owned=30L,
       prix_m2_owned=sum(habitat$indicateurs$key=="prix_m2" & !is.na(habitat$indicateurs$detail) &
-        habitat$indicateurs$type %in% c("commune","epci","departement"))))
+        habitat$indicateurs$type %in% c("commune","epci","departement","region"))))
   producer <- project_conso_enaf_series_from_artifacts(payload$indicateurs,
     vintages_milieux(),metadata)
   prix_producer <- project_prix_m2_owned_series(habitat$indicateurs,habitat_vintages,habitat_metadata)
@@ -365,7 +369,8 @@ test_that("production owned-series reader and check route project both canonical
     scalar_content_version(established))
   expect_identical(scalar_content_version(projections$prix_m2_owned),scalar_content_version(prix_producer))
   expect_equal(attr(projections,"excluded")$conso_enaf_annuel_owned$region$row_count,
-    producer$excluded$region$row_count)
+    0L)
+  expect_equal(producer$excluded$region$row_count,14L)
   connect <- function() stop("check route must not connect")
   checked <- dispatch_owned_series_cli("check",projections,connect)
   expect_identical(unlist(checked$versions),vapply(projections,scalar_content_version,character(1)))
@@ -479,4 +484,78 @@ test_that("series smoke cleanup is limited to owned RESTRICT schema drops", {
   expect_true(grepl('DROP SCHEMA IF EXISTS "series_it_owned" RESTRICT', tail(sql, 1L), fixed=TRUE))
   expect_error(series_smoke_schema_cleanup_sql(function(parts) paste0('"', parts, '"'), "public"),
     "owned series smoke schema")
+})
+test_that("owned raccordement publisher projects focal curve and a distinct named median reference", {
+  axis_keys <- paste0("t",sprintf("%04d",c(0,15,30,45,60,90,120,180,240,300,360)))
+  metadata <- list(theme="mobilite",owned_series_routes=list(raccordement_courbe=list(
+     dataset_id="raccordement_curve",indicator_id="raccordement_courbe",theme_id="mobilite",
+     active_read_route=TRUE,reference_read_route=TRUE,axis_kind="duration_minute",
+     axis_values=c(0,15,30,45,60,90,120,180,240,300,360),
+      observation_period_contract=list(kind="snapshot_date",source="raccordement_recipe_date_mesure"),
+     comparison_contract=list(statistic="median",scope="default_group"),
+     reference_indicator="raccordement_reference",reference=list(id="commune_bretonne_mediane",
+        label="Commune bretonne médiane",role="analytical_reference",statistic="median_routed_communes"),
+     reference_id="commune_bretonne_mediane",reference_role="analytical_reference",
+     reference_label="Commune bretonne médiane",reference_statistic="median_routed_communes",
+     source_id="matrice_temps_mairies")),
+    indicator_pages=list(raccordement_courbe=list(indicator="raccordement_courbe",unit="%",direction="high",
+      comparison=list(detail="t0090",details=axis_keys),label="Courbe raccordement",sources="matrice_temps_mairies",
+      trajectory=list(reference=list(indicator="raccordement_reference",territoire="53",
+        label="Commune bretonne médiane")),levels=c("commune","epci","departement"))),
+    source_records=list(matrice_temps_mairies=list(dataset="Matrice de temps",vintages=list(list(
+       id="matrice_temps_mairies",version="2026-09-18",dateReference="2026-08-25",
+      datePublication="2026-08-26")))))
+  keys <- axis_keys
+  rows <- function(key, values, territory, type) data.frame(key=key,theme="mobilite",detail=keys,
+    type=type,territoire=territory,value=values,unit="%",vintage_source="Fixture matrix",
+    observation_period=rep("2026-09-16",length(keys)),
+    vintage_version="2026-09-18",vintage_date_reference=as.Date("2026-08-25"),
+    vintage_date_publication=as.Date("2026-08-26"),stringsAsFactors=FALSE)
+  canonical <- rbind(rows("raccordement_courbe",seq(.1,1,length.out=11),"35238","commune"),
+    rows("raccordement_courbe",rep(NA_real_,11),"29001","commune"),
+    rows("raccordement_reference",seq(.05,.95,length.out=11),"53","region"))
+  vintages <- data.frame(id="matrice_temps_mairies",source="Fixture matrix",version="2026-09-18",
+    date_reference=as.Date("2026-08-25"),date_publication=as.Date("2026-08-26"))
+  projection <- project_raccordement_owned_series(canonical,vintages,metadata,
+    producer_contract=list(date_mesure="2026-09-16"))
+  expect_no_error(validate_owned_series_projection(projection))
+  expect_equal(projection$descriptor$axis_kind,"duration_minute")
+  expect_true(projection$descriptor$active_read_route)
+  rennes <- projection$points[projection$points$territory_id=="35238",]
+  unavailable <- projection$points[projection$points$territory_id=="29001",]
+  expect_equal(rennes$value,seq(.1,1,length.out=11))
+  expect_true(all(unavailable$status=="missing"))
+  expect_true(all(is.na(unavailable$value)))
+  expect_equal(projection$named_reference$value,seq(.05,.95,length.out=11))
+  expect_equal(unique(projection$points$observation_period),"2026-09-16")
+  expect_equal(unique(projection$named_reference$observation_period),"2026-09-16")
+  changed_recipe <- project_raccordement_owned_series(
+    transform(canonical, observation_period="2026-09-17"),vintages,metadata,
+    producer_contract=list(date_mesure="2026-09-17"))
+  expect_equal(unique(changed_recipe$points$observation_period),"2026-09-17")
+  expect_error(project_raccordement_owned_series(canonical,vintages,metadata,
+    producer_contract=list(date_mesure="2026-09-17")),"observation period")
+  expect_equal(projection$named_reference_descriptors$reference_indicator_id,"raccordement_reference")
+  expect_true(projection$named_reference_descriptors$active_read_route)
+  expect_equal(projection$descriptor$comparison_statistic,"median")
+  expect_equal(projection$descriptor$comparison_scope,"default_group")
+  expect_false("territory_id" %in% names(projection$named_reference))
+  expect_true(all(projection$named_reference$reference_id=="commune_bretonne_mediane"))
+  missing_identity <- metadata; missing_identity$indicator_pages$raccordement_courbe$indicator <- NULL
+  expect_error(project_raccordement_owned_series(canonical,vintages,missing_identity,
+    producer_contract=list(date_mesure="2026-09-16")),
+    "metadata contract")
+  invalid_identity <- metadata; invalid_identity$owned_series_routes$raccordement_courbe$indicator_id <- "other_curve"
+  expect_error(project_raccordement_owned_series(canonical,vintages,invalid_identity,
+    producer_contract=list(date_mesure="2026-09-16")),
+    "metadata contract")
+  missing_reference_route <- metadata
+  missing_reference_route$owned_series_routes$raccordement_courbe$reference_indicator <- NULL
+  expect_error(project_raccordement_owned_series(canonical,vintages,missing_reference_route,
+    producer_contract=list(date_mesure="2026-09-16")),
+    "metadata contract")
+  wrong_period <- canonical; wrong_period$observation_period[1] <- "2026-08-25"
+  expect_error(project_raccordement_owned_series(wrong_period,vintages,metadata,
+    producer_contract=list(date_mesure="2026-09-16")),
+    "observation period")
 })

@@ -892,8 +892,9 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
                       "stationnement_velo_communes",
                          "offre_cyclable_communes", "offre_territoires",
                          "tot_loss_territoires", "moyennes_acces_territoires",
-                          "matrice_profils_acces_bpe",
-                           "profils_acces_bpe",
+                           "matrice_profils_acces_bpe",
+                            "profils_acces_bpe_univers",
+                            "profils_acces_bpe",
                            "distribution_acces_batiments",
                            "rampe_acces_batiments",
                            "distribution_acces_batiments_comparaisons",
@@ -936,6 +937,9 @@ test_that("construire_analytiques_mobilite : le chaînon flagship + le sous-bloc
   expect_true(file.exists(file.path(sortie, "offre_cyclable_communes.rds")))
   expect_true(file.exists(file.path(sortie, "offre_territoires.rds")))
   expect_true(file.exists(file.path(sortie, "matrice_profils_acces_bpe.rds")))
+  expect_equal(nrow(res$profils_acces_bpe_univers),
+               nrow(dplyr::distinct(res$matrice_profils_acces_bpe,
+                                    territoire, type, typequ)))
   expect_true(file.exists(file.path(sortie, "profils_acces_bpe.rds")))
 })
 
@@ -2927,6 +2931,7 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
   expect_true(all(racc_ind$vintage_version == "2026-09-16"))
 
   courbe_ind <- ind[ind$key == "raccordement_courbe", ]
+  expect_true(all(courbe_ind$observation_period == RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure))
   expect_equal(sum(courbe_ind$territoire == "22001"), grille_n)
   grille_attendue <- grille_raccordement()
   expect_setequal(courbe_ind$detail[courbe_ind$territoire == "22001"],
@@ -2942,6 +2947,7 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
   expect_true(all(is.na(courbe_ind$rang_epci)) && all(is.na(courbe_ind$rang_reg)))
 
   reference_ind <- ind[ind$key == "raccordement_reference", ]
+  expect_true(all(reference_ind$observation_period == RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure))
   expect_setequal(unique(reference_ind$territoire), "53")
   expect_equal(nrow(reference_ind), grille_n)
 })

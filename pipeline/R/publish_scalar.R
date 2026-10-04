@@ -208,11 +208,31 @@ publish_service_share_scalars <- function(con, access, metadata, eligible_territ
   if (!is.list(additional_projections)) stop("Additional scalar cohorts must be registered projections", call.=FALSE)
   project <- publisher$services_essentiels_scalar$project
   publisher$services_essentiels_scalar$project <- function(canonical) {
-    assemble_scalar_snapshot(project(canonical), additional_projections)
+    attach_essential_service_denominators(
+      assemble_scalar_snapshot(project(canonical), additional_projections))
   }
   db <- scalar_postgres_adapter(con)
   publish_registered_scalar(publisher, "services_essentiels_scalar",
     canonical=list(access=access, eligible_territories=eligible_territories), db=db)
+}
+
+attach_essential_service_denominators <- function(projection) {
+  service_rows <- grepl("^share_", projection$facts$indicator_id)
+  if (!any(service_rows)) return(projection)
+  building_rows <- projection$facts[projection$facts$indicator_id == "nb_buildings", , drop=FALSE]
+  if (!nrow(building_rows) || anyDuplicated(building_rows$territory_id) ||
+      any(building_rows$status == "measured" & (is.na(building_rows$value) |
+        building_rows$value < 0 | building_rows$value != floor(building_rows$value))))
+    stop("Canonical nb_buildings facts have invalid measured denominators", call.=FALSE)
+  denominator <- building_rows$value[match(projection$facts$territory_id[service_rows], building_rows$territory_id)]
+  unavailable_denominator <- is.na(denominator)
+  service_fact_status <- projection$facts$status[service_rows]
+  service_fact_value <- projection$facts$value[service_rows]
+  if (any(unavailable_denominator & service_fact_status == "measured" & !is.na(service_fact_value)))
+    stop("Measured essential-service fact has no canonical nb_buildings denominator", call.=FALSE)
+  projection$facts$denominator_count[service_rows] <- as.integer(denominator)
+  validate_scalar_projection(projection$facts, projection$descriptors, projection$eligible_territories)
+  projection
 }
 
 # Shared canonical fact-to-serving projection. Fixture-only completeness is
@@ -445,12 +465,18 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^(scalar_it|profile_it|series_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
+      !grepl("^(scalar_it|profile_it|series_it|reading_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
-  tables <- c("series_observation_provenance", "series_dataset_observation", "series_dataset_descriptor",
+  tables <- c("series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
+    "series_context_parent_policy", "habitat_typed_reading",
+    "selected_reading_publication", "selected_reading_descriptor", "demographic_typed_reading", "demographic_reading_descriptor",
+    "period_detail_observation", "anchored_membership", "observed_collection_category",
+    "observed_collection_descriptor", "observed_collection_publication",
+    "series_named_reference_descriptor", "series_dataset_descriptor",
     "series_dataset_publication", "series_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
     "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
+    "bpe_profile_evidence_source", "bpe_profile_evidence", "bpe_profile_class_axis", "bpe_profile_evidence_descriptor",
     "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
     "scalar_descriptor", "building_ramp", "building_grid", "building_evidence_descriptor_source",
     "building_evidence_descriptor", "essential_service_access", "service_registry",
@@ -464,9 +490,15 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "assert_building_dataset_complete(integer, integer)", "assert_building_fact_source()",
     "assert_building_descriptor_publication()", "assert_current_dataset_complete(integer)",
     "validate_series_dataset_descriptor()", "validate_series_dataset_observation()",
-    "validate_series_dataset_publication()", "validate_series_observation_provenance()",
+     "validate_series_dataset_publication()", "validate_series_observation_provenance()",
+     "assert_bpe_profile_evidence_complete()",
+     "validate_series_named_reference()", "validate_series_named_reference_provenance()",
+     "validate_observed_collection_write()", "validate_anchored_membership()",
+     "validate_period_detail_observation()", "validate_observed_collection_publication()",
     "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
-    "validate_ordered_series()")
+    "validate_ordered_series()", "validate_anchored_membership()",
+     "validate_period_detail_observation()", "validate_observed_collection_write()",
+     "validate_observed_collection_publication()", "assert_bpe_profile_evidence_complete()")
   c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
     paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
       split <- strsplit(signature, "(", fixed=TRUE)[[1L]]
@@ -490,6 +522,12 @@ profile_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   serving_smoke_schema_cleanup_sql(quote_identifier, schema)
 }
 
+reading_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
+  if (length(schema) != 1L || !grepl("^reading_it_[A-Za-z0-9_]+$", schema))
+    stop("Cleanup requires an owned reading smoke schema", call. = FALSE)
+  serving_smoke_schema_cleanup_sql(quote_identifier, schema)
+}
+
 series_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (length(schema) != 1L || !grepl("^series_it_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned series smoke schema", call. = FALSE)
@@ -500,6 +538,7 @@ series_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
 cleanup_serving_smoke_schema <- function(connection, schema, kind) {
   expected_schema <- switch(kind, scalar="^scalar_it_[A-Za-z0-9_]+$",
     profile="^profile_it_[A-Za-z0-9_]+$",
+    reading="^reading_it_[A-Za-z0-9_]+$",
     building="^it_building_publisher_[A-Za-z0-9_]+$",
     series="^series_it_[A-Za-z0-9_]+$", NULL)
   if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||

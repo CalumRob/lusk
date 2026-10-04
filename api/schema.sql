@@ -3,13 +3,13 @@
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
         'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series')),
+        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence') OR reference_content_version IS NOT NULL)
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -135,6 +135,64 @@ CREATE TABLE territory_reference (
     density_class_code text,
     density_class_label text
 );
+-- BPE evidence is neither an ordinary median-profile nor raw TYPEQU matrix.
+-- Four closed class rows carry producer-selected bounded exemplars; the actual
+-- registered TYPEQU universe and its identity are kept with this publication.
+CREATE TABLE bpe_profile_evidence_descriptor (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
+  indicator_id text NOT NULL UNIQUE CHECK(indicator_id='bpe_access_profile'),
+  descriptor_version text NOT NULL,
+  allowed_levels text[] NOT NULL CHECK(allowed_levels=ARRAY['commune','epci','departement','region']::text[]),
+  completeness text NOT NULL CHECK(completeness='dense_complete'), classification_id text NOT NULL CHECK(length(trim(classification_id))>0),
+  universe_count integer NOT NULL CHECK(universe_count>0), universe_sha256 text NOT NULL CHECK(universe_sha256 ~ '^[0-9a-f]{64}$'),
+  registry_filename text NOT NULL CHECK(length(trim(registry_filename))>0), registry_semantic_effect text NOT NULL CHECK(length(trim(registry_semantic_effect))>0),
+  membership_sha256 text NOT NULL CHECK(membership_sha256 ~ '^[0-9a-f]{64}$'),
+  source_id text NOT NULL REFERENCES source_dataset(source_id), vintage_id text NOT NULL,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
+);
+CREATE TABLE bpe_profile_class_axis (
+  class_key text PRIMARY KEY CHECK(class_key ~ '^[a-z][a-z0-9-]{0,63}$'), label text NOT NULL CHECK(length(trim(label))>0),
+  ordinal smallint NOT NULL UNIQUE CHECK(ordinal>=0), direction text NOT NULL CHECK(direction IN ('high','low','none'))
+);
+CREATE TABLE bpe_profile_evidence (
+  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
+  class_key text NOT NULL REFERENCES bpe_profile_class_axis(class_key), class_label text NOT NULL,
+  class_count integer NOT NULL CHECK(class_count>=0), universe_count integer NOT NULL CHECK(universe_count>0),
+  exemplar_typequ text, exemplar_label text, exemplar_c double precision, exemplar_b double precision, exemplar_t double precision,
+  PRIMARY KEY(territory_type,territory_id,class_key), FOREIGN KEY(territory_id) REFERENCES territory_reference(territory_id),
+  CHECK((class_count=0 AND exemplar_typequ IS NULL AND exemplar_label IS NULL AND exemplar_c IS NULL AND exemplar_b IS NULL AND exemplar_t IS NULL) OR
+        (class_count>0 AND exemplar_typequ ~ '^[A-Z][0-9]{3}$' AND exemplar_label IS NOT NULL AND exemplar_c BETWEEN 0 AND 1 AND exemplar_b BETWEEN 0 AND 1 AND exemplar_t BETWEEN 0 AND 1)),
+  CHECK(universe_count>=class_count)
+);
+CREATE TABLE bpe_profile_evidence_source (
+  territory_type text NOT NULL, territory_id text NOT NULL, class_key text NOT NULL, source_id text NOT NULL, vintage_id text NOT NULL,
+  PRIMARY KEY(territory_type,territory_id,class_key,source_id,vintage_id),
+  FOREIGN KEY(territory_type,territory_id,class_key) REFERENCES bpe_profile_evidence(territory_type,territory_id,class_key) ON DELETE CASCADE,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
+);
+CREATE FUNCTION assert_bpe_profile_evidence_complete() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE expected integer; bad boolean;
+BEGIN
+  SELECT universe_count INTO expected FROM bpe_profile_evidence_descriptor WHERE singleton;
+  IF expected IS NULL THEN RAISE EXCEPTION 'BPE profile evidence descriptor is unavailable'; END IF;
+  IF (SELECT count(*) FROM bpe_profile_class_axis) <> 4 THEN
+    RAISE EXCEPTION 'BPE evidence requires exactly four declared class axes';
+  END IF;
+  SELECT EXISTS (SELECT 1 FROM territory_reference t
+    WHERE EXISTS (SELECT 1 FROM bpe_profile_evidence e WHERE e.territory_id=t.territory_id AND e.territory_type=t.territory_type)
+      AND (SELECT count(*) FROM bpe_profile_evidence e WHERE e.territory_id=t.territory_id AND e.territory_type=t.territory_type) <>
+          (SELECT count(*) FROM bpe_profile_class_axis)) INTO bad;
+  IF bad THEN RAISE EXCEPTION 'BPE profile evidence is not dense over declared class axes'; END IF;
+  IF EXISTS (SELECT 1 FROM bpe_profile_evidence GROUP BY territory_type,territory_id
+    HAVING sum(class_count)<>expected OR min(universe_count)<>expected OR max(universe_count)<>expected)
+  THEN RAISE EXCEPTION 'BPE profile evidence universe/count partition is incomplete'; END IF;
+  IF EXISTS (SELECT 1 FROM bpe_profile_evidence e JOIN bpe_profile_class_axis a USING(class_key)
+             WHERE e.class_label<>a.label)
+  THEN RAISE EXCEPTION 'BPE fact class labels differ from the declared class axis'; END IF;
+  RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER bpe_profile_evidence_complete AFTER INSERT OR UPDATE OR DELETE ON bpe_profile_evidence
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION assert_bpe_profile_evidence_complete();
 ALTER TABLE profile_observation ADD CONSTRAINT profile_observation_territory_reference
   FOREIGN KEY (territory_id) REFERENCES territory_reference(territory_id);
 CREATE FUNCTION assert_profile_territory_level() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -478,23 +536,39 @@ CREATE TABLE series_dataset_publication (
  content_version text NOT NULL, reference_content_version text NOT NULL,
  row_count bigint NOT NULL CHECK(row_count>0), published_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE series_dataset_descriptor (
+  absence_semantics text NOT NULL DEFAULT 'unavailable'
+    CHECK (absence_semantics IN ('unavailable','no_record')),
+  comparison_levels text[],
  dataset_id text NOT NULL REFERENCES series_dataset_publication(dataset_id) ON DELETE CASCADE,
  indicator_id text NOT NULL CHECK(indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
- axis_kind text NOT NULL CHECK(axis_kind IN ('year','state_role','declared_detail')),
+ axis_kind text NOT NULL CHECK(axis_kind IN ('year','state_role','declared_detail','duration_minute')),
  axis_values text[] NOT NULL CHECK(cardinality(axis_values)>0),
+ axis_numeric_values integer[],
  completeness text NOT NULL CHECK(completeness IN ('dense_complete','may_be_missing')),
- comparison_point text, label text NOT NULL, unit text NOT NULL,
+  comparison_point text, label text NOT NULL, unit text NOT NULL,
+  comparison_statistic text CHECK(comparison_statistic IS NULL OR comparison_statistic='median'),
+  comparison_scope text CHECK(comparison_scope IS NULL OR comparison_scope='default_group'),
+  observation_period_kind text CHECK(observation_period_kind IS NULL OR observation_period_kind IN ('snapshot_date','unknown')),
  direction text NOT NULL CHECK(direction IN ('high','low','none')),
  allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
- descriptor_version text NOT NULL, PRIMARY KEY(dataset_id,indicator_id),
+ descriptor_version text NOT NULL, active_read_route boolean NOT NULL DEFAULT false,
+ theme_id text,
+ PRIMARY KEY(dataset_id,indicator_id),
  CHECK(comparison_point IS NULL OR (comparison_point=ANY(axis_values) AND direction IN ('high','low'))),
  CHECK(comparison_point IS NOT NULL OR direction='none'));
+ ALTER TABLE series_dataset_descriptor ADD CONSTRAINT series_absence_contract
+   CHECK (absence_semantics <> 'no_record' OR completeness='may_be_missing');
+ ALTER TABLE series_dataset_descriptor ADD CONSTRAINT series_comparison_levels_contract
+   CHECK (comparison_levels IS NULL OR
+     (cardinality(comparison_levels)>0 AND comparison_levels <@ allowed_levels));
+ CREATE UNIQUE INDEX series_dataset_one_active_route ON series_dataset_descriptor(indicator_id) WHERE active_read_route;
 CREATE TABLE series_dataset_observation (
  dataset_id text NOT NULL, indicator_id text NOT NULL,
  territory_id text NOT NULL REFERENCES territory_reference(territory_id),
  territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
  axis_value text NOT NULL, state_role text CHECK(state_role IS NULL OR state_role IN ('M2','M3')),
  observation_period text NOT NULL, value double precision,
+ missing_reason text,
  status text NOT NULL CHECK(status IN ('measured','missing')),
  PRIMARY KEY(dataset_id,indicator_id,territory_id,axis_value),
  FOREIGN KEY(dataset_id,indicator_id) REFERENCES series_dataset_descriptor(dataset_id,indicator_id) ON DELETE CASCADE,
@@ -505,7 +579,32 @@ CREATE TABLE series_observation_provenance (
  provenance_revision_id text NOT NULL REFERENCES series_provenance_revision(provenance_revision_id),
  PRIMARY KEY(dataset_id,indicator_id,territory_id,axis_value,provenance_revision_id),
  FOREIGN KEY(dataset_id,indicator_id,territory_id,axis_value)
-  REFERENCES series_dataset_observation(dataset_id,indicator_id,territory_id,axis_value) ON DELETE CASCADE);
+   REFERENCES series_dataset_observation(dataset_id,indicator_id,territory_id,axis_value) ON DELETE CASCADE);
+  CREATE TABLE series_named_reference_descriptor (
+   dataset_id text NOT NULL, indicator_id text NOT NULL, reference_id text NOT NULL,
+   reference_label text NOT NULL, reference_role text NOT NULL CHECK(reference_role='analytical_reference'),
+    reference_statistic text NOT NULL CHECK(length(trim(reference_statistic))>0),
+    required boolean NOT NULL DEFAULT true,
+    reference_indicator_id text NOT NULL CHECK(reference_indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
+    active_read_route boolean NOT NULL DEFAULT false,
+    PRIMARY KEY(dataset_id,indicator_id,reference_id),
+    FOREIGN KEY(dataset_id,indicator_id) REFERENCES series_dataset_descriptor(dataset_id,indicator_id) ON DELETE CASCADE);
+ CREATE UNIQUE INDEX series_named_reference_one_active_route
+  ON series_named_reference_descriptor(reference_indicator_id) WHERE active_read_route;
+  CREATE TABLE series_named_reference (
+   dataset_id text NOT NULL, indicator_id text NOT NULL, reference_id text NOT NULL,
+ axis_value text NOT NULL, observation_period text NOT NULL, value double precision,
+ missing_reason text,
+  status text NOT NULL CHECK(status IN ('measured','missing')),
+  PRIMARY KEY(dataset_id,indicator_id,reference_id,axis_value),
+   FOREIGN KEY(dataset_id,indicator_id,reference_id) REFERENCES series_named_reference_descriptor(dataset_id,indicator_id,reference_id) ON DELETE CASCADE,
+  CHECK((status='measured' AND value IS NOT NULL AND value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)) OR (status='missing' AND value IS NULL)));
+ CREATE TABLE series_named_reference_provenance (
+  dataset_id text NOT NULL, indicator_id text NOT NULL, reference_id text NOT NULL, axis_value text NOT NULL,
+  provenance_revision_id text NOT NULL REFERENCES series_provenance_revision(provenance_revision_id),
+  PRIMARY KEY(dataset_id,indicator_id,reference_id,axis_value,provenance_revision_id),
+  FOREIGN KEY(dataset_id,indicator_id,reference_id,axis_value)
+   REFERENCES series_named_reference(dataset_id,indicator_id,reference_id,axis_value) ON DELETE CASCADE);
 CREATE FUNCTION validate_series_dataset_write() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE owner_id text; marker_exists boolean; marker_time timestamptz; BEGIN
  owner_id:=COALESCE(NEW.dataset_id,OLD.dataset_id);
@@ -518,15 +617,32 @@ DECLARE owner_id text; marker_exists boolean; marker_time timestamptz; BEGIN
  RETURN NEW;
 END $$;
 CREATE TRIGGER series_dataset_descriptor_owned_write BEFORE INSERT OR UPDATE OR DELETE ON series_dataset_descriptor
- FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_write();
+  FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_write();
+CREATE TABLE series_context_parent_policy (
+  dataset_id text NOT NULL, indicator_id text NOT NULL,
+  focal_level text NOT NULL, parent_level text NOT NULL,
+  PRIMARY KEY(dataset_id,indicator_id,focal_level),
+  FOREIGN KEY(dataset_id,indicator_id) REFERENCES series_dataset_descriptor(dataset_id,indicator_id) ON DELETE CASCADE,
+  CHECK ((focal_level='commune' AND parent_level='epci') OR
+    (focal_level IN ('epci','departement') AND parent_level='region')));
+CREATE TRIGGER series_context_parent_policy_owned_write BEFORE INSERT OR UPDATE OR DELETE ON series_context_parent_policy
+  FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_write();
+GRANT SELECT ON series_context_parent_policy TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON series_context_parent_policy TO lusk_publisher;
 CREATE TRIGGER series_dataset_observation_owned_write BEFORE INSERT OR UPDATE OR DELETE ON series_dataset_observation
  FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_write();
 CREATE TRIGGER series_observation_provenance_owned_write BEFORE INSERT OR UPDATE OR DELETE ON series_observation_provenance
  FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_write();
+ CREATE TRIGGER series_named_reference_owned_write BEFORE INSERT OR UPDATE OR DELETE ON series_named_reference
+  FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_write();
+ CREATE TRIGGER series_named_reference_descriptor_owned_write BEFORE INSERT OR UPDATE OR DELETE ON series_named_reference_descriptor
+  FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_write();
+ CREATE TRIGGER series_named_reference_provenance_owned_write BEFORE INSERT OR UPDATE OR DELETE ON series_named_reference_provenance
+ FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_write();
 CREATE INDEX series_dataset_observation_axis ON series_dataset_observation(dataset_id,indicator_id,axis_value,territory_id) INCLUDE(value,status);
-GRANT SELECT ON series_provenance_revision,series_dataset_publication,series_dataset_descriptor,series_dataset_observation,series_observation_provenance TO lusk_reader;
+  GRANT SELECT ON series_provenance_revision,series_dataset_publication,series_dataset_descriptor,series_dataset_observation,series_observation_provenance,series_named_reference_descriptor,series_named_reference,series_named_reference_provenance TO lusk_reader;
 GRANT SELECT,INSERT ON series_provenance_revision TO lusk_publisher;
- GRANT SELECT,INSERT,UPDATE,DELETE ON series_dataset_publication,series_dataset_descriptor,series_dataset_observation,series_observation_provenance TO lusk_publisher;
+   GRANT SELECT,INSERT,UPDATE,DELETE ON series_dataset_publication,series_dataset_descriptor,series_dataset_observation,series_observation_provenance,series_named_reference_descriptor,series_named_reference,series_named_reference_provenance TO lusk_publisher;
 CREATE FUNCTION validate_series_dataset_descriptor() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
  IF cardinality(NEW.axis_values)<>cardinality(ARRAY(SELECT DISTINCT unnest(NEW.axis_values))) THEN
@@ -540,12 +656,27 @@ BEGIN
  ELSIF NEW.axis_kind='state_role' AND NEW.axis_values<>ARRAY['M2','M3']::text[] THEN
    RAISE EXCEPTION 'state-role axis must declare M2 then M3';
  ELSIF NEW.axis_kind='declared_detail' AND cardinality(NEW.axis_values)<>cardinality(ARRAY(SELECT DISTINCT unnest(NEW.axis_values))) THEN
-   RAISE EXCEPTION 'declared detail axis contains duplicates';
- END IF;
- IF EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=NEW.dataset_id
-   AND o.indicator_id=NEW.indicator_id AND NOT o.axis_value=ANY(NEW.axis_values)) THEN
-   RAISE EXCEPTION 'series dataset descriptor excludes published observations';
- END IF;
+  RAISE EXCEPTION 'declared detail axis contains duplicates';
+  END IF;
+  IF NEW.axis_kind='duration_minute' AND (NEW.axis_numeric_values IS NULL OR cardinality(NEW.axis_numeric_values)<>cardinality(NEW.axis_values)
+     OR EXISTS(SELECT 1 FROM unnest(NEW.axis_numeric_values) a WHERE a IS NULL OR a<0 OR a>9999)
+     OR NEW.axis_values IS DISTINCT FROM ARRAY(SELECT 't'||lpad(a::text,4,'0') FROM unnest(NEW.axis_numeric_values) WITH ORDINALITY x(a,n) ORDER BY n)
+     OR NEW.axis_numeric_values IS DISTINCT FROM ARRAY(SELECT a FROM unnest(NEW.axis_numeric_values) a ORDER BY a)
+    OR cardinality(NEW.axis_numeric_values)<>cardinality(ARRAY(SELECT DISTINCT unnest(NEW.axis_numeric_values)))) THEN
+    RAISE EXCEPTION 'duration axis numeric minutes do not match declared detail keys';
+  END IF;
+  IF NEW.active_read_route AND NEW.axis_kind='duration_minute' AND
+     (NEW.observation_period_kind IS NULL OR NEW.comparison_statistic IS NULL OR NEW.comparison_scope IS NULL) THEN
+    RAISE EXCEPTION 'active duration route requires declared comparison and observation-period semantics';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=NEW.dataset_id
+    AND o.indicator_id=NEW.indicator_id AND NOT o.axis_value=ANY(NEW.axis_values)) THEN
+    RAISE EXCEPTION 'series dataset descriptor excludes published observations';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_named_reference r WHERE r.dataset_id=NEW.dataset_id
+    AND r.indicator_id=NEW.indicator_id AND NOT r.axis_value=ANY(NEW.axis_values)) THEN
+    RAISE EXCEPTION 'series descriptor excludes published named-reference points';
+  END IF;
  RETURN NEW;
 END $$;
 CREATE TRIGGER series_dataset_descriptor_contract BEFORE INSERT OR UPDATE ON series_dataset_descriptor
@@ -565,14 +696,36 @@ BEGIN
  END IF;
  RETURN NEW;
 END $$;
-CREATE TRIGGER series_dataset_observation_contract BEFORE INSERT OR UPDATE ON series_dataset_observation
- FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_observation();
+ CREATE TRIGGER series_dataset_observation_contract BEFORE INSERT OR UPDATE ON series_dataset_observation
+  FOR EACH ROW EXECUTE FUNCTION validate_series_dataset_observation();
+ CREATE FUNCTION validate_series_named_reference() RETURNS trigger LANGUAGE plpgsql AS $$
+ DECLARE allowed_axes text[]; BEGIN
+  SELECT d.axis_values INTO allowed_axes FROM series_dataset_descriptor d
+   JOIN series_named_reference_descriptor r USING(dataset_id,indicator_id)
+   WHERE r.dataset_id=NEW.dataset_id AND r.indicator_id=NEW.indicator_id AND r.reference_id=NEW.reference_id;
+  IF allowed_axes IS NULL OR NOT NEW.axis_value=ANY(allowed_axes) THEN
+   RAISE EXCEPTION 'named reference point is outside its declared descriptor axis';
+  END IF;
+  RETURN NEW;
+ END $$;
+ CREATE TRIGGER series_named_reference_contract BEFORE INSERT OR UPDATE ON series_named_reference
+  FOR EACH ROW EXECUTE FUNCTION validate_series_named_reference();
 CREATE FUNCTION validate_series_dataset_publication() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE actual_rows bigint; actual_descriptors bigint; BEGIN
- SELECT count(*) INTO actual_rows FROM series_dataset_observation WHERE dataset_id=NEW.dataset_id;
+ SELECT (SELECT count(*) FROM series_dataset_observation WHERE dataset_id=NEW.dataset_id) +
+        (SELECT count(*) FROM series_named_reference WHERE dataset_id=NEW.dataset_id) INTO actual_rows;
  SELECT count(*) INTO actual_descriptors FROM series_dataset_descriptor WHERE dataset_id=NEW.dataset_id;
  IF actual_rows<>NEW.row_count OR actual_descriptors=0 THEN
    RAISE EXCEPTION 'owned series marker does not match complete descriptor/observation snapshot';
+ END IF;
+ IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id AND d.axis_kind='duration_minute'
+   AND (EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=d.dataset_id AND o.indicator_id=d.indicator_id AND NOT o.axis_value=ANY(d.axis_values))
+     OR EXISTS(SELECT 1 FROM series_named_reference r WHERE r.dataset_id=d.dataset_id AND r.indicator_id=d.indicator_id AND NOT r.axis_value=ANY(d.axis_values)))) THEN
+   RAISE EXCEPTION 'duration facts contain undeclared axis points';
+ END IF;
+  IF EXISTS(SELECT 1 FROM series_named_reference r WHERE r.dataset_id=NEW.dataset_id AND NOT EXISTS(
+   SELECT 1 FROM series_named_reference_provenance p WHERE (p.dataset_id,p.indicator_id,p.reference_id,p.axis_value)=(r.dataset_id,r.indicator_id,r.reference_id,r.axis_value))) THEN
+   RAISE EXCEPTION 'named reference observation is missing provenance association';
  END IF;
  IF NOT EXISTS(SELECT 1 FROM table_publication t WHERE t.table_name='territory_reference'
    AND t.content_version=NEW.reference_content_version) THEN
@@ -583,12 +736,72 @@ DECLARE actual_rows bigint; actual_descriptors bigint; BEGIN
    AND p.indicator_id=o.indicator_id AND p.territory_id=o.territory_id AND p.axis_value=o.axis_value)) THEN
    RAISE EXCEPTION 'owned series observation is missing provenance association';
  END IF;
- IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id
-   AND d.axis_kind='declared_detail' AND EXISTS(SELECT 1 FROM series_dataset_observation o
+ IF EXISTS(SELECT 1 FROM series_named_reference r WHERE r.dataset_id=NEW.dataset_id AND NOT EXISTS(
+   SELECT 1 FROM series_named_reference_provenance p WHERE (p.dataset_id,p.indicator_id,p.reference_id,p.axis_value)=(r.dataset_id,r.indicator_id,r.reference_id,r.axis_value))) THEN
+  RAISE EXCEPTION 'named reference observation is missing provenance association';
+ END IF;
+  IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id
+    AND d.axis_kind='declared_detail' AND EXISTS(SELECT 1 FROM series_dataset_observation o
      WHERE o.dataset_id=d.dataset_id AND o.indicator_id=d.indicator_id
      GROUP BY o.territory_id HAVING count(DISTINCT o.state_role)<>2)) THEN
-   RAISE EXCEPTION 'declared-detail publication must contain both canonical state roles per territory';
- END IF;
+    RAISE EXCEPTION 'declared-detail publication must contain both canonical state roles per territory';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_named_reference r WHERE r.dataset_id=NEW.dataset_id AND r.indicator_id IN
+    (SELECT indicator_id FROM series_dataset_descriptor WHERE dataset_id=NEW.dataset_id)
+    AND NOT EXISTS(SELECT 1 FROM series_named_reference_descriptor d WHERE
+      (d.dataset_id,d.indicator_id,d.reference_id)=(r.dataset_id,r.indicator_id,r.reference_id))) THEN
+   RAISE EXCEPTION 'named reference fact has no declared reference identity';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_named_reference_descriptor d WHERE d.dataset_id=NEW.dataset_id AND d.required
+    AND NOT EXISTS(SELECT 1 FROM series_named_reference r WHERE
+      (r.dataset_id,r.indicator_id,r.reference_id)=(d.dataset_id,d.indicator_id,d.reference_id))) THEN
+    RAISE EXCEPTION 'required named reference is missing';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_named_reference_descriptor d WHERE d.dataset_id=NEW.dataset_id
+    AND d.active_read_route AND NOT d.required) THEN
+    RAISE EXCEPTION 'active analytical-reference route must be required';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id
+    AND d.axis_kind='duration_minute' AND d.active_read_route AND d.observation_period_kind='snapshot_date'
+    AND (EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=d.dataset_id
+       AND o.indicator_id=d.indicator_id AND o.observation_period !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$')
+      OR EXISTS(SELECT 1 FROM series_named_reference r WHERE r.dataset_id=d.dataset_id
+       AND r.indicator_id=d.indicator_id AND r.observation_period !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}$'))) THEN
+    RAISE EXCEPTION 'duration snapshot-date observations must carry an ISO date period';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_named_reference_descriptor d JOIN series_dataset_descriptor s USING(dataset_id,indicator_id)
+    WHERE d.dataset_id=NEW.dataset_id AND d.active_read_route
+      AND (SELECT count(DISTINCT r.axis_value) FROM series_named_reference r WHERE
+        (r.dataset_id,r.indicator_id,r.reference_id)=(d.dataset_id,d.indicator_id,d.reference_id)
+        AND r.axis_value=ANY(s.axis_values))<>cardinality(s.axis_values)) THEN
+    RAISE EXCEPTION 'active analytical-reference route is missing declared axis points';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_named_reference_descriptor d JOIN series_dataset_descriptor s USING(dataset_id,indicator_id)
+    WHERE d.dataset_id=NEW.dataset_id AND d.required AND s.axis_kind='duration_minute'
+      AND (SELECT count(DISTINCT r.axis_value) FROM series_named_reference r WHERE
+        (r.dataset_id,r.indicator_id,r.reference_id)=(d.dataset_id,d.indicator_id,d.reference_id) AND r.axis_value=ANY(s.axis_values)
+        )<>cardinality(s.axis_values)) THEN
+   RAISE EXCEPTION 'required named reference is missing declared duration points';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id AND d.axis_kind='duration_minute'
+    AND d.completeness='dense_complete' AND EXISTS(SELECT 1 FROM series_dataset_observation o
+      WHERE o.dataset_id=d.dataset_id AND o.indicator_id=d.indicator_id GROUP BY o.territory_id
+      HAVING count(DISTINCT o.axis_value)<>cardinality(d.axis_values))) THEN
+    RAISE EXCEPTION 'dense duration curve is missing declared focal points';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id AND d.axis_kind='duration_minute'
+    AND d.completeness='dense_complete' AND EXISTS(SELECT 1 FROM territory_reference t
+      WHERE t.territory_type=ANY(d.allowed_levels) AND NOT EXISTS(SELECT 1 FROM series_dataset_observation o
+        WHERE o.dataset_id=d.dataset_id AND o.indicator_id=d.indicator_id
+          AND o.territory_id=t.territory_id AND o.territory_type=t.territory_type))) THEN
+    RAISE EXCEPTION 'dense duration publication omits an eligible territory from the reference universe';
+  END IF;
+  IF EXISTS(SELECT 1 FROM series_dataset_descriptor d WHERE d.dataset_id=NEW.dataset_id AND d.axis_kind='duration_minute'
+    AND d.completeness='dense_complete' AND EXISTS(SELECT 1 FROM series_named_reference r
+      WHERE r.dataset_id=d.dataset_id AND r.indicator_id=d.indicator_id GROUP BY r.reference_id
+      HAVING count(DISTINCT r.axis_value)<>cardinality(d.axis_values))) THEN
+    RAISE EXCEPTION 'dense duration reference is missing declared points';
+  END IF;
  RETURN NULL;
 END $$;
 CREATE CONSTRAINT TRIGGER series_dataset_publication_complete
@@ -608,6 +821,183 @@ END $$;
 CREATE CONSTRAINT TRIGGER series_observation_provenance_required
  AFTER INSERT OR UPDATE OR DELETE ON series_observation_provenance DEFERRABLE INITIALLY DEFERRED
  FOR EACH ROW EXECUTE FUNCTION validate_series_observation_provenance();
-CREATE CONSTRAINT TRIGGER series_observation_has_provenance
+ CREATE CONSTRAINT TRIGGER series_observation_has_provenance
  AFTER INSERT OR UPDATE ON series_dataset_observation DEFERRABLE INITIALLY DEFERRED
- FOR EACH ROW EXECUTE FUNCTION validate_series_observation_provenance();
+  FOR EACH ROW EXECUTE FUNCTION validate_series_observation_provenance();
+ CREATE FUNCTION validate_series_named_reference_provenance() RETURNS trigger LANGUAGE plpgsql AS $$
+ DECLARE d text; i text; r text; a text; BEGIN
+  d:=COALESCE(NEW.dataset_id,OLD.dataset_id); i:=COALESCE(NEW.indicator_id,OLD.indicator_id);
+  r:=COALESCE(NEW.reference_id,OLD.reference_id); a:=COALESCE(NEW.axis_value,OLD.axis_value);
+  IF EXISTS(SELECT 1 FROM series_named_reference n WHERE n.dataset_id=d AND n.indicator_id=i
+    AND n.reference_id=r AND n.axis_value=a) AND NOT EXISTS(SELECT 1 FROM series_named_reference_provenance p
+    WHERE p.dataset_id=d AND p.indicator_id=i AND p.reference_id=r AND p.axis_value=a) THEN
+   RAISE EXCEPTION 'named reference observation is missing provenance association';
+  END IF;
+  RETURN NULL;
+ END $$;
+ CREATE CONSTRAINT TRIGGER series_named_reference_provenance_required
+  AFTER INSERT OR UPDATE OR DELETE ON series_named_reference_provenance DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION validate_series_named_reference_provenance();
+ CREATE CONSTRAINT TRIGGER series_named_reference_has_provenance
+  AFTER INSERT OR UPDATE ON series_named_reference DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION validate_series_named_reference_provenance();
+
+-- Selected demographic reading facts have their own narrow typed grain.
+CREATE TABLE demographic_reading_descriptor (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), descriptor_version text NOT NULL,
+  source_id text NOT NULL REFERENCES source_dataset(source_id), vintage_id text NOT NULL, rate_unit text NOT NULL,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
+);
+CREATE UNIQUE INDEX territory_reference_id_type_unique ON territory_reference(territory_id,territory_type);
+CREATE TABLE demographic_typed_reading (
+  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
+  groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL, periode text,
+  solde_naturel double precision, solde_migratoire double precision,
+  taux_solde_naturel double precision, taux_solde_migratoire double precision, classification text,
+  status text NOT NULL CHECK(status IN ('measured','unavailable')), source_id text NOT NULL, vintage_id text NOT NULL,
+  PRIMARY KEY(territory_id,territory_type,groupe),
+  FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+  CHECK ((status='measured') = (periode IS NOT NULL AND solde_naturel IS NOT NULL AND solde_migratoire IS NOT NULL AND
+    taux_solde_naturel IS NOT NULL AND taux_solde_migratoire IS NOT NULL AND classification IS NOT NULL)),
+  CHECK (solde_naturel IS NULL OR solde_naturel NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)),
+  CHECK (solde_migratoire IS NULL OR solde_migratoire NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)),
+  CHECK (taux_solde_naturel IS NULL OR taux_solde_naturel NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)),
+  CHECK (taux_solde_migratoire IS NULL OR taux_solde_migratoire NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))
+);
+CREATE TABLE selected_reading_descriptor (
+  theme_id text PRIMARY KEY CHECK(theme_id IN ('habitat')),
+  descriptor_version text NOT NULL, source_id text NOT NULL REFERENCES source_dataset(source_id),
+  vintage_id text NOT NULL, linked_content_version text NOT NULL,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+CREATE TABLE selected_reading_publication (
+  theme_id text PRIMARY KEY REFERENCES selected_reading_descriptor(theme_id) ON DELETE CASCADE,
+  content_version text NOT NULL, reference_content_version text NOT NULL,
+  row_count integer NOT NULL CHECK(row_count>0), published_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE habitat_typed_reading (
+  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
+  groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL,
+  classification text, part_passoires double precision, part_abc double precision, n_dpe bigint,
+  status text NOT NULL CHECK(status IN ('measured','suppressed','unavailable')),
+  source_id text NOT NULL, vintage_id text NOT NULL,
+  PRIMARY KEY(territory_id,territory_type,groupe),
+  FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+  CHECK ((status='measured') = (classification IS NOT NULL AND part_passoires IS NOT NULL AND part_abc IS NOT NULL AND n_dpe IS NOT NULL)),
+  CHECK (status <> 'suppressed' OR (part_passoires IS NULL AND part_abc IS NULL)),
+  CHECK (part_passoires IS NULL OR part_passoires BETWEEN 0 AND 1), CHECK(part_abc IS NULL OR part_abc BETWEEN 0 AND 1),
+  CHECK(n_dpe IS NULL OR n_dpe>=0));
+-- Sparse period/detail facts have real year coordinates, not dense profile zeros.
+CREATE TABLE observed_collection_publication (
+  indicator_id text PRIMARY KEY CHECK(indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),
+  content_version text NOT NULL CHECK(length(content_version)>0),
+  reference_content_version text NOT NULL CHECK(length(reference_content_version)>0),
+  row_count bigint NOT NULL CHECK(row_count>=0), published_at timestamptz NOT NULL DEFAULT now());
+CREATE TABLE observed_collection_descriptor (
+  indicator_id text PRIMARY KEY REFERENCES observed_collection_publication(indicator_id) ON DELETE CASCADE,
+  theme_id text NOT NULL, kind text NOT NULL CHECK(kind IN ('period_detail','anchored_membership')),
+  label text NOT NULL, unit text NOT NULL, descriptor_version text NOT NULL,
+  allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
+  comparison_detail text, comparison_period text CHECK(comparison_period IS NULL OR comparison_period ~ '^[0-9]{4}$'),
+  direction text NOT NULL CHECK(direction IN ('high','low','none')),
+  CHECK((direction='none' AND comparison_detail IS NULL AND comparison_period IS NULL) OR
+    (direction IN ('high','low') AND comparison_detail IS NOT NULL AND comparison_period IS NOT NULL)));
+CREATE TABLE observed_collection_category (
+  indicator_id text NOT NULL REFERENCES observed_collection_descriptor(indicator_id) ON DELETE CASCADE,
+  detail_key text NOT NULL CHECK(length(detail_key)>0), label text NOT NULL CHECK(length(label)>0),
+  ordinal integer NOT NULL CHECK(ordinal>=0), source_id text NOT NULL REFERENCES source_dataset(source_id),
+  anchor_levels text[], rider_label text,
+  clock_policy text NOT NULL DEFAULT 'dataset' CHECK(clock_policy IN ('dataset','row_reference')),
+  PRIMARY KEY(indicator_id,detail_key), UNIQUE(indicator_id,ordinal));
+CREATE TABLE period_detail_observation (
+  indicator_id text NOT NULL, territory_id text NOT NULL REFERENCES territory_reference(territory_id),
+  territory_type text NOT NULL, detail_key text NOT NULL,
+  observation_period text NOT NULL CHECK(observation_period ~ '^[0-9]{4}$'),
+  value double precision NOT NULL CHECK(value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)),
+  source_id text NOT NULL, vintage_id text NOT NULL,
+  PRIMARY KEY(indicator_id,territory_id,observation_period,detail_key),
+  FOREIGN KEY(indicator_id,detail_key) REFERENCES observed_collection_category(indicator_id,detail_key) ON DELETE CASCADE,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+CREATE TABLE anchored_membership (
+  indicator_id text NOT NULL, territory_id text NOT NULL REFERENCES territory_reference(territory_id),
+  territory_type text NOT NULL, detail_key text NOT NULL, convention_valant_ort boolean NOT NULL,
+  source_id text NOT NULL, vintage_id text NOT NULL,
+  PRIMARY KEY(indicator_id,territory_id,detail_key),
+  FOREIGN KEY(indicator_id,detail_key) REFERENCES observed_collection_category(indicator_id,detail_key) ON DELETE CASCADE,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+CREATE FUNCTION validate_observed_collection_write() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE id text; stamp timestamptz; BEGIN
+  id:=COALESCE(NEW.indicator_id,OLD.indicator_id);
+  SELECT published_at INTO stamp FROM observed_collection_publication WHERE indicator_id=id;
+  IF TG_OP='DELETE' AND stamp IS NULL THEN RETURN OLD; END IF;
+  IF stamp IS DISTINCT FROM transaction_timestamp() THEN RAISE EXCEPTION 'observed collection write outside publication transaction'; END IF;
+  IF TG_OP='DELETE' THEN RETURN OLD; END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER observed_collection_descriptor_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_descriptor
+  FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_write();
+CREATE TRIGGER observed_collection_category_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_category
+  FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_write();
+CREATE TRIGGER period_detail_observation_owned_write BEFORE INSERT OR UPDATE OR DELETE ON period_detail_observation
+  FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_write();
+CREATE TRIGGER anchored_membership_owned_write BEFORE INSERT OR UPDATE OR DELETE ON anchored_membership
+  FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_write();
+CREATE FUNCTION validate_anchored_membership() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+  IF NOT EXISTS(SELECT 1 FROM observed_collection_descriptor d JOIN observed_collection_category c USING(indicator_id)
+    JOIN territory_reference t ON t.territory_id=NEW.territory_id
+    JOIN source_vintage v ON v.source_id=NEW.source_id AND v.vintage_id=NEW.vintage_id
+    WHERE d.indicator_id=NEW.indicator_id AND d.kind='anchored_membership' AND c.detail_key=NEW.detail_key
+      AND c.source_id=NEW.source_id AND NEW.territory_type=ANY(c.anchor_levels)
+      AND NEW.territory_type=ANY(d.allowed_levels)
+      AND t.territory_type=NEW.territory_type AND v.reference_date IS NOT NULL
+      AND ((c.clock_policy='row_reference' AND v.publication_date IS NULL) OR
+           (c.clock_policy='dataset' AND v.publication_date IS NOT NULL))
+      AND (NOT NEW.convention_valant_ort OR c.rider_label IS NOT NULL))
+  THEN RAISE EXCEPTION 'membership outside declared source, anchor, rider or reference'; END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER anchored_membership_contract BEFORE INSERT OR UPDATE ON anchored_membership
+  FOR EACH ROW EXECUTE FUNCTION validate_anchored_membership();
+CREATE FUNCTION validate_period_detail_observation() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+  IF NOT EXISTS(SELECT 1 FROM observed_collection_descriptor d
+    JOIN observed_collection_category c USING(indicator_id)
+    JOIN territory_reference t ON t.territory_id=NEW.territory_id
+    WHERE d.indicator_id=NEW.indicator_id AND d.kind='period_detail' AND c.detail_key=NEW.detail_key
+      AND c.source_id=NEW.source_id AND NEW.territory_type=ANY(d.allowed_levels) AND t.territory_type=NEW.territory_type)
+  THEN RAISE EXCEPTION 'period/detail observation outside declared coordinates, source or reference'; END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER period_detail_observation_contract BEFORE INSERT OR UPDATE ON period_detail_observation
+  FOR EACH ROW EXECUTE FUNCTION validate_period_detail_observation();
+CREATE FUNCTION validate_observed_collection_publication() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+  IF NOT EXISTS(SELECT 1 FROM observed_collection_descriptor WHERE indicator_id=NEW.indicator_id) OR
+     NOT EXISTS(SELECT 1 FROM observed_collection_category WHERE indicator_id=NEW.indicator_id) OR
+     NEW.row_count<>((SELECT count(*) FROM period_detail_observation WHERE indicator_id=NEW.indicator_id)+
+       (SELECT count(*) FROM anchored_membership WHERE indicator_id=NEW.indicator_id)) OR
+     NOT EXISTS(SELECT 1 FROM table_publication WHERE table_name='territory_reference' AND content_version=NEW.reference_content_version)
+  THEN RAISE EXCEPTION 'observed collection publication is incomplete or stale'; END IF;
+  IF EXISTS(SELECT 1 FROM observed_collection_descriptor d WHERE d.indicator_id=NEW.indicator_id
+    AND d.comparison_detail IS NOT NULL AND NOT EXISTS(SELECT 1 FROM observed_collection_category c
+      WHERE c.indicator_id=d.indicator_id AND c.detail_key=d.comparison_detail))
+  THEN RAISE EXCEPTION 'observed collection comparison category is undeclared'; END IF;
+  IF EXISTS(SELECT 1 FROM observed_collection_descriptor d JOIN observed_collection_category c USING(indicator_id)
+    WHERE d.indicator_id=NEW.indicator_id AND ((d.kind='anchored_membership' AND
+      (c.anchor_levels IS NULL OR cardinality(c.anchor_levels)=0 OR NOT c.anchor_levels <@ ARRAY['commune','epci']::text[]))
+      OR (d.kind='period_detail' AND (c.anchor_levels IS NOT NULL OR c.rider_label IS NOT NULL OR c.clock_policy<>'dataset'))))
+  THEN RAISE EXCEPTION 'collection categories have incompatible typed anchor or clock policy'; END IF;
+  IF EXISTS(SELECT 1 FROM period_detail_observation o JOIN observed_collection_descriptor d USING(indicator_id)
+    JOIN observed_collection_category c USING(indicator_id,detail_key)
+    WHERE o.indicator_id=NEW.indicator_id AND (d.kind<>'period_detail' OR c.source_id<>o.source_id OR NOT o.territory_type=ANY(d.allowed_levels)))
+    OR EXISTS(SELECT 1 FROM anchored_membership o JOIN observed_collection_descriptor d USING(indicator_id)
+      JOIN observed_collection_category c USING(indicator_id,detail_key)
+      WHERE o.indicator_id=NEW.indicator_id AND (d.kind<>'anchored_membership' OR c.source_id<>o.source_id OR
+        NOT o.territory_type=ANY(c.anchor_levels) OR NOT o.territory_type=ANY(d.allowed_levels) OR
+        (o.convention_valant_ort AND c.rider_label IS NULL)))
+  THEN RAISE EXCEPTION 'observed facts differ from their active descriptor or source'; END IF;
+  RETURN NEW;
+END $$;
+CREATE CONSTRAINT TRIGGER observed_collection_publication_contract AFTER INSERT OR UPDATE ON observed_collection_publication
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_publication();
+CREATE INDEX period_detail_comparison ON period_detail_observation(indicator_id,observation_period,detail_key,territory_id) INCLUDE(value);
+GRANT SELECT ON observed_collection_publication,observed_collection_descriptor,observed_collection_category,period_detail_observation,anchored_membership TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON observed_collection_publication,observed_collection_descriptor,observed_collection_category,period_detail_observation,anchored_membership TO lusk_publisher;
