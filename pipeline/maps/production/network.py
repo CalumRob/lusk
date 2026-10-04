@@ -765,6 +765,7 @@ class NetworkAdapter:
         self._ocsge_identity_cache = {}
         self._network_scope_cache = {}
         self._visible_ground_parts_cache = {}
+        self._context_scope_cache = {}
         self._visible_ground_parts_cache_root = None
         self._network_scope_cache_root = None
         self._scope_cache_refresh = False
@@ -923,6 +924,7 @@ class NetworkAdapter:
         self._stage_events = []
         self._stage_validity = {}
         self._identity_cache = {}
+        self._context_scope_cache = {}
         self._ocsge_identity_cache = {}
         self._ground_cache = {}
         self._network_scope_cache = {}
@@ -1127,13 +1129,8 @@ class NetworkAdapter:
         territory_wkb = bytes(geometry.asWkb()) if geometry is not None else b""
         region_wkb = bytes(region.asWkb()) if region is not None else b""
         frame = QgsGeometry.fromRect(extent)
-        scoped_context_parts = [geometry for geometry in self._shared_ground.context_geometries
-            if geometry.boundingBox().intersects(extent)]
-        if scoped_context_parts:
-            context_scope = QgsGeometry.unaryUnion(scoped_context_parts).intersection(frame)
-        else:
-            context_scope = QgsGeometry()
-        context_wkb = _canonical_geometry_wkb(context_scope)
+        scope = frame if profile.name == "inspection" else frame.intersection(analysis)
+        context_wkb = self._visible_context_scope_wkb(feature, profile, scope)
         identity_payload = {"schema": 2, "kind": feature["territory"]["kind"],
             "profile": profile.name, "size": profile.size,
             "extent": [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()],
@@ -1161,7 +1158,6 @@ class NetworkAdapter:
                         return parts, "reused", perf_counter() - started
             except (OSError, ValueError, TypeError, AttributeError):
                 pass
-        scope = frame if profile.name == "inspection" else frame.intersection(analysis)
         context_part = _canonical_geometry_wkb(self._shared_ground.context_geometry.intersection(scope))
         territory_part = _canonical_geometry_wkb(geometry.intersection(scope)) if geometry is not None else b""
         frontier_part = b""
@@ -1188,6 +1184,26 @@ class NetworkAdapter:
             for temporary in temporaries:
                 temporary.unlink(missing_ok=True)
         return parts, "built", perf_counter() - started
+
+    def _visible_context_scope_wkb(self, feature, profile, scope):
+        """Memoize exact visible-context content for a scope within this prepared run."""
+        extent = QgsRectangle(feature["extent"])
+        analysis = feature.get("analytical_geometry")
+        analysis_key = (_canonical_geometry_wkb(analysis)
+            if profile.name == "inline" and analysis is not None else b"")
+        key = ((extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()),
+            profile.name, profile.size, analysis_key)
+        cached = self._context_scope_cache.get(key)
+        if cached is not None:
+            return cached
+        bounds = scope.boundingBox()
+        candidates = [geometry for geometry in self._shared_ground.context_geometries
+            if geometry.boundingBox().intersects(bounds)]
+        context_scope = (QgsGeometry.unaryUnion(candidates).intersection(scope)
+            if candidates else QgsGeometry())
+        value = _canonical_geometry_wkb(context_scope)
+        self._context_scope_cache[key] = value
+        return value
 
     def _ocsge_render_identity(self, layers, extent, profile):
         """Cache a deterministic fingerprint of styled OCS-GE geometry per run."""

@@ -27,7 +27,7 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from network import NetworkAdapter, network_recipe  # noqa: E402
 from mainland_context import acquire_context  # noqa: E402
-from runner import Binding, MapSet, run_production  # noqa: E402
+from runner import Binding, MapSet, PROFILES, run_production  # noqa: E402
 
 
 class InlineProfileContractTests(unittest.TestCase):
@@ -534,7 +534,7 @@ class InlineProfileContractTests(unittest.TestCase):
         binding = Binding("network", MapSet({"outputs": [feature]}))
         output = root / "outputs"
 
-        def run(profiles=("inspection",)):
+        def run(profiles=("inspection", "inline")):
             QgsProject.instance().clear()
             adapter = NetworkAdapter(raw, cache_root=root / "network-cache")
             result = run_production(network_recipe(), binding, "representative", profiles, adapter, output)
@@ -551,28 +551,36 @@ class InlineProfileContractTests(unittest.TestCase):
                     run()
             acquire(context_response())
             with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
-                _, inline_first = run(("inline",))
-            self.assertEqual(inline_first.outputs[0]["decision"], "rendered")
-            with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
                 adapter, first = run()
+                inline_first = next(item for item in first.outputs if item["profile"] == "inline")
+                self.assertEqual(inline_first["decision"], "rendered")
                 # Official land outside the local analytic polygon is present in the actual shared ground.
                 self.assertFalse(adapter._shared_ground.context_geometry.intersection(
                     QgsGeometry.fromWkt("POLYGON ((90 0,100 0,100 10,90 0))")).isEmpty())
+                cache_size = len(adapter._context_scope_cache)
+                self.assertEqual(cache_size, 2, adapter._context_scope_cache)
+                scope = QgsGeometry.fromRect(feature["extent"]).intersection(feature["analytical_geometry"])
+                adapter._visible_context_scope_wkb(feature, PROFILES["inline"], scope)
+                self.assertEqual(len(adapter._context_scope_cache), cache_size)
             acquire(context_response(irrelevant_shift=50), refresh=True)
             with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
                 _, warm = run()
-                _, inline_warm = run(("inline",))
-            self.assertEqual(inline_warm.outputs[0]["decision"], "reused-output")
+            inline_warm = next(item for item in warm.outputs if item["profile"] == "inline")
+            self.assertEqual(inline_warm["decision"], "reused-output")
             derivative = next(item for item in warm.qa["stage_report"] if item["stage"] == "visible-ground-derivatives")
             self.assertEqual(derivative["decision"], "reused")
             self.assertEqual(warm.outputs[0]["decision"], "reused-output")
             acquire(context_response(visible_shift=5, irrelevant_shift=50), refresh=True)
             with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
                 _, changed = run()
-            derivative = next(item for item in changed.qa["stage_report"] if item["stage"] == "visible-ground-derivatives")
-            self.assertEqual(derivative["decision"], "built")
-            self.assertEqual(changed.outputs[0]["decision"], "rendered")
-            self.assertNotEqual(first.outputs[0]["effective_identity"], changed.outputs[0]["effective_identity"])
+            decisions = {item["profile"]: item["decision"] for item in changed.outputs}
+            self.assertEqual(decisions, {"inspection": "rendered", "inline": "reused-output"})
+            inline_derivative = next(item for item in changed.qa["stage_report"]
+                if item["stage"] == "visible-ground-derivatives" and item["profile"] == "inline")
+            self.assertEqual(inline_derivative["decision"], "reused")
+            inspection_first = next(item for item in first.outputs if item["profile"] == "inspection")
+            inspection_changed = next(item for item in changed.outputs if item["profile"] == "inspection")
+            self.assertNotEqual(inspection_first["effective_identity"], inspection_changed["effective_identity"])
         finally:
             QgsProject.instance().clear()
     def _recipe_with_shadow_opacity(self, opacity):
