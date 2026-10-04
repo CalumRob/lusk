@@ -83,6 +83,15 @@ tryCatch({
     source_vintages=canonical_vintages)
   pooled_price <- habitat$indicateurs[habitat$indicateurs$key == "prix_m2" &
     is.na(habitat$indicateurs$detail), , drop=FALSE]
+  canonical_price_source <- function(row) {
+    version <- as.character(row$vintage_version)
+    reference_date <- as.character(row$vintage_date_reference)
+    list(source_id=as.character(habitat_metadata$sources$prix_m2),
+      name=as.character(row$vintage_source),
+      vintage_id=if (!is.na(version) && !is.na(reference_date)) paste(version, reference_date, sep="/") else NA_character_,
+      version=version, reference_date=if (is.na(row$vintage_date_reference)) NULL else reference_date,
+      publication_date=if (is.na(row$vintage_date_publication)) NULL else as.character(row$vintage_date_publication))
+  }
   price_manifest <- lapply(c("commune", "epci", "departement", "region"), function(level) {
     row <- pooled_price[pooled_price$type == level, , drop=FALSE]
     # Stable representatives include Rennes for the commune headline.
@@ -92,10 +101,7 @@ tryCatch({
     list(territory_type=level, territory_id=as.character(row$territoire),
       value=as.numeric(row$value), status=if (is.na(row$value)) "suppressed" else "measured",
       support=as.integer(row$n), unit=as.character(row$unit),
-      source_id=as.character(habitat_metadata$sources$prix_m2),
-      source_name=as.character(row$vintage_source), version=as.character(row$vintage_version),
-      reference_date=as.character(row$vintage_date_reference),
-      publication_date=as.character(row$vintage_date_publication))
+      source=canonical_price_source(row))
   })
   suppressed_price <- pooled_price[pooled_price$type == "commune" & is.na(pooled_price$value) &
     !is.na(pooled_price$n) & pooled_price$n > 0L & pooled_price$n < 10L, , drop=FALSE]
@@ -103,10 +109,7 @@ tryCatch({
   row <- suppressed_price[order(suppressed_price$territoire), , drop=FALSE][1L, , drop=FALSE]
   price_manifest[[5L]] <- list(territory_type="commune", territory_id=as.character(row$territoire),
     value=NULL, status="suppressed", support=as.integer(row$n), unit=as.character(row$unit),
-    source_id=as.character(habitat_metadata$sources$prix_m2),
-    source_name=as.character(row$vintage_source), version=as.character(row$vintage_version),
-    reference_date=as.character(row$vintage_date_reference),
-    publication_date=as.character(row$vintage_date_publication))
+    source=canonical_price_source(row))
   comparable_epcis <- unique(pooled_price$territoire[pooled_price$type == "epci" & !is.na(pooled_price$value)])
   comparison <- NULL
   for (epci in comparable_epcis) {

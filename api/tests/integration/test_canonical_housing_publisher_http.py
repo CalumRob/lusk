@@ -198,8 +198,7 @@ def test_pooled_price_scalar_is_registered_and_theme_http_matches_canonical():
                     assert fact["value"] is None
                 else:
                     assert math.isclose(fact["value"], item["value"], rel_tol=1e-14, abs_tol=1e-14)
-                assert fact["sources"][0]["source_id"] == item["source_id"]
-                assert fact["sources"][0]["version"] == item["version"]
+                assert fact["sources"] == [item["source"]]
             rennes = next(x for x in expected if x["territory_id"] == "35238")
             assert math.isclose(rennes["value"], 3819.4444444444443, rel_tol=1e-14)
             empty = client.post("/api/territories/commune/35238/indicators/prix_m2/comparison", json={"selection": []})

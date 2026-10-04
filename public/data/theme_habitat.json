@@ -557,6 +557,18 @@
       "zero_support_status": "not_available"
     }
   },
+  "owned_series_routes": {
+    "prix_m2": {
+      "active_read_route": true,
+      "theme_id": "habitat",
+      "serving_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ]
+    }
+  },
   "source_records": {
     "logements": {
       "dataset": "INSEE — Logements (dossier complet)",
