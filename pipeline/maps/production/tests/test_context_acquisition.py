@@ -30,15 +30,36 @@ class MainlandContextAcquisitionTests(unittest.TestCase):
             def fetch(url):
                 query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
                 return b'<FeatureCollection numberMatched="1"/>' if query.get("resultType") == ["hits"] else json.dumps(good).encode()
-            path, manifest = acquire_context(temp, (0, 45, 1, 50), fetch=fetch)
+            path, manifest = acquire_context(temp, (0, 45, 1, 50), fetch=fetch,
+                                            validate_layer=lambda path, count: None)
             old_bytes = path.read_bytes()
             def partial(url):
                 query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
                 return b'<FeatureCollection numberMatched="2"/>' if query.get("resultType") == ["hits"] else json.dumps(good).encode()
             with self.assertRaisesRegex(RuntimeError, "completeness"):
-                acquire_context(temp, (0, 45, 1, 50), refresh=True, fetch=partial)
+                acquire_context(temp, (0, 45, 1, 50), refresh=True, fetch=partial,
+                                validate_layer=lambda path, count: None)
             self.assertEqual(path.read_bytes(), old_bytes)
-            self.assertEqual(manifest["edition"], "2026")
+            self.assertEqual(manifest["edition"], "2026-01-01")
+
+    def test_topology_or_schema_failure_happens_before_pointer_promotion(self):
+        with tempfile.TemporaryDirectory() as temp:
+            good = payload([feature()], bbox=(-10, 40, 10, 60))
+            def fetch(url):
+                query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+                return b'<FeatureCollection numberMatched="1"/>' if query.get("resultType") == ["hits"] else json.dumps(good).encode()
+            path, manifest = acquire_context(temp, (0, 45, 1, 50), fetch=fetch,
+                                            validate_layer=lambda path, count: None)
+            pointer = json.loads((path.parent.parent.parent / "current.json").read_text())
+            for failure in ("topology", "schema"):
+                def reject(_path, _count, reason=failure):
+                    raise ValueError(f"invalid {reason}")
+                with self.assertRaisesRegex(RuntimeError, "current pointer was not replaced"):
+                    acquire_context(temp, (0, 45, 1, 50), refresh=True, fetch=fetch,
+                                    validate_layer=reject)
+                self.assertEqual(json.loads((path.parent.parent.parent / "current.json").read_text()), pointer)
+                self.assertTrue(path.is_file())
+            self.assertEqual(manifest["edition"], "2026-01-01")
 
     def test_rejects_partial_response_even_when_geometry_bbox_could_look_plausible(self):
         with self.assertRaisesRegex(ValueError, "counts"):

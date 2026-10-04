@@ -57,7 +57,12 @@ inspection furniture/citations bind at mode/profile boundaries; bump the explici
 shared-ground, inline-mask or network-render version when its rendering algorithm
 changes rather than treating the all-files provenance digest as a reuse key.
 
-At run preparation, inspection land context is acquired as a distinct,
+Before inspection rendering, acquire context explicitly with
+`python pipeline/maps/production/prepare_mainland_context.py` in a QGIS-enabled
+Python environment. The command derives its EPSG:2154 bbox from the current
+map-ready frames. `run_production()` and shared-ground preparation are
+offline-only: they load a validated local generation and fail clearly if the
+matching frame generation is absent. Inspection land context is a distinct,
 frame-scoped `ADMINEXPRESS-COG.2026:commune` WFS source. A dated hits query and
 one full-geometry response must agree on matched/returned/feature counts and
 unique stable IDs; CRS, schema, polygon structure and requested-frame coverage

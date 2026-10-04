@@ -11,7 +11,7 @@ import urllib.request
 import xml.etree.ElementTree as ET
 from pathlib import Path
 
-CONTEXT_EDITION = "2026"
+CONTEXT_EDITION = "2026-01-01"
 CONTEXT_TYPE = "ADMINEXPRESS-COG.2026:commune"
 CONTEXT_ENDPOINT = "https://data.geopf.fr/wfs/ows"
 CONTEXT_CRS = "urn:ogc:def:crs:EPSG::2154"
@@ -30,30 +30,95 @@ def _http_fetch(url):
         return response.read()
 
 
-def acquire_context(cache_root, bbox, *, refresh=False, fetch=_http_fetch):
+def _qgis_validate_generation(path, expected_count):
+    """Validate promoted-source schema and actual QGIS topology before publish."""
+    try:
+        from qgis.core import QgsGeometry, QgsPointXY
+    except ImportError as error:
+        raise RuntimeError("QGIS is required to validate official context geometry before promotion") from error
+    document = json.loads(Path(path).read_text(encoding="utf-8"))
+    if len(document.get("features", [])) != expected_count:
+        raise ValueError("staged official context feature count disagrees with validated response")
+    stable_ids = set()
+    for feature in document["features"]:
+        properties = feature["properties"]
+        if not {"cleabs", "code_insee", "nom_officiel"}.issubset(properties):
+            raise ValueError("staged official context schema lacks required fields")
+        identifier = properties["cleabs"]
+        if not identifier or identifier in stable_ids:
+            raise ValueError("staged official context has missing or duplicate stable IDs")
+        stable_ids.add(identifier)
+        geojson_geometry = feature["geometry"]
+        if geojson_geometry["type"] == "Polygon":
+            geometry = QgsGeometry.fromPolygonXY([
+                [QgsPointXY(position[0], position[1]) for position in ring]
+                for ring in geojson_geometry["coordinates"]])
+        elif geojson_geometry["type"] == "MultiPolygon":
+            geometry = QgsGeometry.fromMultiPolygonXY([
+                [[QgsPointXY(position[0], position[1]) for position in ring] for ring in polygon]
+                for polygon in geojson_geometry["coordinates"]])
+        else:
+            raise ValueError("staged official context includes non-polygon geometry")
+        if geometry.isNull() or geometry.isEmpty() or not geometry.isGeosValid():
+            raise ValueError(f"staged official context feature {identifier} has invalid topology")
+
+
+def load_context(cache_root, bbox):
+    """Load only a locally cached, validated generation matching this exact frame."""
+    bbox = list(map(float, bbox))
+    identity = _context_identity(bbox)
+    root = Path(cache_root) / identity
+    pointer_path = root / "current.json"
+    try:
+        pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
+        generation = pointer["generation"]
+        if (pointer.get("identity") != identity or not isinstance(generation, str)
+                or Path(generation).name != generation):
+            raise ValueError("generation pointer does not match requested frame")
+        generation_dir = root / "generations" / generation
+        manifest = json.loads((generation_dir / "manifest.json").read_text(encoding="utf-8"))
+        data_path = generation_dir / "context.geojson"
+        data = data_path.read_bytes()
+        bbox_value = ",".join(format(float(value), ".12g") for value in bbox) + "," + CONTEXT_CRS
+        request = manifest.get("request", {})
+        if (manifest.get("schema") != 1 or manifest.get("identity") != identity
+                or manifest.get("source") != CONTEXT_ENDPOINT or manifest.get("product") != CONTEXT_TYPE
+                or manifest.get("edition") != CONTEXT_EDITION
+                or manifest.get("crs") != CONTEXT_CRS or manifest.get("bbox") != bbox
+                or request.get("service") != "WFS" or request.get("version") != "2.0.0"
+                or request.get("typeNames") != CONTEXT_TYPE or request.get("bbox") != bbox_value
+                or request.get("srsName") != CONTEXT_CRS or request.get("outputFormat") != "application/json"
+                or manifest.get("topology_validated") is not True
+                or hashlib.sha256(data).hexdigest() != manifest.get("sha256")):
+            raise ValueError("cached generation provenance, coverage, CRS or content hash is invalid")
+        document = json.loads(data)
+        evidence = validate_response(document, expected=manifest.get("matched"), requested_bbox=bbox)
+        if (manifest.get("matched") != manifest.get("returned")
+                or manifest.get("returned") != manifest.get("unique_ids")
+                or evidence["feature_count"] != manifest.get("returned")
+                or len(set(evidence["ids"])) != manifest.get("unique_ids")):
+            raise ValueError("cached generation completeness counts disagree")
+        return data_path, manifest
+    except (OSError, ValueError, KeyError, TypeError, json.JSONDecodeError) as error:
+        raise RuntimeError(f"No valid pre-acquired mainland context for requested inspection frame: {error}") from error
+
+
+def _context_identity(bbox):
+    seed = json.dumps({"edition": CONTEXT_EDITION, "type": CONTEXT_TYPE,
+        "bbox": list(map(float, bbox)), "crs": CONTEXT_CRS}, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(seed.encode()).hexdigest()
+
+
+def acquire_context(cache_root, bbox, *, refresh=False, fetch=_http_fetch, validate_layer=_qgis_validate_generation):
     """Fetch dated hits + one complete frame response, stage and promote atomically."""
     bbox_value = ",".join(format(float(value), ".12g") for value in bbox) + "," + CONTEXT_CRS
-    identity_seed = json.dumps({"edition": CONTEXT_EDITION, "type": CONTEXT_TYPE,
-        "bbox": list(map(float, bbox)), "crs": CONTEXT_CRS}, sort_keys=True, separators=(",", ":"))
-    identity = hashlib.sha256(identity_seed.encode()).hexdigest()
+    identity = _context_identity(bbox)
     root = Path(cache_root) / identity
     pointer_path = root / "current.json"
     if not refresh and pointer_path.is_file():
         try:
-            pointer = json.loads(pointer_path.read_text(encoding="utf-8"))
-            generation = pointer["generation"]
-            if not isinstance(generation, str) or Path(generation).name != generation:
-                raise ValueError("invalid context generation pointer")
-            generation_dir = root / "generations" / generation
-            manifest = json.loads((generation_dir / "manifest.json").read_text(encoding="utf-8"))
-            data_path = generation_dir / "context.geojson"
-            data = data_path.read_bytes()
-            doc = json.loads(data)
-            validate_response(doc, expected=manifest["matched"], requested_bbox=bbox)
-            if (pointer.get("identity") == identity and manifest.get("identity") == identity
-                    and hashlib.sha256(data).hexdigest() == manifest.get("sha256")):
-                return data_path, manifest
-        except (OSError, ValueError, KeyError, json.JSONDecodeError):
+            return load_context(cache_root, bbox)
+        except RuntimeError:
             pass
     params = {"service": "WFS", "version": "2.0.0", "request": "GetFeature",
         "typeNames": CONTEXT_TYPE, "bbox": bbox_value, "resultType": "hits"}
@@ -78,9 +143,11 @@ def acquire_context(cache_root, bbox, *, refresh=False, fetch=_http_fetch):
     if matched == 0:
         raise RuntimeError("Official context acquisition returned no communes for requested frame")
     (root / "generations").mkdir(parents=True, exist_ok=True)
-    staging = Path(tempfile.mkdtemp(prefix=".context-stage-", dir=root))
+    staging = Path(tempfile.mkdtemp(prefix=".context-stage-", dir=root / "generations"))
     try:
-        (staging / "context.geojson").write_bytes(response)
+        staged_data = staging / "context.geojson"
+        staged_data.write_bytes(response)
+        validate_layer(staged_data, evidence["feature_count"])
         manifest = {"schema": 1, "identity": identity, "source": CONTEXT_ENDPOINT,
             "product": CONTEXT_TYPE, "edition": CONTEXT_EDITION, "bbox": list(map(float, bbox)),
             "crs": CONTEXT_CRS, "matched": matched, "returned": evidence["feature_count"],
@@ -89,7 +156,7 @@ def acquire_context(cache_root, bbox, *, refresh=False, fetch=_http_fetch):
             "request": {"service": "WFS", "version": "2.0.0", "bbox": bbox_value,
                         "typeNames": CONTEXT_TYPE, "count": CONTEXT_CAPACITY,
                         "outputFormat": "application/json", "srsName": CONTEXT_CRS},
-            "sha256": hashlib.sha256(response).hexdigest()}
+            "sha256": hashlib.sha256(response).hexdigest(), "topology_validated": True}
         (staging / "manifest.json").write_text(json.dumps(manifest, sort_keys=True), encoding="utf-8")
         generation_id = hashlib.sha256(response + os.urandom(16)).hexdigest()[:32]
         generation_dir = root / "generations" / generation_id
@@ -97,6 +164,8 @@ def acquire_context(cache_root, bbox, *, refresh=False, fetch=_http_fetch):
         pointer_tmp = root / (".current-" + generation_id + ".tmp")
         pointer_tmp.write_text(json.dumps({"identity": identity, "generation": generation_id}), encoding="utf-8")
         os.replace(pointer_tmp, pointer_path)
+    except Exception as error:
+        raise RuntimeError("Context generation validation/promotion failed; current pointer was not replaced") from error
     finally:
         if staging.exists():
             import shutil
@@ -134,11 +203,13 @@ def validate_response(document, *, expected, requested_bbox):
         if not isinstance(item, dict) or item.get("type") != "Feature":
             raise ValueError("Malformed context feature")
         props = item.get("properties") or {}
-        stable_id = props.get("cleabs") or item.get("id")
+        stable_id = props.get("cleabs")
         if not isinstance(stable_id, str) or not stable_id.strip():
-            raise ValueError("Context feature has no stable unique ID")
+            raise ValueError("Context feature is missing required cleabs stable ID")
         if not isinstance(props.get("code_insee"), str) or not props["code_insee"]:
             raise ValueError("Context feature is missing code_insee")
+        if not isinstance(props.get("nom_officiel"), str) or not props["nom_officiel"]:
+            raise ValueError("Context feature is missing nom_officiel")
         geometry = item.get("geometry")
         if not isinstance(geometry, dict) or geometry.get("type") not in ("Polygon", "MultiPolygon"):
             raise ValueError("Context feature has missing or non-polygon geometry")

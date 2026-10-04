@@ -71,7 +71,8 @@ class InlineProfileContractTests(unittest.TestCase):
         }
         binding = Binding("network", MapSet({"network-outputs": (feature,)}))
         output = root / "outputs"
-        adapter = NetworkAdapter(raw, cache_root=root / "network-cache", official_context=False)
+        adapter = NetworkAdapter(raw, cache_root=root / "network-cache",
+            context_loader=lambda _cache, _bbox: (raw / "communes_limites.geojson", None))
         recipe = network_recipe()
         self.assertEqual(recipe.foundation.ground["inline_surface"], "paper-only")
         self.assertEqual(
@@ -171,7 +172,8 @@ class InlineProfileContractTests(unittest.TestCase):
         def run(source=raw, profiles=("inspection", "inline"), destination=output, recipe=None,
                 geometry_variant=False):
             QgsProject.instance().clear()
-            adapter = NetworkAdapter(source, cache_root=root / ("network-cache-" + source.parent.name), official_context=False)
+            adapter = NetworkAdapter(source, cache_root=root / ("network-cache-" + source.parent.name),
+                context_loader=lambda _cache, _bbox: (source / "communes_limites.geojson", None))
             original_geometry = feature["analytical_geometry"]
             if geometry_variant:
                 feature["analytical_geometry"] = QgsGeometry.fromWkt(
@@ -338,7 +340,8 @@ class InlineProfileContractTests(unittest.TestCase):
 
         def run(raw, profiles, *, refresh=False):
             QgsProject.instance().clear()
-            adapter = NetworkAdapter(raw, cache_root=root / ("network-cache-" + raw.parents[2].name), official_context=False)
+            adapter = NetworkAdapter(raw, cache_root=root / ("network-cache-" + raw.parents[2].name),
+                context_loader=lambda _cache, _bbox: (raw / "communes_limites.geojson", None))
             return run_production(network_recipe(), binding, "representative", profiles,
                 adapter, output, refresh=refresh)
 
@@ -438,7 +441,8 @@ class InlineProfileContractTests(unittest.TestCase):
 
         def run(car_colour=None, refresh=False):
             QgsProject.instance().clear()
-            adapter = NetworkAdapter(raw, cache_root=root / "network-cache", official_context=False)
+            adapter = NetworkAdapter(raw, cache_root=root / "network-cache",
+                context_loader=lambda _cache, _bbox: (raw / "communes_limites.geojson", None))
             if car_colour is not None:
                 config_path = root / "network-family.json"
                 config = json.loads(adapter.family_config_path.read_text(encoding="utf-8"))

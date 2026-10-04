@@ -754,10 +754,10 @@ class NetworkAdapter:
     """Network-family adapter; shared map and plate modules own presentation."""
 
     def __init__(self, raw_dir: str | Path, cache_root: str | Path | None = None, *,
-                 official_context: bool = True):
+                 context_loader=None):
         self.raw_dir = Path(raw_dir)
         self.cache_root = Path(cache_root) if cache_root is not None else None
-        self.official_context = official_context
+        self.context_loader = context_loader
         self.family_config_path = Path(__file__).with_name("network-family.json")
         self.family_config = _load_network_family_config()
         self._ground_cache = {}
@@ -949,7 +949,7 @@ class NetworkAdapter:
             include_ocsge="inspection" in profiles,
             cache_root=output_dir / ".stage-cache" / "context-land",
             refresh=refresh, stage_report=self._stage_events,
-            official_context=self.official_context,
+            context_loader=self.context_loader,
         )
         self._stage_events.append({"stage": "context-and-provider-load", "profile": "shared",
             "decision": "validated", "seconds": round(perf_counter() - context_started, 3)})
