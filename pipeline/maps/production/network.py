@@ -753,9 +753,11 @@ def _title_and_content(mode: str, family_config: Mapping):
 class NetworkAdapter:
     """Network-family adapter; shared map and plate modules own presentation."""
 
-    def __init__(self, raw_dir: str | Path, cache_root: str | Path | None = None):
+    def __init__(self, raw_dir: str | Path, cache_root: str | Path | None = None, *,
+                 official_context: bool = True):
         self.raw_dir = Path(raw_dir)
         self.cache_root = Path(cache_root) if cache_root is not None else None
+        self.official_context = official_context
         self.family_config_path = Path(__file__).with_name("network-family.json")
         self.family_config = _load_network_family_config()
         self._ground_cache = {}
@@ -855,7 +857,7 @@ class NetworkAdapter:
 
         metadata_root = source_root / "inst" / "extdata"
         modes = getattr(self, "_requested_modes", set(NETWORK_MODES))
-        sources = [record("commune-context", self.raw_dir / "communes_limites.geojson")]
+        sources = [record("analytical-commune-geometry", self.raw_dir / "communes_limites.geojson")]
         if modes & {"car", "walk"}:
             sources.append(record("osm-network", self.raw_dir / "bretagne-latest.gpkg",
                 layer="lines", preparation_version=OSM_PREPARATION_VERSION))
@@ -947,6 +949,7 @@ class NetworkAdapter:
             include_ocsge="inspection" in profiles,
             cache_root=output_dir / ".stage-cache" / "context-land",
             refresh=refresh, stage_report=self._stage_events,
+            official_context=self.official_context,
         )
         self._stage_events.append({"stage": "context-and-provider-load", "profile": "shared",
             "decision": "validated", "seconds": round(perf_counter() - context_started, 3)})

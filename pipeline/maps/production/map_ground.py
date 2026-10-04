@@ -62,9 +62,7 @@ INLINE_SHADOW_OPACITY = 0.25
 SHARED_GROUND_RENDER_VERSION = 1
 INLINE_MASK_RENDER_VERSION = 1
 TEXTURE_FILENAME = "qgis-hub-paper-texture-cc0.jpg"
-CONTEXT_DEPARTMENTS = (
-    "14", "22", "29", "35", "44", "49", "50", "53", "56", "61", "72", "79", "85"
-)
+CONTEXT_SOURCE = "ADMINEXPRESS-COG.2026:commune"
 
 
 def _canonical_wkb(geometry: QgsGeometry) -> bytes:
@@ -94,6 +92,7 @@ class SharedGround:
     context_geometry: QgsGeometry
     ocsge_layers: tuple[QgsVectorLayer, ...]
     texture: QImage
+    context_provenance: dict = field(default_factory=dict, repr=False, compare=False)
     _frontiers: dict[bytes, QgsGeometry] = field(default_factory=dict, repr=False, compare=False)
     _frontier_cache_root: Path | None = field(default=None, repr=False, compare=False)
     _stage_report: list | None = field(default=None, repr=False, compare=False)
@@ -468,19 +467,11 @@ def add_context_land(
 ) -> tuple[QgsVectorLayer, QgsGeometry]:
     """Build the official commune context from the local Admin Express source."""
     fingerprint_started = perf_counter()
-    department_field = "code_insee_du_departement"
-    if department_field not in {field.name() for field in communes.fields()}:
-        raise ValueError(f"Local commune source is missing {department_field!r}")
     source_to_map = QgsCoordinateTransform(communes.crs(), MAP_CRS, project.transformContext())
     map_to_source = QgsCoordinateTransform(MAP_CRS, communes.crs(), project.transformContext())
     bbox_geometry = QgsGeometry.fromRect(bbox)
     geometries = []
-    department_values = ", ".join(
-        "'" + department.replace("'", "''") + "'" for department in CONTEXT_DEPARTMENTS
-    )
-    request = QgsFeatureRequest().setFilterExpression(
-        f'"{department_field}" IN ({department_values})'
-    )
+    request = QgsFeatureRequest()
     request.setFilterRect(map_to_source.transformBoundingBox(bbox))
     for feature in communes.getFeatures(request):
         geometry = QgsGeometry(feature.geometry())
@@ -495,7 +486,7 @@ def add_context_land(
     geometries.sort(key=_canonical_wkb)
     records = [_canonical_wkb(geometry) for geometry in geometries]
     signature = sha256()
-    signature.update(json.dumps({"departments": CONTEXT_DEPARTMENTS,
+    signature.update(json.dumps({"source": CONTEXT_SOURCE,
         "crs": MAP_CRS.authid(), "bbox": [bbox.xMinimum(), bbox.yMinimum(),
         bbox.xMaximum(), bbox.yMaximum()], "version": 1}, separators=(",", ":")).encode())
     for record in records:
@@ -613,17 +604,53 @@ def prepare_shared_ground(
     assets_dir: str | Path,
     include_ocsge: bool = True,
     *, cache_root: str | Path | None = None, refresh: bool = False,
-    stage_report: list | None = None,
+    stage_report: list | None = None, official_context: bool = True,
 ) -> SharedGround:
     """Load local commune context and OCS-GE sources once for a production run."""
     project.setCrs(MAP_CRS)
     started = perf_counter()
-    commune_path = Path(raw_dir) / "communes_limites.geojson"
-    communes = QgsVectorLayer(str(commune_path), "Admin Express COG · context source", "ogr")
+    _context_manifest = None
+    if include_ocsge and official_context:
+        # Only inspection frames require the complete official context source.
+        # Inline-only maps stay local and scoped; unrelated distant inspection
+        # coverage must not become an input prerequisite for their products.
+        from mainland_context import acquire_context
+        context_cache_root = Path(cache_root).parent / "official-context" if cache_root is not None else Path(raw_dir).parent / ".cache" / "official-context"
+        commune_path, _context_manifest = acquire_context(context_cache_root,
+            (combined_extent.xMinimum(), combined_extent.yMinimum(), combined_extent.xMaximum(), combined_extent.yMaximum()),
+            refresh=refresh)
+        communes = QgsVectorLayer(str(commune_path), "Admin Express COG 2026 · validated context", "ogr")
+    else:
+        commune_path = Path(raw_dir) / "communes_limites.geojson"
+        communes = QgsVectorLayer(str(commune_path), "Admin Express COG · inline local context", "ogr")
     if not communes.isValid():
         raise RuntimeError(f"Could not load official commune context: {commune_path}")
+    if communes.crs().authid() != MAP_CRS.authid():
+        raise RuntimeError(f"Official context CRS is {communes.crs().authid()}, expected {MAP_CRS.authid()}")
+    if _context_manifest is not None:
+        required_fields = {"cleabs", "code_insee", "nom_officiel"}
+        if not required_fields.issubset({field.name() for field in communes.fields()}):
+            raise RuntimeError("Official context schema is missing required stable-ID/commune fields")
+        stable_ids = set()
+        for feature in communes.getFeatures():
+            stable_id = feature["cleabs"]
+            geometry = feature.geometry()
+            if not stable_id or stable_id in stable_ids:
+                raise RuntimeError("Official context contains a missing or duplicate cleabs ID")
+            stable_ids.add(stable_id)
+            if geometry.isNull() or geometry.isEmpty() or geometry.type() != QgsWkbTypes.PolygonGeometry:
+                raise RuntimeError(f"Official context feature {stable_id} has invalid polygon geometry")
+            if not geometry.isGeosValid():
+                raise RuntimeError(f"Official context feature {stable_id} has topologically invalid geometry")
     context_layer, context_geometry = add_context_land(project, combined_extent, communes,
         cache_root=cache_root, refresh=refresh, stage_report=stage_report)
+    if stage_report is not None and _context_manifest is not None:
+        stage_report.append({"stage": "official-mainland-context-source", "profile": "shared",
+            "decision": "validated", "edition": _context_manifest["edition"],
+            "product": _context_manifest["product"], "bbox": _context_manifest["bbox"],
+            "crs": _context_manifest["crs"], "matched": _context_manifest["matched"],
+            "returned": _context_manifest["returned"], "unique_ids": _context_manifest["unique_ids"],
+            "sha256": _context_manifest["sha256"]})
     print(f"[maps] shared local land context prepared once: {perf_counter()-started:.1f}s", flush=True)
     started = perf_counter()
     ocsge_layers = tuple(add_ocsge_layers(project, Path(raw_dir))) if include_ocsge else ()
@@ -633,7 +660,7 @@ def prepare_shared_ground(
     if texture.isNull():
         raise RuntimeError(f"Could not load approved paper texture: {texture_path}")
     frontier_root = Path(cache_root).parent / "frontier" if cache_root is not None else None
-    return SharedGround(context_layer, context_geometry, ocsge_layers, texture,
+    return SharedGround(context_layer, context_geometry, ocsge_layers, texture, _context_manifest,
         _frontier_cache_root=frontier_root, _stage_report=stage_report, _refresh=refresh)
 
 

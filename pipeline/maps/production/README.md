@@ -57,9 +57,17 @@ inspection furniture/citations bind at mode/profile boundaries; bump the explici
 shared-ground, inline-mask or network-render version when its rendering algorithm
 changes rather than treating the all-files provenance digest as a reuse key.
 
-At run preparation, context communes are selected from the local
-`communes_limites.geojson` (Admin Express COG) source; rendering does not call the
-Geo API. Eligible network geometry is prepared into spatially indexed
+At run preparation, inspection land context is acquired as a distinct,
+frame-scoped `ADMINEXPRESS-COG.2026:commune` WFS source. A dated hits query and
+one full-geometry response must agree on matched/returned/feature counts and
+unique stable IDs; CRS, schema, polygon structure and requested-frame coverage
+are checked before a generation is atomically promoted. Results above the
+advertised one-response capacity fail rather than paging a non-transaction-safe
+service. Validated local generations are consumed offline by renderers, and a
+failed refresh leaves the previous generation in place. This is separate from
+the analytical `communes_limites.geojson` source and does not rewrite it.
+Source edition, requested EPSG:2154 frame, counts and content SHA-256 appear in
+the QA stage report. Eligible network geometry is prepared into spatially indexed
 FlatGeobufs under `pipeline/maps/.cache/network-sources/`: OSM car and walk are
 classified during one source scan, while Geovelo protected and shared cycling
 are classified during one France-wide source scan. OSM and Geovelo use
