@@ -108,13 +108,25 @@ def _profile_input_sha256(feature: Mapping, profile: Profile,
         "territory": {"kind": territory["kind"], "code": territory["code"]},
         "mode": feature["mode"],
         "analytical_geometry": feature.get("analytical_geometry", feature["geometry"]),
-        "region_geometry": feature.get("region_geometry"),
         "extent": feature.get("extent"),
     }
     if profile.name == "inspection":
         selected["territory"]["name"] = territory["name"]
-        selected["geometry"] = feature.get("geometry")
+        selected["region_geometry"] = feature.get("region_geometry")
     return _input_sha256(selected, geometry_hashes)
+
+
+def _profile_foundation(recipe: Recipe, profile: Profile) -> Mapping:
+    """Include only recipe foundation rules consumed by this export profile."""
+    ground = recipe.foundation.ground
+    composition = recipe.foundation.composition
+    if profile.name == "inline":
+        return {"version": recipe.foundation.version,
+                "ground": {key: ground[key] for key in ("inline_surface", "water") if key in ground},
+                "composition": {"inline": composition.get("inline", {})}}
+    return {"version": recipe.foundation.version,
+            "ground": {key: ground[key] for key in ("inspection_surface", "water") if key in ground},
+            "composition": {"inspection": composition.get("inspection")}}
 
 
 def _render_identity(recipe: Recipe, scope: str, profiles: Sequence[str],
@@ -261,7 +273,11 @@ def preflight(recipe: Recipe, binding: Binding, scope: str, profiles: Sequence[s
             if identity in identities:
                 raise ValueError(f"duplicate map-set territory/mode coverage: {identity}")
             identities.add(identity)
-    adapter.preflight(recipe, binding)
+    profile_preflight = getattr(adapter, "preflight_profiles", None)
+    if callable(profile_preflight):
+        profile_preflight(recipe, binding, tuple(profiles))
+    else:
+        adapter.preflight(recipe, binding)
 
 
 def run_production(recipe: Recipe, binding: Binding, scope: str,
@@ -287,8 +303,19 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
         cache_manifest = {"outputs": {}}
     if not isinstance(cache_manifest, dict) or not isinstance(cache_manifest.get("outputs"), dict):
         cache_manifest = {"outputs": {}}
-    cached_outputs = {key: value for key, value in cache_manifest["outputs"].items()
-                      if isinstance(key, str) and isinstance(value, dict)}
+    cached_outputs = {}
+    for key, value in cache_manifest["outputs"].items():
+        if (isinstance(key, str) and isinstance(value, dict)
+                and isinstance(value.get("path"), str)
+                and isinstance(value.get("effective_identity"), str)
+                and isinstance(value.get("output_sha256"), str)
+                and len(value["output_sha256"]) == 64):
+            candidate = Path(value["path"])
+            try:
+                candidate.resolve().relative_to(output_dir.resolve())
+            except (OSError, ValueError):
+                continue
+            cached_outputs[key] = value
     next_cached_outputs = dict(cached_outputs)
     preparation_seconds = 0.0
     prepare_run = getattr(adapter, "prepare_run", None)
@@ -298,6 +325,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
         preparation_seconds = perf_counter() - preparation_started
         print(f"[maps] shared source preparation: {preparation_seconds:.1f}s", flush=True)
     outputs = []
+    identity_report = []
     artifact_total = sum(len(features) for features in binding.map_set.layers.values()) * len(requested_profiles)
     artifact_number = 0
     geometry_hashes: dict[int, tuple[str, int]] = {}
@@ -316,38 +344,68 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
             for name in requested_profiles:
                 profile = PROFILES[name]
                 key = f"{feature['territory']['kind']}/{feature['territory']['code']}/{feature['mode']}/{name}"
+                profile_input_started = perf_counter()
                 profile_input_sha256 = _profile_input_sha256(feature, profile, geometry_hashes)
+                identity_report.append({"stage": "profile-input-identity", "profile": name,
+                    "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
+                    "mode": feature["mode"], "decision": "validated",
+                    "seconds": round(perf_counter() - profile_input_started, 6)})
+                profile_contract_started = perf_counter()
                 effective_contract = {"input": profile_input_sha256,
                                       "recipe": {"name": recipe.name, "version": recipe.version,
                                           "family": recipe.family,
-                                          "foundation": {"version": recipe.foundation.version,
-                                              "framing": recipe.foundation.framing,
-                                              "geography": recipe.foundation.geography,
-                                              "ground": recipe.foundation.ground,
-                                              "composition": recipe.foundation.composition}},
-                                      "renderer": (adapter.profile_identity(profile, feature)
+                                       "foundation": _profile_foundation(recipe, profile),
+                                       "shared_foundation": {
+                                           "framing": recipe.foundation.framing,
+                                           "geography": recipe.foundation.geography,
+                                       }},
+                                      "renderer": (adapter.profile_identity(profile, feature, recipe)
                                           if callable(getattr(adapter, "profile_identity", None))
                                           else renderer_identity),
                                       "profile": {"name": name, "size": profile.size,
                                                   "context": profile.context,
-                                                  "furniture": profile.furniture,
-                                                  "transparent_outside": profile.transparent_outside}}
+                                       "furniture": profile.furniture,
+                                                   "transparent_outside": profile.transparent_outside}}
+                identity_report.append({"stage": "profile-render-contract", "profile": name,
+                    "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
+                    "mode": feature["mode"], "decision": "validated",
+                    "seconds": round(perf_counter() - profile_contract_started, 6)})
                 effective_inputs = getattr(adapter, "effective_input_identity", None)
                 if callable(effective_inputs):
+                    effective_started = perf_counter()
                     effective_contract["displayed_content"] = effective_inputs(feature, profile)
+                    identity_report.append({"stage": "effective-content-identity", "profile": name,
+                        "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
+                        "mode": feature["mode"], "decision": "validated",
+                        "seconds": round(perf_counter() - effective_started, 6)})
+                digest_started = perf_counter()
                 effective_identity = sha256(json.dumps(effective_contract, sort_keys=True,
                     separators=(",", ":")).encode()).hexdigest()
+                identity_report.append({"stage": "effective-identity-digest", "profile": name,
+                    "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
+                    "mode": feature["mode"], "decision": "validated",
+                    "seconds": round(perf_counter() - digest_started, 6)})
                 previous = cached_outputs.get(key, {})
                 path = Path(previous.get("path", "")) if previous.get("path") else None
+                expected_path = getattr(adapter, "expected_output_path", None)
+                expected = (Path(expected_path(feature, profile, output_dir)).resolve()
+                    if callable(expected_path) else None)
+                cache_validation_started = perf_counter()
                 reusable = (not refresh and previous.get("effective_identity") == effective_identity
                     and path is not None and path.is_file()
+                    and (expected is None and path.resolve().parent == output_dir.resolve()
+                         or expected is not None and path.resolve() == expected)
                     and sha256(path.read_bytes()).hexdigest() == previous.get("output_sha256"))
+                identity_report.append({"stage": "output-cache-verification", "profile": name,
+                    "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
+                    "mode": feature["mode"], "decision": "reused" if reusable else "miss",
+                    "seconds": round(perf_counter() - cache_validation_started, 6)})
                 render_seconds = 0.0
                 decision = "reused-output" if reusable else "rendered"
                 if reusable:
                     report_reuse = getattr(adapter, "record_reused_output", None)
                     if callable(report_reuse):
-                        report_reuse(feature, profile, output_dir)
+                        report_reuse(feature, profile, output_dir, recipe)
                 if not reusable:
                     render_started = perf_counter()
                     path = Path(adapter.render(recipe, feature, profile, output_dir))
@@ -379,10 +437,11 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                 )
     elapsed_seconds = perf_counter() - run_started
     stage_report = [{"stage": "adapter-preparation-total", "profile": "shared",
-        "decision": "built", "seconds": round(preparation_seconds, 3)}]
+        "decision": "completed", "seconds": round(preparation_seconds, 3)}]
     report_hook = getattr(adapter, "stage_report", None)
     if callable(report_hook):
         stage_report.extend(report_hook())
+    stage_report.extend(identity_report)
     fd, temporary_manifest = tempfile.mkstemp(prefix=".production-manifest-", suffix=".tmp", dir=output_dir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:
