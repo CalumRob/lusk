@@ -606,6 +606,7 @@ def prepare_shared_ground(
     include_ocsge: bool = True,
     *, cache_root: str | Path | None = None, refresh: bool = False,
     stage_report: list | None = None, context_loader=None,
+    context_cache_root: str | Path | None = None,
 ) -> SharedGround:
     """Load local commune context and OCS-GE sources once for a production run."""
     project.setCrs(MAP_CRS)
@@ -617,8 +618,10 @@ def prepare_shared_ground(
         # coverage must not become an input prerequisite for their products.
         from mainland_context import load_context
         context_loader = context_loader or load_context
-        context_cache_root = Path(cache_root).parent / "official-context" if cache_root is not None else Path(raw_dir).parent / ".cache" / "official-context"
-        commune_path, _context_manifest = context_loader(context_cache_root,
+        official_context_root = (Path(context_cache_root) if context_cache_root is not None else
+            Path(cache_root).parent / "official-context" if cache_root is not None else
+            Path(raw_dir).parent / ".cache" / "official-context")
+        commune_path, _context_manifest = context_loader(official_context_root,
             (combined_extent.xMinimum(), combined_extent.yMinimum(), combined_extent.xMaximum(), combined_extent.yMaximum()),
         )
         communes = QgsVectorLayer(str(commune_path), "Admin Express COG 2026 · validated context", "ogr")

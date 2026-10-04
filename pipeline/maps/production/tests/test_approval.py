@@ -142,7 +142,7 @@ class HumanApprovalTests(unittest.TestCase):
                 self.preparations = []
             def prepare_run(self, recipe, binding, profiles, output_dir, *, refresh=False):
                 self.preparations.append("full")
-            def prepare_current_approval_members(self, recipe, binding, profiles, renderer):
+            def prepare_current_approval_members(self, recipe, binding, profiles, renderer, output_dir):
                 self.preparations.append("representative")
                 return [(kind, code, mode, profile,
                     sha256(f"current/{kind}/{code}/{mode}/{profile}".encode()).hexdigest())

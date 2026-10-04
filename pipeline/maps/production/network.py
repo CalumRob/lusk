@@ -908,7 +908,7 @@ class NetworkAdapter:
         return sorted(members)
 
     def prepare_current_approval_members(self, recipe, full_binding, requested_profiles,
-                                         renderer_identity):
+                                         renderer_identity, output_dir):
         """Prepare only the representative footprint to verify approval pre-full-run."""
         import gc
         from tempfile import TemporaryDirectory
@@ -917,7 +917,8 @@ class NetworkAdapter:
                                 dir=Path(__file__).parents[3]) as scratch:
             try:
                 self.prepare_run(recipe, representatives, requested_profiles,
-                                 Path(scratch), refresh=False)
+                    Path(scratch), refresh=False,
+                    context_cache_root=Path(output_dir) / ".stage-cache" / "official-context")
                 freshly_built = self.current_approval_members(recipe, representatives,
                     requested_profiles, renderer_identity)
                 full_scope_sample = self.current_approval_members(recipe, full_binding,
@@ -1089,10 +1090,14 @@ class NetworkAdapter:
             from map_ground import discover_ocsge_sources
             discover_ocsge_sources(self.raw_dir)
 
-    def prepare_run(self, recipe: Recipe, binding: Binding, profiles, output_dir: Path, *, refresh: bool = False) -> None:
+    def prepare_run(self, recipe: Recipe, binding: Binding, profiles, output_dir: Path, *,
+                    refresh: bool = False, context_cache_root: str | Path | None = None) -> None:
         """Load source providers and reusable family layers once for this run."""
         from map_ground import prepare_shared_ground
 
+        output_dir = Path(output_dir)
+        context_cache_root = (Path(context_cache_root) if context_cache_root is not None else
+            output_dir / ".stage-cache" / "official-context")
         project = QgsProject.instance()
         self._stage_events = []
         self._stage_validity = {}
@@ -1125,6 +1130,7 @@ class NetworkAdapter:
             cache_root=output_dir / ".stage-cache" / "context-land",
             refresh=refresh, stage_report=self._stage_events,
             context_loader=self.context_loader,
+            context_cache_root=context_cache_root,
         )
         self._stage_events.append({"stage": "context-and-provider-load", "profile": "shared",
             "decision": "validated", "seconds": round(perf_counter() - context_started, 3)})

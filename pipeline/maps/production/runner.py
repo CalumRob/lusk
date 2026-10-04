@@ -326,7 +326,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
         if not callable(bounded_identity_check):
             raise ValueError("adapter cannot independently prepare current representative identities")
         current_members = bounded_identity_check(recipe, binding, tuple(requested_profiles),
-                                                 renderer_identity)
+                                                 renderer_identity, output_dir)
         require_approval({"scope": "representative", "approval_pairs_complete": True,
             "recipe": recipe.name, "recipe_version": recipe.version,
             "foundation_version": recipe.foundation.version,

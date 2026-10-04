@@ -538,15 +538,19 @@ class NetworkPreparationTests(unittest.TestCase):
         from network import NetworkAdapter, network_recipe
         full_binding, representative_binding = object(), object()
         adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
+        output_root = Path.cwd() / "fixture-production-output"
         identities = [("commune", "35238", "car", "inline", "a" * 64)]
         with (patch("network.build_representative_map_set", return_value=representative_binding),
               patch.object(adapter, "prepare_run") as prepare,
               patch.object(adapter, "current_approval_members", return_value=identities)):
             result = adapter.prepare_current_approval_members(network_recipe(), full_binding,
-                ("inspection", "inline"), {"renderer": "fixture"})
+                ("inspection", "inline"), {"renderer": "fixture"}, output_root)
         self.assertEqual(result, identities)
         self.assertIs(prepare.call_args.args[1], representative_binding)
         self.assertIsNot(prepare.call_args.args[1], full_binding)
+        self.assertNotEqual(prepare.call_args.args[3], output_root)
+        self.assertEqual(prepare.call_args.kwargs["context_cache_root"],
+                         output_root / ".stage-cache" / "official-context")
 
     def test_post_batch_visual_review_selection_is_family_metadata_owned(self):
         from network import NetworkAdapter
