@@ -501,6 +501,39 @@ class NetworkPreparationTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "does not cover exactly"):
             adapter.preflight_scope(None, incomplete, "full", ("inspection", "inline"))
 
+    def test_real_network_adapter_recomputes_paired_current_review_identities(self):
+        from dataclasses import replace
+        from network import NetworkAdapter, network_recipe
+        from runner import Binding, MapSet, PROFILES
+        project = QgsProject.instance()
+        project.clear()
+        adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
+        features = []
+        for kind, code in (("commune", "35238"), ("region", "53"),
+                           ("epci", "243500741")):
+            for mode in ("car", "walk", "bike"):
+                geometry = QgsGeometry.fromRect(QgsRectangle(0, 0, 10, 10))
+                features.append({"territory": {"kind": kind, "code": code, "name": code},
+                    "mode": mode, "geometry": geometry, "analytical_geometry": geometry,
+                    "extent": QgsRectangle(0, 0, 10, 10)})
+        binding = Binding("network", MapSet({"network-outputs": features}))
+        adapter.effective_input_identity = lambda feature, profile: {"visible": feature["mode"]}
+        recipe = network_recipe()
+        current = adapter.current_approval_members(recipe, binding,
+            ("inspection", "inline"), adapter.render_identity())
+        changed_recipe = replace(recipe, foundation=replace(recipe.foundation,
+            composition={**recipe.foundation.composition,
+                "inline": {"shadow": "changed-profile-rule"}}))
+        changed = adapter.current_approval_members(changed_recipe, binding,
+            ("inspection", "inline"), adapter.render_identity())
+        self.assertEqual(len(current), len(features) * len(PROFILES))
+        by_profile = {name: {item[4] for item in current if item[3] == name}
+                      for name in ("inspection", "inline")}
+        changed_by_profile = {name: {item[4] for item in changed if item[3] == name}
+                              for name in ("inspection", "inline")}
+        self.assertEqual(by_profile["inspection"], changed_by_profile["inspection"])
+        self.assertNotEqual(by_profile["inline"], changed_by_profile["inline"])
+
     def test_land_context_uses_selected_communes_from_local_admin_express(self):
         project = QgsProject.instance()
         project.clear()
