@@ -193,24 +193,177 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
             connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('dpe_22','DPE')")
             connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version,publication_date) VALUES ('dpe_22','dpe_22','fixture','2026-01-01')")
             connection.execute(migration_020.read_text(encoding="utf-8"))
+            # Populate representative pre-021 scalar and typed-reading state,
+            # including nullable source clocks. Migration 021 is additive: it
+            # must leave every marker token/value/time and these consumer rows intact.
+            with connection.transaction():
+                connection.execute("""
+                    INSERT INTO scalar_descriptor(indicator_id,label,unit,direction,comparison_facet,
+                      allowed_levels,denominator_semantics,completeness,descriptor_version)
+                    VALUES ('legacy_scalar','Legacy scalar','items','none',NULL,ARRAY['commune'],
+                      'fixture','sparse','scalar-before-021')
+                """)
+                connection.execute("INSERT INTO scalar_descriptor_source VALUES ('legacy_scalar','dpe_22')")
+                connection.execute("""
+                    INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,support_count)
+                    VALUES ('legacy_scalar','chain-fixture','commune',45,'measured',10)
+                """)
+                connection.execute("""
+                    INSERT INTO scalar_observation_source VALUES ('legacy_scalar','chain-fixture','dpe_22','dpe_22')
+                """)
+            connection.execute("""
+                INSERT INTO demographic_reading_descriptor(singleton,descriptor_version,source_id,vintage_id,rate_unit)
+                VALUES (true,'demography-before-021','dpe_22','dpe_22','items')
+            """)
+            connection.execute("""
+                INSERT INTO demographic_typed_reading(territory_id,territory_type,groupe,story_key,
+                  salience_reason,status,source_id,vintage_id)
+                VALUES ('chain-fixture','commune','legacy','legacy-story','fixture','unavailable','dpe_22','dpe_22')
+            """)
+            connection.execute("""
+                INSERT INTO selected_reading_descriptor(theme_id,descriptor_version,source_id,vintage_id,linked_content_version)
+                VALUES ('habitat','habitat-before-021','dpe_22','dpe_22','scalar-before-021')
+            """)
+            connection.execute("""
+                INSERT INTO selected_reading_publication(theme_id,content_version,reference_content_version,row_count)
+                VALUES ('habitat','habitat-before-021','ref-chain',1)
+            """)
+            connection.execute("""
+                INSERT INTO habitat_typed_reading(territory_id,territory_type,groupe,story_key,salience_reason,
+                  status,source_id,vintage_id)
+                VALUES ('chain-fixture','commune','legacy','legacy-story','fixture','unavailable','dpe_22','dpe_22')
+            """)
+            with connection.transaction():
+                connection.execute("""
+                    INSERT INTO bpe_profile_evidence_descriptor(singleton,indicator_id,descriptor_version,
+                      allowed_levels,completeness,classification_id,universe_count,universe_sha256,
+                      registry_filename,registry_semantic_effect,membership_sha256,source_id,vintage_id)
+                    VALUES (true,'bpe_access_profile','bpe-before-021',
+                      ARRAY['commune','epci','departement','region'],'dense_complete','fixture',1,
+                      repeat('a',64),'fixture.csv','fixture semantic contract',repeat('b',64),'dpe_22','dpe_22')
+                """)
+                connection.execute("""
+                    INSERT INTO bpe_profile_class_axis(class_key,label,ordinal,direction) VALUES
+                      ('class-a','Class A',0,'high'),('class-b','Class B',1,'high'),
+                      ('class-c','Class C',2,'none'),('class-d','Class D',3,'none')
+                """)
+                connection.execute("""
+                    INSERT INTO bpe_profile_evidence(territory_id,territory_type,class_key,class_label,
+                      class_count,universe_count,exemplar_typequ,exemplar_label,exemplar_c,exemplar_b,exemplar_t)
+                    VALUES ('chain-fixture','commune','class-a','Class A',1,1,'A001','Fixture',0.5,0.5,0.5),
+                      ('chain-fixture','commune','class-b','Class B',0,1,NULL,NULL,NULL,NULL,NULL),
+                      ('chain-fixture','commune','class-c','Class C',0,1,NULL,NULL,NULL,NULL,NULL),
+                      ('chain-fixture','commune','class-d','Class D',0,1,NULL,NULL,NULL,NULL,NULL)
+                """)
+                connection.execute("""
+                    INSERT INTO bpe_profile_evidence_source(territory_type,territory_id,class_key,source_id,vintage_id)
+                    SELECT 'commune','chain-fixture',class_key,'dpe_22','dpe_22' FROM bpe_profile_class_axis
+                """)
+            connection.execute("""
+                INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
+                VALUES ('territory_reference','ref-chain',1,NULL),
+                       ('service_registry','services-before-021',3,NULL),
+                       ('essential_service_access','access-before-021',4,'ref-chain'),
+                       ('scalar_observation','scalar-before-021',1,'ref-chain'),
+                       ('demographic_typed_reading','demography-before-021',1,'ref-chain'),
+                       ('selected_reading','selected-before-021',1,'ref-chain'),
+                       ('bpe_profile_evidence','bpe-before-021',4,'ref-chain')
+            """)
+            markers_before_021 = connection.execute(
+                "SELECT table_name,content_version,row_count,reference_content_version,published_at "
+                "FROM table_publication ORDER BY table_name"
+            ).fetchall()
+            scalar_before_021 = connection.execute("""
+                SELECT d.label,d.unit,d.descriptor_version,o.value,o.status,o.support_count,
+                       s.source_id,s.vintage_id,v.version,v.reference_date,v.publication_date
+                FROM scalar_descriptor d JOIN scalar_observation o USING(indicator_id)
+                JOIN scalar_observation_source s USING(indicator_id,territory_id)
+                JOIN source_vintage v USING(source_id,vintage_id) WHERE d.indicator_id='legacy_scalar'
+            """).fetchone()
+            typed_before_021 = connection.execute("""
+                SELECT r.story_key,r.salience_reason,r.status,r.source_id,r.vintage_id,v.version,
+                       v.reference_date,v.publication_date
+                FROM demographic_typed_reading r JOIN source_vintage v USING(source_id,vintage_id)
+                WHERE r.territory_id='chain-fixture'
+            """).fetchone()
+            habitat_before_021 = connection.execute("""
+                SELECT h.story_key,h.salience_reason,h.status,h.source_id,h.vintage_id,
+                       v.version,v.reference_date,v.publication_date
+                FROM habitat_typed_reading h JOIN source_vintage v USING(source_id,vintage_id)
+                WHERE h.territory_id='chain-fixture'
+            """).fetchone()
+            bpe_before_021 = connection.execute("""
+                SELECT e.class_key,e.class_label,e.class_count,e.universe_count,e.exemplar_typequ,
+                       s.source_id,s.vintage_id,v.version,v.reference_date,v.publication_date
+                FROM bpe_profile_evidence e JOIN bpe_profile_evidence_source s
+                  USING(territory_type,territory_id,class_key)
+                JOIN source_vintage v USING(source_id,vintage_id)
+                WHERE e.territory_id='chain-fixture' ORDER BY e.class_key
+            """).fetchall()
             connection.execute((api_root / "migrations/021_economy_typed_reading.sql").read_text(encoding="utf-8"))
             prior_after_020 = connection.execute(
                 "SELECT table_name,content_version,reference_content_version FROM table_publication "
                 "WHERE table_name IN ('declared_profile','ordered_series') ORDER BY table_name"
             ).fetchall()
             assert prior_after_020 == profile_series_before
+            assert connection.execute(
+                "SELECT table_name,content_version,row_count,reference_content_version,published_at "
+                "FROM table_publication ORDER BY table_name"
+            ).fetchall() == markers_before_021
+            assert connection.execute("""
+                SELECT d.label,d.unit,d.descriptor_version,o.value,o.status,o.support_count,
+                       s.source_id,s.vintage_id,v.version,v.reference_date,v.publication_date
+                FROM scalar_descriptor d JOIN scalar_observation o USING(indicator_id)
+                JOIN scalar_observation_source s USING(indicator_id,territory_id)
+                JOIN source_vintage v USING(source_id,vintage_id) WHERE d.indicator_id='legacy_scalar'
+            """).fetchone() == scalar_before_021
+            assert connection.execute("""
+                SELECT r.story_key,r.salience_reason,r.status,r.source_id,r.vintage_id,v.version,
+                       v.reference_date,v.publication_date
+                FROM demographic_typed_reading r JOIN source_vintage v USING(source_id,vintage_id)
+                WHERE r.territory_id='chain-fixture'
+            """).fetchone() == typed_before_021
+            assert connection.execute("""
+                SELECT h.story_key,h.salience_reason,h.status,h.source_id,h.vintage_id,
+                       v.version,v.reference_date,v.publication_date
+                FROM habitat_typed_reading h JOIN source_vintage v USING(source_id,vintage_id)
+                WHERE h.territory_id='chain-fixture'
+            """).fetchone() == habitat_before_021
+            assert connection.execute("""
+                SELECT e.class_key,e.class_label,e.class_count,e.universe_count,e.exemplar_typequ,
+                       s.source_id,s.vintage_id,v.version,v.reference_date,v.publication_date
+                FROM bpe_profile_evidence e JOIN bpe_profile_evidence_source s
+                  USING(territory_type,territory_id,class_key)
+                JOIN source_vintage v USING(source_id,vintage_id)
+                WHERE e.territory_id='chain-fixture' ORDER BY e.class_key
+            """).fetchall() == bpe_before_021
+            assert scalar_before_021[8] == 'fixture'
+            assert scalar_before_021[9] is None
+            assert scalar_before_021[10].isoformat() == '2026-01-01'
             check_020 = connection.execute("""SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
                 JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
                 WHERE n.nspname=current_schema() AND t.relname='table_publication'
                   AND c.conname='table_publication_table_name_check'""").fetchone()[0]
             assert set(re.findall(r"'([a-z_]+)'", check_020)) == fresh_names
-            for marker in ('declared_profile', 'ordered_series'):
+            for marker in ('scalar_observation', 'declared_profile', 'ordered_series',
+                           'demographic_typed_reading', 'selected_reading',
+                           'bpe_profile_evidence'):
                 with pytest.raises(psycopg.errors.CheckViolation):
                     with connection.transaction():
                         connection.execute(
                             "UPDATE table_publication SET reference_content_version=NULL WHERE table_name=%s",
                             (marker,),
                         )
+            reference_check = connection.execute("""
+                SELECT pg_get_constraintdef(c.oid) FROM pg_constraint c
+                JOIN pg_class t ON t.oid=c.conrelid JOIN pg_namespace n ON n.oid=t.relnamespace
+                WHERE n.nspname=current_schema() AND t.relname='table_publication'
+                  AND c.conname='shared_fact_publication_requires_reference'
+            """).fetchone()[0]
+            fresh_reference_names = set(re.findall(r"'([a-z_]+)'", re.search(
+                r"shared_fact_publication_requires_reference.*?CHECK\s*\(.*?IN\s*\((.*?)\)",
+                fresh_sql, re.S).group(1)))
+            assert set(re.findall(r"'([a-z_]+)'", reference_check)) == fresh_reference_names
     finally:
         if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(publish_dsn, autocommit=True) as connection:

@@ -51,10 +51,29 @@ tryCatch({
   economy_canonical <- list(histories=economy_histories,vintages=economy_vintages,metadata=economy_metadata,
     content_version=economy_reading_content_version(economy_histories,economy_vintages,economy_metadata))
   publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_canonical,con)
-  expected_reading <- project_economy_reading(economy_histories,economy_vintages,economy_metadata)
-  reading_columns <- c("territory_id","territory_type","groupe","story_key","salience_reason","status","source_id","vintage_id")
-  actual_reading <- DBI::dbGetQuery(con,paste0("SELECT ",paste(reading_columns,collapse=","),
-    " FROM economy_typed_reading ORDER BY territory_type,territory_id,groupe"))
+  # Acceptance oracle comes directly from the canonical producer artifact,
+  # not from the serving projection being tested.
+  expected_reading <- economy_histories[economy_histories$theme == "economie", , drop=FALSE]
+  names(expected_reading)[names(expected_reading)=="territoire"] <- "territory_id"
+  names(expected_reading)[names(expected_reading)=="type"] <- "territory_type"
+  expected_reading$status <- ifelse(is.na(expected_reading$top1_activity_code),"unavailable","measured")
+  expected_source_id <- as.character(economy_metadata$sources$eco_activites)
+  expected_source <- economy_vintages[economy_vintages$id==expected_source_id,,drop=FALSE]
+  stopifnot(nrow(expected_source)==1L)
+  expected_reading$source_id <- expected_source_id
+  expected_reading$vintage_id <- paste(as.character(expected_source$version[[1L]]),
+    if(is.na(expected_source$date_reference[[1L]])) "NA" else as.character(expected_source$date_reference[[1L]]),sep="/")
+  expected_reading$source_name <- as.character(expected_source$source[[1L]])
+  expected_reading$source_version <- as.character(expected_source$version[[1L]])
+  expected_reading$source_reference_date <- as.Date(expected_source$date_reference[[1L]])
+  expected_reading$source_publication_date <- as.Date(expected_source$date_publication[[1L]])
+  reading_columns <- c("territory_id","territory_type","groupe","story_key","salience_reason","status","source_id","vintage_id",
+    "source_name","source_version","source_reference_date","source_publication_date")
+  actual_reading <- DBI::dbGetQuery(con,"SELECT f.territory_id,f.territory_type,f.groupe,f.story_key,f.salience_reason,
+    f.status,f.source_id,f.vintage_id,sd.name AS source_name,sv.version AS source_version,
+    sv.reference_date AS source_reference_date,sv.publication_date AS source_publication_date
+    FROM economy_typed_reading f JOIN source_vintage sv USING(source_id,vintage_id) JOIN source_dataset sd USING(source_id)
+    ORDER BY f.territory_type,f.territory_id,f.groupe")
   expected_reading_ordered <- expected_reading[order(expected_reading$territory_type,expected_reading$territory_id,expected_reading$groupe),reading_columns,drop=FALSE]
   rownames(actual_reading) <- rownames(expected_reading_ordered) <- NULL
   expected_evidence <- do.call(rbind,lapply(seq_len(5L),function(rank) {
@@ -64,10 +83,15 @@ tryCatch({
       activity_label=expected_reading[[paste0("top",rank,"_activity_label")]][keep],
       lq=expected_reading[[paste0("top",rank,"_lq")]][keep],establishment_count=expected_reading[[paste0("top",rank,"_n")]][keep],
       park_share=expected_reading[[paste0("top",rank,"_part_parc")]][keep],source_id=expected_reading$source_id[keep],
-      vintage_id=expected_reading$vintage_id[keep],stringsAsFactors=FALSE)
+      vintage_id=expected_reading$vintage_id[keep],source_name=expected_reading$source_name[keep],
+      source_version=expected_reading$source_version[keep],source_reference_date=expected_reading$source_reference_date[keep],
+      source_publication_date=expected_reading$source_publication_date[keep],stringsAsFactors=FALSE)
   }))
   actual_evidence <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,rank,activity_code,activity_label,lq,
-    establishment_count,park_share,source_id,vintage_id FROM economy_activity_evidence ORDER BY territory_type,territory_id,groupe,rank")
+    establishment_count,park_share,source_id,vintage_id,sd.name AS source_name,sv.version AS source_version,
+    sv.reference_date AS source_reference_date,sv.publication_date AS source_publication_date
+    FROM economy_activity_evidence JOIN source_vintage sv USING(source_id,vintage_id) JOIN source_dataset sd USING(source_id)
+    ORDER BY territory_type,territory_id,groupe,rank")
   expected_evidence <- expected_evidence[order(expected_evidence$territory_type,expected_evidence$territory_id,
     expected_evidence$groupe,expected_evidence$rank),]
   rownames(actual_evidence) <- rownames(expected_evidence) <- NULL
@@ -88,7 +112,11 @@ tryCatch({
   DBI::dbExecute(con,"DROP FUNCTION reject_economy_evidence()")
   stopifnot(inherits(failed_publication,"try-error"),
     isTRUE(all.equal(marker_before_noop,DBI::dbGetQuery(con,"SELECT table_name,content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name IN ('economy_typed_reading','economy_activity_evidence') ORDER BY table_name"),check.attributes=FALSE)),
-    isTRUE(all.equal(actual_evidence,DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,rank,activity_code,activity_label,lq,establishment_count,park_share,source_id,vintage_id FROM economy_activity_evidence ORDER BY territory_type,territory_id,groupe,rank"),check.attributes=FALSE)))
+    isTRUE(all.equal(actual_evidence,DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,rank,activity_code,activity_label,lq,
+      establishment_count,park_share,source_id,vintage_id,sd.name AS source_name,sv.version AS source_version,
+      sv.reference_date AS source_reference_date,sv.publication_date AS source_publication_date
+      FROM economy_activity_evidence JOIN source_vintage sv USING(source_id,vintage_id) JOIN source_dataset sd USING(source_id)
+      ORDER BY territory_type,territory_id,groupe,rank"),check.attributes=FALSE)))
   expected_eco <- complete$projection$facts[complete$projection$facts$indicator_id == "eco_activites", , drop=FALSE]
   actual_eco <- DBI::dbGetQuery(con, "SELECT indicator_id,territory_id,territory_type,value,status,support_count,denominator_count FROM scalar_observation WHERE indicator_id='eco_activites' ORDER BY territory_type,territory_id")
   expected_eco <- expected_eco[order(expected_eco$territory_type, expected_eco$territory_id),
@@ -387,6 +415,54 @@ tryCatch({
     shQuote(normalizePath("../api/tests/integration/test_housing_economy_publisher_http.py", winslash="/", mustWork=TRUE), type="cmd")),
     stdout="", stderr="")
   if (!identical(status, 0L)) stop("Canonical economy publisher-to-HTTP parity failed", call.=FALSE)
+  # Prove the canonical artifact oracle detects a valid-but-wrong publisher
+  # output, then restore and re-prove the normal HTTP contract.
+  economy_registry <- register_economy_reading_publisher(list())
+  original_project <- economy_registry$economie$project
+  economy_registry$economie$project <- function(input) {
+    projected <- original_project(input)
+    target <- which(projected$territory_type=="commune" & projected$territory_id=="35238")[[1L]]
+    projected$top1_lq[[target]] <- projected$top1_lq[[target]] + 1
+    projected
+  }
+  faulty_canonical <- economy_canonical
+  faulty_projection <- economy_registry$economie$project(economy_canonical)
+  faulty_source <- economy_vintages[economy_vintages$id==economy_metadata$sources$eco_activites,,drop=FALSE]
+  faulty_canonical$content_version <- scalar_content_version(list(facts=faulty_projection,
+    source=faulty_source,metadata=economy_metadata))
+  publish_registered_typed_reading(economy_registry,"economie",faulty_canonical,con)
+  red_log <- tempfile("economy-independent-red-")
+  red_status <- system2(Sys.which("python"),c("-m","pytest","-q","-x",
+    shQuote(paste0(normalizePath("../api/tests/integration/test_housing_economy_publisher_http.py",winslash="/",mustWork=TRUE),
+      "::test_registered_economy_readings_match_independent_canonical_artifact"),type="cmd")),
+    stdout=red_log,stderr=red_log)
+  red_output <- paste(readLines(red_log,warn=FALSE),collapse="\n")
+  unlink(red_log)
+  publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_canonical,con)
+  if (!identical(red_status,1L) || !grepl('assert actual["activities"] == expected_activities',red_output,fixed=TRUE))
+    stop("Independent economy HTTP mutation proof did not fail at canonical activity parity: ",red_output,call.=FALSE)
+  cat("Independent canonical HTTP mutation proof RED observed; pytest's failed artifact comparison follows:\n",
+    red_output,"\nPublisher restored to the canonical selected reading before the GREEN check.\n",sep="")
+  positive_status <- system2(Sys.which("python"),c("-m","pytest","-q",
+    shQuote(paste0(normalizePath("../api/tests/integration/test_housing_economy_publisher_http.py",winslash="/",mustWork=TRUE),
+      "::test_registered_economy_readings_match_independent_canonical_artifact"),type="cmd")),stdout="",stderr="")
+  if (!identical(positive_status,0L)) stop("Restored canonical independent Economy HTTP test failed",call.=FALSE)
+  original_clock <- DBI::dbGetQuery(con,"SELECT reference_date,publication_date FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
+    params=list(as.character(faulty_source$id[[1L]]),
+      as.character(paste(faulty_source$version[[1L]],faulty_source$date_reference[[1L]],sep="/"))))
+  clock_test <- normalizePath("../api/tests/integration/test_housing_economy_publisher_http.py",winslash="/",mustWork=TRUE)
+  for (clock in c("reference","publication")) {
+    column <- if (clock=="reference") "reference_date" else "publication_date"
+    DBI::dbExecute(con,paste0("UPDATE source_vintage SET ",column,"=NULL WHERE source_id=$1 AND vintage_id=$2"),
+      params=list(as.character(faulty_source$id[[1L]]),as.character(paste(faulty_source$version[[1L]],faulty_source$date_reference[[1L]],sep="/"))))
+    Sys.setenv(LUSK_ECONOMY_NULL_CLOCK=clock)
+    null_status <- system2(Sys.which("python"),c("-m","pytest","-q",
+      shQuote(paste0(clock_test,"::test_registered_economy_readings_match_independent_canonical_artifact"),type="cmd")),stdout="",stderr="")
+    DBI::dbExecute(con,paste0("UPDATE source_vintage SET ",column,"=$3 WHERE source_id=$1 AND vintage_id=$2"),
+      params=list(as.character(faulty_source$id[[1L]]),as.character(paste(faulty_source$version[[1L]],faulty_source$date_reference[[1L]],sep="/")),original_clock[[column]][[1L]]))
+    if (!identical(null_status,0L)) stop("Economy HTTP NULL ",clock," date did not remain NULL",call.=FALSE)
+  }
+  Sys.unsetenv("LUSK_ECONOMY_NULL_CLOCK")
   building_http_test <- normalizePath("../api/tests/integration/test_building_fiche_publisher_http.py", winslash="/", mustWork=TRUE)
   building_http_status <- system2(Sys.which("python"), c("-m","pytest","-q",shQuote(building_http_test,type="cmd")),stdout="",stderr="")
   if (!identical(building_http_status,0L)) stop("Canonical building publisher-to-fiche HTTP parity failed",call.=FALSE)

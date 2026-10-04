@@ -59,12 +59,17 @@ project_economy_reading <- function(histories, vintages, metadata) {
       stop("Economy selected reading disagrees with its producer subgroup declaration",call.=FALSE)
   }
   source <- vintages[vintages$id == source_id, , drop=FALSE]
-  if (nrow(source) != 1L || anyNA(source[c("id", "source", "version", "date_reference", "date_publication")]))
-    stop("Canonical vintage manifest has no unique economy source clock", call.=FALSE)
+  if (nrow(source) != 1L || anyNA(source[c("id", "source", "version")]) ||
+      any(!nzchar(as.character(source$id))) || any(!nzchar(as.character(source$source))) ||
+      any(!nzchar(as.character(source$version))) || length(source$id) != 1L)
+    stop("Canonical vintage manifest has no unique economy source clock/identity", call.=FALSE)
   facts$status <- ifelse(is.na(facts$top1_activity_code), "unavailable", "measured")
   facts$source_id <- as.character(source$id[[1L]])
+  # Keep the registered scalar vintage identity stable even when the manifest
+  # has no reference date; NULL dates remain NULL in source_vintage.
+  reference <- source$date_reference[[1L]]
   facts$vintage_id <- paste(as.character(source$version[[1L]]),
-    ifelse(is.na(source$date_reference[[1L]]),"NA",as.character(source$date_reference[[1L]])),sep="/")
+    if (is.na(reference)) "NA" else as.character(reference), sep="/")
   facts
 }
 

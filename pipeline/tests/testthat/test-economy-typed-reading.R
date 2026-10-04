@@ -24,6 +24,15 @@ test_that("canonical Economy reading preserves the producer's populated top-five
   expect_equal(projected$top1_lq,2)
   expect_equal(projected$top1_n,5L)
   expect_true(is.na(projected$top1_part_parc))
+  reference_missing <- vintage
+  reference_missing$date_reference <- NA_character_
+  reference_projected <- project_economy_reading(history,reference_missing,metadata)
+  expect_true(is.na(reference_missing$date_reference[[1L]]))
+  expect_equal(reference_projected$source_id,"sirene_snapshot")
+  expect_equal(reference_projected$vintage_id,"2026-04/NA")
+  publication_missing <- vintage
+  publication_missing$date_publication <- NA_character_
+  expect_equal(project_economy_reading(history,publication_missing,metadata)$vintage_id,"2026-04/2026-03-31")
   expect_error(project_economy_reading(history,vintage,modifyList(metadata,list(sources=list(eco_activites="wrong_source")))),
     "unique economy source clock")
 })
