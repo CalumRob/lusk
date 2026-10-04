@@ -83,6 +83,7 @@ test_that("la projection est bornée et choisit la rareté puis le code à saill
   projection <- construire_projection_profils_acces_bpe(matrice)
 
   expect_named(projection, CLES_PROJECTION_PROFILS_ACCES_BPE)
+  expect_true(all(projection$univers_typequ_count == dplyr::n_distinct(matrice$typequ)))
   expect_silent(verifier_contrat_projection_profils_acces_bpe(projection))
   expect_equal(anyDuplicated(projection[c("territoire", "type", "profil")]), 0L)
   expect_equal(
@@ -99,7 +100,11 @@ test_that("la projection est bornée et choisit la rareté puis le code à saill
     ],
     "A206"
   )
-  expect_true(all(projection$nombre_typequ >= 1L))
+  expect_true(all(projection$nombre_typequ >= 0L))
+  expect_equal(nrow(projection),
+               dplyr::n_distinct(matrice$territoire, matrice$type) *
+                 length(PROFILS_ACCES_BPE))
+  expect_true(all(is.na(projection$exemplar_typequ[projection$nombre_typequ == 0L])))
 })
 
 test_that("la projection choisit la saillance puis la rareté et le code", {
@@ -141,6 +146,23 @@ test_that("la projection choisit la saillance puis la rareté et le code", {
   expect_equal(exemplar("velo-compense"), "A203")
   expect_equal(exemplar("voiture-requise"), "A206")
   expect_equal(exemplar("inaccessible-20-minutes"), "A208")
+})
+
+test_that("un univers TYPEQU complet autorise les classes absentes à zéro", {
+  matrice <- construire_matrice_profils_acces_bpe(
+    fixture_snapshot_bpe(), base_epci_bpe
+  )
+  profil_present <- names(PROFILS_ACCES_BPE)[[1L]]
+  matrice$profil <- profil_present
+  matrice$profil_libelle <- unname(PROFILS_ACCES_BPE[[profil_present]])
+
+  projection <- construire_projection_profils_acces_bpe(matrice)
+  verifier_contrat_projection_profils_acces_bpe(projection)
+
+  absent <- projection$profil != profil_present
+  expect_true(all(projection$nombre_typequ[absent] == 0L))
+  expect_true(all(is.na(projection$exemplar_typequ[absent])))
+  expect_true(all(projection$univers_typequ_count == dplyr::n_distinct(matrice$typequ)))
 })
 
 test_that("un univers de codes snapshot incomplet est refusé", {

@@ -196,6 +196,11 @@ publish <- function(payload, cible = "public/data", backend = "static") {
     ecrire_parquet_si_modifie(payload$profils_acces_bpe,
                                file.path(cible, "profils_acces_bpe.parquet"))
   }
+  if ("profils_acces_bpe_univers" %in% names(payload) &&
+      !is.null(payload$profils_acces_bpe_univers)) {
+    ecrire_parquet_si_modifie(payload$profils_acces_bpe_univers,
+                               file.path(cible, "profils_acces_bpe_univers.parquet"))
+  }
   if ("distribution_acces_batiments" %in% names(payload) &&
       !is.null(payload$distribution_acces_batiments)) {
     ecrire_parquet_si_modifie(

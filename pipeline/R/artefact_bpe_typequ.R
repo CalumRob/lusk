@@ -86,6 +86,7 @@ CLES_PROFILS_ACCES_BPE <- c("territoire", "type", "typequ", "libelle_typequ",
 
 CLES_PROJECTION_PROFILS_ACCES_BPE <- c(
   "territoire", "type", "profil", "profil_libelle", "nombre_typequ",
+  "univers_typequ_count",
   "exemplar_typequ", "exemplar_libelle", "exemplar_c", "exemplar_b",
   "exemplar_t"
 )
@@ -294,12 +295,22 @@ construire_projection_profils_acces_bpe <- function(matrice) {
       exemplar_t = t
     )
 
-  matrice %>%
-    dplyr::count(territoire, type, profil, name = "nombre_typequ") %>%
-    dplyr::left_join(
-      matrice %>% dplyr::distinct(territoire, type, profil, profil_libelle),
-      by = c("territoire", "type", "profil")
-    ) %>%
+  univers <- matrice %>%
+    dplyr::group_by(territoire, type) %>%
+    dplyr::summarise(univers_typequ_count = dplyr::n_distinct(typequ),
+                     .groups = "drop")
+  observations <- matrice %>%
+    dplyr::count(territoire, type, profil, profil_libelle,
+                 name = "nombre_typequ")
+  grille <- tidyr::crossing(
+    univers,
+    tibble::tibble(profil = names(PROFILS_ACCES_BPE),
+                   profil_libelle = unname(PROFILS_ACCES_BPE))
+  )
+  grille %>%
+    dplyr::left_join(observations,
+                     by = c("territoire", "type", "profil", "profil_libelle")) %>%
+    dplyr::mutate(nombre_typequ = dplyr::coalesce(as.integer(nombre_typequ), 0L)) %>%
     dplyr::left_join(exemplaires, by = c("territoire", "type", "profil")) %>%
     dplyr::select(dplyr::all_of(CLES_PROJECTION_PROFILS_ACCES_BPE)) %>%
     dplyr::arrange(type, territoire, profil)
@@ -315,9 +326,24 @@ verifier_contrat_projection_profils_acces_bpe <- function(projection) {
     stop("Projection BPE invalide — profil en double pour un territoire.",
          call. = FALSE)
   }
-  if (any(projection$nombre_typequ < 1L) ||
+  if (any(projection$nombre_typequ < 0L) ||
       any(!is.finite(projection$nombre_typequ))) {
-    stop("Projection BPE invalide — un profil publié doit être non vide.",
+    stop("Projection BPE invalide — un compte de profil doit être positif ou nul.",
+         call. = FALSE)
+  }
+  univers <- unique(projection[c("territoire", "type", "univers_typequ_count")])
+  if (any(!is.finite(univers$univers_typequ_count) |
+          univers$univers_typequ_count < 1L) ||
+      anyDuplicated(univers[c("territoire", "type")])) {
+    stop("Projection BPE invalide — univers TYPEQU absent ou contradictoire.",
+         call. = FALSE)
+  }
+  totals <- stats::aggregate(nombre_typequ ~ territoire + type + univers_typequ_count,
+                             projection, sum)
+  if (any(totals$nombre_typequ != totals$univers_typequ_count) ||
+      any((projection$nombre_typequ == 0L) != is.na(projection$exemplar_typequ)) ||
+      any(projection$profil_libelle != unname(PROFILS_ACCES_BPE[projection$profil]))) {
+    stop("Projection BPE invalide — partition complète ou exemplaire incohérent.",
          call. = FALSE)
   }
   invisible(projection)

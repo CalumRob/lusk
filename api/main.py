@@ -1093,6 +1093,9 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     if profiles is None:
         profiles, profile_version = focal_profiles(conn, territory_type, territory_id,
             theme_id=theme_id, indicator_id=indicator_id)
+    bpe_available = (theme_id == "mobilite" and
+        conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0] and
+        conn.execute("SELECT 1 FROM bpe_profile_evidence_descriptor WHERE singleton AND indicator_id='bpe_access_profile'").fetchone())
     owned_descriptors=[]
     if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
         has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
@@ -1104,7 +1107,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 WHERE theme_id=%s AND active_read_route AND (%s::text IS NULL OR indicator_id=%s)
                 ORDER BY indicator_id""",(theme_id,indicator_id,indicator_id)).fetchall()
     collections = collection_descriptors(conn,indicator_id=indicator_id,theme_id=theme_id)
-    if not scalar_descriptors and not profiles and not owned_descriptors and not collections:
+    if not scalar_descriptors and not profiles and not owned_descriptors and not collections and not bpe_available:
         raise HTTPException(404, "No published facts for this theme")
     reference = conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
@@ -1170,17 +1173,21 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 "rank": rank, "rank_size": len(values) if rank is not None else None,
                 "comparison_sources": sources})
     profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id)
+    bpe_results = _bpe_profile_comparison(conn, territory_type, territory_id, selection)["results"] if bpe_available else []
     owned_results,owned_markers,_,_,_=_owned_series_comparison_results(conn,
         [(dataset_id,theme_id,False,owned_indicator,None)
          for dataset_id,owned_indicator in owned_descriptors],
         territory_type,territory_id,selection,cohort=(cohort_type,members,scope))
     results.extend(owned_results)
+    results.extend(bpe_results)
     collection_results = [collection_comparison(conn,descriptor,territory_type,territory_id,cohort_type,members)
                           for descriptor in collections]
     results.extend(collection_results)
     return {"contract": "theme-comparison-v1", "complete_theme": False, "theme_id": theme_id,
         "content_version": scalar_marker[0] if scalar_marker else (
-            next(iter(owned_markers.values()))[1] if owned_markers else collection_results[0]["content_version"] if collection_results else None),
+            next(iter(owned_markers.values()))[1] if owned_markers else
+                collection_results[0]["content_version"] if collection_results else
+                    (_bpe_profile_publication(conn)[0] if bpe_available else None)),
         "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
         "reference_content_version": reference[0],
         "selection": None if selection is None else [
@@ -1693,6 +1700,104 @@ def _owned_series_comparison_result(conn, route, territory_type, territory_id, i
         "result":_comparison_result_without_focal_value(result)}
 
 
+def _bpe_profile_publication(conn):
+    marker = conn.execute("""SELECT p.content_version,p.reference_content_version,r.content_version,
+        d.descriptor_version,d.allowed_levels,d.completeness,d.classification_id,d.universe_count,
+        d.universe_sha256,d.registry_filename,d.registry_semantic_effect,d.source_id,sd.name,sv.version,
+        sv.reference_date,sv.publication_date,d.indicator_id,p.row_count,d.membership_sha256
+      FROM table_publication p JOIN table_publication r ON r.table_name='territory_reference'
+      JOIN bpe_profile_evidence_descriptor d ON d.singleton
+      JOIN source_dataset sd ON sd.source_id=d.source_id
+      JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+      WHERE p.table_name='bpe_profile_evidence'""").fetchone()
+    if (not marker or not marker[0] or marker[1] != marker[2]
+            or not marker[18] or len(marker[18]) != 64):
+        raise HTTPException(503, "BPE profile publication is unavailable or incompatible")
+    published_rows = conn.execute("SELECT count(*) FROM bpe_profile_evidence").fetchone()[0]
+    if int(published_rows) != int(marker[17]):
+        raise HTTPException(503, "BPE profile row count differs from its publication marker")
+    return marker
+
+
+def _bpe_profile_comparison(conn, territory_type, territory_id, selection):
+    marker = _bpe_profile_publication(conn)
+    cohort_type, members, scope = _comparison_cohort(conn, territory_type, territory_id, selection)
+    axes = conn.execute("SELECT class_key,label,direction FROM bpe_profile_class_axis ORDER BY ordinal").fetchall()
+    if not axes or len(axes) != 4:
+        raise HTTPException(503, "BPE class axes are unavailable or incompatible")
+    # Comparison-only reads contain only selected group members. The focal fact
+    # is needed solely when the focal territory is itself selected.
+    read_ids = sorted(set(members))
+    rows = conn.execute("""SELECT territory_id,class_key,class_count,universe_count
+      FROM bpe_profile_evidence WHERE territory_type=%s AND territory_id=ANY(%s)""",
+      (cohort_type, read_ids)).fetchall() if read_ids else []
+    facts = {(row[0], row[1]): (int(row[2]), int(row[3])) for row in rows}
+    results=[]
+    for class_key,label,direction in axes:
+        class_members = [(code, facts[(code,class_key)][0]) for code in members
+                         if (code,class_key) in facts and facts[(code,class_key)][1] == marker[7]]
+        focal = facts.get((territory_id,class_key))
+        focal_count = focal[0] if focal and focal[1] == marker[7] else None
+        eligible = [value for _,value in class_members]
+        enough = len(eligible) >= 2
+        mean_value = sum(eligible)/len(eligible) if enough else None
+        rank = (1 + sum((value > focal_count) if direction == "high" else (value < focal_count)
+                        for value in eligible)) if enough and focal_count is not None and territory_id in members else None
+        ties = sum(value == focal_count for value in eligible) if rank is not None else None
+        results.append({"indicator_id":"bpe_access_profile","detail":class_key,"label":label,"direction":direction,
+          "statistic":"mean","metric_type":"mean","status":"available" if enough else "unavailable",
+          "reason":None if enough else ("fewer_than_two_comparable_values" if eligible else
+            ("no_selected_comparable_values" if members else "empty_selection")),
+          "selected_member_count":len(members),"eligible_count":len(eligible),
+          "missing_count":max(0,len(members)-len(eligible)),"mean":mean_value,
+          "rank":rank,"rank_size":len(eligible) if rank is not None else None,"rank_ties":ties})
+    return {"content_version":marker[0],"reference_content_version":marker[2],
+      "selection":None if selection is None else [{"territory_type":level,"territory_id":code}
+        for level,code in selection],"scope":{**scope,"member_count":len(members)} if scope else None,
+      "results":results}
+
+
+def _bpe_profile_snapshot(conn, territory_type, territory_id, *, default_comparison):
+    marker = _bpe_profile_publication(conn)
+    territory = conn.execute("SELECT territory_id,name,territory_type FROM territory_reference WHERE territory_id=%s AND territory_type=%s",
+                             (territory_id,territory_type)).fetchone()
+    if not territory:
+        raise HTTPException(404,"Territory not found")
+    rows = conn.execute("""SELECT e.class_key,a.label,a.direction,e.class_count,e.universe_count,
+       e.exemplar_typequ,e.exemplar_label,e.exemplar_c,e.exemplar_b,e.exemplar_t,
+       sd.source_id,sd.name,sv.version,sv.reference_date,sv.publication_date
+      FROM bpe_profile_evidence e JOIN bpe_profile_class_axis a USING(class_key)
+      JOIN bpe_profile_evidence_source es USING(territory_type,territory_id,class_key)
+      JOIN source_dataset sd USING(source_id) JOIN source_vintage sv USING(source_id,vintage_id)
+      WHERE e.territory_type=%s AND e.territory_id=%s ORDER BY a.ordinal""",
+      (territory_type,territory_id)).fetchall()
+    if len(rows) != 4:
+        raise HTTPException(404,"Complete BPE classification evidence is unavailable for this territory")
+    if (sum(int(r[3]) for r in rows) != int(marker[7])
+            or any(int(r[4]) != int(marker[7]) for r in rows)
+            or any(r[10] != marker[11] or r[11] != marker[12] or r[12] != marker[13]
+                   or r[13] != marker[14] or r[14] != marker[15] for r in rows)):
+        raise HTTPException(503,"BPE class rows do not match their universe or source descriptor")
+    sources = [{"source_id":marker[11],"name":marker[12],"version":marker[13],
+                "reference_date":marker[14].isoformat() if marker[14] else None,
+                "publication_date":marker[15].isoformat() if marker[15] else None}]
+    evidence = [{"class_key":r[0],"label":r[1],"direction":r[2],"count":r[3],
+      "universe_count":r[4],"exemplar":None if r[5] is None else {
+        "typequ":r[5],"label":r[6],"access":{"car":r[7],"bike":r[8],"walk_transit":r[9]}}}
+      for r in rows]
+    payload={"contract":"bpe-profile-evidence-v1","indicator_id":marker[16],"shape":"bpe_profile_evidence",
+      "territory":{"territory_id":territory[0],"name":territory[1],"territory_type":territory[2]},
+      "content_version":marker[0],"reference_content_version":marker[2],
+      "descriptor":{"version":marker[3],"allowed_levels":marker[4],"completeness":marker[5],
+        "classification_id":marker[6],"universe_count":marker[7],"universe_sha256":marker[8],
+        "registry_filename":marker[9],"registry_semantic_effect":marker[10],
+        "membership_sha256":marker[18]},
+      "classes":evidence,"sources":sources}
+    if default_comparison:
+        payload["default_comparison"]=_bpe_profile_comparison(conn,territory_type,territory_id,None)
+    return payload
+
+
 @app.get("/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
 def scalar_observation(
     territory_type: Literal["commune", "epci", "departement", "region"],
@@ -1712,6 +1817,16 @@ def scalar_observation(
             # Shape probes are restricted to the fixed descriptor tables in the
             # serving contract; this also supports installations mid expand/migrate.
             shape_rows = []
+            if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]:
+                bpe_descriptor = conn.execute(
+                    "SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone()
+                if bpe_descriptor and bpe_descriptor[0] == indicator_id:
+                    return _bpe_profile_snapshot(conn, territory_type, territory_id,
+                                                 default_comparison=True)
+            bpe = conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone() \
+                if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0] else None
+            if bpe and bpe[0] == indicator_id:
+                return _bpe_profile_snapshot(conn, territory_type, territory_id, default_comparison=True)
             for table, shape in (("scalar_descriptor", "scalar"),
                                  ("profile_descriptor", "profile"),
                                  ("series_descriptor", "series")):
@@ -1872,6 +1987,8 @@ def theme_facts(
                      (theme_id, territory_id, territory_type)).fetchall()
             profiles, profile_version = focal_profiles(conn, territory_type, territory_id, theme_id=theme_id)
             owned_series=[]
+            collections=[]
+            bpe_profile=None
             if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
                 has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
                     WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
@@ -1882,10 +1999,14 @@ def theme_facts(
                         WHERE theme_id=%s AND active_read_route ORDER BY indicator_id""",(theme_id,)).fetchall()
                     owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator)
                                   for dataset_id,indicator in routes]
+            bpe_profile = (_bpe_profile_snapshot(conn,territory_type,territory_id,default_comparison=False)
+                if theme_id == "mobilite" and conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]
+                and conn.execute("SELECT 1 FROM bpe_profile_evidence_descriptor WHERE singleton AND indicator_id='bpe_access_profile'").fetchone()
+                else None)
             collections = [collection_snapshot(conn,descriptor,territory_type,territory_id)
                            for descriptor in collection_descriptors(conn,theme_id=theme_id)
                            if territory_type in descriptor["allowed_levels"]]
-            if not rows and not profiles and not owned_series and not collections:
+            if not rows and not profiles and not owned_series and not bpe_profile and not collections:
                 raise HTTPException(404, "No published facts for this theme and territory")
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
                 profiles=profiles, profile_version=profile_version)
@@ -1916,7 +2037,7 @@ def theme_facts(
         "owned_series_content_versions":[item["publication_id"] for item in owned_series],
         "reference_content_version":comparison["reference_content_version"],
         "profile_content_version":profile_version,"profiles":profiles,
-        "series":owned_series,
+        "series":owned_series,"bpe_profile_evidence":bpe_profile,
         "collections":collections,
        "facts":[dict(zip(names,row)) for row in rows],
        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
@@ -2134,6 +2255,16 @@ def indicator_comparison_only(
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]:
+                bpe_descriptor=conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone()
+                if bpe_descriptor and bpe_descriptor[0] == indicator_id:
+                    result=_bpe_profile_comparison(conn,territory_type,territory_id,selection)
+                    return {"contract":"indicator-comparison-v1","complete_theme":False,
+                        "indicator_id":indicator_id,"shape":"bpe_profile_evidence",
+                        "content_version":result["content_version"],
+                        "reference_content_version":result["reference_content_version"],
+                        "selection":result["selection"],"scope":result["scope"],
+                        "results":result["results"]}
             active_owned=_owned_series_route(conn,indicator_id)
             if active_owned:
                 if active_owned[2]:
