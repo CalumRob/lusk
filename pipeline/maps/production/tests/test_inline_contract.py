@@ -4,6 +4,7 @@ import gc
 import shutil
 import tempfile
 import unittest
+import urllib.parse
 from unittest.mock import patch
 from pathlib import Path
 import sys
@@ -25,6 +26,7 @@ from qgis.PyQt.QtGui import QColor, QImage
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
 from network import NetworkAdapter, network_recipe  # noqa: E402
+from mainland_context import acquire_context  # noqa: E402
 from runner import Binding, MapSet, run_production  # noqa: E402
 
 
@@ -487,6 +489,90 @@ class InlineProfileContractTests(unittest.TestCase):
                 recoloured = run("#123456")
             self.assertEqual({item["mode"]: item["decision"] for item in recoloured.outputs},
                 {"car": "rendered", "walk": "reused-output", "bike": "reused-output"})
+        finally:
+            QgsProject.instance().clear()
+
+    def test_network_adapter_scopes_context_derivative_reuse_and_loads_acquired_context(self):
+        root = Path(tempfile.mkdtemp(prefix="lusk-official-context-runner-"))
+        self.__class__.fixture_dirs.append(root)
+        raw = root / "pipeline" / "data" / "raw"
+        raw.mkdir(parents=True)
+        metadata = root / "pipeline" / "inst" / "extdata" / "theme-metadata"
+        metadata.mkdir(parents=True)
+        self._write_source_metadata(metadata)
+        (metadata.parent / "epci_geo_api.json").write_text(json.dumps({"labels": []}), encoding="utf-8")
+        self._write_osm(raw / "bretagne-latest.gpkg")
+        (raw / "france-20260807.parquet").write_bytes(b"unused bike source")
+        self._write_communes(raw / "communes_limites.geojson")
+        self._write_ocsge(raw / "extracted" / "ocsge")
+        extent = (-10.0, -10.0, 110.0, 110.0)
+        cache = root / "outputs" / ".stage-cache" / "official-context"
+
+        def context_response(visible_shift=0, irrelevant_shift=0):
+            visible = [[90 + visible_shift, 0], [100 + visible_shift, 0],
+                       [100 + visible_shift, 10], [90 + visible_shift, 0]]
+            irrelevant = [[1000 + irrelevant_shift, 0], [1010 + irrelevant_shift, 0],
+                          [1010 + irrelevant_shift, 10], [1000 + irrelevant_shift, 0]]
+            return {"type": "FeatureCollection", "numberMatched": 2, "numberReturned": 2,
+                "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::2154"}},
+                "features": [{"type": "Feature", "properties": {"cleabs": "VISIBLE", "code_insee": "22001", "nom_officiel": "Visible"},
+                    "geometry": {"type": "Polygon", "coordinates": [visible]}},
+                    {"type": "Feature", "properties": {"cleabs": "OUTSIDE", "code_insee": "22002", "nom_officiel": "Outside"},
+                    "geometry": {"type": "Polygon", "coordinates": [irrelevant]}}]}
+
+        def acquire(document, bbox=extent, refresh=False):
+            def fetch(url):
+                query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+                return b'<FeatureCollection numberMatched="2"/>' if query.get("resultType") == ["hits"] else json.dumps(document).encode()
+            return acquire_context(cache, bbox, fetch=fetch, refresh=refresh)
+
+        feature = {"territory": {"kind": "epci", "code": "fixture", "name": "Fixture"},
+            "mode": "car", "geometry": QgsGeometry.fromWkt("POLYGON ((0 0,80 0,80 100,0 100,0 0))"),
+            "analytical_geometry": QgsGeometry.fromWkt("POLYGON ((0 0,80 0,80 100,0 100,0 0))"),
+            "region_geometry": QgsGeometry.fromWkt("POLYGON ((-10 -10,80 -10,80 110,-10 110,-10 -10))"),
+            "extent": QgsRectangle(*extent)}
+        binding = Binding("network", MapSet({"outputs": [feature]}))
+        output = root / "outputs"
+
+        def run(profiles=("inspection",)):
+            QgsProject.instance().clear()
+            adapter = NetworkAdapter(raw, cache_root=root / "network-cache")
+            result = run_production(network_recipe(), binding, "representative", profiles, adapter, output)
+            return adapter, result
+
+        try:
+            with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
+                # No pre-acquired generation: public runner fails before rendering.
+                with self.assertRaisesRegex(RuntimeError, "No valid pre-acquired mainland context"):
+                    run()
+            acquire(context_response(), bbox=(-5.0, -5.0, 105.0, 105.0))
+            with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
+                with self.assertRaisesRegex(RuntimeError, "No valid pre-acquired mainland context"):
+                    run()
+            acquire(context_response())
+            with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
+                _, inline_first = run(("inline",))
+            self.assertEqual(inline_first.outputs[0]["decision"], "rendered")
+            with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
+                adapter, first = run()
+                # Official land outside the local analytic polygon is present in the actual shared ground.
+                self.assertFalse(adapter._shared_ground.context_geometry.intersection(
+                    QgsGeometry.fromWkt("POLYGON ((90 0,100 0,100 10,90 0))")).isEmpty())
+            acquire(context_response(irrelevant_shift=50), refresh=True)
+            with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
+                _, warm = run()
+                _, inline_warm = run(("inline",))
+            self.assertEqual(inline_warm.outputs[0]["decision"], "reused-output")
+            derivative = next(item for item in warm.qa["stage_report"] if item["stage"] == "visible-ground-derivatives")
+            self.assertEqual(derivative["decision"], "reused")
+            self.assertEqual(warm.outputs[0]["decision"], "reused-output")
+            acquire(context_response(visible_shift=5, irrelevant_shift=50), refresh=True)
+            with patch("mainland_context._http_fetch", side_effect=AssertionError("renderer attempted HTTP")):
+                _, changed = run()
+            derivative = next(item for item in changed.qa["stage_report"] if item["stage"] == "visible-ground-derivatives")
+            self.assertEqual(derivative["decision"], "built")
+            self.assertEqual(changed.outputs[0]["decision"], "rendered")
+            self.assertNotEqual(first.outputs[0]["effective_identity"], changed.outputs[0]["effective_identity"])
         finally:
             QgsProject.instance().clear()
     def _recipe_with_shadow_opacity(self, opacity):

@@ -1126,8 +1126,15 @@ class NetworkAdapter:
         analysis_wkb = bytes(analysis.asWkb()) if analysis is not None else b""
         territory_wkb = bytes(geometry.asWkb()) if geometry is not None else b""
         region_wkb = bytes(region.asWkb()) if region is not None else b""
-        context_wkb = bytes(self._shared_ground.context_geometry.asWkb())
-        identity_payload = {"schema": 1, "kind": feature["territory"]["kind"],
+        frame = QgsGeometry.fromRect(extent)
+        scoped_context_parts = [geometry for geometry in self._shared_ground.context_geometries
+            if geometry.boundingBox().intersects(extent)]
+        if scoped_context_parts:
+            context_scope = QgsGeometry.unaryUnion(scoped_context_parts).intersection(frame)
+        else:
+            context_scope = QgsGeometry()
+        context_wkb = _canonical_geometry_wkb(context_scope)
+        identity_payload = {"schema": 2, "kind": feature["territory"]["kind"],
             "profile": profile.name, "size": profile.size,
             "extent": [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()],
             "analysis_sha256": sha256(analysis_wkb).hexdigest(),
@@ -1154,7 +1161,6 @@ class NetworkAdapter:
                         return parts, "reused", perf_counter() - started
             except (OSError, ValueError, TypeError, AttributeError):
                 pass
-        frame = QgsGeometry.fromRect(extent)
         scope = frame if profile.name == "inspection" else frame.intersection(analysis)
         context_part = _canonical_geometry_wkb(self._shared_ground.context_geometry.intersection(scope))
         territory_part = _canonical_geometry_wkb(geometry.intersection(scope)) if geometry is not None else b""

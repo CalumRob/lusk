@@ -93,6 +93,7 @@ class SharedGround:
     ocsge_layers: tuple[QgsVectorLayer, ...]
     texture: QImage
     context_provenance: dict = field(default_factory=dict, repr=False, compare=False)
+    context_geometries: tuple[QgsGeometry, ...] = field(default_factory=tuple, repr=False, compare=False)
     _frontiers: dict[bytes, QgsGeometry] = field(default_factory=dict, repr=False, compare=False)
     _frontier_cache_root: Path | None = field(default=None, repr=False, compare=False)
     _stage_report: list | None = field(default=None, repr=False, compare=False)
@@ -464,7 +465,7 @@ def add_context_land(
     communes: QgsVectorLayer,
     *, cache_root: str | Path | None = None, refresh: bool = False,
     stage_report: list | None = None,
-) -> tuple[QgsVectorLayer, QgsGeometry]:
+) -> tuple[QgsVectorLayer, QgsGeometry, tuple[QgsGeometry, ...]]:
     """Build the official commune context from the local Admin Express source."""
     fingerprint_started = perf_counter()
     source_to_map = QgsCoordinateTransform(communes.crs(), MAP_CRS, project.transformContext())
@@ -524,7 +525,7 @@ def add_context_land(
         stage_report.append({"stage": "context-land-union", "profile": "shared",
             "identity": identity, "decision": decision,
             "seconds": round(perf_counter() - stage_started, 3)})
-    return layer, land_geometry
+    return layer, land_geometry, tuple(geometries)
 
 
 def _read_context_cache(directory: Path, identity: str) -> QgsGeometry | None:
@@ -643,7 +644,7 @@ def prepare_shared_ground(
                 raise RuntimeError(f"Official context feature {stable_id} has invalid polygon geometry")
             if not geometry.isGeosValid():
                 raise RuntimeError(f"Official context feature {stable_id} has topologically invalid geometry")
-    context_layer, context_geometry = add_context_land(project, combined_extent, communes,
+    context_layer, context_geometry, context_geometries = add_context_land(project, combined_extent, communes,
         cache_root=cache_root, refresh=refresh, stage_report=stage_report)
     if stage_report is not None and _context_manifest is not None:
         stage_report.append({"stage": "official-mainland-context-source", "profile": "shared",
@@ -662,6 +663,7 @@ def prepare_shared_ground(
         raise RuntimeError(f"Could not load approved paper texture: {texture_path}")
     frontier_root = Path(cache_root).parent / "frontier" if cache_root is not None else None
     return SharedGround(context_layer, context_geometry, ocsge_layers, texture, _context_manifest,
+        context_geometries=context_geometries,
         _frontier_cache_root=frontier_root, _stage_report=stage_report, _refresh=refresh)
 
 
