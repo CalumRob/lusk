@@ -45,6 +45,50 @@ tryCatch({
     DBI::dbGetQuery(con, "SELECT row_count FROM table_publication WHERE table_name='building_grid'")$row_count[[1L]] == nrow(inputs$tables$building_grid))
   publish_service_share_scalars(con, inputs$scalar_access, inputs$scalar_metadata,
     inputs$scalar_eligible_territories, additional_projections=complete$additional_projections)
+  economy_histories <- nanoparquet::read_parquet(file.path(canonical_dir,"histoires_economie.parquet"))
+  economy_vintages <- nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
+  economy_metadata <- lire_theme_metadata("economie")
+  economy_canonical <- list(histories=economy_histories,vintages=economy_vintages,metadata=economy_metadata,
+    content_version=economy_reading_content_version(economy_histories,economy_vintages,economy_metadata))
+  publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_canonical,con)
+  expected_reading <- project_economy_reading(economy_histories,economy_vintages,economy_metadata)
+  reading_columns <- c("territory_id","territory_type","groupe","story_key","salience_reason","status","source_id","vintage_id")
+  actual_reading <- DBI::dbGetQuery(con,paste0("SELECT ",paste(reading_columns,collapse=","),
+    " FROM economy_typed_reading ORDER BY territory_type,territory_id,groupe"))
+  expected_reading_ordered <- expected_reading[order(expected_reading$territory_type,expected_reading$territory_id,expected_reading$groupe),reading_columns,drop=FALSE]
+  rownames(actual_reading) <- rownames(expected_reading_ordered) <- NULL
+  expected_evidence <- do.call(rbind,lapply(seq_len(5L),function(rank) {
+    code <- expected_reading[[paste0("top",rank,"_activity_code")]]; keep <- !is.na(code)
+    data.frame(territory_id=expected_reading$territory_id[keep],territory_type=expected_reading$territory_type[keep],
+      groupe=expected_reading$groupe[keep],rank=rank,activity_code=code[keep],
+      activity_label=expected_reading[[paste0("top",rank,"_activity_label")]][keep],
+      lq=expected_reading[[paste0("top",rank,"_lq")]][keep],establishment_count=expected_reading[[paste0("top",rank,"_n")]][keep],
+      park_share=expected_reading[[paste0("top",rank,"_part_parc")]][keep],source_id=expected_reading$source_id[keep],
+      vintage_id=expected_reading$vintage_id[keep],stringsAsFactors=FALSE)
+  }))
+  actual_evidence <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,rank,activity_code,activity_label,lq,
+    establishment_count,park_share,source_id,vintage_id FROM economy_activity_evidence ORDER BY territory_type,territory_id,groupe,rank")
+  expected_evidence <- expected_evidence[order(expected_evidence$territory_type,expected_evidence$territory_id,
+    expected_evidence$groupe,expected_evidence$rank),]
+  rownames(actual_evidence) <- rownames(expected_evidence) <- NULL
+  stopifnot(isTRUE(all.equal(actual_reading,expected_reading_ordered,check.attributes=FALSE)),
+    isTRUE(all.equal(actual_evidence,expected_evidence,check.attributes=FALSE)),
+    DBI::dbGetQuery(con,"SELECT row_count FROM table_publication WHERE table_name='economy_typed_reading'")$row_count[[1L]]==nrow(expected_reading),
+    DBI::dbGetQuery(con,"SELECT row_count FROM table_publication WHERE table_name='economy_activity_evidence'")$row_count[[1L]]==nrow(expected_evidence))
+  marker_before_noop <- DBI::dbGetQuery(con,"SELECT table_name,content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name IN ('economy_typed_reading','economy_activity_evidence') ORDER BY table_name")
+  publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_canonical,con)
+  stopifnot(isTRUE(all.equal(marker_before_noop,DBI::dbGetQuery(con,"SELECT table_name,content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name IN ('economy_typed_reading','economy_activity_evidence') ORDER BY table_name"),check.attributes=FALSE)))
+  DBI::dbExecute(con,"CREATE FUNCTION reject_economy_evidence() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected economy evidence failure'; END $$")
+  DBI::dbExecute(con,"CREATE TRIGGER reject_economy_evidence BEFORE INSERT ON economy_activity_evidence FOR EACH ROW EXECUTE FUNCTION reject_economy_evidence()")
+  failed_input <- economy_canonical
+  failed_input$histories$salience_reason[[1L]] <- paste0(failed_input$histories$salience_reason[[1L]],"-rollback-test")
+  failed_input$content_version <- economy_reading_content_version(failed_input$histories,failed_input$vintages,failed_input$metadata)
+  failed_publication <- try(publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",failed_input,con),silent=TRUE)
+  DBI::dbExecute(con,"DROP TRIGGER reject_economy_evidence ON economy_activity_evidence")
+  DBI::dbExecute(con,"DROP FUNCTION reject_economy_evidence()")
+  stopifnot(inherits(failed_publication,"try-error"),
+    isTRUE(all.equal(marker_before_noop,DBI::dbGetQuery(con,"SELECT table_name,content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name IN ('economy_typed_reading','economy_activity_evidence') ORDER BY table_name"),check.attributes=FALSE)),
+    isTRUE(all.equal(actual_evidence,DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,rank,activity_code,activity_label,lq,establishment_count,park_share,source_id,vintage_id FROM economy_activity_evidence ORDER BY territory_type,territory_id,groupe,rank"),check.attributes=FALSE)))
   expected_eco <- complete$projection$facts[complete$projection$facts$indicator_id == "eco_activites", , drop=FALSE]
   actual_eco <- DBI::dbGetQuery(con, "SELECT indicator_id,territory_id,territory_type,value,status,support_count,denominator_count FROM scalar_observation WHERE indicator_id='eco_activites' ORDER BY territory_type,territory_id")
   expected_eco <- expected_eco[order(expected_eco$territory_type, expected_eco$territory_id),
@@ -354,7 +398,9 @@ tryCatch({
   housing_levels <- vapply(expected_profiles, function(p) length(unique(p$facts$territory_type)), integer(1))
   names(housing_counts) <- housing_ids
   names(housing_levels) <- housing_ids
-  cat("Canonical housing SQL rows:", paste(names(housing_counts), housing_counts, sep="=", collapse=", "),
+  cat("Canonical economy selected readings:",nrow(expected_reading)," and sparse ordered activity facts:",nrow(expected_evidence),
+    "; registered R publisher/SQL parity plus public theme-facts HTTP assertion: PASS\n",
+    "Canonical housing SQL rows:", paste(names(housing_counts), housing_counts, sep="=", collapse=", "),
     "\nHTTP focal levels per profile:", paste(names(housing_levels), housing_levels, sep="=", collapse=", "),
     "\nCanonical building publisher rows: reference=", nrow(inputs$tables$territory_reference),
     " ramp=", nrow(inputs$tables$building_ramp), " grid=", nrow(inputs$tables$building_grid),

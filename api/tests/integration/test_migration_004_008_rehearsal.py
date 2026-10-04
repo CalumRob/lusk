@@ -193,6 +193,7 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
             connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('dpe_22','DPE')")
             connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version,publication_date) VALUES ('dpe_22','dpe_22','fixture','2026-01-01')")
             connection.execute(migration_020.read_text(encoding="utf-8"))
+            connection.execute((api_root / "migrations/021_economy_typed_reading.sql").read_text(encoding="utf-8"))
             prior_after_020 = connection.execute(
                 "SELECT table_name,content_version,reference_content_version FROM table_publication "
                 "WHERE table_name IN ('declared_profile','ordered_series') ORDER BY table_name"

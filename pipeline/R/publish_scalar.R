@@ -469,6 +469,7 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
   tables <- c("series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
+    "economy_activity_evidence", "economy_typed_reading",
     "series_context_parent_policy", "habitat_typed_reading",
     "selected_reading_publication", "selected_reading_descriptor", "demographic_typed_reading", "demographic_reading_descriptor",
     "period_detail_observation", "anchored_membership", "observed_collection_category",

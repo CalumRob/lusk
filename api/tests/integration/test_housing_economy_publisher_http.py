@@ -50,6 +50,10 @@ def test_registered_economy_scalar_publication_is_readable_over_http():
                 WHERE o.indicator_id='eco_activites' AND o.territory_id=%s AND o.territory_type='commune'""",
                 (territory,)).fetchone()
             assert canonical is not None
+            expected_activities = conn.execute("""SELECT rank,activity_code,activity_label,lq,establishment_count,park_share
+                FROM economy_activity_evidence WHERE territory_id=%s AND territory_type='commune' AND groupe=%s ORDER BY rank""",
+                (territory,"sante-et-taille")).fetchall()
+            unsupported_region = conn.execute("SELECT territory_id FROM territory_reference WHERE territory_type='region' LIMIT 1").fetchone()
         previous_pool = main.app.dependency_overrides.get(main.get_repository)
         with TestClient(main.app) as client:
             response = client.get(f"/api/territories/commune/{territory}/indicators/eco_activites")
@@ -77,6 +81,18 @@ def test_registered_economy_scalar_publication_is_readable_over_http():
             assert empty.json()["result"]["status"] == "unavailable"
             assert empty.json()["result"]["median"] is None
             assert "focal_value" not in empty.json()["result"]
+            fiche = client.get(f"/api/territories/commune/{territory}/themes/economie/facts")
+            assert fiche.status_code == 200, fiche.text
+            economy = next(item for item in fiche.json()["readings"] if item["groupe"] == "sante-et-taille")
+            assert [tuple(item.get(key) for key in ("rank","activity_code","activity_label","lq","n","part_parc"))
+                    for item in economy["activities"]] == expected_activities
+            assert economy["story_key"] == "ce-que-la-commune-abrite"
+            assert economy["salience_reason"] == "defaut"
+            assert economy["provenance"]["source_id"] == "sirene_snapshot"
+            unsupported = client.get(f"/api/territories/region/{unsupported_region[0]}/themes/economie/facts")
+            assert unsupported.status_code == 200, unsupported.text
+            assert unsupported.json()["readings"] == []
+            assert unsupported.json()["reading_availability"] == "unsupported"
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
