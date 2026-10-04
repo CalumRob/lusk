@@ -251,11 +251,22 @@ test_that("housing DPE scalar retains producer denominator and suppression", {
   expect_true(all(facts$status[facts$support_count > 0L & facts$support_count < 30L] == "suppressed"))
   expect_equal(projection$descriptors$comparison_facet, "part_passoires")
   expect_true("region" %in% projection$descriptors$allowed_levels[[1L]])
+  price_rows <- rows[canonical$key == "prix_m2" & is.na(canonical$detail), , drop=FALSE]
+  price <- project_scalar_canonical_rows(price_rows, metadata, "prix_m2",
+    unique(price_rows[c("territory_id", "territory_type")]))
+  expect_equal(nrow(price$facts), 1268L)
+  expect_setequal(as.character(table(price$facts$territory_type)), c("1202", "61", "4", "1"))
+  rennes <- price$facts[price$facts$territory_id == "35238", , drop=FALSE]
+  expect_equal(rennes$value, 3819.4444444444443)
+  expect_equal(rennes$status, "measured")
+  expect_true(any(price$facts$status == "suppressed" & price$facts$support_count < 10L))
+  expect_true(all(price$provenance$source_id == metadata$sources$prix_m2))
   inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
   snapshot <- project_service_scalar_snapshot(inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
-  expect_equal(nrow(snapshot$descriptors), 44L)
+  expect_equal(nrow(snapshot$descriptors), 45L)
   expect_true(all(c("effectifs_salaries", "chomage", "densite", "taille_menages", "part_passoires") %in%
     snapshot$descriptors$indicator_id))
+  expect_true(all(c("prix_m2", "part_passoires") %in% snapshot$descriptors$indicator_id))
   expect_true(all(c("distribution_dpe", "part_passoires") %in% names(metadata$indicator_pages)))
   expect_identical(metadata$indicator_pages$distribution_dpe$comparison$indicator, "part_passoires")
 })
@@ -430,8 +441,8 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
   service_inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
   snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
   expect_true(all(c(ids, "effectifs_salaries", "chomage", "densite", "taille_menages",
-    "evolution_1968", "part_passoires") %in% snapshot$descriptors$indicator_id))
-  expect_equal(nrow(snapshot$descriptors), 44L)
+    "evolution_1968", "part_passoires", "prix_m2") %in% snapshot$descriptors$indicator_id))
+  expect_equal(nrow(snapshot$descriptors), 45L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
 })
 

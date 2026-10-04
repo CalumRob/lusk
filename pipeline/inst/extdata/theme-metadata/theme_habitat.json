@@ -142,6 +142,15 @@
     "age_du_bati": { "completeness": "dense_complete", "allowed_levels": ["commune", "epci", "departement", "region"], "denominator_semantics": "residences_principales", "detail_units": { "lt1919": "%", "1919_1945": "%", "1946_1970": "%", "1971_1990": "%", "1991_2005": "%", "2006_plus": "%" } }
   },
   "scalar_contracts": {
+    "prix_m2": {
+      "allowed_levels": ["commune", "epci", "departement", "region"],
+      "completeness": "sparse",
+      "comparison_facet": "prix_m2",
+      "missing_status": "suppressed",
+      "counts_available": true,
+      "support_count_field": "support",
+      "suppressed_below": 10
+    },
     "part_passoires": {
       "allowed_levels": ["commune", "epci", "departement", "region"],
       "completeness": "sparse",

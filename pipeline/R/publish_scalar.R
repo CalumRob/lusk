@@ -497,8 +497,8 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
      "validate_period_detail_observation()", "validate_observed_collection_publication()",
     "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
     "validate_ordered_series()", "validate_anchored_membership()",
-    "validate_period_detail_observation()", "validate_observed_collection_write()",
-    "validate_observed_collection_publication()")
+     "validate_period_detail_observation()", "validate_observed_collection_write()",
+     "validate_observed_collection_publication()", "assert_bpe_profile_evidence_complete()")
   c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
     paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
       split <- strsplit(signature, "(", fixed=TRUE)[[1L]]
