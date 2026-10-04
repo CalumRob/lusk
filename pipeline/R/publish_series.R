@@ -67,8 +67,8 @@ project_conso_enaf_series <- function(payload, metadata) {
     stop("Canonical annual series is mislabeled with a different theme", call.=FALSE)
   if (anyNA(all_annual$detail) || any(!as.character(all_annual$detail) %in% axis))
     stop("Canonical annual series contains an undeclared axis point", call.=FALSE)
-  # Canonical territory-fiche data also contains the Région observation. It is
-  # explicitly accounted for and excluded from this indicator-page series;
+  # Canonical territory-fiche data also contains the RÃ©gion observation. It is
+  # explicitly accounted for by the declared levels of this projection;
   # all other non-eligible levels fail rather than disappearing in a filter.
   recognized_levels <- c(allowed_levels, "region")
   if (anyNA(all_annual$type) || any(!as.character(all_annual$type) %in% recognized_levels))
@@ -114,20 +114,25 @@ project_conso_enaf_series <- function(payload, metadata) {
     vintage_id=vintage_id, descriptor_version=as.character(page$descriptor_version %||% "1"))
   validate_series_projection(points, descriptor)
   list(points=points, descriptor=descriptor, dataset_name=source_record$dataset, vintage=vintage,
-    excluded=list(region=list(policy="territory_fiche_only", row_count=sum(all_annual$type == "region"),
-      keys=all_annual[all_annual$type == "region", c("territoire", "detail"), drop=FALSE])))
+    excluded=list(region=list(policy="territory_fiche_only", row_count=sum(!all_annual$type %in% allowed_levels),
+      keys=all_annual[!all_annual$type %in% allowed_levels, c("territoire", "detail"), drop=FALSE])))
 }
 
 owned_conso_enaf_projection <- function(canonical, metadata) {
+  serving_metadata <- metadata
+  route <- metadata$owned_series_routes$conso_enaf_annuel
+  if (!is.null(route$serving_levels))
+    serving_metadata$indicator_pages$conso_enaf_annuel$levels <- route$serving_levels
   projection <- if (is.list(canonical) && is.data.frame(canonical$indicateurs) && is.data.frame(canonical$vintages))
-    project_conso_enaf_series_from_artifacts(canonical$indicateurs, canonical$vintages, metadata) else
-    project_conso_enaf_series(canonical, metadata)
+    project_conso_enaf_series_from_artifacts(canonical$indicateurs, canonical$vintages, serving_metadata) else
+    project_conso_enaf_series(canonical, serving_metadata)
   d <- projection$descriptor
   points <- projection$points
   dataset_id <- metadata$indicator_pages$conso_enaf_annuel$series_dataset_id
   if (is.null(dataset_id) || length(dataset_id)!=1L || !nzchar(dataset_id))
     stop("ENAF owned-series identity is missing from metadata",call.=FALSE)
   d$dataset_id <- dataset_id
+  d <- declared_owned_series_route(d,metadata)
   points$dataset_id <- dataset_id
   source <- d$source_id; vintage_id <- unique(points$vintage_id)
   source_name <- projection$canonical_vintage_source %||% unique(points$source_id)[[1L]]
@@ -152,14 +157,14 @@ project_artif_m2m3_projection <- function(indicators, histories, vintages, metad
   dataset_id <- page$series_dataset_id
   if (is.null(dataset_id) || length(dataset_id)!=1L || !nzchar(dataset_id))
     stop("OCS-GE owned-series identity is missing from metadata",call.=FALSE)
-  levels <- unlist(page$levels, use.names=FALSE)
+  levels <- unlist(metadata$owned_series_routes[[indicator_id]]$serving_levels %||% page$levels, use.names=FALSE)
   raw <- indicators[!is.na(indicators$key) & indicators$key==indicator_id,,drop=FALSE]
   if (!nrow(raw) || !all(c("state_role","source_components") %in% names(raw)) ||
       anyNA(raw[c("territoire","type","detail","state_role","source_components","source_reference",
       "vintage_source","vintage_version","vintage_date_reference","vintage_date_publication")]))
     stop("Canonical state observations, typed roles or source components are incomplete",call.=FALSE)
   if (any(!raw$type %in% c(levels,"region"))) stop("Canonical state has an unexpected territory level",call.=FALSE)
-  excluded_region <- raw[raw$type=="region",,drop=FALSE]
+  excluded_region <- raw[!raw$type %in% levels,,drop=FALSE]
   raw <- raw[raw$type %in% levels,,drop=FALSE]
   history <- histories[!is.na(histories$theme) & histories$theme=="milieux" &
     histories$territoire %in% raw$territoire & histories$type %in% levels,,drop=FALSE]
@@ -219,6 +224,7 @@ project_artif_m2m3_projection <- function(indicators, histories, vintages, metad
     comparison_point=as.character(page$comparison$detail),
     label=page$label,unit=page$unit,direction=as.character(page$comparison$direction %||% page$direction),allowed_levels=levels,
     descriptor_version=as.character(page$descriptor_version %||% "1"))
+  descriptor <- declared_owned_series_route(descriptor,metadata)
   result <- list(dataset_id=dataset_id,points=points,descriptor=descriptor,
     provenance=provenance,point_provenance=point_provenance,
     excluded=list(region=list(policy="territory_fiche_only",row_count=nrow(excluded_region))))
@@ -231,7 +237,8 @@ project_prix_m2_owned_series <- function(indicators, vintages, metadata) {
   if (is.null(page) || is.null(page$series_dataset_id) || page$series_publication != "owned")
     stop("prix_m2 owned-series identity is missing from metadata", call.=FALSE)
   axis <- as.character(unlist(page$comparison$details, use.names=FALSE))
-  levels <- as.character(unlist(page$levels, use.names=FALSE))
+  route <- metadata$owned_series_routes[[page$indicator]]
+  levels <- as.character(unlist(route$serving_levels %||% page$levels, use.names=FALSE))
   raw_all <- indicators[!is.na(indicators$key) & indicators$key == "prix_m2", , drop=FALSE]
   raw <- raw_all[!is.na(raw_all$detail) & raw_all$type %in% levels, , drop=FALSE]
   if (!nrow(raw) || !all(c("territoire", "type", "detail", "value", "vintage_source", "vintage_version",
@@ -287,10 +294,25 @@ project_prix_m2_owned_series <- function(indicators, vintages, metadata) {
     completeness="may_be_missing", comparison_point=as.character(page$comparison$detail), label=page$label,
     unit=page$unit, direction=page$direction, allowed_levels=levels,
     descriptor_version=as.character(page$descriptor_version %||% "1"))
+  descriptor <- declared_owned_series_route(descriptor,metadata)
   result <- list(dataset_id=page$series_dataset_id, points=points, descriptor=descriptor,
     provenance=do.call(rbind, revisions), point_provenance=unique(do.call(rbind, links)))
   validate_owned_series_projection(result)
   result
+}
+
+declared_owned_series_route <- function(descriptor,metadata) {
+  route <- metadata$owned_series_routes[[descriptor$indicator_id]]
+  if (is.null(route)) return(descriptor)
+  comparison_levels <- unlist(metadata$indicator_pages[[descriptor$indicator_id]]$levels,use.names=FALSE)
+  if (!identical(route$theme_id,metadata$theme) || !is.logical(route$active_read_route) ||
+      length(route$active_read_route)!=1L || is.na(route$active_read_route) ||
+      !length(comparison_levels) || any(!comparison_levels %in% descriptor$allowed_levels))
+    stop("Invalid producer owned-series routing declaration",call.=FALSE)
+  descriptor$theme_id <- route$theme_id
+  descriptor$active_read_route <- route$active_read_route
+  descriptor$comparison_levels <- comparison_levels
+  descriptor
 }
 
 project_raccordement_owned_series <- function(indicators,vintages,metadata,producer_contract) {
@@ -755,11 +777,12 @@ read_owned_series_projections <- function(sortie="../public/data",
     lapply(projections,validate_owned_series_projection)
     # Reporting-only exclusion metadata belongs to the reader result, not the
     # owned projection whose serialized identity is the publication version.
+    serving_metadata <- metadata
+    serving_metadata$indicator_pages$conso_enaf_annuel$levels <-
+      projections$conso_enaf_annuel_owned$descriptor$allowed_levels
     enaf <- project_conso_enaf_series_from_artifacts(canonical$indicateurs,
-      canonical$vintages,metadata)
-     excluded <- list(conso_enaf_annuel_owned=enaf$excluded)
-     if(!is.null(projections$raccordement_courbe_owned)) excluded$raccordement_courbe_owned <- projections$raccordement_courbe_owned$excluded
-     attr(projections,"excluded") <- excluded
+      canonical$vintages,serving_metadata)
+    attr(projections,"excluded") <- list(conso_enaf_annuel_owned=enaf$excluded)
     projections
   })
 }

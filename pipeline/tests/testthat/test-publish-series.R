@@ -37,9 +37,11 @@ test_that("owned prix_m2 projects annual canonical facts with their effective ro
   vintages <- vintages_habitat()
   projection <- project_prix_m2_owned_series(payload$indicateurs, vintages, metadata)
   raw <- payload$indicateurs[payload$indicateurs$key == "prix_m2" & !is.na(payload$indicateurs$detail) &
-    payload$indicateurs$type %in% c("commune", "epci", "departement"), , drop=FALSE]
+    payload$indicateurs$type %in% c("commune", "epci", "departement", "region"), , drop=FALSE]
   expect_identical(projection$descriptor$axis_values, as.character(unlist(metadata$indicator_pages$prix_m2$comparison$details)))
-  expect_setequal(projection$points$territory_type, c("commune", "epci", "departement"))
+  expect_setequal(projection$points$territory_type, c("commune", "epci", "departement", "region"))
+  expect_setequal(projection$descriptor$comparison_levels,c("commune", "epci", "departement"))
+  expect_true(projection$descriptor$active_read_route)
   for (i in seq_len(nrow(raw))) {
     fact <- raw[i,]
     point <- projection$points[projection$points$territory_id == fact$territoire &
@@ -219,7 +221,9 @@ test_that("owned ENAF projection preserves its canonical facts and immutable pro
     vintages=nanoparquet::read_parquet(file.path(root,"vintages.parquet"))), metadata)
   expect_invisible(validate_owned_series_projection(projection))
   expect_identical(projection$descriptor$dataset_id,"conso_enaf_annuel")
-  expect_equal(nrow(projection$points),17710L)
+  expect_equal(nrow(projection$points),17724L)
+  expect_equal(sum(projection$points$territory_type=="region"),14L)
+  expect_setequal(projection$descriptor$comparison_levels,c("commune", "epci", "departement"))
   expect_true(all(projection$points$dataset_id=="conso_enaf_annuel"))
   expect_equal(nrow(projection$point_provenance),nrow(projection$points))
   expect_identical(projection$provenance$source_name,
@@ -352,9 +356,9 @@ test_that("production owned-series reader and check route project both canonical
       metadata$indicator_pages$artif_par_habitant, habitat_metadata$indicator_pages$prix_m2),
       function(p) p$series_dataset_id,character(1)))
   expect_equal(vapply(projections,function(p) nrow(p$points),integer(1)),
-    c(conso_enaf_annuel_owned=196L,artif_par_habitant_owned=28L,
+    c(conso_enaf_annuel_owned=210L,artif_par_habitant_owned=30L,
       prix_m2_owned=sum(habitat$indicateurs$key=="prix_m2" & !is.na(habitat$indicateurs$detail) &
-        habitat$indicateurs$type %in% c("commune","epci","departement"))))
+        habitat$indicateurs$type %in% c("commune","epci","departement","region"))))
   producer <- project_conso_enaf_series_from_artifacts(payload$indicateurs,
     vintages_milieux(),metadata)
   prix_producer <- project_prix_m2_owned_series(habitat$indicateurs,habitat_vintages,habitat_metadata)
@@ -365,7 +369,8 @@ test_that("production owned-series reader and check route project both canonical
     scalar_content_version(established))
   expect_identical(scalar_content_version(projections$prix_m2_owned),scalar_content_version(prix_producer))
   expect_equal(attr(projections,"excluded")$conso_enaf_annuel_owned$region$row_count,
-    producer$excluded$region$row_count)
+    0L)
+  expect_equal(producer$excluded$region$row_count,14L)
   connect <- function() stop("check route must not connect")
   checked <- dispatch_owned_series_cli("check",projections,connect)
   expect_identical(unlist(checked$versions),vapply(projections,scalar_content_version,character(1)))

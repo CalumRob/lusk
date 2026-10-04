@@ -1486,7 +1486,7 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
         raise HTTPException(422, "Focal territory type does not match route")
     facts = conn.execute("""SELECT o.axis_value,o.observation_period,o.value,o.status,o.missing_reason,
         p.provenance_revision_id,p.source_id,p.vintage_id,p.source_name,p.dataset_name,p.source_version,
-        p.reference_date,p.publication_date,p.revision_hash
+        p.reference_date,p.publication_date,p.revision_hash,o.state_role
         FROM series_dataset_observation o LEFT JOIN series_observation_provenance a
         USING(dataset_id,indicator_id,territory_id,axis_value)
         LEFT JOIN series_provenance_revision p USING(provenance_revision_id)
@@ -1531,6 +1531,8 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
         row=matching[0]
         points.append({"axis":row[0],"observation_period":row[1],"value":row[2],"status":row[3],
             "missing_reason":row[4],"provenance":[lineage(item,5) for item in matching]})
+        if row[14] is not None:
+            points[-1]["state_role"] = row[14]
     reference_groups={}
     required_ids=set()
     for row in references:
