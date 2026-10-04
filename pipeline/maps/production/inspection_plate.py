@@ -386,7 +386,6 @@ def _source_citation(metadata_dir: Path, mode: str) -> str:
     mobility = json.loads((metadata_dir / "theme_mobilite.json").read_text(encoding="utf-8"))["source_records"]
     milieus = json.loads((metadata_dir / "theme_milieux.json").read_text(encoding="utf-8"))["source_records"]
     osm = mobility["osm_reseaux"]
-    geovelo = mobility["amenagements_cyclables"]
     ocsge = next(record for key, record in milieus.items() if key.startswith("ocsge_artificialisation_"))
 
     def credit(record: dict) -> str:
@@ -397,6 +396,7 @@ def _source_citation(metadata_dir: Path, mode: str) -> str:
 
     ocsge_credit = f"{ocsge['publisher']} · OCS-GE"
     if mode == "bike":
+        geovelo = mobility["amenagements_cyclables"]
         return f"{geovelo['publisher']} · {credit(geovelo)} · {ocsge_credit}"
     return f"{credit(osm)} · {ocsge_credit}"
 
@@ -469,13 +469,15 @@ def _compose_map_layers(
     assets: Path,
     text_family: str,
     furniture_clear: QRect,
+    desaturate_outside_land: bool = True,
 ) -> QImage:
     image = ground.copy().convertToFormat(QImage.Format_RGBA8888)
     painter = QPainter(image)
     painter.drawImage(0, 0, boundaries)
     painter.end()
-    from map_ground import desaturate_outside_image
-    desaturate_outside_image(image, outside_land, extent, OUTPUT_SIZE, OUTPUT_SIZE)
+    if desaturate_outside_land:
+        from map_ground import desaturate_outside_image
+        desaturate_outside_image(image, outside_land, extent, OUTPUT_SIZE, OUTPUT_SIZE)
 
     wordmark = QPainterPath(title.wordmark_path)
     wordmark_mask = _glyph_coverage(wordmark)
@@ -583,6 +585,7 @@ def compose_inspection(
     assets: str | Path,
     metadata_dir: str | Path,
     scale_spec: tuple[str, float],
+    desaturate_outside_land: bool = True,
 ) -> QImage:
     """Produce the complete, independent 3200px approved inspection profile."""
     if ground.size().width() != OUTPUT_SIZE or ground.size().height() != OUTPUT_SIZE:
@@ -596,7 +599,7 @@ def compose_inspection(
         _load_static_face("mozilla-text", 700, assets, temp)
         image = _compose_map_layers(
             ground, boundaries, networks, outside_land, land_mask, extent, title,
-            scale_spec, assets, family_regular, QRect(),
+            scale_spec, assets, family_regular, QRect(), desaturate_outside_land,
         )
         citation = _source_citation(Path(metadata_dir), content["mode"])
         _draw_footer(image, content["mode"], family_regular, family_semibold, citation,

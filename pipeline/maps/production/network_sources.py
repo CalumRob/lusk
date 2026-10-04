@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from hashlib import sha256
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,7 @@ import re
 import shutil
 from typing import Callable, Mapping
 from uuid import uuid4
+from time import perf_counter
 
 
 @dataclass(frozen=True)
@@ -157,6 +159,7 @@ def _publish_family(
 def prepare_network_sources(
     cache_root: str | Path,
     preparations: Mapping[str, FamilyPreparation],
+    *, force: bool = False, report: list | None = None,
 ) -> dict[str, dict[str, Path]]:
     """Reuse or atomically prepare each family using its own cache signature."""
     if not preparations:
@@ -164,17 +167,26 @@ def prepare_network_sources(
     cache_root = Path(cache_root)
     result = {}
     for family, preparation in preparations.items():
+        started = perf_counter()
         _validate_names(family, preparation)
         signature = _canonical_signature(preparation.signature)
+        signature_identity = sha256(json.dumps(signature, sort_keys=True,
+            separators=(",", ":")).encode()).hexdigest()
         family_root = cache_root / family
-        paths = _load_family(family_root, family, preparation, signature)
+        paths = None if force else _load_family(family_root, family, preparation, signature)
         if paths is not None:
             generation = paths[next(iter(paths))].parent.name
             print(f"[network-prep] {family}: reused {generation}", flush=True)
             result[family] = paths
+            if report is not None:
+                report.append({"stage": f"network-{family}", "profile": "shared",
+                    "identity": signature_identity, "decision": "reused", "seconds": round(perf_counter()-started, 3)})
             continue
 
         print(f"[network-prep] {family}: preparing indexed FlatGeobuf sources", flush=True)
         result[family] = _publish_family(cache_root, family, preparation, signature)
         print(f"[network-prep] {family}: prepared {len(result[family])} artifacts", flush=True)
+        if report is not None:
+            report.append({"stage": f"network-{family}", "profile": "shared",
+                "identity": signature_identity, "decision": "built", "seconds": round(perf_counter()-started, 3)})
     return result

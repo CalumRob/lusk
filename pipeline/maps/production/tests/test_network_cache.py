@@ -19,6 +19,18 @@ def family(signature, filenames, calls, name):
 
 
 class PreparedNetworkCacheTests(unittest.TestCase):
+    def test_refresh_forces_a_new_generation_and_reports_builds(self):
+        with tempfile.TemporaryDirectory() as temp:
+            calls = {"osm": 0}
+            preparation = family({"effective": "fixture-v1"}, {"car": "car.fgb"}, calls, "osm")
+            cache = Path(temp) / "cache"
+            prepare_network_sources(cache, {"osm": preparation})
+            report = []
+            prepare_network_sources(cache, {"osm": preparation}, force=True, report=report)
+            self.assertEqual(calls["osm"], 2)
+            self.assertEqual(len(report), 1)
+            self.assertEqual(report[0]["decision"], "built")
+
     def test_second_prepare_reuses_each_family_artifact_generation(self):
         with tempfile.TemporaryDirectory() as temp:
             cache_root = Path(temp) / "network-sources"

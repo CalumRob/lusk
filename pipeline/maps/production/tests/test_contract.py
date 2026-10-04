@@ -45,18 +45,63 @@ class FixtureAdapter:
         png(path, *profile.size, rgba=profile.transparent_outside,
             transparent=profile.transparent_outside)
         return path
+    def expected_output_path(self, feature, profile, output_dir):
+        return output_dir / f"fixture-{profile.name}.png"
     def validate(self, path, feature, profile): pass
 
 
 class ContractTests(unittest.TestCase):
-    def test_production_runner_invokes_the_shared_preparation_hook_once(self):
-        class PreparingAdapter(FixtureAdapter):
-            def __init__(self):
-                super().__init__()
-                self.preparations = []
+    def test_subset_run_preserves_omitted_cached_output_records(self):
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        features = [{"geometry": "polygon", "territory": {"kind": "test", "code": code}, "mode": "test"}
+                    for code in ("1", "2")]
+        with TemporaryDirectory() as directory:
+            full = run_production(recipe, Binding("fixture", MapSet({"shape": features})),
+                "representative", ["inline"], FixtureAdapter(), directory)
+            subset = run_production(recipe, Binding("fixture", MapSet({"shape": features[:1]})),
+                "representative", ["inline"], FixtureAdapter(), directory)
+            saved = json.loads((Path(directory) / ".production-manifest.json").read_text())
+        self.assertEqual(len(full.outputs), 2)
+        self.assertEqual(len(subset.outputs), 1)
+        self.assertEqual(len(saved["outputs"]), 2)
 
-            def prepare_run(self, recipe, binding, profiles, output_dir):
-                self.preparations.append((recipe, binding, tuple(profiles), output_dir))
+    def test_public_run_reuses_verified_output_across_runs_and_repairs_corruption(self):
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        feature = {"geometry": "polygon", "territory": {"kind": "test", "code": "1"}, "mode": "test"}
+        binding = Binding("fixture", MapSet({"shape": [feature]}))
+        with TemporaryDirectory() as directory:
+            adapter = FixtureAdapter()
+            cold = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            warm = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            self.assertEqual(cold.outputs[0]["decision"], "rendered")
+            self.assertEqual(warm.outputs[0]["decision"], "reused-output")
+            Path(warm.outputs[0]["path"]).write_bytes(b"corrupt")
+            repaired = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            self.assertEqual(repaired.outputs[0]["decision"], "rendered")
+            refreshed = run_production(recipe, binding, "representative", ["inline"], adapter, directory, refresh=True)
+            self.assertEqual(refreshed.outputs[0]["decision"], "rendered")
+            self.assertEqual(refreshed.outputs[0]["output_sha256"], cold.outputs[0]["output_sha256"])
+            cache_path = Path(directory) / ".production-manifest.json"
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+            cache["outputs"]["test/1/test/inline"]["path"] = 123
+            cache_path.write_text(json.dumps(cache), encoding="utf-8")
+            malformed = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            self.assertEqual(malformed.outputs[0]["decision"], "rendered")
+            decoy = Path(directory) / "decoy.png"
+            png(decoy, 900, 900, rgba=True, transparent=True)
+            cache = json.loads(cache_path.read_text(encoding="utf-8"))
+            cache["outputs"]["test/1/test/inline"]["path"] = str(decoy)
+            cache_path.write_text(json.dumps(cache), encoding="utf-8")
+            wrong_path = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            self.assertEqual(wrong_path.outputs[0]["decision"], "rendered")
+
+    def test_run_report_exposes_adapter_preparation_stage(self):
+        class PreparingAdapter(FixtureAdapter):
+            def prepare_run(self, recipe, binding, profiles, output_dir, *, refresh=False):
+                self.refresh_seen = refresh
+
+            def stage_report(self):
+                return [{"stage": "fixture-stage", "profile": "inline", "decision": "built", "seconds": 0.0}]
 
         recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
         feature = {
@@ -68,10 +113,27 @@ class ContractTests(unittest.TestCase):
         adapter = PreparingAdapter()
 
         with TemporaryDirectory() as directory:
-            run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            result = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
 
-        self.assertEqual(len(adapter.preparations), 1)
-        self.assertEqual(adapter.preparations[0][:3], (recipe, binding, ("inline",)))
+        self.assertIn({"stage": "fixture-stage", "profile": "inline", "decision": "built", "seconds": 0.0},
+                      result.qa["stage_report"])
+        self.assertEqual(next(item["decision"] for item in result.qa["stage_report"]
+            if item["stage"] == "adapter-preparation-total"), "completed")
+
+    def test_shared_frame_and_geography_contracts_invalidate_profile_outputs(self):
+        from dataclasses import replace
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        feature = {"geometry": "polygon", "territory": {"kind": "test", "code": "1"}, "mode": "test"}
+        binding = Binding("fixture", MapSet({"shape": [feature]}))
+        with TemporaryDirectory() as directory:
+            first = run_production(recipe, binding, "representative", ["inline"], FixtureAdapter(), directory)
+            changed_foundation = replace(recipe.foundation,
+                framing={"margin": 0.15}, geography={"extent_rule": "shared-v2"})
+            changed = run_production(replace(recipe, foundation=changed_foundation), binding,
+                "representative", ["inline"], FixtureAdapter(), directory)
+        self.assertEqual(first.outputs[0]["decision"], "rendered")
+        self.assertEqual(changed.outputs[0]["decision"], "rendered")
+        self.assertNotEqual(first.outputs[0]["effective_identity"], changed.outputs[0]["effective_identity"])
 
     def test_run_manifest_hashes_geometry_bytes_without_stringifying_geometry(self):
         class Geometry:

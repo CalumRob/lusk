@@ -7,8 +7,13 @@ typography.
 """
 from __future__ import annotations
 
-import json
 import re
+import json
+import os
+import tempfile
+from hashlib import sha256
+from typing import Mapping
+from uuid import uuid4
 from time import perf_counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -53,10 +58,19 @@ INLINE_SHADOW_BLUR_RADIUS_PX = 6
 INLINE_SHADOW_SIGMA_PX = 3.0
 INLINE_SHADOW_OFFSET_Y_PX = 2
 INLINE_SHADOW_OPACITY = 0.25
+# Bump when the corresponding algorithms change (profile-specific cache contract).
+SHARED_GROUND_RENDER_VERSION = 1
+INLINE_MASK_RENDER_VERSION = 1
 TEXTURE_FILENAME = "qgis-hub-paper-texture-cc0.jpg"
 CONTEXT_DEPARTMENTS = (
     "14", "22", "29", "35", "44", "49", "50", "53", "56", "61", "72", "79", "85"
 )
+
+
+def _canonical_wkb(geometry: QgsGeometry) -> bytes:
+    canonical = QgsGeometry(geometry)
+    canonical.normalize()
+    return bytes(canonical.asWkb())
 OCSGE_YEAR_PATTERN = re.compile(r"(?:^|_)artif_(\d{4})_(\d{2})\.gpkg$")
 
 
@@ -81,16 +95,87 @@ class SharedGround:
     ocsge_layers: tuple[QgsVectorLayer, ...]
     texture: QImage
     _frontiers: dict[bytes, QgsGeometry] = field(default_factory=dict, repr=False, compare=False)
+    _frontier_cache_root: Path | None = field(default=None, repr=False, compare=False)
+    _stage_report: list | None = field(default=None, repr=False, compare=False)
+    _refresh: bool = field(default=False, repr=False, compare=False)
 
     def frontier_for(self, region: QgsGeometry) -> QgsGeometry:
         """Reuse exact, context-dependent frontier geometry within this run."""
-        key = bytes(region.asWkb())
+        key = _canonical_wkb(region)
         if key not in self._frontiers:
             started = perf_counter()
-            print("[maps] preparing shared land frontier geometry", flush=True)
-            self._frontiers[key] = _frontier_geometry(region, self.context_geometry)
-            print(f"[maps] shared land frontier prepared once: {perf_counter()-started:.1f}s", flush=True)
+            runtime = f"frontier-v1|qgis={Qgis.QGIS_VERSION}"
+            digest = sha256(key + _canonical_wkb(self.context_geometry) + runtime.encode()).hexdigest()
+            cached = (self._read_frontier(digest)
+                if self._frontier_cache_root and not self._refresh else None)
+            decision = "reused" if cached is not None else "built"
+            if cached is None:
+                print("[maps] preparing shared land frontier geometry", flush=True)
+                cached = _frontier_geometry(region, self.context_geometry)
+                if self._frontier_cache_root:
+                    self._write_frontier(digest, cached)
+                print(f"[maps] shared land frontier prepared once: {perf_counter()-started:.1f}s", flush=True)
+            if self._stage_report is not None:
+                self._stage_report.append({"stage": "context-frontier", "profile": "shared-ground",
+                    "identity": digest, "decision": decision, "seconds": round(perf_counter()-started, 3)})
+            self._frontiers[key] = cached
         return QgsGeometry(self._frontiers[key])
+
+    def _read_frontier(self, identity: str) -> QgsGeometry | None:
+        directory = self._frontier_cache_root / identity
+        try:
+            output_root = directory.parents[2].resolve()
+            if not directory.parent.resolve().is_relative_to(output_root):
+                return None
+            if directory.resolve().parent != directory.parent.resolve():
+                return None
+            manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+            generation = manifest.get("generation") if isinstance(manifest, dict) else None
+            if (manifest.get("schema") != 1 or manifest.get("identity") != identity
+                    or not isinstance(generation, str) or len(generation) != 32
+                    or any(ch not in "0123456789abcdef" for ch in generation)):
+                return None
+            folder = directory / generation
+            path = folder / "frontier.wkb"
+            if folder.resolve().parent != directory.resolve() or path.resolve().parent != folder.resolve():
+                return None
+            data = path.read_bytes()
+            if sha256(data).hexdigest() != manifest.get("sha256"):
+                return None
+            geometry = QgsGeometry()
+            geometry.fromWkb(data)
+            if geometry.isNull() or (not geometry.isEmpty()
+                    and geometry.type() != QgsWkbTypes.LineGeometry):
+                return None
+            return geometry
+        except (OSError, ValueError, TypeError, AttributeError):
+            return None
+
+    def _write_frontier(self, identity: str, geometry: QgsGeometry) -> None:
+        directory = self._frontier_cache_root / identity
+        directory.mkdir(parents=True, exist_ok=True)
+        generation = uuid4().hex
+        staging = Path(tempfile.mkdtemp(prefix=".frontier-", dir=directory))
+        try:
+            data = bytes(geometry.asWkb())
+            (staging / "frontier.wkb").write_bytes(data)
+            os.replace(staging, directory / generation)
+            manifest = {"schema": 1, "identity": identity, "generation": generation,
+                "sha256": sha256(data).hexdigest()}
+            fd, temporary = tempfile.mkstemp(prefix=".manifest-", suffix=".tmp", dir=directory)
+            try:
+                with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                    json.dump(manifest, stream, sort_keys=True)
+                    stream.flush()
+                    os.fsync(stream.fileno())
+                os.replace(temporary, directory / "manifest.json")
+            finally:
+                if os.path.exists(temporary):
+                    os.unlink(temporary)
+        finally:
+            if staging.exists():
+                import shutil
+                shutil.rmtree(staging, ignore_errors=True)
 
 
 def _palette_data(palette_file: str | Path | None = None) -> dict:
@@ -378,8 +463,11 @@ def add_context_land(
     project: QgsProject,
     bbox: QgsRectangle,
     communes: QgsVectorLayer,
+    *, cache_root: str | Path | None = None, refresh: bool = False,
+    stage_report: list | None = None,
 ) -> tuple[QgsVectorLayer, QgsGeometry]:
     """Build the official commune context from the local Admin Express source."""
+    fingerprint_started = perf_counter()
     department_field = "code_insee_du_departement"
     if department_field not in {field.name() for field in communes.fields()}:
         raise ValueError(f"Local commune source is missing {department_field!r}")
@@ -398,10 +486,37 @@ def add_context_land(
         geometry = QgsGeometry(feature.geometry())
         geometry.transform(source_to_map)
         if geometry.intersects(bbox_geometry):
-            geometries.append(geometry)
+            clipped = geometry.intersection(bbox_geometry)
+            if not clipped.isEmpty():
+                geometries.append(clipped)
     if not geometries:
         raise RuntimeError("Could not build land context for the selected map extent")
-    land_geometry = QgsGeometry.unaryUnion(geometries)
+    # Hash canonical, effective geometry records, not a whole-source file stat/hash.
+    geometries.sort(key=_canonical_wkb)
+    records = [_canonical_wkb(geometry) for geometry in geometries]
+    signature = sha256()
+    signature.update(json.dumps({"departments": CONTEXT_DEPARTMENTS,
+        "crs": MAP_CRS.authid(), "bbox": [bbox.xMinimum(), bbox.yMinimum(),
+        bbox.xMaximum(), bbox.yMaximum()], "version": 1}, separators=(",", ":")).encode())
+    for record in records:
+        signature.update(len(record).to_bytes(8, "big"))
+        signature.update(record)
+    identity = signature.hexdigest()
+    if stage_report is not None:
+        stage_report.append({"stage": "context-scope-fingerprint", "profile": "shared",
+            "identity": identity, "decision": "validated", "seconds": round(perf_counter() - fingerprint_started, 3)})
+    stage_started = perf_counter()
+    cache_path = Path(cache_root) / identity if cache_root is not None else None
+    land_geometry = None
+    decision = "built"
+    if cache_path is not None and not refresh:
+        land_geometry = _read_context_cache(cache_path, identity)
+        if land_geometry is not None:
+            decision = "reused"
+    if land_geometry is None:
+        land_geometry = QgsGeometry.unaryUnion(geometries)
+        if cache_path is not None:
+            _write_context_cache(cache_path, identity, land_geometry)
     if land_geometry.isEmpty():
         raise RuntimeError("Land context geometry is empty")
     layer = QgsVectorLayer("MultiPolygon?crs=EPSG:2154", "Contexte · terres", "memory")
@@ -414,7 +529,81 @@ def add_context_land(
         QgsSingleSymbolRenderer(QgsFillSymbol.createSimple({"color": PAPER, "outline_style": "no"}))
     )
     project.addMapLayer(layer)
+    if stage_report is not None:
+        stage_report.append({"stage": "context-land-union", "profile": "shared",
+            "identity": identity, "decision": decision,
+            "seconds": round(perf_counter() - stage_started, 3)})
     return layer, land_geometry
+
+
+def _read_context_cache(directory: Path, identity: str) -> QgsGeometry | None:
+    try:
+        output_root = directory.parents[2].resolve()
+        if not directory.parent.resolve().is_relative_to(output_root):
+            return None
+        if directory.resolve().parent != directory.parent.resolve():
+            return None
+        manifest = json.loads((directory / "manifest.json").read_text(encoding="utf-8"))
+        if (not isinstance(manifest, dict) or manifest.get("schema") != 1
+                or manifest.get("identity") != identity or manifest.get("artifact") != "context.wkb"
+                or not isinstance(manifest.get("generation"), str)
+                or len(manifest["generation"]) != 32
+                or any(ch not in "0123456789abcdef" for ch in manifest["generation"])):
+            return None
+        generation = directory / manifest["generation"]
+        if generation.resolve().parent != directory.resolve():
+            return None
+        path = generation / "context.wkb"
+        if path.resolve().parent != generation.resolve() or not path.is_file():
+            return None
+        data = path.read_bytes()
+        if sha256(data).hexdigest() != manifest.get("sha256"):
+            return None
+        geometry = QgsGeometry()
+        geometry.fromWkb(data)
+        if geometry.isNull() or geometry.isEmpty() or geometry.type() != QgsWkbTypes.PolygonGeometry:
+            return None
+        raw_bbox = manifest["bbox"]
+        if (not isinstance(raw_bbox, list) or len(raw_bbox) != 4
+                or any(not isinstance(value, (int, float)) for value in raw_bbox)):
+            return None
+        bbox = QgsRectangle(*raw_bbox)
+        if bbox.isEmpty():
+            return None
+        if not bbox.contains(geometry.boundingBox()):
+            return None
+        return geometry
+    except (OSError, ValueError, TypeError, KeyError, AttributeError):
+        return None
+
+
+def _write_context_cache(directory: Path, identity: str, geometry: QgsGeometry) -> None:
+    directory.mkdir(parents=True, exist_ok=True)
+    generation = uuid4().hex
+    staging = Path(tempfile.mkdtemp(prefix=".context-", dir=directory))
+    try:
+        artifact = staging / "context.wkb"
+        data = bytes(geometry.asWkb())
+        artifact.write_bytes(data)
+        os.replace(staging, directory / generation)
+        manifest = {"schema": 1, "identity": identity, "generation": generation,
+            "artifact": artifact.name, "sha256": sha256(data).hexdigest(),
+            "bbox": [geometry.boundingBox().xMinimum(), geometry.boundingBox().yMinimum(),
+                     geometry.boundingBox().xMaximum(), geometry.boundingBox().yMaximum()]}
+        fd, temporary = tempfile.mkstemp(prefix=".manifest-", suffix=".tmp", dir=directory)
+        try:
+            with os.fdopen(fd, "w", encoding="utf-8") as stream:
+                json.dump(manifest, stream, sort_keys=True)
+                stream.flush()
+                os.fsync(stream.fileno())
+            os.replace(temporary, directory / "manifest.json")
+        finally:
+            if os.path.exists(temporary):
+                os.unlink(temporary)
+    finally:
+        if staging.exists():
+            import shutil
+            shutil.rmtree(staging, ignore_errors=True)
 
 
 def prepare_shared_ground(
@@ -423,6 +612,8 @@ def prepare_shared_ground(
     combined_extent: QgsRectangle,
     assets_dir: str | Path,
     include_ocsge: bool = True,
+    *, cache_root: str | Path | None = None, refresh: bool = False,
+    stage_report: list | None = None,
 ) -> SharedGround:
     """Load local commune context and OCS-GE sources once for a production run."""
     project.setCrs(MAP_CRS)
@@ -431,7 +622,8 @@ def prepare_shared_ground(
     communes = QgsVectorLayer(str(commune_path), "Admin Express COG · context source", "ogr")
     if not communes.isValid():
         raise RuntimeError(f"Could not load official commune context: {commune_path}")
-    context_layer, context_geometry = add_context_land(project, combined_extent, communes)
+    context_layer, context_geometry = add_context_land(project, combined_extent, communes,
+        cache_root=cache_root, refresh=refresh, stage_report=stage_report)
     print(f"[maps] shared local land context prepared once: {perf_counter()-started:.1f}s", flush=True)
     started = perf_counter()
     ocsge_layers = tuple(add_ocsge_layers(project, Path(raw_dir))) if include_ocsge else ()
@@ -440,7 +632,9 @@ def prepare_shared_ground(
     texture = QImage(str(texture_path))
     if texture.isNull():
         raise RuntimeError(f"Could not load approved paper texture: {texture_path}")
-    return SharedGround(context_layer, context_geometry, ocsge_layers, texture)
+    frontier_root = Path(cache_root).parent / "frontier" if cache_root is not None else None
+    return SharedGround(context_layer, context_geometry, ocsge_layers, texture,
+        _frontier_cache_root=frontier_root, _stage_report=stage_report, _refresh=refresh)
 
 
 def _polygon_only(geometry: QgsGeometry) -> QgsGeometry:
@@ -469,6 +663,7 @@ def prepare_ground(
     size: int,
     shared: SharedGround,
     include_ocsge: bool = True,
+    ground_settings: Mapping | None = None,
 ) -> PreparedGround:
     """Render the original ground/context/border passes at this profile's size."""
     extent = QgsRectangle(feature["extent"])
@@ -502,11 +697,21 @@ def prepare_ground(
     for layer in temporary_layers:
         project.addMapLayer(layer)
     try:
+        ground_settings = ground_settings or {}
+        expected_surface = "ocsge-selected-cs" if include_ocsge else "paper-only"
+        surface_key = "inspection_surface" if include_ocsge else "inline_surface"
+        if ground_settings.get(surface_key, expected_surface) != expected_surface:
+            raise ValueError(f"Unsupported {surface_key} ground setting: {ground_settings.get(surface_key)!r}")
+        water_setting = ground_settings.get("water", "sea-colour")
+        water_colour = sea_colour() if water_setting == "sea-colour" else str(water_setting)
+        background = QColor(water_colour)
+        if not background.isValid():
+            raise ValueError(f"Invalid ground water colour: {water_colour!r}")
         ground = render_layers(
             project,
             extent,
             [outside_ground, *(shared.ocsge_layers if include_ocsge else ()), context_land_layer],
-            QColor(sea_colour()),
+            background,
             size,
         )
         paper_texture(ground, shared.texture, geometry, extent)
@@ -565,23 +770,33 @@ def apply_inline_mask(
     return result
 
 
-def apply_inline_shadow(image: QImage) -> QImage:
+def apply_inline_shadow(image: QImage, settings: Mapping | None = None) -> QImage:
     """Add the approved low-opacity paper-cutout shadow without filling its exterior."""
     rgba = image.convertToFormat(QImage.Format_RGBA8888)
     alpha = pixels(rgba)[:, :, 3].astype(np.float32) / 255.0
-    radius = INLINE_SHADOW_BLUR_RADIUS_PX
+    settings = settings or {"blur_radius_px": INLINE_SHADOW_BLUR_RADIUS_PX,
+        "sigma_px": INLINE_SHADOW_SIGMA_PX, "offset_px": {"y": INLINE_SHADOW_OFFSET_Y_PX},
+        "opacity": INLINE_SHADOW_OPACITY}
+    radius = int(settings["blur_radius_px"])
+    sigma = float(settings["sigma_px"])
+    offset = int(settings["offset_px"]["y"])
+    opacity = float(settings["opacity"])
+    if radius < 0 or sigma <= 0 or offset < 0 or not 0 <= opacity <= 1:
+        raise ValueError("Inline shadow settings are outside their valid ranges")
     offsets = np.arange(-radius, radius + 1)
-    kernel = np.exp(-(offsets ** 2) / (2 * INLINE_SHADOW_SIGMA_PX ** 2))
+    kernel = np.exp(-(offsets ** 2) / (2 * sigma ** 2))
     kernel /= kernel.sum()
     blurred = np.apply_along_axis(lambda line: np.convolve(line, kernel, mode="same"), 1, alpha)
     blurred = np.apply_along_axis(lambda line: np.convolve(line, kernel, mode="same"), 0, blurred)
     shifted = np.zeros_like(blurred)
-    offset = INLINE_SHADOW_OFFSET_Y_PX
-    shifted[offset:] = blurred[:-offset]
+    if offset:
+        shifted[offset:] = blurred[:-offset]
+    else:
+        shifted[:] = blurred
 
     result = QImage(rgba.size(), QImage.Format_RGBA8888)
     result.fill(Qt.transparent)
-    pixels(result)[:, :, 3] = np.rint(shifted * INLINE_SHADOW_OPACITY * 255).astype(np.uint8)
+    pixels(result)[:, :, 3] = np.rint(shifted * opacity * 255).astype(np.uint8)
     painter = QPainter(result)
     painter.drawImage(0, 0, rgba)
     painter.end()
