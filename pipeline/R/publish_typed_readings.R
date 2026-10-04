@@ -65,8 +65,11 @@ project_habitat_reading <- function(histories,vintages,metadata) {
   # date is source-owned and is represented as NA, never filled from elsewhere.
   facts$vintage_id <- paste(vintage[["version"]][[1L]],
     ifelse(is.na(vintage[["date_reference"]][[1L]]),"NA",as.character(vintage[["date_reference"]][[1L]])),sep="/")
-  facts$status <- ifelse(!is.na(facts$n_dpe) & facts$n_dpe < threshold,"suppressed",
-    ifelse(is.na(facts$classification)|is.na(facts$part_passoires)|is.na(facts$part_abc)|is.na(facts$n_dpe),"unavailable","measured"))
+  zero_support_status <- metadata$scalar_contracts$part_passoires$zero_support_status
+  facts$status <- ifelse(!is.na(facts$n_dpe) & facts$n_dpe == 0,
+    if(identical(zero_support_status,"not_available")) "unavailable" else zero_support_status,
+    ifelse(!is.na(facts$n_dpe) & facts$n_dpe < threshold,"suppressed",
+      ifelse(is.na(facts$classification)|is.na(facts$part_passoires)|is.na(facts$part_abc)|is.na(facts$n_dpe),"unavailable","measured")))
   attr(facts,"vintage") <- vintage
   facts
 }
@@ -140,26 +143,63 @@ publish_selected_reading_family <- function(con, facts, canonical, theme) {
     stop("Published territory reference is required for selected readings",call.=FALSE)
   if (theme != "habitat") stop("Unsupported selected-reading family",call.=FALSE)
   dependency <- DBI::dbGetQuery(con,"SELECT p.content_version,p.reference_content_version,
-    s.content_version AS scalar_version,d.required_scalar_version,dps.source_id
+    s.content_version AS scalar_version,d.required_scalar_version,d.allowed_levels,t.content_version AS reference_version,
+    s.reference_content_version AS scalar_reference_version
     FROM table_publication p JOIN profile_descriptor d ON d.indicator_id='distribution_dpe'
-    JOIN profile_descriptor_source dps ON dps.indicator_id=d.indicator_id
     JOIN table_publication s ON s.table_name='scalar_observation'
+    JOIN table_publication t ON t.table_name='territory_reference'
     WHERE p.table_name='declared_profile'")
   if (nrow(dependency)!=1L || is.na(dependency$reference_content_version[[1L]]) ||
       !identical(as.character(dependency$required_scalar_version[[1L]]),as.character(dependency$scalar_version[[1L]])) ||
-      !identical(as.character(dependency$source_id[[1L]]),as.character(vintage[["id"]][[1L]])))
+      !identical(as.character(dependency$reference_content_version[[1L]]),as.character(dependency$reference_version[[1L]])) ||
+      !identical(as.character(dependency$scalar_reference_version[[1L]]),as.character(dependency$reference_version[[1L]])))
     stop("Habitat readings require compatible registered scalar and DPE profile publications",call.=FALSE)
-  bound <- DBI::dbGetQuery(con,"SELECT DISTINCT os.territory_id,so.territory_type,os.source_id,os.vintage_id
+  profile_bound <- DBI::dbGetQuery(con,"SELECT DISTINCT os.territory_id,tr.territory_type,os.source_id,os.vintage_id
+    FROM profile_observation_source os JOIN territory_reference tr USING(territory_id)
+    WHERE os.indicator_id='distribution_dpe'")
+  scalar_bound <- DBI::dbGetQuery(con,"SELECT DISTINCT os.territory_id,so.territory_type,os.source_id,os.vintage_id
     FROM scalar_observation_source os JOIN scalar_observation so USING(indicator_id,territory_id)
     WHERE os.indicator_id='part_passoires'")
-  if (!nrow(bound)) stop("Registered DPE profile has no source bindings",call.=FALSE)
+  binding_key <- function(rows) sort(unique(paste(rows$territory_id,rows$territory_type,rows$source_id,rows$vintage_id,sep="\r")))
+  # Compare every source association where the registered DPE profile has a
+  # supported territory. Outside those registered levels, Habitat uses the
+  # scalar binding only (the descriptor, not a territory literal, defines this).
+  profile_levels <- strsplit(gsub("[{}]","",as.character(dependency$allowed_levels[[1L]])),",",fixed=TRUE)[[1L]]
+  scalar_profile_levels <- scalar_bound[scalar_bound$territory_type %in% profile_levels,,drop=FALSE]
+  if (!nrow(profile_bound) || !nrow(scalar_bound) || !identical(binding_key(profile_bound),binding_key(scalar_profile_levels)))
+    stop("Registered DPE profile and scalar source/vintage associations disagree (profile-only: ",
+      paste(head(setdiff(binding_key(profile_bound),binding_key(scalar_bound)),3L),collapse="; "),
+      "; scalar-only: ",paste(head(setdiff(binding_key(scalar_profile_levels),binding_key(profile_bound)),3L),collapse="; "),")",call.=FALSE)
+  bound <- scalar_bound
+  scalar_facts <- DBI::dbGetQuery(con,"SELECT territory_id,value,status,support_count FROM scalar_observation
+    WHERE indicator_id='part_passoires'")
   for (i in seq_len(nrow(facts))) {
     matches <- bound[bound$territory_id==facts$territory_id[[i]] & bound$territory_type==facts$territory_type[[i]],,drop=FALSE]
     if (nrow(matches)!=1L) stop("DPE profile source binding is missing or ambiguous for Habitat reading: ",
       facts$territory_type[[i]]," ",facts$territory_id[[i]]," (",nrow(matches)," matches)",call.=FALSE)
     facts$source_id[[i]] <- matches$source_id[[1L]]
     facts$vintage_id[[i]] <- matches$vintage_id[[1L]]
+    scalar_fact <- scalar_facts[scalar_facts$territory_id==facts$territory_id[[i]],,drop=FALSE]
+    if(nrow(scalar_fact)!=1L) stop("Registered DPE scalar fact is missing or ambiguous for Habitat reading",call.=FALSE)
+    expected_status <- switch(as.character(scalar_fact$status[[1L]]),measured="measured",suppressed="suppressed",
+      not_available="unavailable",unsupported="unavailable",NA_character_)
+    same_value <- (is.na(scalar_fact$value[[1L]]) && is.na(facts$part_passoires[[i]])) ||
+      (!is.na(scalar_fact$value[[1L]]) && !is.na(facts$part_passoires[[i]]) &&
+        isTRUE(all.equal(as.numeric(scalar_fact$value[[1L]]),as.numeric(facts$part_passoires[[i]]),tolerance=1e-10)))
+    same_support <- (is.na(scalar_fact$support_count[[1L]]) && is.na(facts$n_dpe[[i]])) ||
+      (!is.na(scalar_fact$support_count[[1L]]) && !is.na(facts$n_dpe[[i]]) &&
+        as.numeric(scalar_fact$support_count[[1L]])==as.numeric(facts$n_dpe[[i]]))
+    if(is.na(expected_status) || !identical(facts$status[[i]],expected_status) || !same_value || !same_support)
+      stop("Habitat reading value/status/support disagrees with registered DPE scalar at ",facts$territory_type[[i]],
+        " ",facts$territory_id[[i]]," (reading ",facts$status[[i]],"/",facts$part_passoires[[i]],"/",facts$n_dpe[[i]],
+        "; scalar ",scalar_fact$status[[1L]],"/",scalar_fact$value[[1L]],"/",scalar_fact$support_count[[1L]],")",call.=FALSE)
   }
+  expected_vintage_id <- paste(vintage[["version"]][[1L]],
+    ifelse(is.na(vintage[["date_reference"]][[1L]]),"NA",as.character(vintage[["date_reference"]][[1L]])),sep="/")
+  source_pairs <- unique(bound[c("source_id","vintage_id")])
+  if (nrow(source_pairs)!=1L || !identical(as.character(source_pairs$source_id[[1L]]),as.character(vintage[["id"]][[1L]])) ||
+      !identical(as.character(source_pairs$vintage_id[[1L]]),as.character(expected_vintage_id)))
+    stop("The registered DPE binding is not the producer-declared single source clock",call.=FALSE)
   version <- canonical$content_version; count <- nrow(facts)
   linked_version <- paste(canonical$linked_content_version,dependency$content_version[[1L]],
     dependency$scalar_version[[1L]],dependency$reference_content_version[[1L]],sep="-")
@@ -171,16 +211,25 @@ publish_selected_reading_family <- function(con, facts, canonical, theme) {
      marker$row_count[[1L]]==count && identical(as.character(marker$reference_content_version[[1L]]),as.character(reference_version[[1L]])) &&
      identical(as.character(marker$descriptor_version[[1L]]),version) &&
      identical(as.character(marker$source_id[[1L]]),as.character(vintage$id[[1L]])) &&
-      identical(as.character(marker$vintage_id[[1L]]),as.character(facts$vintage_id[[1L]])) &&
-      identical(as.character(marker$linked_content_version[[1L]]),as.character(linked_version)))
-    return(invisible(list(content_version=version,row_count=count,changed=FALSE)))
+     identical(as.character(marker$vintage_id[[1L]]),as.character(facts$vintage_id[[1L]])) &&
+     identical(as.character(marker$linked_content_version[[1L]]),as.character(linked_version))) {
+      generic_marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version
+        FROM table_publication WHERE table_name='selected_reading'")
+      if(nrow(generic_marker)==1L && identical(as.character(generic_marker$content_version[[1L]]),version) &&
+         generic_marker$row_count[[1L]]==count &&
+         identical(as.character(generic_marker$reference_content_version[[1L]]),as.character(reference_version[[1L]])))
+        return(invisible(list(content_version=version,row_count=count,changed=FALSE)))
+  }
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con,paste("DELETE FROM",target))
     if(theme=="habitat") {
-      facts <- facts[c("territory_id","territory_type","groupe","story_key","salience_reason","classification",
+     facts <- facts[c("territory_id","territory_type","groupe","story_key","salience_reason","classification",
         "part_passoires","part_abc","n_dpe","status","source_id","vintage_id")]
       DBI::dbWriteTable(con,target,facts,append=TRUE,row.names=FALSE)
     }
+    inserted_count <- DBI::dbGetQuery(con,paste0("SELECT count(*) AS row_count FROM ",target))$row_count[[1L]]
+    if (!identical(as.integer(inserted_count),as.integer(count)))
+      stop("Selected-reading inserted row count does not match its projection",call.=FALSE)
     DBI::dbExecute(con,"INSERT INTO selected_reading_descriptor(theme_id,descriptor_version,source_id,vintage_id,linked_content_version)
       VALUES($1,$2,$3,$4,$5) ON CONFLICT(theme_id) DO UPDATE SET descriptor_version=EXCLUDED.descriptor_version,
       source_id=EXCLUDED.source_id,vintage_id=EXCLUDED.vintage_id,linked_content_version=EXCLUDED.linked_content_version",
@@ -189,6 +238,11 @@ publish_selected_reading_family <- function(con, facts, canonical, theme) {
       VALUES($1,$2,$3,$4,now()) ON CONFLICT(theme_id) DO UPDATE SET content_version=EXCLUDED.content_version,
       reference_content_version=EXCLUDED.reference_content_version,row_count=EXCLUDED.row_count,published_at=now()",
       params=list(theme,version,reference_version[[1L]],count))
+    DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at)
+      VALUES('selected_reading',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET
+      content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,
+      reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",
+      params=list(version,count,reference_version[[1L]]))
   })
   invisible(list(content_version=version,row_count=count,changed=TRUE))
 }
