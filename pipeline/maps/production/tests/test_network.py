@@ -467,7 +467,7 @@ class NetworkPreparationTests(unittest.TestCase):
         communes.dataProvider().addFeatures(features)
         communes.updateExtents()
 
-        _, land = add_context_land(project, QgsRectangle(-1, -1, 31, 11), communes)
+        _, land, _ = add_context_land(project, QgsRectangle(-1, -1, 31, 11), communes)
 
         self.assertTrue(land.contains(QgsGeometry.fromPointXY(QgsPointXY(5, 5))))
         self.assertTrue(land.contains(QgsGeometry.fromPointXY(QgsPointXY(25, 5))))

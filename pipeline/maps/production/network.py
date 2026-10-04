@@ -753,9 +753,11 @@ def _title_and_content(mode: str, family_config: Mapping):
 class NetworkAdapter:
     """Network-family adapter; shared map and plate modules own presentation."""
 
-    def __init__(self, raw_dir: str | Path, cache_root: str | Path | None = None):
+    def __init__(self, raw_dir: str | Path, cache_root: str | Path | None = None, *,
+                 context_loader=None):
         self.raw_dir = Path(raw_dir)
         self.cache_root = Path(cache_root) if cache_root is not None else None
+        self.context_loader = context_loader
         self.family_config_path = Path(__file__).with_name("network-family.json")
         self.family_config = _load_network_family_config()
         self._ground_cache = {}
@@ -763,6 +765,7 @@ class NetworkAdapter:
         self._ocsge_identity_cache = {}
         self._network_scope_cache = {}
         self._visible_ground_parts_cache = {}
+        self._context_scope_cache = {}
         self._visible_ground_parts_cache_root = None
         self._network_scope_cache_root = None
         self._scope_cache_refresh = False
@@ -855,7 +858,7 @@ class NetworkAdapter:
 
         metadata_root = source_root / "inst" / "extdata"
         modes = getattr(self, "_requested_modes", set(NETWORK_MODES))
-        sources = [record("commune-context", self.raw_dir / "communes_limites.geojson")]
+        sources = [record("analytical-commune-geometry", self.raw_dir / "communes_limites.geojson")]
         if modes & {"car", "walk"}:
             sources.append(record("osm-network", self.raw_dir / "bretagne-latest.gpkg",
                 layer="lines", preparation_version=OSM_PREPARATION_VERSION))
@@ -921,6 +924,7 @@ class NetworkAdapter:
         self._stage_events = []
         self._stage_validity = {}
         self._identity_cache = {}
+        self._context_scope_cache = {}
         self._ocsge_identity_cache = {}
         self._ground_cache = {}
         self._network_scope_cache = {}
@@ -947,6 +951,7 @@ class NetworkAdapter:
             include_ocsge="inspection" in profiles,
             cache_root=output_dir / ".stage-cache" / "context-land",
             refresh=refresh, stage_report=self._stage_events,
+            context_loader=self.context_loader,
         )
         self._stage_events.append({"stage": "context-and-provider-load", "profile": "shared",
             "decision": "validated", "seconds": round(perf_counter() - context_started, 3)})
@@ -1123,8 +1128,10 @@ class NetworkAdapter:
         analysis_wkb = bytes(analysis.asWkb()) if analysis is not None else b""
         territory_wkb = bytes(geometry.asWkb()) if geometry is not None else b""
         region_wkb = bytes(region.asWkb()) if region is not None else b""
-        context_wkb = bytes(self._shared_ground.context_geometry.asWkb())
-        identity_payload = {"schema": 1, "kind": feature["territory"]["kind"],
+        frame = QgsGeometry.fromRect(extent)
+        scope = frame if profile.name == "inspection" else frame.intersection(analysis)
+        context_wkb = self._visible_context_scope_wkb(feature, profile, scope)
+        identity_payload = {"schema": 2, "kind": feature["territory"]["kind"],
             "profile": profile.name, "size": profile.size,
             "extent": [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()],
             "analysis_sha256": sha256(analysis_wkb).hexdigest(),
@@ -1151,8 +1158,6 @@ class NetworkAdapter:
                         return parts, "reused", perf_counter() - started
             except (OSError, ValueError, TypeError, AttributeError):
                 pass
-        frame = QgsGeometry.fromRect(extent)
-        scope = frame if profile.name == "inspection" else frame.intersection(analysis)
         context_part = _canonical_geometry_wkb(self._shared_ground.context_geometry.intersection(scope))
         territory_part = _canonical_geometry_wkb(geometry.intersection(scope)) if geometry is not None else b""
         frontier_part = b""
@@ -1179,6 +1184,26 @@ class NetworkAdapter:
             for temporary in temporaries:
                 temporary.unlink(missing_ok=True)
         return parts, "built", perf_counter() - started
+
+    def _visible_context_scope_wkb(self, feature, profile, scope):
+        """Memoize exact visible-context content for a scope within this prepared run."""
+        extent = QgsRectangle(feature["extent"])
+        analysis = feature.get("analytical_geometry")
+        analysis_key = (_canonical_geometry_wkb(analysis)
+            if profile.name == "inline" and analysis is not None else b"")
+        key = ((extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()),
+            profile.name, profile.size, analysis_key)
+        cached = self._context_scope_cache.get(key)
+        if cached is not None:
+            return cached
+        bounds = scope.boundingBox()
+        candidates = [geometry for geometry in self._shared_ground.context_geometries
+            if geometry.boundingBox().intersects(bounds)]
+        context_scope = (QgsGeometry.unaryUnion(candidates).intersection(scope)
+            if candidates else QgsGeometry())
+        value = _canonical_geometry_wkb(context_scope)
+        self._context_scope_cache[key] = value
+        return value
 
     def _ocsge_render_identity(self, layers, extent, profile):
         """Cache a deterministic fingerprint of styled OCS-GE geometry per run."""
