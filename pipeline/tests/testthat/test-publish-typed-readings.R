@@ -16,3 +16,22 @@ test_that("typed reading projection rejects incomplete or duplicate selected fac
   expect_error(project_typed_reading_facts(data.frame(theme="demographie"), "demographie"),
                "missing fields")
 })
+
+test_that("typed Milieux reading projection retains producer-selected reading coordinates", {
+  histories <- data.frame(territoire=c("35238", "35238"), type="commune",
+    theme=c("milieux", "autre"), groupe=c("artificialisation", "autre"),
+    story_key=c("artif-par-habitant", "other"), salience_reason="declared",
+    periode_pop="2012-2017", periode_artif="2011-2021", delta_population=125,
+    taux_variation_population=4.7, artif_m2_par_habitant=321.5,
+    artif_m3_par_habitant=101.2, trajectoire_artif_par_habitant="stable",
+    classification="pression-moderee")
+  projected <- project_typed_reading_facts(histories, "milieux")
+  expect_equal(nrow(projected), 1L)
+  expect_equal(projected$territory_id, "35238")
+  expect_equal(projected$groupe, "artificialisation")
+  expect_equal(projected$delta_population, 125)
+  expect_equal(projected$taux_variation_population, 4.7)
+  expect_equal(projected$periode_pop, "2012-2017")
+  expect_equal(projected$periode_artif, "2011-2021")
+  expect_equal(projected$trajectoire_artif_par_habitant, "stable")
+})

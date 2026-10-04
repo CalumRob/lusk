@@ -3,13 +3,13 @@
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
         'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence')),
+        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading') OR reference_content_version IS NOT NULL)
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -903,6 +903,18 @@ CREATE TABLE economy_activity_evidence (
   FOREIGN KEY(territory_id,territory_type,groupe) REFERENCES economy_typed_reading(territory_id,territory_type,groupe) ON DELETE CASCADE,
   FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
   CHECK(park_share IS NULL OR park_share BETWEEN 0 AND 1));
+CREATE TABLE milieux_typed_reading (
+ territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
+ groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL,
+ periode_pop text, periode_artif text, delta_population double precision,
+ taux_variation_population double precision, artif_m2_par_habitant double precision,
+ artif_m3_par_habitant double precision, trajectoire_artif_par_habitant text,
+ classification text, status text NOT NULL CHECK(status IN ('measured','unavailable')),
+ source_id text NOT NULL, vintage_id text NOT NULL,
+ PRIMARY KEY(territory_id,territory_type,groupe),
+ FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
+ FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+ CHECK ((status='measured') = (periode_pop IS NOT NULL AND periode_artif IS NOT NULL AND classification IS NOT NULL)));
 -- Sparse period/detail facts have real year coordinates, not dense profile zeros.
 CREATE TABLE observed_collection_publication (
   indicator_id text PRIMARY KEY CHECK(indicator_id ~ '^[a-z][a-z0-9_]{0,95}$'),

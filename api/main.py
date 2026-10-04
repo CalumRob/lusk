@@ -2189,6 +2189,33 @@ def theme_facts(
                     readings=[{"groupe":row[0],"story_key":row[1],"salience_reason":row[2],"status":row[3],
                         "activities":by_group.get(row[0],[]),"provenance":provenance} for row in reading_rows]
                     reading_version=selected_marker[0]
+            elif theme_id == "milieux":
+                installed=conn.execute("SELECT to_regclass('milieux_typed_reading')").fetchone()[0]
+                if not installed:
+                    raise HTTPException(503,"Milieux reading publication is unavailable")
+                marker=conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
+                    FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+                    WHERE p.table_name='milieux_typed_reading'""").fetchone()
+                if not marker or marker[0] is None or marker[1] < 1 or marker[2] != marker[3]:
+                    raise HTTPException(503,"Milieux reading publication is unavailable or incompatible")
+                rows=conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.periode_pop,r.periode_artif,
+                    r.delta_population,r.taux_variation_population,r.artif_m2_par_habitant,r.artif_m3_par_habitant,
+                    r.trajectoire_artif_par_habitant,r.classification,r.status,r.source_id,r.vintage_id,
+                    sd.name,sv.version,sv.reference_date,sv.publication_date
+                    FROM milieux_typed_reading r JOIN source_dataset sd USING(source_id)
+                    JOIN source_vintage sv USING(source_id,vintage_id)
+                    WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
+                    (territory_id,territory_type)).fetchall()
+                if not rows:
+                    raise HTTPException(404,"No selected Milieux reading for this territory")
+                readings=[]
+                for row in rows:
+                    readings.append(dict(zip(("groupe","story_key","salience_reason","periode_pop","periode_artif",
+                        "delta_population","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant",
+                        "trajectoire_artif_par_habitant","classification","status","source_id","vintage_id"),row[:14]),
+                        provenance={"source_id":row[12],"source_name":row[14],"vintage_id":row[13],
+                        "source_version":row[15],"source_reference_date":row[16],"source_publication_date":row[17]}))
+                reading_version=marker[0]
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
                 profiles=profiles, profile_version=profile_version, has_readings=bool(readings))
             building_access = None

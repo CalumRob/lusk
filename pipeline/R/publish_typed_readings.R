@@ -129,6 +129,24 @@ project_habitat_reading <- function(histories,vintages,metadata) {
   facts
 }
 
+project_milieux_reading <- function(histories, vintages, metadata) {
+  facts <- project_typed_reading_facts(histories, "milieux")
+  if (any(!is.finite(facts$delta_population[!is.na(facts$delta_population)])) ||
+      any(!is.finite(facts$taux_variation_population[!is.na(facts$taux_variation_population)])) ||
+      any(!is.finite(facts$artif_m2_par_habitant[!is.na(facts$artif_m2_par_habitant)])) ||
+      any(!is.finite(facts$artif_m3_par_habitant[!is.na(facts$artif_m3_par_habitant)])))
+    stop("Canonical Milieux reading contains non-finite measurements", call.=FALSE)
+  # Selected story labels/classification are producer metadata-owned. The two
+  # source clocks are intentionally carried separately: population and OCS-GE
+  # state windows are not one theme-wide vintage.
+  if (is.null(metadata$subgroups) || !length(metadata$subgroups) ||
+      any(!facts$groupe %in% vapply(metadata$subgroups, `[[`, character(1), "key")))
+    stop("Milieux selected reading identities are not declared by producer metadata", call.=FALSE)
+  facts$status <- ifelse(is.na(facts$classification) | is.na(facts$periode_pop) |
+    is.na(facts$periode_artif), "unavailable", "measured")
+  facts
+}
+
 register_typed_reading_publisher <- function(registry, name, project, publish) {
   if (!is.list(registry) || (length(registry) && is.null(names(registry))) || name %in% names(registry) ||
       !is.function(project) || !is.function(publish))
@@ -312,6 +330,35 @@ register_economy_reading_publisher <- function(registry) {
   register_typed_reading_publisher(registry,"economie",
     function(input) project_economy_reading(input$histories,input$vintages,input$metadata),
     function(db,projection,input) publish_economy_reading_family(db,projection,input))
+}
+
+register_milieux_reading_publisher <- function(registry) {
+  register_typed_reading_publisher(registry,"milieux",
+    function(input) project_milieux_reading(input$histories,input$vintages,input$metadata),
+    function(db,projection,input) publish_milieux_reading(db,projection,input))
+}
+
+publish_milieux_reading <- function(con, facts, canonical) {
+  bindings <- canonical$source_bindings
+  if (!is.data.frame(bindings) || !all(c("territory_id","territory_type","groupe","source_id","vintage_id") %in% names(bindings)))
+    stop("Canonical Milieux publication requires producer-owned per-reading source/window bindings",call.=FALSE)
+  key <- paste(facts$territory_id,facts$territory_type,facts$groupe,sep="\r")
+  binding_key <- paste(bindings$territory_id,bindings$territory_type,bindings$groupe,sep="\r")
+  if (anyDuplicated(binding_key) || !setequal(key,binding_key) || anyNA(bindings[c("source_id","vintage_id")]))
+    stop("Milieux reading source/window bindings are missing, duplicate, or not aligned with canonical readings",call.=FALSE)
+  facts$source_id <- bindings$source_id[match(key,binding_key)]
+  facts$vintage_id <- bindings$vintage_id[match(key,binding_key)]
+  reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version
+  if(length(reference)!=1L || is.na(reference) || !nzchar(reference)) stop("Published territory reference is required for Milieux readings",call.=FALSE)
+  version <- canonical$content_version
+  DBI::dbWithTransaction(con, {
+    DBI::dbExecute(con,"DELETE FROM milieux_typed_reading")
+    DBI::dbWriteTable(con,"milieux_typed_reading",facts[c("territory_id","territory_type","groupe","story_key","salience_reason","periode_pop","periode_artif","delta_population","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant","trajectoire_artif_par_habitant","classification","status","source_id","vintage_id")],append=TRUE,row.names=FALSE)
+    inserted <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_typed_reading")$n[[1L]]
+    if(inserted!=nrow(facts)) stop("Milieux reading inserted row count does not match projection",call.=FALSE)
+    DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('milieux_typed_reading',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=now()",params=list(version,inserted,reference[[1L]]))
+  })
+  invisible(list(content_version=version,row_count=nrow(facts),changed=TRUE))
 }
 
 publish_economy_reading_family <- function(con, facts, canonical) {
