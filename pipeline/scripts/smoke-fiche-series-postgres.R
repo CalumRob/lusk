@@ -36,4 +36,26 @@ tryCatch({
     retry <- publish_registered_series(registry,name,canonical,adapter)
     stopifnot(first$changed,!retry$changed)
   }
+  milieux_publication <- publish_canonical_milieux_reading(con,sortie)
+  reading <- milieux_publication$reading
+  reading_input <- list(histories=canonical$histoires,vintages=canonical$vintages,
+    indicateurs=canonical$indicateurs,metadata=milieux)
+  registry <- register_milieux_reading_publisher(list())
+  marker_before_retry <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='milieux_typed_reading'")
+  sources_before_retry <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_source")$n[[1L]]
+  retry <- publish_registered_typed_reading(registry,"milieux",reading_input,con)
+  marker_after_retry <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='milieux_typed_reading'")
+  sources_after_retry <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_source")$n[[1L]]
+  stopifnot(reading$changed,!retry$changed,reading$row_count==nrow(canonical$histoires),reading$source_row_count>reading$row_count,
+    isTRUE(all.equal(marker_before_retry,marker_after_retry,check.attributes=FALSE)),sources_before_retry==sources_after_retry)
+  projection <- registry$milieux$project(reading_input)
+  bindings <- attr(projection,"source_bindings")
+  invalid <- rbind(projection,projection[1,,drop=FALSE])
+  attr(invalid,"source_bindings") <- bindings
+  rolled_back <- try(publish_milieux_reading(con,invalid,reading_input),silent=TRUE)
+  stopifnot(inherits(rolled_back,"try-error"))
+  marker_after_failure <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='milieux_typed_reading'")
+  stopifnot(isTRUE(all.equal(marker_before_retry,marker_after_failure,check.attributes=FALSE)),
+    DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_typed_reading")$n[[1L]]==reading$row_count,
+    DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_source")$n[[1L]]==reading$source_row_count)
 },finally=DBI::dbDisconnect(con))

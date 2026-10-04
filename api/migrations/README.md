@@ -185,6 +185,21 @@ has a compatible marker, and the Economy theme facts reader fails closed for
 missing/stale publication dependencies. Region territories with no canonical
 reading row report `unsupported`; the reader does not invent a region reading.
 Fresh installs carry the additive tables/markers in `schema.sql`.
+
+# Migration 022 — selected Milieux reading and field-level source windows
+
+Migration 022 adds typed selected Milieux reading facts plus constrained field
+source associations. The R publisher consumes the canonical selected history,
+population vintage manifest, and the registered OCS-GE M2/M3 role/component
+projection. Each state association carries its immutable source revision,
+state role, observation window, and owned-series content token; population keeps
+its independent history clock. The bounded theme facts reader checks these
+associations against the selected reading and current owned-series publication
+and returns 503 for stale or inconsistent dependencies. No indicator is
+recomputed in SQL, and unrelated publications remain untouched. `schema.sql`
+contains the matching fresh-install contract. The guarded fiche-series HTTP
+rehearsal publishes the canonical facts and validates every fact and source
+association against incumbent JSON, Parquet, and source manifest expectations.
 # Migration 017 — declared source absence for owned series
 
 Migration 017 adds a constrained `absence_semantics` declaration to the shared

@@ -207,6 +207,140 @@ def test_canonical_owned_series_have_independent_fiche_routes(tmp_path):
                                 assert (rec[8],rec[9],rec[11],str(rec[12]),str(rec[13]))==(clock[1],clock[2],clock[1],clock[3],clock[4])
                                 expected_dataset=milieux_metadata["source_records"][milieux_metadata["indicator_pages"][indicator]["sources"][0]]["dataset"]
                                 assert rec[10]==expected_dataset
+                expected_readings=json.loads((canonical/"histoires_milieux.json").read_text(encoding="utf-8-sig"))
+                reading_rows=[row for row in expected_readings if row["theme"]=="milieux"]
+                pub.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+                sql_readings=pub.execute("""SELECT territory_id,territory_type,groupe,story_key,salience_reason,periode_pop,
+                    periode_artif,delta_population,taux_variation_population,artif_m2_par_habitant,
+                    artif_m3_par_habitant,trajectoire_artif_par_habitant,classification,status,source_id,vintage_id
+                    FROM milieux_typed_reading ORDER BY territory_type,territory_id,groupe""").fetchall()
+                expected_by_key={(str(row["territoire"]),row["type"],row["groupe"]):row for row in reading_rows}
+                actual_by_key={(row[0],row[1],row[2]):row for row in sql_readings}
+                assert set(actual_by_key)==set(expected_by_key)
+                for key,old in expected_by_key.items():
+                    row=actual_by_key[key]
+                    for index,field in ((3,"story_key"),(4,"salience_reason"),(5,"periode_pop"),(6,"periode_artif"),
+                        (11,"trajectoire_artif_par_habitant"),(12,"classification")):
+                        assert row[index]==old[field],(key,field)
+                    for index,field in ((7,"delta_population"),(8,"taux_variation_population"),
+                        (9,"artif_m2_par_habitant"),(10,"artif_m3_par_habitant")):
+                        if old[field] is None: assert row[index] is None,(key,field)
+                        else: assert row[index]==pytest.approx(old[field],rel=0,abs=1e-10),(key,field)
+                    assert row[13]==("measured" if old["classification"] is not None and old["periode_pop"] is not None and old["periode_artif"] is not None else "unavailable")
+                    population_vintage_id=f'{vintage_by_id["serie_historique"]["version"]}/{vintage_by_id["serie_historique"]["date_reference"]}'
+                    assert (row[14],row[15])==("serie_historique",population_vintage_id)
+                sql_sources=pub.execute("""SELECT territory_id,territory_type,groupe,field_key,source_id,vintage_id,
+                    source_name,source_version,reference_date,publication_date,observation_period,dataset_id,
+                    dataset_content_version,state_role,axis_value,provenance_revision_id
+                    FROM milieux_reading_source ORDER BY territory_type,territory_id,groupe,field_key,source_id,vintage_id""").fetchall()
+                actual_sources={(r[0],r[1],r[2],r[3],r[4],r[5]):r for r in sql_sources}
+                expected_source_keys=set()
+                for key,old in expected_by_key.items():
+                    territory,level,groupe=key
+                    pop=vintage_by_id["serie_historique"]
+                    population_vintage_id=f'{pop["version"]}/{pop["date_reference"]}'
+                    expected_source_keys.add((territory,level,groupe,"population","serie_historique",population_vintage_id))
+                    source_row=next(row for row in reading_rows if (str(row["territoire"]),row["type"],row["groupe"])==key)
+                    pop_actual=actual_sources[(territory,level,groupe,"population","serie_historique",population_vintage_id)]
+                    assert (pop_actual[6],pop_actual[7],str(pop_actual[8]),str(pop_actual[9]),pop_actual[10])==(
+                        pop["source"],pop["version"],str(pop["date_reference"]),str(pop["date_publication"]),old["periode_pop"])
+                    state_rows=typed_states[(typed_states.key=="artif_par_habitant") &
+                        (typed_states.territoire.astype(str)==territory) & (typed_states.type==level)]
+                    for state in state_rows.to_dict(orient="records"):
+                        role=state["state_role"]
+                        field="artif_m2_par_habitant" if role=="M2" else "artif_m3_par_habitant"
+                        component_ids=set(json.loads(state["source_components"])[role])
+                        for source_id in component_ids:
+                            clock=vintage_by_id[source_id]
+                            vintage_id=str(clock["version"])
+                            source_key=(territory,level,groupe,field,source_id,vintage_id)
+                            expected_source_keys.add(source_key)
+                            linked=actual_sources[source_key]
+                            assert (linked[6],linked[7],str(linked[8]),str(linked[9]),linked[10],linked[13],linked[14])==(
+                                clock["source"],clock["version"],str(clock["date_reference"]),str(clock["date_publication"]),
+                                old["periode_artif"],role,str(state["detail"]))
+                            assert linked[11]==milieux_metadata["indicator_pages"]["artif_par_habitant"]["series_dataset_id"]
+                            assert linked[12]==pub.execute("SELECT content_version FROM series_dataset_publication WHERE dataset_id=%s",
+                                (linked[11],)).fetchone()[0]
+                            assert linked[15] and pub.execute("SELECT 1 FROM series_observation_provenance WHERE dataset_id=%s AND indicator_id='artif_par_habitant' AND territory_id=%s AND axis_value=%s AND provenance_revision_id=%s",
+                                (linked[11],territory,linked[14],linked[15])).fetchone()
+                assert set(actual_sources)==expected_source_keys
+                selected_by_level={}
+                for level in ("commune","epci","departement","region"):
+                    candidates=[row for row in reading_rows if row["type"]==level and
+                        not typed_states[(typed_states.key=="artif_par_habitant") & (typed_states.territoire.astype(str)==str(row["territoire"]))].empty]
+                    assert candidates, f"canonical Milieux reading missing source-supported {level} row"
+                    selected_by_level[level]=candidates[0]
+                vintage_by_id={str(row["id"]):row for row in vintages.to_dict(orient="records")}
+                for level,old in selected_by_level.items():
+                    territory=str(old["territoire"])
+                    response=client.get(f"/api/territories/{level}/{territory}/themes/milieux/facts")
+                    assert response.status_code==200,response.text
+                    body=response.json(); actual_reading=next(r for r in body["readings"] if r["groupe"]==old["groupe"])
+                    for field in ("groupe","story_key","salience_reason","periode_pop","periode_artif","delta_population",
+                        "taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant",
+                        "trajectoire_artif_par_habitant","classification"):
+                        assert actual_reading[field]==old[field],(level,territory,field)
+                    population=vintage_by_id["serie_historique"]
+                    assert actual_reading["provenance"]["source_id"]=="serie_historique"
+                    assert actual_reading["provenance"]["vintage_id"]==f'{population["version"]}/{population["date_reference"]}'
+                    assert actual_reading["provenance"]["source_version"]==population["version"]
+                    assert str(actual_reading["provenance"]["source_reference_date"])==str(population["date_reference"])
+                    associations=actual_reading["provenance"]["associations"]
+                    pop_assoc=[a for a in associations if a["field"]=="population"]
+                    assert len(pop_assoc)==1 and pop_assoc[0]["observation_period"]==old["periode_pop"]
+                    assert pop_assoc[0]["source_id"]=="serie_historique"
+                    state_rows=typed_states[(typed_states.key=="artif_par_habitant") & (typed_states.territoire.astype(str)==territory)]
+                    for role,field in (("M2","artif_m2_par_habitant"),("M3","artif_m3_par_habitant")):
+                        state=state_rows[state_rows.state_role==role]
+                        assert len(state)==1
+                        source_ids=set(json.loads(state.iloc[0].source_components)[role])
+                        linked=[a for a in associations if a["field"]==field]
+                        assert {a["source_id"] for a in linked}==source_ids
+                        assert all(a["state_role"]==role and a["observation_period"]==old["periode_artif"] for a in linked)
+                        for association in linked:
+                            vintage=vintage_by_id[association["source_id"]]
+                            assert association["source_version"]==vintage["version"]
+                            assert str(association["source_reference_date"])==str(vintage["date_reference"])
+                            assert str(association["source_publication_date"])==str(vintage["date_publication"])
+                            marker=pub.execute("SELECT content_version FROM series_dataset_publication WHERE dataset_id=%s",
+                                (association["dataset_id"],)).fetchone()
+                            assert marker and marker[0]==association["dataset_content_version"]
+                focal=selected_by_level["commune"]; territory=str(focal["territoire"])
+                pub.execute(sql.SQL("SET search_path TO {}").format(sql.Identifier(schema)))
+                original=pub.execute("SELECT taux_variation_population FROM milieux_typed_reading WHERE territory_id=%s AND territory_type='commune'",
+                    (territory,)).fetchone()[0]
+                pub.execute("UPDATE milieux_typed_reading SET taux_variation_population=%s WHERE territory_id=%s AND territory_type='commune'",
+                    (original+1,territory))
+                try:
+                    mutated=client.get(f"/api/territories/commune/{territory}/themes/milieux/facts")
+                    assert mutated.status_code==200,mutated.text
+                    got=next(r for r in mutated.json()["readings"] if r["groupe"]==focal["groupe"])
+                    assert got["taux_variation_population"]!=focal["taux_variation_population"]
+                finally:
+                    pub.execute("UPDATE milieux_typed_reading SET taux_variation_population=%s WHERE territory_id=%s AND territory_type='commune'",
+                        (original,territory))
+                pop_window=pub.execute("SELECT observation_period FROM milieux_reading_source WHERE territory_id=%s AND territory_type='commune' AND field_key='population'",
+                    (territory,)).fetchone()[0]
+                pub.execute("UPDATE milieux_reading_source SET observation_period='2099-2100' WHERE territory_id=%s AND territory_type='commune' AND field_key='population'",
+                    (territory,))
+                try:
+                    stale=client.get(f"/api/territories/commune/{territory}/themes/milieux/facts")
+                    assert stale.status_code==503,stale.text
+                finally:
+                    pub.execute("UPDATE milieux_reading_source SET observation_period=%s WHERE territory_id=%s AND territory_type='commune' AND field_key='population'",
+                        (pop_window,territory))
+                dataset=next(a["dataset_id"] for a in associations if a["dataset_id"] is not None)
+                dataset_version=pub.execute("SELECT content_version FROM series_dataset_publication WHERE dataset_id=%s",
+                    (dataset,)).fetchone()[0]
+                pub.execute("UPDATE series_dataset_publication SET content_version='deliberately-stale-test-token' WHERE dataset_id=%s",
+                    (dataset,))
+                try:
+                    incompatible=client.get(f"/api/territories/commune/{territory}/themes/milieux/facts")
+                    assert incompatible.status_code==503,incompatible.text
+                finally:
+                    pub.execute("UPDATE series_dataset_publication SET content_version=%s WHERE dataset_id=%s",
+                        (dataset_version,dataset))
         finally:
             app.dependency_overrides.clear()
             pool.cache_clear()
