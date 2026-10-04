@@ -143,6 +143,7 @@ python pipeline/maps/production/tests/render_representative.py
 python pipeline/maps/production/record_network_approval.py --manifest pipeline/maps/production/output/manifest.json --qa pipeline/maps/production/output/qa.json --reviewer NAME --outcome approved --output pipeline/maps/production/output/human-approval.json
 python pipeline/maps/production/prepare_mainland_context.py --scope full
 python pipeline/maps/production/run_full_network.py --approval pipeline/maps/production/output/human-approval.json
+python pipeline/maps/production/record_spot_check.py --qa pipeline/maps/production/output/full-qa.json --reviewer NAME --outcome approved --output pipeline/maps/production/output/human-spot-check.json
 ```
 
 The reviewer must open the representative pair for all three territories and
@@ -161,4 +162,6 @@ reusable on retry; missing, corrupt, changed or failed files are rebuilt and
 validated. `status=passed` is automated QA only; `production_status` remains
 `awaiting-human-spot-check` until the listed high-risk files have been visually
 reviewed and `record_spot_check.py` records the affirmative human outcome.
+The script also records a rejected outcome; rejection leaves production
+incomplete so the artifacts can be corrected and rerun/reviewed.
 Nothing in this workflow publishes assets to the application or Cloudflare.

@@ -11,6 +11,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from approval import approval_payload, record_human_approval, read_approval, require_approval
 from runner import Binding, Foundation, MapSet, Recipe, run_production
 from test_contract import FixtureAdapter
+from record_spot_check import record_spot_check
 
 
 class HumanApprovalTests(unittest.TestCase):
@@ -162,6 +163,21 @@ class HumanApprovalTests(unittest.TestCase):
                 run_production(recipe, binding, "full", ("inspection", "inline"),
                     adapter, Path(folder) / "out", approval=read_approval(approval_path))
             self.assertFalse(adapter.rendered)
+
+    def test_visual_spot_check_records_affirmative_or_rejected_human_outcome(self):
+        artifact = Path(self.manifest["outputs"][0]["path"])
+        qa = {"status": "passed", "production_status": "awaiting-human-spot-check",
+            "human_spot_check": {"status": "pending", "outcome": None,
+                "review_set": [{"path": str(artifact),
+                    "output_sha256": sha256(artifact.read_bytes()).hexdigest(),
+                    "territory": {"kind": "epci", "code": "243500741"},
+                    "mode": "car", "profile": "inline", "effective_identity": "identity"}]}}
+        approved = record_spot_check(qa, "reviewer", "approved")
+        rejected = record_spot_check(qa, "reviewer", "rejected")
+        self.assertEqual(approved["production_status"], "complete")
+        self.assertEqual(approved["human_spot_check"]["status"], "approved")
+        self.assertEqual(rejected["production_status"], "incomplete-human-review")
+        self.assertEqual(rejected["human_spot_check"]["status"], "rejected")
 
 
 if __name__ == "__main__":
