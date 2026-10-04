@@ -162,6 +162,7 @@
       "zero_support_status": "not_available"
     }
   },
+  "owned_series_routes": { "prix_m2": { "active_read_route": true, "theme_id": "habitat", "serving_levels": ["commune", "epci", "departement", "region"] } },
   "source_records": {
     "logements": { "dataset": "INSEE — Logements (dossier complet)", "publisher": "INSEE", "url": "https://www.data.gouv.fr/datasets/logements-principaux-indicateurs-dossier-complet", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "30 juin 2026", "vintages": [{ "id": "logements", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }] },
     "dvf_2025_dep22": { "dataset": "Étalab — DVF géolocalisées", "publisher": "Étalab", "url": "https://www.data.gouv.fr/datasets/demandes-de-valeurs-foncieres-geolocalisees", "licence": "Licence Ouverte 2.0", "vintage": "2021–2025", "freshness": "18 mai 2026", "vintages": [
