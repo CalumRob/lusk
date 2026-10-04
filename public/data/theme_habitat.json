@@ -527,6 +527,20 @@
     }
   },
   "scalar_contracts": {
+    "prix_m2": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "prix_m2",
+      "missing_status": "suppressed",
+      "counts_available": true,
+      "support_count_field": "support",
+      "suppressed_below": 10
+    },
     "part_passoires": {
       "allowed_levels": [
         "commune",

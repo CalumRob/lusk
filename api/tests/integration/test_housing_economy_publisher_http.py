@@ -37,7 +37,7 @@ def test_registered_economy_scalar_publication_is_readable_over_http():
             marker = conn.execute("SELECT content_version,row_count FROM table_publication "
                                   "WHERE table_name='scalar_observation'").fetchone()
             assert marker is not None and marker[1] > 53253
-            assert conn.execute("SELECT count(*) FROM scalar_descriptor").fetchone()[0] == 44
+            assert conn.execute("SELECT count(*) FROM scalar_descriptor").fetchone()[0] == 45
             canonical = conn.execute("""SELECT o.value,o.status,o.support_count,o.denominator_count,
                 d.unit,d.direction,d.comparison_facet,
                 (SELECT json_agg(json_build_object('source_id',s.source_id,'vintage_id',s.vintage_id,

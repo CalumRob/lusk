@@ -30,9 +30,9 @@ tryCatch({
 
   inputs <- preparer_tables_service(canonical_dir)
   complete <- project_service_scalar_snapshot(inputs, canonical_dir)
-  stopifnot("eco_activites" %in% complete$projection$descriptors$indicator_id,
-    nrow(complete$projection$descriptors) == 44L,
-    nrow(complete$projection$facts[complete$projection$facts$indicator_id != "eco_activites", , drop=FALSE]) == 53253L + 1268L,
+  stopifnot(all(c("eco_activites", "prix_m2") %in% complete$projection$descriptors$indicator_id),
+    nrow(complete$projection$descriptors) == 45L,
+    nrow(complete$projection$facts[complete$projection$facts$indicator_id != "eco_activites", , drop=FALSE]) == 53253L + 1268L + 1268L,
     nrow(complete$projection$facts[complete$projection$facts$indicator_id == "eco_activites", , drop=FALSE]) > 0L)
   # Publish the actual canonical registered service/building producer first.
   # This owns the full territory reference and the two independent building
@@ -51,9 +51,23 @@ tryCatch({
     c("indicator_id","territory_id","territory_type","value","status","support_count","denominator_count"), drop=FALSE]
   rownames(actual_eco) <- rownames(expected_eco) <- NULL
   stopifnot(isTRUE(all.equal(actual_eco, expected_eco, check.attributes=FALSE)),
-    DBI::dbGetQuery(con, "SELECT count(*) AS n FROM scalar_descriptor")$n[[1L]] == 44L,
+    DBI::dbGetQuery(con, "SELECT count(*) AS n FROM scalar_descriptor")$n[[1L]] == 45L,
     DBI::dbGetQuery(con, "SELECT row_count FROM table_publication WHERE table_name='scalar_observation'")$row_count[[1L]] ==
-      53253L + 1268L + nrow(expected_eco))
+      53253L + 1268L + 1268L + nrow(expected_eco))
+  expected_all <- complete$projection$facts[order(complete$projection$facts$indicator_id,
+    complete$projection$facts$territory_type, complete$projection$facts$territory_id),
+    c("indicator_id","territory_id","territory_type","value","status","support_count","denominator_count"),drop=FALSE]
+  actual_all <- DBI::dbGetQuery(con, "SELECT indicator_id,territory_id,territory_type,value,status,support_count,denominator_count FROM scalar_observation ORDER BY indicator_id,territory_type,territory_id")
+  rownames(actual_all) <- rownames(expected_all) <- NULL
+  expected_sources <- complete$projection$provenance[order(complete$projection$provenance$indicator_id,
+    complete$projection$provenance$territory_id, complete$projection$provenance$source_id,
+    complete$projection$provenance$vintage_id),]
+  actual_sources <- DBI::dbGetQuery(con, "SELECT indicator_id,territory_id,source_id,vintage_id FROM scalar_observation_source ORDER BY indicator_id,territory_id,source_id,vintage_id")
+  rownames(actual_sources) <- rownames(expected_sources) <- NULL
+  stopifnot(isTRUE(all.equal(actual_all, expected_all, check.attributes=FALSE)),
+    isTRUE(all.equal(actual_sources, expected_sources, check.attributes=FALSE)),
+    all(c("prix_m2", "part_passoires") %in% DBI::dbGetQuery(con,
+      "SELECT indicator_id FROM scalar_descriptor WHERE theme_id='habitat'")$indicator_id))
 
   # Full canonical registered-profile batch: keep structure_age, DPE, and all
   # four mobility profiles in the replacement snapshot while adding the four
@@ -67,6 +81,50 @@ tryCatch({
   demography <- list(indicateurs=read_canonical("indicateurs_demographie"), territoires=canonical_territories)
   habitat <- list(indicateurs=read_canonical("indicateurs_habitat"), territoires=canonical_territories,
     source_vintages=canonical_vintages)
+  pooled_price <- habitat$indicateurs[habitat$indicateurs$key == "prix_m2" &
+    is.na(habitat$indicateurs$detail), , drop=FALSE]
+  price_manifest <- lapply(c("commune", "epci", "departement", "region"), function(level) {
+    row <- pooled_price[pooled_price$type == level, , drop=FALSE]
+    # Stable representatives include Rennes for the commune headline.
+    if (level == "commune") row <- row[row$territoire == "35238", , drop=FALSE]
+    else row <- row[1L, , drop=FALSE]
+    stopifnot(nrow(row) == 1L)
+    list(territory_type=level, territory_id=as.character(row$territoire),
+      value=as.numeric(row$value), status=if (is.na(row$value)) "suppressed" else "measured",
+      support=as.integer(row$n), unit=as.character(row$unit),
+      source_id=as.character(habitat_metadata$sources$prix_m2),
+      source_name=as.character(row$vintage_source), version=as.character(row$vintage_version),
+      reference_date=as.character(row$vintage_date_reference),
+      publication_date=as.character(row$vintage_date_publication))
+  })
+  suppressed_price <- pooled_price[pooled_price$type == "commune" & is.na(pooled_price$value) &
+    !is.na(pooled_price$n) & pooled_price$n > 0L & pooled_price$n < 10L, , drop=FALSE]
+  stopifnot(nrow(suppressed_price) > 0L)
+  row <- suppressed_price[order(suppressed_price$territoire), , drop=FALSE][1L, , drop=FALSE]
+  price_manifest[[5L]] <- list(territory_type="commune", territory_id=as.character(row$territoire),
+    value=NULL, status="suppressed", support=as.integer(row$n), unit=as.character(row$unit),
+    source_id=as.character(habitat_metadata$sources$prix_m2),
+    source_name=as.character(row$vintage_source), version=as.character(row$vintage_version),
+    reference_date=as.character(row$vintage_date_reference),
+    publication_date=as.character(row$vintage_date_publication))
+  comparable_epcis <- unique(pooled_price$territoire[pooled_price$type == "epci" & !is.na(pooled_price$value)])
+  comparison <- NULL
+  for (epci in comparable_epcis) {
+    members <- canonical_territories$territoire[canonical_territories$type == "commune" &
+      !is.na(canonical_territories$epci) &
+      canonical_territories$epci == epci]
+    observations <- pooled_price[pooled_price$type == "commune" & pooled_price$territoire %in% members &
+      !is.na(pooled_price$value), , drop=FALSE]
+    if (nrow(observations) >= 2L) {
+      comparison <- list(epci_id=as.character(epci), commune_id=as.character(members[[1L]]),
+        median=stats::median(observations$value), selected_member_count=nrow(observations))
+      break
+    }
+  }
+  stopifnot(!is.null(comparison))
+  price_manifest[[6L]] <- list(comparison=comparison)
+  price_manifest_path <- tempfile("housing-price-http-", fileext=".json")
+  jsonlite::write_json(price_manifest, price_manifest_path, auto_unbox=TRUE, null="null", digits=NA)
   mobility <- list(indicateurs=read_canonical("indicateurs_mobilite"), territoires=canonical_territories,
     source_vintages=canonical_vintages)
   scalar_version <- DBI::dbGetQuery(con,
@@ -268,13 +326,13 @@ tryCatch({
     " TO ", DBI::dbQuoteIdentifier(con, read_user)))
   DBI::dbExecute(con, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ", DBI::dbQuoteIdentifier(con, schema),
     " TO ", DBI::dbQuoteIdentifier(con, read_user)))
-  keys <- c("LUSK_HOUSING_HTTP_SCHEMA", "LUSK_HOUSING_HTTP_TERRITORY", "LUSK_HOUSING_HTTP_MANIFEST",
+  keys <- c("LUSK_HOUSING_HTTP_SCHEMA", "LUSK_HOUSING_HTTP_TERRITORY", "LUSK_HOUSING_HTTP_MANIFEST", "LUSK_HOUSING_PRICE_MANIFEST",
     "LUSK_BUILDING_FICHE_HTTP_SCHEMA", "LUSK_BUILDING_FICHE_HTTP_TERRITORY", "LUSK_BUILDING_FICHE_HTTP_MANIFEST", "PYTHONPATH")
   old <- Sys.getenv(keys, unset=NA_character_)
   on.exit(for (i in seq_along(keys)) if (is.na(old[[i]])) Sys.unsetenv(keys[[i]]) else
     do.call(Sys.setenv, setNames(list(old[[i]]), keys[[i]])), add=TRUE)
   Sys.setenv(LUSK_HOUSING_HTTP_SCHEMA=schema, LUSK_HOUSING_HTTP_TERRITORY="35238",
-    LUSK_HOUSING_HTTP_MANIFEST=manifest_path,
+    LUSK_HOUSING_HTTP_MANIFEST=manifest_path, LUSK_HOUSING_PRICE_MANIFEST=price_manifest_path,
     LUSK_BUILDING_FICHE_HTTP_SCHEMA=schema,LUSK_BUILDING_FICHE_HTTP_TERRITORY=building_territory,
     LUSK_BUILDING_FICHE_HTTP_MANIFEST=building_manifest_path,
     PYTHONPATH=normalizePath("..", winslash="/", mustWork=TRUE))
@@ -303,9 +361,10 @@ tryCatch({
     "; density-class peer curves=", peer_ramp$member_count,
     " peers / ", peer_ramp$total_buildings, " ramp buildings; pooled grid=",
     peer_grid$total_buildings, " buildings, ", length(peer_grid$cells), " cells",
-    "\nRegistered full canonical profile snapshot (10 profiles), all four housing profiles PostgreSQL/HTTP parity, full scalar snapshot (44 descriptors including nb_buildings), essential-service denominator parity, and canonical building publisher-to-theme HTTP parity: PASS\n", sep="")
+    "\nRegistered profile snapshot (10 profiles), all four housing profiles PostgreSQL/HTTP parity, all 45 scalar descriptors and every observation/status/source link preserved against the canonical snapshot, pooled prix_m2 Habitat facts at four levels including suppression, empty/singleton/overlap comparison HTTP parity, essential-service denominator parity, and canonical building publisher-to-theme HTTP parity: PASS\n", sep="")
 }, finally={
   if (exists("manifest_path") && file.exists(manifest_path)) unlink(manifest_path)
+  if (exists("price_manifest_path") && file.exists(price_manifest_path)) unlink(price_manifest_path)
   if (exists("building_manifest_path") && file.exists(building_manifest_path)) unlink(building_manifest_path)
   if (created) cleanup_serving_smoke_schema(con, schema, "profile")
   DBI::dbDisconnect(con)

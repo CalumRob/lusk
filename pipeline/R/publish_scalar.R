@@ -475,8 +475,10 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
     "scalar_descriptor", "building_ramp", "building_grid", "building_evidence_descriptor_source",
     "building_evidence_descriptor", "essential_service_access", "service_registry",
-    "anchored_membership", "period_detail_observation", "observed_collection_category",
-    "observed_collection_descriptor", "observed_collection_publication",
+     "anchored_membership", "period_detail_observation", "observed_collection_category",
+     "observed_collection_descriptor", "observed_collection_publication",
+     "bpe_profile_evidence_source", "bpe_profile_evidence", "bpe_profile_class_axis",
+     "bpe_profile_evidence_descriptor",
     "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
     "table_publication")
   functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_combined_smoke_value()", "reject_smoke_ramp()",
@@ -491,8 +493,8 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "validate_series_named_reference()", "validate_series_named_reference_provenance()",
     "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
     "validate_ordered_series()", "validate_anchored_membership()",
-    "validate_period_detail_observation()", "validate_observed_collection_write()",
-    "validate_observed_collection_publication()")
+     "validate_period_detail_observation()", "validate_observed_collection_write()",
+     "validate_observed_collection_publication()", "assert_bpe_profile_evidence_complete()")
   c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
     paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
       split <- strsplit(signature, "(", fixed=TRUE)[[1L]]
