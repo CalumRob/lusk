@@ -320,6 +320,17 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
             raise ValueError("full production approval requires both inspection and inline profiles")
         if approval.get("human_approved") is not True:
             raise ValueError("approval record must explicitly record human_approved=true")
+        from approval import validate_approval_claim, require_approval
+        validate_approval_claim(approval, recipe, renderer_identity)
+        bounded_identity_check = getattr(adapter, "prepare_current_approval_members", None)
+        if not callable(bounded_identity_check):
+            raise ValueError("adapter cannot independently prepare current representative identities")
+        current_members = bounded_identity_check(recipe, binding, tuple(requested_profiles),
+                                                 renderer_identity)
+        require_approval({"scope": "representative", "approval_pairs_complete": True,
+            "recipe": recipe.name, "recipe_version": recipe.version,
+            "foundation_version": recipe.foundation.version,
+            "renderer_identity": renderer_identity, "approval_members": current_members}, approval)
     preflight_seconds = perf_counter() - preflight_started
     print(f"[maps] input preflight: {preflight_seconds:.1f}s", flush=True)
     authoritative_inputs = adapter.input_identity()
@@ -356,16 +367,6 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
         prepare_run(recipe, binding, requested_profiles, output_dir, refresh=refresh)
         preparation_seconds = perf_counter() - preparation_started
         print(f"[maps] shared source preparation: {preparation_seconds:.1f}s", flush=True)
-    if scope == "full":
-        approval_members = getattr(adapter, "current_approval_members", None)
-        if not callable(approval_members):
-            raise ValueError("network adapter cannot establish the current representative review set")
-        current_members = approval_members(recipe, binding, tuple(requested_profiles), renderer_identity)
-        from approval import require_approval
-        require_approval({"scope": "representative", "approval_pairs_complete": True,
-            "recipe": recipe.name, "recipe_version": recipe.version,
-            "foundation_version": recipe.foundation.version,
-            "renderer_identity": renderer_identity, "approval_members": current_members}, approval)
     outputs = []
     failures = []
     expected_outputs = []
@@ -543,17 +544,8 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                 "input_hash_seconds": round(input_hash_seconds, 3),
                 "elapsed_seconds": round(elapsed_seconds, 3), "outputs": outputs}
     automated_status = "passed" if not failures and len(outputs) == artifact_total else "incomplete"
-    risk_keys = {("epci", "243500741", "car", "inspection"),
-        ("epci", "243500741", "car", "inline"),
-        ("epci", "243500741", "bike", "inline"),
-        ("region", "53", "car", "inspection"),
-        ("region", "53", "car", "inline")}
-    spot_check = [{"territory": item["territory"], "mode": item["mode"],
-        "profile": item["profile"], "path": item["path"],
-        "effective_identity": item["effective_identity"],
-        "output_sha256": item["output_sha256"]}
-        for item in outputs if (item["territory"]["kind"], item["territory"]["code"],
-            item["mode"], item["profile"]) in risk_keys]
+    select_spot_check = getattr(adapter, "visual_spot_check_outputs", None)
+    spot_check = (select_spot_check(outputs) if callable(select_spot_check) else [])
     qa = {"status": automated_status,
           "production_status": ("awaiting-human-spot-check" if automated_status == "passed" else "incomplete"),
           "human_spot_check": {"status": "pending" if automated_status == "passed" else "not-ready",

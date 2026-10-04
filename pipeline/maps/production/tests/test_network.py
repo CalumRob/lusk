@@ -534,6 +534,38 @@ class NetworkPreparationTests(unittest.TestCase):
         self.assertEqual(by_profile["inspection"], changed_by_profile["inspection"])
         self.assertNotEqual(by_profile["inline"], changed_by_profile["inline"])
 
+    def test_network_adapter_approval_seam_prepares_only_representative_binding(self):
+        from network import NetworkAdapter, network_recipe
+        full_binding, representative_binding = object(), object()
+        adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
+        identities = [("commune", "35238", "car", "inline", "a" * 64)]
+        with (patch("network.build_representative_map_set", return_value=representative_binding),
+              patch.object(adapter, "prepare_run") as prepare,
+              patch.object(adapter, "current_approval_members", return_value=identities)):
+            result = adapter.prepare_current_approval_members(network_recipe(), full_binding,
+                ("inspection", "inline"), {"renderer": "fixture"})
+        self.assertEqual(result, identities)
+        self.assertIs(prepare.call_args.args[1], representative_binding)
+        self.assertIsNot(prepare.call_args.args[1], full_binding)
+
+    def test_post_batch_visual_review_selection_is_family_metadata_owned(self):
+        from network import NetworkAdapter
+        adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
+        outputs = []
+        for kind, code, mode in (("epci", "243500741", "car"),
+                                 ("epci", "243500741", "bike"),
+                                 ("region", "53", "car")):
+            for profile in ("inspection", "inline"):
+                outputs.append({"territory": {"kind": kind, "code": code},
+                    "mode": mode, "profile": profile, "path": f"{kind}-{mode}-{profile}.png",
+                    "effective_identity": "a" * 64, "output_sha256": "b" * 64})
+        selected = adapter.visual_spot_check_outputs(outputs)
+        self.assertEqual({(item["territory"]["kind"], item["mode"], item["profile"])
+                          for item in selected}, {
+            ("epci", "car", "inspection"), ("epci", "car", "inline"),
+            ("epci", "bike", "inline"), ("region", "car", "inspection"),
+            ("region", "car", "inline")})
+
     def test_land_context_uses_selected_communes_from_local_admin_express(self):
         project = QgsProject.instance()
         project.clear()

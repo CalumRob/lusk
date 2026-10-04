@@ -139,8 +139,11 @@ class HumanApprovalTests(unittest.TestCase):
             def __init__(self):
                 super().__init__()
                 self.rendered = False
-            def prepare_run(self, *args, **kwargs): pass
-            def current_approval_members(self, recipe, binding, profiles, renderer):
+                self.preparations = []
+            def prepare_run(self, recipe, binding, profiles, output_dir, *, refresh=False):
+                self.preparations.append("full")
+            def prepare_current_approval_members(self, recipe, binding, profiles, renderer):
+                self.preparations.append("representative")
                 return [(kind, code, mode, profile,
                     sha256(f"current/{kind}/{code}/{mode}/{profile}".encode()).hexdigest())
                     for kind, code in (("commune", "35238"), ("region", "53"),
@@ -163,6 +166,15 @@ class HumanApprovalTests(unittest.TestCase):
                 run_production(recipe, binding, "full", ("inspection", "inline"),
                     adapter, Path(folder) / "out", approval=read_approval(approval_path))
             self.assertFalse(adapter.rendered)
+            self.assertEqual(adapter.preparations, ["representative"])
+            self.assertFalse((Path(folder) / "out").exists())
+
+            adapter.preparations.clear()
+            recipe_stale = {**read_approval(approval_path), "recipe_version": 99}
+            with self.assertRaisesRegex(ValueError, "recipe or renderer is stale"):
+                run_production(recipe, binding, "full", ("inspection", "inline"),
+                    adapter, Path(folder) / "other-out", approval=recipe_stale)
+            self.assertEqual(adapter.preparations, [])
 
     def test_visual_spot_check_records_affirmative_or_rejected_human_outcome(self):
         artifact = Path(self.manifest["outputs"][0]["path"])

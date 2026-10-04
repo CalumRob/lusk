@@ -45,6 +45,24 @@ def require_approval(manifest, approval):
         raise ValueError("approval record lacks an affirmative human visual review outcome")
 
 
+def validate_approval_claim(approval, recipe, renderer_identity):
+    """Cheaply reject malformed, wrong-recipe and wrong-renderer records."""
+    if not isinstance(approval, dict):
+        raise ValueError("full production requires explicit human approval")
+    claim = {"scope": "representative", "recipe": approval.get("recipe"),
+        "recipe_version": approval.get("recipe_version"),
+        "foundation_version": approval.get("foundation_version"),
+        "renderer_identity": approval.get("renderer_identity"),
+        "approval_members": approval.get("approval_members"),
+        "approval_pairs_complete": True}
+    require_approval(claim, approval)
+    if (approval.get("recipe") != recipe.name
+            or approval.get("recipe_version") != recipe.version
+            or approval.get("foundation_version") != recipe.foundation.version
+            or approval.get("renderer_identity") != renderer_identity):
+        raise ValueError("representative approval recipe or renderer is stale")
+
+
 def read_approval(path):
     try:
         value = json.loads(Path(path).read_text(encoding="utf-8"))

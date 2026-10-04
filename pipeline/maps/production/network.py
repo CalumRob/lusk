@@ -907,6 +907,32 @@ class NetworkAdapter:
             raise ValueError("representative cohort must contain all 18 territory/mode/profile artifacts")
         return sorted(members)
 
+    def prepare_current_approval_members(self, recipe, full_binding, requested_profiles,
+                                         renderer_identity):
+        """Prepare only the representative footprint to verify approval pre-full-run."""
+        import gc
+        from tempfile import TemporaryDirectory
+        representatives = build_representative_map_set(self.raw_dir)
+        with TemporaryDirectory(prefix="lusk-network-approval-",
+                                dir=Path(__file__).parents[3]) as scratch:
+            try:
+                self.prepare_run(recipe, representatives, requested_profiles,
+                                 Path(scratch), refresh=False)
+                freshly_built = self.current_approval_members(recipe, representatives,
+                    requested_profiles, renderer_identity)
+                full_scope_sample = self.current_approval_members(recipe, full_binding,
+                    requested_profiles, renderer_identity)
+                if freshly_built != full_scope_sample:
+                    raise ValueError("full binding representative identities differ from fresh map-ready inputs")
+                return freshly_built
+            finally:
+                # Release QGIS providers before TemporaryDirectory removes its stages.
+                QgsProject.instance().clear()
+                self._shared_ground = None
+                self._network_layers = {}
+                self._ground_cache.clear()
+                gc.collect()
+
     def profile_identity(self, profile, feature: Mapping | None = None, recipe: Recipe | None = None) -> Mapping:
         """Fine-grained contract identity, separate from broad provenance."""
         root = Path(__file__).parent
@@ -1111,6 +1137,21 @@ class NetworkAdapter:
 
     def stage_report(self):
         return list(self._stage_events)
+
+    def visual_spot_check_outputs(self, outputs):
+        """Select family-owned high-risk post-batch examples from the run results."""
+        selected = []
+        for spec in self.family_config.get("visual_spot_check", []):
+            for item in outputs:
+                if (item["territory"]["kind"] == spec["territory"]["kind"]
+                        and item["territory"]["code"] == spec["territory"]["code"]
+                        and item["mode"] == spec["mode"]
+                        and item["profile"] in spec["profiles"]):
+                    selected.append({"territory": item["territory"], "mode": item["mode"],
+                        "profile": item["profile"], "path": item["path"],
+                        "effective_identity": item["effective_identity"],
+                        "output_sha256": item["output_sha256"]})
+        return selected
 
     def record_reused_output(self, feature, profile, output_dir, recipe=None):
         started = perf_counter()
