@@ -373,6 +373,7 @@ class NetworkPreparationTests(unittest.TestCase):
     def test_network_scope_comes_from_family_config_not_shared_foundation(self):
         from network import (
             NetworkAdapter,
+            build_full_map_set,
             build_representative_map_set,
             network_recipe,
         )
@@ -446,6 +447,128 @@ class NetworkPreparationTests(unittest.TestCase):
         self.assertAlmostEqual(region["geometry"].boundingBox().xMaximum(), 30)
         self.assertAlmostEqual(epci["analytical_geometry"].boundingBox().xMaximum(), 30)
         self.assertAlmostEqual(epci["geometry"].boundingBox().xMaximum(), 50)
+
+    def test_full_inventory_is_derived_from_authoritative_communes_and_pinned_epci_metadata(self):
+        from network import NetworkAdapter, build_full_map_set
+        from runner import Binding, MapSet
+        project = QgsProject.instance()
+        project.clear()
+        root = Path(tempfile.mkdtemp(prefix="lusk-full-inventory-"))
+        self.__class__.fixture_dirs.append(root)
+        raw = root / "pipeline" / "data" / "raw"
+        raw.mkdir(parents=True)
+        metadata = root / "pipeline" / "inst" / "extdata"
+        metadata.mkdir(parents=True)
+        (metadata / "epci_geo_api.json").write_text(json.dumps({"labels": [
+            {"code": "epci-a", "nom": "A"}, {"code": "epci-b", "nom": "B"}]}), encoding="utf-8")
+        communes = QgsVectorLayer(
+            "MultiPolygon?crs=EPSG:2154&field=code_insee:string&field=nom_officiel:string"
+            "&field=code_insee_du_departement:string&field=code_insee_de_la_region:string"
+            "&field=codes_siren_des_epci:string", "inventory fixture", "memory")
+        rows = (("22001", "One", "22", "53", "epci-a", 0),
+                ("22002", "Two", "22", "53", "epci-a/epci-b", 20),
+                ("29001", "Outside analytical department", "29", "53", "epci-b", 40))
+        features = []
+        for code, name, department, region, epcis, x in rows:
+            feature = QgsFeature(communes.fields())
+            feature.setAttributes([code, name, department, region, epcis])
+            geometry = QgsGeometry.fromWkt(
+                f"POLYGON (({x} 0,{x+10} 0,{x+10} 10,{x} 10,{x} 0))")
+            geometry.convertToMultiType()
+            feature.setGeometry(geometry)
+            features.append(feature)
+        communes.dataProvider().addFeatures(features)
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = "GeoJSON"
+        result = QgsVectorFileWriter.writeAsVectorFormatV3(
+            communes, str(raw / "communes_limites.geojson"), project.transformContext(), options)
+        self.assertEqual(result[0], QgsVectorFileWriter.NoError, result)
+        binding = build_full_map_set(raw, project,
+            family_config={"scope": {"analytical_departments": ["22"]}})
+        adapter = NetworkAdapter(raw)
+        adapter.family_config = {"scope": {"analytical_departments": ["22"]}}
+        adapter.preflight_scope(None, binding, "full", ("inspection", "inline"))
+        items = binding.map_set.layers["network-outputs"]
+        territories = {(item["territory"]["kind"], item["territory"]["code"])
+                       for item in items}
+        self.assertEqual(territories, {("commune", "22001"), ("commune", "22002"),
+            ("epci", "epci-a"), ("epci", "epci-b"), ("departement", "22"), ("region", "53")})
+        self.assertEqual(len(items), len(territories) * len({item["mode"] for item in items}))
+        epci_b = next(item for item in items if item["territory"]["code"] == "epci-b")
+        self.assertEqual(epci_b["geometry"].boundingBox().xMaximum(), 50)
+        self.assertEqual(epci_b["analytical_geometry"].boundingBox().xMaximum(), 30)
+        incomplete = Binding("network", MapSet({"network-outputs": items[:-1]}))
+        with self.assertRaisesRegex(ValueError, "does not cover exactly"):
+            adapter.preflight_scope(None, incomplete, "full", ("inspection", "inline"))
+
+    def test_real_network_adapter_recomputes_paired_current_review_identities(self):
+        from dataclasses import replace
+        from network import NetworkAdapter, network_recipe
+        from runner import Binding, MapSet, PROFILES
+        project = QgsProject.instance()
+        project.clear()
+        adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
+        features = []
+        for kind, code in (("commune", "35238"), ("region", "53"),
+                           ("epci", "243500741")):
+            for mode in ("car", "walk", "bike"):
+                geometry = QgsGeometry.fromRect(QgsRectangle(0, 0, 10, 10))
+                features.append({"territory": {"kind": kind, "code": code, "name": code},
+                    "mode": mode, "geometry": geometry, "analytical_geometry": geometry,
+                    "extent": QgsRectangle(0, 0, 10, 10)})
+        binding = Binding("network", MapSet({"network-outputs": features}))
+        adapter.effective_input_identity = lambda feature, profile: {"visible": feature["mode"]}
+        recipe = network_recipe()
+        current = adapter.current_approval_members(recipe, binding,
+            ("inspection", "inline"), adapter.render_identity())
+        changed_recipe = replace(recipe, foundation=replace(recipe.foundation,
+            composition={**recipe.foundation.composition,
+                "inline": {"shadow": "changed-profile-rule"}}))
+        changed = adapter.current_approval_members(changed_recipe, binding,
+            ("inspection", "inline"), adapter.render_identity())
+        self.assertEqual(len(current), len(features) * len(PROFILES))
+        by_profile = {name: {item[4] for item in current if item[3] == name}
+                      for name in ("inspection", "inline")}
+        changed_by_profile = {name: {item[4] for item in changed if item[3] == name}
+                              for name in ("inspection", "inline")}
+        self.assertEqual(by_profile["inspection"], changed_by_profile["inspection"])
+        self.assertNotEqual(by_profile["inline"], changed_by_profile["inline"])
+
+    def test_network_adapter_approval_seam_prepares_only_representative_binding(self):
+        from network import NetworkAdapter, network_recipe
+        full_binding, representative_binding = object(), object()
+        adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
+        output_root = Path.cwd() / "fixture-production-output"
+        identities = [("commune", "35238", "car", "inline", "a" * 64)]
+        with (patch("network.build_representative_map_set", return_value=representative_binding),
+              patch.object(adapter, "prepare_run") as prepare,
+              patch.object(adapter, "current_approval_members", return_value=identities)):
+            result = adapter.prepare_current_approval_members(network_recipe(), full_binding,
+                ("inspection", "inline"), {"renderer": "fixture"}, output_root)
+        self.assertEqual(result, identities)
+        self.assertIs(prepare.call_args.args[1], representative_binding)
+        self.assertIsNot(prepare.call_args.args[1], full_binding)
+        self.assertNotEqual(prepare.call_args.args[3], output_root)
+        self.assertEqual(prepare.call_args.kwargs["context_cache_root"],
+                         output_root / ".stage-cache" / "official-context")
+
+    def test_post_batch_visual_review_selection_is_family_metadata_owned(self):
+        from network import NetworkAdapter
+        adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
+        outputs = []
+        for kind, code, mode in (("epci", "243500741", "car"),
+                                 ("epci", "243500741", "bike"),
+                                 ("region", "53", "car")):
+            for profile in ("inspection", "inline"):
+                outputs.append({"territory": {"kind": kind, "code": code},
+                    "mode": mode, "profile": profile, "path": f"{kind}-{mode}-{profile}.png",
+                    "effective_identity": "a" * 64, "output_sha256": "b" * 64})
+        selected = adapter.visual_spot_check_outputs(outputs)
+        self.assertEqual({(item["territory"]["kind"], item["mode"], item["profile"])
+                          for item in selected}, {
+            ("epci", "car", "inspection"), ("epci", "car", "inline"),
+            ("epci", "bike", "inline"), ("region", "car", "inspection"),
+            ("region", "car", "inline")})
 
     def test_land_context_uses_selected_communes_from_local_admin_express(self):
         project = QgsProject.instance()

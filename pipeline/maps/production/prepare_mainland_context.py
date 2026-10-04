@@ -10,7 +10,7 @@ from qgis.core import QgsApplication, QgsProject, QgsRectangle
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).parent))
 from mainland_context import acquire_context  # noqa: E402
-from network import build_representative_map_set  # noqa: E402
+from network import build_full_map_set, build_representative_map_set  # noqa: E402
 
 
 def main():
@@ -18,12 +18,15 @@ def main():
     parser.add_argument("--raw-dir", type=Path, default=ROOT / "pipeline/data/raw")
     parser.add_argument("--output-dir", type=Path, default=ROOT / "pipeline/maps/production/output")
     parser.add_argument("--refresh", action="store_true", help="acquire and validate a new generation")
+    parser.add_argument("--scope", choices=("representative", "full"), default="representative",
+                        help="derive frame coverage from the requested run scope")
     args = parser.parse_args()
 
     app = QgsApplication([], False)
     app.initQgis()
     try:
-        binding = build_representative_map_set(args.raw_dir, QgsProject.instance())
+        builder = build_full_map_set if args.scope == "full" else build_representative_map_set
+        binding = builder(args.raw_dir, QgsProject.instance())
         frames = [feature["extent"] for values in binding.map_set.layers.values() for feature in values]
         if not frames:
             raise RuntimeError("Cannot acquire mainland context without map-ready frames")

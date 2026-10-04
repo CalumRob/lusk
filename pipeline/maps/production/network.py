@@ -294,6 +294,86 @@ def build_representative_map_set(
     return Binding("network", MapSet({"network-outputs": tuple(features)}))
 
 
+def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
+                       family_config: Mapping | None = None) -> Binding:
+    """Derive the full supported territory inventory from current map-ready sources."""
+    raw_dir = Path(raw_dir)
+    family_config = family_config or _load_network_family_config()
+    departments = {str(code) for code in family_config["scope"]["analytical_departments"]}
+    metadata_path = _metadata_path(raw_dir)
+    metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+    epci_labels = {str(item["code"]): str(item["nom"]) for item in metadata["labels"]}
+    project = project or QgsProject.instance()
+    project.setCrs(MAP_CRS)
+    source = QgsVectorLayer(str(raw_dir / "communes_limites.geojson"), "map-ready communes", "ogr")
+    if not source.isValid():
+        raise ValueError("Could not load authoritative map-ready commune inventory")
+    required = {"code_insee", "nom_officiel", "code_insee_du_departement",
+                "code_insee_de_la_region", "codes_siren_des_epci"}
+    missing = required - {field.name() for field in source.fields()}
+    if missing:
+        raise ValueError(f"Commune map-ready source is missing fields: {sorted(missing)}")
+    territories = []
+    department_parts = {code: [] for code in departments}
+    region_parts = []
+    epci_parts = {code: [] for code in epci_labels}
+    epci_analysis_parts = {code: [] for code in epci_labels}
+    seen_communes = set()
+    for row in source.getFeatures():
+        code = str(row["code_insee"])
+        department = str(row["code_insee_du_departement"])
+        epcis = {value for value in str(row["codes_siren_des_epci"] or "").split("/") if value}
+        geometry = _projected(row.geometry(), source.crs(), project)
+        if department in departments:
+            if code in seen_communes:
+                raise ValueError(f"duplicate authoritative commune code: {code}")
+            seen_communes.add(code)
+            territories.append({"kind": "commune", "code": code,
+                "name": str(row["nom_officiel"]), "geometry": geometry,
+                "analytical_geometry": geometry})
+            department_parts[department].append(geometry)
+            if str(row["code_insee_de_la_region"]) == "53":
+                region_parts.append(geometry)
+        for epci in epcis & epci_labels.keys():
+            # Full administrative outline is used for inspection; Breton
+            # communes alone define the analytical geometry of cross-border EPCIs.
+            epci_parts[epci].append(geometry)
+            if department in departments:
+                epci_analysis_parts[epci].append(geometry)
+    if not seen_communes:
+        raise ValueError("authoritative commune inventory has no supported departments")
+    for code, name in sorted(epci_labels.items()):
+        members = epci_parts[code]
+        if not members:
+            raise ValueError(f"pinned EPCI {code} has no authoritative commune membership")
+        analytical = epci_analysis_parts[code]
+        if not analytical:
+            raise ValueError(f"EPCI {code} has no in-scope analytical commune membership")
+        territories.append({"kind": "epci", "code": code, "name": name,
+            "geometry": _union(members, f"EPCI {code}"),
+            "analytical_geometry": _union(analytical, f"EPCI analysis {code}")})
+    for code, parts in sorted(department_parts.items()):
+        if not parts:
+            raise ValueError(f"supported department {code} has no communes")
+        territories.append({"kind": "departement", "code": code, "name": code,
+            "geometry": _union(parts, f"department {code}"),
+            "analytical_geometry": _union(parts, f"department analysis {code}")})
+    if not region_parts:
+        raise ValueError("authoritative commune inventory has no Bretagne region membership")
+    region = _union(region_parts, "Bretagne (region 53)")
+    territories.append({"kind": "region", "code": "53", "name": "Bretagne",
+                        "geometry": region, "analytical_geometry": region})
+    features = []
+    for territory in territories:
+        extent = _map_extent(territory["analytical_geometry"])
+        for mode in NETWORK_MODES:
+            features.append({"territory": {key: territory[key] for key in ("kind", "code", "name")},
+                "mode": mode, "geometry": territory["geometry"],
+                "analytical_geometry": territory["analytical_geometry"],
+                "region_geometry": region, "extent": extent})
+    return Binding("network", MapSet({"network-outputs": tuple(features)}))
+
+
 def _sql_values(values: tuple[str, ...]) -> str:
     return ", ".join("'" + value.replace("'", "''") + "'" for value in values)
 
@@ -800,6 +880,60 @@ class NetworkAdapter:
             },
         }
 
+    def current_approval_members(self, recipe, binding, requested_profiles, renderer_identity):
+        """Fingerprint the live representative cohort before a full run is scheduled."""
+        from runner import PROFILES, _effective_identity_for
+        representatives = {("commune", "35238"), ("region", "53"),
+                           ("epci", "243500741")}
+        if set(requested_profiles) != {"inspection", "inline"}:
+            raise ValueError("full production approval requires both canonical profiles")
+        features = [feature for layer in binding.map_set.layers.values() for feature in layer
+                    if (str(feature["territory"]["kind"]), str(feature["territory"]["code"]))
+                    in representatives]
+        found = {(str(feature["territory"]["kind"]), str(feature["territory"]["code"]),
+                  feature["mode"]) for feature in features}
+        expected_pairs = {(kind, code, mode) for kind, code in representatives
+                          for mode in NETWORK_MODES}
+        if found != expected_pairs:
+            raise ValueError("full map binding lacks the current complete representative cohort")
+        members = []
+        for feature in features:
+            for profile_name in sorted(requested_profiles):
+                identity = _effective_identity_for(recipe, self, renderer_identity,
+                    feature, PROFILES[profile_name])
+                members.append((str(feature["territory"]["kind"]),
+                    str(feature["territory"]["code"]), feature["mode"], profile_name, identity))
+        if len(members) != len(expected_pairs) * len(requested_profiles):
+            raise ValueError("representative cohort must contain all 18 territory/mode/profile artifacts")
+        return sorted(members)
+
+    def prepare_current_approval_members(self, recipe, full_binding, requested_profiles,
+                                         renderer_identity, output_dir):
+        """Prepare only the representative footprint to verify approval pre-full-run."""
+        import gc
+        from tempfile import TemporaryDirectory
+        representatives = build_representative_map_set(self.raw_dir)
+        with TemporaryDirectory(prefix="lusk-network-approval-",
+                                dir=Path(__file__).parents[3]) as scratch:
+            try:
+                self.prepare_run(recipe, representatives, requested_profiles,
+                    Path(scratch), refresh=False,
+                    context_cache_root=Path(output_dir) / ".stage-cache" / "official-context")
+                freshly_built = self.current_approval_members(recipe, representatives,
+                    requested_profiles, renderer_identity)
+                full_scope_sample = self.current_approval_members(recipe, full_binding,
+                    requested_profiles, renderer_identity)
+                if freshly_built != full_scope_sample:
+                    raise ValueError("full binding representative identities differ from fresh map-ready inputs")
+                return freshly_built
+            finally:
+                # Release QGIS providers before TemporaryDirectory removes its stages.
+                QgsProject.instance().clear()
+                self._shared_ground = None
+                self._network_layers = {}
+                self._ground_cache.clear()
+                gc.collect()
+
     def profile_identity(self, profile, feature: Mapping | None = None, recipe: Recipe | None = None) -> Mapping:
         """Fine-grained contract identity, separate from broad provenance."""
         root = Path(__file__).parent
@@ -879,6 +1013,46 @@ class NetworkAdapter:
         self._requested_modes = {feature["mode"] for layer in binding.map_set.layers.values() for feature in layer}
         self.preflight(recipe, binding)
 
+    def preflight_scope(self, recipe, binding, scope, profiles):
+        if scope != "full":
+            return
+        departments = {str(value) for value in self.family_config["scope"]["analytical_departments"]}
+        epci_payload = json.loads(_metadata_path(self.raw_dir).read_text(encoding="utf-8"))
+        epci_codes = {str(item["code"]) for item in epci_payload["labels"]}
+        source = QgsVectorLayer(str(self.raw_dir / "communes_limites.geojson"),
+                                "full coverage preflight", "ogr")
+        if not source.isValid():
+            raise ValueError("Cannot validate full output coverage without the authoritative commune inventory")
+        fields = {field.name() for field in source.fields()}
+        if not {"code_insee", "code_insee_du_departement", "codes_siren_des_epci"} <= fields:
+            raise ValueError("Authoritative commune inventory lacks full-scope membership fields")
+        communes, epcis = set(), set()
+        for item in source.getFeatures():
+            department = str(item["code_insee_du_departement"])
+            memberships = {value for value in str(item["codes_siren_des_epci"] or "").split("/") if value}
+            epcis.update(memberships & epci_codes)
+            if department in departments:
+                communes.add(str(item["code_insee"]))
+        if epcis != epci_codes:
+            raise ValueError(f"Full map inventory EPCI membership incomplete: {sorted(epci_codes - epcis)}")
+        expected = ({("commune", code) for code in communes}
+            | {("epci", code) for code in epci_codes}
+            | {("departement", code) for code in departments}
+            | {("region", "53")})
+        features = [feature for values in binding.map_set.layers.values() for feature in values]
+        actual = {(str(feature["territory"]["kind"]), str(feature["territory"]["code"]))
+                  for feature in features}
+        if actual != expected:
+            raise ValueError(f"Full territory inventory mismatch; missing={sorted(expected-actual)}, "
+                             f"unexpected={sorted(actual-expected)}")
+        expected_matrix = {(kind, code, mode) for kind, code in expected for mode in NETWORK_MODES}
+        actual_matrix = {(str(item["territory"]["kind"]), str(item["territory"]["code"]), item["mode"])
+                         for item in features}
+        if actual_matrix != expected_matrix or len(features) != len(expected_matrix):
+            raise ValueError("Full map binding does not cover exactly territory × network mode")
+        if set(profiles) != {"inspection", "inline"}:
+            raise ValueError("Full map batch requires both canonical profiles")
+
     def preflight(self, recipe: Recipe, binding: Binding) -> None:
         profiles = getattr(self, "_requested_profiles", ("inspection", "inline"))
         modes = getattr(self, "_requested_modes", set(NETWORK_MODES))
@@ -916,10 +1090,14 @@ class NetworkAdapter:
             from map_ground import discover_ocsge_sources
             discover_ocsge_sources(self.raw_dir)
 
-    def prepare_run(self, recipe: Recipe, binding: Binding, profiles, output_dir: Path, *, refresh: bool = False) -> None:
+    def prepare_run(self, recipe: Recipe, binding: Binding, profiles, output_dir: Path, *,
+                    refresh: bool = False, context_cache_root: str | Path | None = None) -> None:
         """Load source providers and reusable family layers once for this run."""
         from map_ground import prepare_shared_ground
 
+        output_dir = Path(output_dir)
+        context_cache_root = (Path(context_cache_root) if context_cache_root is not None else
+            output_dir / ".stage-cache" / "official-context")
         project = QgsProject.instance()
         self._stage_events = []
         self._stage_validity = {}
@@ -952,6 +1130,7 @@ class NetworkAdapter:
             cache_root=output_dir / ".stage-cache" / "context-land",
             refresh=refresh, stage_report=self._stage_events,
             context_loader=self.context_loader,
+            context_cache_root=context_cache_root,
         )
         self._stage_events.append({"stage": "context-and-provider-load", "profile": "shared",
             "decision": "validated", "seconds": round(perf_counter() - context_started, 3)})
@@ -964,6 +1143,21 @@ class NetworkAdapter:
 
     def stage_report(self):
         return list(self._stage_events)
+
+    def visual_spot_check_outputs(self, outputs):
+        """Select family-owned high-risk post-batch examples from the run results."""
+        selected = []
+        for spec in self.family_config.get("visual_spot_check", []):
+            for item in outputs:
+                if (item["territory"]["kind"] == spec["territory"]["kind"]
+                        and item["territory"]["code"] == spec["territory"]["code"]
+                        and item["mode"] == spec["mode"]
+                        and item["profile"] in spec["profiles"]):
+                    selected.append({"territory": item["territory"], "mode": item["mode"],
+                        "profile": item["profile"], "path": item["path"],
+                        "effective_identity": item["effective_identity"],
+                        "output_sha256": item["output_sha256"]})
+        return selected
 
     def record_reused_output(self, feature, profile, output_dir, recipe=None):
         started = perf_counter()

@@ -25,8 +25,9 @@ from qgis.PyQt.QtGui import QColor, QImage
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
-from network import NetworkAdapter, network_recipe  # noqa: E402
-from mainland_context import acquire_context  # noqa: E402
+from network import NetworkAdapter, build_full_map_set, network_recipe  # noqa: E402
+from approval import approval_payload  # noqa: E402
+from mainland_context import acquire_context, load_context  # noqa: E402
 from runner import Binding, MapSet, PROFILES, run_production  # noqa: E402
 
 
@@ -616,6 +617,145 @@ class InlineProfileContractTests(unittest.TestCase):
         shutil.copy2(original_metadata / "epci_geo_api.json", metadata.parent / "epci_geo_api.json")
         shutil.copytree(original_metadata / "theme-metadata", metadata, dirs_exist_ok=True)
         return directory
+
+    def test_public_full_gate_uses_preacquired_output_context_and_rejects_changed_source(self):
+        root = Path(tempfile.mkdtemp(prefix="lusk-full-approval-context-"))
+        self.__class__.fixture_dirs.append(root)
+        raw = root / "pipeline" / "data" / "raw"
+        raw.mkdir(parents=True)
+        metadata = root / "pipeline" / "inst" / "extdata" / "theme-metadata"
+        metadata.mkdir(parents=True)
+        self._write_source_metadata(metadata)
+        (metadata.parent / "epci_geo_api.json").write_text(json.dumps({
+            "labels": [{"code": "243500741", "nom": "CA Redon Agglomération"}]
+        }), encoding="utf-8")
+        self._write_osm(raw / "bretagne-latest.gpkg")
+        (raw / "france-20260807.parquet").write_bytes(b"fixture; network provider is a test seam")
+        commune = QgsVectorLayer(
+            "MultiPolygon?crs=EPSG:2154&field=code_insee:string&field=nom_officiel:string"
+            "&field=code_insee_du_departement:string&field=code_insee_de_la_region:string"
+            "&field=codes_siren_des_epci:string", "map-ready fixture", "memory")
+        feature = QgsFeature(commune.fields())
+        feature.setAttributes(["35238", "Rennes", "35", "53", "243500741"])
+        geometry = QgsGeometry.fromWkt("POLYGON ((0 0,100 0,100 100,0 100,0 0))")
+        geometry.convertToMultiType()
+        feature.setGeometry(geometry)
+        commune.dataProvider().addFeature(feature)
+        options = QgsVectorFileWriter.SaveVectorOptions()
+        options.driverName = "GeoJSON"
+        written = QgsVectorFileWriter.writeAsVectorFormatV3(commune,
+            str(raw / "communes_limites.geojson"), QgsProject.instance().transformContext(), options)
+        self.assertEqual(written[0], QgsVectorFileWriter.NoError, written)
+        ocsge_dir = raw / "extracted" / "ocsge"
+        self._write_ocsge(ocsge_dir)
+
+        changed_raw = root / "changed" / "pipeline" / "data" / "raw"
+        changed_raw.mkdir(parents=True)
+        changed_metadata = root / "changed" / "pipeline" / "inst" / "extdata" / "theme-metadata"
+        changed_metadata.mkdir(parents=True)
+        self._write_source_metadata(changed_metadata)
+        (changed_metadata.parent / "epci_geo_api.json").write_text(json.dumps({
+            "labels": [{"code": "243500741", "nom": "CA Redon Agglomération"}]
+        }), encoding="utf-8")
+        self._write_osm(changed_raw / "bretagne-latest.gpkg")
+        (changed_raw / "france-20260807.parquet").write_bytes(b"fixture; network provider is a test seam")
+        shutil.copyfile(raw / "communes_limites.geojson", changed_raw / "communes_limites.geojson")
+        self._write_ocsge(changed_raw / "extracted" / "ocsge", x_offset=1)
+
+        adapter = NetworkAdapter(raw, cache_root=root / "network-cache")
+        adapter.family_config = {**adapter.family_config,
+            "scope": {"analytical_departments": ["35"]}}
+        binding = build_full_map_set(raw, family_config=adapter.family_config)
+        recipe = network_recipe()
+        renderer_identity = adapter.render_identity()
+        output = root / "production-output"
+        context_cache = output / ".stage-cache" / "official-context"
+        extents = [feature["extent"] for feature in binding.map_set.layers["network-outputs"]]
+        combined = QgsRectangle(extents[0])
+        for extent in extents[1:]:
+            combined.combineExtentWith(QgsRectangle(extent))
+        bbox = (combined.xMinimum(), combined.yMinimum(), combined.xMaximum(), combined.yMaximum())
+
+        def fetch(url):
+            query = urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
+            if query.get("resultType") == ["hits"]:
+                return b'<FeatureCollection numberMatched="1" timeStamp="fixture"/>'
+            x0, y0, x1, y1 = bbox
+            ring = [[x0-10, y0-10], [x1+10, y0-10], [x1+10, y1+10],
+                    [x0-10, y1+10], [x0-10, y0-10]]
+            document = {"type": "FeatureCollection", "numberMatched": 1, "numberReturned": 1,
+                "crs": {"type": "name", "properties": {"name": "urn:ogc:def:crs:EPSG::2154"}},
+                "features": [{"type": "Feature", "properties": {"cleabs": "COMMUNE_FIXTURE",
+                    "code_insee": "35238", "nom_officiel": "Rennes"},
+                    "geometry": {"type": "MultiPolygon", "coordinates": [[ring]]}}]}
+            return json.dumps(document).encode()
+
+        acquire_context(context_cache, bbox, fetch=fetch)
+        adapter.context_loader = lambda _scratch, requested: load_context(context_cache, requested)
+
+        def fixture_network_layers(project, features, _raw, _config,
+                                   cache_root=None, *, force=False, report=None):
+            result = {}
+            for mode in {item["mode"] for item in features}:
+                layer = QgsVectorLayer("LineString?crs=EPSG:2154", f"fixture {mode}", "memory")
+                project.addMapLayer(layer)
+                result[mode] = [layer]
+            return result
+
+        with patch("network._prepare_network_layers", side_effect=fixture_network_layers):
+            members = adapter.prepare_current_approval_members(recipe, binding,
+                ("inspection", "inline"), renderer_identity, output)
+        approval = approval_payload({"scope": "representative", "approval_pairs_complete": True,
+            "recipe": recipe.name, "recipe_version": recipe.version,
+            "foundation_version": recipe.foundation.version,
+            "renderer_identity": renderer_identity, "approval_members": members})
+        approval.update({"human_approved": True, "reviewer": "fixture reviewer",
+                         "visual_outcome": "approved"})
+        adapter.context_loader = None
+        prepare_calls = []
+        original_prepare = adapter.prepare_run
+
+        def tracked_prepare(run_recipe, run_binding, profiles, stage_output, *, refresh=False,
+                            context_cache_root=None):
+            count = sum(len(rows) for rows in run_binding.map_set.layers.values())
+            resolved_context_root = (Path(context_cache_root) if context_cache_root else
+                Path(stage_output) / ".stage-cache" / "official-context")
+            prepare_calls.append((count, resolved_context_root))
+            return original_prepare(run_recipe, run_binding, profiles, stage_output,
+                refresh=refresh, context_cache_root=context_cache_root)
+
+        adapter.prepare_run = tracked_prepare
+        try:
+            with (patch("network._prepare_network_layers", side_effect=fixture_network_layers),
+                  patch("mainland_context._http_fetch", side_effect=AssertionError("unexpected HTTP")),
+                  patch("mainland_context.load_context", wraps=load_context) as context_load):
+                # A changed, actually-read OCS-GE source invalidates the old human token;
+                # only the representative gate may prepare, never full shared stages.
+                adapter.raw_dir = changed_raw
+                with self.assertRaisesRegex(ValueError, "stale or incomplete"):
+                    run_production(recipe, binding, "full", ("inspection", "inline"),
+                        adapter, output, approval=approval)
+                self.assertEqual([count for count, _ in prepare_calls], [9])
+                self.assertTrue(all(path == context_cache for _, path in prepare_calls), prepare_calls)
+
+                # Restore the reviewed visible source. The valid public path consumes
+                # the pre-acquired generation during bounded verification and full prep.
+                prepare_calls.clear()
+                adapter.raw_dir = raw
+                with patch.object(adapter, "render", side_effect=SystemError("fixture stop before output")):
+                    with self.assertRaisesRegex(RuntimeError, "systemic production failure"):
+                        run_production(recipe, binding, "full", ("inspection", "inline"),
+                            adapter, output, approval=approval)
+                self.assertEqual(len(prepare_calls), 2)
+                self.assertEqual(prepare_calls[0][0], 9)
+                self.assertEqual(prepare_calls[1][0], len(binding.map_set.layers["network-outputs"]))
+                self.assertTrue(all(path == context_cache for _, path in prepare_calls), prepare_calls)
+                self.assertEqual(context_load.call_count, 3)
+                self.assertTrue(any(item["stage"] == "official-mainland-context-source"
+                                    for item in adapter._stage_events))
+        finally:
+            QgsProject.instance().clear()
+            gc.collect()
 
     def _write_source_metadata(self, directory):
         (directory / "theme_mobilite.json").write_text(json.dumps({

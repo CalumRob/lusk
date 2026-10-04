@@ -111,6 +111,7 @@ Run the fixture suites from the repository root with QGIS-enabled Python:
 ```text
 python -m unittest pipeline.maps.production.tests.test_contract pipeline.maps.production.tests.test_network_cache pipeline.maps.production.tests.test_network -v
 python -m unittest pipeline.maps.production.tests.test_inline_contract -v
+python -m unittest pipeline.maps.production.tests.test_approval -v
 ```
 
 `tests/render_rennes_car.py` is the bounded car-pair visual/alpha contract check.
@@ -123,4 +124,55 @@ QGIS/Qt/Python runtime; it also lists authoritative source paths and file
 versions plus a SHA-256 per rendered artifact. Render/QA timings and preparation
 progress are printed during execution. Outputs and source caches remain ignored
 local pipeline artifacts, never application publication assets. This representative
-check does not implement #611's approval-gated full batch or retries.
+
+## Approval-gated full network batch
+
+The complete inventory is derived by `build_full_map_set()` from the current
+map-ready commune file, configured analytical departments, and pinned EPCI
+labels/membership metadata. It is not inferred from existing image files. In
+the current source snapshot this resolves to 1,202 communes, 61 EPCIs, 4
+departments and Bretagne (1,268 territories), 3 modes and 2 profiles; counts
+are observations from that input inventory, not literals in the builder.
+
+Before running either batch, acquire the exact coverage frame separately and
+offline-render from its local validated generation:
+
+```text
+python pipeline/maps/production/prepare_mainland_context.py --scope representative
+python pipeline/maps/production/tests/render_representative.py
+python pipeline/maps/production/record_network_approval.py --manifest pipeline/maps/production/output/manifest.json --qa pipeline/maps/production/output/qa.json --reviewer NAME --outcome approved --output pipeline/maps/production/output/human-approval.json
+python pipeline/maps/production/prepare_mainland_context.py --scope full
+python pipeline/maps/production/run_full_network.py --approval pipeline/maps/production/output/human-approval.json
+python pipeline/maps/production/record_spot_check.py --qa pipeline/maps/production/output/full-qa.json --reviewer NAME --outcome approved --output pipeline/maps/production/output/human-spot-check.json
+```
+
+The reviewer must open the representative pair for all three territories and
+modes before recording approval. The resulting record is bound to each of the
+18 current effective visible-input/profile identities and the recipe,
+foundation and renderer identity. Full runs first reject malformed, wrong
+recipe/renderer, partial-cohort or non-affirmative records cheaply. They then
+prepare only the bounded representative footprint in a temporary stage area,
+recompute all paired identities from live local inputs, and reject stale
+approval before creating/mutating the full output directory or starting full
+shared preparation. Only after that gate does `run_production()` prepare the
+full binding and render. Do not edit or synthesize approval JSON.
+
+The full-context hit-count feasibility probe is recorded at
+`E:\Temp\opencode\issue-611-full-context-hits.json`: the actual derived frame
+union matched the existing Bretagne representative frame, and the dated IGN
+2026 WFS hit response was within the advertised one-response limit. This is
+run-specific acquisition evidence, not a frame/count constant in code. The
+full preparation still derives its bbox from the live full inventory, fetches
+and validates the complete geometry response, and fails if its live count
+exceeds supported single-response capacity; it never truncates or pages the
+non-transaction-safe service.
+
+Batch QA writes `full-manifest.json` and `full-qa.json` including the complete
+expected matrix and per-output failures. Successful unchanged files remain
+reusable on retry; missing, corrupt, changed or failed files are rebuilt and
+validated. `status=passed` is automated QA only; `production_status` remains
+`awaiting-human-spot-check` until the adapter-selected high-risk files have
+been visually reviewed and `record_spot_check.py` records the human outcome.
+The script also records a rejected outcome; rejection leaves production
+incomplete so the artifacts can be corrected and rerun/reviewed.
+Nothing in this workflow publishes assets to the application or Cloudflare.

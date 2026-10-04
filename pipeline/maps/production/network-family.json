@@ -4,6 +4,11 @@
   "scope": {
     "analytical_departments": ["22", "29", "35", "56"]
   },
+  "visual_spot_check": [
+    {"territory": {"kind": "epci", "code": "243500741"}, "mode": "car", "profiles": ["inspection", "inline"]},
+    {"territory": {"kind": "epci", "code": "243500741"}, "mode": "bike", "profiles": ["inline"]},
+    {"territory": {"kind": "region", "code": "53"}, "mode": "car", "profiles": ["inspection", "inline"]}
+  ],
   "marks": {
     "car": "#A94562",
     "walk": "#448FA6",
