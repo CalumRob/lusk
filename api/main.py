@@ -2123,6 +2123,53 @@ def _mobility_service_reference_snapshot(conn):
             "content_version": marker[0]}
 
 
+def _mobility_density_distribution_snapshot(conn, territory_type, territory_id):
+    installed = conn.execute("SELECT to_regclass('mobility_density_distribution_descriptor')").fetchone()[0]
+    if not installed:
+        return None
+    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version,
+        d.descriptor_version,d.source_id,d.vintage_id,d.axis_count,d.density_unit,d.decile_unit,
+        sd.name,sv.version,sv.reference_date,sv.publication_date,m.source_id,m.vintage_id,m.source_version,
+        m.reference_date,m.publication_date
+        FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+        JOIN mobility_density_distribution_descriptor d ON d.singleton
+        JOIN source_dataset sd ON sd.source_id=d.source_id
+        JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+        JOIN mobility_reading_descriptor m ON m.singleton
+        WHERE p.table_name='mobility_density_distribution'""").fetchone()
+    if not marker:
+        exists = conn.execute("SELECT 1 FROM mobility_density_distribution_range LIMIT 1").fetchone()
+        if exists:
+            raise HTTPException(503,"Mobility density distribution publication marker is unavailable")
+        return None
+    if (not marker[0] or marker[1]<1 or marker[2]!=marker[3] or marker[4]!=marker[0] or
+        marker[5]!="mobilite_snapshot" or marker[5]!=marker[14] or marker[6]!=marker[15] or
+        marker[11]!=marker[16] or marker[12]!=marker[17] or marker[13]!=marker[18]):
+        raise HTTPException(503,"Mobility density distribution publication is incompatible")
+    focal = conn.execute("""SELECT minimum,maximum,status,source_id,vintage_id FROM mobility_density_distribution_range
+        WHERE territory_id=%s AND territory_type=%s""",(territory_id,territory_type)).fetchone()
+    if not focal:
+        return {"status":"unsupported","range":{"minimum":None,"maximum":None,"status":"unsupported"},
+            "points":[],"units":{"density":marker[8],"decile":marker[9]},"provenance":{
+                "source_id":marker[5],"source_name":marker[10],"vintage_id":marker[6],"source_version":marker[11],
+                "source_reference_date":marker[12],"source_publication_date":marker[13]},
+            "content_version":marker[0],"descriptor_version":marker[4]}
+    if focal[3]!=marker[5] or focal[4]!=marker[6]:
+        raise HTTPException(503,"Mobility density distribution fact has incompatible provenance")
+    points = conn.execute("""SELECT ordinal,density,density_status,decile,decile_status,source_id,vintage_id
+        FROM mobility_density_distribution_point WHERE territory_id=%s AND territory_type=%s ORDER BY ordinal""",
+        (territory_id,territory_type)).fetchall()
+    if (len(points)!=marker[7] or [row[0] for row in points]!=list(range(marker[7])) or
+        any(row[5]!=marker[5] or row[6]!=marker[6] for row in points)):
+        raise HTTPException(503,"Mobility density distribution coordinates or provenance are incomplete")
+    return {"status":focal[2],"range":{"minimum":focal[0],"maximum":focal[1],"status":focal[2]},
+        "points":[{"ordinal":r[0],"density":r[1],"density_status":r[2],"decile":r[3],"decile_status":r[4]} for r in points],
+        "units":{"density":marker[8],"decile":marker[9]},"provenance":{
+            "source_id":marker[5],"source_name":marker[10],"vintage_id":marker[6],"source_version":marker[11],
+            "source_reference_date":marker[12],"source_publication_date":marker[13]},
+        "content_version":marker[0],"descriptor_version":marker[4]}
+
+
 @app.get("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
 def theme_facts(
     territory_type: Literal["commune", "epci", "departement", "region"],
@@ -2169,6 +2216,7 @@ def theme_facts(
             owned_series=[]
             collections=[]
             bpe_profile=None
+            density_distribution=None
             if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
                 has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
                     WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
@@ -2460,6 +2508,7 @@ def theme_facts(
             building_access = None
             service_reference = None
             if theme_id == "mobilite":
+                density_distribution=_mobility_density_distribution_snapshot(conn,territory_type,territory_id)
                 try:
                     building_access = repository.read_building_initial(
                         territory_type, territory_id,
@@ -2489,11 +2538,13 @@ def theme_facts(
         "series":owned_series,
         "series":owned_series,"bpe_profile_evidence":bpe_profile,
         "collections":collections,
-       "facts":[dict(zip(names,row)) for row in rows],
-       "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
-                             "profile_comparisons":comparison["profile_comparisons"]}}
+        "facts":[dict(zip(names,row)) for row in rows],
+        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
+                              "profile_comparisons":comparison["profile_comparisons"]}}
     if building_access is not None:
         payload["building_access"] = building_access
+    if density_distribution is not None:
+        payload["density_distribution"] = density_distribution
     if service_reference is not None:
         payload["service_reference"] = service_reference
     return payload

@@ -266,6 +266,71 @@ project_declared_detail_profile <- function(canonical, metadata, indicator, sour
 # producer-declared detail projection with other themes.
 project_mobility_profile <- project_declared_detail_profile
 
+# The Mobilité density signature is not a declared detail profile: the input
+# carries one range and two distinct, paired ordinates (density and decile).
+# Keep that producer grain intact for its named figure consumer.
+project_mobility_density_distribution <- function(histories, vintages, metadata) {
+  required <- c("territoire", "type", "dens_min", "dens_max", "vintage_source",
+                "vintage_version", "vintage_date_reference", "vintage_date_publication")
+  if (!is.data.frame(histories) || !all(required %in% names(histories)))
+    stop("Canonical mobility distribution fields are incomplete", call.=FALSE)
+  density_cols <- grep("^dens_[0-9]+$", names(histories), value=TRUE)
+  decile_cols <- grep("^dec_[0-9]+$", names(histories), value=TRUE)
+  density_index <- as.integer(sub("^dens_", "", density_cols))
+  decile_index <- as.integer(sub("^dec_", "", decile_cols))
+  if (!length(density_cols) || !identical(sort(density_index), sort(decile_index)) ||
+      anyDuplicated(density_index) || anyDuplicated(decile_index))
+    stop("Canonical mobility density and decile axes do not match", call.=FALSE)
+  contract <- metadata$distribution_contracts$mobilite_density_distribution
+  source_id <- MOBILITE_SNAPSHOT_SOURCE_ID
+  suffixes <- as.integer(unlist(contract$axis_ordinals, use.names=FALSE))
+  if (is.null(contract) || !identical(as.character(contract$source_id), source_id) ||
+      !length(suffixes) || anyNA(suffixes) || anyDuplicated(suffixes) ||
+      !identical(sort(density_index), sort(suffixes)) || !identical(sort(decile_index), sort(suffixes)) ||
+      !is.character(contract$density_unit) || length(contract$density_unit)!=1L || !nzchar(contract$density_unit) ||
+      !is.character(contract$decile_unit) || length(contract$decile_unit)!=1L || !nzchar(contract$decile_unit))
+    stop("Mobility density distribution descriptor differs from its producer contract", call.=FALSE)
+  rows <- histories[histories$story_key == "vingt-minutes-sans-voiture",,drop=FALSE]
+  if (!nrow(rows) || anyDuplicated(rows[c("territoire", "type")]) ||
+      any(!rows$type %in% c("commune", "epci", "departement", "region")))
+    stop("Canonical mobility distribution territory grain is invalid", call.=FALSE)
+  vintage <- vintages[vintages$id==source_id,,drop=FALSE]
+  if (nrow(vintage)!=1L || !all(c("id","source","version","date_reference","date_publication") %in% names(vintage)) ||
+      anyNA(vintage[c("source","version")]) || anyNA(rows[c("vintage_source", "vintage_version", "vintage_date_reference", "vintage_date_publication")]) ||
+      any(rows$vintage_source!=vintage$source[[1L]] | rows$vintage_version!=vintage$version[[1L]] |
+        rows$vintage_date_reference!=as.character(vintage$date_reference[[1L]]) |
+        rows$vintage_date_publication!=as.character(vintage$date_publication[[1L]])))
+    stop("Canonical Mobility distribution has incompatible snapshot provenance", call.=FALSE)
+  vintage_id <- paste(as.character(vintage$version[[1L]]),
+    if(is.na(vintage$date_reference[[1L]])) "NA" else as.character(vintage$date_reference[[1L]]),sep="/")
+  point_order <- order(density_index)
+  points <- do.call(rbind, lapply(seq_along(point_order), function(j) {
+    i <- density_index[[point_order[[j]]]]
+    density_value <- as.numeric(rows[[paste0("dens_", i)]])
+    decile_value <- as.numeric(rows[[paste0("dec_", i)]])
+    data.frame(territory_id=as.character(rows$territoire), territory_type=as.character(rows$type),
+      ordinal=as.integer(j-1L), density=density_value,
+      density_status=ifelse(is.na(density_value),"not_available","measured"),
+      decile=decile_value, decile_status=ifelse(is.na(decile_value),"not_available","measured"),
+      stringsAsFactors=FALSE)
+  }))
+  rownames(points) <- NULL
+  ranges <- data.frame(territory_id=as.character(rows$territoire), territory_type=as.character(rows$type),
+    range_min=as.numeric(rows$dens_min), range_max=as.numeric(rows$dens_max),
+    status=ifelse(!is.na(rows$dens_min) & !is.na(rows$dens_max),"measured","not_available"), stringsAsFactors=FALSE)
+  if (any(!is.na(points$density) & (!is.finite(points$density) | points$density < 0)) ||
+      any(!is.na(points$decile) & !is.finite(points$decile)) ||
+      any(ranges$status=="measured" & (!is.finite(ranges$range_min) | !is.finite(ranges$range_max) | ranges$range_min>ranges$range_max)) ||
+      any((ranges$status!="measured") & (!is.na(ranges$range_min) | !is.na(ranges$range_max))))
+    stop("Canonical mobility distribution contains invalid values", call.=FALSE)
+  list(points=points, ranges=ranges, source_id=source_id,
+    source_name=as.character(vintage$source[[1L]]), vintage_id=vintage_id,
+    source_version=as.character(vintage$version[[1L]]), reference_date=as.Date(vintage$date_reference[[1L]]),
+    publication_date=as.Date(vintage$date_publication[[1L]]), axis_count=length(suffixes),
+    density_unit=contract$density_unit, decile_unit=contract$decile_unit,
+    version=profile_content_version(list(points, ranges, contract, vintage)))
+}
+
 profile_content_version <- function(projection) {
   path <- tempfile("profile-version-")
   on.exit(unlink(path), add = TRUE)

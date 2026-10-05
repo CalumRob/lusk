@@ -465,17 +465,18 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^(scalar_it|profile_it|series_it|reading_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
+      !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
-  tables <- c("series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
-    "economy_activity_evidence", "economy_typed_reading",
-    "series_context_parent_policy", "habitat_typed_reading",
+  tables <- c("milieux_reading_source", "series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
+    "economy_activity_evidence", "economy_typed_reading", "milieux_typed_reading", "mobility_typed_reading",
+    "series_context_parent_policy", "habitat_typed_reading", "mobility_reading_clock", "mobility_reading_story", "mobility_reading_descriptor",
     "selected_reading_publication", "selected_reading_descriptor", "demographic_typed_reading", "demographic_reading_descriptor",
     "period_detail_observation", "anchored_membership", "observed_collection_category",
     "observed_collection_descriptor", "observed_collection_publication",
+    "mobility_density_distribution_point", "mobility_density_distribution_range", "mobility_density_distribution_descriptor",
     "series_named_reference_descriptor", "series_dataset_descriptor",
-    "series_dataset_publication", "series_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
+    "series_dataset_publication", "series_provenance_revision", "milieux_population_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
     "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
     "bpe_profile_evidence_source", "bpe_profile_evidence", "bpe_profile_class_axis", "bpe_profile_evidence_descriptor",
     "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
@@ -496,10 +497,12 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
      "validate_series_named_reference()", "validate_series_named_reference_provenance()",
      "validate_observed_collection_write()", "validate_anchored_membership()",
      "validate_period_detail_observation()", "validate_observed_collection_publication()",
-    "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
+      "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
+     "reject_milieux_population_provenance_mutation()",
     "validate_ordered_series()", "validate_anchored_membership()",
      "validate_period_detail_observation()", "validate_observed_collection_write()",
-     "validate_observed_collection_publication()", "assert_bpe_profile_evidence_complete()")
+      "validate_observed_collection_publication()", "assert_bpe_profile_evidence_complete()",
+      "assert_mobility_density_distribution_complete()", "validate_mobility_density_distribution_territory()")
   c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
     paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
       split <- strsplit(signature, "(", fixed=TRUE)[[1L]]
@@ -540,11 +543,12 @@ cleanup_serving_smoke_schema <- function(connection, schema, kind) {
   expected_schema <- switch(kind, scalar="^scalar_it_[A-Za-z0-9_]+$",
     profile="^profile_it_[A-Za-z0-9_]+$",
     reading="^reading_it_[A-Za-z0-9_]+$",
+    distribution="^distribution_it_[A-Za-z0-9_]+$",
     building="^it_building_publisher_[A-Za-z0-9_]+$",
     series="^series_it_[A-Za-z0-9_]+$", NULL)
   if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||
       length(schema) != 1L || is.na(schema) || !grepl(expected_schema, schema))
-    stop("Cleanup requires an owned ", kind, " smoke schema", call. = FALSE)
+    stop("Cleanup requires an owned ", kind, " smoke schema; received ", schema, call. = FALSE)
   identity <- DBI::dbGetQuery(connection, "SELECT current_database() AS database,
     EXISTS (SELECT 1 FROM pg_namespace n JOIN pg_roles r ON r.oid=n.nspowner
       WHERE n.nspname=$1 AND r.rolname=current_user) AS owned", params=list(schema))

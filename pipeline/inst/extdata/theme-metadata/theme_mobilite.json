@@ -372,6 +372,14 @@
     "reseaux_par_habitant": {"completeness":"dense_complete","denominator_semantics":"Longueur du réseau divisée par la population du territoire, pour 1 000 habitants","detail_units":{"t_km_1000":"km / 1 000 hab.","b_km_1000":"km / 1 000 hab.","c_km_1000":"km / 1 000 hab."}},
     "offre_cyclable": {"completeness":"dense_complete","denominator_semantics":"Longueurs Geovelo protégée, partagée et totale; les composantes par habitant sont divisées par la population, pour 1 000 habitants","detail_units":{"protege_longueur":"km","protege_km_1000":"km / 1 000 hab","partage_longueur":"km","partage_km_1000":"km / 1 000 hab","total_longueur":"km"}}
   },
+  "distribution_contracts": {
+    "mobilite_density_distribution": {
+      "source_id": "mobilite_snapshot",
+      "axis_ordinals": [1,2,3,4,5,6,7,8,9,10],
+      "density_unit": "1 / type de service perdu",
+      "decile_unit": "type de service perdu"
+    }
+  },
   "scalar_contracts": {
     "nb_buildings": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "nb_buildings", "missing_status": "not_available", "counts_available": false },
     "surface_reseaux_routiers": { "allowed_levels": ["commune", "epci", "departement", "region"], "completeness": "sparse", "comparison_facet": "surface_reseaux_routiers", "missing_status": "not_available", "counts_available": false },
