@@ -1,6 +1,38 @@
 #!/usr/bin/env Rscript
 # Small guarded registered publisher -> disposable PostgreSQL -> HTTP tracer.
 pkgload::load_all(".",quiet=TRUE)
+assert_invalid_density_identity_move <- function(con,label,config,schema) {
+  before <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,count(*) point_count,
+    max(density) FILTER(WHERE ordinal=0) ordinal_zero_density FROM mobility_density_distribution_point
+    WHERE (territory_type='commune' AND territory_id='35238') OR (territory_type='epci' AND territory_id='200000001')
+    GROUP BY territory_type,territory_id ORDER BY territory_type,territory_id")
+  stopifnot(nrow(before)==2L,all(before$point_count==10L))
+  txn <- DBI::dbConnect(RPostgres::Postgres(),host=config$HOST,port=as.integer(config$PORT),
+    dbname=config$DATABASE,user=config$USER)
+  on.exit(if(!is.null(txn) && DBI::dbIsValid(txn)) DBI::dbDisconnect(txn),add=TRUE)
+  DBI::dbExecute(txn,paste0("SET search_path TO ",DBI::dbQuoteIdentifier(txn,schema)))
+  DBI::dbBegin(txn)
+  statements <- try({
+    DBI::dbExecute(txn,"DELETE FROM mobility_density_distribution_point WHERE territory_type='epci' AND territory_id='200000001' AND ordinal=0")
+    DBI::dbExecute(txn,"UPDATE mobility_density_distribution_point SET territory_type='epci',territory_id='200000001'
+      WHERE territory_type='commune' AND territory_id='35238' AND ordinal=0")
+  },silent=TRUE)
+  if(inherits(statements,"try-error")) {
+    DBI::dbRollback(txn)
+    stop("Identity-move regression setup failed before deferred commit",call.=FALSE)
+  }
+  # Close the isolated transaction connection after the expected deferred
+  # commit failure; PostgreSQL rolls it back on disconnect without disturbing
+  # the read connection used to verify both original coordinates.
+  attempted <- try(DBI::dbCommit(txn),silent=TRUE)
+  if(inherits(attempted,"try-error")) { DBI::dbDisconnect(txn); txn <- NULL }
+  after <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,count(*) point_count,
+    max(density) FILTER(WHERE ordinal=0) ordinal_zero_density FROM mobility_density_distribution_point
+    WHERE (territory_type='commune' AND territory_id='35238') OR (territory_type='epci' AND territory_id='200000001')
+    GROUP BY territory_type,territory_id ORDER BY territory_type,territory_id")
+  stopifnot(inherits(attempted,"try-error"),identical(before,after))
+  cat(label,": deferred OLD/NEW identity move rejected; both original axes and coordinates rolled back.\n")
+}
 required <- c("HOST","PORT","DATABASE","USER")
 config <- setNames(lapply(required,function(k) Sys.getenv(paste0("LUSK_PROFILE_TEST_",k),unset="")),required)
 stopifnot(all(vapply(config,nzchar,logical(1))), identical(config$DATABASE,Sys.getenv("LUSK_TEST_DATABASE_NAME")),
@@ -17,6 +49,32 @@ tryCatch({
   DBI::dbExecute(con,paste0("CREATE SCHEMA ",DBI::dbQuoteIdentifier(con,schema))); created <- TRUE
   DBI::dbExecute(con,paste0("SET search_path TO ",DBI::dbQuoteIdentifier(con,schema)))
   for(statement in split_postgres_sql(paste(readLines("../api/schema.sql",warn=FALSE),collapse="\n"))) DBI::dbExecute(con,statement)
+  metadata <- lire_theme_metadata("mobilite")
+  source <- metadata$source_records$mobilite_snapshot
+  vintage_id <- paste(source$vintages[[1L]]$version,source$vintages[[1L]]$dateReference,sep="/")
+  DBI::dbWriteTable(con,"territory_reference",data.frame(territory_id=c("35238","200000001","35"),
+    territory_type=c("commune","epci","departement"),name=c("Focal fixture","EPCI fixture","Department fixture"),
+    department_id=c("35","35",NA),epci_id=c("200000001",NA,NA),density_class_code=c("D1",NA,NA),
+    density_class_label=c("Fixture",NA,NA),stringsAsFactors=FALSE),append=TRUE,row.names=FALSE)
+  reference_version <- "distribution-reference-v1"
+  DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference',$1,3)",params=list(reference_version))
+  DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES('mobilite_snapshot',$1)",params=list(source$dataset))
+  DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES('mobilite_snapshot',$1,$2,$3,$4)",
+    params=list(vintage_id,source$vintages[[1L]]$version,source$vintages[[1L]]$dateReference,source$vintages[[1L]]$datePublication))
+  # Exercise the fresh-install trigger before replacing it with migration 024.
+  DBI::dbExecute(con,"INSERT INTO mobility_density_distribution_descriptor(singleton,descriptor_version,source_id,vintage_id,axis_count,allowed_levels,density_unit,decile_unit)
+    VALUES(true,'fresh-trigger-v1','mobilite_snapshot',$1,10,ARRAY['commune','epci','departement','region'],'fixture density unit','fixture decile unit')",params=list(vintage_id))
+  fresh_ranges <- data.frame(territory_id=c("35238","200000001"),territory_type=c("commune","epci"),
+    minimum=c(1,2),maximum=c(52,49),status="measured",source_id="mobilite_snapshot",vintage_id=vintage_id)
+  fresh_points <- do.call(rbind,lapply(seq_len(nrow(fresh_ranges)),function(r) data.frame(
+    territory_id=fresh_ranges$territory_id[[r]],territory_type=fresh_ranges$territory_type[[r]],ordinal=0:9,
+    density=if(r==1L) seq(.01,.10,.01) else seq(.02,.11,.01),density_status="measured",
+    decile=seq_len(10),decile_status="measured",source_id="mobilite_snapshot",vintage_id=vintage_id)))
+  DBI::dbWithTransaction(con,{
+    DBI::dbWriteTable(con,"mobility_density_distribution_range",fresh_ranges,append=TRUE,row.names=FALSE)
+    DBI::dbWriteTable(con,"mobility_density_distribution_point",fresh_points,append=TRUE,row.names=FALSE)
+  })
+  assert_invalid_density_identity_move(con,"Fresh-schema trigger",config,schema)
   # Rehearse migration 024 over preserved prior facts/markers.
   DBI::dbExecute(con,"DROP TABLE mobility_density_distribution_point,mobility_density_distribution_range,mobility_density_distribution_descriptor")
   DBI::dbExecute(con,"DROP FUNCTION assert_mobility_density_distribution_complete(),validate_mobility_density_distribution_territory()")
@@ -26,18 +84,6 @@ tryCatch({
   DBI::dbExecute(con,"ALTER TABLE table_publication DROP CONSTRAINT shared_fact_publication_requires_reference")
   DBI::dbExecute(con,"ALTER TABLE table_publication ADD CONSTRAINT shared_fact_publication_requires_reference CHECK
     (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','bpe_profile_evidence','demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','mobility_typed_reading') OR reference_content_version IS NOT NULL)")
-  DBI::dbWriteTable(con,"territory_reference",data.frame(territory_id=c("35238","200000001","35"),
-    territory_type=c("commune","epci","departement"),name=c("Focal fixture","EPCI fixture","Department fixture"),
-    department_id=c("35","35",NA),epci_id=c("200000001",NA,NA),density_class_code=c("D1",NA,NA),
-    density_class_label=c("Fixture",NA,NA),stringsAsFactors=FALSE),append=TRUE,row.names=FALSE)
-  reference_version <- "distribution-reference-v1"
-  DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference',$1,3)",params=list(reference_version))
-  metadata <- lire_theme_metadata("mobilite")
-  source <- metadata$source_records$mobilite_snapshot
-  vintage_id <- paste(source$vintages[[1L]]$version,source$vintages[[1L]]$dateReference,sep="/")
-  DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES('mobilite_snapshot',$1)",params=list(source$dataset))
-  DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES('mobilite_snapshot',$1,$2,$3,$4)",
-    params=list(vintage_id,source$vintages[[1L]]$version,source$vintages[[1L]]$dateReference,source$vintages[[1L]]$datePublication))
   DBI::dbExecute(con,"INSERT INTO mobility_reading_descriptor(singleton,descriptor_version,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,unit,direction,allowed_levels,missing_status,classification_values,field_keys,story_count,clock_count)
     VALUES(true,'binding-v1','mobilite_snapshot',$1,$2,$3,$4,$5,$6,'types de service perdu','none',ARRAY['commune','epci','departement','region'],'unavailable',ARRAY['fixture'],ARRAY['groupe','story_key','salience_reason','classification_saillance','div_loss_t','div_loss_b','status'],1,1)",
     params=list(vintage_id,source$dataset,source$dataset,source$vintages[[1L]]$version,source$vintages[[1L]]$dateReference,source$vintages[[1L]]$datePublication))
@@ -73,6 +119,7 @@ tryCatch({
   retry <- publish_registered_mobility_density_distribution(registry,"mobility_density_distribution",input,con)
   stopifnot(isTRUE(result$changed),!isTRUE(retry$changed),identical(marker_before,
     DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='mobility_density_distribution'")))
+  assert_invalid_density_identity_move(con,"Migration-024 trigger",config,schema)
   DBI::dbExecute(con,"CREATE FUNCTION reject_density_fixture() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'fixture rollback'; END $$")
   DBI::dbExecute(con,"CREATE TRIGGER reject_density_fixture BEFORE INSERT ON mobility_density_distribution_point FOR EACH ROW EXECUTE FUNCTION reject_density_fixture()")
   changed_input <- input; changed_input$histories$dens_1[[1L]] <- .015

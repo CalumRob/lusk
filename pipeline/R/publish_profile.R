@@ -292,7 +292,10 @@ project_mobility_density_distribution <- function(histories, vintages, metadata)
       !is.character(contract$density_unit) || length(contract$density_unit)!=1L || !nzchar(contract$density_unit) ||
       !is.character(contract$decile_unit) || length(contract$decile_unit)!=1L || !nzchar(contract$decile_unit))
     stop("Mobility density distribution descriptor differs from its producer contract", call.=FALSE)
-  rows <- histories[histories$story_key == "vingt-minutes-sans-voiture",,drop=FALSE]
+  # The producer emits one canonical density signature for every history
+  # territory row. This includes the supported focal territories represented
+  # by either story; it does not project or reconstruct the separate peer cloud.
+  rows <- histories
   if (!nrow(rows) || anyDuplicated(rows[c("territoire", "type")]) ||
       any(!rows$type %in% allowed_levels))
     stop("Canonical mobility distribution contains a territory outside producer-declared focal levels", call.=FALSE)

@@ -465,7 +465,7 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|it_building_publisher)_[A-Za-z0-9_]+$", schema))
+      !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
   tables <- c("milieux_reading_source", "series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
@@ -544,6 +544,7 @@ cleanup_serving_smoke_schema <- function(connection, schema, kind) {
     profile="^profile_it_[A-Za-z0-9_]+$",
     reading="^reading_it_[A-Za-z0-9_]+$",
     distribution="^distribution_it_[A-Za-z0-9_]+$",
+    distribution_canonical="^distribution_canonical_[A-Za-z0-9_]+$",
     building="^it_building_publisher_[A-Za-z0-9_]+$",
     series="^series_it_[A-Za-z0-9_]+$", NULL)
   if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||

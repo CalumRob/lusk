@@ -36,11 +36,13 @@ publish_mobility_density_distribution <- function(con, projection, input=NULL) {
         !identical(date_value(source$publication_date[[1L]]),date_value(projection$publication_date)))
       stop("Mobility distribution source vintage is not the immutable registered vintage",call.=FALSE)
     ids <- unique(projection$ranges[c("territory_id","territory_type")])
-    for (i in seq_len(nrow(ids))) {
-      found <- DBI::dbGetQuery(con,"SELECT 1 FROM territory_reference WHERE territory_id=$1 AND territory_type=$2",
-        params=unname(as.list(ids[i,])))
-      if (nrow(found)!=1L) stop("Mobility distribution territory is absent from the published reference",call.=FALSE)
-    }
+    identity_sql <- paste(vapply(seq_len(nrow(ids)),function(i)
+      paste0("($",2L*i-1L,",$",2L*i,")"),character(1)),collapse=",")
+    absent <- DBI::dbGetQuery(con,paste0("SELECT requested.territory_id,requested.territory_type FROM (VALUES ",identity_sql,
+      ") AS requested(territory_id,territory_type) LEFT JOIN territory_reference actual
+      ON actual.territory_id=requested.territory_id AND actual.territory_type=requested.territory_type
+      WHERE actual.territory_id IS NULL"),params=unname(as.list(as.vector(t(as.matrix(ids))))))
+    if (nrow(absent)) stop("Mobility distribution territory is absent from the published reference",call.=FALSE)
     if (any(!projection$points$ordinal %in% (seq_len(projection$axis_count)-1L)) ||
         any(vapply(split(projection$points,interaction(projection$points$territory_type,projection$points$territory_id,drop=TRUE)),
           function(x) nrow(x)!=projection$axis_count || !identical(sort(as.integer(x$ordinal)),seq_len(projection$axis_count)-1L),logical(1))))

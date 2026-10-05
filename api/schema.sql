@@ -1136,14 +1136,28 @@ END $$;
 CREATE TRIGGER mobility_density_distribution_territory_contract BEFORE INSERT OR UPDATE ON mobility_density_distribution_range
   FOR EACH ROW EXECUTE FUNCTION validate_mobility_density_distribution_territory();
 CREATE FUNCTION assert_mobility_density_distribution_complete() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected integer; BEGIN
+DECLARE expected integer; territory text; territory_kind text; point_count integer; first_ordinal integer; last_ordinal integer;
+  impacted_types text[]; impacted_ids text[]; i integer; BEGIN
   SELECT axis_count INTO expected FROM mobility_density_distribution_descriptor WHERE singleton;
   IF expected IS NULL THEN RAISE EXCEPTION 'Mobility density distribution descriptor is unavailable'; END IF;
-  IF EXISTS(SELECT 1 FROM mobility_density_distribution_range r WHERE
-    (SELECT count(*) FROM mobility_density_distribution_point p WHERE p.territory_type=r.territory_type AND p.territory_id=r.territory_id)<>expected OR
-    (SELECT min(ordinal) FROM mobility_density_distribution_point p WHERE p.territory_type=r.territory_type AND p.territory_id=r.territory_id)<>0 OR
-    (SELECT max(ordinal) FROM mobility_density_distribution_point p WHERE p.territory_type=r.territory_type AND p.territory_id=r.territory_id)<>expected-1)
-  THEN RAISE EXCEPTION 'Mobility density distribution axis is incomplete'; END IF;
+  IF TG_OP='DELETE' THEN
+    impacted_types:=ARRAY[OLD.territory_type]; impacted_ids:=ARRAY[OLD.territory_id];
+  ELSIF TG_OP='UPDATE' AND (OLD.territory_type IS DISTINCT FROM NEW.territory_type OR OLD.territory_id IS DISTINCT FROM NEW.territory_id) THEN
+    impacted_types:=ARRAY[OLD.territory_type,NEW.territory_type]; impacted_ids:=ARRAY[OLD.territory_id,NEW.territory_id];
+  ELSE
+    impacted_types:=ARRAY[NEW.territory_type]; impacted_ids:=ARRAY[NEW.territory_id];
+  END IF;
+  FOR i IN 1..array_length(impacted_types,1) LOOP
+    territory_kind:=impacted_types[i]; territory:=impacted_ids[i];
+    IF EXISTS(SELECT 1 FROM mobility_density_distribution_range r WHERE r.territory_type=territory_kind AND r.territory_id=territory) THEN
+      SELECT count(*),min(ordinal),max(ordinal) INTO point_count,first_ordinal,last_ordinal FROM mobility_density_distribution_point p
+        WHERE p.territory_type=territory_kind AND p.territory_id=territory;
+      IF point_count<>expected OR first_ordinal<>0 OR last_ordinal<>expected-1
+      THEN RAISE EXCEPTION 'Mobility density distribution axis is incomplete for %/%',territory_kind,territory; END IF;
+    ELSIF EXISTS(SELECT 1 FROM mobility_density_distribution_point p WHERE p.territory_type=territory_kind AND p.territory_id=territory) THEN
+      RAISE EXCEPTION 'Mobility density distribution has orphan coordinates for %/%',territory_kind,territory;
+    END IF;
+  END LOOP;
   RETURN NULL;
 END $$;
 CREATE CONSTRAINT TRIGGER mobility_density_distribution_points_complete AFTER INSERT OR UPDATE OR DELETE
