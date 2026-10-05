@@ -176,10 +176,15 @@ def test_real_sql_response_reaches_mounted_variant_e(tmp_path):
                 focal = client.get('/api/territories/commune/22001/themes/mobilite/facts')
                 assert focal.status_code == 200, focal.text
                 assert 'indicators' in focal.json()
-                assert 'facts' not in focal.json() and 'profiles' not in focal.json()
+                assert 'facts' not in focal.json() and 'profiles' not in focal.json() and 'series' not in focal.json()
                 assert any(row['indicator_id'] == 'places_stationnement_voiture_1000'
                            for row in focal.json()['indicators'])
                 assert any(row['dimensions'].get('detail') for row in focal.json()['indicators'])
+                profile_meta = next(row for row in focal.json()['indicator_metadata']
+                    if row['kind'] == 'declared_dimensions')
+                assert profile_meta['axes'][0]['key'] and profile_meta['axes'][0]['order'] == 0
+                assert profile_meta['allowed_levels'] == ['commune']
+                assert focal.json()['named_reference_evidence'] == []
                 assert sum(q.startswith('SET TRANSACTION') for q in probe.statements) == 1
                 assert focal.json()['service_reference']['value'] == 9876
                 selected = [{'territory_type':'commune','territory_id':code} for code in ['22001','22002']]

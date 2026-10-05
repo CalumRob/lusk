@@ -1715,6 +1715,29 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
             point["status"]=="measured" for point in points) else "incomplete"}
 
 
+def _theme_owned_series_contract(series_rows):
+    """Keep owned-series descriptors and named analytical references separate from observations."""
+    metadata, references = [], []
+    for series in series_rows:
+        metadata.append({key: value for key, value in series.items()
+            if key not in ("points", "scope_series", "named_references")})
+        references.extend({"indicator_id": series["indicator_id"], **reference}
+            for reference in series.get("named_references", []))
+    return metadata, references
+
+
+def _theme_owned_series_indicator(series, point):
+    """Project one real owned point without collapsing its axis or revision lineage."""
+    numeric_axis = next((value for axis, value in zip(series.get("axis_values", []),
+        series.get("axis_numeric_values", [])) if axis == point.get("axis")), None)
+    return {"indicator_id":series["indicator_id"],"label":series["label"],"unit":series["unit"],
+        "value":point.get("value"),"status":point.get("status"),
+        "sources":[{**source,"name":source.get("source_name")} for source in point.get("provenance", [])],
+        "dimensions":{"axis":point.get("axis"),"numeric_axis_value":numeric_axis,
+            **({"observation_period":point["observation_period"]} if point.get("observation_period") is not None else {}),
+            **({"state_role":point["state_role"]} if point.get("state_role") is not None else {})}}
+
+
 def _owned_named_reference_snapshot(conn, route, territory_type, territory_id, indicator_id):
     dataset_id, theme_id, _is_reference, owner_indicator, reference_id = route
     marker=conn.execute("""SELECT p.content_version,p.reference_content_version,p.row_count,
@@ -2575,10 +2598,19 @@ def theme_facts(
     # A public theme response exposes observations as indicator facts, rather
     # than leaking the storage families (scalar/profile/series) as collections.
     indicators = []
+    indicator_metadata = []
     for row in rows:
         fact = dict(zip(names, row))
         indicators.append({**fact, "dimensions": {}})
     for profile in profiles:
+        indicator_metadata.append({"indicator_id": profile["indicator"], "kind": "declared_dimensions",
+            "label": profile["label"], "unit": profile["unit"],
+            "denominator_semantics": profile.get("denominator_semantics"),
+            "descriptor_version": profile["descriptor_version"],
+            "allowed_levels": profile["allowed_levels"],
+            "axes": profile["axes"], "comparison_point": profile.get("comparison_point"),
+            "comparison_scalar": profile.get("comparison_scalar"),
+            "required_scalar_version": profile.get("required_scalar_version")})
         for cell in profile["cells"]:
             indicators.append({"indicator_id": profile["indicator"], "label": profile["label"],
                 "unit": cell["unit"], "value": cell["value"], "status": cell["status"],
@@ -2586,24 +2618,22 @@ def theme_facts(
                     **({"sex": cell["sex"]} if cell.get("sex") is not None else {}),
                     **({"observation_period": cell["observation_period"]} if cell.get("observation_period") is not None else {})},
                 "denominator_semantics": cell.get("denominator_semantics")})
+    series_metadata, named_reference_evidence = _theme_owned_series_contract(owned_series)
+    indicator_metadata.extend(series_metadata)
     for series in owned_series:
         for point in series.get("points", []):
             # Sparse axis positions without an observation are not facts.
             if point.get("value") is None and point.get("status") == "missing" and not point.get("provenance"):
                 continue
-            indicators.append({"indicator_id": series["indicator_id"], "label": series.get("label"),
-                "unit": series["unit"], "value": point.get("value"), "status": point.get("status"),
-                "sources": [{"source_id": source.get("source_id"), "name": source.get("source_name"),
-                    "version": source.get("version"), "reference_date": source.get("reference_date"),
-                    "publication_date": source.get("publication_date")} for source in point.get("provenance", [])],
-                "dimensions": {"axis": point.get("axis"),
-                    **({"observation_period": point["observation_period"]} if point.get("observation_period") is not None else {})}})
+            indicators.append(_theme_owned_series_indicator(series, point))
     payload = {"contract":"theme-facts-v1","complete_theme":False,"theme_id":theme_id,
        "territory":{"territory_id":territory[0],"name":territory[1],"territory_type":territory[2]},
         "content_version":marker[0] if marker else comparison["content_version"],
         "owned_series_content_versions":[item["publication_id"] for item in owned_series],
         "reference_content_version":comparison["reference_content_version"],
          "profile_content_version":profile_version,
+         "indicator_metadata":indicator_metadata,
+         "named_reference_evidence":named_reference_evidence,
          "readings":readings,"reading_content_version":reading_version,"reading_descriptor_version":reading_descriptor_version,
          "reading_availability":reading_availability,
          "bpe_profile_evidence":bpe_profile,

@@ -22,6 +22,8 @@ export interface FactProvenance {
   version: string
   referenceDate: string | null
   publicationDate: string | null
+  /** Original producer lineage, retained when the normalized consumer uses only source clocks. */
+  lineage?: Record<string, unknown>
 }
 
 export type ComparisonScopeKind =
@@ -386,12 +388,14 @@ function factOf(options: {
 }
 
 function provenanceFromRow(row: Indicateur, sourceId: string | null): FactProvenance {
+  const source = row.fact_sources?.[0]
   return {
-    sourceId,
+    sourceId: source?.sourceId ?? sourceId,
     source: row.vintage_source,
     version: row.vintage_version,
     referenceDate: row.vintage_date_reference,
     publicationDate: row.vintage_date_publication,
+    ...(source?.lineage ? { lineage: source.lineage } : {}),
   }
 }
 

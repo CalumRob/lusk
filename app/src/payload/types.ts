@@ -82,7 +82,7 @@ export interface VintageStamp {
   vintage_date_publication: string | null
   /** Complete source lineage for SQL-backed read-model facts. */
   fact_sources?: Array<{ sourceId: string; source: string; version: string;
-    referenceDate: string | null; publicationDate: string | null }>
+    referenceDate: string | null; publicationDate: string | null; lineage?: Record<string, unknown> }>
 }
 
 /** One facts row per (territoire × key × detail × sex × dimension). */

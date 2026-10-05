@@ -27,7 +27,8 @@ function apiSources(value: unknown): FactProvenance[] {
       throw new Error('Provenance SQL Mobilité invalide')
     }
     return { sourceId: source.source_id, source: source.name, version: source.version,
-      referenceDate: source.reference_date, publicationDate: source.publication_date }
+      referenceDate: source.reference_date, publicationDate: source.publication_date,
+      lineage: { ...source } }
   })
 }
 
@@ -143,6 +144,25 @@ function payloadFromSql(payload: Payload, response: Row): Payload {
   const indicators = rows(response.indicators, 'indicators').map((fact) => {
     if (!text(fact.indicator_id) || !isRecord(fact.dimensions)) throw new Error('Fait indicateur SQL Mobilité invalide')
     const dimensions = fact.dimensions
+    for (const key of ['detail', 'sex', 'axis', 'observation_period', 'state_role']) {
+      if (key in dimensions && dimensions[key] !== null && !text(dimensions[key])) {
+        throw new Error(`Dimension SQL Mobilité invalide : ${key}`)
+      }
+    }
+    if ('numeric_axis_value' in dimensions && dimensions.numeric_axis_value !== null &&
+        !finite(dimensions.numeric_axis_value)) throw new Error('Axe numérique SQL Mobilité invalide')
+    const descriptor = rows(response.indicator_metadata, 'indicator_metadata')
+      .find((item) => item.indicator_id === fact.indicator_id)
+    if (descriptor && Array.isArray(descriptor.axes)) {
+      for (const key of ['detail', 'sex'] as const) {
+        if (dimensions[key] !== undefined && dimensions[key] !== null &&
+            !descriptor.axes.some((axis) => isRecord(axis) && axis.name === key && axis.key === dimensions[key])) {
+          throw new Error(`Coordonnée SQL Mobilité non déclarée : ${key}`)
+        }
+      }
+    }
+    if (text(dimensions.axis) && descriptor && Array.isArray(descriptor.axis_values) &&
+        !descriptor.axis_values.includes(dimensions.axis)) throw new Error('Axe SQL Mobilité non déclaré')
     return indicatorFromSql(target, fact.indicator_id, fact.value, fact.status, fact.unit, fact.sources,
       text(dimensions.detail) ? dimensions.detail : text(dimensions.axis) ? dimensions.axis : null,
       text(dimensions.sex) ? dimensions.sex : null,
@@ -227,7 +247,8 @@ export function mobilityFactsFromThemeApi(
     return loadingFacts(payload, territoryId, context)
   }
   if (!isRecord(response) || response.contract !== 'theme-facts-v1' || response.theme_id !== 'mobilite' ||
-      !Array.isArray(response.indicators) ||
+      !Array.isArray(response.indicators) || !Array.isArray(response.indicator_metadata) ||
+      !Array.isArray(response.named_reference_evidence) ||
       !Array.isArray(response.readings)) throw new Error('Réponse de faits Mobilité invalide')
   const projected = payloadFromSql(payload, response)
   const facts = territoryFactsFor(projected, territoryId, context)

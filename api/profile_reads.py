@@ -85,6 +85,7 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
         comparison_unit = detail_units.get(d[5], d[2])
         profiles.append({'indicator': d[0], 'label': d[1], 'unit': d[2], 'denominator_semantics': d[10], 'descriptor_version': d[4],
             'content_version': marker[0], 'comparison_scalar': d[8], 'required_scalar_version': d[9],
+            'allowed_levels': d[3],
             'comparison_point': None if d[8] else {'detail': d[5], 'sex': d[6], 'direction': d[7], 'unit': comparison_unit},
             'axes': [{'name': name, 'key': key, 'label': label, 'order': order,
                       'unit': detail_units[key] if name == 'detail' else unit} for name,key,label,order,unit in axes],

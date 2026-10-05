@@ -26,6 +26,11 @@ const response = (): any => ({
     { indicator_id: 'reseaux_par_habitant', label: 'Réseaux', value: 456, status: 'measured',
       unit: 'km / 1 000 habitants', sources, dimensions: { detail: 't_km_1000' } },
   ],
+  indicator_metadata: [{ indicator_id: 'reseaux_par_habitant', kind: 'declared_dimensions',
+    allowed_levels: ['commune'], descriptor_version: 'profile-v1', denominator_semantics: 'published denominator',
+    axes: [{ name: 'detail', key: 't_km_1000', label: 'À pied', order: 0, unit: 'km / 1 000 habitants' },
+      { name: 'sex', key: 'F', label: 'Femmes', order: 0, unit: null }] }],
+  named_reference_evidence: [],
   series: [], bpe_profile_evidence: null,
   readings: [{ groupe: readingGroup, story_key: 'sql-story', salience_reason: 'sql',
     classification_saillance: null, div_loss_t: 7, div_loss_b: 8, status: 'measured', unit: 'types',
@@ -48,6 +53,11 @@ describe('SQL Mobilité response to Variant E facts', () => {
     data.indicators[0]!.sources = []
     expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow()
   })
+  it('rejects malformed provided coordinates instead of silently treating them as scalars', () => {
+    const data = response()
+    data.indicators[1]!.dimensions.detail = 42
+    expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow(/Dimension SQL/)
+  })
   it('retains source missingness and never fills absent SQL values from static history', () => {
     const data = response()
     data.readings = []
@@ -58,12 +68,18 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(mobilityFactsFromThemeApi(payload, '22001', null).mobility.losses.diversityWalkTransit.value).toBeNull()
   })
   it('accepts immutable owned-series lineage using source_name rather than scalar name', () => {
-    const data = { ...response(), series: [{ indicator_id: 'raccordement', unit: '%',
-      points: [{ axis: '20', observation_period: null, value: 0.6, status: 'measured',
-        provenance: [{ revision_id: 'rev-1', source_id: 'mobilite_snapshot', vintage_id: 'v1',
-          source_name: 'SQL mobility', dataset_name: 'Raccordement', version: 'sql-v1',
-          reference_date: null, publication_date: null, revision_hash: 'hash-1' }] }] }] }
-    expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).not.toThrow()
+    const lineage = { revision_id: 'rev-1', source_id: 'mobilite_snapshot', vintage_id: 'v1',
+      source_name: 'SQL mobility', dataset_name: 'Raccordement', version: 'sql-v1',
+      reference_date: null, publication_date: null, revision_hash: 'hash-1' }
+    const data = { ...response(), indicator_metadata: [{ indicator_id: 'raccordement',
+      axis_kind: 'duration_minute', axis_values: ['20'], axis_numeric_values: [20],
+      completeness: 'dense_complete', direction: 'low', descriptor_version: 'series-v1',
+      comparison_point: '20', observation_period_kind: 'source_snapshot' }],
+      indicators: [...response().indicators, { indicator_id: 'raccordement', unit: '%', value: 0.6,
+        status: 'measured', sources: [{ ...lineage, name: lineage.source_name }],
+        dimensions: { axis: '20', numeric_axis_value: 20, observation_period: '2026-09-16' } }] }
+    expect(mobilityFactsFromThemeApi(payload, '22001', data).mobility.indicators
+      .find((fact) => fact.key === 'raccordement')?.provenance?.lineage?.revision_hash).toBe('hash-1')
   })
   it('does not manufacture an exemplar for a source-defined empty BPE class', () => {
     const data = { ...response(), bpe_profile_evidence: { sources, classes:
