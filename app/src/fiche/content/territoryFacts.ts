@@ -60,6 +60,7 @@ export interface FactComparison {
 export interface NumericFact {
   key: string
   detail: string | null
+  sex?: Indicateur['sex']
   /** Payload-owned label when this fact is a published indicator. */
   label?: string | null
   value: number | null
@@ -357,6 +358,7 @@ function availabilityOf(value: number | null, present: boolean): FactAvailabilit
 function factOf(options: {
   key: string
   detail?: string | null
+  sex?: Indicateur['sex']
   label?: string | null
   value: number | null
   unit: string
@@ -370,6 +372,7 @@ function factOf(options: {
   return {
     key: options.key,
     detail: options.detail ?? null,
+    ...(options.sex !== undefined ? { sex: options.sex } : {}),
     label: options.label ?? null,
     value: options.value,
     unit: options.unit,
@@ -653,6 +656,7 @@ function indicatorsOf(
       return factOf({
         key: row.key,
         detail: row.detail,
+        sex: row.sex ?? null,
         label: payload.themeMetadata?.mobilite?.indicator_labels[row.key] ?? null,
         value: row.value,
         unit: row.unit,

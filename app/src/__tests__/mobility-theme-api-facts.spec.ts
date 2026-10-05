@@ -1,11 +1,14 @@
 import { describe, expect, it } from 'vitest'
-import { mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
+import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
+import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
 import { metadonneesThemesFixtures, histoiresMobiliteFixture } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
 
 // Wire fields are those emitted by theme_facts and focal_profiles, not payload rows.
 const sources = [{ source_id: 'mobilite_snapshot', name: 'SQL mobility', version: 'sql-v1',
   reference_date: null, publication_date: null }]
+const context: TerritoryComparisonContext = { mode: 'densite', scope: {
+  kind: 'communes-densite', label: 'Source-defined group' }, facts: [], buildingDistribution: null, accessRamp: null }
 const payload: Payload = {
   territoires: [{ territoire: '22001', type: 'commune', nom: 'Commune', departement: '22', epci: null }],
   indicateurs: [], histoires: histoiresMobiliteFixture, apercu: null, runReport: null,
@@ -21,7 +24,7 @@ const response = () => ({
     value: 123, status: 'measured', unit: 'places / 1 000 habitants', sources }],
   profiles: [{ indicator: 'reseaux_par_habitant', label: 'Réseaux', unit: 'km / 1 000 habitants',
     axes: [{ name: 'detail', key: 't_km_1000', label: 'À pied', order: 0, unit: 'km / 1 000 habitants' }],
-    cells: [{ detail: 't_km_1000', sex: null, value: 456, status: 'measured',
+    cells: [{ detail: 't_km_1000', sex: null as string | null, value: 456, status: 'measured',
       unit: 'km / 1 000 habitants', sources }] }],
   series: [], bpe_profile_evidence: null,
   readings: [{ groupe: readingGroup, story_key: 'sql-story', salience_reason: 'sql',
@@ -70,5 +73,25 @@ describe('SQL Mobilité response to Variant E facts', () => {
       ) } }
     const facts = mobilityFactsFromThemeApi(payload, '22001', data)
     expect(facts.mobility.bpeAccess.profiles[0]).toMatchObject({ count: 0, exemplar: null })
+  })
+  it('matches a profile comparison only to the same detail and sex facet', () => {
+    const data = response()
+    data.profiles[0]!.cells[0]!.sex = 'F'
+    const facts = mobilityFactsFromThemeApi(payload, '22001', data)
+    const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', results: [],
+      profile_comparisons: [{ indicator: 'reseaux_par_habitant', facet: { detail: 't_km_1000', sex: 'F' },
+        status: 'available', direction: 'high', median: 12 }] }
+    expect(applyThemeComparisonApiFacts(facts, comparisons, context).mobility.indicators
+      .find((fact) => fact.key === 'reseaux_par_habitant')?.comparison?.reference?.value).toBe(12)
+    comparisons.profile_comparisons[0]!.facet.sex = 'M'
+    expect(applyThemeComparisonApiFacts(facts, comparisons, context).mobility.indicators
+      .find((fact) => fact.key === 'reseaux_par_habitant')?.comparison).toBeNull()
+  })
+  it('never interprets an unspecified comparison direction as more-is-better', () => {
+    const facts = mobilityFactsFromThemeApi(payload, '22001', response())
+    const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', profile_comparisons: [],
+      results: [{ indicator_id: 'places_stationnement_velo_1000', status: 'available', direction: 'none', median: 12 }] }
+    expect(applyThemeComparisonApiFacts(facts, comparisons, context).mobility.indicators
+      .find((fact) => fact.key === 'places_stationnement_velo_1000')?.comparison).toBeNull()
   })
 })

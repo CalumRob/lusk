@@ -17,6 +17,14 @@ read-surface contract for the incremental scalar/profile work under #627 and
   focal evidence. A commune defaults to its density-class service comparison;
   `?comparison=densite|epci|bretagne` selects one of the established commune
   scopes. Other territory levels retain their same-level comparison behavior.
+  `building_access.distribution[].share` is computed from the published SQL
+  count and denominator in this snapshot. `building_access.presentation`
+  carries the producer's existing building descriptor metadata (bucket bounds
+  and labels, mode and axis labels, quantile labels). Variant E consumes these
+  fields rather than inventing categories or copy in its adapter. This is an
+  additive descriptor-JSON extension, not a new fact shape or SQL migration;
+  older publications without this metadata must be republished before E's
+  numeric consumer is enabled, and missing metadata fails closed.
 - `GET /api/territories/{type}/{id}/indicators/{indicator}` resolves a stable
   indicator identity through the published scalar/profile/legacy-series
   descriptors in one read-only repeatable-read transaction. Scalar and series

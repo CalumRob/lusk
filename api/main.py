@@ -548,7 +548,8 @@ class ReadRepository:
                 ).fetchall()
                 grid_rows = connection.execute(
                     """SELECT territory_id, territory_type, availability, mode, breadth_bucket,
-                              depth_bucket, building_count, total_buildings, source_id, source_version
+                              depth_bucket, building_count, total_buildings, source_id, source_version,
+                              building_count::double precision / NULLIF(total_buildings,0) AS share
                        FROM building_grid WHERE territory_type = %s AND territory_id = ANY(%s)""",
                     (ttype, list(focal_and_peers))
                 ).fetchall()
@@ -556,7 +557,7 @@ class ReadRepository:
                                       "quantile", "accessible_types", "total_buildings", "source_id", "version"), row))
                              for row in ramp_rows]
                 grid_data = [dict(zip(("territoire", "type", "availability", "mode", "breadth_bucket",
-                                      "depth_bucket", "building_count", "total_buildings", "source_id", "version"), row))
+                                      "depth_bucket", "building_count", "total_buildings", "source_id", "version", "share"), row))
                              for row in grid_rows]
                 try:
                     peer_ramp = (weighted_peer_ramp(ramp_data, members, max_members=len(reference),
@@ -576,6 +577,9 @@ class ReadRepository:
                     (tid, ttype)).fetchall()
                 if not source_rows:
                     raise HTTPException(503, "Building-access source provenance is unavailable")
+                presentation = {table: contract.get("presentation") for table, contract in connection.execute(
+                    "SELECT table_name,contract FROM building_evidence_descriptor WHERE table_name IN ('building_ramp','building_grid')"
+                ).fetchall()}
                 if ({r["availability"] for r in target_ramp} == {"absent"} and
                     {r["availability"] for r in target_grid} == {"absent"} and
                     len(target_ramp) == 3 and {r["mode"] for r in target_ramp} == {"c", "b", "t"} and
@@ -595,6 +599,7 @@ class ReadRepository:
                     "publication_id": publication,
                     "territory": {"id": tid, "type": ttype, "name": name},
                     "availability": availability,
+                    "presentation": presentation,
                     "scope": None if ttype == "region" else {
                         "kind": kind,
                         "comparison_mode": comparison_mode if ttype == "commune" else "bretagne"},
@@ -606,7 +611,7 @@ class ReadRepository:
                               **{k: r[k] for k in ("quantile", "accessible_types", "total_buildings", "source_id")},
                               "source_version": r["version"]} for r in focal_ramp],
                     "peer_ramp": peer_ramp,
-                    "distribution": None if availability == "absent" else [{**{k: r[k] for k in ("breadth_bucket", "depth_bucket", "building_count", "total_buildings", "source_id")},
+                    "distribution": None if availability == "absent" else [{**{k: r[k] for k in ("breadth_bucket", "depth_bucket", "building_count", "total_buildings", "source_id", "share")},
                                       "source_version": r["version"]} for r in focal_grid],
                     "peer_distribution": peer_distribution,
                 }

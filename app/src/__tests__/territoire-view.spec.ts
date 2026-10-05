@@ -122,6 +122,15 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
       scope: kind ? { comparison_mode: kind === 'communes-densite' ? 'densite' :
         kind === 'communes-epci' ? 'epci' : 'bretagne', kind } : null,
       sources: buildingSources,
+      presentation: {
+        building_grid: { mode_label: grid.modeLabel, breadth_axis_label: grid.breadthAxisLabel,
+          depth_axis_label: grid.depthAxisLabel,
+          breadth: grid.breadthBins.map((bin) => ({ key: bin.key, min_value: bin.min, max_value: bin.max, label: bin.label })),
+          depth: grid.depthBins.map((bin) => ({ key: bin.key, min_value: bin.min, max_value: bin.max, label: bin.label })) },
+        building_ramp: { modes: Object.fromEntries(Object.entries(displayModes).map(([code, display]) => [code, ramp.curves[display].modeLabel])),
+          quantile_labels: ramp.curves.car.points.map((point) => point.quantileLabel),
+          x_axis_label: ramp.xAxisLabel, y_axis_label: ramp.yAxisLabel },
+      },
       ramp: (['c', 'b', 't'] as const).flatMap((mode) =>
         ramp.curves[displayModes[mode]].points.map((point, quantile_index) => ({
           mode, quantile_index, quantile: quantile_index / 10,
@@ -133,7 +142,7 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
             mode, quantile: index / 10, accessible_types: index + 2,
           }))) } : null,
       distribution: grid.cells.map((cell) => ({ breadth_bucket: cell.breadthBucket,
-        depth_bucket: cell.depthBucket, building_count: cell.buildingCount,
+        depth_bucket: cell.depthBucket, building_count: cell.buildingCount, share: cell.share,
         total_buildings: grid.totalBuildings })),
       peer_distribution: kind ? { statistic: 'mean', member_count: 2,
         total_buildings: grid.totalBuildings, cells: grid.cells.map((cell) => ({
@@ -238,7 +247,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
             mode, quantile: index / 10, accessible_types: p.accessibleTypes + 2,
           }))) },
       distribution: grid.cells.map((cell) => ({ breadth_bucket: cell.breadthBucket,
-        depth_bucket: cell.depthBucket, building_count: cell.buildingCount,
+        depth_bucket: cell.depthBucket, building_count: cell.buildingCount, share: cell.share,
         total_buildings: grid.totalBuildings })),
       peer_distribution: { statistic: 'mean', member_count: 2, total_buildings: grid.totalBuildings,
         cells: grid.cells.map((cell) => ({ breadth_bucket: cell.breadthBucket,
@@ -247,6 +256,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     }
     const assembled = reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label)
     assembled.building_access = { ...assembled.building_access, ...figure }
+    assembled.building_access.presentation.building_grid.breadth_axis_label = 'Axe fourni par le producteur'
     const fetchApi = vi.fn(async () => ({ ok: true, json: async () => assembled }))
     vi.stubGlobal('fetch', fetchApi)
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
@@ -254,6 +264,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
     expect(section.find('.access-ramp-evidence').exists()).toBe(true)
     expect(section.find('.bivariate-evidence').exists()).toBe(true)
+    expect(section.text()).toContain('Axe fourni par le producteur')
     expect(section.text()).toContain('moyenne des')
     expect(section.text()).not.toContain('territoires sélectionnés')
     wrapper.unmount()

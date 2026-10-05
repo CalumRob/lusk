@@ -58,12 +58,12 @@ function indicatorFromSql(
   }
 }
 
-function bucket(key: unknown): { key: string; min: number; max: number | null; label: string } {
-  if (!text(key)) throw new Error('Classe SQL de distribution invalide')
-  const match = key.match(/^(\d+)(?:-(\d+)|\+)?$/)
-  if (!match) throw new Error('Classe SQL de distribution inconnue')
-  return { key, min: Number(match[1]), max: match[2] ? Number(match[2]) : key.endsWith('+') ? null : Number(match[1]),
-    label: key.replace('-', '–').replace('+', ' ou +') }
+function buckets(value: unknown): { key: string; min: number; max: number | null; label: string }[] {
+  return rows(value, 'building_access.presentation.bins').map((bin) => {
+    if (!text(bin.key) || !text(bin.label) || !finite(bin.min_value) ||
+        !(bin.max_value === null || finite(bin.max_value))) throw new Error('Classe SQL de distribution invalide')
+    return { key: bin.key, min: bin.min_value, max: bin.max_value, label: bin.label }
+  })
 }
 
 function buildingRows(response: Row, target: Payload['territoires'][number]): {
@@ -82,10 +82,25 @@ function buildingRows(response: Row, target: Payload['territoires'][number]): {
   const source = sourceRows[0]!
   const grid = rows(evidence.distribution, 'building_access.distribution')
   const rampRows = rows(evidence.ramp, 'building_access.ramp')
-  const breadth = [...new Map(grid.map((cell) => { const item = bucket(cell.breadth_bucket); return [item.key, item] })).values()]
-    .sort((a, b) => a.min - b.min)
-  const depth = [...new Map(grid.map((cell) => { const item = bucket(cell.depth_bucket); return [item.key, item] })).values()]
-    .sort((a, b) => a.min - b.min)
+  const presentation = evidence.presentation
+  if (!isRecord(presentation) || !isRecord(presentation.building_grid) ||
+      !isRecord(presentation.building_ramp)) throw new Error('Métadonnées SQL bâtiments absentes')
+  const gridPresentation = presentation.building_grid
+  const rampPresentation = presentation.building_ramp
+  if (!text(gridPresentation.mode_label) || !text(gridPresentation.breadth_axis_label) ||
+      !text(gridPresentation.depth_axis_label) || !text(rampPresentation.x_axis_label) ||
+      !text(rampPresentation.y_axis_label) || !isRecord(rampPresentation.modes) ||
+      !Array.isArray(rampPresentation.quantile_labels) || rampPresentation.quantile_labels.some((label) => !text(label))) {
+    throw new Error('Métadonnées SQL bâtiments invalides')
+  }
+  const breadth = buckets(gridPresentation.breadth)
+  const depth = buckets(gridPresentation.depth)
+  if (grid.some((cell) => !breadth.some((bin) => bin.key === cell.breadth_bucket) ||
+      !depth.some((bin) => bin.key === cell.depth_bucket) || !finite(cell.share)) ||
+      rampRows.some((point) => !text((rampPresentation.modes as Row)[String(point.mode)]) ||
+        !text((rampPresentation.quantile_labels as unknown[])[Number(point.quantile_index)]))) {
+    throw new Error('Axes SQL bâtiments incohérents')
+  }
   const total = grid.length && finite(grid[0]!.total_buildings) ? grid[0]!.total_buildings : 0
   if (grid.length !== 30 || rampRows.length !== 33 || !total) throw new Error('Publication SQL bâtiments incomplète')
   const distribution: DistributionAccesBatimentsRow[] = grid.map((cell) => ({
@@ -99,19 +114,19 @@ function buildingRows(response: Row, target: Payload['territoires'][number]): {
     depth_max: depth.find((item) => item.key === cell.depth_bucket)!.max,
     depth_label: depth.find((item) => item.key === cell.depth_bucket)!.label,
     building_count: cell.building_count as number,
-    share: (cell.building_count as number) / (cell.total_buildings as number),
-    mode: 't', mode_label: 'À pied + TC', breadth_axis_label: 'types d’équipements accessibles',
-    depth_axis_label: 'équipements accessibles', source_id: source.sourceId!, source: source.source,
+    share: cell.share as number,
+    mode: 't', mode_label: gridPresentation.mode_label as string, breadth_axis_label: gridPresentation.breadth_axis_label as string,
+    depth_axis_label: gridPresentation.depth_axis_label as string, source_id: source.sourceId!, source: source.source,
     version: source.version, date_reference: source.referenceDate ?? '', date_publication: source.publicationDate ?? '',
     comparison_label: null, comparison_total_buildings: null, comparison_building_count: null, comparison_share: null,
   }))
   const ramp: RampeAccesBatimentsRow[] = rampRows.map((point) => ({
     territoire: target.territoire, type: target.type, availability: 'complete',
     total_buildings: point.total_buildings as number, mode: point.mode as RampeAccesBatimentsRow['mode'],
-    mode_label: point.mode === 'c' ? 'Voiture' : point.mode === 'b' ? 'À vélo + TC' : 'À pied + TC',
-    quantile: point.quantile as number, quantile_label: `${Math.round((point.quantile as number) * 100)} %`,
-    accessible_types: point.accessible_types as number, x_axis_label: 'Part cumulée des bâtiments',
-    y_axis_label: 'types d’équipements accessibles', source_id: source.sourceId!, source: source.source,
+    mode_label: (rampPresentation.modes as Row)[String(point.mode)] as string,
+    quantile: point.quantile as number, quantile_label: (rampPresentation.quantile_labels as string[])[Number(point.quantile_index)]!,
+    accessible_types: point.accessible_types as number, x_axis_label: rampPresentation.x_axis_label as string,
+    y_axis_label: rampPresentation.y_axis_label as string, source_id: source.sourceId!, source: source.source,
     version: source.version, date_reference: source.referenceDate ?? '', date_publication: source.publicationDate ?? '',
     comparison_label: null, comparison_total_buildings: null, comparison_accessible_types: null,
   }))
@@ -253,7 +268,8 @@ export function applyThemeComparisonApiFacts(
     const result = comparisons.get(fact.key) ?? profileRows.find((candidate) =>
       candidate.indicator === fact.key && isRecord(candidate.facet) &&
       candidate.facet.detail === detail && candidate.facet.sex === sex)
-    if (!result || result.status !== 'available') return { ...fact, comparison: null }
+    if (!result || result.status !== 'available' ||
+        (result.direction !== 'high' && result.direction !== 'low')) return { ...fact, comparison: null }
     const meanValue = finite(result.mean) ? result.mean : null
     const medianValue = finite(result.median) ? result.median : null
     const reference = meanValue !== null ? { kind: 'mean' as const, value: meanValue }
@@ -266,7 +282,7 @@ export function applyThemeComparisonApiFacts(
     return { ...fact, comparison: { direction: result.direction === 'low' ? 'moins-est-mieux' : 'plus-est-mieux',
       scope: { mode, kind, label: context.scope.label }, rank, reference } }
   }
-  const indicators = facts.mobility.indicators.map((fact) => comparisonFor(fact, fact.detail))
+  const indicators = facts.mobility.indicators.map((fact) => comparisonFor(fact, fact.detail, fact.sex ?? null))
   const updateModeFacts = (source: TerritoryFacts['mobility']['access']['summary']['accessibleEquipment']) =>
     Object.fromEntries(Object.entries(source).map(([mode, fact]) => [mode, comparisonFor(fact)])) as unknown as typeof source
   const summary = { ...facts.mobility.access.summary,
@@ -276,7 +292,8 @@ export function applyThemeComparisonApiFacts(
   const bpeAccess = { ...facts.mobility.bpeAccess, profiles: facts.mobility.bpeAccess.profiles.map((profile) => {
     const result = resultRows.find((candidate) => candidate.indicator_id === 'bpe_access_profile' &&
       candidate.detail === profile.profile)
-    if (!result || result.status !== 'available' || !context) return { ...profile, comparison: null }
+    if (!result || result.status !== 'available' || !context ||
+        (result.direction !== 'high' && result.direction !== 'low')) return { ...profile, comparison: null }
     return { ...profile, comparison: { scope: { mode: context.mode, kind: context.scope.kind,
       label: context.scope.label }, direction: (result.direction === 'low' ? 'moins-est-mieux' : 'plus-est-mieux') as 'moins-est-mieux' | 'plus-est-mieux',
       rank: finite(result.rank) && finite(result.rank_size)
@@ -290,7 +307,8 @@ export function applyThemeComparisonApiFacts(
       return [service, Object.fromEntries(Object.entries(modes).map(([mode, fact]) => {
         const sourceMode = mode === 'car' ? 'c' : mode === 'bike' ? 'b' : 't'
         const result = comparisons.get(indicators[sourceMode])
-        if (!result || result.status !== 'available' || !context) return [mode, { ...fact, comparison: null }]
+        if (!result || result.status !== 'available' || !context ||
+            (result.direction !== 'high' && result.direction !== 'low')) return [mode, { ...fact, comparison: null }]
         return [mode, { ...fact, comparison: { direction: result.direction === 'low' ? 'moins-est-mieux' : 'plus-est-mieux',
           scope: { mode: context.mode, kind: context.scope.kind, label: context.scope.label },
           rank: finite(result.rank) && finite(result.rank_size)

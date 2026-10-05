@@ -274,12 +274,17 @@ def test_initial_building_response_resolves_vintage_identity_not_display_version
                 _publish_fixture(connection, "reader")
             # The FK stores vintage_id, not the human-facing source version.
             connection.execute("UPDATE source_vintage SET version='Descriptive version', reference_date=NULL WHERE source_id='snapshot'")
+            connection.execute("""UPDATE building_evidence_descriptor
+                SET contract=jsonb_set(contract,'{presentation}',%s::jsonb)
+                WHERE table_name='building_grid'""", (json.dumps({"mode_label": "Publisher label sentinel"}),))
             with connection.transaction():
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 data = ReadRepository(None).read_building_initial("commune", "A", "bretagne", connection=connection)
             assert data["availability"] == "complete"
             assert len(data["ramp"]) == 33
             assert len(data["distribution"]) == 30
+            assert data["distribution"][0]["share"] == 1.0
+            assert data["presentation"]["building_grid"] == {"mode_label": "Publisher label sentinel"}
             assert data["sources"] == [{"source_id": "snapshot", "name": "Canonical fixture source",
                 "version": "Descriptive version", "reference_date": None, "publication_date": "2026-02-01"}]
     finally:
