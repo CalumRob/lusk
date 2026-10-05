@@ -28,6 +28,14 @@ _Avoid_: Page d'indicateurs, profil, dashboard
 The prototype's normalized, presentation-neutral account of a territory's available facts for one theme: identity, values, time, provenance, and any declared comparison context. It is the input to **ThemeContent**, not a payload-shaped record, an all-themes object, or a renderer prop.
 _Avoid_: raw payload, fiche data, Story input
 
+**Fait d'indicateur**:
+A measurement for one indicator and territory, with its declared unit, time, provenance and availability. It may have no category coordinate or be distinguished by dimensions such as age band, sex, energy class or transport mode. Categories distinguish measurements; they do not prescribe a figure or a presentation grouping.
+_Avoid_: profil (when referring to measurements), nombre brut (omits identity and availability)
+
+**Regroupement de présentation**:
+A selection and arrangement of related indicator facts for a reading surface. The same facts can support several groupings without changing their meaning. A grouping is not an independently owned measurement and does not determine which facts are available for a territory.
+_Avoid_: profil publié (confuses a presentation grouping with its underlying facts)
+
 **TerritoryContent**:
 The prototype's presentation-neutral semantic account of what can be said about a territory across its themes: an ordered collection of **ThemeContent** results, each resolved independently from that theme's **TerritoryFacts**. It represents unavailable content honestly, does not fetch data, and does not prescribe the Cahier, pages, cards, margins, or other presentation placement.
 _Avoid_: FicheContent, Cahier content, view model
