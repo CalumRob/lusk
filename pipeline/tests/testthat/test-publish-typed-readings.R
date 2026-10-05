@@ -35,3 +35,24 @@ test_that("typed Milieux reading projection retains producer-selected reading co
   expect_equal(projected$periode_artif, "2011-2021")
   expect_equal(projected$trajectoire_artif_par_habitant, "stable")
 })
+
+test_that("Milieux population provenance revisions hash the actual source clock and preserve NULL dates", {
+  vintage <- data.frame(id="serie_historique", source="Producer source", version="2023",
+    date_reference="2023-01-01", date_publication=NA_character_, stringsAsFactors=FALSE)
+  metadata <- list(source_records=list(serie_historique=list(dataset="Canonical population dataset")))
+
+  original <- project_milieux_population_revision(vintage, metadata)
+  expect_identical(original$source_name, "Producer source")
+  expect_identical(original$dataset_name, "Canonical population dataset")
+  expect_identical(as.character(original$reference_date), "2023-01-01")
+  expect_true(is.na(original$publication_date))
+
+  renamed <- vintage
+  renamed$source <- "Revised producer source"
+  expect_false(identical(original$population_revision_id,
+    project_milieux_population_revision(renamed, metadata)$population_revision_id))
+  redated <- vintage
+  redated$date_reference <- "2023-01-02"
+  expect_false(identical(original$population_revision_id,
+    project_milieux_population_revision(redated, metadata)$population_revision_id))
+})

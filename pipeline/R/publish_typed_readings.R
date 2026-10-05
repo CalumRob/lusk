@@ -129,6 +129,32 @@ project_habitat_reading <- function(histories,vintages,metadata) {
   facts
 }
 
+project_milieux_population_revision <- function(vintage, metadata) {
+  if(!is.data.frame(vintage) || nrow(vintage)!=1L ||
+     anyNA(vintage[c("id","source","version")] ) || is.null(metadata$source_records[[as.character(vintage$id[[1L]])]]))
+    stop("Canonical Milieux population provenance identity is missing",call.=FALSE)
+  source_record <- metadata$source_records[[as.character(vintage$id[[1L]])]]
+  dataset_name <- source_record$dataset
+  if(is.null(dataset_name) || length(dataset_name)!=1L || is.na(dataset_name) || !nzchar(dataset_name))
+    stop("Canonical Milieux population dataset identity is missing from producer metadata",call.=FALSE)
+  vintage_id <- paste(as.character(vintage$version[[1L]]),
+    if(is.na(vintage$date_reference[[1L]])) "NA" else as.character(vintage$date_reference[[1L]]),sep="/")
+  to_source_date <- function(value) if(is.na(value) || identical(as.character(value),"NA") || !nzchar(as.character(value)))
+    as.Date(NA) else as.Date(as.character(value),format="%Y-%m-%d")
+  reference_date <- to_source_date(vintage$date_reference[[1L]])
+  publication_date <- to_source_date(vintage$date_publication[[1L]])
+  revision_hash <- scalar_content_version(list(source_id=as.character(vintage$id[[1L]]),vintage_id=vintage_id,
+    source_name=as.character(vintage$source[[1L]]),dataset_name=as.character(dataset_name),
+    source_version=as.character(vintage$version[[1L]]),
+    reference_date=if(is.na(reference_date)) NULL else as.character(reference_date),
+    publication_date=if(is.na(publication_date)) NULL else as.character(publication_date)))
+  data.frame(population_revision_id=paste0(as.character(vintage$id[[1L]]),"-",as.character(vintage$version[[1L]]),"-",substr(revision_hash,1L,16L)),
+    source_id=as.character(vintage$id[[1L]]),vintage_id=vintage_id,source_name=as.character(vintage$source[[1L]]),
+    dataset_name=as.character(dataset_name),source_version=as.character(vintage$version[[1L]]),
+    reference_date=reference_date,publication_date=publication_date,
+    revision_hash=revision_hash,stringsAsFactors=FALSE)
+}
+
 project_milieux_reading <- function(histories, vintages, metadata, canonical) {
   facts <- project_typed_reading_facts(histories, "milieux")
   if (any(!is.finite(facts$delta_population[!is.na(facts$delta_population)])) ||
@@ -146,12 +172,12 @@ project_milieux_reading <- function(histories, vintages, metadata, canonical) {
     stop("Milieux selected reading identities are not declared by producer metadata", call.=FALSE)
   facts$status <- ifelse(is.na(facts$classification) | is.na(facts$periode_pop) |
     is.na(facts$periode_artif), "unavailable", "measured")
-  facts$source_id <- "serie_historique"
   population_vintage <- vintages[vintages$id == "serie_historique",,drop=FALSE]
-  if(nrow(population_vintage)!=1L || anyNA(population_vintage[c("version","source")]))
+  if(nrow(population_vintage)!=1L)
     stop("Canonical population-history source vintage is missing or ambiguous",call.=FALSE)
-  population_vintage_id <- paste(as.character(population_vintage$version[[1L]]),
-    if(is.na(population_vintage$date_reference[[1L]])) "NA" else as.character(population_vintage$date_reference[[1L]]),sep="/")
+  population_revision <- project_milieux_population_revision(population_vintage,metadata)
+  population_vintage_id <- population_revision$vintage_id[[1L]]
+  facts$source_id <- population_revision$source_id[[1L]]
   facts$vintage_id <- population_vintage_id
   facts$population_source_version <- as.character(population_vintage$version[[1L]])
   facts$population_source_reference_date <- population_vintage$date_reference[[1L]]
@@ -181,17 +207,19 @@ project_milieux_reading <- function(histories, vintages, metadata, canonical) {
           publication_date=revision$publication_date[[1L]],dataset_id=states$dataset_id,
           dataset_content_version=scalar_content_version(states),state_role=role,
           observation_period=point$observation_period[[1L]],axis_value=point$axis_value[[1L]],provenance_revision_id=revision$provenance_revision_id[[1L]],
+          population_revision_id=NA_character_,
           stringsAsFactors=FALSE)
       }
     }
     binding_rows[[length(binding_rows)+1L]] <- data.frame(territory_id=territory,territory_type=level,
-      groupe=facts$groupe[[i]],field_key="population",source_id="serie_historique",vintage_id=population_vintage_id,source_name=population_vintage$source[[1L]],
-      source_version=population_vintage$version[[1L]],reference_date=population_vintage$date_reference[[1L]],
-      publication_date=population_vintage$date_publication[[1L]],dataset_id=NA_character_,
+      groupe=facts$groupe[[i]],field_key="population",source_id=population_revision$source_id[[1L]],vintage_id=population_vintage_id,source_name=population_revision$source_name[[1L]],
+      source_version=population_revision$source_version[[1L]],reference_date=population_revision$reference_date[[1L]],
+      publication_date=population_revision$publication_date[[1L]],dataset_id=NA_character_,
       dataset_content_version=NA_character_,state_role=NA_character_,observation_period=facts$periode_pop[[i]],axis_value=NA_character_,
-      provenance_revision_id=NA_character_,stringsAsFactors=FALSE)
+      provenance_revision_id=NA_character_,population_revision_id=population_revision$population_revision_id[[1L]],stringsAsFactors=FALSE)
   }
   attr(facts,"source_bindings") <- do.call(rbind,binding_rows)
+  attr(facts,"population_revisions") <- population_revision
   facts
 }
 
@@ -403,12 +431,6 @@ publish_canonical_milieux_reading <- function(con, sortie="../public/data") {
   population <- canonical$vintages[canonical$vintages$id=="serie_historique",,drop=FALSE]
   if(nrow(population)!=1L || anyNA(population[c("source","version")]))
     stop("Canonical Milieux population-history source clock is missing or ambiguous",call.=FALSE)
-  vintage_id <- paste(as.character(population$version[[1L]]),
-    if(is.na(population$date_reference[[1L]])) "NA" else as.character(population$date_reference[[1L]]),sep="/")
-  DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
-    params=list(population$id[[1L]],population$source[[1L]]))
-  DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
-    params=list(population$id[[1L]],vintage_id,population$version[[1L]],population$date_reference[[1L]],population$date_publication[[1L]]))
   series_registry <- register_artif_m2m3_owned_publisher(list(),canonical$metadata)
   series_result <- publish_registered_series(series_registry,"artif_par_habitant_owned",canonical,
     owned_series_postgres_adapter(con))
@@ -418,25 +440,23 @@ publish_canonical_milieux_reading <- function(con, sortie="../public/data") {
 
 publish_milieux_reading <- function(con, facts, canonical) {
   bindings <- attr(facts,"source_bindings")
+  population_revisions <- attr(facts,"population_revisions")
   binding_fields <- c("territory_id","territory_type","groupe","field_key","source_id","vintage_id","source_name","source_version",
-    "reference_date","publication_date","observation_period","dataset_id","dataset_content_version","state_role","axis_value","provenance_revision_id")
-  if (!is.data.frame(bindings) || !all(binding_fields %in% names(bindings)))
+    "reference_date","publication_date","observation_period","dataset_id","dataset_content_version","state_role","axis_value","provenance_revision_id","population_revision_id")
+  if (!is.data.frame(bindings) || !all(binding_fields %in% names(bindings)) || !is.data.frame(population_revisions) || nrow(population_revisions)!=1L)
     stop("Canonical Milieux producer projection did not supply source/window bindings",call.=FALSE)
   reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version
   if(length(reference)!=1L || is.na(reference) || !nzchar(reference)) stop("Published territory reference is required for Milieux readings",call.=FALSE)
   identity <- c("territory_id","territory_type","groupe","field_key","source_id","vintage_id")
   if(anyDuplicated(bindings[identity]) || any(!paste(bindings$territory_id,bindings$territory_type,bindings$groupe) %in%
       paste(facts$territory_id,facts$territory_type,facts$groupe))) stop("Milieux source bindings are duplicate or outside selected readings",call.=FALSE)
-  source_rows <- DBI::dbGetQuery(con,"SELECT source_id,vintage_id,version,reference_date,publication_date FROM source_vintage")
-  for(i in which(bindings$field_key=="population")) {
-    match <- source_rows[source_rows$source_id==bindings$source_id[[i]] & source_rows$vintage_id==bindings$vintage_id[[i]],,drop=FALSE]
-    same_date <- function(actual,expected) (is.na(actual) && is.na(expected)) ||
-      (!is.na(actual) && !is.na(expected) && as.character(actual)==as.character(expected))
-    if(nrow(match)!=1L || as.character(match$version[[1L]])!=as.character(bindings$source_version[[i]]) ||
-       !same_date(match$reference_date[[1L]],bindings$reference_date[[i]]) ||
-       !same_date(match$publication_date[[1L]],bindings$publication_date[[i]]))
-      stop("Milieux reading source/window binding differs from registered source vintage: ",bindings$source_id[[i]],call.=FALSE)
-  }
+  population_indices <- which(bindings$field_key=="population")
+  if(!length(population_indices) || any(bindings$population_revision_id[population_indices]!=population_revisions$population_revision_id[[1L]]) ||
+     any(bindings$source_id[population_indices]!=population_revisions$source_id[[1L]]) ||
+     any(bindings$vintage_id[population_indices]!=population_revisions$vintage_id[[1L]]) ||
+     any(bindings$source_name[population_indices]!=population_revisions$source_name[[1L]]) ||
+     any(bindings$source_version[population_indices]!=population_revisions$source_version[[1L]]))
+    stop("Milieux population associations are detached from their immutable producer revision",call.=FALSE)
   for(i in which(bindings$field_key!="population")) {
     revision <- DBI::dbGetQuery(con,"SELECT source_id,vintage_id,source_name,source_version,reference_date,publication_date FROM series_provenance_revision WHERE provenance_revision_id=$1",
       params=list(bindings$provenance_revision_id[[i]]))
@@ -467,6 +487,20 @@ publish_milieux_reading <- function(con, facts, canonical) {
   version <- scalar_content_version(list(facts=facts,source_bindings=bindings))
   expected_count <- nrow(facts); expected_sources <- nrow(bindings); unchanged <- FALSE
   DBI::dbWithTransaction(con, {
+    revision <- population_revisions[1,,drop=FALSE]
+    DBI::dbExecute(con,"INSERT INTO milieux_population_provenance_revision(population_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,revision_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(population_revision_id) DO NOTHING",
+      params=unname(as.list(revision[1,c("population_revision_id","source_id","vintage_id","source_name","dataset_name","source_version","reference_date","publication_date","revision_hash")])))
+    stored_revision <- DBI::dbGetQuery(con,"SELECT source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,revision_hash FROM milieux_population_provenance_revision WHERE population_revision_id=$1",
+      params=list(revision$population_revision_id[[1L]]))
+    date_equal <- function(actual,expected) (is.na(actual) && is.na(expected)) ||
+      (!is.na(actual) && !is.na(expected) && as.character(actual)==as.character(expected))
+    if(nrow(stored_revision)!=1L ||
+       !all(vapply(c("source_id","vintage_id","source_name","dataset_name","source_version"),function(field)
+         identical(as.character(stored_revision[[field]][[1L]]),as.character(revision[[field]][[1L]])),logical(1))) ||
+       !date_equal(stored_revision$reference_date[[1L]],revision$reference_date[[1L]]) ||
+       !date_equal(stored_revision$publication_date[[1L]],revision$publication_date[[1L]]) ||
+       !identical(as.character(stored_revision$revision_hash[[1L]]),as.character(revision$revision_hash[[1L]])))
+      stop("Milieux population provenance revision identity collision or immutable-field mismatch",call.=FALSE)
     marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='milieux_typed_reading'")
     source_count <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_source")$n[[1L]]
     if(nrow(marker)==1L && identical(as.character(marker$content_version[[1L]]),version) && marker$row_count[[1L]]==expected_count &&

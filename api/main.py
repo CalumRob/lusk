@@ -2200,18 +2200,21 @@ def theme_facts(
                     raise HTTPException(503,"Milieux reading publication is unavailable or incompatible")
                 rows=conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.periode_pop,r.periode_artif,
                     r.delta_population,r.taux_variation_population,r.artif_m2_par_habitant,r.artif_m3_par_habitant,
-                    r.trajectoire_artif_par_habitant,r.classification,r.status,r.source_id,r.vintage_id,
-                    sd.name,sv.version,sv.reference_date,sv.publication_date
-                    FROM milieux_typed_reading r JOIN source_dataset sd USING(source_id)
-                    JOIN source_vintage sv USING(source_id,vintage_id)
+                    r.trajectoire_artif_par_habitant,r.classification,r.status,r.source_id,r.vintage_id
+                    FROM milieux_typed_reading r
                     WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
                     (territory_id,territory_type)).fetchall()
                 if not rows:
                     raise HTTPException(404,"No selected Milieux reading for this territory")
                 source_rows=conn.execute("""SELECT b.groupe,b.field_key,b.source_id,b.source_name,b.vintage_id,b.source_version,
                     b.reference_date,b.publication_date,b.observation_period,b.dataset_id,b.dataset_content_version,
-                    b.state_role,b.provenance_revision_id,b.axis_value
+                    b.state_role,b.provenance_revision_id,b.axis_value,b.population_revision_id,
+                    COALESCE(p.source_id,s.source_id),COALESCE(p.vintage_id,s.vintage_id),
+                    COALESCE(p.source_name,s.source_name),COALESCE(p.source_version,s.source_version),
+                    COALESCE(p.reference_date,s.reference_date),COALESCE(p.publication_date,s.publication_date)
                     FROM milieux_reading_source b
+                    LEFT JOIN milieux_population_provenance_revision p ON p.population_revision_id=b.population_revision_id
+                    LEFT JOIN series_provenance_revision s ON s.provenance_revision_id=b.provenance_revision_id
                     WHERE b.territory_id=%s AND b.territory_type=%s
                     ORDER BY b.groupe,b.field_key,b.source_id,b.vintage_id""",(territory_id,territory_type)).fetchall()
                 by_reading={}
@@ -2221,12 +2224,18 @@ def theme_facts(
                             (source_row[9],)).fetchone()
                         if not current or current[0]!=source_row[10] or current[1]!=marker[3]:
                             raise HTTPException(503,"Milieux OCS-GE source association is stale or incompatible")
-                    by_reading.setdefault(source_row[0],[]).append({"field":source_row[1],"source_id":source_row[2],
-                        "source_name":source_row[3],"vintage_id":source_row[4],"source_version":source_row[5],
-                        "source_reference_date":source_row[6],"source_publication_date":source_row[7],
+                    if (source_row[2]!=source_row[15] or source_row[4]!=source_row[16] or source_row[3]!=source_row[17] or
+                        source_row[5]!=source_row[18] or source_row[6]!=source_row[19] or source_row[7]!=source_row[20] or
+                        (source_row[1]=="population" and (source_row[14] is None or source_row[12] is not None)) or
+                        (source_row[1]!="population" and (source_row[12] is None or source_row[14] is not None))):
+                        raise HTTPException(503,"Milieux source clock differs from its immutable provenance revision")
+                    by_reading.setdefault(source_row[0],[]).append({"field":source_row[1],"source_id":source_row[15],
+                        "source_name":source_row[17],"vintage_id":source_row[16],"source_version":source_row[18],
+                        "source_reference_date":source_row[19],"source_publication_date":source_row[20],
                         "observation_period":source_row[8],"dataset_id":source_row[9],
                         "dataset_content_version":source_row[10],"state_role":source_row[11],
-                        "provenance_revision_id":source_row[12],"axis_value":source_row[13]})
+                        "provenance_revision_id":source_row[12],"population_revision_id":source_row[14],
+                        "axis_value":source_row[13]})
                 readings=[]
                 for row in rows:
                     associations=by_reading.get(row[0],[])
@@ -2256,8 +2265,12 @@ def theme_facts(
                     readings.append(dict(zip(("groupe","story_key","salience_reason","periode_pop","periode_artif",
                         "delta_population","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant",
                         "trajectoire_artif_par_habitant","classification","status","source_id","vintage_id"),row[:14]),
-                        provenance={"source_id":row[12],"source_name":row[14],"vintage_id":row[13],
-                        "source_version":row[15],"source_reference_date":row[16],"source_publication_date":row[17],
+                        provenance={"source_id":population_associations[0]["source_id"],
+                        "source_name":population_associations[0]["source_name"],
+                        "vintage_id":population_associations[0]["vintage_id"],
+                        "source_version":population_associations[0]["source_version"],
+                        "source_reference_date":population_associations[0]["source_reference_date"],
+                        "source_publication_date":population_associations[0]["source_publication_date"],
                         "associations":associations}))
                 reading_version=marker[0]
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,

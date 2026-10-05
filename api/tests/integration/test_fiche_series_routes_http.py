@@ -232,6 +232,7 @@ def test_canonical_owned_series_have_independent_fiche_routes(tmp_path):
                 sql_sources=pub.execute("""SELECT territory_id,territory_type,groupe,field_key,source_id,vintage_id,
                     source_name,source_version,reference_date,publication_date,observation_period,dataset_id,
                     dataset_content_version,state_role,axis_value,provenance_revision_id
+                    ,population_revision_id
                     FROM milieux_reading_source ORDER BY territory_type,territory_id,groupe,field_key,source_id,vintage_id""").fetchall()
                 actual_sources={(r[0],r[1],r[2],r[3],r[4],r[5]):r for r in sql_sources}
                 expected_source_keys=set()
@@ -264,6 +265,14 @@ def test_canonical_owned_series_have_independent_fiche_routes(tmp_path):
                                 (linked[11],)).fetchone()[0]
                             assert linked[15] and pub.execute("SELECT 1 FROM series_observation_provenance WHERE dataset_id=%s AND indicator_id='artif_par_habitant' AND territory_id=%s AND axis_value=%s AND provenance_revision_id=%s",
                                 (linked[11],territory,linked[14],linked[15])).fetchone()
+                    population_sources=[r for r in sql_sources if r[3]=="population"]
+                    assert len(population_sources)==len(reading_rows)
+                    for source in population_sources:
+                        revision=pub.execute("SELECT source_id,vintage_id,source_name,source_version,reference_date,publication_date FROM milieux_population_provenance_revision WHERE population_revision_id=%s",
+                            (source[16],)).fetchone()
+                        assert revision is not None
+                        assert (source[4],source[5],source[6],source[7],source[8],source[9])==(
+                            revision[0],revision[1],revision[2],revision[3],revision[4],revision[5])
                 assert set(actual_sources)==expected_source_keys
                 selected_by_level={}
                 for level in ("commune","epci","departement","region"):
@@ -320,6 +329,43 @@ def test_canonical_owned_series_have_independent_fiche_routes(tmp_path):
                 finally:
                     pub.execute("UPDATE milieux_typed_reading SET taux_variation_population=%s WHERE territory_id=%s AND territory_type='commune'",
                         (original,territory))
+                population_clock=pub.execute("SELECT population_revision_id,source_name,source_version,reference_date,publication_date FROM milieux_reading_source WHERE territory_id=%s AND territory_type='commune' AND field_key='population'",
+                    (territory,)).fetchone()
+                for column,bad_value in (("source_name","mutated source name"),("source_version","mutated source version"),
+                    ("reference_date","1900-01-01"),("publication_date","1900-01-02")):
+                    pub.execute(f"UPDATE milieux_reading_source SET {column}=%s WHERE territory_id=%s AND territory_type='commune' AND field_key='population'",
+                        (bad_value,territory))
+                    try:
+                        corrupted=client.get(f"/api/territories/commune/{territory}/themes/milieux/facts")
+                        assert corrupted.status_code==503,(column,corrupted.text)
+                    finally:
+                        pub.execute("UPDATE milieux_reading_source SET source_name=%s,source_version=%s,reference_date=%s,publication_date=%s WHERE territory_id=%s AND territory_type='commune' AND field_key='population'",
+                            (*population_clock[1:],territory))
+                null_clock=pub.execute("""SELECT r.population_revision_id,r.vintage_id,r.source_name,r.source_version,
+                    r.reference_date,r.publication_date FROM milieux_population_provenance_revision r
+                    WHERE r.reference_date IS NULL AND r.publication_date IS NULL AND r.source_id='serie_historique'
+                    ORDER BY r.population_revision_id LIMIT 1""").fetchone()
+                assert null_clock is not None
+                pub.execute("UPDATE milieux_typed_reading SET vintage_id=%s WHERE territory_id=%s AND territory_type='commune'",
+                    (null_clock[1],territory))
+                pub.execute("""UPDATE milieux_reading_source SET vintage_id=%s,population_revision_id=%s,source_name=%s,
+                    source_version=%s,reference_date=NULL,publication_date=NULL
+                    WHERE territory_id=%s AND territory_type='commune' AND field_key='population'""",
+                    (null_clock[1],null_clock[0],null_clock[2],null_clock[3],territory))
+                try:
+                    null_clock_response=client.get(f"/api/territories/commune/{territory}/themes/milieux/facts")
+                    assert null_clock_response.status_code==200,null_clock_response.text
+                    null_reading=next(r for r in null_clock_response.json()["readings"] if r["groupe"]==focal["groupe"])
+                    assert null_reading["provenance"]["source_reference_date"] is None
+                    assert null_reading["provenance"]["source_publication_date"] is None
+                finally:
+                    pub.execute("UPDATE milieux_typed_reading SET vintage_id=%s WHERE territory_id=%s AND territory_type='commune'",
+                        (population_vintage_id,territory))
+                    pub.execute("""UPDATE milieux_reading_source SET vintage_id=%s,population_revision_id=%s,source_name=%s,
+                        source_version=%s,reference_date=%s,publication_date=%s
+                        WHERE territory_id=%s AND territory_type='commune' AND field_key='population'""",
+                        (population_vintage_id,population_clock[0],population_clock[1],population_clock[2],
+                         population_clock[3],population_clock[4],territory))
                 pop_window=pub.execute("SELECT observation_period FROM milieux_reading_source WHERE territory_id=%s AND territory_type='commune' AND field_key='population'",
                     (territory,)).fetchone()[0]
                 pub.execute("UPDATE milieux_reading_source SET observation_period='2099-2100' WHERE territory_id=%s AND territory_type='commune' AND field_key='population'",
