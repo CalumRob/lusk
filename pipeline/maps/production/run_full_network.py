@@ -6,7 +6,7 @@ import sys
 
 from qgis.core import QgsApplication
 
-ROOT = Path(__file__).resolve().parents[4]
+ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from approval import read_approval
 from network import NetworkAdapter, build_full_map_set, network_recipe

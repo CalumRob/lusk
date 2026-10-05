@@ -578,7 +578,7 @@ def prepare_network_cache(
     project: QgsProject | None = None,
     cache_root: str | Path | None = None,
     families: tuple[str, ...] = ("osm", "geovelo"),
-    *, force: bool = False, report: list | None = None,
+    *, force: bool = False, report: list | None = None, read_only: bool = False,
 ) -> dict[str, dict[str, Path]]:
     """Prepare or reuse the independently versioned OSM and Geovelo families."""
     raw_dir = Path(raw_dir)
@@ -625,7 +625,8 @@ def prepare_network_cache(
             validate=lambda paths: _validate_flatgeobuf(paths, "Geovelo"),
         )
     root = Path(cache_root) if cache_root is not None else _cache_root(raw_dir)
-    return prepare_network_source_families(root, preparations, force=force, report=report)
+    return prepare_network_source_families(root, preparations, force=force, report=report,
+        read_only=read_only)
 
 
 def _eligible_osm_modes(source, modes, request_rect: QgsRectangle | None = None):
@@ -771,6 +772,7 @@ def prepare_osm_layers(project: QgsProject, source, modes, marks,
 def _prepare_network_layers(project: QgsProject, features, raw_dir: Path,
                             family_config: Mapping,
                             cache_root: Path | None = None, *, force: bool = False,
+                            read_only_cache: bool = False,
                             report: list | None = None) -> dict[str, list[QgsVectorLayer]]:
     """Load cached, indexed source layers once for all outputs in this run."""
     features = tuple(features)
@@ -783,7 +785,8 @@ def _prepare_network_layers(project: QgsProject, features, raw_dir: Path,
             ("geovelo", "bike" in modes),
         ) if needed
     )
-    prepared = prepare_network_cache(raw_dir, project, cache_root, families, force=force, report=report)
+    prepared = prepare_network_cache(raw_dir, project, cache_root, families, force=force,
+        report=report, read_only=read_only_cache)
 
     def indexed_layer(path: Path, name: str, colour: str) -> QgsVectorLayer:
         layer = QgsVectorLayer(str(path), name, "ogr")
@@ -834,10 +837,14 @@ class NetworkAdapter:
     """Network-family adapter; shared map and plate modules own presentation."""
 
     def __init__(self, raw_dir: str | Path, cache_root: str | Path | None = None, *,
-                 context_loader=None):
+                 context_loader=None, context_cache_root: str | Path | None = None,
+                 read_only_source_cache: bool = False):
         self.raw_dir = Path(raw_dir)
         self.cache_root = Path(cache_root) if cache_root is not None else None
         self.context_loader = context_loader
+        self.context_cache_root = (Path(context_cache_root)
+            if context_cache_root is not None else None)
+        self.read_only_source_cache = bool(read_only_source_cache)
         self.family_config_path = Path(__file__).with_name("network-family.json")
         self.family_config = _load_network_family_config()
         self._ground_cache = {}
@@ -854,6 +861,10 @@ class NetworkAdapter:
         self._stage_events = []
         self._stage_validity = {}
         self._refresh = False
+        self._persist_territory_stages = True
+        self._bounded_territory_state = False
+        self._active_territory = None
+        self._territory_cache_high_water = {}
 
     def render_identity(self) -> Mapping:
         """Identify runtime code/assets and the versions that affect rendering."""
@@ -878,7 +889,16 @@ class NetworkAdapter:
                 "pyqt": PYQT_VERSION_STR,
                 "python": platform.python_version(),
             },
+            "canonical_encoding": self.output_contract(None),
         }
+
+    @staticmethod
+    def output_contract(profile=None) -> Mapping:
+        from webp_encoding import WEBP_ENCODING_CONTRACT
+        return {**WEBP_ENCODING_CONTRACT,
+            "dimensions": list(profile.size) if profile is not None else {
+                "inspection": [2400, 2400], "inline": [900, 900]},
+            "alpha": "lossless" if profile is None or profile.transparent_outside else "opaque-rgb"}
 
     def current_approval_members(self, recipe, binding, requested_profiles, renderer_identity):
         """Fingerprint the live representative cohort before a full run is scheduled."""
@@ -946,6 +966,7 @@ class NetworkAdapter:
                        "car": ("car",), "walk": ("walk",)}.get(mode)
                       if mode else tuple(config["marks"]))
         scoped = {"marks": {key: config["marks"][key] for key in mark_names},
+                  "canonical_encoding": self.output_contract(profile),
                   "shared_ground_version": SHARED_GROUND_RENDER_VERSION,
                   "shared_network_render_version": SHARED_NETWORK_RENDER_VERSION,
                   "network_stroke": _network_stroke_contract(profile)}
@@ -1097,6 +1118,7 @@ class NetworkAdapter:
 
         output_dir = Path(output_dir)
         context_cache_root = (Path(context_cache_root) if context_cache_root is not None else
+            self.context_cache_root if self.context_cache_root is not None else
             output_dir / ".stage-cache" / "official-context")
         project = QgsProject.instance()
         self._stage_events = []
@@ -1136,13 +1158,67 @@ class NetworkAdapter:
             "decision": "validated", "seconds": round(perf_counter() - context_started, 3)})
         self._network_layers = _prepare_network_layers(
             project, features, self.raw_dir, self.family_config, self.cache_root,
-            force=refresh, report=self._stage_events
+            force=refresh, read_only_cache=self.read_only_source_cache, report=self._stage_events
         )
         self._ground_cache.clear()
         self._refresh = refresh
 
+    def begin_production_scope(self, scope: str, output_dir: Path) -> None:
+        """Select intermediate retention policy without changing shared caches."""
+        self._persist_territory_stages = scope != "full"
+        self._bounded_territory_state = scope == "full"
+
+    def end_production_scope(self, scope: str, output_dir: Path, *, success: bool) -> None:
+        # Full-run shared providers/frontier are intentionally kept alive until
+        # process teardown; territory state is released at every territory edge.
+        self._persist_territory_stages = True
+        self._bounded_territory_state = False
+        self._active_territory = None
+
+    def begin_territory(self, feature: Mapping, profiles, output_dir: Path) -> None:
+        self._active_territory = (str(feature["territory"]["kind"]), str(feature["territory"]["code"]))
+        self._territory_cache_high_water = {name: 0 for name in self._territory_working_caches()}
+        self.observe_territory_state(feature)
+
+    def observe_territory_state(self, feature: Mapping) -> None:
+        if self._active_territory is None:
+            return
+        for name, cache in self._territory_working_caches().items():
+            self._territory_cache_high_water[name] = max(
+                self._territory_cache_high_water.get(name, 0), len(cache))
+
+    def end_territory(self, feature: Mapping, output_dir: Path, *, success: bool) -> None:
+        if not self._bounded_territory_state:
+            return
+        high_water = dict(self._territory_cache_high_water)
+        for cache in self._territory_working_caches().values():
+            cache.clear()
+        territory = self._active_territory or (
+            str(feature["territory"]["kind"]), str(feature["territory"]["code"]))
+        self._stage_events.append({"stage": "territory-working-set-release",
+            "territory": f"{territory[0]}/{territory[1]}",
+            "decision": "released", "success": bool(success),
+            "high_water_objects": high_water,
+            "retained_objects": {name: len(cache) for name, cache in self._territory_working_caches().items()}})
+        self._active_territory = None
+        self._territory_cache_high_water = {}
+
+    def _territory_working_caches(self):
+        return {"ground_preparations": self._ground_cache,
+            "ground_identities": self._identity_cache,
+            "ocsge_identities": self._ocsge_identity_cache,
+            "network_scopes_and_engines": self._network_scope_cache,
+            "visible_ground_derivatives": self._visible_ground_parts_cache,
+            "visible_context_scopes": self._context_scope_cache}
+
     def stage_report(self):
         return list(self._stage_events)
+
+    def drain_stage_report(self):
+        """Transfer accumulated scalar diagnostics to the runner's bounded spool."""
+        events = list(self._stage_events)
+        self._stage_events.clear()
+        return events
 
     def visual_spot_check_outputs(self, outputs):
         """Select family-owned high-risk post-batch examples from the run results."""
@@ -1160,28 +1236,12 @@ class NetworkAdapter:
         return selected
 
     def record_reused_output(self, feature, profile, output_dir, recipe=None):
-        started = perf_counter()
-        identity = self._ground_id(feature, profile, recipe)
-        if identity in self._stage_validity:
-            self._stage_events.append({"stage": "territory-ground", "profile": profile.name,
-                "identity": identity, "decision": "reused" if self._stage_validity[identity] else "missing-cache",
-                "seconds": 0.0})
-            self._stage_events.append({"stage": "territory-ground-cache-validation", "profile": profile.name,
-                "identity": identity, "decision": "shared-validation", "seconds": 0.0})
-            return
-        stage = Path(output_dir) / ".stage-cache" / "ground" / identity
-        read_started = perf_counter()
-        prepared = self._read_ground_stage(stage, profile.size, feature["extent"])
-        read_seconds = perf_counter() - read_started
-        self._stage_validity[identity] = prepared is not None
+        # An unchanged, QA-verified final artifact is independent of the
+        # territory's disposable ground intermediate. Do not load or imply reuse
+        # of a ground cache just to report that the canonical output was reused.
         self._stage_events.append({"stage": "territory-ground", "profile": profile.name,
-            "identity": identity, "decision": "reused" if prepared else "missing-cache",
-            "seconds": 0.0})
-        self._stage_events.append({"stage": "territory-ground-cache-validation", "profile": profile.name,
-            "identity": identity, "decision": "validated" if prepared else "missing-cache",
-            "seconds": round(read_seconds, 6)})
-        self._stage_events.append({"stage": "reused-output-ground-preparation-total", "profile": profile.name,
-            "identity": identity, "decision": "completed", "seconds": round(perf_counter() - started, 6)})
+            "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
+            "decision": "not-loaded-reused-output", "seconds": 0.0})
 
     def effective_input_identity(self, feature: Mapping, profile) -> Mapping:
         """Fingerprint only source facts that intersect this map and profile."""
@@ -1271,7 +1331,7 @@ class NetworkAdapter:
             "stroke": scope_key[4], "scope_version": 1}, sort_keys=True).encode()).hexdigest()
         stage = self._network_scope_cache_root / identity
         started = perf_counter()
-        if not self._scope_cache_refresh:
+        if self._persist_territory_stages and not self._scope_cache_refresh:
             try:
                 manifest = json.loads((stage / "manifest.json").read_text(encoding="utf-8"))
                 data = (stage / "scope.wkb").read_bytes()
@@ -1298,20 +1358,21 @@ class NetworkAdapter:
         engine = QgsGeometry.createGeometryEngine(network_scope.constGet())
         engine.prepareGeometry()
         self._network_scope_cache[scope_key] = (network_scope, engine)
-        stage.mkdir(parents=True, exist_ok=True)
-        data = bytes(network_scope.asWkb())
-        temporary_data = stage / f".scope-{uuid4().hex}.tmp"
-        temporary_manifest = stage / f".manifest-{uuid4().hex}.tmp"
-        try:
-            temporary_data.write_bytes(data)
-            os.replace(temporary_data, stage / "scope.wkb")
-            temporary_manifest.write_text(json.dumps({"schema": 1, "identity": identity,
-                "sha256": sha256(data).hexdigest()}, sort_keys=True), encoding="utf-8")
-            os.replace(temporary_manifest, stage / "manifest.json")
-        finally:
-            temporary_data.unlink(missing_ok=True)
-            temporary_manifest.unlink(missing_ok=True)
-        return network_scope, engine, "built", perf_counter() - started
+        if self._persist_territory_stages:
+            stage.mkdir(parents=True, exist_ok=True)
+            data = bytes(network_scope.asWkb())
+            temporary_data = stage / f".scope-{uuid4().hex}.tmp"
+            temporary_manifest = stage / f".manifest-{uuid4().hex}.tmp"
+            try:
+                temporary_data.write_bytes(data)
+                os.replace(temporary_data, stage / "scope.wkb")
+                temporary_manifest.write_text(json.dumps({"schema": 1, "identity": identity,
+                    "sha256": sha256(data).hexdigest()}, sort_keys=True), encoding="utf-8")
+                os.replace(temporary_manifest, stage / "manifest.json")
+            finally:
+                temporary_data.unlink(missing_ok=True)
+                temporary_manifest.unlink(missing_ok=True)
+        return network_scope, engine, "built" if self._persist_territory_stages else "built-in-memory", perf_counter() - started
 
     def _visible_ground_parts(self, feature, profile):
         """Share exact clipped ground derivatives between content and ground identities."""
@@ -1339,7 +1400,7 @@ class NetworkAdapter:
             return cached, "reused-in-run", 0.0
         started = perf_counter()
         stage = self._visible_ground_parts_cache_root / identity
-        if not self._scope_cache_refresh:
+        if self._persist_territory_stages and not self._scope_cache_refresh:
             try:
                 manifest = json.loads((stage / "manifest.json").read_text(encoding="utf-8"))
                 if manifest.get("schema") == 1 and manifest.get("identity") == identity:
@@ -1359,25 +1420,26 @@ class NetworkAdapter:
             frontier_part = _canonical_geometry_wkb(self._shared_ground.frontier_for(region).intersection(scope))
         parts = (context_part, territory_part, frontier_part)
         self._visible_ground_parts_cache[key] = parts
-        stage.mkdir(parents=True, exist_ok=True)
-        names = ("context", "territory", "frontier")
-        files = {name: sha256(data).hexdigest() for name, data in zip(names, parts)}
-        temporaries = []
-        try:
-            for name, data in zip(names, parts):
-                temporary = stage / f".{name}-{uuid4().hex}.tmp"
-                temporary.write_bytes(data)
-                temporaries.append(temporary)
-                os.replace(temporary, stage / f"{name}.wkb")
-            temporary_manifest = stage / f".manifest-{uuid4().hex}.tmp"
-            temporaries.append(temporary_manifest)
-            temporary_manifest.write_text(json.dumps({"schema": 1, "identity": identity,
-                "files": files}, sort_keys=True), encoding="utf-8")
-            os.replace(temporary_manifest, stage / "manifest.json")
-        finally:
-            for temporary in temporaries:
-                temporary.unlink(missing_ok=True)
-        return parts, "built", perf_counter() - started
+        if self._persist_territory_stages:
+            stage.mkdir(parents=True, exist_ok=True)
+            names = ("context", "territory", "frontier")
+            files = {name: sha256(data).hexdigest() for name, data in zip(names, parts)}
+            temporaries = []
+            try:
+                for name, data in zip(names, parts):
+                    temporary = stage / f".{name}-{uuid4().hex}.tmp"
+                    temporary.write_bytes(data)
+                    temporaries.append(temporary)
+                    os.replace(temporary, stage / f"{name}.wkb")
+                temporary_manifest = stage / f".manifest-{uuid4().hex}.tmp"
+                temporaries.append(temporary_manifest)
+                temporary_manifest.write_text(json.dumps({"schema": 1, "identity": identity,
+                    "files": files}, sort_keys=True), encoding="utf-8")
+                os.replace(temporary_manifest, stage / "manifest.json")
+            finally:
+                for temporary in temporaries:
+                    temporary.unlink(missing_ok=True)
+        return parts, "built" if self._persist_territory_stages else "built-in-memory", perf_counter() - started
 
     def _visible_context_scope_wkb(self, feature, profile, scope):
         """Memoize exact visible-context content for a scope within this prepared run."""
@@ -1477,20 +1539,23 @@ class NetworkAdapter:
         if prepared is None:
             stage = output_dir / ".stage-cache" / "ground" / ground_id
             cache_validation_started = perf_counter()
-            prepared = None if self._refresh else self._read_ground_stage(stage, profile.size, feature["extent"])
+            prepared = (None if self._refresh or not self._persist_territory_stages
+                else self._read_ground_stage(stage, profile.size, feature["extent"]))
             cache_validation_seconds = perf_counter() - cache_validation_started
             self._stage_events.append({"stage": "territory-ground-cache-validation", "profile": profile.name,
                 "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
                 "mode": feature["mode"], "identity": ground_id,
-                "decision": "validated" if prepared is not None else "missing-cache",
+                "decision": "validated" if prepared is not None else
+                    "disabled-by-full-scope-policy" if not self._persist_territory_stages else "missing-cache",
                 "seconds": round(cache_validation_seconds, 6)})
             if prepared is None:
                 started = perf_counter()
                 prepared = prepare_ground(project, feature, profile.size[0], self._shared_ground,
                     include_ocsge=profile.name == "inspection",
                     ground_settings=recipe.foundation.ground)
-                self._write_ground_stage(stage, prepared)
-                decision = "built"
+                if self._persist_territory_stages:
+                    self._write_ground_stage(stage, prepared)
+                decision = "built-in-memory" if not self._persist_territory_stages else "built"
                 seconds = round(perf_counter() - started, 3)
             else:
                 decision, seconds = "reused", 0.0
@@ -1526,14 +1591,27 @@ class NetworkAdapter:
                 mode_runs, content, assets, metadata, _inspection_scale(prepared.extent),
                 desaturate_outside_land,
             )
-        path = output_dir / f"{feature['territory']['code']}-{feature['mode']}-{profile.name}.png"
-        if not image.save(str(path), "PNG"):
-            raise RuntimeError(f"Could not save production map: {path}")
-        return path
+        from uuid import uuid4
+        from webp_encoding import encode_qimage
+        final = self.expected_output_path(feature, profile, output_dir)
+        staged = final.with_name(f".{final.stem}-{uuid4().hex}.stage.webp")
+        return encode_qimage(image, staged, preserve_alpha=profile.transparent_outside)
+
+    @staticmethod
+    def promote_output(staged_path: Path, final_path: Path) -> Path:
+        staged_path, final_path = Path(staged_path), Path(final_path)
+        if staged_path.parent.resolve() != final_path.parent.resolve():
+            raise ValueError("staged and canonical map artifacts must share the output directory")
+        os.replace(staged_path, final_path)
+        return final_path
+
+    @staticmethod
+    def discard_output(staged_path: Path) -> None:
+        Path(staged_path).unlink(missing_ok=True)
 
     @staticmethod
     def expected_output_path(feature: Mapping, profile, output_dir: Path) -> Path:
-        return output_dir / f"{feature['territory']['code']}-{feature['mode']}-{profile.name}.png"
+        return output_dir / f"{feature['territory']['code']}-{feature['mode']}-{profile.name}.webp"
 
     def _ground_id(self, feature, profile, recipe=None):
         cache_key = self._ground_identity_cache_key(feature, profile, recipe)
@@ -1687,14 +1765,16 @@ class NetworkAdapter:
             return None
 
     def validate(self, path: Path, feature: Mapping, profile) -> None:
+        from webp_encoding import validate_webp
+        decoded = validate_webp(path, profile)
         image = QImage(str(path))
         if image.isNull() or (image.width(), image.height()) != profile.size:
-            raise ValueError(f"Invalid {profile.name} image dimensions or decode: {path}")
+            raise ValueError(f"Invalid {profile.name} WebP dimensions or decode: {path}")
         if profile.name == "inspection":
             if image.pixelColor(0, 0).alpha() != 255 or image.pixelColor(100, 170).alpha() != 255:
                 raise ValueError("Inspection plate must have an opaque ground and title region")
             return
-        if image.format() not in (QImage.Format_RGBA8888, QImage.Format_ARGB32,
+        if decoded.mode != "RGBA" or image.format() not in (QImage.Format_RGBA8888, QImage.Format_ARGB32,
                                   QImage.Format_ARGB32_Premultiplied):
             raise ValueError("Inline profile must retain RGBA alpha")
         geometry = feature["analytical_geometry"]
