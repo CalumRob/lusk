@@ -194,7 +194,7 @@ def test_real_sql_response_reaches_mounted_variant_e(tmp_path):
                 evidence.write_text(json.dumps(dict(focal=focal.json(), comparison=comparison.json(), model=model,cohort=cohort,
                     unavailable_status=unavailable.status_code,unavailable=unavailable.json())), encoding='utf-8')
                 env = dict(os.environ, LUSK_MOUNTED_E_HTTP_FIXTURE=str(evidence))
-                result = subprocess.run(['cmd','/c',str(ROOT/'app/node_modules/.bin/vitest.cmd'),'run',
+                result = subprocess.run(['node',str(ROOT/'app/node_modules/vitest/vitest.mjs'),'run',
                     'src/__tests__/territoire-view.spec.ts','-t','consumes real PostgreSQL HTTP responses in mounted E'],
                     cwd=ROOT/'app',env=env,capture_output=True,text=True,encoding='utf-8',timeout=60)
                 assert result.returncode == 0, result.stdout+result.stderr
