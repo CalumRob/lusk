@@ -2572,17 +2572,43 @@ def theme_facts(
                     service_reference = _mobility_service_reference_snapshot(conn)
     names=("indicator_id","label","unit","direction","comparison_facet","descriptor_version",
            "value","status","support_count","denominator_count","sources")
+    # A public theme response exposes observations as indicator facts, rather
+    # than leaking the storage families (scalar/profile/series) as collections.
+    indicators = []
+    for row in rows:
+        fact = dict(zip(names, row))
+        indicators.append({**fact, "dimensions": {}})
+    for profile in profiles:
+        for cell in profile["cells"]:
+            indicators.append({"indicator_id": profile["indicator"], "label": profile["label"],
+                "unit": cell["unit"], "value": cell["value"], "status": cell["status"],
+                "sources": cell["sources"], "dimensions": {"detail": cell["detail"],
+                    **({"sex": cell["sex"]} if cell.get("sex") is not None else {}),
+                    **({"observation_period": cell["observation_period"]} if cell.get("observation_period") is not None else {})},
+                "denominator_semantics": cell.get("denominator_semantics")})
+    for series in owned_series:
+        for point in series.get("points", []):
+            # Sparse axis positions without an observation are not facts.
+            if point.get("value") is None and point.get("status") == "missing" and not point.get("provenance"):
+                continue
+            indicators.append({"indicator_id": series["indicator_id"], "label": series.get("label"),
+                "unit": series["unit"], "value": point.get("value"), "status": point.get("status"),
+                "sources": [{"source_id": source.get("source_id"), "name": source.get("source_name"),
+                    "version": source.get("version"), "reference_date": source.get("reference_date"),
+                    "publication_date": source.get("publication_date")} for source in point.get("provenance", [])],
+                "dimensions": {"axis": point.get("axis"),
+                    **({"observation_period": point["observation_period"]} if point.get("observation_period") is not None else {})}})
     payload = {"contract":"theme-facts-v1","complete_theme":False,"theme_id":theme_id,
        "territory":{"territory_id":territory[0],"name":territory[1],"territory_type":territory[2]},
         "content_version":marker[0] if marker else comparison["content_version"],
         "owned_series_content_versions":[item["publication_id"] for item in owned_series],
         "reference_content_version":comparison["reference_content_version"],
-         "profile_content_version":profile_version,"profiles":profiles,
+         "profile_content_version":profile_version,
          "readings":readings,"reading_content_version":reading_version,"reading_descriptor_version":reading_descriptor_version,
          "reading_availability":reading_availability,
-         "series":owned_series,"bpe_profile_evidence":bpe_profile,
+         "bpe_profile_evidence":bpe_profile,
         "collections":collections,
-        "facts":[dict(zip(names,row)) for row in rows],
+        "indicators":indicators,
         "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
                               "profile_comparisons":comparison["profile_comparisons"]}}
     if building_access is not None:

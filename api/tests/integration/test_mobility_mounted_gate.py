@@ -175,6 +175,11 @@ def test_real_sql_response_reaches_mounted_variant_e(tmp_path):
             with TestClient(main.app) as client:
                 focal = client.get('/api/territories/commune/22001/themes/mobilite/facts')
                 assert focal.status_code == 200, focal.text
+                assert 'indicators' in focal.json()
+                assert 'facts' not in focal.json() and 'profiles' not in focal.json()
+                assert any(row['indicator_id'] == 'places_stationnement_voiture_1000'
+                           for row in focal.json()['indicators'])
+                assert any(row['dimensions'].get('detail') for row in focal.json()['indicators'])
                 assert sum(q.startswith('SET TRANSACTION') for q in probe.statements) == 1
                 assert focal.json()['service_reference']['value'] == 9876
                 selected = [{'territory_type':'commune','territory_id':code} for code in ['22001','22002']]

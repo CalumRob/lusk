@@ -4,7 +4,7 @@ import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
 import { metadonneesThemesFixtures, histoiresMobiliteFixture } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
 
-// Wire fields are those emitted by theme_facts and focal_profiles, not payload rows.
+// Wire fields are producer-owned indicator observations, not storage-family rows.
 const sources = [{ source_id: 'mobilite_snapshot', name: 'SQL mobility', version: 'sql-v1',
   reference_date: null, publication_date: null }]
 const context: TerritoryComparisonContext = { mode: 'densite', scope: {
@@ -17,15 +17,15 @@ const payload: Payload = {
 const readingGroup = metadonneesThemesFixtures.mobilite!.subgroups.find(
   (group) => group.reading?.params.includes('div_loss_t'),
 )!.key
-const response = () => ({
+const response = (): any => ({
   contract: 'theme-facts-v1', complete_theme: false, theme_id: 'mobilite',
   territory: { territory_id: '22001', territory_type: 'commune', name: 'Commune' },
-  facts: [{ indicator_id: 'places_stationnement_velo_1000', label: 'Stationnement',
-    value: 123, status: 'measured', unit: 'places / 1 000 habitants', sources }],
-  profiles: [{ indicator: 'reseaux_par_habitant', label: 'Réseaux', unit: 'km / 1 000 habitants',
-    axes: [{ name: 'detail', key: 't_km_1000', label: 'À pied', order: 0, unit: 'km / 1 000 habitants' }],
-    cells: [{ detail: 't_km_1000', sex: null as string | null, value: 456, status: 'measured',
-      unit: 'km / 1 000 habitants', sources }] }],
+  indicators: [
+    { indicator_id: 'places_stationnement_velo_1000', label: 'Stationnement',
+      value: 123, status: 'measured', unit: 'places / 1 000 habitants', sources, dimensions: {} },
+    { indicator_id: 'reseaux_par_habitant', label: 'Réseaux', value: 456, status: 'measured',
+      unit: 'km / 1 000 habitants', sources, dimensions: { detail: 't_km_1000' } },
+  ],
   series: [], bpe_profile_evidence: null,
   readings: [{ groupe: readingGroup, story_key: 'sql-story', salience_reason: 'sql',
     classification_saillance: null, div_loss_t: 7, div_loss_b: 8, status: 'measured', unit: 'types',
@@ -45,14 +45,13 @@ describe('SQL Mobilité response to Variant E facts', () => {
   })
   it('rejects measured facts without source lineage instead of presenting static provenance', () => {
     const data = response()
-    data.facts[0]!.sources = []
+    data.indicators[0]!.sources = []
     expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow()
   })
   it('retains source missingness and never fills absent SQL values from static history', () => {
     const data = response()
     data.readings = []
-    data.facts = []
-    data.profiles = []
+    data.indicators = []
     const facts = mobilityFactsFromThemeApi(payload, '22001', data)
     expect(facts.mobility.indicators).toHaveLength(0)
     expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
@@ -76,7 +75,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
   })
   it('matches a profile comparison only to the same detail and sex facet', () => {
     const data = response()
-    data.profiles[0]!.cells[0]!.sex = 'F'
+    data.indicators[1]!.dimensions = { detail: 't_km_1000', sex: 'F' }
     const facts = mobilityFactsFromThemeApi(payload, '22001', data)
     const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', results: [],
       profile_comparisons: [{ indicator: 'reseaux_par_habitant', facet: { detail: 't_km_1000', sex: 'F' },

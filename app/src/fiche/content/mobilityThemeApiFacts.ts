@@ -140,9 +140,14 @@ function payloadFromSql(payload: Payload, response: Row): Payload {
     throw new Error('Territoire de la réponse Mobilité invalide')
   }
 
-  const indicators = rows(response.facts, 'facts').map((fact) => indicatorFromSql(
-    target, fact.indicator_id, fact.value, fact.status, fact.unit, fact.sources,
-  ))
+  const indicators = rows(response.indicators, 'indicators').map((fact) => {
+    if (!text(fact.indicator_id) || !isRecord(fact.dimensions)) throw new Error('Fait indicateur SQL Mobilité invalide')
+    const dimensions = fact.dimensions
+    return indicatorFromSql(target, fact.indicator_id, fact.value, fact.status, fact.unit, fact.sources,
+      text(dimensions.detail) ? dimensions.detail : text(dimensions.axis) ? dimensions.axis : null,
+      text(dimensions.sex) ? dimensions.sex : null,
+      text(dimensions.observation_period) ? dimensions.observation_period : null)
+  })
   const territories = [...payload.territoires]
   if (response.service_reference !== undefined) {
     const reference = response.service_reference
@@ -163,29 +168,6 @@ function payloadFromSql(payload: Payload, response: Row): Payload {
         reference.status, reference.unit, reference.sources))
     }
   }
-  for (const profile of rows(response.profiles, 'profiles')) {
-    if (!text(profile.indicator) || !Array.isArray(profile.cells)) throw new Error('Profil SQL Mobilité invalide')
-    for (const cell of rows(profile.cells, 'profile.cells')) {
-      indicators.push(indicatorFromSql(target, profile.indicator, cell.value, cell.status,
-        cell.unit, cell.sources, text(cell.detail) ? cell.detail : null,
-        text(cell.sex) ? cell.sex : null))
-    }
-  }
-  for (const series of rows(response.series, 'series')) {
-    if (!text(series.indicator_id)) throw new Error('Série SQL Mobilité invalide')
-    for (const point of rows(series.points, 'series.points')) {
-      const lineage = rows(point.provenance, 'series.points.provenance').map((source) => ({
-        source_id: source.source_id, name: source.source_name, version: source.version,
-        reference_date: source.reference_date, publication_date: source.publication_date,
-      }))
-      // An absent sparse-axis observation is not an observation with fabricated lineage.
-      if (point.status === 'missing' && point.value === null && !lineage.length) continue
-      indicators.push(indicatorFromSql(target, series.indicator_id, point.value, point.status,
-        series.unit, lineage, text(point.axis) ? point.axis : null,
-        null, text(point.observation_period) ? point.observation_period : null))
-    }
-  }
-
   rows(response.readings, 'readings')
   const bpeRows: ProfilAccesBpeRow[] = []
   if (response.bpe_profile_evidence !== null) {
@@ -245,7 +227,7 @@ export function mobilityFactsFromThemeApi(
     return loadingFacts(payload, territoryId, context)
   }
   if (!isRecord(response) || response.contract !== 'theme-facts-v1' || response.theme_id !== 'mobilite' ||
-      !Array.isArray(response.facts) || !Array.isArray(response.profiles) || !Array.isArray(response.series) ||
+      !Array.isArray(response.indicators) ||
       !Array.isArray(response.readings)) throw new Error('Réponse de faits Mobilité invalide')
   const projected = payloadFromSql(payload, response)
   const facts = territoryFactsFor(projected, territoryId, context)
