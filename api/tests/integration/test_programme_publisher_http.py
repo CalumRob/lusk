@@ -285,7 +285,12 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
                 theme = client.get("/api/territories/commune/35238/themes/programmes/facts")
                 assert theme.status_code == 200, theme.text
                 assert theme.json()["complete_theme"] is False
-                assert theme.json()["series"][0]["indicator_id"] == expected["key"]
+                theme_indicators = [row for row in theme.json()["indicators"]
+                                    if row["indicator_id"] == expected["key"]]
+                theme_series = next(row for row in theme.json()["indicator_metadata"]
+                                    if row["indicator_id"] == expected["key"])
+                assert len(theme_indicators) == len(theme_series["axis_values"])
+                assert [row["dimensions"]["axis"] for row in theme_indicators] == theme_series["axis_values"]
                 assert {collection["indicator_id"] for collection in theme.json()["collections"]} == {
                     "couverture_programmes", "subventions_par_domaine"}
                 assert next(result for result in theme.json()["default_comparison"]["results"]

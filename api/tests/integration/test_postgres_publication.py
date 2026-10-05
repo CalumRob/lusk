@@ -613,7 +613,8 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert cohort_rows[2]["sources"] == []
         assert focal.status_code == 200 and focal.json()["complete_theme"] is False
         assert focal.json()["default_comparison"]["results"][0]["median"] == 1
-        assert [fact["indicator_id"] for fact in focal.json()["facts"]] == ["fixture_scalar"]
+        assert [fact["indicator_id"] for fact in focal.json()["indicators"]] == ["fixture_scalar"]
+        assert focal.json()["indicators"][0]["dimensions"] == {}
         assert empty_comparison.status_code == 200
         assert empty_comparison.json()["selection"] == []
         assert empty_comparison.json()["results"][0]["eligible_count"] == 0

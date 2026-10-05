@@ -41,10 +41,12 @@ def test_legacy_null_unit_falls_back_but_required_per_detail_unit_fails_closed(c
             url = f"/api/territories/commune/{territory}/themes/compat/facts"
             legacy = client.get(url)
             assert legacy.status_code == 200, legacy.text
-            legacy_profile = next(p for p in legacy.json()["profiles"] if p["indicator"] == "legacy_uniform")
-            assert legacy_profile["cells"][0]["unit"] == "widgets"
-            assert legacy_profile["axes"][0]["unit"] == "widgets"
-            assert legacy_profile["comparison_point"]["unit"] == "widgets"
+            legacy_body = legacy.json()
+            legacy_profile = [row for row in legacy_body["indicators"] if row["indicator_id"] == "legacy_uniform"]
+            legacy_meta = next(row for row in legacy_body["indicator_metadata"] if row["indicator_id"] == "legacy_uniform")
+            assert legacy_profile[0]["unit"] == "widgets"
+            assert legacy_meta["axes"][0]["unit"] == "widgets"
+            assert legacy_meta["comparison_point"]["unit"] == "widgets"
 
             with psycopg.connect(canonical_db_env["publish_dsn"]) as conn:
                 conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,completeness,
@@ -65,9 +67,11 @@ def test_legacy_null_unit_falls_back_but_required_per_detail_unit_fails_closed(c
                 conn.execute("UPDATE profile_axis SET unit='km / 1 000 hab' WHERE indicator_id='mixed_contract' AND axis_key='per_person'")
             mixed = client.get(url)
             assert mixed.status_code == 200, mixed.text
-            mixed_profile = next(p for p in mixed.json()["profiles"] if p["indicator"] == "mixed_contract")
-            assert [cell["unit"] for cell in mixed_profile["cells"]] == ["km", "km / 1 000 hab"]
-            assert mixed_profile["comparison_point"]["unit"] == "km"
+            mixed_profile = [row for row in mixed.json()["indicators"] if row["indicator_id"] == "mixed_contract"]
+            mixed_meta = next(row for row in mixed.json()["indicator_metadata"] if row["indicator_id"] == "mixed_contract")
+            assert [row["unit"] for row in mixed_profile] == ["km", "km / 1 000 hab"]
+            assert [axis["unit"] for axis in mixed_meta["axes"]] == ["km", "km / 1 000 hab"]
+            assert mixed_meta["comparison_point"]["unit"] == "km"
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)

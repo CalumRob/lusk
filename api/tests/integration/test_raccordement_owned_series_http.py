@@ -200,7 +200,23 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             theme_comparison=client.post("/api/territories/commune/35238/themes/mobilite/comparison",
                 json={"theme_id":"mobilite","selection":[]})
         assert theme.status_code==200,theme.text
-        assert len(theme.json()["series"])==1 and len(theme.json()["series"][0]["points"])==11
+        theme_body=theme.json()
+        curve_facts=[row for row in theme_body["indicators"] if row["indicator_id"]=="raccordement_courbe"]
+        curve_metadata=next(row for row in theme_body["indicator_metadata"] if row["indicator_id"]=="raccordement_courbe")
+        assert len(curve_facts)==11 and len(curve_metadata["axis_values"])==11
+        assert [row["dimensions"]["axis"] for row in curve_facts]==axes
+        assert [row["dimensions"]["numeric_axis_value"] for row in curve_facts]==[0,15,30,45,60,90,120,180,240,300,360]
+        assert [row["value"] for row in curve_facts]==[.11,.19,.27,.35,.43,.55,.67,.79,.87,.93,.98]
+        assert curve_metadata["axis_kind"]=="duration_minute"
+        assert curve_metadata["completeness"]=="dense_complete"
+        assert curve_metadata["comparison_point"]=="t0090"
+        assert len(theme_body["named_reference_evidence"])==1
+        theme_reference=theme_body["named_reference_evidence"][0]
+        assert theme_reference["id"]=="commune_bretonne_mediane"
+        assert theme_reference["statistic"]=="median_routed_communes"
+        assert [point["value"] for point in theme_reference["points"]]==[.02,.08,.16,.24,.33,.45,.59,.72,.82,.9,.96]
+        assert all(point["dimensions"]["observation_period"]=="2026-09-16" for point in curve_facts)
+        assert all(point["sources"][0]["revision_hash"] for point in curve_facts)
         assert next(result for result in theme.json()["default_comparison"]["results"]
             if result["indicator_id"]=="fixture_scalar")["median"]==.5
         curve_default=next(result for result in theme.json()["default_comparison"]["results"]

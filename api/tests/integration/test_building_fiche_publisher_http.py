@@ -156,7 +156,7 @@ def test_registered_canonical_building_publisher_reaches_fiche_http():
                 "reference_date": expected["service_reference"]["reference_date"],
                 "publication_date": expected["service_reference"]["publication_date"],
             }]
-            share_facts = [fact for fact in focal["facts"] if fact["indicator_id"].startswith("share_")]
+            share_facts = [fact for fact in focal["indicators"] if fact["indicator_id"].startswith("share_")]
             assert share_facts and all(
                 fact["denominator_count"] == nb["value"]
                 for fact in share_facts if fact["status"] == "measured"

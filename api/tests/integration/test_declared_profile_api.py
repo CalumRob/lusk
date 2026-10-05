@@ -121,7 +121,7 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env,
             assert wrote_concurrently
             assert body['content_version'] == 'scalar-v1'
             assert body['profile_content_version'] == 'profiles-v1'
-            assert body['facts'][0]['value'] == 0.3
+            assert next(row for row in body['indicators'] if row['indicator_id'] == 'part_passoires')['value'] == 0.3
             assert body['default_comparison']['results'][0]['median'] == 0.2
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
                 with writer.transaction():
@@ -136,14 +136,16 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env,
             assert response.status_code == 200, response.text
             body = response.json()
             assert body['profile_content_version'] == 'profiles-v1'
-            profile = body['profiles'][0]
-            assert profile['indicator'] == 'distribution_dpe'
-            assert [(cell['detail'], cell['sex']) for cell in profile['cells']] == [(detail, None) for detail in 'ABCDEFG']
-            assert profile['cells'][6]['value'] == 0.4
-            assert profile['cells'][0]['sources'][0]['version'] == '2024'
-            assert {axis['name'] for axis in profile['axes']} == {'detail'}
-            assert profile['comparison_scalar'] == 'part_passoires'
-            assert 'comparison' not in profile and '29002' not in response.text
+            profile = [row for row in body['indicators'] if row['indicator_id'] == 'distribution_dpe']
+            profile_metadata = next(row for row in body['indicator_metadata']
+                                    if row['indicator_id'] == 'distribution_dpe')
+            assert [(row['dimensions']['detail'], row['dimensions'].get('sex')) for row in profile] == [(detail, None) for detail in 'ABCDEFG']
+            assert profile[6]['value'] == 0.4
+            assert profile[0]['sources'][0]['version'] == '2024'
+            assert [(axis['name'], axis['key'], axis['order']) for axis in profile_metadata['axes']] == [
+                ('detail', detail, order) for order, detail in enumerate('ABCDEFG')]
+            assert profile_metadata['comparison_scalar'] == 'part_passoires'
+            assert all('comparison' not in row for row in profile) and '29002' not in response.text
             assert body['default_comparison']['results'][0]['median'] == 0.2
             dpe_comparison = body['default_comparison']['profile_comparisons'][0]
             assert dpe_comparison['indicator'] == 'distribution_dpe'
@@ -401,7 +403,8 @@ def test_declared_profile_postgres_api_contract(installation):
             profile_only_url = f"/api/territories/commune/{territory}/themes/demographie/facts"
             profile_only = client.get(profile_only_url)
             assert profile_only.status_code == 200, profile_only.text
-            assert profile_only.json()["facts"] == []
+            assert all(row['dimensions'] for row in profile_only.json()['indicators'])
+            assert {row['indicator_id'] for row in profile_only.json()['indicators']} == {'structure_age', 'one_axis_fixture'}
             profile_only_results = profile_only.json()["default_comparison"]["profile_comparisons"]
             age_comparison = next(row for row in profile_only_results if row["indicator"] == "structure_age")
             assert age_comparison["indicator"] == "structure_age"
