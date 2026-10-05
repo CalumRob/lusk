@@ -223,82 +223,66 @@ const prototypeCahierMobilite = computed(
 const prototypeAccesApi = computed(() => prototypeCahierMobilite.value && variante.value?.clef === 'E')
 const accesApi = ref<MobiliteAccessFacts | null>(null)
 const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
-const relancerAccesApi = ref(0)
-let sequenceAccesApi = 0
-
-watch(
-  [prototypeAccesApi, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
-    () => modeleTerritoire.model.value, relancerAccesApi],
-  (_values, _oldValues, onCleanup) => {
-    const sequence = ++sequenceAccesApi
-    accesApi.value = null
-    statutAccesApi.value = 'loading'
-    if (!prototypeAccesApi.value || !typeValide.value || !modeleTerritoire.model.value) return
-    const abort = new AbortController()
-    onCleanup(() => abort.abort())
-    const type = typeRoute.value
-    const code = idRoute.value
-    const mode = resolutionComparaison.value?.mode
-    const query = type === 'commune' && mode ? `?comparison=${encodeURIComponent(mode)}` : ''
-    void fetch(`/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(code)}/essential-services${query}`, {
-      signal: abort.signal,
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      return response.json() as Promise<unknown>
-    }).then((data) => {
-      if (sequence !== sequenceAccesApi) return
-      // Validate at the semantic boundary, before a stale static figure could render.
-      const facts = territoryFactsFor(toRaw(payloadPourRendu.value!), code, resolutionComparaison.value?.contexte ?? undefined)
-      if (!facts) throw new Error('Territoire inconnu')
-      const normalized = applyAccessApiFacts(facts, data, resolutionComparaison.value?.contexte?.scope.kind ?? null,
-        resolutionComparaison.value?.contexte?.scope.label ?? null)
-      accesApi.value = normalized.mobility.access
-      statutAccesApi.value = 'ready'
-    }).catch(() => {
-      if (sequence === sequenceAccesApi) statutAccesApi.value = 'error'
-    })
-  },
-  { immediate: true },
-)
-
-function rechargerAccesApi(): void {
-  relancerAccesApi.value += 1
-}
 const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const buildingFacts = ref<TerritoryFacts | null>(null)
-const retryBuilding = ref(0)
-let buildingRequest = 0
+const retryMobilityFacts = ref(0)
+let mobilityFactsRequest = 0
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+let lastMobilityFactsKey: string | null = null
 
 watch([prototypeAccesApi, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
-  () => modeleTerritoire.model.value, retryBuilding], (_values, _oldValues, onCleanup) => {
-  const request = ++buildingRequest
+  () => modeleTerritoire.model.value, retryMobilityFacts], (_values, _oldValues, onCleanup) => {
+  const request = ++mobilityFactsRequest
+  accesApi.value = null
+  statutAccesApi.value = 'loading'
   buildingFacts.value = null
   buildingStatus.value = 'loading'
-  if (!prototypeAccesApi.value || !typeValide.value || !modeleTerritoire.model.value || !payloadPourRendu.value) return
+  if (!prototypeAccesApi.value || !typeValide.value || !modeleTerritoire.model.value || !payloadPourRendu.value) {
+    lastMobilityFactsKey = null
+    return
+  }
   const mode = resolutionComparaison.value?.mode
-  const scope = resolutionComparaison.value?.contexte?.scope
-  if (typeRoute.value === 'commune' && (!mode || !scope)) {
+  const scope = resolutionComparaison.value?.contexte?.scope ??
+    modeleTerritoire.model.value.themes.mobilite?.comparisons.densite?.scope
+  const serviceMode = mode ?? (typeRoute.value === 'commune' ? 'densite' : null)
+  if (typeRoute.value === 'commune' && (!serviceMode || !scope)) {
+    statutAccesApi.value = 'error'
     buildingStatus.value = 'error'
     return
   }
+  const requestKey = `${typeRoute.value}/${idRoute.value}/${serviceMode ?? ''}/${retryMobilityFacts.value}`
+  if (lastMobilityFactsKey === requestKey) return
+  lastMobilityFactsKey = requestKey
   const controller = new AbortController()
   onCleanup(() => controller.abort())
   const code = idRoute.value
-  const query = mode ? `?comparison=${encodeURIComponent(mode)}` : ''
-  void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/building-access${query}`,
+  const query = serviceMode ? `?comparison=${encodeURIComponent(serviceMode)}` : ''
+  void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/themes/mobilite/facts${query}`,
     { signal: controller.signal }).then(async (response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return response.json() as Promise<unknown>
   }).then((data) => {
-    if (request !== buildingRequest || !payloadPourRendu.value) return
+    if (request !== mobilityFactsRequest || !payloadPourRendu.value || !isRecord(data)) return
     const facts = territoryFactsFor(toRaw(payloadPourRendu.value), code, resolutionComparaison.value?.contexte ?? undefined)
     if (!facts) throw new Error('Territoire inconnu')
-    buildingFacts.value = applyInitialBuildingApiFacts(facts, data, mode ?? null, scope?.kind ?? null, scope?.label ?? null)
+    const withAccess = applyAccessApiFacts(facts, data.essential_service_access,
+      scope?.kind ?? null, scope?.label ?? null)
+    const combined = applyInitialBuildingApiFacts(withAccess, data.building_access,
+      mode ?? null, scope?.kind ?? null, scope?.label ?? null)
+    accesApi.value = combined.mobility.access
+    buildingFacts.value = combined
+    statutAccesApi.value = 'ready'
     buildingStatus.value = 'ready'
-  }).catch(() => { if (request === buildingRequest) buildingStatus.value = 'error' })
+  }).catch(() => {
+    if (request === mobilityFactsRequest) {
+      statutAccesApi.value = 'error'
+      buildingStatus.value = 'error'
+    }
+  })
 }, { immediate: true })
 
-function rechargerBuilding(): void { retryBuilding.value += 1 }
+function rechargerMobilityFacts(): void { retryMobilityFacts.value += 1 }
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
     !prototypeCahierMobilite.value ||
@@ -312,15 +296,12 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
     resolutionComparaison.value?.contexte ?? undefined,
   )
   if (!facts) return null
-  const withBuilding = prototypeAccesApi.value
-    ? { ...facts, mobility: { ...facts.mobility,
-      accessRamp: buildingStatus.value === 'ready' ? buildingFacts.value?.mobility.accessRamp ?? null : null,
-      buildingDistribution: buildingStatus.value === 'ready' ? buildingFacts.value?.mobility.buildingDistribution ?? null : null,
-    } }
+  const contentFacts = prototypeAccesApi.value
+    ? statutAccesApi.value === 'ready' && buildingStatus.value === 'ready' && buildingFacts.value
+      ? buildingFacts.value
+      : { ...facts, mobility: { ...facts.mobility,
+        accessRamp: null, buildingDistribution: null } }
     : facts
-  const contentFacts = prototypeAccesApi.value && statutAccesApi.value === 'ready' && accesApi.value
-    ? { ...withBuilding, mobility: { ...withBuilding.mobility, access: accesApi.value } }
-    : withBuilding
   return resolveMobiliteThemeContent(contentFacts)
 })
 const paginationCahier = computed(() =>
@@ -467,9 +448,9 @@ watch(
               :pagination="paginationCahier"
                :comparison-options="variante.clef === 'E' ? optionsComparaison : []"
                  :access-status="variante.clef === 'E' ? statutAccesApi : undefined"
-                 :retry-access="rechargerAccesApi"
+                 :retry-access="rechargerMobilityFacts"
                  :building-status="variante.clef === 'E' ? buildingStatus : undefined"
-                 :retry-building="rechargerBuilding"
+                 :retry-building="rechargerMobilityFacts"
             />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation

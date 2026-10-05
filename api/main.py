@@ -172,8 +172,8 @@ class ReadRepository:
     def __init__(self, connections: ConnectionPool):
         self.connections = connections
 
-    def read(self, territory_id: str, comparison: str) -> dict:
-        return self._read("commune", territory_id, comparison)
+    def read(self, territory_id: str, comparison: str, *, connection=None) -> dict:
+        return self._read("commune", territory_id, comparison, connection=connection)
 
     def read_series(self, territory_type: str, territory_id: str, indicator_id: str,
                     scope_level: str, department_id: str | None = None,
@@ -437,8 +437,8 @@ class ReadRepository:
                     "points":focal["points"],"scope_series":[grouped[peer_id] for peer_id in peer_ids if peer_id in grouped],
                     "availability":"complete" if all(p["status"]=="measured" for p in focal["points"]) else "incomplete"}
 
-    def read_level(self, territory_type: str, territory_id: str) -> dict:
-        return self._read(territory_type, territory_id, None)
+    def read_level(self, territory_type: str, territory_id: str, *, connection=None) -> dict:
+        return self._read(territory_type, territory_id, None, connection=connection)
 
     def read_building_catalog(self) -> dict:
         with self.connections.connection() as connection:
@@ -660,11 +660,17 @@ class ReadRepository:
                     "direction": next(iter(directions)),
                 }
 
-    def _read(self, territory_type: str, territory_id: str, comparison: str | None) -> dict:
-        # A repeatable-read snapshot pins metadata and rows to one committed refresh.
-        with self.connections.connection() as connection:
-            with connection.transaction():
-                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+    def _read(self, territory_type: str, territory_id: str, comparison: str | None,
+              *, connection=None) -> dict:
+        # A caller may compose this projection into an existing read-only
+        # repeatable-read transaction (the Mobility theme snapshot does so).
+        # Standalone route callers retain ownership of connection/transaction.
+        owns_connection = connection is None
+        connection_context = self.connections.connection() if owns_connection else nullcontext(connection)
+        with connection_context as connection:
+            with (connection.transaction() if owns_connection else nullcontext()):
+                if owns_connection:
+                    connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 active = connection.execute(
                     """SELECT p.content_version, m.bretagne_kind, m.bretagne_label
                        FROM table_publication p CROSS JOIN access_publication_metadata m
@@ -2183,6 +2189,8 @@ def theme_facts(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str = Path(min_length=1, max_length=32),
     theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
+    service_comparison: Literal["densite", "epci", "bretagne"] | None = Query(
+        default=None, alias="comparison"),
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Compact published focal facts/profiles.
@@ -2190,6 +2198,8 @@ def theme_facts(
     This endpoint deliberately reports its coverage per published shape; a
     scalar/profile subset must never be mistaken for a complete theme model.
     """
+    if territory_type != "commune" and service_comparison is not None:
+        raise HTTPException(422, "Explicit service comparison modes apply only to communes")
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
@@ -2515,12 +2525,22 @@ def theme_facts(
                 profiles=profiles, profile_version=profile_version, has_readings=bool(readings))
             building_access = None
             service_reference = None
+            essential_service_access = None
             if theme_id == "mobilite":
+                # Reuse the registered essential-service reader inside this
+                # endpoint's snapshot. For communes this is the established
+                # density-class default; larger territory levels use their
+                # same-level published peers. Do not open a nested connection.
+                service_mode = service_comparison or "densite"
+                service_snapshot = (repository.read(territory_id, service_mode, connection=conn)
+                    if territory_type == "commune"
+                    else repository.read_level(territory_type, territory_id, connection=conn))
+                essential_service_access = compare(service_snapshot).model_dump(mode="json")
                 density_distribution=_mobility_density_distribution_snapshot(conn,territory_type,territory_id)
                 try:
                     building_access = repository.read_building_initial(
                         territory_type, territory_id,
-                        "densite" if territory_type == "commune" else None,
+                        service_mode if territory_type == "commune" else None,
                         connection=conn)
                 except HTTPException as exc:
                     # Older installations can serve the existing theme facts
@@ -2555,6 +2575,8 @@ def theme_facts(
         payload["density_distribution"] = density_distribution
     if service_reference is not None:
         payload["service_reference"] = service_reference
+    if essential_service_access is not None:
+        payload["essential_service_access"] = essential_service_access
     return payload
 
 

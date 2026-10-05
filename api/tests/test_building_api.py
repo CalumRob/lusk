@@ -2,7 +2,7 @@
 
 from fastapi.testclient import TestClient
 
-from api.main import ReadRepository, _building_publication, app, get_repository
+from api.main import ReadRepository, _building_publication, app, compare, get_repository
 from api.tests.test_building_comparison import curve
 
 
@@ -207,6 +207,46 @@ def test_initial_building_access_rejects_arbitrary_comparison_scope():
     finally:
         app.dependency_overrides.clear()
     assert response.status_code == 422
+
+
+def test_essential_service_snapshot_can_join_callers_repeatable_read_transaction():
+    class Result:
+        def __init__(self, rows): self.rows = rows
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+
+    class Connection:
+        def __init__(self): self.calls = []; self.transaction_calls = 0
+        def transaction(self):
+            self.transaction_calls += 1
+            raise AssertionError("caller owns transaction")
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "access_publication_metadata" in sql:
+                return Result([("services-v1", "communes-densite", "communes denses")])
+            if "FROM territory_reference" in sql and "WHERE territory_id" in sql:
+                return Result([("A", "A", "commune", "E", "D1", "communes denses")])
+            if "FROM essential_service_access" in sql:
+                return Result([("A", service, mode, 0.6, f"{service}-{mode}", "high",
+                                "src", "Source", "2024", None, None)
+                               for service in ("admin", "food", "health", "bank", "school")
+                               for mode in ("walk_transit", "bike", "car")])
+            raise AssertionError(sql)
+
+    class Connections:
+        def connection(self): raise AssertionError("must reuse caller connection")
+
+    connection = Connection()
+    raw = ReadRepository(Connections()).read("A", "densite", connection=connection)
+    response = compare(raw).model_dump(mode="json")
+
+    assert response["publication_id"] == "services-v1"
+    assert response["scope"] == {"kind": "communes-densite", "label": "communes denses",
+                                 "member_count": 1}
+    assert len(response["services"]) == 5
+    assert response["services"][0]["modes"]["car"]["value"] == 0.6
+    assert connection.transaction_calls == 0
+    assert all("SET TRANSACTION" not in sql for sql, _ in connection.calls)
 
 
 def test_region_initial_access_returns_focal_facts_without_comparison():

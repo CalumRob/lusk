@@ -11,7 +11,12 @@ read-surface contract for the incremental scalar/profile work under #627 and
 - `GET /api/territories/{type}/{id}/themes/{theme}/facts` returns the focal
   facts/profiles plus compact default-comparison summaries. Descriptor lookup,
   publication markers, focal facts, profile facet values and comparison
-  summaries are read inside one read-only repeatable-read transaction.
+  summaries are read inside one read-only repeatable-read transaction. The
+  Mobilité response also carries `essential_service_access`, using the existing
+  grouped service response contract and the same transaction as its other
+  focal evidence. A commune defaults to its density-class service comparison;
+  `?comparison=densite|epci|bretagne` selects one of the established commune
+  scopes. Other territory levels retain their same-level comparison behavior.
 - `GET /api/territories/{type}/{id}/indicators/{indicator}` resolves a stable
   indicator identity through the published scalar/profile/legacy-series
   descriptors in one read-only repeatable-read transaction. Scalar and series

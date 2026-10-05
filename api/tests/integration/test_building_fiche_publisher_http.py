@@ -98,6 +98,12 @@ def test_registered_canonical_building_publisher_reaches_fiche_http():
             assert focal_response.status_code == 200, focal_response.text
             focal = focal_response.json()
             assert "building_access" in focal, "theme facts omit the registered building publication"
+            assert "essential_service_access" in focal, "theme facts omit essential-service evidence"
+            assert len(focal["essential_service_access"]["services"]) == 5
+            assert any("FROM essential_service_access" in statement for statement in fact_statements), \
+                "essential-service rows were not read by the atomic theme snapshot"
+            assert focal["essential_service_access"] == client.get(
+                f"/api/territories/commune/{territory}/essential-services?comparison=densite").json()
             building = focal["building_access"]
             assert building["territory"]["id"] == territory
             assert building["availability"] == "complete"
