@@ -143,6 +143,26 @@ function payloadFromSql(payload: Payload, response: Row): Payload {
   const indicators = rows(response.facts, 'facts').map((fact) => indicatorFromSql(
     target, fact.indicator_id, fact.value, fact.status, fact.unit, fact.sources,
   ))
+  const territories = [...payload.territoires]
+  if (response.service_reference !== undefined) {
+    const reference = response.service_reference
+    if (!isRecord(reference) || !isRecord(reference.territory) ||
+        reference.territory.territory_type !== 'region' || !text(reference.territory.territory_id) ||
+        !text(reference.territory.name) || reference.indicator_id !== 'nb_buildings') {
+      throw new Error('Référence SQL des services invalide')
+    }
+    const referenceTerritory: Payload['territoires'][number] = {
+      territoire: reference.territory.territory_id, type: 'region', nom: reference.territory.name,
+      departement: null, epci: null,
+    }
+    if (!territories.some((territory) => territory.territoire === referenceTerritory.territoire)) {
+      territories.push(referenceTerritory)
+    }
+    if (target.territoire !== referenceTerritory.territoire) {
+      indicators.push(indicatorFromSql(referenceTerritory, reference.indicator_id, reference.value,
+        reference.status, reference.unit, reference.sources))
+    }
+  }
   for (const profile of rows(response.profiles, 'profiles')) {
     if (!text(profile.indicator) || !Array.isArray(profile.cells)) throw new Error('Profil SQL Mobilité invalide')
     for (const cell of rows(profile.cells, 'profile.cells')) {
@@ -188,7 +208,7 @@ function payloadFromSql(payload: Payload, response: Row): Payload {
   const building = buildingRows(response, target)
   // Values come only from the SQL product. The original payload contributes
   // territory identity and declared presentation metadata, not numeric rows.
-  return { ...payload, indicateurs: indicators, histoires: [], profilsAccesBpe: bpeRows,
+  return { ...payload, territoires: territories, indicateurs: indicators, histoires: [], profilsAccesBpe: bpeRows,
     distributionAccesBatiments: building.distribution, rampeAccesBatiments: building.ramp }
 }
 

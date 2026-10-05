@@ -198,6 +198,60 @@ async function monter(
 describe('TerritoireView — modèle atomique par territoire', () => {
   beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('API not configured in tests'))))
   afterEach(() => vi.unstubAllGlobals())
+  it.skipIf(!process.env.LUSK_MOUNTED_E_HTTP_FIXTURE)('consumes real PostgreSQL HTTP responses in mounted E', async () => {
+    const evidence = JSON.parse(readFileSync(process.env.LUSK_MOUNTED_E_HTTP_FIXTURE!, 'utf8'))
+    const model = validerModeleTerritoire(evidence.model, 'gate/22001.json', { type: 'commune', territoire: '22001' })
+    model.cohortTerritories = evidence.cohort
+    // The companion Python test executes the real HTTP reads while its SQL schema is live.
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
+      if (url.endsWith('/facts')) return { ok: true, json: async () => evidence.focal }
+      if (url.endsWith('/comparison')) {
+        expect(JSON.parse(String(options?.body)).selection).toEqual(evidence.comparison.selection)
+        return { ok: true, json: async () => evidence.comparison }
+      }
+      throw new Error(`Not a product-data request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchApi)
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
+    const rendered = () => wrapper.findComponent({ name: 'VarianteCahierLibre' }).props('content') as any
+    const section = (key: string) => rendered().units.flatMap((unit: any) => unit.sections).find((item: any) => item.key === key)
+    expect(wrapper.find('[data-section="distribution-acces-par-batiment"] .bivariate-evidence').exists()).toBe(true)
+    expect(wrapper.text()).toContain('SQL gate breadth')
+    expect(JSON.stringify(section('reseaux'))).toContain('456')
+    expect(JSON.stringify(section('offre-cyclable'))).toContain('456')
+    expect(JSON.stringify(section('stationnement'))).toContain('123')
+    expect(section('stationnement').evidence.carSpaces.fact.value).toBeNull()
+    expect(section('stationnement').evidence.carSpaces.fact.availability).toBe('incomplete')
+    expect(JSON.stringify(section('profils-acces-par-mode'))).toContain('SQL vélo class')
+    expect(section('services-essentiels').evidence.totalBuildings.fact.value).toBe(120)
+    expect(section('services-essentiels').evidence.totalBrittanyBuildings.fact.value).toBe(9876)
+    expect(section('resume').evidence.losses.diversity.walkTransit.fact.value).toBe(8)
+    expect(section('resume').evidence.losses.diversity.bike.fact.value).toBe(7)
+    expect(rendered().sourceRegister.some((source: any) => JSON.stringify(source).includes('SQL gate source'))).toBe(true)
+    expect(rendered().sourceRegister.filter((source: any) => source.source === 'SQL gate source')
+      .every((source: any) => source.referenceDate === null && source.publicationDate === null)).toBe(true)
+    const focalFigures = wrapper.findAll('.access-foot-summary').map((figure) => figure.text())
+    expect(focalFigures).toHaveLength(5)
+    expect(focalFigures.every((text) => text.includes('42'))).toBe(true)
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/facts'))).toHaveLength(1)
+    await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'epci' } })
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(1)
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/facts'))).toHaveLength(1)
+    expect(wrapper.findAll('.access-foot-summary').map((figure) => figure.text())).toEqual(focalFigures)
+    await router.replace({ query: { theme: 'habitat', variant: 'E', comparaison: 'epci' } })
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => url.includes('/api/'))).toHaveLength(2)
+    wrapper.unmount()
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: evidence.unavailable_status,
+      json: async () => evidence.unavailable })))
+    const { wrapper: failed } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
+    expect(failed.find('[data-section="distribution-acces-par-batiment"] .bivariate-evidence').exists()).toBe(false)
+    expect(failed.findAll('.access-figure')).toHaveLength(0)
+    expect(failed.find('[role="alert"]').exists()).toBe(true)
+    failed.unmount()
+  })
   it('keeps the building figures without exposing an interactive peer selector', async () => {
     await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',

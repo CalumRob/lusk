@@ -560,7 +560,7 @@ watch(
                  cinq thèmes éditoriaux — même props, zéro fetch propre. -->
             <component
               :is="variante.composant"
-              v-else-if="ongletTheme && variante && variante.clef !== 'D'"
+              v-else-if="ongletTheme && variante && !['D', 'E'].includes(variante.clef)"
               :theme="ongletTheme.theme"
               :payload="ongletTheme.payload"
               :territoire="idRoute"
