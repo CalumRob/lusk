@@ -211,6 +211,28 @@ building distribution bins or quantiles, which have separate figure contracts.
 The registered publisher replaces only this family atomically and the theme
 facts reader returns 503 for a missing/stale marker or unavailable source clock.
 Fresh installs carry the same table and marker allow-list in `schema.sql`.
+
+# Migration 024 — focal Mobilité density distribution
+
+Migration 024 adds an independently versioned, shape-specific publication for
+the focal `dens_min`/`dens_max` range and paired ordered `dens_N`/`dec_N`
+coordinates. It is not a median profile and contains no peer cloud. Its
+descriptor declares focal eligibility from producer metadata (independent of
+the narrower figure-comparison levels) and each fact row binds to the already registered immutable
+`mobilite_snapshot` vintage and the territory-reference publication. The
+publisher validates closed axes, territory identity, source-clock compatibility,
+inserted counts, retry/no-op and transaction rollback; it does not alter legacy
+source or vintage records. The Mobilité theme-facts reader returns this focal
+distribution only when its marker, descriptor, reference, source clock and
+requested territory coordinates are compatible. Fresh installs carry the same
+tables, validation triggers, grants and marker allow-list in `schema.sql`.
+
+`pipeline/scripts/smoke-mobility-density-distribution-postgres.R` rehearses 024
+over prior reading facts/markers in a random owned schema in `lusk_it_contract`,
+then invokes the registered publisher with a three-territory fixture and checks
+the focal HTTP payload, unchanged retry, and failed-refresh rollback. It does
+not read or publish the canonical full set and is not production deployment or
+canonical parity evidence.
 # Migration 017 — declared source absence for owned series
 
 Migration 017 adds a constrained `absence_semantics` declaration to the shared
