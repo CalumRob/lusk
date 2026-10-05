@@ -17,17 +17,18 @@ class Result:
 
 
 class Connection:
-    def __init__(self, *, readings, associations, publication):
+    def __init__(self, *, readings, associations, publication, focal_reading=True):
         self.readings = readings
         self.associations = associations
         self.publication = publication
+        self.focal_reading = focal_reading
         self.queries = []
 
     def execute(self, sql, params=()):
         sql = " ".join(str(sql).split())
         self.queries.append(sql)
         if "SELECT groupe FROM milieux_typed_reading" in sql:
-            return Result([("land",)])
+            return Result([("land",)] if self.focal_reading else [])
         if "FROM milieux_typed_reading r JOIN territory_reference" in sql:
             return Result(self.readings)
         if "FROM milieux_reading_source b" in sql:
@@ -63,11 +64,15 @@ def test_milieux_cloud_returns_only_selected_plot_facts_and_provenance_windows()
 
 
 def test_milieux_cloud_preserves_unavailable_empty_group_without_invented_points():
-    cloud = _milieux_reading_cloud(Connection(readings=[], associations=[], publication=None),
+    connection = Connection(readings=[], associations=[], publication=None, focal_reading=False)
+    cloud = _milieux_reading_cloud(connection,
         ("reading-v1", 2, "reference-v1", "reference-v1", None), "commune", "focal", "commune", [], None)
     assert cloud["status"] == "unavailable"
     assert cloud["reason"] == "no_selected_members"
+    assert cloud["groupe"] is None
+    assert cloud["selected_member_count"] == 0 and cloud["plotted_member_count"] == 0
     assert cloud["points"] == []
+    assert connection.queries == []  # no focal lookup when selection is empty
 
 
 def test_milieux_cloud_fails_closed_for_missing_peer_or_incomplete_provenance():

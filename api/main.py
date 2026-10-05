@@ -1274,6 +1274,10 @@ def _milieux_reading_marker(conn):
 
 def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_type, members, scope):
     """Return only selected Milieux cloud coordinates and identities; never focal facts/history."""
+    if not members:
+        return {"status":"unavailable","reason":"no_selected_members","groupe":None,
+            "scope":scope,"selected_member_count":0,"plotted_member_count":0,
+            "content_version":marker[0],"points":[]}
     focal = conn.execute("SELECT groupe FROM milieux_typed_reading WHERE territory_id=%s AND territory_type=%s ORDER BY groupe",
         (territory_id, territory_type)).fetchall()
     if len(focal) != 1:
