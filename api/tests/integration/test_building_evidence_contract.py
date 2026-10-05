@@ -253,3 +253,36 @@ def test_building_descriptor_constraints_and_atomic_refresh(building_db_env, lay
         if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(building_db_env["publish_dsn"], autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+def test_initial_building_response_resolves_vintage_identity_not_display_version(building_db_env):
+    """A tiny real SQL read proves the adapter's source-clock response contract."""
+    import psycopg
+    from api.main import ReadRepository
+
+    schema = "it_building_read_" + uuid.uuid4().hex[:16]
+    scoped = _schema_dsn(building_db_env["publish_dsn"], schema)
+    created = False
+    try:
+        with psycopg.connect(building_db_env["publish_dsn"], autocommit=True) as connection:
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+            created = True
+        with psycopg.connect(scoped, autocommit=True) as connection:
+            connection.execute((Path(__file__).resolve().parents[2] / "schema.sql").read_text(encoding="utf-8"))
+            _seed_fresh_reference(connection)
+            with connection.transaction():
+                _publish_fixture(connection, "reader")
+            # The FK stores vintage_id, not the human-facing source version.
+            connection.execute("UPDATE source_vintage SET version='Descriptive version', reference_date=NULL WHERE source_id='snapshot'")
+            with connection.transaction():
+                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                data = ReadRepository(None).read_building_initial("commune", "A", "bretagne", connection=connection)
+            assert data["availability"] == "complete"
+            assert len(data["ramp"]) == 33
+            assert len(data["distribution"]) == 30
+            assert data["sources"] == [{"source_id": "snapshot", "name": "Canonical fixture source",
+                "version": "Descriptive version", "reference_date": None, "publication_date": "2026-02-01"}]
+    finally:
+        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(building_db_env["publish_dsn"], autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
