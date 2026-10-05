@@ -1108,7 +1108,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 ORDER BY indicator_id""",(theme_id,indicator_id,indicator_id)).fetchall()
     collections = collection_descriptors(conn,indicator_id=indicator_id,theme_id=theme_id)
     reading_marker = _demographic_reading_marker(conn) if theme_id == "demographie" else None
-    if not scalar_descriptors and not profiles and not owned_descriptors and not collections and not has_readings and not reading_marker and not bpe_available:
+    milieux_marker = _milieux_reading_marker(conn) if theme_id == "milieux" else None
+    if not scalar_descriptors and not profiles and not owned_descriptors and not collections and not has_readings and not reading_marker and not milieux_marker and not bpe_available:
         raise HTTPException(404, "No published facts for this theme")
     reference = conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
@@ -1186,10 +1187,13 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     results.extend(collection_results)
     reading_cloud = (_demographic_reading_cloud(conn, reading_marker, territory_type, territory_id,
         cohort_type, members, scope) if reading_marker else None)
+    if milieux_marker:
+        reading_cloud = _milieux_reading_cloud(conn, milieux_marker, territory_type, territory_id,
+            cohort_type, members, scope)
     return {"contract": "theme-comparison-v1", "complete_theme": False, "theme_id": theme_id,
         "content_version": scalar_marker[0] if scalar_marker else (
-            next(iter(owned_markers.values()))[1] if owned_markers else collection_results[0]["content_version"] if collection_results else reading_marker[0] if reading_marker else (_bpe_profile_publication(conn)[0] if bpe_available else None)),
-        "reading_content_version": reading_marker[0] if reading_marker else None,
+             next(iter(owned_markers.values()))[1] if owned_markers else collection_results[0]["content_version"] if collection_results else reading_marker[0] if reading_marker else milieux_marker[0] if milieux_marker else (_bpe_profile_publication(conn)[0] if bpe_available else None)),
+        "reading_content_version": reading_marker[0] if reading_marker else milieux_marker[0] if milieux_marker else None,
         "reading_cloud": reading_cloud,
         "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
         "reference_content_version": reference[0],
@@ -1251,6 +1255,65 @@ def _demographic_reading_cloud(conn, marker, territory_type, territory_id,
             "vintage_id":marker[7],"version":marker[8],
             "reference_date":marker[9].isoformat() if marker[9] else None,
             "publication_date":marker[10].isoformat() if marker[10] else None},
+        "content_version":marker[0],"points":points}
+
+
+def _milieux_reading_marker(conn):
+    """Pin the typed Milieux reading and shared territory reference in this snapshot."""
+    if not conn.execute("SELECT to_regclass('milieux_typed_reading')").fetchone()[0]:
+        return None
+    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version,
+        p.content_version FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+        WHERE p.table_name='milieux_typed_reading'""").fetchone()
+    if not marker:
+        raise HTTPException(503, "Milieux reading publication is unavailable")
+    if not marker[0] or marker[1] < 1 or marker[2] != marker[3]:
+        raise HTTPException(503, "Milieux reading publication is unavailable or incompatible")
+    return marker
+
+
+def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_type, members, scope):
+    """Return only selected Milieux cloud coordinates and identities; never focal facts/history."""
+    focal = conn.execute("SELECT groupe FROM milieux_typed_reading WHERE territory_id=%s AND territory_type=%s ORDER BY groupe",
+        (territory_id, territory_type)).fetchall()
+    if len(focal) != 1:
+        raise HTTPException(503, "Milieux cloud reading identity is ambiguous or absent")
+    group = focal[0][0]
+    points = []
+    if members:
+        rows = conn.execute("""SELECT r.territory_id,r.territory_type,t.name,r.periode_pop,r.periode_artif,
+            r.taux_variation_population,r.artif_m2_par_habitant,r.artif_m3_par_habitant,r.status,r.source_id,r.vintage_id
+            FROM milieux_typed_reading r JOIN territory_reference t
+              ON t.territory_id=r.territory_id AND t.territory_type=r.territory_type
+            WHERE r.groupe=%s AND r.territory_type=%s AND r.territory_id=ANY(%s::text[])
+            ORDER BY t.name,r.territory_id""", (group,cohort_type,list(members))).fetchall()
+        if len(rows) != len(set(members)):
+            raise HTTPException(503, "Selected Milieux cloud members have missing reading facts")
+        if any(row[8] != "measured" or any(value is None for value in row[5:8]) for row in rows):
+            raise HTTPException(503, "Selected Milieux cloud facts are unavailable or incomplete")
+        # Source rows are the typed reading's registered population/state provenance. Check the
+        # actual OCS-GE state coordinates and period before exposing a point.
+        for row in rows:
+            associations = conn.execute("""SELECT field_key,observation_period,state_role,dataset_id,dataset_content_version
+                FROM milieux_reading_source WHERE territory_id=%s AND territory_type=%s AND groupe=%s
+                ORDER BY field_key""", (row[0],row[1],group)).fetchall()
+            population = [a for a in associations if a[0] == "population"]
+            m2 = [a for a in associations if a[0] == "artif_m2_par_habitant"]
+            m3 = [a for a in associations if a[0] == "artif_m3_par_habitant"]
+            if (len(population) != 1 or len(m2) != 1 or len(m3) != 1 or
+                population[0][1] != row[3] or m2[0][1] != row[4] or m3[0][1] != row[4] or
+                m2[0][2] != "M2" or m3[0][2] != "M3"):
+                raise HTTPException(503, "Milieux cloud source windows are incompatible")
+            for association in (m2[0],m3[0]):
+                current=conn.execute("SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=%s",
+                    (association[3],)).fetchone()
+                if not current or current[0] != association[4] or current[1] != marker[3]:
+                    raise HTTPException(503, "Milieux cloud OCS-GE publication is unavailable or incompatible")
+            points.append({"territory":{"territory_id":row[0],"territory_type":row[1],"name":row[2]},
+                "periode_pop":row[3],"periode_artif":row[4],"taux_variation_population":row[5],
+                "artif_m2_par_habitant":row[6],"artif_m3_par_habitant":row[7]})
+    return {"status":"available" if points else "unavailable",
+        "reason":None if points else "no_selected_members","groupe":group,"scope":scope,
         "content_version":marker[0],"points":points}
 
 
