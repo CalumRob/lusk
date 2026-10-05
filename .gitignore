@@ -25,6 +25,7 @@
 !/pipeline/maps/production/
 !/pipeline/maps/production/**
 /pipeline/maps/production/output/
+/pipeline/maps/production/.runtime/
 /pipeline/maps/production/**/__pycache__/
 /pipeline/maps/production/**/*.pyc
 

@@ -8,6 +8,7 @@ from hashlib import sha256
 from pathlib import Path
 import sys
 from unittest.mock import patch
+from qgis.PyQt.QtGui import QColor, QImage
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
@@ -51,7 +52,153 @@ class FixtureAdapter:
     def validate(self, path, feature, profile): pass
 
 
+class WebPFixtureAdapter(FixtureAdapter):
+    def __init__(self):
+        super().__init__()
+        self.fail_validation = False
+        self.fail_encoding = False
+        self.prepared = 0
+        self.render_calls = 0
+
+    def output_contract(self, profile):
+        from webp_encoding import WEBP_ENCODING_CONTRACT
+        return {**WEBP_ENCODING_CONTRACT, "dimensions": list(profile.size),
+            "alpha": "lossless" if profile.transparent_outside else "opaque-rgb"}
+
+    def expected_output_path(self, feature, profile, output_dir):
+        return Path(output_dir) / f"fixture-{profile.name}.webp"
+
+    def prepare_run(self, *args, **kwargs):
+        self.prepared += 1
+
+    def render(self, recipe, feature, profile, output_dir):
+        from webp_encoding import encode_qimage
+        self.render_calls += 1
+        if self.fail_encoding:
+            raise RuntimeError("injected conversion failure")
+        image = QImage(*profile.size, QImage.Format_RGBA8888)
+        image.fill(QColor(36, 80, 120, 255))
+        if profile.transparent_outside:
+            image.setPixelColor(0, 0, QColor(0, 0, 0, 0))
+        if self.fail_validation:
+            stage = Path(output_dir) / ".broken.stage.webp"
+            stage.write_bytes(b"bad WebP bytes")
+            return stage
+        stage = Path(output_dir) / f".fixture-{profile.name}.stage.webp"
+        return encode_qimage(image, stage, preserve_alpha=profile.transparent_outside)
+
+    def promote_output(self, staged, final):
+        import os
+        os.replace(staged, final)
+        return final
+
+    def discard_output(self, staged):
+        Path(staged).unlink(missing_ok=True)
+
+
 class ContractTests(unittest.TestCase):
+    def test_webp_canonical_output_is_promoted_qaed_and_legacy_png_is_not_reused(self):
+        from webp_encoding import validate_webp
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        feature = {"geometry": "polygon", "territory": {"kind": "test", "code": "1"}, "mode": "test"}
+        with TemporaryDirectory() as directory:
+            legacy = run_production(recipe, Binding("fixture", MapSet({"shape": [feature]})),
+                "representative", ["inline"], FixtureAdapter(), directory)
+            legacy_path = Path(legacy.outputs[0]["path"])
+            adapter = WebPFixtureAdapter()
+            current = run_production(recipe, Binding("fixture", MapSet({"shape": [feature]})),
+                "representative", ["inline"], adapter, directory)
+            final = Path(current.outputs[0]["path"])
+            self.assertEqual(current.outputs[0]["decision"], "rendered")
+            self.assertTrue(final.is_file() and final.suffix == ".webp")
+            self.assertFalse(list(Path(directory).glob("*.stage.webp")))
+            self.assertEqual(validate_webp(final, __import__("runner").PROFILES["inline"]).size,
+                (900, 900))
+            self.assertEqual(current.outputs[0]["artifact_contract"]["quality"], 80)
+            self.assertEqual(current.manifest["artifact_contracts"]["inline"]["method"], 4)
+            expected = current.manifest["expected_outputs"][0]
+            self.assertEqual(expected["artifact_contract"]["format"], "webp")
+            self.assertTrue(expected["path"].endswith(".webp"))
+            self.assertTrue(legacy_path.is_file(), "historical PNG cache products remain untouched")
+
+    def test_encoding_contract_change_invalidates_effective_output_identity(self):
+        from webp_encoding import WEBP_ENCODING_CONTRACT
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        binding = Binding("fixture", MapSet({"shape": [{"geometry": "polygon",
+            "territory": {"kind": "test", "code": "1"}, "mode": "test"}]}))
+        adapter = WebPFixtureAdapter()
+        with TemporaryDirectory() as directory:
+            first = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            with patch.dict(WEBP_ENCODING_CONTRACT, {"quality": 79}):
+                second = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+        self.assertEqual(second.outputs[0]["decision"], "rendered")
+        self.assertNotEqual(first.outputs[0]["effective_identity"], second.outputs[0]["effective_identity"])
+
+    def test_failed_webp_qa_keeps_prior_canonical_output_and_cleans_stage(self):
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        feature = {"geometry": "polygon", "territory": {"kind": "test", "code": "1"}, "mode": "test"}
+        binding = Binding("fixture", MapSet({"shape": [feature]}))
+        adapter = WebPFixtureAdapter()
+        with TemporaryDirectory() as directory:
+            first = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            final = Path(first.outputs[0]["path"])
+            previous_bytes = final.read_bytes()
+            adapter.fail_validation = True
+            failed = run_production(recipe, binding, "representative", ["inline"], adapter,
+                directory, refresh=True)
+            self.assertEqual(failed.qa["status"], "incomplete")
+            self.assertEqual(final.read_bytes(), previous_bytes)
+            self.assertEqual(list(Path(directory).glob(".*.stage.webp")), [])
+            checkpoint = next(Path(directory).glob(".production-checkpoint-*.jsonl"))
+            records = [json.loads(line)["payload"] for line in checkpoint.read_text().splitlines()]
+            self.assertTrue(any(row.get("kind") == "output-failure" for row in records))
+
+    def test_encoder_exception_before_return_cannot_delete_previous_final(self):
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        binding = Binding("fixture", MapSet({"shape": [{"geometry": "polygon",
+            "territory": {"kind": "test", "code": "1"}, "mode": "test"}]}))
+        adapter = WebPFixtureAdapter()
+        with TemporaryDirectory() as directory:
+            first = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            final = Path(first.outputs[0]["path"])
+            previous = final.read_bytes()
+            adapter.fail_encoding = True
+            interrupted = run_production(recipe, binding, "representative", ["inline"], adapter,
+                directory, refresh=True)
+            self.assertEqual(interrupted.qa["status"], "incomplete")
+            self.assertEqual(final.read_bytes(), previous)
+            self.assertFalse(list(Path(directory).glob(".*.stage.webp")))
+
+    def test_crash_after_atomic_promotion_recovers_durable_pending_candidate(self):
+        from checkpoint import OutputCheckpoint
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        binding = Binding("fixture", MapSet({"shape": [{"geometry": "polygon",
+            "territory": {"kind": "test", "code": "1"}, "mode": "test"}]}))
+        adapter = WebPFixtureAdapter()
+        with TemporaryDirectory() as directory:
+            with patch.object(OutputCheckpoint, "record_success", side_effect=OSError("power cut after promotion")):
+                with self.assertRaisesRegex(OSError, "power cut"):
+                    run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            final = adapter.expected_output_path(binding.map_set.layers["shape"][0],
+                __import__("runner").PROFILES["inline"], Path(directory))
+            self.assertTrue(final.is_file())
+            first_render_count = adapter.render_calls
+            resumed = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
+            self.assertEqual(resumed.outputs[0]["decision"], "reused-output")
+            self.assertEqual(adapter.render_calls, first_render_count)
+
+    def test_missing_pipeline_pillow_fails_before_output_or_shared_preparation(self):
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        feature = {"geometry": "polygon", "territory": {"kind": "test", "code": "1"}, "mode": "test"}
+        adapter = WebPFixtureAdapter()
+        with TemporaryDirectory() as directory:
+            with patch("webp_encoding._pillow", side_effect=RuntimeError("missing pinned encoder")):
+                with self.assertRaisesRegex(RuntimeError, "missing pinned encoder"):
+                    run_production(recipe, Binding("fixture", MapSet({"shape": [feature]})),
+                        "representative", ["inline"], adapter, directory)
+            self.assertEqual(adapter.prepared, 0)
+            self.assertFalse(Path(directory, ".production-manifest.json").exists())
+
     def test_subset_run_preserves_omitted_cached_output_records(self):
         recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
         features = [{"geometry": "polygon", "territory": {"kind": "test", "code": code}, "mode": "test"}
@@ -375,7 +522,9 @@ class ContractTests(unittest.TestCase):
 
     def test_profiles_have_stable_dimensions(self):
         from runner import PROFILES
-        self.assertEqual(PROFILES["inspection"].size, (3200, 3200))
+        from inspection_plate import OUTPUT_SIZE
+        self.assertEqual(PROFILES["inspection"].size, (2400, 2400))
+        self.assertEqual(PROFILES["inspection"].size, (OUTPUT_SIZE, OUTPUT_SIZE))
         self.assertEqual(PROFILES["inline"].size, (900, 900))
 
     def test_inline_png_requires_transparent_and_opaque_alpha_samples(self):

@@ -112,11 +112,29 @@ Run the fixture suites from the repository root with QGIS-enabled Python:
 python -m unittest pipeline.maps.production.tests.test_contract pipeline.maps.production.tests.test_network_cache pipeline.maps.production.tests.test_network -v
 python -m unittest pipeline.maps.production.tests.test_inline_contract -v
 python -m unittest pipeline.maps.production.tests.test_approval -v
+python -m unittest pipeline.maps.production.tests.test_checkpoint pipeline.maps.production.tests.test_webp_encoding -v
 ```
+
+Network map products use a pipeline-local, pinned Pillow WebP encoder rather
+than QGIS's bundled Pillow. Install it with the QGIS Python launcher before
+running production renders:
+
+```powershell
+& .\pipeline\maps\production\install_webp_encoder.ps1
+```
+
+The setup pins Pillow 12.3.0 and installs only under
+`pipeline/maps/production/.runtime/site-packages`; it does not modify QGIS,
+global Python, or other pipeline runtimes. The network artifact contract is
+WebP RGB quality 80, method 4, exact transparent RGB preservation, lossless
+alpha quality 100, native 2400×2400 inspection and 900×900 inline. Contract
+settings and dimensions participate in renderer, effective-output and approval
+identities. Existing reviewed PNG artifacts are historical evidence and are
+not overwritten or reused as canonical WebP outputs.
 
 `tests/render_rennes_car.py` is the bounded car-pair visual/alpha contract check.
 `tests/render_representative.py` renders all three territories, all three modes,
-and both profiles through `run_production()`. It checks the 18-output identity
+and both profiles through `run_production()` at the canonical native sizes. It checks the 18-output identity
 set and writes `output/manifest.json` and `output/qa.json` only after the run
 passes. The manifest records input fingerprints, a render identity covering the
 recipe/foundation/profile contract, hashed family code/config/assets, and the
@@ -124,6 +142,27 @@ QGIS/Qt/Python runtime; it also lists authoritative source paths and file
 versions plus a SHA-256 per rendered artifact. Render/QA timings and preparation
 progress are printed during execution. Outputs and source caches remain ignored
 local pipeline artifacts, never application publication assets. This representative
+verification does not publish anything.
+
+For a separate native WebP review run that must not touch historical PNG evidence,
+pass a worktree-owned output directory and explicit read-only paths for the
+existing main-checkout raw sources, source-cache generations and validated
+official-context generation. `--read-only-source-cache` fails closed on any
+missing/invalid source generation instead of creating or mutating one:
+
+```powershell
+& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+  pipeline/maps/production/tests/render_representative.py `
+  --output-dir pipeline/maps/production/output/webp-native-review `
+  --raw-dir E:\Lusk\pipeline\data\raw `
+  --network-cache-root E:\Lusk\pipeline\maps\.cache\network-sources `
+  --read-only-source-cache `
+  --context-cache-root E:\Lusk\pipeline\maps\production\output\.stage-cache\official-context
+```
+
+Run this proof only after scoped implementation review; then inspect its fresh
+WebP artifacts and QA before recording a new human approval. The worker does
+not create approval records or run a full batch.
 
 ## Approval-gated full network batch
 
@@ -148,7 +187,7 @@ python pipeline/maps/production/record_spot_check.py --qa pipeline/maps/producti
 
 The reviewer must open the representative pair for all three territories and
 modes before recording approval. The resulting record is bound to each of the
-18 current effective visible-input/profile identities and the recipe,
+18 current effective visible-input/profile/encoding identities and the recipe,
 foundation and renderer identity. Full runs first reject malformed, wrong
 recipe/renderer, partial-cohort or non-affirmative records cheaply. They then
 prepare only the bounded representative footprint in a temporary stage area,

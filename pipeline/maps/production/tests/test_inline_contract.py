@@ -113,15 +113,15 @@ class InlineProfileContractTests(unittest.TestCase):
             set(result.manifest["renderer_identity"]["runtime"]),
             {"qgis", "qt", "pyqt", "python"},
         )
-        inspection = QImage(str(output / "fixture-car-inspection.png"))
-        inline = QImage(str(output / "fixture-car-inline.png"))
+        inspection = QImage(str(output / "fixture-car-inspection.webp"))
+        inline = QImage(str(output / "fixture-car-inline.webp"))
         self.assertFalse(inspection.isNull())
         self.assertFalse(inline.isNull())
 
         # The synthetic OCS-GE woodland occupies map coordinates 20..40,
         # 40..60. Its inspection pixel is tinted green, while the inline
         # profile retains the same textured paper as a nearby bare pixel.
-        inspection_pixel = inspection.pixelColor(1067, 1600)
+        inspection_pixel = inspection.pixelColor(800, 1200)
         inline_ocs_pixel = inline.pixelColor(300, 450)
         inline_bare_pixel = inline.pixelColor(450, 450)
         self.assertLess(inspection_pixel.green(), 200)
@@ -429,7 +429,8 @@ class InlineProfileContractTests(unittest.TestCase):
         binding = Binding("network", MapSet({"outputs": features}))
         output = root / "outputs"
 
-        def fake_prepare(project, features, raw_dir, config, cache_root, *, force=False, report=None):
+        def fake_prepare(project, features, raw_dir, config, cache_root, *, force=False,
+                         read_only_cache=False, report=None):
             layers = {}
             for mode in ("car", "walk", "bike"):
                 layer = QgsVectorLayer("LineString?crs=EPSG:2154", f"fixture {mode}", "memory")
@@ -694,7 +695,7 @@ class InlineProfileContractTests(unittest.TestCase):
         adapter.context_loader = lambda _scratch, requested: load_context(context_cache, requested)
 
         def fixture_network_layers(project, features, _raw, _config,
-                                   cache_root=None, *, force=False, report=None):
+                                   cache_root=None, *, force=False, read_only_cache=False, report=None):
             result = {}
             for mode in {item["mode"] for item in features}:
                 layer = QgsVectorLayer("LineString?crs=EPSG:2154", f"fixture {mode}", "memory")

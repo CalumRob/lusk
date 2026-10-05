@@ -578,7 +578,7 @@ def prepare_network_cache(
     project: QgsProject | None = None,
     cache_root: str | Path | None = None,
     families: tuple[str, ...] = ("osm", "geovelo"),
-    *, force: bool = False, report: list | None = None,
+    *, force: bool = False, report: list | None = None, read_only: bool = False,
 ) -> dict[str, dict[str, Path]]:
     """Prepare or reuse the independently versioned OSM and Geovelo families."""
     raw_dir = Path(raw_dir)
@@ -625,7 +625,8 @@ def prepare_network_cache(
             validate=lambda paths: _validate_flatgeobuf(paths, "Geovelo"),
         )
     root = Path(cache_root) if cache_root is not None else _cache_root(raw_dir)
-    return prepare_network_source_families(root, preparations, force=force, report=report)
+    return prepare_network_source_families(root, preparations, force=force, report=report,
+        read_only=read_only)
 
 
 def _eligible_osm_modes(source, modes, request_rect: QgsRectangle | None = None):
@@ -771,6 +772,7 @@ def prepare_osm_layers(project: QgsProject, source, modes, marks,
 def _prepare_network_layers(project: QgsProject, features, raw_dir: Path,
                             family_config: Mapping,
                             cache_root: Path | None = None, *, force: bool = False,
+                            read_only_cache: bool = False,
                             report: list | None = None) -> dict[str, list[QgsVectorLayer]]:
     """Load cached, indexed source layers once for all outputs in this run."""
     features = tuple(features)
@@ -783,7 +785,8 @@ def _prepare_network_layers(project: QgsProject, features, raw_dir: Path,
             ("geovelo", "bike" in modes),
         ) if needed
     )
-    prepared = prepare_network_cache(raw_dir, project, cache_root, families, force=force, report=report)
+    prepared = prepare_network_cache(raw_dir, project, cache_root, families, force=force,
+        report=report, read_only=read_only_cache)
 
     def indexed_layer(path: Path, name: str, colour: str) -> QgsVectorLayer:
         layer = QgsVectorLayer(str(path), name, "ogr")
@@ -834,10 +837,14 @@ class NetworkAdapter:
     """Network-family adapter; shared map and plate modules own presentation."""
 
     def __init__(self, raw_dir: str | Path, cache_root: str | Path | None = None, *,
-                 context_loader=None):
+                 context_loader=None, context_cache_root: str | Path | None = None,
+                 read_only_source_cache: bool = False):
         self.raw_dir = Path(raw_dir)
         self.cache_root = Path(cache_root) if cache_root is not None else None
         self.context_loader = context_loader
+        self.context_cache_root = (Path(context_cache_root)
+            if context_cache_root is not None else None)
+        self.read_only_source_cache = bool(read_only_source_cache)
         self.family_config_path = Path(__file__).with_name("network-family.json")
         self.family_config = _load_network_family_config()
         self._ground_cache = {}
@@ -882,7 +889,16 @@ class NetworkAdapter:
                 "pyqt": PYQT_VERSION_STR,
                 "python": platform.python_version(),
             },
+            "canonical_encoding": self.output_contract(None),
         }
+
+    @staticmethod
+    def output_contract(profile=None) -> Mapping:
+        from webp_encoding import WEBP_ENCODING_CONTRACT
+        return {**WEBP_ENCODING_CONTRACT,
+            "dimensions": list(profile.size) if profile is not None else {
+                "inspection": [2400, 2400], "inline": [900, 900]},
+            "alpha": "lossless" if profile is None or profile.transparent_outside else "opaque-rgb"}
 
     def current_approval_members(self, recipe, binding, requested_profiles, renderer_identity):
         """Fingerprint the live representative cohort before a full run is scheduled."""
@@ -950,6 +966,7 @@ class NetworkAdapter:
                        "car": ("car",), "walk": ("walk",)}.get(mode)
                       if mode else tuple(config["marks"]))
         scoped = {"marks": {key: config["marks"][key] for key in mark_names},
+                  "canonical_encoding": self.output_contract(profile),
                   "shared_ground_version": SHARED_GROUND_RENDER_VERSION,
                   "shared_network_render_version": SHARED_NETWORK_RENDER_VERSION,
                   "network_stroke": _network_stroke_contract(profile)}
@@ -1101,6 +1118,7 @@ class NetworkAdapter:
 
         output_dir = Path(output_dir)
         context_cache_root = (Path(context_cache_root) if context_cache_root is not None else
+            self.context_cache_root if self.context_cache_root is not None else
             output_dir / ".stage-cache" / "official-context")
         project = QgsProject.instance()
         self._stage_events = []
@@ -1140,7 +1158,7 @@ class NetworkAdapter:
             "decision": "validated", "seconds": round(perf_counter() - context_started, 3)})
         self._network_layers = _prepare_network_layers(
             project, features, self.raw_dir, self.family_config, self.cache_root,
-            force=refresh, report=self._stage_events
+            force=refresh, read_only_cache=self.read_only_source_cache, report=self._stage_events
         )
         self._ground_cache.clear()
         self._refresh = refresh
@@ -1214,7 +1232,7 @@ class NetworkAdapter:
     def record_reused_output(self, feature, profile, output_dir, recipe=None):
         # An unchanged, QA-verified final artifact is independent of the
         # territory's disposable ground intermediate. Do not load or imply reuse
-        # of a ground cache just to report that the PNG was reused.
+        # of a ground cache just to report that the canonical output was reused.
         self._stage_events.append({"stage": "territory-ground", "profile": profile.name,
             "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
             "decision": "not-loaded-reused-output", "seconds": 0.0})
@@ -1567,14 +1585,27 @@ class NetworkAdapter:
                 mode_runs, content, assets, metadata, _inspection_scale(prepared.extent),
                 desaturate_outside_land,
             )
-        path = output_dir / f"{feature['territory']['code']}-{feature['mode']}-{profile.name}.png"
-        if not image.save(str(path), "PNG"):
-            raise RuntimeError(f"Could not save production map: {path}")
-        return path
+        from uuid import uuid4
+        from webp_encoding import encode_qimage
+        final = self.expected_output_path(feature, profile, output_dir)
+        staged = final.with_name(f".{final.stem}-{uuid4().hex}.stage.webp")
+        return encode_qimage(image, staged, preserve_alpha=profile.transparent_outside)
+
+    @staticmethod
+    def promote_output(staged_path: Path, final_path: Path) -> Path:
+        staged_path, final_path = Path(staged_path), Path(final_path)
+        if staged_path.parent.resolve() != final_path.parent.resolve():
+            raise ValueError("staged and canonical map artifacts must share the output directory")
+        os.replace(staged_path, final_path)
+        return final_path
+
+    @staticmethod
+    def discard_output(staged_path: Path) -> None:
+        Path(staged_path).unlink(missing_ok=True)
 
     @staticmethod
     def expected_output_path(feature: Mapping, profile, output_dir: Path) -> Path:
-        return output_dir / f"{feature['territory']['code']}-{feature['mode']}-{profile.name}.png"
+        return output_dir / f"{feature['territory']['code']}-{feature['mode']}-{profile.name}.webp"
 
     def _ground_id(self, feature, profile, recipe=None):
         cache_key = self._ground_identity_cache_key(feature, profile, recipe)
@@ -1728,14 +1759,16 @@ class NetworkAdapter:
             return None
 
     def validate(self, path: Path, feature: Mapping, profile) -> None:
+        from webp_encoding import validate_webp
+        decoded = validate_webp(path, profile)
         image = QImage(str(path))
         if image.isNull() or (image.width(), image.height()) != profile.size:
-            raise ValueError(f"Invalid {profile.name} image dimensions or decode: {path}")
+            raise ValueError(f"Invalid {profile.name} WebP dimensions or decode: {path}")
         if profile.name == "inspection":
             if image.pixelColor(0, 0).alpha() != 255 or image.pixelColor(100, 170).alpha() != 255:
                 raise ValueError("Inspection plate must have an opaque ground and title region")
             return
-        if image.format() not in (QImage.Format_RGBA8888, QImage.Format_ARGB32,
+        if decoded.mode != "RGBA" or image.format() not in (QImage.Format_RGBA8888, QImage.Format_ARGB32,
                                   QImage.Format_ARGB32_Premultiplied):
             raise ValueError("Inline profile must retain RGBA alpha")
         geometry = feature["analytical_geometry"]

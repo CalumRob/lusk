@@ -345,7 +345,7 @@ class NetworkPreparationTests(unittest.TestCase):
             osm_path.write_bytes(b"osm source placeholder")
             geovelo_path.write_bytes(b"geovelo source placeholder")
 
-            def build_caches(cache_root, preparations, *, force=False, report=None):
+            def build_caches(cache_root, preparations, *, force=False, report=None, read_only=False):
                 for family, preparation in preparations.items():
                     preparation.build(root / f"built-{family}")
                 return {}
@@ -519,8 +519,9 @@ class NetworkPreparationTests(unittest.TestCase):
         binding = Binding("network", MapSet({"network-outputs": features}))
         adapter.effective_input_identity = lambda feature, profile: {"visible": feature["mode"]}
         recipe = network_recipe()
+        renderer_identity = adapter.render_identity()
         current = adapter.current_approval_members(recipe, binding,
-            ("inspection", "inline"), adapter.render_identity())
+            ("inspection", "inline"), renderer_identity)
         changed_recipe = replace(recipe, foundation=replace(recipe.foundation,
             composition={**recipe.foundation.composition,
                 "inline": {"shadow": "changed-profile-rule"}}))
@@ -533,6 +534,11 @@ class NetworkPreparationTests(unittest.TestCase):
                               for name in ("inspection", "inline")}
         self.assertEqual(by_profile["inspection"], changed_by_profile["inspection"])
         self.assertNotEqual(by_profile["inline"], changed_by_profile["inline"])
+        current_output_contract = adapter.output_contract
+        adapter.output_contract = lambda profile: {**current_output_contract(profile), "quality": 79}
+        changed_encoding = adapter.current_approval_members(recipe, binding,
+            ("inspection", "inline"), renderer_identity)
+        self.assertNotEqual({item[4] for item in current}, {item[4] for item in changed_encoding})
 
     def test_network_adapter_approval_seam_prepares_only_representative_binding(self):
         from network import NetworkAdapter, network_recipe
@@ -551,6 +557,24 @@ class NetworkPreparationTests(unittest.TestCase):
         self.assertNotEqual(prepare.call_args.args[3], output_root)
         self.assertEqual(prepare.call_args.kwargs["context_cache_root"],
                          output_root / ".stage-cache" / "official-context")
+
+    def test_network_adapter_uses_explicit_read_only_context_cache_root(self):
+        from network import NetworkAdapter, network_recipe
+        from runner import Binding, MapSet
+        raw = Path("fixture-raw")
+        shared_root = Path("fixture-shared-context-read-only")
+        adapter = NetworkAdapter(raw, context_cache_root=shared_root)
+        extent = QgsRectangle(0, 0, 10, 10)
+        feature = {"geometry": QgsGeometry.fromRect(extent),
+            "territory": {"kind": "commune", "code": "1", "name": "One"},
+            "mode": "car", "analytical_geometry": QgsGeometry.fromRect(extent), "extent": extent}
+        binding = Binding("network", MapSet({"network-outputs": [feature]}))
+        with TemporaryDirectory() as directory:
+            with (patch("map_ground.prepare_shared_ground", return_value=object()) as prepare_shared,
+                  patch("network._prepare_network_layers", return_value={"car": [], "walk": [], "bike": []})):
+                adapter.prepare_run(network_recipe(), binding, ("inspection",), Path(directory))
+            self.assertEqual(prepare_shared.call_args.kwargs["context_cache_root"], shared_root)
+            self.assertFalse(shared_root.exists(), "the explicitly selected shared source is read-only")
 
     def test_full_lifecycle_reports_actual_cache_high_water_and_releases_only_territory_state(self):
         from types import SimpleNamespace
@@ -610,12 +634,15 @@ class NetworkPreparationTests(unittest.TestCase):
         second_mode = {**feature, "mode": "walk"}
         prepared = PreparedGround(QImage(4, 4, QImage.Format_ARGB32), QImage(4, 4, QImage.Format_ARGB32),
             QImage(4, 4, QImage.Format_ARGB32), QgsGeometry(), __import__("numpy").zeros((4, 4)), extent)
-        profile = type("TinyInspection", (), {"name": "inspection", "size": (4, 4)})()
+        profile = type("TinyInspection", (), {"name": "inspection", "size": (4, 4),
+            "transparent_outside": False})()
+        opaque = QImage(4, 4, QImage.Format_RGBA8888)
+        opaque.fill(QColor(20, 30, 40, 255))
         with TemporaryDirectory() as folder:
             with (patch("network.NetworkAdapter._ground_id", return_value="ground-identity"),
                   patch("map_ground.prepare_ground", return_value=prepared) as prepare_ground,
-                  patch("map_ground.render_layers", return_value=QImage(4, 4, QImage.Format_ARGB32)),
-                  patch("inspection_plate.compose_inspection", return_value=QImage(4, 4, QImage.Format_ARGB32)),
+                  patch("map_ground.render_layers", return_value=opaque),
+                  patch("inspection_plate.compose_inspection", return_value=opaque),
                   patch.object(adapter, "_read_ground_stage") as read_stage,
                   patch.object(adapter, "_write_ground_stage") as write_stage):
                 adapter.begin_territory(feature, ("inspection", "inline"), Path(folder))
@@ -694,6 +721,9 @@ class NetworkPreparationTests(unittest.TestCase):
             for mode in ("car", "walk", "bike") for code in ("1", "2")]
         binding = Binding(recipe.family, MapSet({"outputs": features}))
         adapter.render_identity = lambda: renderer_identity
+        adapter.output_contract = lambda profile: {"format": "png", "dimensions": list(profile.size)}
+        adapter.expected_output_path = lambda feature, profile, output_dir: (
+            Path(output_dir) / f"{feature['territory']['code']}-{feature['mode']}-{profile.name}.png")
         adapter.input_identity = lambda: {"source": "fixture"}
         adapter.profile_identity = lambda *_args: {"profile-renderer": "fixture"}
         adapter.effective_input_identity = lambda feature, profile: {
@@ -840,8 +870,12 @@ class NetworkPreparationTests(unittest.TestCase):
         adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
 
         with TemporaryDirectory() as directory:
-            path = Path(directory) / "inline.png"
-            self.assertTrue(image.save(str(path), "PNG"))
+            from webp_encoding import encode_qimage
+            path = Path(directory) / "inline.webp"
+            def write_webp(source):
+                path.unlink(missing_ok=True)
+                encode_qimage(source, path, preserve_alpha=True)
+            write_webp(image)
             with patch("network.QgsGeometry.createGeometryEngine",
                        wraps=QgsGeometry.createGeometryEngine) as engine:
                 adapter.validate(path, feature, PROFILES["inline"])
@@ -855,7 +889,7 @@ class NetworkPreparationTests(unittest.TestCase):
                 with self.subTest(label=label):
                     invalid = image.copy()
                     invalid.setPixelColor(x, y, QColor(255, 255, 255, alpha))
-                    self.assertTrue(invalid.save(str(path), "PNG"))
+                    write_webp(invalid)
                     with self.assertRaisesRegex(ValueError, error):
                         adapter.validate(path, feature, PROFILES["inline"])
 

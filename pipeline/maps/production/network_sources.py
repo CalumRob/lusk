@@ -159,11 +159,13 @@ def _publish_family(
 def prepare_network_sources(
     cache_root: str | Path,
     preparations: Mapping[str, FamilyPreparation],
-    *, force: bool = False, report: list | None = None,
+    *, force: bool = False, report: list | None = None, read_only: bool = False,
 ) -> dict[str, dict[str, Path]]:
     """Reuse or atomically prepare each family using its own cache signature."""
     if not preparations:
         raise ValueError("At least one network source family is required")
+    if read_only and force:
+        raise ValueError("read-only network source cache cannot be force-refreshed")
     cache_root = Path(cache_root)
     result = {}
     for family, preparation in preparations.items():
@@ -182,6 +184,9 @@ def prepare_network_sources(
                 report.append({"stage": f"network-{family}", "profile": "shared",
                     "identity": signature_identity, "decision": "reused", "seconds": round(perf_counter()-started, 3)})
             continue
+
+        if read_only:
+            raise RuntimeError(f"read-only network source cache has no validated current generation for {family!r}")
 
         print(f"[network-prep] {family}: preparing indexed FlatGeobuf sources", flush=True)
         result[family] = _publish_family(cache_root, family, preparation, signature)

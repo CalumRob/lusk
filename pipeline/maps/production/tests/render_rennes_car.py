@@ -25,7 +25,7 @@ try:
     # prototype image (SHA-256 17fc95c4f2afe90ae52f36106c18eb700c43d064d22f22d52ec1c4cbda97b86e).
     # They exercise paper/context, the mode-title engraving, the territory
     # label, and the source prototype's white footer through run_production().
-    inspection = QImage(str(root / "pipeline/maps/production/output/35238-car-inspection.png"))
+    inspection = QImage(str(root / "pipeline/maps/production/output/35238-car-inspection.webp"))
     for point, expected in {
         (0, 0): (204, 204, 204),
         (500, 160): (112, 122, 121),
@@ -36,7 +36,7 @@ try:
         assert max(abs(actual.red() - expected[0]), abs(actual.green() - expected[1]),
                    abs(actual.blue() - expected[2])) <= 12, (point, actual.name(), expected)
 
-    inline = QImage(str(root / "pipeline/maps/production/output/35238-car-inline.png"))
+    inline = QImage(str(root / "pipeline/maps/production/output/35238-car-inline.webp"))
     extent = QgsRectangle(feature["extent"])
     inside = feature["analytical_geometry"].pointOnSurface().asPoint()
     inside_x = round((inside.x() - extent.xMinimum()) / extent.width() * inline.width())

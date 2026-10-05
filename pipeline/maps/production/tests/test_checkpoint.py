@@ -70,6 +70,18 @@ class OutputCheckpointTests(unittest.TestCase):
             with self.assertRaisesRegex(OSError, "disk full"):
                 current.record_success({"key": "one"})
 
+    def test_pending_promotion_is_recoverable_and_later_success_supersedes_it(self):
+        current = self.checkpoint()
+        pending = {"key": self.expected[0]["key"], "path": str(self.root / "map.webp"),
+            "effective_identity": "a" * 64, "output_sha256": "b" * 64,
+            "artifact_contract": {"format": "webp"}}
+        current.record_pending(pending)
+        restarted = self.checkpoint()
+        self.assertEqual(restarted.output_records[-1]["kind"], "output-pending")
+        restarted.record_success(pending)
+        retried = self.checkpoint()
+        self.assertEqual(retried.output_records[-1]["kind"], "output-success")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -78,7 +78,7 @@ class OutputCheckpoint:
                         raise CheckpointContractMismatch(
                             "production checkpoint contract/header does not match this run")
                 elif not isinstance(payload, dict) or payload.get("kind") not in {
-                        "attempt-start", "output-success", "output-failure"}:
+                        "attempt-start", "output-pending", "output-success", "output-failure"}:
                     break
             except CheckpointContractMismatch:
                 raise
@@ -104,6 +104,20 @@ class OutputCheckpoint:
     @property
     def failure_records(self):
         return [row for row in self.records if row.get("kind") == "output-failure"]
+
+    @property
+    def output_records(self):
+        """Latest staged-or-promoted candidate per key, in journal order."""
+        latest = {}
+        for row in self.records:
+            if row.get("kind") in {"output-pending", "output-success"} and isinstance(row.get("key"), str):
+                latest[row["key"]] = row
+        return list(latest.values())
+
+    def record_pending(self, output):
+        """Durably name validated candidate bytes before atomic final-path promotion."""
+        self._append_record({"kind": "output-pending", "attempt_id": self.attempt_id,
+            **dict(output)})
 
     def record_success(self, output):
         self._append_record({"kind": "output-success", "attempt_id": self.attempt_id,
