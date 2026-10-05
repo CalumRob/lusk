@@ -143,6 +143,7 @@ def seed(conn):
 
 def test_real_sql_response_reaches_mounted_variant_e(tmp_path):
     import psycopg
+    from psycopg import sql
     from psycopg_pool import ConnectionPool
     from fastapi.testclient import TestClient
     from api import main
@@ -162,8 +163,9 @@ def test_real_sql_response_reaches_mounted_variant_e(tmp_path):
                 conn.execute((ROOT/'api/schema.sql').read_text(encoding='utf-8'))
                 with conn.transaction():
                     model = seed(conn)
-                conn.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {os.environ["LUSK_TEST_READ_USER"]}')
-                conn.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {os.environ["LUSK_TEST_READ_USER"]}')
+                role = sql.Identifier(os.environ['LUSK_TEST_READ_USER'])
+                conn.execute(sql.SQL('GRANT USAGE ON SCHEMA {} TO {}').format(sql.Identifier(schema),role))
+                conn.execute(sql.SQL('GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}').format(sql.Identifier(schema),role))
             pool = ConnectionPool(_schema_dsn(os.environ['LUSK_TEST_READ_DSN'],schema), min_size=1, max_size=1, open=True, kwargs={'autocommit':True})
             with pool.connection() as conn:
                 assert conn.execute('SELECT current_database(),current_user').fetchone() == (
