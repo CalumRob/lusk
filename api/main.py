@@ -2130,7 +2130,7 @@ def _mobility_density_distribution_snapshot(conn, territory_type, territory_id):
     marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version,
         d.descriptor_version,d.source_id,d.vintage_id,d.axis_count,d.density_unit,d.decile_unit,
         sd.name,sv.version,sv.reference_date,sv.publication_date,m.source_id,m.vintage_id,m.source_version,
-        m.reference_date,m.publication_date
+        m.reference_date,m.publication_date,d.allowed_levels
         FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
         JOIN mobility_density_distribution_descriptor d ON d.singleton
         JOIN source_dataset sd ON sd.source_id=d.source_id
@@ -2146,6 +2146,12 @@ def _mobility_density_distribution_snapshot(conn, territory_type, territory_id):
         marker[5]!="mobilite_snapshot" or marker[5]!=marker[14] or marker[6]!=marker[15] or
         marker[11]!=marker[16] or marker[12]!=marker[17] or marker[13]!=marker[18]):
         raise HTTPException(503,"Mobility density distribution publication is incompatible")
+    if territory_type not in marker[19]:
+        return {"status":"unsupported","range":{"minimum":None,"maximum":None,"status":"unsupported"},
+            "points":[],"units":{"density":marker[8],"decile":marker[9]},"provenance":{
+                "source_id":marker[5],"source_name":marker[10],"vintage_id":marker[6],"source_version":marker[11],
+                "source_reference_date":marker[12],"source_publication_date":marker[13]},
+            "allowed_levels":marker[19],"content_version":marker[0],"descriptor_version":marker[4]}
     focal = conn.execute("""SELECT minimum,maximum,status,source_id,vintage_id FROM mobility_density_distribution_range
         WHERE territory_id=%s AND territory_type=%s""",(territory_id,territory_type)).fetchone()
     if not focal:
@@ -2153,6 +2159,7 @@ def _mobility_density_distribution_snapshot(conn, territory_type, territory_id):
             "points":[],"units":{"density":marker[8],"decile":marker[9]},"provenance":{
                 "source_id":marker[5],"source_name":marker[10],"vintage_id":marker[6],"source_version":marker[11],
                 "source_reference_date":marker[12],"source_publication_date":marker[13]},
+            "allowed_levels":marker[19],
             "content_version":marker[0],"descriptor_version":marker[4]}
     if focal[3]!=marker[5] or focal[4]!=marker[6]:
         raise HTTPException(503,"Mobility density distribution fact has incompatible provenance")
@@ -2167,6 +2174,7 @@ def _mobility_density_distribution_snapshot(conn, territory_type, territory_id):
         "units":{"density":marker[8],"decile":marker[9]},"provenance":{
             "source_id":marker[5],"source_name":marker[10],"vintage_id":marker[6],"source_version":marker[11],
             "source_reference_date":marker[12],"source_publication_date":marker[13]},
+        "allowed_levels":marker[19],
         "content_version":marker[0],"descriptor_version":marker[4]}
 
 

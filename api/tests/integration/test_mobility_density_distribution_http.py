@@ -51,6 +51,7 @@ def test_registered_mobility_density_distribution_is_readable_over_http():
             assert [point["ordinal"] for point in distribution["points"]] == list(range(10))
             assert distribution["units"] == {"density": "1 / type de service perdu",
                                              "decile": "type de service perdu"}
+            assert distribution["allowed_levels"] == ["commune", "epci", "departement", "region"]
             assert distribution["provenance"]["source_id"] == "mobilite_snapshot"
             assert distribution["provenance"]["source_version"] == "2026-02"
             assert "nuage" not in distribution

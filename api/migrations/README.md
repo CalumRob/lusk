@@ -217,7 +217,8 @@ Fresh installs carry the same table and marker allow-list in `schema.sql`.
 Migration 024 adds an independently versioned, shape-specific publication for
 the focal `dens_min`/`dens_max` range and paired ordered `dens_N`/`dec_N`
 coordinates. It is not a median profile and contains no peer cloud. Its
-descriptor and each fact row bind to the already registered immutable
+descriptor declares focal eligibility from producer metadata (independent of
+the narrower figure-comparison levels) and each fact row binds to the already registered immutable
 `mobilite_snapshot` vintage and the territory-reference publication. The
 publisher validates closed axes, territory identity, source-clock compatibility,
 inserted counts, retry/no-op and transaction rollback; it does not alter legacy

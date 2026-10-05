@@ -49,20 +49,23 @@ publish_mobility_density_distribution <- function(con, projection, input=NULL) {
     marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='mobility_density_distribution'")
     actual_ranges <- if(nrow(marker)) DBI::dbGetQuery(con,"SELECT count(*) n FROM mobility_density_distribution_range")$n[[1L]] else -1L
     actual_points <- if(nrow(marker)) DBI::dbGetQuery(con,"SELECT count(*) n FROM mobility_density_distribution_point")$n[[1L]] else -1L
-    descriptor <- DBI::dbGetQuery(con,"SELECT descriptor_version,source_id,vintage_id,axis_count,density_unit,decile_unit
+    descriptor <- DBI::dbGetQuery(con,"SELECT descriptor_version,source_id,vintage_id,axis_count,
+      array_to_json(allowed_levels)::text AS allowed_levels_json,density_unit,decile_unit
       FROM mobility_density_distribution_descriptor WHERE singleton")
     no_op <- nrow(marker)==1L && marker$content_version[[1L]]==projection$version &&
         marker$row_count[[1L]]==expected_ranges && marker$reference_content_version[[1L]]==reference$content_version[[1L]] &&
         actual_ranges==expected_ranges && actual_points==expected_points && nrow(descriptor)==1L &&
         descriptor$descriptor_version[[1L]]==projection$version && descriptor$source_id[[1L]]==projection$source_id &&
         descriptor$vintage_id[[1L]]==projection$vintage_id && descriptor$axis_count[[1L]]==projection$axis_count &&
+        identical(as.character(jsonlite::fromJSON(descriptor$allowed_levels_json[[1L]])),projection$allowed_levels) &&
         descriptor$density_unit[[1L]]==projection$density_unit && descriptor$decile_unit[[1L]]==projection$decile_unit
     if (!no_op) {
     DBI::dbExecute(con,"DELETE FROM mobility_density_distribution_range")
-    DBI::dbExecute(con,"INSERT INTO mobility_density_distribution_descriptor(singleton,descriptor_version,source_id,vintage_id,axis_count,density_unit,decile_unit)
-      VALUES(true,$1,$2,$3,$4,$5,$6) ON CONFLICT(singleton) DO UPDATE SET descriptor_version=EXCLUDED.descriptor_version,
+    quoted_levels <- paste(as.character(DBI::dbQuoteString(con,projection$allowed_levels)),collapse=",")
+    DBI::dbExecute(con,paste0("INSERT INTO mobility_density_distribution_descriptor(singleton,descriptor_version,source_id,vintage_id,axis_count,allowed_levels,density_unit,decile_unit)
+      VALUES(true,$1,$2,$3,$4,ARRAY[",quoted_levels,"]::text[],$5,$6) ON CONFLICT(singleton) DO UPDATE SET descriptor_version=EXCLUDED.descriptor_version,
       source_id=EXCLUDED.source_id,vintage_id=EXCLUDED.vintage_id,axis_count=EXCLUDED.axis_count,
-      density_unit=EXCLUDED.density_unit,decile_unit=EXCLUDED.decile_unit",
+      allowed_levels=EXCLUDED.allowed_levels,density_unit=EXCLUDED.density_unit,decile_unit=EXCLUDED.decile_unit"),
       params=list(projection$version,projection$source_id,projection$vintage_id,projection$axis_count,
         projection$density_unit,projection$decile_unit))
     ranges <- projection$ranges

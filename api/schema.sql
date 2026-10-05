@@ -1098,7 +1098,9 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON observed_collection_publication,observed_co
 CREATE TABLE mobility_density_distribution_descriptor (
   singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), descriptor_version text NOT NULL,
   source_id text NOT NULL CHECK(source_id='mobilite_snapshot'), vintage_id text NOT NULL,
-  axis_count integer NOT NULL CHECK(axis_count>0), density_unit text NOT NULL CHECK(length(trim(density_unit))>0),
+  axis_count integer NOT NULL CHECK(axis_count>0),
+  allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
+  density_unit text NOT NULL CHECK(length(trim(density_unit))>0),
   decile_unit text NOT NULL CHECK(length(trim(decile_unit))>0),
   FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
 CREATE TABLE mobility_density_distribution_range (
@@ -1127,6 +1129,8 @@ CREATE FUNCTION validate_mobility_density_distribution_territory() RETURNS trigg
 BEGIN
   IF NOT EXISTS(SELECT 1 FROM territory_reference WHERE territory_id=NEW.territory_id AND territory_type=NEW.territory_type)
   THEN RAISE EXCEPTION 'Mobility density distribution territory type differs from reference'; END IF;
+  IF NOT EXISTS(SELECT 1 FROM mobility_density_distribution_descriptor d WHERE d.singleton AND NEW.territory_type=ANY(d.allowed_levels))
+  THEN RAISE EXCEPTION 'Mobility distribution territory level is outside its active descriptor'; END IF;
   RETURN NEW;
 END $$;
 CREATE TRIGGER mobility_density_distribution_territory_contract BEFORE INSERT OR UPDATE ON mobility_density_distribution_range

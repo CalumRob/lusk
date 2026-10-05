@@ -283,8 +283,10 @@ project_mobility_density_distribution <- function(histories, vintages, metadata)
     stop("Canonical mobility density and decile axes do not match", call.=FALSE)
   contract <- metadata$distribution_contracts$mobilite_density_distribution
   source_id <- MOBILITE_SNAPSHOT_SOURCE_ID
+  allowed_levels <- as.character(unlist(contract$allowed_focal_levels, use.names=FALSE))
   suffixes <- as.integer(unlist(contract$axis_ordinals, use.names=FALSE))
   if (is.null(contract) || !identical(as.character(contract$source_id), source_id) ||
+      !length(allowed_levels) || anyNA(allowed_levels) || any(!nzchar(allowed_levels)) || anyDuplicated(allowed_levels) ||
       !length(suffixes) || anyNA(suffixes) || anyDuplicated(suffixes) ||
       !identical(sort(density_index), sort(suffixes)) || !identical(sort(decile_index), sort(suffixes)) ||
       !is.character(contract$density_unit) || length(contract$density_unit)!=1L || !nzchar(contract$density_unit) ||
@@ -292,8 +294,8 @@ project_mobility_density_distribution <- function(histories, vintages, metadata)
     stop("Mobility density distribution descriptor differs from its producer contract", call.=FALSE)
   rows <- histories[histories$story_key == "vingt-minutes-sans-voiture",,drop=FALSE]
   if (!nrow(rows) || anyDuplicated(rows[c("territoire", "type")]) ||
-      any(!rows$type %in% c("commune", "epci", "departement", "region")))
-    stop("Canonical mobility distribution territory grain is invalid", call.=FALSE)
+      any(!rows$type %in% allowed_levels))
+    stop("Canonical mobility distribution contains a territory outside producer-declared focal levels", call.=FALSE)
   vintage <- vintages[vintages$id==source_id,,drop=FALSE]
   if (nrow(vintage)!=1L || !all(c("id","source","version","date_reference","date_publication") %in% names(vintage)) ||
       anyNA(vintage[c("source","version")]) || anyNA(rows[c("vintage_source", "vintage_version", "vintage_date_reference", "vintage_date_publication")]) ||
@@ -326,7 +328,7 @@ project_mobility_density_distribution <- function(histories, vintages, metadata)
   list(points=points, ranges=ranges, source_id=source_id,
     source_name=as.character(vintage$source[[1L]]), vintage_id=vintage_id,
     source_version=as.character(vintage$version[[1L]]), reference_date=as.Date(vintage$date_reference[[1L]]),
-    publication_date=as.Date(vintage$date_publication[[1L]]), axis_count=length(suffixes),
+    publication_date=as.Date(vintage$date_publication[[1L]]), allowed_levels=allowed_levels, axis_count=length(suffixes),
     density_unit=contract$density_unit, decile_unit=contract$decile_unit,
     version=profile_content_version(list(points, ranges, contract, vintage)))
 }
