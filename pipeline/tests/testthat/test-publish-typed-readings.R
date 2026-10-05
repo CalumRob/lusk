@@ -36,6 +36,27 @@ test_that("typed Milieux reading projection retains producer-selected reading co
   expect_equal(projected$trajectoire_artif_par_habitant, "stable")
 })
 
+test_that("Mobility reading projection keeps only actual selected story facts", {
+  histories <- data.frame(territoire=c("35238", "35238"), type="commune",
+    theme=c("mobilite", "autre"), groupe=c("acces-aux-services", "ignored"),
+    story_key=c("vingt-minutes-sans-voiture", "ignored"), salience_reason="defaut",
+    div_loss_t=c(8, 99), div_loss_b=c(5, 99),
+    classification_saillance=c("non-saillant", "ignored"),
+    dens_1=c(.2, .9), dec_1=c(3, 99))
+
+  projected <- project_typed_reading_facts(histories, "mobilite")
+
+  expect_equal(nrow(projected), 1L)
+  expect_equal(projected[c("story_key", "groupe", "salience_reason", "div_loss_t", "div_loss_b",
+                           "classification_saillance")], histories[1, c("story_key", "groupe",
+    "salience_reason", "div_loss_t", "div_loss_b", "classification_saillance")])
+  expect_false(any(c("dens_1", "dec_1") %in% names(projected)))
+  expect_error(project_typed_reading_facts(transform(histories[1, ], div_loss_b=9), "mobilite"),
+    "Invalid selected mobility reading values")
+  expect_error(project_typed_reading_facts(transform(histories[1, ], story_key="unselected"), "mobilite"),
+    "Invalid selected mobility story")
+})
+
 test_that("Milieux population provenance revisions hash the actual source clock and preserve NULL dates", {
   vintage <- data.frame(id="serie_historique", source="Producer source", version="2023",
     date_reference="2023-01-01", date_publication=NA_character_, stringsAsFactors=FALSE)

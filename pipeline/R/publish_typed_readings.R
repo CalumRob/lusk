@@ -9,6 +9,11 @@ project_typed_reading_facts <- function(histories, theme) {
       "classification", "part_passoires", "part_abc", "n_dpe"),
     economie = c("territoire", "type", "theme", "groupe", "story_key", "salience_reason",
       unlist(lapply(seq_len(5L), function(rank) paste0("top", rank, "_", c("activity_code", "activity_label", "lq", "n", "part_parc"))), use.names=FALSE)),
+    # Mobility's selected histories are one row per territory and selected
+    # story. Keep the reading decision alongside its two actual ordinates;
+    # density bins/quantiles are figure data, not reading inputs.
+    mobilite = c("territoire", "type", "theme", "groupe", "story_key", "salience_reason",
+      "div_loss_t", "div_loss_b", "classification_saillance"),
     milieux = c("territoire", "type", "theme", "groupe", "story_key", "salience_reason",
       "periode_pop", "periode_artif", "delta_population", "taux_variation_population",
       "artif_m2_par_habitant", "artif_m3_par_habitant", "trajectoire_artif_par_habitant", "classification"),
@@ -33,6 +38,15 @@ project_typed_reading_facts <- function(histories, theme) {
         (!is.na(park) & (!is.finite(park) | park < 0 | park > 1)))) ||
         any(!present & (!is.na(label) | !is.na(lq) | !is.na(count) | !is.na(park))))
       stop("Invalid sparse activity evidence in canonical economy reading",call.=FALSE)
+  }
+  if (theme == "mobilite") {
+    measured <- !is.na(rows$div_loss_t) & !is.na(rows$div_loss_b)
+    if (any(measured & (!is.finite(rows$div_loss_t) | !is.finite(rows$div_loss_b) |
+        rows$div_loss_t < 0 | rows$div_loss_b < 0 | rows$div_loss_b > rows$div_loss_t)))
+      stop("Invalid selected mobility reading values", call.=FALSE)
+    if (any(!rows$story_key %in% c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve")) ||
+        any(!rows$classification_saillance %in% c("saillant", "non-saillant", "notable")))
+      stop("Invalid selected mobility story or salience classification", call.=FALSE)
   }
   if(theme=="economie") for(i in seq_len(nrow(rows))) {
     populated <- vapply(seq_len(5L),function(rank) !is.na(rows[[paste0("top",rank,"_activity_code")]][[i]]),logical(1))
