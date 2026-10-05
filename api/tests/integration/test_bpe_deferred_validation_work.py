@@ -73,7 +73,7 @@ def test_bpe_fact_validation_work_is_partition_local_and_integrity_remains_defer
         old_seq_delta = old_after - old_before
         assert old_seq_delta >= 30, f"legacy full-validator baseline did not reproduce per-event scans: {old_seq_delta}"
         conn.execute("TRUNCATE bpe_profile_evidence_source,bpe_profile_evidence")
-        conn.execute((api / "migrations/026_bpe_validation_once_per_transaction.sql").read_text(encoding="utf-8"))
+        conn.execute((api / "migrations/026_bpe_partition_validation.sql").read_text(encoding="utf-8"))
 
         # PostgreSQL's own per-table scan counters make the regression signal
         # deterministic: 800 fact trigger calls should use the territory PK,
@@ -94,6 +94,7 @@ def test_bpe_fact_validation_work_is_partition_local_and_integrity_remains_defer
         assert seq_delta <= 8, f"whole-publication scans scaled with fact events: {seq_delta}"
         assert idx_delta >= 800, f"expected PK-local group checks, observed only {idx_delta} index scans"
         assert conn.execute("SELECT count(*) FROM bpe_profile_evidence").fetchone() == (800,)
+        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('bpe_profile_evidence','bpe-v1',800,'ref')")
         print(f"BPE trigger proof: legacy_facts=40 legacy_seq_scan_delta={old_seq_delta}; "
               f"fixed_facts=800 territory_groups=200 seq_scan_delta={seq_delta} "
               f"idx_scan_delta={idx_delta} commit_seconds={elapsed:.3f}")
@@ -111,6 +112,20 @@ def test_bpe_fact_validation_work_is_partition_local_and_integrity_remains_defer
                 conn.execute("UPDATE bpe_profile_evidence SET territory_id='t200' WHERE territory_id='t000' AND class_key='c0'")
         assert conn.execute("SELECT count(*) FROM bpe_profile_evidence WHERE territory_id='t000'").fetchone() == (4,)
         assert conn.execute("SELECT count(*) FROM bpe_profile_evidence WHERE territory_id='t200'").fetchone() == (0,)
+
+        # A whole territory may retire from the source universe during a
+        # replacement. Provenance rows cascade with its four facts; the
+        # publication marker and full territory retirement commit together.
+        conn.cursor().executemany("""INSERT INTO bpe_profile_evidence_source
+          (territory_type,territory_id,class_key,source_id,vintage_id)
+          VALUES ('commune','t199',%s,'test','v1')""", [(key,) for key, *_ in axes])
+        with conn.transaction():
+            conn.execute("DELETE FROM bpe_profile_evidence WHERE territory_id='t199'")
+            conn.execute("UPDATE table_publication SET content_version='bpe-v2',row_count=796 WHERE table_name='bpe_profile_evidence'")
+        assert conn.execute("SELECT count(*) FROM bpe_profile_evidence WHERE territory_id='t199'").fetchone() == (0,)
+        assert conn.execute("SELECT count(*) FROM bpe_profile_evidence WHERE territory_id='t198'").fetchone() == (4,)
+        assert conn.execute("SELECT count(*) FROM bpe_profile_evidence_source WHERE territory_id='t199'").fetchone() == (0,)
+        assert conn.execute("SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='bpe_profile_evidence'").fetchone() == ('bpe-v2',796,'ref')
 
         # Metadata has its own full validator; descriptor/axis tampering cannot
         # silently invalidate already-published fact partitions.

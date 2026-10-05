@@ -6,7 +6,7 @@ API = Path(__file__).resolve().parents[1]
 
 def test_bpe_fresh_and_upgrade_contracts_share_partitioned_validator_and_metadata_triggers():
     fresh = (API / "schema.sql").read_text(encoding="utf-8")
-    migration = (API / "migrations/026_bpe_validation_once_per_transaction.sql").read_text(encoding="utf-8")
+    migration = (API / "migrations/026_bpe_partition_validation.sql").read_text(encoding="utf-8")
     for sql in (fresh.lower(), migration.lower()):
         assert "pg_try_advisory_xact_lock" not in sql
         assert "tg_table_name <> 'bpe_profile_evidence'" in sql

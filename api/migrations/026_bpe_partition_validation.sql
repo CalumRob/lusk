@@ -4,7 +4,7 @@ BEGIN;
 -- changes validate their OLD and NEW territory partitions; descriptor/axis
 -- changes validate the complete publication.
 CREATE OR REPLACE FUNCTION assert_bpe_profile_evidence_complete() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected integer; axis_count integer; territory record; bad boolean;
+DECLARE expected integer; axis_count integer; territory record; bad boolean; partition_rows integer;
 BEGIN
   SELECT universe_count INTO expected FROM bpe_profile_evidence_descriptor WHERE singleton;
   IF expected IS NULL THEN RAISE EXCEPTION 'BPE profile evidence descriptor is unavailable'; END IF;
@@ -30,6 +30,9 @@ BEGIN
         SELECT OLD.territory_type,OLD.territory_id WHERE TG_OP='UPDATE'
       ) affected
     LOOP
+      SELECT count(*) INTO partition_rows FROM bpe_profile_evidence
+        WHERE territory_type=territory.territory_type AND territory_id=territory.territory_id;
+      IF partition_rows = 0 THEN CONTINUE; END IF;
       SELECT count(*) <> axis_count OR coalesce(sum(class_count),0) <> expected
           OR min(universe_count) <> expected OR max(universe_count) <> expected
         INTO bad FROM bpe_profile_evidence
