@@ -55,17 +55,18 @@ def test_registered_mobility_reading_publication_survives_populated_upgrade_and_
         old_schema = (root / "api/schema.sql").read_text(encoding="utf-8")
         old_schema = old_schema.replace("'milieux_typed_reading','mobility_typed_reading'", "'milieux_typed_reading'")
         old_schema = old_schema.replace(",'mobility_typed_reading'", "")
-        old_schema = re.sub(r"CREATE TABLE mobility_typed_reading \(.*?\);\n", "", old_schema, flags=re.S)
-        old_schema = re.sub(r"GRANT (?:SELECT|SELECT,INSERT,UPDATE,DELETE) ON mobility_typed_reading TO lusk_(?:reader|publisher);\n", "", old_schema)
+        old_schema = re.sub(r"CREATE TABLE mobility_typed_reading \(.*?CREATE TABLE milieux_population_provenance_revision \(",
+                            "CREATE TABLE milieux_population_provenance_revision (", old_schema, flags=re.S)
+        old_schema = re.sub(r"GRANT .* ON mobility_typed_reading,mobility_reading_descriptor,mobility_reading_story,mobility_reading_clock TO lusk_(?:reader|publisher);\n", "", old_schema)
         pub.execute(old_schema)
-        pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,density_class_code,density_class_label)
-            VALUES('35238','commune','Fixture Rennes','D1','Fixture density')""")
-        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','ref-v1',1)")
+        pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,density_class_code,density_class_label) VALUES
+            ('35238','commune','Fixture Rennes','D1','Fixture density'),('35239','commune','Fixture unavailable','D1','Fixture density')""")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','ref-v1',2)")
         pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('mobilite_snapshot','Snapshot fixture')")
         pub.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
-            VALUES('mobilite_snapshot','v1/2026-02-28','v1','2026-02-28','2026-08-06')""")
+            VALUES('mobilite_snapshot','v1/NA','v1',NULL,'2026-08-06')""")
         pub.execute("""INSERT INTO economy_typed_reading VALUES
-            ('35238','commune','economy-fixture','fixture-story','fixture','unavailable','mobilite_snapshot','v1/2026-02-28')""")
+            ('35238','commune','economy-fixture','fixture-story','fixture','unavailable','mobilite_snapshot','v1/NA')""")
         pub.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
             VALUES('economy_typed_reading','economy-fixture-v1',1,'ref-v1')""")
         pub.execute((root / "api/migrations/023_mobility_typed_reading.sql").read_text(encoding="utf-8"))
@@ -74,6 +75,10 @@ def test_registered_mobility_reading_publication_survives_populated_upgrade_and_
                                check=False, timeout=120, capture_output=True, text=True)
         assert smoke.returncode == 0, smoke.stdout + smoke.stderr
         assert pub.execute("SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='mobility_typed_reading'").fetchone()[1:] == (2, "ref-v1")
+        descriptor = pub.execute("SELECT unit,direction,allowed_levels,missing_status,classification_values,field_keys,source_version,reference_date FROM mobility_reading_descriptor").fetchone()
+        assert descriptor == ("types de services","low",["commune","epci","departement","region"],"unavailable",
+            ["saillant","notable","non-saillant"],
+            ["groupe","story_key","salience_reason","classification_saillance","div_loss_t","div_loss_b","status"],"v1",None)
         assert pub.execute("SELECT content_version,row_count FROM table_publication WHERE table_name='economy_typed_reading'").fetchone() == ("economy-fixture-v1", 1)
         assert pub.execute("SELECT story_key,div_loss_t,div_loss_b,status FROM mobility_typed_reading WHERE territory_id='35238'").fetchone() == (
             "vingt-minutes-sans-voiture", 8.0, 5.0, "measured")
@@ -91,17 +96,23 @@ def test_registered_mobility_reading_publication_survives_populated_upgrade_and_
                 response = client.get("/api/territories/commune/35238/themes/mobilite/facts")
                 assert response.status_code == 200, response.text
                 body = response.json()
-                reading = next(item for item in body["readings"] if item["groupe"] == "access")
+                reading = next(item for item in body["readings"] if item["groupe"] == "acces-aux-services")
                 assert {key: reading[key] for key in ("story_key", "salience_reason", "classification_saillance",
                     "div_loss_t", "div_loss_b", "status")} == {
                     "story_key": "vingt-minutes-sans-voiture", "salience_reason": "defaut",
                     "classification_saillance": "non-saillant", "div_loss_t": 8.0,
                     "div_loss_b": 5.0, "status": "measured"}
                 assert reading["provenance"]["source_id"] == "mobilite_snapshot"
-                unavailable = next(item for item in body["readings"] if item["groupe"] == "access-unavailable")
-                assert unavailable["status"] == "unavailable"
-                assert unavailable["div_loss_t"] is None and unavailable["div_loss_b"] is None
+                assert reading["provenance"]["dataset_name"] == "Mobility snapshot dataset"
+                assert reading["provenance"]["source_reference_date"] is None
+                assert len(reading["provenance"]["windows"]) == 2
                 assert body["reading_content_version"]
+                unavailable_response=client.get("/api/territories/commune/35239/themes/mobilite/facts")
+                assert unavailable_response.status_code==200,unavailable_response.text
+                unavailable=unavailable_response.json()["readings"][0]
+                assert unavailable["status"]=="unavailable" and unavailable["div_loss_t"] is None
+                assert unavailable["div_loss_b"] is None
+                assert unavailable_response.json()["reading_descriptor_version"]==body["reading_descriptor_version"]
                 pub.execute("UPDATE table_publication SET reference_content_version='stale-ref' WHERE table_name='mobility_typed_reading'")
                 stale = client.get("/api/territories/commune/35238/themes/mobilite/facts")
                 assert stale.status_code == 503

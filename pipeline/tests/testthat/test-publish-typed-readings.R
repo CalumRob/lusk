@@ -53,28 +53,64 @@ test_that("Mobility reading projection keeps only actual selected story facts", 
   expect_false(any(c("dens_1", "dec_1") %in% names(projected)))
   expect_error(project_typed_reading_facts(transform(histories[1, ], div_loss_b=9), "mobilite"),
     "Invalid selected mobility reading values")
-  expect_error(project_typed_reading_facts(transform(histories[1, ], story_key=""), "mobilite"),
-    "Invalid selected mobility story or salience classification")
 })
 
-test_that("Mobility publisher projection binds selected readings to the declared snapshot clock", {
-  histories <- data.frame(territoire="35238",type="commune",theme="mobilite",
-    groupe="access",story_key="story-from-producer",salience_reason="producer-choice",
-    div_loss_t=8,div_loss_b=5,classification_saillance="producer-classification")
+fixture_mobility_metadata <- function(reference_date="2026-02-28",version="v1",dataset="Mobility snapshot dataset") {
+  list(sources=list(tot_loss_t="mobilite_snapshot",tot_loss_b="mobilite_snapshot"),
+    story_keys=c("vingt-minutes-sans-voiture","ce-que-le-velo-preserve"),
+    selected_reading_contract=list(unit="types de services",direction="low",
+      allowed_levels=c("commune","epci","departement","region"),missing_status="unavailable",
+      classification_values=c("saillant","notable","non-saillant"),
+      field_keys=c("groupe","story_key","salience_reason","classification_saillance","div_loss_t","div_loss_b","status")),
+    source_records=list(mobilite_snapshot=list(dataset=dataset,publisher="Snapshot source",
+      vintages=list(list(id="mobilite_snapshot",version=version,dateReference=reference_date,datePublication="2026-08-06")),
+      clocks=list(list(name="BPE",frequency="annual",reference="2024",trigger="new release"),
+        list(name="Buildings",frequency="campaign",reference="2025-07",trigger="new campaign")))))
+}
+
+test_that("Mobility projection validates selected story semantics and registered source contract", {
+  histories <- data.frame(territoire=c("35238","35239"),type="commune",theme="mobilite",
+    groupe="acces-aux-services",story_key=c("vingt-minutes-sans-voiture","ce-que-le-velo-preserve"),
+    salience_reason=c("defaut","delta-velo-saillant"),div_loss_t=c(8,12),div_loss_b=c(5,2),
+    classification_saillance=c("notable","saillant"))
   vintages <- data.frame(id="mobilite_snapshot",source="Snapshot source",version="v1",
     date_reference="2026-02-28",date_publication="2026-08-06",stringsAsFactors=FALSE)
-  metadata <- list(sources=list(tot_loss_t="mobilite_snapshot",tot_loss_b="mobilite_snapshot"),
-    story_keys="story-from-producer")
+  metadata <- fixture_mobility_metadata()
   projection <- project_mobility_reading(histories,vintages,metadata)
-  expect_equal(projection$status,"measured")
-  expect_equal(projection$source_id,"mobilite_snapshot")
-  expect_equal(projection$vintage_id,"v1/2026-02-28")
-  expect_equal(projection$classification_saillance,"producer-classification")
+  expect_equal(projection$status,c("measured","measured"))
+  expect_equal(projection$source_id,c("mobilite_snapshot","mobilite_snapshot"))
+  expect_equal(projection$vintage_id,c("v1/2026-02-28","v1/2026-02-28"))
+  expect_equal(projection$classification_saillance,c("notable","saillant"))
+  expect_error(project_mobility_reading(transform(histories,story_key="unknown"),vintages,metadata),"producer registry")
+  expect_error(project_mobility_reading(transform(histories,groupe="wrong-group"),vintages,metadata),"producer registry")
+  expect_error(project_mobility_reading(transform(histories,salience_reason="invented"),vintages,metadata),"producer registry")
+  expect_error(project_mobility_reading(transform(histories,classification_saillance="unknown"),vintages,metadata),"classification")
+  expect_error(project_mobility_reading(transform(histories,classification_saillance=c("notable","notable")),vintages,metadata),"classification")
   expect_error(project_mobility_reading(histories,vintages,modifyList(metadata,
-    list(sources=list(tot_loss_t="wrong",tot_loss_b="wrong")))),"unique mobility snapshot source clock")
+    list(sources=list(tot_loss_t="wrong",tot_loss_b="wrong")))),"producer contract")
+  expect_error(project_mobility_reading(histories,vintages,modifyList(metadata,
+    list(source_records=list(mobilite_snapshot=list(dataset=""))))),"producer contract")
+  wrong_dataset <- metadata
+  wrong_dataset$source_records$mobilite_snapshot$dataset <- ""
+  expect_error(project_mobility_reading(histories,vintages,wrong_dataset),"producer contract")
+  wrong_version <- vintages; wrong_version$version <- "different"
+  expect_error(project_mobility_reading(histories,wrong_version,metadata),"producer-declared source clock")
+  wrong_name <- vintages; wrong_name$source <- ""
+  expect_error(project_mobility_reading(histories,wrong_name,metadata),"non-empty source identity")
+  wrong_name$source <- "Another source"
+  expect_error(project_mobility_reading(histories,wrong_name,metadata),"producer-declared source clock")
   unavailable <- histories
-  unavailable$div_loss_t <- NA_real_
-  expect_equal(project_mobility_reading(unavailable,vintages,metadata)$status,"unavailable")
+  unavailable$div_loss_t[1] <- NA_real_
+  unavailable$classification_saillance[1] <- NA_character_
+  absent <- project_mobility_reading(unavailable,vintages,metadata)
+  expect_equal(absent$status,c("unavailable","measured"))
+  expect_true(is.na(absent$div_loss_t[1]))
+  null_clock_vintage <- vintages; null_clock_vintage$date_reference <- NA_character_
+  null_metadata <- fixture_mobility_metadata(reference_date=NULL)
+  expect_equal(project_mobility_reading(histories,null_clock_vintage,null_metadata)$vintage_id,
+    c("v1/NA","v1/NA"))
+  bad_format <- vintages; bad_format$date_reference <- "not-a-date"
+  expect_error(project_mobility_reading(histories,bad_format,metadata),"Invalid Mobility source clock date")
 })
 
 test_that("Milieux population provenance revisions hash the actual source clock and preserve NULL dates", {

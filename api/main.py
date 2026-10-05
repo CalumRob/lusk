@@ -2188,6 +2188,7 @@ def theme_facts(
                            if territory_type in descriptor["allowed_levels"]]
             readings = []
             reading_version = None
+            reading_descriptor_version = None
             reading_availability = None
             if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat", "mobilite"):
                 raise HTTPException(404, "No published facts for this theme and territory")
@@ -2231,32 +2232,59 @@ def theme_facts(
                 if not installed:
                     raise HTTPException(503,"Mobility reading publication is unavailable")
                 reading_marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
-                    t.content_version FROM table_publication p JOIN table_publication t
-                    ON t.table_name='territory_reference' WHERE p.table_name='mobility_typed_reading'""").fetchone()
+                    t.content_version,d.descriptor_version,d.source_id,d.vintage_id,d.source_name,d.dataset_name,
+                    d.source_version,d.reference_date,d.publication_date,d.unit,d.direction,d.allowed_levels,
+                    d.missing_status,d.classification_values,d.field_keys,d.story_count,d.clock_count,
+                    sd.name,sv.version,sv.reference_date,sv.publication_date
+                    FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+                    JOIN mobility_reading_descriptor d ON d.singleton
+                    JOIN source_dataset sd ON sd.source_id=d.source_id
+                    JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+                    WHERE p.table_name='mobility_typed_reading'""").fetchone()
                 if not reading_marker or not reading_marker[0] or reading_marker[1] < 1 or reading_marker[2] != reading_marker[3]:
                     raise HTTPException(503,"Mobility reading publication is unavailable or incompatible")
-                reading_rows = conn.execute("""SELECT groupe,story_key,salience_reason,classification_saillance,
-                    div_loss_t,div_loss_b,status,source_id,vintage_id FROM mobility_typed_reading
-                    WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",
-                    (territory_id,territory_type)).fetchall()
-                if not reading_rows:
-                    raise HTTPException(404,"No selected Mobility reading for this territory")
-                clocks = {}
+                if (not reading_marker[4] or not reading_marker[5] or not reading_marker[6] or
+                    reading_marker[7] != reading_marker[20] or reading_marker[9] != reading_marker[21] or
+                    reading_marker[10] != reading_marker[22] or reading_marker[11] != reading_marker[23] or
+                    not reading_marker[8] or not reading_marker[12] or
+                    reading_marker[13] not in ("high","low","none") or not reading_marker[14] or
+                    reading_marker[15] != "unavailable" or not reading_marker[16] or
+                    not {"groupe","story_key","salience_reason","classification_saillance","div_loss_t","div_loss_b","status"}.issubset(set(reading_marker[17]))):
+                    raise HTTPException(503,"Mobility reading descriptor differs from its registered source contract")
+                reading_availability = "available" if territory_type in reading_marker[14] else "unsupported"
+                clocks = conn.execute("""SELECT clock_name,frequency,reference,trigger FROM mobility_reading_clock
+                    ORDER BY ordinal""").fetchall()
+                story_descriptors = conn.execute("""SELECT story_key,groupe,salience_reason FROM mobility_reading_story
+                    ORDER BY ordinal""").fetchall()
+                if len(clocks)!=reading_marker[19] or len(story_descriptors)!=reading_marker[18]:
+                    raise HTTPException(503,"Mobility reading semantic descriptor is incomplete")
+                source_provenance={"source_id":reading_marker[5],"source_name":reading_marker[7],
+                    "dataset_name":reading_marker[8],"vintage_id":reading_marker[6],
+                    "source_version":reading_marker[9],"source_reference_date":reading_marker[10],
+                    "source_publication_date":reading_marker[11],
+                    "windows":[dict(zip(("name","frequency","reference","trigger"),clock)) for clock in clocks]}
+                story_bindings={(story,group,reason) for story,group,reason in story_descriptors}
+                reading_rows = conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.classification_saillance,
+                    r.div_loss_t,r.div_loss_b,r.status,r.source_id,r.vintage_id,s.story_key
+                    FROM mobility_typed_reading r LEFT JOIN mobility_reading_story s
+                      ON s.groupe=r.groupe AND s.story_key=r.story_key AND s.salience_reason=r.salience_reason
+                    WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
+                    (territory_id,territory_type)).fetchall() if reading_availability == "available" else []
+                if reading_availability == "available" and not reading_rows:
+                    raise HTTPException(503,"Declared eligible Mobility reading is absent for this territory")
                 for row in reading_rows:
-                    pair = (row[7],row[8])
-                    if pair not in clocks:
-                        clock = conn.execute("""SELECT sd.name,sv.version,sv.reference_date,sv.publication_date
-                            FROM source_dataset sd JOIN source_vintage sv USING(source_id)
-                            WHERE sv.source_id=%s AND sv.vintage_id=%s""",pair).fetchone()
-                        if not clock:
-                            raise HTTPException(503,"Mobility reading immutable source clock is unavailable")
-                        clocks[pair] = {"source_id":pair[0],"source_name":clock[0],"vintage_id":pair[1],
-                            "source_version":clock[1],"source_reference_date":clock[2],
-                            "source_publication_date":clock[3]}
+                    if (row[9] is None or (row[1],row[0],row[2]) not in story_bindings or
+                        row[7]!=reading_marker[5] or row[8]!=reading_marker[6] or row[2] is None or
+                        (row[3] is not None and row[3] not in reading_marker[16]) or
+                        (row[6]=="measured" and (row[4] is None or row[5] is None)) or
+                        (row[6]==reading_marker[15] and row[4] is not None and row[5] is not None) or
+                        (row[6] not in ("measured",reading_marker[15]))):
+                        raise HTTPException(503,"Mobility reading fields differ from their registered descriptor")
                     readings.append(dict(zip(("groupe","story_key","salience_reason","classification_saillance",
-                        "div_loss_t","div_loss_b","status","source_id","vintage_id"),row),
-                        provenance=clocks[pair]))
+                        "div_loss_t","div_loss_b","status","source_id","vintage_id"),row[:9]),
+                        unit=reading_marker[12],direction=reading_marker[13],provenance=source_provenance))
                 reading_version = reading_marker[0]
+                reading_descriptor_version = reading_marker[4]
             elif theme_id == "habitat":
                 installed = conn.execute("SELECT to_regclass('habitat_typed_reading')").fetchone()[0]
                 if installed:
@@ -2455,8 +2483,9 @@ def theme_facts(
         "content_version":marker[0] if marker else comparison["content_version"],
         "owned_series_content_versions":[item["publication_id"] for item in owned_series],
         "reference_content_version":comparison["reference_content_version"],
-        "profile_content_version":profile_version,"profiles":profiles,
-        "readings":readings,"reading_content_version":reading_version,"reading_availability":reading_availability,
+         "profile_content_version":profile_version,"profiles":profiles,
+         "readings":readings,"reading_content_version":reading_version,"reading_descriptor_version":reading_descriptor_version,
+         "reading_availability":reading_availability,
         "series":owned_series,
         "series":owned_series,"bpe_profile_evidence":bpe_profile,
         "collections":collections,
