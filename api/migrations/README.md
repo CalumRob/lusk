@@ -200,6 +200,17 @@ recomputed in SQL, and unrelated publications remain untouched. `schema.sql`
 contains the matching fresh-install contract. The guarded fiche-series HTTP
 rehearsal publishes the canonical facts and validates every fact and source
 association against incumbent JSON, Parquet, and source manifest expectations.
+
+# Migration 023 — selected Mobility reading
+
+Migration 023 adds a constrained, source-bound selected-reading projection for
+Mobilité (`story_key`, `groupe`, producer salience/classification, and the two
+published loss values). It reuses the registered `mobilite_snapshot` source
+vintage and territory-reference publication tokens; it does not publish the
+building distribution bins or quantiles, which have separate figure contracts.
+The registered publisher replaces only this family atomically and the theme
+facts reader returns 503 for a missing/stale marker or unavailable source clock.
+Fresh installs carry the same table and marker allow-list in `schema.sql`.
 # Migration 017 — declared source absence for owned series
 
 Migration 017 adds a constrained `absence_semantics` declaration to the shared

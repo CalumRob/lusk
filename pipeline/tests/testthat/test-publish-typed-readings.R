@@ -53,8 +53,28 @@ test_that("Mobility reading projection keeps only actual selected story facts", 
   expect_false(any(c("dens_1", "dec_1") %in% names(projected)))
   expect_error(project_typed_reading_facts(transform(histories[1, ], div_loss_b=9), "mobilite"),
     "Invalid selected mobility reading values")
-  expect_error(project_typed_reading_facts(transform(histories[1, ], story_key="unselected"), "mobilite"),
-    "Invalid selected mobility story")
+  expect_error(project_typed_reading_facts(transform(histories[1, ], story_key=""), "mobilite"),
+    "Invalid selected mobility story or salience classification")
+})
+
+test_that("Mobility publisher projection binds selected readings to the declared snapshot clock", {
+  histories <- data.frame(territoire="35238",type="commune",theme="mobilite",
+    groupe="access",story_key="story-from-producer",salience_reason="producer-choice",
+    div_loss_t=8,div_loss_b=5,classification_saillance="producer-classification")
+  vintages <- data.frame(id="mobilite_snapshot",source="Snapshot source",version="v1",
+    date_reference="2026-02-28",date_publication="2026-08-06",stringsAsFactors=FALSE)
+  metadata <- list(sources=list(tot_loss_t="mobilite_snapshot",tot_loss_b="mobilite_snapshot"),
+    story_keys="story-from-producer")
+  projection <- project_mobility_reading(histories,vintages,metadata)
+  expect_equal(projection$status,"measured")
+  expect_equal(projection$source_id,"mobilite_snapshot")
+  expect_equal(projection$vintage_id,"v1/2026-02-28")
+  expect_equal(projection$classification_saillance,"producer-classification")
+  expect_error(project_mobility_reading(histories,vintages,modifyList(metadata,
+    list(sources=list(tot_loss_t="wrong",tot_loss_b="wrong")))),"unique mobility snapshot source clock")
+  unavailable <- histories
+  unavailable$div_loss_t <- NA_real_
+  expect_equal(project_mobility_reading(unavailable,vintages,metadata)$status,"unavailable")
 })
 
 test_that("Milieux population provenance revisions hash the actual source clock and preserve NULL dates", {

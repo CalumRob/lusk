@@ -3,13 +3,13 @@
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
         'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading')),
+        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','mobility_typed_reading')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','mobility_typed_reading') OR reference_content_version IS NOT NULL)
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -914,6 +914,19 @@ CREATE TABLE milieux_typed_reading (
  PRIMARY KEY(territory_id,territory_type,groupe),
  FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
  CHECK ((status='measured') = (periode_pop IS NOT NULL AND periode_artif IS NOT NULL AND classification IS NOT NULL)));
+CREATE TABLE mobility_typed_reading (
+ territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
+ groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL,
+ classification_saillance text, div_loss_t double precision, div_loss_b double precision,
+ status text NOT NULL CHECK(status IN ('measured','unavailable')),
+ source_id text NOT NULL, vintage_id text NOT NULL,
+ PRIMARY KEY(territory_id,territory_type,groupe),
+ FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
+ FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+ CHECK ((status='measured') = (div_loss_t IS NOT NULL AND div_loss_b IS NOT NULL)),
+ CHECK (div_loss_t IS NULL OR (div_loss_t >= 0 AND div_loss_t NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))),
+ CHECK (div_loss_b IS NULL OR (div_loss_b >= 0 AND div_loss_b NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))),
+ CHECK (div_loss_t IS NULL OR div_loss_b IS NULL OR div_loss_b <= div_loss_t));
 CREATE TABLE milieux_population_provenance_revision (
  population_revision_id text PRIMARY KEY,
  source_id text NOT NULL, vintage_id text NOT NULL, source_name text NOT NULL,
@@ -939,6 +952,8 @@ CREATE TABLE milieux_reading_source (
      OR (field_key IN ('artif_m2_par_habitant','artif_m3_par_habitant') AND dataset_id IS NOT NULL AND dataset_content_version IS NOT NULL AND state_role IN ('M2','M3') AND provenance_revision_id IS NOT NULL AND population_revision_id IS NULL)));
 GRANT SELECT ON milieux_typed_reading,milieux_reading_source TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_typed_reading,milieux_reading_source TO lusk_publisher;
+GRANT SELECT ON mobility_typed_reading TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON mobility_typed_reading TO lusk_publisher;
 GRANT SELECT ON milieux_population_provenance_revision TO lusk_reader;
 GRANT SELECT,INSERT ON milieux_population_provenance_revision TO lusk_publisher;
 -- Sparse period/detail facts have real year coordinates, not dense profile zeros.

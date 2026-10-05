@@ -2189,7 +2189,7 @@ def theme_facts(
             readings = []
             reading_version = None
             reading_availability = None
-            if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat"):
+            if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat", "mobilite"):
                 raise HTTPException(404, "No published facts for this theme and territory")
             readings = []
             reading_version = None
@@ -2226,6 +2226,37 @@ def theme_facts(
                     for row in reading_rows]
                 for reading in readings:
                     reading["rate_unit"] = reading_marker[11]
+            elif theme_id == "mobilite":
+                installed = conn.execute("SELECT to_regclass('mobility_typed_reading')").fetchone()[0]
+                if not installed:
+                    raise HTTPException(503,"Mobility reading publication is unavailable")
+                reading_marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
+                    t.content_version FROM table_publication p JOIN table_publication t
+                    ON t.table_name='territory_reference' WHERE p.table_name='mobility_typed_reading'""").fetchone()
+                if not reading_marker or not reading_marker[0] or reading_marker[1] < 1 or reading_marker[2] != reading_marker[3]:
+                    raise HTTPException(503,"Mobility reading publication is unavailable or incompatible")
+                reading_rows = conn.execute("""SELECT groupe,story_key,salience_reason,classification_saillance,
+                    div_loss_t,div_loss_b,status,source_id,vintage_id FROM mobility_typed_reading
+                    WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",
+                    (territory_id,territory_type)).fetchall()
+                if not reading_rows:
+                    raise HTTPException(404,"No selected Mobility reading for this territory")
+                clocks = {}
+                for row in reading_rows:
+                    pair = (row[7],row[8])
+                    if pair not in clocks:
+                        clock = conn.execute("""SELECT sd.name,sv.version,sv.reference_date,sv.publication_date
+                            FROM source_dataset sd JOIN source_vintage sv USING(source_id)
+                            WHERE sv.source_id=%s AND sv.vintage_id=%s""",pair).fetchone()
+                        if not clock:
+                            raise HTTPException(503,"Mobility reading immutable source clock is unavailable")
+                        clocks[pair] = {"source_id":pair[0],"source_name":clock[0],"vintage_id":pair[1],
+                            "source_version":clock[1],"source_reference_date":clock[2],
+                            "source_publication_date":clock[3]}
+                    readings.append(dict(zip(("groupe","story_key","salience_reason","classification_saillance",
+                        "div_loss_t","div_loss_b","status","source_id","vintage_id"),row),
+                        provenance=clocks[pair]))
+                reading_version = reading_marker[0]
             elif theme_id == "habitat":
                 installed = conn.execute("SELECT to_regclass('habitat_typed_reading')").fetchone()[0]
                 if installed:

@@ -44,8 +44,8 @@ project_typed_reading_facts <- function(histories, theme) {
     if (any(measured & (!is.finite(rows$div_loss_t) | !is.finite(rows$div_loss_b) |
         rows$div_loss_t < 0 | rows$div_loss_b < 0 | rows$div_loss_b > rows$div_loss_t)))
       stop("Invalid selected mobility reading values", call.=FALSE)
-    if (any(!rows$story_key %in% c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve")) ||
-        any(!rows$classification_saillance %in% c("saillant", "non-saillant", "notable")))
+    if (anyNA(rows$story_key) || any(!nzchar(rows$story_key)) ||
+        anyNA(rows$classification_saillance) || any(!nzchar(rows$classification_saillance)))
       stop("Invalid selected mobility story or salience classification", call.=FALSE)
   }
   if(theme=="economie") for(i in seq_len(nrow(rows))) {
@@ -55,6 +55,30 @@ project_typed_reading_facts <- function(histories, theme) {
   names(rows)[names(rows) == "territoire"] <- "territory_id"
   names(rows)[names(rows) == "type"] <- "territory_type"
   rows
+}
+
+# Project the selected Mobility reading and bind it to its producer-declared snapshot clock.
+project_mobility_reading <- function(histories, vintages, metadata) {
+  facts <- project_typed_reading_facts(histories, "mobilite")
+  source_id <- metadata$sources$tot_loss_t
+  if (is.null(source_id) || length(source_id)!=1L || is.na(source_id) || !nzchar(source_id) ||
+      !identical(as.character(metadata$sources$tot_loss_b), as.character(source_id)) ||
+      is.null(metadata$story_keys) || any(!facts$story_key %in% unlist(metadata$story_keys,use.names=FALSE)))
+    stop("Mobility reading source/story declarations are missing or inconsistent",call.=FALSE)
+  source <- vintages[vintages$id==source_id,,drop=FALSE]
+  if (nrow(source)!=1L || anyNA(source[c("id","source","version","date_publication")]))
+    stop("Canonical vintage manifest has no unique mobility snapshot source clock",call.=FALSE)
+  facts$status <- ifelse(is.na(facts$div_loss_t) | is.na(facts$div_loss_b),"unavailable","measured")
+  facts$source_id <- as.character(source$id[[1L]])
+  facts$vintage_id <- paste(as.character(source$version[[1L]]),
+    if (is.na(source$date_reference[[1L]])) "NA" else as.character(source$date_reference[[1L]]),sep="/")
+  facts
+}
+
+mobility_reading_content_version <- function(histories,vintages,metadata) {
+  facts <- project_mobility_reading(histories,vintages,metadata)
+  scalar_content_version(list(facts=facts,source=vintages[vintages$id==unique(facts$source_id),,drop=FALSE],
+    story_keys=metadata$story_keys,sources=metadata$sources[c("tot_loss_t","tot_loss_b")]))
 }
 
 # The canonical economy history already contains the producer-ranked top five.
@@ -426,6 +450,69 @@ register_milieux_reading_publisher <- function(registry) {
   register_typed_reading_publisher(registry,"milieux",
     function(input) project_milieux_reading(input$histories,input$vintages,input$metadata,canonical=input),
     function(db,projection,input) publish_milieux_reading(db,projection,input))
+}
+
+register_mobility_reading_publisher <- function(registry) {
+  register_typed_reading_publisher(registry,"mobilite",
+    function(input) project_mobility_reading(input$histories,input$vintages,input$metadata),
+    function(db,projection,input) publish_mobility_reading(db,projection,input))
+}
+
+publish_mobility_reading <- function(con, facts, canonical) {
+  reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version
+  if(length(reference)!=1L || is.na(reference) || !nzchar(reference))
+    stop("Published territory reference is required for Mobility readings",call.=FALSE)
+  known <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type FROM territory_reference")
+  identity <- function(x) paste(x$territory_id,x$territory_type,sep="\r")
+  if(any(!identity(unique(facts[c("territory_id","territory_type")])) %in% identity(known)))
+    stop("Mobility reading contains a territory absent from the registered reference",call.=FALSE)
+  source_id <- facts$source_id[[1L]]; vintage_id <- facts$vintage_id[[1L]]
+  vintage <- canonical$vintages[canonical$vintages$id==source_id,,drop=FALSE]
+  registered <- DBI::dbGetQuery(con,"SELECT sd.name,sv.version,sv.reference_date,sv.publication_date
+    FROM source_dataset sd JOIN source_vintage sv USING(source_id) WHERE sd.source_id=$1 AND sv.vintage_id=$2",
+    params=list(source_id,vintage_id))
+  date_value <- function(value) if(is.na(value)) NA_character_ else as.character(value)
+  if(nrow(vintage)!=1L || nrow(registered)!=1L || registered$name[[1L]]!=as.character(vintage$source[[1L]]) ||
+     registered$version[[1L]]!=as.character(vintage$version[[1L]]) ||
+     date_value(registered$reference_date[[1L]])!=date_value(vintage$date_reference[[1L]]) ||
+     date_value(registered$publication_date[[1L]])!=date_value(vintage$date_publication[[1L]]) ||
+     any(facts$source_id!=source_id) || any(facts$vintage_id!=vintage_id))
+    stop("Registered immutable Mobility snapshot clock differs from canonical reading",call.=FALSE)
+  version <- canonical$content_version; expected <- nrow(facts); changed <- TRUE
+  if(is.null(version) || length(version)!=1L || is.na(version) || !nzchar(version))
+    stop("Canonical Mobility reading content version is required",call.=FALSE)
+  DBI::dbWithTransaction(con, {
+    marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='mobility_typed_reading'")
+    actual <- if(nrow(marker)) DBI::dbGetQuery(con,"SELECT count(*) n FROM mobility_typed_reading")$n[[1L]] else -1L
+    if(nrow(marker)==1L && marker$content_version[[1L]]==version && marker$row_count[[1L]]==expected &&
+       marker$reference_content_version[[1L]]==reference[[1L]] && actual==expected) {
+      changed <- FALSE
+    } else {
+      DBI::dbExecute(con,"DELETE FROM mobility_typed_reading")
+      rows <- facts[c("territory_id","territory_type","groupe","story_key","salience_reason",
+        "classification_saillance","div_loss_t","div_loss_b","status","source_id","vintage_id")]
+      DBI::dbWriteTable(con,"mobility_typed_reading",rows,append=TRUE,row.names=FALSE)
+      inserted <- DBI::dbGetQuery(con,"SELECT count(*) n FROM mobility_typed_reading")$n[[1L]]
+      if(inserted!=expected) stop("Mobility reading inserted row count does not match projection",call.=FALSE)
+      DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at)
+        VALUES('mobility_typed_reading',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET
+        content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,
+        reference_content_version=EXCLUDED.reference_content_version,published_at=now()",
+        params=list(version,inserted,reference[[1L]]))
+    }
+  })
+  invisible(list(content_version=version,row_count=expected,changed=changed))
+}
+
+publish_canonical_mobility_reading <- function(con, sortie="../public/data") {
+  history_path <- file.path(sortie,"histoires_mobilite.parquet")
+  vintage_path <- file.path(sortie,"vintages.parquet")
+  if(any(!file.exists(c(history_path,vintage_path))))
+    stop("Canonical Mobility history and vintage artifacts are required",call.=FALSE)
+  input <- list(histories=nanoparquet::read_parquet(history_path),
+    vintages=nanoparquet::read_parquet(vintage_path),metadata=lire_theme_metadata("mobilite"))
+  input$content_version <- mobility_reading_content_version(input$histories,input$vintages,input$metadata)
+  publish_registered_typed_reading(register_mobility_reading_publisher(list()),"mobilite",input,con)
 }
 
 # Production publication path: reuse the registered OCS-GE dataset publisher,
