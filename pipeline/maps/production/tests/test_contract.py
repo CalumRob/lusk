@@ -7,6 +7,7 @@ from hashlib import sha256
 
 from pathlib import Path
 import sys
+from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 
@@ -65,6 +66,151 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(len(subset.outputs), 1)
         self.assertEqual(len(saved["outputs"]), 2)
 
+    def test_public_run_groups_all_modes_profiles_by_territory_and_releases_on_failure(self):
+        class LifecycleAdapter(FixtureAdapter):
+            def __init__(self):
+                super().__init__()
+                self.events = []
+                self.rendered = []
+            def begin_production_scope(self, scope, output_dir): self.events.append(("scope-begin", scope))
+            def end_production_scope(self, scope, output_dir, *, success):
+                self.events.append(("scope-end", scope, success))
+            def begin_territory(self, feature, profiles, output_dir):
+                self.events.append(("territory-begin", feature["territory"]["code"], tuple(profiles)))
+            def observe_territory_state(self, feature): pass
+            def end_territory(self, feature, output_dir, *, success):
+                self.events.append(("territory-end", feature["territory"]["code"], success))
+            def expected_output_path(self, feature, profile, output_dir):
+                return output_dir / f"{feature['territory']['code']}-{feature['mode']}-{profile.name}.png"
+            def render(self, recipe, feature, profile, output_dir):
+                key = f"{feature['territory']['code']}/{feature['mode']}/{profile.name}"
+                self.rendered.append(key)
+                if key == "1/walk/inline":
+                    raise RuntimeError("one output failed")
+                output_dir.mkdir(parents=True, exist_ok=True)
+                path = self.expected_output_path(feature, profile, output_dir)
+                png(path, *profile.size, rgba=profile.transparent_outside,
+                    transparent=profile.transparent_outside)
+                return path
+
+        territories = [(code, mode) for mode in ("car", "walk", "bike") for code in ("1", "2")]
+        features = [{"geometry": "polygon", "territory": {"kind": "fixture", "code": code,
+            "name": f"Territory {code}"}, "mode": mode} for code, mode in territories]
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        adapter = LifecycleAdapter()
+        with TemporaryDirectory() as directory:
+            result = run_production(recipe, Binding("fixture", MapSet({"outputs": features})),
+                "representative", ("inspection", "inline"), adapter, directory)
+        self.assertEqual(len(result.qa["expected_outputs"]), 12)
+        self.assertEqual(len(result.qa["failures"]), 1)
+        begins = [event for event in adapter.events if event[0] == "territory-begin"]
+        ends = [event for event in adapter.events if event[0] == "territory-end"]
+        self.assertEqual([event[1] for event in begins], ["1", "2"])
+        self.assertEqual([event[1:] for event in ends], [("1", False), ("2", True)])
+        self.assertEqual(adapter.events[-1], ("scope-end", "representative", False))
+
+    def test_public_interruption_resumes_from_durable_verified_output_without_rerender(self):
+        class Interrupted(BaseException): pass
+        class InterruptOnce(FixtureAdapter):
+            def __init__(self):
+                super().__init__(); self.calls = []; self.interrupt = True; self.releases = 0
+            def begin_production_scope(self, scope, output_dir): pass
+            def begin_territory(self, feature, profiles, output_dir): pass
+            def end_territory(self, feature, output_dir, *, success): self.releases += 1
+            def end_production_scope(self, scope, output_dir, *, success): self.releases += 1
+            def expected_output_path(self, feature, profile, output_dir):
+                return output_dir / f"{profile.name}.png"
+            def render(self, recipe, feature, profile, output_dir):
+                self.calls.append(profile.name)
+                if profile.name == "inline" and self.interrupt:
+                    self.interrupt = False
+                    raise Interrupted()
+                output_dir.mkdir(parents=True, exist_ok=True)
+                path = self.expected_output_path(feature, profile, output_dir)
+                png(path, *profile.size, rgba=profile.transparent_outside,
+                    transparent=profile.transparent_outside)
+                return path
+
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        feature = {"geometry": "polygon", "territory": {"kind": "fixture", "code": "1",
+            "name": "One"}, "mode": "car"}
+        adapter = InterruptOnce()
+        with TemporaryDirectory() as directory:
+            with self.assertRaises(Interrupted):
+                run_production(recipe, Binding("fixture", MapSet({"outputs": [feature]})),
+                    "representative", ("inspection", "inline"), adapter, directory)
+            checkpoints = list(Path(directory).glob(".production-checkpoint-*.jsonl"))
+            self.assertEqual(len(checkpoints), 1)
+            records = [json.loads(row)["payload"] for row in checkpoints[0].read_text().splitlines()]
+            header = records[0]
+            success = [row for row in records if row.get("kind") == "output-success"]
+            self.assertEqual(len(header["expected_outputs"]), 2)
+            self.assertEqual(len(success), 1)
+            self.assertEqual(len(success[0]["effective_identity"]), 64)
+            self.assertTrue(Path(success[0]["path"]).is_file())
+            self.assertEqual(sha256(Path(success[0]["path"]).read_bytes()).hexdigest(),
+                             success[0]["output_sha256"])
+            adapter.calls.clear()
+            resumed = run_production(recipe, Binding("fixture", MapSet({"outputs": [feature]})),
+                "representative", ("inspection", "inline"), adapter, directory)
+        self.assertEqual([output["decision"] for output in resumed.outputs], ["reused-output", "rendered"])
+        self.assertEqual(adapter.calls, ["inline"])
+        self.assertGreaterEqual(adapter.releases, 4)
+
+    def test_changed_effective_identity_rerenders_only_changed_territory(self):
+        class Counting(FixtureAdapter):
+            def __init__(self): super().__init__(); self.calls = []
+            def expected_output_path(self, feature, profile, output_dir):
+                return output_dir / f"{feature['territory']['code']}-{profile.name}.png"
+            def render(self, recipe, feature, profile, output_dir):
+                self.calls.append(str(feature["territory"]["code"]))
+                output_dir.mkdir(parents=True, exist_ok=True)
+                path = self.expected_output_path(feature, profile, output_dir)
+                png(path, *profile.size, rgba=profile.transparent_outside,
+                    transparent=profile.transparent_outside)
+                return path
+
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        def feature(code, geom):
+            return {"geometry": geom, "territory": {"kind": "fixture", "code": code,
+                "name": f"Territory {code}"}, "mode": "test"}
+        first_binding = Binding("fixture", MapSet({"outputs": [feature("1", "g1"), feature("2", "g2")] }))
+        changed_binding = Binding("fixture", MapSet({"outputs": [feature("1", "g1"), feature("2", "g2-edited")] }))
+        adapter = Counting()
+        with TemporaryDirectory() as directory:
+            initial = run_production(recipe, first_binding, "representative", ("inline",), adapter, directory)
+            original_hash = initial.outputs[0]["output_sha256"]
+            adapter.calls.clear()
+            retry = run_production(recipe, changed_binding, "representative", ("inline",), adapter, directory)
+        self.assertEqual([item["decision"] for item in retry.outputs], ["reused-output", "rendered"])
+        self.assertEqual(adapter.calls, ["2"])
+        self.assertEqual(retry.outputs[0]["output_sha256"], original_hash)
+
+    def test_checkpoint_write_failure_stops_run_and_calls_lifecycle_cleanup(self):
+        from checkpoint import OutputCheckpoint
+        class Lifecycle(FixtureAdapter):
+            def __init__(self): super().__init__(); self.events = []
+            def begin_production_scope(self, scope, output_dir): self.events.append("scope-begin")
+            def end_production_scope(self, scope, output_dir, *, success): self.events.append(("scope-end", success))
+            def begin_territory(self, feature, profiles, output_dir): self.events.append("territory-begin")
+            def end_territory(self, feature, output_dir, *, success): self.events.append(("territory-end", success))
+
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        feature = {"geometry": "g1", "territory": {"kind": "fixture", "code": "1", "name": "One"},
+            "mode": "test"}
+        adapter = Lifecycle()
+        with TemporaryDirectory() as directory:
+            with patch.object(OutputCheckpoint, "record_success", side_effect=OSError("disk full")):
+                with self.assertRaisesRegex(OSError, "disk full"):
+                    run_production(recipe, Binding("fixture", MapSet({"outputs": [feature]})),
+                        "representative", ("inline",), adapter, directory)
+            self.assertFalse((Path(directory) / ".production-manifest.json").exists())
+            self.assertEqual(adapter.events[-2:], [("territory-end", False), ("scope-end", False)])
+            journal = next(Path(directory).glob(".production-checkpoint-*.jsonl"))
+            records = [json.loads(line)["payload"] for line in journal.read_text().splitlines()]
+            self.assertEqual(len(records[0]["expected_outputs"]), 1)
+            self.assertFalse(any(row.get("kind") == "output-success" for row in records))
+
     def test_public_run_reuses_verified_output_across_runs_and_repairs_corruption(self):
         recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
         feature = {"geometry": "polygon", "territory": {"kind": "test", "code": "1"}, "mode": "test"}
@@ -86,14 +232,16 @@ class ContractTests(unittest.TestCase):
             cache["outputs"]["test/1/test/inline"]["path"] = 123
             cache_path.write_text(json.dumps(cache), encoding="utf-8")
             malformed = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
-            self.assertEqual(malformed.outputs[0]["decision"], "rendered")
+            self.assertEqual(malformed.outputs[0]["decision"], "reused-output")
             decoy = Path(directory) / "decoy.png"
             png(decoy, 900, 900, rgba=True, transparent=True)
             cache = json.loads(cache_path.read_text(encoding="utf-8"))
             cache["outputs"]["test/1/test/inline"]["path"] = str(decoy)
             cache_path.write_text(json.dumps(cache), encoding="utf-8")
             wrong_path = run_production(recipe, binding, "representative", ["inline"], adapter, directory)
-            self.assertEqual(wrong_path.outputs[0]["decision"], "rendered")
+            # A corrupted legacy manifest cannot displace a valid checksummed
+            # checkpoint row, whose path and bytes are reverified by the runner.
+            self.assertEqual(wrong_path.outputs[0]["decision"], "reused-output")
 
     def test_run_report_exposes_adapter_preparation_stage(self):
         class PreparingAdapter(FixtureAdapter):

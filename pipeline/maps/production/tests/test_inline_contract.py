@@ -199,8 +199,9 @@ class InlineProfileContractTests(unittest.TestCase):
                 [("reused", next(item["identity"] for item in cold.qa["stage_report"]
                     if item["stage"] == "context-land-union"))])
             self.assertEqual({item["decision"] for item in warm.outputs}, {"reused-output"})
-            self.assertEqual({item["decision"] for item in warm.qa["stage_report"]
-                if item["stage"] == "territory-ground"}, {"reused"})
+            self.assertFalse(any(item["stage"] == "territory-ground"
+                for item in warm.qa["stage_report"]),
+                "reused final products must not load or imply a ground cache")
             context_identity = next(item["identity"] for item in warm.qa["stage_report"]
                 if item["stage"] == "context-land-union")
             context_stage = output / ".stage-cache" / "context-land" / context_identity
@@ -214,7 +215,7 @@ class InlineProfileContractTests(unittest.TestCase):
                 if item["stage"] == "context-land-union"), "built")
 
             inline_output = next(item for item in warm.outputs if item["profile"] == "inline")
-            inline_stage = next(item["identity"] for item in warm.qa["stage_report"]
+            inline_stage = next(item["identity"] for item in cold.qa["stage_report"]
                 if item["stage"] == "territory-ground" and item["profile"] == "inline")
             ground_manifest = output / ".stage-cache" / "ground" / inline_stage / "manifest.json"
             ground_manifest.write_text('{"schema":1,"files":[]}', encoding="utf-8")
@@ -473,9 +474,8 @@ class InlineProfileContractTests(unittest.TestCase):
                 warm = run()
                 refreshed = run(refresh=True)
             warm_ground = [item for item in warm.qa["stage_report"] if item["stage"] == "territory-ground"]
-            self.assertEqual(len(warm_ground), 3)
-            self.assertEqual({item["decision"] for item in warm_ground}, {"reused"})
-            self.assertEqual({item["identity"] for item in warm_ground}, identities)
+            self.assertFalse(warm_ground,
+                "unchanged final products should be reused without loading persistent ground stages")
             warm_derivatives = [item for item in warm.qa["stage_report"]
                 if item["stage"] == "visible-ground-derivatives"]
             self.assertTrue(warm_derivatives, warm.qa["stage_report"])
