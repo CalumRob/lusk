@@ -70,6 +70,41 @@ test_that("closed mobility profile projections preserve all canonical details an
   expect_error(project_mobility_profile(canonical, bad_metadata, "offre_cyclable"), "contract is incomplete")
 })
 
+test_that("Mobility density signature preserves independent range, density and decile coordinates", {
+  metadata <- lire_theme_metadata("mobilite")
+  fields <- c("territoire", "type", "story_key", "dens_min", "dens_max",
+    paste0("dens_", 1:10), paste0("dec_", 1:10), "vintage_source", "vintage_version",
+    "vintage_date_reference", "vintage_date_publication")
+  history <- as.data.frame(setNames(rep(list(NA), length(fields)), fields), stringsAsFactors=FALSE)
+  history[1,] <- c(list("35238", "commune", "vingt-minutes-sans-voiture", 1, 52),
+    as.list(seq(.01,.10,.01)), as.list(c(1,4,8,12,18,NA,NA,33,42,52)),
+    list(metadata$source_records$mobilite_snapshot$dataset,"2026-02","2026-02-28","2026-08-06"))
+  vintage <- data.frame(id="mobilite_snapshot",source=metadata$source_records$mobilite_snapshot$dataset,
+    version="2026-02",date_reference="2026-02-28",date_publication="2026-08-06")
+  histories <- do.call(rbind, lapply(list(c("35238","commune"), c("200000001","epci"),
+    c("35","departement"), c("53","region")), function(identity) {
+      row <- history
+      row$territoire <- identity[[1L]]
+      row$type <- identity[[2L]]
+      row
+  }))
+  projected <- project_mobility_density_distribution(histories, vintage, metadata)
+  focal_range <- projected$ranges[projected$ranges$territory_id == "35238",]
+  focal_points <- projected$points[projected$points$territory_id == "35238",]
+  expect_equal(focal_range$range_min, 1)
+  expect_equal(focal_range$range_max, 52)
+  expect_equal(focal_points$density, seq(.01,.10,.01))
+  expect_equal(focal_points$decile, c(1,4,8,12,18,NA,NA,33,42,52))
+  expect_identical(focal_points$ordinal, 0:9)
+  expect_setequal(unique(projected$ranges$territory_type), c("commune","epci","departement","region"))
+  expect_identical(focal_points$decile_status[6:7], c("not_available","not_available"))
+  restricted <- metadata
+  restricted$distribution_contracts$mobilite_density_distribution$allowed_focal_levels <- "commune"
+  expect_error(project_mobility_density_distribution(histories, vintage, restricted), "outside.*producer-declared focal levels")
+  expect_error(project_mobility_density_distribution(history[c("territoire", "type")], vintage, metadata),
+    "fields are incomplete")
+})
+
 test_that("the four Habitat detail profiles project canonical cells including regional facts", {
   metadata <- lire_theme_metadata("habitat")
   root <- pkgload::pkg_path()

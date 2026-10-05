@@ -2123,6 +2123,61 @@ def _mobility_service_reference_snapshot(conn):
             "content_version": marker[0]}
 
 
+def _mobility_density_distribution_snapshot(conn, territory_type, territory_id):
+    installed = conn.execute("SELECT to_regclass('mobility_density_distribution_descriptor')").fetchone()[0]
+    if not installed:
+        return None
+    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version,
+        d.descriptor_version,d.source_id,d.vintage_id,d.axis_count,d.density_unit,d.decile_unit,
+        sd.name,sv.version,sv.reference_date,sv.publication_date,m.source_id,m.vintage_id,m.source_version,
+        m.reference_date,m.publication_date,d.allowed_levels
+        FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+        JOIN mobility_density_distribution_descriptor d ON d.singleton
+        JOIN source_dataset sd ON sd.source_id=d.source_id
+        JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+        JOIN mobility_reading_descriptor m ON m.singleton
+        WHERE p.table_name='mobility_density_distribution'""").fetchone()
+    if not marker:
+        exists = conn.execute("SELECT 1 FROM mobility_density_distribution_range LIMIT 1").fetchone()
+        if exists:
+            raise HTTPException(503,"Mobility density distribution publication marker is unavailable")
+        return None
+    if (not marker[0] or marker[1]<1 or marker[2]!=marker[3] or marker[4]!=marker[0] or
+        marker[5]!="mobilite_snapshot" or marker[5]!=marker[14] or marker[6]!=marker[15] or
+        marker[11]!=marker[16] or marker[12]!=marker[17] or marker[13]!=marker[18]):
+        raise HTTPException(503,"Mobility density distribution publication is incompatible")
+    if territory_type not in marker[19]:
+        return {"status":"unsupported","range":{"minimum":None,"maximum":None,"status":"unsupported"},
+            "points":[],"units":{"density":marker[8],"decile":marker[9]},"provenance":{
+                "source_id":marker[5],"source_name":marker[10],"vintage_id":marker[6],"source_version":marker[11],
+                "source_reference_date":marker[12],"source_publication_date":marker[13]},
+            "allowed_levels":marker[19],"content_version":marker[0],"descriptor_version":marker[4]}
+    focal = conn.execute("""SELECT minimum,maximum,status,source_id,vintage_id FROM mobility_density_distribution_range
+        WHERE territory_id=%s AND territory_type=%s""",(territory_id,territory_type)).fetchone()
+    if not focal:
+        return {"status":"unsupported","range":{"minimum":None,"maximum":None,"status":"unsupported"},
+            "points":[],"units":{"density":marker[8],"decile":marker[9]},"provenance":{
+                "source_id":marker[5],"source_name":marker[10],"vintage_id":marker[6],"source_version":marker[11],
+                "source_reference_date":marker[12],"source_publication_date":marker[13]},
+            "allowed_levels":marker[19],
+            "content_version":marker[0],"descriptor_version":marker[4]}
+    if focal[3]!=marker[5] or focal[4]!=marker[6]:
+        raise HTTPException(503,"Mobility density distribution fact has incompatible provenance")
+    points = conn.execute("""SELECT ordinal,density,density_status,decile,decile_status,source_id,vintage_id
+        FROM mobility_density_distribution_point WHERE territory_id=%s AND territory_type=%s ORDER BY ordinal""",
+        (territory_id,territory_type)).fetchall()
+    if (len(points)!=marker[7] or [row[0] for row in points]!=list(range(marker[7])) or
+        any(row[5]!=marker[5] or row[6]!=marker[6] for row in points)):
+        raise HTTPException(503,"Mobility density distribution coordinates or provenance are incomplete")
+    return {"status":focal[2],"range":{"minimum":focal[0],"maximum":focal[1],"status":focal[2]},
+        "points":[{"ordinal":r[0],"density":r[1],"density_status":r[2],"decile":r[3],"decile_status":r[4]} for r in points],
+        "units":{"density":marker[8],"decile":marker[9]},"provenance":{
+            "source_id":marker[5],"source_name":marker[10],"vintage_id":marker[6],"source_version":marker[11],
+            "source_reference_date":marker[12],"source_publication_date":marker[13]},
+        "allowed_levels":marker[19],
+        "content_version":marker[0],"descriptor_version":marker[4]}
+
+
 @app.get("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
 def theme_facts(
     territory_type: Literal["commune", "epci", "departement", "region"],
@@ -2169,6 +2224,7 @@ def theme_facts(
             owned_series=[]
             collections=[]
             bpe_profile=None
+            density_distribution=None
             if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
                 has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
                     WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
@@ -2188,8 +2244,9 @@ def theme_facts(
                            if territory_type in descriptor["allowed_levels"]]
             readings = []
             reading_version = None
+            reading_descriptor_version = None
             reading_availability = None
-            if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat"):
+            if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat", "mobilite"):
                 raise HTTPException(404, "No published facts for this theme and territory")
             readings = []
             reading_version = None
@@ -2226,6 +2283,64 @@ def theme_facts(
                     for row in reading_rows]
                 for reading in readings:
                     reading["rate_unit"] = reading_marker[11]
+            elif theme_id == "mobilite":
+                installed = conn.execute("SELECT to_regclass('mobility_typed_reading')").fetchone()[0]
+                if not installed:
+                    raise HTTPException(503,"Mobility reading publication is unavailable")
+                reading_marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
+                    t.content_version,d.descriptor_version,d.source_id,d.vintage_id,d.source_name,d.dataset_name,
+                    d.source_version,d.reference_date,d.publication_date,d.unit,d.direction,d.allowed_levels,
+                    d.missing_status,d.classification_values,d.field_keys,d.story_count,d.clock_count,
+                    sd.name,sv.version,sv.reference_date,sv.publication_date
+                    FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+                    JOIN mobility_reading_descriptor d ON d.singleton
+                    JOIN source_dataset sd ON sd.source_id=d.source_id
+                    JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+                    WHERE p.table_name='mobility_typed_reading'""").fetchone()
+                if not reading_marker or not reading_marker[0] or reading_marker[1] < 1 or reading_marker[2] != reading_marker[3]:
+                    raise HTTPException(503,"Mobility reading publication is unavailable or incompatible")
+                if (not reading_marker[4] or not reading_marker[5] or not reading_marker[6] or
+                    reading_marker[7] != reading_marker[20] or reading_marker[9] != reading_marker[21] or
+                    reading_marker[10] != reading_marker[22] or reading_marker[11] != reading_marker[23] or
+                    not reading_marker[8] or not reading_marker[12] or
+                    reading_marker[13] not in ("high","low","none") or not reading_marker[14] or
+                    reading_marker[15] != "unavailable" or not reading_marker[16] or
+                    not {"groupe","story_key","salience_reason","classification_saillance","div_loss_t","div_loss_b","status"}.issubset(set(reading_marker[17]))):
+                    raise HTTPException(503,"Mobility reading descriptor differs from its registered source contract")
+                reading_availability = "available" if territory_type in reading_marker[14] else "unsupported"
+                clocks = conn.execute("""SELECT clock_name,frequency,reference,trigger FROM mobility_reading_clock
+                    ORDER BY ordinal""").fetchall()
+                story_descriptors = conn.execute("""SELECT story_key,groupe,salience_reason FROM mobility_reading_story
+                    ORDER BY ordinal""").fetchall()
+                if len(clocks)!=reading_marker[19] or len(story_descriptors)!=reading_marker[18]:
+                    raise HTTPException(503,"Mobility reading semantic descriptor is incomplete")
+                source_provenance={"source_id":reading_marker[5],"source_name":reading_marker[7],
+                    "dataset_name":reading_marker[8],"vintage_id":reading_marker[6],
+                    "source_version":reading_marker[9],"source_reference_date":reading_marker[10],
+                    "source_publication_date":reading_marker[11],
+                    "windows":[dict(zip(("name","frequency","reference","trigger"),clock)) for clock in clocks]}
+                story_bindings={(story,group,reason) for story,group,reason in story_descriptors}
+                reading_rows = conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.classification_saillance,
+                    r.div_loss_t,r.div_loss_b,r.status,r.source_id,r.vintage_id,s.story_key
+                    FROM mobility_typed_reading r LEFT JOIN mobility_reading_story s
+                      ON s.groupe=r.groupe AND s.story_key=r.story_key AND s.salience_reason=r.salience_reason
+                    WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
+                    (territory_id,territory_type)).fetchall() if reading_availability == "available" else []
+                if reading_availability == "available" and not reading_rows:
+                    raise HTTPException(503,"Declared eligible Mobility reading is absent for this territory")
+                for row in reading_rows:
+                    if (row[9] is None or (row[1],row[0],row[2]) not in story_bindings or
+                        row[7]!=reading_marker[5] or row[8]!=reading_marker[6] or row[2] is None or
+                        (row[3] is not None and row[3] not in reading_marker[16]) or
+                        (row[6]=="measured" and (row[4] is None or row[5] is None)) or
+                        (row[6]==reading_marker[15] and row[4] is not None and row[5] is not None) or
+                        (row[6] not in ("measured",reading_marker[15]))):
+                        raise HTTPException(503,"Mobility reading fields differ from their registered descriptor")
+                    readings.append(dict(zip(("groupe","story_key","salience_reason","classification_saillance",
+                        "div_loss_t","div_loss_b","status","source_id","vintage_id"),row[:9]),
+                        unit=reading_marker[12],direction=reading_marker[13],provenance=source_provenance))
+                reading_version = reading_marker[0]
+                reading_descriptor_version = reading_marker[4]
             elif theme_id == "habitat":
                 installed = conn.execute("SELECT to_regclass('habitat_typed_reading')").fetchone()[0]
                 if installed:
@@ -2401,6 +2516,7 @@ def theme_facts(
             building_access = None
             service_reference = None
             if theme_id == "mobilite":
+                density_distribution=_mobility_density_distribution_snapshot(conn,territory_type,territory_id)
                 try:
                     building_access = repository.read_building_initial(
                         territory_type, territory_id,
@@ -2424,16 +2540,19 @@ def theme_facts(
         "content_version":marker[0] if marker else comparison["content_version"],
         "owned_series_content_versions":[item["publication_id"] for item in owned_series],
         "reference_content_version":comparison["reference_content_version"],
-        "profile_content_version":profile_version,"profiles":profiles,
-        "readings":readings,"reading_content_version":reading_version,"reading_availability":reading_availability,
+         "profile_content_version":profile_version,"profiles":profiles,
+         "readings":readings,"reading_content_version":reading_version,"reading_descriptor_version":reading_descriptor_version,
+         "reading_availability":reading_availability,
         "series":owned_series,
         "series":owned_series,"bpe_profile_evidence":bpe_profile,
         "collections":collections,
-       "facts":[dict(zip(names,row)) for row in rows],
-       "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
-                             "profile_comparisons":comparison["profile_comparisons"]}}
+        "facts":[dict(zip(names,row)) for row in rows],
+        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
+                              "profile_comparisons":comparison["profile_comparisons"]}}
     if building_access is not None:
         payload["building_access"] = building_access
+    if density_distribution is not None:
+        payload["density_distribution"] = density_distribution
     if service_reference is not None:
         payload["service_reference"] = service_reference
     return payload

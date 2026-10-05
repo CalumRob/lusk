@@ -182,8 +182,9 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data") {
       metadata=lire_theme_metadata("economie"))
     economy_input$content_version <- economy_reading_content_version(economy_input$histories,economy_input$vintages,economy_input$metadata)
     economy_reading <- publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_input,conn)
+    mobility_reading <- publish_canonical_mobility_reading(conn,sortie)
     milieux_reading <- publish_canonical_milieux_reading(conn,sortie)
-    list(access=access, scalar=scalar, economy_reading=economy_reading,
+    list(access=access, scalar=scalar, economy_reading=economy_reading,mobility_reading=mobility_reading,
       milieux_reading=milieux_reading$reading, milieux_state_series=milieux_reading$owned_series)
   },
            finally = DBI::dbDisconnect(conn))

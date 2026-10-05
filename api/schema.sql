@@ -3,13 +3,13 @@
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
         'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading')),
+        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','mobility_typed_reading','mobility_density_distribution')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','mobility_typed_reading','mobility_density_distribution') OR reference_content_version IS NOT NULL)
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -914,6 +914,41 @@ CREATE TABLE milieux_typed_reading (
  PRIMARY KEY(territory_id,territory_type,groupe),
  FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
  CHECK ((status='measured') = (periode_pop IS NOT NULL AND periode_artif IS NOT NULL AND classification IS NOT NULL)));
+CREATE TABLE mobility_typed_reading (
+ territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
+ groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL,
+ classification_saillance text, div_loss_t double precision, div_loss_b double precision,
+ status text NOT NULL CHECK(status IN ('measured','unavailable')),
+ source_id text NOT NULL, vintage_id text NOT NULL,
+ PRIMARY KEY(territory_id,territory_type,groupe),
+ FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
+ FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+ CHECK ((status='measured') = (div_loss_t IS NOT NULL AND div_loss_b IS NOT NULL)),
+ CHECK (div_loss_t IS NULL OR (div_loss_t >= 0 AND div_loss_t NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))),
+ CHECK (div_loss_b IS NULL OR (div_loss_b >= 0 AND div_loss_b NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))),
+ CHECK (div_loss_t IS NULL OR div_loss_b IS NULL OR div_loss_b <= div_loss_t));
+CREATE TABLE mobility_reading_descriptor (
+ singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), descriptor_version text NOT NULL CHECK(length(descriptor_version)>0),
+ source_id text NOT NULL, vintage_id text NOT NULL, source_name text NOT NULL CHECK(length(trim(source_name))>0),
+ dataset_name text NOT NULL CHECK(length(trim(dataset_name))>0), source_version text NOT NULL CHECK(length(trim(source_version))>0),
+ reference_date date, publication_date date,
+ unit text NOT NULL CHECK(length(trim(unit))>0), direction text NOT NULL CHECK(direction IN ('high','low','none')),
+ allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
+ missing_status text NOT NULL CHECK(missing_status='unavailable'),
+ classification_values text[] NOT NULL CHECK(cardinality(classification_values)>0),
+ field_keys text[] NOT NULL CHECK(cardinality(field_keys)>0), story_count integer NOT NULL CHECK(story_count>0),
+ clock_count integer NOT NULL CHECK(clock_count>0),
+ FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+CREATE TABLE mobility_reading_story (
+ story_key text PRIMARY KEY, groupe text NOT NULL, salience_reason text NOT NULL, ordinal integer NOT NULL CHECK(ordinal>0),
+ UNIQUE(groupe,story_key), UNIQUE(groupe,story_key,salience_reason), UNIQUE(ordinal),
+ CHECK(length(trim(story_key))>0 AND length(trim(groupe))>0 AND length(trim(salience_reason))>0));
+ALTER TABLE mobility_typed_reading ADD CONSTRAINT mobility_reading_story_contract
+ FOREIGN KEY(groupe,story_key,salience_reason) REFERENCES mobility_reading_story(groupe,story_key,salience_reason);
+CREATE TABLE mobility_reading_clock (
+ ordinal integer PRIMARY KEY CHECK(ordinal>0), clock_name text NOT NULL CHECK(length(trim(clock_name))>0),
+ frequency text NOT NULL CHECK(length(trim(frequency))>0), reference text NOT NULL CHECK(length(trim(reference))>0),
+ trigger text NOT NULL CHECK(length(trim(trigger))>0), UNIQUE(clock_name));
 CREATE TABLE milieux_population_provenance_revision (
  population_revision_id text PRIMARY KEY,
  source_id text NOT NULL, vintage_id text NOT NULL, source_name text NOT NULL,
@@ -939,6 +974,8 @@ CREATE TABLE milieux_reading_source (
      OR (field_key IN ('artif_m2_par_habitant','artif_m3_par_habitant') AND dataset_id IS NOT NULL AND dataset_content_version IS NOT NULL AND state_role IN ('M2','M3') AND provenance_revision_id IS NOT NULL AND population_revision_id IS NULL)));
 GRANT SELECT ON milieux_typed_reading,milieux_reading_source TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_typed_reading,milieux_reading_source TO lusk_publisher;
+GRANT SELECT ON mobility_typed_reading,mobility_reading_descriptor,mobility_reading_story,mobility_reading_clock TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON mobility_typed_reading,mobility_reading_descriptor,mobility_reading_story,mobility_reading_clock TO lusk_publisher;
 GRANT SELECT ON milieux_population_provenance_revision TO lusk_reader;
 GRANT SELECT,INSERT ON milieux_population_provenance_revision TO lusk_publisher;
 -- Sparse period/detail facts have real year coordinates, not dense profile zeros.
@@ -1055,3 +1092,79 @@ CREATE CONSTRAINT TRIGGER observed_collection_publication_contract AFTER INSERT 
 CREATE INDEX period_detail_comparison ON period_detail_observation(indicator_id,observation_period,detail_key,territory_id) INCLUDE(value);
 GRANT SELECT ON observed_collection_publication,observed_collection_descriptor,observed_collection_category,period_detail_observation,anchored_membership TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON observed_collection_publication,observed_collection_descriptor,observed_collection_category,period_detail_observation,anchored_membership TO lusk_publisher;
+
+-- Paired density/decile distribution consumed by the Mobilité focal figure.
+-- This is intentionally distinct from a median-comparison profile.
+CREATE TABLE mobility_density_distribution_descriptor (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), descriptor_version text NOT NULL,
+  source_id text NOT NULL CHECK(source_id='mobilite_snapshot'), vintage_id text NOT NULL,
+  axis_count integer NOT NULL CHECK(axis_count>0),
+  allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
+  density_unit text NOT NULL CHECK(length(trim(density_unit))>0),
+  decile_unit text NOT NULL CHECK(length(trim(decile_unit))>0),
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+CREATE TABLE mobility_density_distribution_range (
+  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
+  minimum double precision, maximum double precision, status text NOT NULL CHECK(status IN ('measured','not_available','unsupported')),
+  source_id text NOT NULL CHECK(source_id='mobilite_snapshot'), vintage_id text NOT NULL,
+  PRIMARY KEY(territory_type,territory_id),
+  FOREIGN KEY(territory_id) REFERENCES territory_reference(territory_id),
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+  CHECK((status='measured' AND minimum IS NOT NULL AND maximum IS NOT NULL AND minimum<=maximum) OR
+        (status<>'measured' AND minimum IS NULL AND maximum IS NULL)),
+  CHECK(minimum IS NULL OR (minimum NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8) AND minimum>=0)),
+  CHECK(maximum IS NULL OR (maximum NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8) AND maximum>=0)));
+CREATE TABLE mobility_density_distribution_point (
+  territory_id text NOT NULL, territory_type text NOT NULL, ordinal integer NOT NULL CHECK(ordinal>=0),
+  density double precision, density_status text NOT NULL CHECK(density_status IN ('measured','not_available','unsupported')),
+  decile double precision, decile_status text NOT NULL CHECK(decile_status IN ('measured','not_available','unsupported')),
+  source_id text NOT NULL CHECK(source_id='mobilite_snapshot'), vintage_id text NOT NULL,
+  PRIMARY KEY(territory_type,territory_id,ordinal),
+  FOREIGN KEY(territory_type,territory_id) REFERENCES mobility_density_distribution_range(territory_type,territory_id) ON DELETE CASCADE,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
+  CHECK((density_status='measured')=(density IS NOT NULL)), CHECK((decile_status='measured')=(decile IS NOT NULL)),
+  CHECK(density IS NULL OR (density NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8) AND density>=0)),
+  CHECK(decile IS NULL OR decile NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)));
+CREATE FUNCTION validate_mobility_density_distribution_territory() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NOT EXISTS(SELECT 1 FROM territory_reference WHERE territory_id=NEW.territory_id AND territory_type=NEW.territory_type)
+  THEN RAISE EXCEPTION 'Mobility density distribution territory type differs from reference'; END IF;
+  IF NOT EXISTS(SELECT 1 FROM mobility_density_distribution_descriptor d WHERE d.singleton AND NEW.territory_type=ANY(d.allowed_levels))
+  THEN RAISE EXCEPTION 'Mobility distribution territory level is outside its active descriptor'; END IF;
+  RETURN NEW;
+END $$;
+CREATE TRIGGER mobility_density_distribution_territory_contract BEFORE INSERT OR UPDATE ON mobility_density_distribution_range
+  FOR EACH ROW EXECUTE FUNCTION validate_mobility_density_distribution_territory();
+CREATE FUNCTION assert_mobility_density_distribution_complete() RETURNS trigger LANGUAGE plpgsql AS $$
+DECLARE expected integer; territory text; territory_kind text; point_count integer; first_ordinal integer; last_ordinal integer;
+  impacted_types text[]; impacted_ids text[]; i integer; BEGIN
+  SELECT axis_count INTO expected FROM mobility_density_distribution_descriptor WHERE singleton;
+  IF expected IS NULL THEN RAISE EXCEPTION 'Mobility density distribution descriptor is unavailable'; END IF;
+  IF TG_OP='DELETE' THEN
+    impacted_types:=ARRAY[OLD.territory_type]; impacted_ids:=ARRAY[OLD.territory_id];
+  ELSIF TG_OP='UPDATE' AND (OLD.territory_type IS DISTINCT FROM NEW.territory_type OR OLD.territory_id IS DISTINCT FROM NEW.territory_id) THEN
+    impacted_types:=ARRAY[OLD.territory_type,NEW.territory_type]; impacted_ids:=ARRAY[OLD.territory_id,NEW.territory_id];
+  ELSE
+    impacted_types:=ARRAY[NEW.territory_type]; impacted_ids:=ARRAY[NEW.territory_id];
+  END IF;
+  FOR i IN 1..array_length(impacted_types,1) LOOP
+    territory_kind:=impacted_types[i]; territory:=impacted_ids[i];
+    IF EXISTS(SELECT 1 FROM mobility_density_distribution_range r WHERE r.territory_type=territory_kind AND r.territory_id=territory) THEN
+      SELECT count(*),min(ordinal),max(ordinal) INTO point_count,first_ordinal,last_ordinal FROM mobility_density_distribution_point p
+        WHERE p.territory_type=territory_kind AND p.territory_id=territory;
+      IF point_count<>expected OR first_ordinal<>0 OR last_ordinal<>expected-1
+      THEN RAISE EXCEPTION 'Mobility density distribution axis is incomplete for %/%',territory_kind,territory; END IF;
+    ELSIF EXISTS(SELECT 1 FROM mobility_density_distribution_point p WHERE p.territory_type=territory_kind AND p.territory_id=territory) THEN
+      RAISE EXCEPTION 'Mobility density distribution has orphan coordinates for %/%',territory_kind,territory;
+    END IF;
+  END LOOP;
+  RETURN NULL;
+END $$;
+CREATE CONSTRAINT TRIGGER mobility_density_distribution_points_complete AFTER INSERT OR UPDATE OR DELETE
+  ON mobility_density_distribution_point DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION assert_mobility_density_distribution_complete();
+CREATE CONSTRAINT TRIGGER mobility_density_distribution_ranges_complete AFTER INSERT OR UPDATE OR DELETE
+  ON mobility_density_distribution_range DEFERRABLE INITIALLY DEFERRED
+  FOR EACH ROW EXECUTE FUNCTION assert_mobility_density_distribution_complete();
+GRANT SELECT ON mobility_density_distribution_descriptor,mobility_density_distribution_range,mobility_density_distribution_point TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON mobility_density_distribution_descriptor,mobility_density_distribution_range,mobility_density_distribution_point TO lusk_publisher;
