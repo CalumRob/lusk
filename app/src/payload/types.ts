@@ -80,6 +80,9 @@ export interface VintageStamp {
   vintage_date_reference: string | null
   /** The publication date — null for a continuous-follow source (ORT, #175). */
   vintage_date_publication: string | null
+  /** Complete source lineage for SQL-backed read-model facts. */
+  fact_sources?: Array<{ sourceId: string; source: string; version: string;
+    referenceDate: string | null; publicationDate: string | null }>
 }
 
 /** One facts row per (territoire × key × detail × sex × dimension). */

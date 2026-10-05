@@ -568,6 +568,14 @@ class ReadRepository:
                     raise HTTPException(503, "Incomplete building-access publication") from exc
                 target_ramp = [r for r in ramp_data if r["territoire"] == tid and r["type"] == ttype]
                 target_grid = [r for r in grid_data if r["territoire"] == tid and r["type"] == ttype]
+                source_rows = connection.execute("""SELECT DISTINCT r.source_id,s.name,v.version,
+                    v.reference_date,v.publication_date
+                    FROM building_ramp r JOIN source_dataset s USING(source_id)
+                    JOIN source_vintage v ON v.source_id=r.source_id AND v.vintage_id=r.source_version
+                    WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.source_id,v.version""",
+                    (tid, ttype)).fetchall()
+                if not source_rows:
+                    raise HTTPException(503, "Building-access source provenance is unavailable")
                 if ({r["availability"] for r in target_ramp} == {"absent"} and
                     {r["availability"] for r in target_grid} == {"absent"} and
                     len(target_ramp) == 3 and {r["mode"] for r in target_ramp} == {"c", "b", "t"} and
@@ -590,6 +598,10 @@ class ReadRepository:
                     "scope": None if ttype == "region" else {
                         "kind": kind,
                         "comparison_mode": comparison_mode if ttype == "commune" else "bretagne"},
+                    "sources": [{"source_id": row[0], "name": row[1], "version": row[2],
+                        "reference_date": row[3].isoformat() if row[3] else None,
+                        "publication_date": row[4].isoformat() if row[4] else None}
+                        for row in source_rows],
                     "ramp": None if availability == "absent" else [{"mode": r["mode"], "quantile_index": r["quantile_index"],
                               **{k: r[k] for k in ("quantile", "accessible_types", "total_buildings", "source_id")},
                               "source_version": r["version"]} for r in focal_ramp],
@@ -2563,8 +2575,7 @@ def theme_facts(
          "profile_content_version":profile_version,"profiles":profiles,
          "readings":readings,"reading_content_version":reading_version,"reading_descriptor_version":reading_descriptor_version,
          "reading_availability":reading_availability,
-        "series":owned_series,
-        "series":owned_series,"bpe_profile_evidence":bpe_profile,
+         "series":owned_series,"bpe_profile_evidence":bpe_profile,
         "collections":collections,
         "facts":[dict(zip(names,row)) for row in rows],
         "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],

@@ -83,3 +83,67 @@ export function clearBuildingApiPeers(facts: TerritoryFacts): TerritoryFacts {
       cells: distribution.cells.map((cell) => ({ ...cell, comparisonBuildingCount: null, comparisonShare: null })) },
   } }
 }
+
+/** Apply the peer-only building projection returned by theme-comparison-v1. */
+export function applyComparisonOnlyBuildingFacts(
+  facts: TerritoryFacts,
+  response: unknown,
+  label: string | null,
+): TerritoryFacts {
+  if (response === null || response === undefined) return clearBuildingApiPeers(facts)
+  if (!record(response) || !record(response.scope) || response.scope.kind !== 'custom' ||
+      !Number.isInteger(response.scope.member_count) || (response.scope.member_count as number) < 0) invalid()
+  const ramp = response.ramp
+  const distribution = response.distribution
+  if ((ramp === null) !== (distribution === null)) invalid()
+  let accessRamp = facts.mobility.accessRamp
+  if (accessRamp && ramp !== null) {
+    if (!record(ramp) || ramp.statistic !== 'mean' || ramp.member_count !== response.scope.member_count ||
+        !finite(ramp.total_buildings) || !Array.isArray(ramp.points) || ramp.points.length !== 33) invalid()
+    const values = new Map<string, number>()
+    for (const point of ramp.points) {
+      if (!record(point) || !(point.mode === 'c' || point.mode === 'b' || point.mode === 't') ||
+          !finite(point.quantile) || !finite(point.accessible_types)) invalid()
+      const key = `${point.mode}:${position(point.quantile as number)}`
+      if (values.has(key)) invalid()
+      values.set(key, point.accessible_types as number)
+    }
+    accessRamp = { ...accessRamp, comparisonStatistic: 'mean',
+      comparisonTotalBuildings: ramp.total_buildings as number,
+      curves: Object.fromEntries(Object.entries(modes).map(([mode, display]) => [display, {
+        ...accessRamp!.curves[display], points: accessRamp!.curves[display].points.map((point) => ({
+          ...point, comparisonAccessibleTypes: values.get(`${mode}:${position(point.quantile)}`) ?? null,
+        })),
+      }])) as unknown as typeof accessRamp.curves }
+  } else if (accessRamp) accessRamp = clearBuildingApiPeers({
+    ...facts, mobility: { ...facts.mobility, accessRamp, buildingDistribution: null },
+  }).mobility.accessRamp
+
+  let buildingDistribution = facts.mobility.buildingDistribution
+  if (buildingDistribution && distribution !== null) {
+    if (!record(distribution) || distribution.statistic !== 'mean' ||
+        distribution.member_count !== response.scope.member_count || !finite(distribution.total_buildings) ||
+        !Array.isArray(distribution.cells) || distribution.cells.length !== 30) invalid()
+    const values = new Map<string, { count: number; share: number }>()
+    for (const cell of distribution.cells) {
+      if (!record(cell) || !text(cell.breadth_bucket) || !text(cell.depth_bucket) ||
+          !Number.isInteger(cell.building_count) || !finite(cell.share)) invalid()
+      const key = `${cell.breadth_bucket}\0${cell.depth_bucket}`
+      if (values.has(key)) invalid()
+      values.set(key, { count: cell.building_count as number, share: cell.share })
+    }
+    if (buildingDistribution.cells.some((cell) => !values.has(`${cell.breadthBucket}\0${cell.depthBucket}`))) invalid()
+    buildingDistribution = { ...buildingDistribution, comparisonStatistic: 'mean',
+      comparisonTotalBuildings: distribution.total_buildings as number,
+      comparisonLabel: label,
+      cells: buildingDistribution.cells.map((cell) => {
+        const peer = values.get(`${cell.breadthBucket}\0${cell.depthBucket}`)!
+        return { ...cell, comparisonBuildingCount: peer.count, comparisonShare: peer.share }
+      }) }
+  } else if (buildingDistribution) buildingDistribution = clearBuildingApiPeers({
+    ...facts, mobility: { ...facts.mobility, accessRamp: null, buildingDistribution },
+  }).mobility.buildingDistribution
+  return { ...facts, mobility: { ...facts.mobility, accessRamp, buildingDistribution } }
+}
+
+const text = (value: unknown): value is string => typeof value === 'string'

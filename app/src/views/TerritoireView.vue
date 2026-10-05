@@ -39,12 +39,14 @@ import {
   resoudreContexteComparaison,
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
-import { territoryFactsFor } from '@/fiche/content/territoryFacts'
+import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
 import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
 import { applyInitialBuildingApiFacts } from '@/fiche/content/initialBuildingApiFacts'
+import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFacts'
+import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { chargerCohortesScalaires, indicateursScalairesPourNiveau, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
 import type { ThemeContent } from '@/fiche/content/themeContent'
-import type { MobiliteAccessFacts, TerritoryFacts } from '@/fiche/content/territoryFacts'
+import type { ComparisonScopeKind, TerritoryFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -221,66 +223,163 @@ const prototypeCahierMobilite = computed(
   () => prototypeActif && ['D', 'E'].includes(variante.value?.clef ?? '') && selection.value === 'mobilite',
 )
 const prototypeAccesApi = computed(() => prototypeCahierMobilite.value && variante.value?.clef === 'E')
-const accesApi = ref<MobiliteAccessFacts | null>(null)
 const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
 const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
-const buildingFacts = ref<TerritoryFacts | null>(null)
+const mobilityFocal = ref<TerritoryFacts | null>(null)
+const mobilityComparisonFacts = ref<TerritoryFacts | null>(null)
+const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const retryMobilityFacts = ref(0)
-let mobilityFactsRequest = 0
+let focalRequestSequence = 0
+let comparisonRequestSequence = 0
 const isRecord = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-let lastMobilityFactsKey: string | null = null
+let lastFocalKey: string | null = null
+let lastFocalModel: object | null = null
+let lastComparisonKey: string | null = null
+let lastComparisonModel: object | null = null
 
-watch([prototypeAccesApi, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
+watch([prototypeAccesApi, typeRoute, idRoute,
   () => modeleTerritoire.model.value, retryMobilityFacts], (_values, _oldValues, onCleanup) => {
-  const request = ++mobilityFactsRequest
-  accesApi.value = null
+  if (!prototypeAccesApi.value) return
+  const model = modeleTerritoire.model.value
+  const key = `${typeRoute.value}/${idRoute.value}/${retryMobilityFacts.value}`
+  if (model && lastFocalKey === key && lastFocalModel === model) return
+  const request = ++focalRequestSequence
   statutAccesApi.value = 'loading'
-  buildingFacts.value = null
+  mobilityFocal.value = null
+  mobilityComparisonFacts.value = null
+  mobilityComparisonStatus.value = 'loading'
   buildingStatus.value = 'loading'
-  if (!prototypeAccesApi.value || !typeValide.value || !modeleTerritoire.model.value || !payloadPourRendu.value) {
-    lastMobilityFactsKey = null
+  if (!typeValide.value || !model || !payloadPourRendu.value) {
+    lastFocalKey = null
+    lastFocalModel = null
+    lastComparisonKey = null
+    lastComparisonModel = null
     return
   }
-  const mode = resolutionComparaison.value?.mode
-  const scope = resolutionComparaison.value?.contexte?.scope ??
-    modeleTerritoire.model.value.themes.mobilite?.comparisons.densite?.scope
-  const serviceMode = mode ?? (typeRoute.value === 'commune' ? 'densite' : null)
-  if (typeRoute.value === 'commune' && (!serviceMode || !scope)) {
-    statutAccesApi.value = 'error'
-    buildingStatus.value = 'error'
-    return
-  }
-  const requestKey = `${typeRoute.value}/${idRoute.value}/${serviceMode ?? ''}/${retryMobilityFacts.value}`
-  if (lastMobilityFactsKey === requestKey) return
-  lastMobilityFactsKey = requestKey
+  lastFocalKey = key
+  lastFocalModel = model
   const controller = new AbortController()
-  onCleanup(() => controller.abort())
+  let settled = false
+  onCleanup(() => {
+    controller.abort()
+    if (!settled) { lastFocalKey = null; lastFocalModel = null }
+  })
   const code = idRoute.value
-  const query = serviceMode ? `?comparison=${encodeURIComponent(serviceMode)}` : ''
-  void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/themes/mobilite/facts${query}`,
+  void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/themes/mobilite/facts`,
     { signal: controller.signal }).then(async (response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return response.json() as Promise<unknown>
   }).then((data) => {
-    if (request !== mobilityFactsRequest || !payloadPourRendu.value || !isRecord(data)) return
-    const facts = territoryFactsFor(toRaw(payloadPourRendu.value), code, resolutionComparaison.value?.contexte ?? undefined)
-    if (!facts) throw new Error('Territoire inconnu')
-    const withAccess = applyAccessApiFacts(facts, data.essential_service_access,
-      scope?.kind ?? null, scope?.label ?? null)
-    const combined = applyInitialBuildingApiFacts(withAccess, data.building_access,
-      mode ?? null, scope?.kind ?? null, scope?.label ?? null)
-    accesApi.value = combined.mobility.access
-    buildingFacts.value = combined
+    if (request !== focalRequestSequence || !payloadPourRendu.value || !isRecord(data)) return
+    const presentation = toRaw(payloadPourRendu.value)
+    const target = presentation.territoires.find((territory) => territory.territoire === code)
+    const initialContext = target?.type === 'commune'
+      ? modeleTerritoire.model.value?.themes.mobilite?.comparisons.densite
+      : resolutionComparaison.value?.contexte ?? undefined
+    let combined = mobilityFactsFromThemeApi(presentation, code, data)
+    combined = applyThemeComparisonApiFacts(combined, data.default_comparison, initialContext)
+    const serviceScope = isRecord(data.essential_service_access) && isRecord(data.essential_service_access.scope)
+      ? data.essential_service_access.scope : null
+    combined = applyAccessApiFacts(combined, data.essential_service_access,
+      typeof serviceScope?.kind === 'string' ? serviceScope.kind as ComparisonScopeKind : null,
+      typeof serviceScope?.label === 'string' ? serviceScope.label : null)
+    const buildingScope = isRecord(data.building_access) && isRecord(data.building_access.scope)
+      ? data.building_access.scope : null
+    combined = applyInitialBuildingApiFacts(combined, data.building_access,
+      typeof buildingScope?.comparison_mode === 'string' ? buildingScope.comparison_mode : null,
+      typeof buildingScope?.kind === 'string' ? buildingScope.kind : null,
+      initialContext?.scope.label ?? null)
+    mobilityFocal.value = combined
+    mobilityComparisonFacts.value = combined
+    mobilityComparisonStatus.value = 'ready'
     statutAccesApi.value = 'ready'
     buildingStatus.value = 'ready'
+    settled = true
   }).catch(() => {
-    if (request === mobilityFactsRequest) {
+    settled = true
+    if (request === focalRequestSequence) {
       statutAccesApi.value = 'error'
       buildingStatus.value = 'error'
+      mobilityComparisonStatus.value = 'error'
     }
   })
 }, { immediate: true })
+
+watch([prototypeAccesApi, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
+  mobilityFocal, () => modeleTerritoire.model.value],
+  (_values, _oldValues, onCleanup) => {
+    if (!prototypeAccesApi.value || !mobilityFocal.value || !payloadPourRendu.value) return
+    const model = modeleTerritoire.model.value
+    const requestKey = `${typeRoute.value}/${idRoute.value}/${resolutionComparaison.value?.mode ?? ''}`
+    if (lastComparisonKey === requestKey && lastComparisonModel === model) return
+    const request = ++comparisonRequestSequence
+    const controller = new AbortController()
+    let settled = false
+    onCleanup(() => {
+      controller.abort()
+      if (!settled) lastComparisonKey = null
+    })
+    const target = payloadPourRendu.value.territoires.find((territory) => territory.territoire === idRoute.value)
+    const mode = resolutionComparaison.value?.mode
+    const context = resolutionComparaison.value?.contexte ?? undefined
+    if ((target?.type === 'commune' && mode === 'densite') || target?.type !== 'commune') {
+      lastComparisonKey = requestKey
+      lastComparisonModel = model
+      mobilityComparisonFacts.value = mobilityFocal.value
+      mobilityComparisonStatus.value = 'ready'
+      return
+    }
+    const cohort = modeleTerritoire.model.value?.cohortTerritories
+    if (!cohort) {
+      mobilityComparisonStatus.value = 'error'
+      mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
+      lastComparisonKey = requestKey
+      lastComparisonModel = model
+      return
+    }
+    const selection = mode === 'bretagne'
+      ? cohort.filter((item) => item.type === 'commune')
+        .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+      : mode === 'epci' && target?.epci
+        ? cohort.filter((item) => item.type === 'commune' && item.epci === target.epci)
+          .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+        : []
+    const body = { theme_id: 'mobilite', ...(selection === undefined ? {} : { selection }) }
+    lastComparisonKey = requestKey
+    lastComparisonModel = model
+    mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
+    mobilityComparisonStatus.value = 'loading'
+    void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(idRoute.value)}/themes/mobilite/comparison`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.json() as Promise<unknown>
+    }).then((data) => {
+      if (request !== comparisonRequestSequence || !isRecord(data)) return
+      const expectedSelection = new Set(selection.map((item) => `${item.territory_type}/${item.territory_id}`))
+      const returnedSelection = Array.isArray(data.selection) ? data.selection : []
+      if (data.contract !== 'theme-comparison-v1' || data.theme_id !== 'mobilite' ||
+          returnedSelection.length !== expectedSelection.size ||
+          returnedSelection.some((item) => !isRecord(item) ||
+            !expectedSelection.has(`${String(item.territory_type)}/${String(item.territory_id)}`))) {
+        throw new Error('Réponse de comparaison Mobilité incohérente avec la sélection')
+      }
+      let updated = applyThemeComparisonApiFacts(mobilityFocal.value!, data, context)
+      updated = applyComparisonOnlyBuildingFacts(updated, data.building_access, context?.scope.label ?? null)
+      mobilityComparisonFacts.value = updated
+      mobilityComparisonStatus.value = 'ready'
+      settled = true
+    }).catch(() => {
+      settled = true
+      if (request === comparisonRequestSequence) {
+        lastComparisonKey = null
+        mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value!)
+        mobilityComparisonStatus.value = 'error'
+      }
+    })
+  }, { immediate: true })
 
 function rechargerMobilityFacts(): void { retryMobilityFacts.value += 1 }
 const contenuMobilite = computed<ThemeContent | null>(() => {
@@ -290,18 +389,14 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
     !payloadPourRendu.value ||
     !typeValide.value
   ) return null
-  const facts = territoryFactsFor(
-    toRaw(payloadPourRendu.value),
-    idRoute.value,
-    resolutionComparaison.value?.contexte ?? undefined,
-  )
+  const facts = prototypeAccesApi.value
+    ? mobilityFocal.value
+      ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
+      : mobilityFactsFromThemeApi(toRaw(payloadPourRendu.value), idRoute.value, null)
+    : territoryFactsFor(toRaw(payloadPourRendu.value), idRoute.value,
+      resolutionComparaison.value?.contexte ?? undefined)
   if (!facts) return null
-  const contentFacts = prototypeAccesApi.value
-    ? statutAccesApi.value === 'ready' && buildingStatus.value === 'ready' && buildingFacts.value
-      ? buildingFacts.value
-      : { ...facts, mobility: { ...facts.mobility,
-        accessRamp: null, buildingDistribution: null } }
-    : facts
+  const contentFacts = facts
   return resolveMobiliteThemeContent(contentFacts)
 })
 const paginationCahier = computed(() =>

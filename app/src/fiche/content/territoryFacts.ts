@@ -66,6 +66,8 @@ export interface NumericFact {
   unit: string
   availability: FactAvailability
   provenance: FactProvenance | null
+  /** Full producer lineage where a publication names more than one source. */
+  sourceLineage?: readonly FactProvenance[]
   comparison: FactComparison | null
   /** Published aggregation semantics, including when the reference is unavailable. */
   comparisonBasis: 'territory-median' | 'territory-mean' | 'building-weighted-mean' | 'pooled-building-mean'
@@ -360,6 +362,7 @@ function factOf(options: {
   unit: string
   present: boolean
   provenance?: FactProvenance | null
+  sourceLineage?: readonly FactProvenance[]
   comparison?: FactComparison | null
   comparisonBasis?: NumericFact['comparisonBasis']
   reason?: string | null
@@ -372,6 +375,7 @@ function factOf(options: {
     unit: options.unit,
     availability: availabilityOf(options.value, options.present),
     provenance: options.present ? options.provenance ?? null : null,
+    ...(options.sourceLineage ? { sourceLineage: options.sourceLineage } : {}),
     comparison: options.comparison ?? null,
     comparisonBasis: options.comparisonBasis ?? 'territory-median',
     reason: options.reason ?? null,
@@ -386,6 +390,10 @@ function provenanceFromRow(row: Indicateur, sourceId: string | null): FactProven
     referenceDate: row.vintage_date_reference,
     publicationDate: row.vintage_date_publication,
   }
+}
+
+function sourceLineageFromRow(row: Indicateur, sourceId: string | null): readonly FactProvenance[] {
+  return row.fact_sources?.length ? row.fact_sources : [provenanceFromRow(row, sourceId)]
 }
 
 function scopeFor(payload: Payload, target: Territoire): ComparisonScope | null {
@@ -650,6 +658,7 @@ function indicatorsOf(
         unit: row.unit,
         present: true,
         provenance: provenanceFromRow(row, sourceId),
+        sourceLineage: sourceLineageFromRow(row, sourceId),
         comparison: direction
           ? indicatorComparison(payload, scope, row, direction, statisticForIndicator(row.key), precomputed)
           : null,
@@ -995,7 +1004,7 @@ function bpeAccessOf(
         profile,
         label: row?.profil_libelle ?? LIBELLES_PROFILS_ACCES_BPE[profile],
         count: row?.nombre_typequ ?? 0,
-        exemplar: row
+        exemplar: row?.exemplar_typequ
           ? {
               typequ: row.exemplar_typequ,
               label: row.exemplar_libelle,

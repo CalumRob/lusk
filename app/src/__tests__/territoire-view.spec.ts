@@ -42,11 +42,13 @@ const modelePublie22001 = JSON.parse(readFileSync(
 
 function modeleAvecContextesComparaison() {
   const model = structuredClone(modelePublie22001)
-  return validerModeleTerritoire(
+  const validated = validerModeleTerritoire(
     model,
     'territoires/commune/22001.json',
     { type: 'commune', territoire: '22001' },
   )
+  validated.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+  return validated
 }
 
 function reponseAccesApi(type: string, code: string, kind: string | null, label?: string) {
@@ -71,19 +73,55 @@ function reponseAccesApi(type: string, code: string, kind: string | null, label?
 }
 
 function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: string | null, label?: string) {
-  const comparison = Object.values(model.themes.mobilite?.comparisons ?? {})
-    .find((candidate: any) => candidate.scope.kind === kind) as any
-  const facts = territoryFactsFor(payloadDepuisModeleTerritoire(model), code, comparison)!
+  const theme = model.themes.mobilite
+  const payload = payloadDepuisModeleTerritoire(model)
+  const facts = territoryFactsFor(payload, code)!
   const ramp = facts.mobility.accessRamp!
   const grid = facts.mobility.buildingDistribution!
   const displayModes = { c: 'car', b: 'bike', t: 'walkTransit' } as const
+  const sourceRows = (rows: any[]) => rows.map((row) => ({ source_id: row.vintage_source === 'Source API' ? 'api' : 'mobilite_snapshot',
+    name: row.vintage_source, version: row.vintage_version, reference_date: row.vintage_date_reference,
+    publication_date: row.vintage_date_publication }))
+  const density = theme.comparisons?.densite
+  const defaultResults = density?.facts.map((fact: any) => ({ indicator_id: fact.key, label: fact.key,
+    unit: 'types', direction: fact.direction === 'plus-est-mieux' ? 'high' : 'low', statistic: 'median',
+    status: fact.reference ? 'available' : 'unavailable', median: fact.reference?.value ?? null,
+    rank: fact.rank?.position ?? null, rank_size: fact.rank?.size ?? null })) ?? []
+  const bpeRows = theme.bpeAccess ?? []
+  const universe = bpeRows.reduce((sum: number, row: any) => sum + row.nombre_typequ, 0)
+  const history = theme.histories?.find((row: any) => row.territoire === code)
+  const buildingSources = [{ source_id: 'mobilite_snapshot', name: ramp.provenance?.source ?? 'Source SQL',
+    version: ramp.provenance?.version ?? 'sql-v1', reference_date: ramp.provenance?.referenceDate ?? null,
+    publication_date: ramp.provenance?.publicationDate ?? null }]
   return {
+    contract: 'theme-facts-v1', theme_id: 'mobilite',
+    territory: { territory_id: code, territory_type: type },
+    facts: theme.indicators.filter((row: any) => !row.detail).map((row: any) => ({ indicator_id: row.key, label: row.key,
+      unit: row.unit, value: row.value, status: row.value === null ? 'unavailable' : 'measured',
+      sources: sourceRows([row]) })),
+    profiles: [...new Set<string>(theme.indicators.filter((row: any) => row.detail).map((row: any) => row.key))]
+      .map((indicator) => ({ indicator, cells: theme.indicators.filter((row: any) => row.key === indicator && row.detail)
+        .map((row: any) => ({ detail: row.detail, sex: row.sex ?? null, unit: row.unit,
+          value: row.value, status: row.value === null ? 'unavailable' : 'measured', sources: sourceRows([row]) })) })),
+    series: [],
+    readings: history ? [{ groupe: history.groupe, story_key: history.story_key,
+      div_loss_t: history.div_loss_t, div_loss_b: history.div_loss_b, status: 'measured', unit: 'types de services',
+      provenance: { source_id: 'mobilite_snapshot', source_name: history.vintage_source,
+        source_version: history.vintage_version, source_reference_date: history.vintage_date_reference,
+        source_publication_date: history.vintage_date_publication } }] : [],
+    bpe_profile_evidence: bpeRows.length ? { classes: bpeRows.map((row: any) => ({ class_key: row.profil,
+      label: row.profil_libelle, count: row.nombre_typequ, universe_count: universe,
+      exemplar: row.exemplar_typequ ? { typequ: row.exemplar_typequ, label: row.exemplar_libelle,
+        access: { car: row.exemplar_c, bike: row.exemplar_b, walk_transit: row.exemplar_t } } : null })),
+      sources: buildingSources } : null,
+    default_comparison: { scope: { kind: 'density_class' }, results: defaultResults, profile_comparisons: [] },
     essential_service_access: reponseAccesApi(type, code, kind, label),
     building_access: {
       publication_id: 'building-v1', availability: 'complete',
       territory: { id: code, type },
       scope: kind ? { comparison_mode: kind === 'communes-densite' ? 'densite' :
-        kind === 'communes-epci' ? 'epci' : 'bretagne', kind, label } : null,
+        kind === 'communes-epci' ? 'epci' : 'bretagne', kind } : null,
+      sources: buildingSources,
       ramp: (['c', 'b', 't'] as const).flatMap((mode) =>
         ramp.curves[displayModes[mode]].points.map((point, quantile_index) => ({
           mode, quantile_index, quantile: quantile_index / 10,
@@ -101,7 +139,7 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
         total_buildings: grid.totalBuildings, cells: grid.cells.map((cell) => ({
           breadth_bucket: cell.breadthBucket, depth_bucket: cell.depthBucket,
           building_count: cell.buildingCount, share: cell.buildingCount / grid.totalBuildings,
-        })) } : null,
+      })) } : null,
     },
   }
 }
@@ -168,7 +206,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       vi.fn(async () => modeleAvecContextesComparaison()))
     await flushPromises()
     expect(fetchApi.mock.calls.some(([url]) => String(url) ===
-      '/api/territories/commune/22001/themes/mobilite/facts?comparison=densite')).toBe(true)
+      '/api/territories/commune/22001/themes/mobilite/facts')).toBe(true)
     const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
     expect(section.find('.access-ramp-evidence').exists()).toBe(false)
     expect(section.find('.bivariate-evidence').exists()).toBe(false)
@@ -250,7 +288,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         vi.fn(async () => modeleAvecContextesComparaison()))
       await flushPromises()
       expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/themes/mobilite/facts'))).toHaveLength(1)
-      expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/22001/themes/mobilite/facts?comparison=densite', expect.anything())
+      expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/22001/themes/mobilite/facts', expect.anything())
       expect(wrapper.findAll('[data-section="services-essentiels"] .access-foot-summary')[0]?.text()).toContain('42')
       expect(wrapper.get('[data-section="services-essentiels"] .cahier-comparison-note').text()).toContain(scope.label)
       expect(wrapper.text()).toContain('Source API · api-v1')
@@ -497,25 +535,39 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const model = modeleAvecContextesComparaison()
     let resolveOld: ((value: unknown) => void) | undefined
     const oldRequest = new Promise((resolve) => { resolveOld = resolve })
-    const fetchApi = vi.fn((url: string) => url.includes('/api/')
-      ? url.includes('comparison=densite')
-        ? oldRequest
-        : Promise.resolve({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', contexts.epci!.scope.kind, contexts.epci!.scope.label) })
-      : Promise.reject(new Error('Not part of access API')))
+    const fetchApi = vi.fn((url: string, options?: RequestInit) => {
+      if (url.endsWith('/facts')) return Promise.resolve({ ok: true, json: async () =>
+        reponseThemeMobiliteApi(model, 'commune', '22001', contexts.densite!.scope.kind, contexts.densite!.scope.label) })
+      if (url.endsWith('/comparison')) {
+        const selected = JSON.parse(String(options?.body)).selection
+        if (selected.length > 100) return oldRequest
+        return Promise.resolve({ ok: true, json: async () => ({
+          contract: 'theme-comparison-v1', theme_id: 'mobilite', selection: selected,
+          results: ['admin', 'food', 'health', 'bank', 'school'].flatMap((service) =>
+            ['c', 'b', 't'].map((mode) => ({ indicator_id: `share_${service}_${mode}`,
+              status: 'available', direction: 'high', median: 0.3, rank: 19, rank_size: 38 }))),
+          profile_comparisons: [], building_access: null,
+        }) })
+      }
+      return Promise.reject(new Error('Not part of access API'))
+    })
     vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
       vi.fn(async () => modeleAvecContextesComparaison()))
+    await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'bretagne' } })
+    await flushPromises()
     await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'epci' } })
     await flushPromises()
     const section = wrapper.get('[data-section="services-essentiels"]')
     expect(section.findAll('.access-figure')).toHaveLength(5)
     expect(section.findAll('.access-foot-summary')[0]?.text()).toContain('42')
     expect(section.get('.cahier-comparison-note').text()).toContain(contexts.epci!.scope.label)
-    const stale = reponseThemeMobiliteApi(model, 'commune', '22001', contexts.densite!.scope.kind, contexts.densite!.scope.label)
-    stale.essential_service_access.services[0]!.modes.walk_transit.value = 0.05
-    resolveOld?.({ ok: true, json: async () => stale })
+    resolveOld?.({ ok: true, json: async () => ({ contract: 'theme-comparison-v1', theme_id: 'mobilite',
+      selection: [], results: [], profile_comparisons: [] }) })
     await flushPromises()
     expect(section.findAll('.access-foot-summary')[0]?.text()).toContain('42')
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/facts'))).toHaveLength(1)
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(2)
     wrapper.unmount()
   })
   it('affiche les six onglets pendant que l’unique modèle charge', async () => {
