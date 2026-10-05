@@ -95,12 +95,19 @@ mobility_reading_serving_contract <- function(metadata, vintages) {
   reference_date <- iso_date(source$date_reference[[1L]],"reference_date")
   publication_date <- iso_date(source$date_publication[[1L]],"publication_date")
   expected_version <- as.character(vintage_rows[[1L]]$version)
-  expected_source_name <- as.character(source_record$publisher)
+  # publisher is the organisation ("Lusk"); source_vintage.source carries the
+  # descriptive identity declared by the actual Mobilité snapshot producer.
+  # Keep those distinct and take the latter from its single producer constant.
+  expected_source_name <- MOBILITE_SNAPSHOT_SOURCE
   expected_reference <- iso_date(vintage_rows[[1L]]$dateReference,"metadata reference date")
   expected_publication <- iso_date(vintage_rows[[1L]]$datePublication,"metadata publication date")
   if(is.null(expected_version) || length(expected_version)!=1L || is.na(expected_version) || !nzchar(expected_version) ||
-     !identical(as.character(source$source[[1L]]),expected_source_name) ||
-     !identical(as.character(source$version[[1L]]),expected_version) ||
+     is.null(expected_source_name) || length(expected_source_name)!=1L || is.na(expected_source_name) ||
+     !nzchar(expected_source_name))
+    stop("Mobility producer source identity or version declaration is incomplete",call.=FALSE)
+  if(!identical(as.character(source$source[[1L]]),expected_source_name))
+    stop("Canonical Mobility source descriptive name differs from its producer constant",call.=FALSE)
+  if(!identical(as.character(source$version[[1L]]),expected_version) ||
      !identical(reference_date,expected_reference) || !identical(publication_date,expected_publication))
     stop("Canonical Mobility vintage differs from the producer-declared source clock",call.=FALSE)
   vintage_id <- paste(as.character(source$version[[1L]]),

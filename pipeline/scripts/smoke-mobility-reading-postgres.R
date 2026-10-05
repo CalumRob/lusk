@@ -16,7 +16,7 @@ tryCatch({
   histories <- data.frame(territoire=c("35238","35239"),type="commune",theme="mobilite",
     groupe="acces-aux-services",story_key="vingt-minutes-sans-voiture",salience_reason="defaut",
     div_loss_t=c(8,NA_real_),div_loss_b=c(5,NA_real_),classification_saillance=c("non-saillant",NA_character_))
-  vintages <- data.frame(id="mobilite_snapshot",source="Snapshot fixture",version="v1",
+  vintages <- data.frame(id="mobilite_snapshot",source=MOBILITE_SNAPSHOT_SOURCE,version="v1",
     date_reference=NA_character_,date_publication="2026-08-06",stringsAsFactors=FALSE)
   metadata <- list(sources=list(tot_loss_t="mobilite_snapshot",tot_loss_b="mobilite_snapshot"),
     story_keys=c("vingt-minutes-sans-voiture","ce-que-le-velo-preserve"),
@@ -24,7 +24,7 @@ tryCatch({
       allowed_levels=c("commune","epci","departement","region"),missing_status="unavailable",
       classification_values=c("saillant","notable","non-saillant"),
       field_keys=c("groupe","story_key","salience_reason","classification_saillance","div_loss_t","div_loss_b","status")),
-    source_records=list(mobilite_snapshot=list(dataset="Mobility snapshot dataset",publisher="Snapshot fixture",
+    source_records=list(mobilite_snapshot=list(dataset="Mobility snapshot dataset",publisher="Fixture publishing organisation",
       vintages=list(list(id="mobilite_snapshot",version="v1",dateReference=NULL,datePublication="2026-08-06")),
       clocks=list(list(name="BPE",frequency="annual",reference="2024",trigger="new release"),
         list(name="Buildings",frequency="campaign",reference="2025-07",trigger="new campaign")))))

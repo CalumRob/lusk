@@ -62,7 +62,7 @@ fixture_mobility_metadata <- function(reference_date="2026-02-28",version="v1",d
       allowed_levels=c("commune","epci","departement","region"),missing_status="unavailable",
       classification_values=c("saillant","notable","non-saillant"),
       field_keys=c("groupe","story_key","salience_reason","classification_saillance","div_loss_t","div_loss_b","status")),
-    source_records=list(mobilite_snapshot=list(dataset=dataset,publisher="Snapshot source",
+    source_records=list(mobilite_snapshot=list(dataset=dataset,publisher="Distinct publishing organisation",
       vintages=list(list(id="mobilite_snapshot",version=version,dateReference=reference_date,datePublication="2026-08-06")),
       clocks=list(list(name="BPE",frequency="annual",reference="2024",trigger="new release"),
         list(name="Buildings",frequency="campaign",reference="2025-07",trigger="new campaign")))))
@@ -73,7 +73,7 @@ test_that("Mobility projection validates selected story semantics and registered
     groupe="acces-aux-services",story_key=c("vingt-minutes-sans-voiture","ce-que-le-velo-preserve"),
     salience_reason=c("defaut","delta-velo-saillant"),div_loss_t=c(8,12),div_loss_b=c(5,2),
     classification_saillance=c("notable","saillant"))
-  vintages <- data.frame(id="mobilite_snapshot",source="Snapshot source",version="v1",
+  vintages <- data.frame(id="mobilite_snapshot",source=MOBILITE_SNAPSHOT_SOURCE,version="v1",
     date_reference="2026-02-28",date_publication="2026-08-06",stringsAsFactors=FALSE)
   metadata <- fixture_mobility_metadata()
   projection <- project_mobility_reading(histories,vintages,metadata)
@@ -81,6 +81,8 @@ test_that("Mobility projection validates selected story semantics and registered
   expect_equal(projection$source_id,c("mobilite_snapshot","mobilite_snapshot"))
   expect_equal(projection$vintage_id,c("v1/2026-02-28","v1/2026-02-28"))
   expect_equal(projection$classification_saillance,c("notable","saillant"))
+  expect_equal(attr(projection,"serving_contract")$source_name,MOBILITE_SNAPSHOT_SOURCE)
+  expect_equal(metadata$source_records$mobilite_snapshot$publisher,"Distinct publishing organisation")
   expect_error(project_mobility_reading(transform(histories,story_key="unknown"),vintages,metadata),"producer registry")
   expect_error(project_mobility_reading(transform(histories,groupe="wrong-group"),vintages,metadata),"producer registry")
   expect_error(project_mobility_reading(transform(histories,salience_reason="invented"),vintages,metadata),"producer registry")
@@ -97,8 +99,8 @@ test_that("Mobility projection validates selected story semantics and registered
   expect_error(project_mobility_reading(histories,wrong_version,metadata),"producer-declared source clock")
   wrong_name <- vintages; wrong_name$source <- ""
   expect_error(project_mobility_reading(histories,wrong_name,metadata),"non-empty source identity")
-  wrong_name$source <- "Another source"
-  expect_error(project_mobility_reading(histories,wrong_name,metadata),"producer-declared source clock")
+  wrong_name$source <- "Another descriptive source"
+  expect_error(project_mobility_reading(histories,wrong_name,metadata),"descriptive name")
   unavailable <- histories
   unavailable$div_loss_t[1] <- NA_real_
   unavailable$classification_saillance[1] <- NA_character_

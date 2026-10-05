@@ -62,7 +62,8 @@ def test_registered_mobility_reading_publication_survives_populated_upgrade_and_
         pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,density_class_code,density_class_label) VALUES
             ('35238','commune','Fixture Rennes','D1','Fixture density'),('35239','commune','Fixture unavailable','D1','Fixture density')""")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','ref-v1',2)")
-        pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('mobilite_snapshot','Snapshot fixture')")
+        pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('mobilite_snapshot',%s)",
+            ("Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",))
         pub.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
             VALUES('mobilite_snapshot','v1/NA','v1',NULL,'2026-08-06')""")
         pub.execute("""INSERT INTO economy_typed_reading VALUES
@@ -103,6 +104,7 @@ def test_registered_mobility_reading_publication_survives_populated_upgrade_and_
                     "classification_saillance": "non-saillant", "div_loss_t": 8.0,
                     "div_loss_b": 5.0, "status": "measured"}
                 assert reading["provenance"]["source_id"] == "mobilite_snapshot"
+                assert reading["provenance"]["source_name"].startswith("Lusk — analyse d'accessibilité")
                 assert reading["provenance"]["dataset_name"] == "Mobility snapshot dataset"
                 assert reading["provenance"]["source_reference_date"] is None
                 assert len(reading["provenance"]["windows"]) == 2
