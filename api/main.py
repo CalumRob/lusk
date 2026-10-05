@@ -2189,6 +2189,90 @@ def theme_facts(
                     readings=[{"groupe":row[0],"story_key":row[1],"salience_reason":row[2],"status":row[3],
                         "activities":by_group.get(row[0],[]),"provenance":provenance} for row in reading_rows]
                     reading_version=selected_marker[0]
+            elif theme_id == "milieux":
+                installed=conn.execute("SELECT to_regclass('milieux_typed_reading')").fetchone()[0]
+                if not installed:
+                    raise HTTPException(503,"Milieux reading publication is unavailable")
+                marker=conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
+                    FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+                    WHERE p.table_name='milieux_typed_reading'""").fetchone()
+                if not marker or marker[0] is None or marker[1] < 1 or marker[2] != marker[3]:
+                    raise HTTPException(503,"Milieux reading publication is unavailable or incompatible")
+                rows=conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.periode_pop,r.periode_artif,
+                    r.delta_population,r.taux_variation_population,r.artif_m2_par_habitant,r.artif_m3_par_habitant,
+                    r.trajectoire_artif_par_habitant,r.classification,r.status,r.source_id,r.vintage_id
+                    FROM milieux_typed_reading r
+                    WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
+                    (territory_id,territory_type)).fetchall()
+                if not rows:
+                    raise HTTPException(404,"No selected Milieux reading for this territory")
+                source_rows=conn.execute("""SELECT b.groupe,b.field_key,b.source_id,b.source_name,b.vintage_id,b.source_version,
+                    b.reference_date,b.publication_date,b.observation_period,b.dataset_id,b.dataset_content_version,
+                    b.state_role,b.provenance_revision_id,b.axis_value,b.population_revision_id,
+                    COALESCE(p.source_id,s.source_id),COALESCE(p.vintage_id,s.vintage_id),
+                    COALESCE(p.source_name,s.source_name),COALESCE(p.source_version,s.source_version),
+                    COALESCE(p.reference_date,s.reference_date),COALESCE(p.publication_date,s.publication_date)
+                    FROM milieux_reading_source b
+                    LEFT JOIN milieux_population_provenance_revision p ON p.population_revision_id=b.population_revision_id
+                    LEFT JOIN series_provenance_revision s ON s.provenance_revision_id=b.provenance_revision_id
+                    WHERE b.territory_id=%s AND b.territory_type=%s
+                    ORDER BY b.groupe,b.field_key,b.source_id,b.vintage_id""",(territory_id,territory_type)).fetchall()
+                by_reading={}
+                for source_row in source_rows:
+                    if source_row[9] is not None:
+                        current=conn.execute("SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=%s",
+                            (source_row[9],)).fetchone()
+                        if not current or current[0]!=source_row[10] or current[1]!=marker[3]:
+                            raise HTTPException(503,"Milieux OCS-GE source association is stale or incompatible")
+                    if (source_row[2]!=source_row[15] or source_row[4]!=source_row[16] or source_row[3]!=source_row[17] or
+                        source_row[5]!=source_row[18] or source_row[6]!=source_row[19] or source_row[7]!=source_row[20] or
+                        (source_row[1]=="population" and (source_row[14] is None or source_row[12] is not None)) or
+                        (source_row[1]!="population" and (source_row[12] is None or source_row[14] is not None))):
+                        raise HTTPException(503,"Milieux source clock differs from its immutable provenance revision")
+                    by_reading.setdefault(source_row[0],[]).append({"field":source_row[1],"source_id":source_row[15],
+                        "source_name":source_row[17],"vintage_id":source_row[16],"source_version":source_row[18],
+                        "source_reference_date":source_row[19],"source_publication_date":source_row[20],
+                        "observation_period":source_row[8],"dataset_id":source_row[9],
+                        "dataset_content_version":source_row[10],"state_role":source_row[11],
+                        "provenance_revision_id":source_row[12],"population_revision_id":source_row[14],
+                        "axis_value":source_row[13]})
+                readings=[]
+                for row in rows:
+                    associations=by_reading.get(row[0],[])
+                    if not any(a["field"]=="population" for a in associations) or not any(a["field"]=="artif_m2_par_habitant" for a in associations) or not any(a["field"]=="artif_m3_par_habitant" for a in associations):
+                        raise HTTPException(503,"Milieux reading source/window associations are incomplete")
+                    population_associations=[a for a in associations if a["field"]=="population"]
+                    if len(population_associations)!=1 or population_associations[0]["source_id"]!=row[12] or population_associations[0]["vintage_id"]!=row[13]:
+                        raise HTTPException(503,"Milieux population reading is detached from its canonical vintage")
+                    for association in associations:
+                        expected_period=row[3] if association["field"]=="population" else row[4]
+                        expected_role={"artif_m2_par_habitant":"M2","artif_m3_par_habitant":"M3"}.get(association["field"])
+                        if association["observation_period"]!=expected_period or (expected_role and association["state_role"]!=expected_role):
+                            raise HTTPException(503,"Milieux reading source/window association disagrees with selected producer window")
+                        if expected_role:
+                            registered=conn.execute("""SELECT r.source_id,r.vintage_id,r.provenance_revision_id,o.state_role,o.observation_period
+                                FROM series_dataset_observation o JOIN series_observation_provenance a
+                                  USING(dataset_id,indicator_id,territory_id,axis_value)
+                                JOIN series_provenance_revision r USING(provenance_revision_id)
+                                WHERE o.dataset_id=%s AND o.indicator_id='artif_par_habitant' AND o.territory_id=%s
+                                  AND o.territory_type=%s AND o.axis_value=%s""",
+                                (association["dataset_id"],territory_id,territory_type,association["axis_value"])).fetchall()
+                            actual_for_field=[a for a in associations if a["field"]==association["field"]]
+                            registered_keys={(r[0],r[1],r[2]) for r in registered}
+                            bound_keys={(a["source_id"],a["vintage_id"],a["provenance_revision_id"]) for a in actual_for_field}
+                            if not registered or registered_keys!=bound_keys or any(r[3]!=expected_role or r[4]!=expected_period for r in registered):
+                                raise HTTPException(503,"Milieux source-component bindings differ from the registered OCS-GE state publication")
+                    readings.append(dict(zip(("groupe","story_key","salience_reason","periode_pop","periode_artif",
+                        "delta_population","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant",
+                        "trajectoire_artif_par_habitant","classification","status","source_id","vintage_id"),row[:14]),
+                        provenance={"source_id":population_associations[0]["source_id"],
+                        "source_name":population_associations[0]["source_name"],
+                        "vintage_id":population_associations[0]["vintage_id"],
+                        "source_version":population_associations[0]["source_version"],
+                        "source_reference_date":population_associations[0]["source_reference_date"],
+                        "source_publication_date":population_associations[0]["source_publication_date"],
+                        "associations":associations}))
+                reading_version=marker[0]
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
                 profiles=profiles, profile_version=profile_version, has_readings=bool(readings))
             building_access = None

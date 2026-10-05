@@ -25,6 +25,7 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
         "007_ordered_series.sql", "008_building_evidence_contract.sql",
         "016_bpe_profile_evidence.sql",
     )]
+    migration_011 = api_root / "migrations/011_owned_series_publications.sql"
     migration_020 = api_root / "migrations/020_demographic_typed_reading.sql"
     schema = "it_migration_chain_" + uuid.uuid4().hex[:16]
     scoped = _dsn_with_schema(publish_dsn, schema)
@@ -301,6 +302,8 @@ def test_cumulative_004_006_007_008_preserves_markers_and_fresh_contract():
                 WHERE e.territory_id='chain-fixture' ORDER BY e.class_key
             """).fetchall()
             connection.execute((api_root / "migrations/021_economy_typed_reading.sql").read_text(encoding="utf-8"))
+            connection.execute(migration_011.read_text(encoding="utf-8"))
+            connection.execute((api_root / "migrations/022_milieux_typed_reading.sql").read_text(encoding="utf-8"))
             prior_after_020 = connection.execute(
                 "SELECT table_name,content_version,reference_content_version FROM table_publication "
                 "WHERE table_name IN ('declared_profile','ordered_series') ORDER BY table_name"
