@@ -171,9 +171,16 @@ CREATE TABLE bpe_profile_evidence_source (
   FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
 );
 CREATE FUNCTION assert_bpe_profile_evidence_complete() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected integer; bad boolean;
-BEGIN
-  SELECT universe_count INTO expected FROM bpe_profile_evidence_descriptor WHERE singleton;
+  DECLARE expected integer; bad boolean;
+  BEGIN
+    -- The deferred row trigger fires once for every changed fact. Validate the
+    -- complete publication once per transaction, rather than rescanning it for
+    -- each queued trigger event. The transaction-scoped advisory lock is keyed
+    -- by xid, so it cannot suppress validation in another transaction.
+    IF NOT pg_try_advisory_xact_lock(hashtextextended('bpe-profile-validation:' || pg_current_xact_id()::text, 0)) THEN
+      RETURN NULL;
+    END IF;
+    SELECT universe_count INTO expected FROM bpe_profile_evidence_descriptor WHERE singleton;
   IF expected IS NULL THEN RAISE EXCEPTION 'BPE profile evidence descriptor is unavailable'; END IF;
   IF (SELECT count(*) FROM bpe_profile_class_axis) <> 4 THEN
     RAISE EXCEPTION 'BPE evidence requires exactly four declared class axes';
