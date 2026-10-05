@@ -1289,31 +1289,87 @@ def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_ty
             ORDER BY t.name,r.territory_id""", (group,cohort_type,list(members))).fetchall()
         if len(rows) != len(set(members)):
             raise HTTPException(503, "Selected Milieux cloud members have missing reading facts")
-        if any(row[8] != "measured" or any(value is None for value in row[5:8]) for row in rows):
-            raise HTTPException(503, "Selected Milieux cloud facts are unavailable or incomplete")
-        # Source rows are the typed reading's registered population/state provenance. Check the
-        # actual OCS-GE state coordinates and period before exposing a point.
-        for row in rows:
-            associations = conn.execute("""SELECT field_key,observation_period,state_role,dataset_id,dataset_content_version
-                FROM milieux_reading_source WHERE territory_id=%s AND territory_type=%s AND groupe=%s
-                ORDER BY field_key""", (row[0],row[1],group)).fetchall()
-            population = [a for a in associations if a[0] == "population"]
-            m2 = [a for a in associations if a[0] == "artif_m2_par_habitant"]
-            m3 = [a for a in associations if a[0] == "artif_m3_par_habitant"]
-            if (len(population) != 1 or len(m2) != 1 or len(m3) != 1 or
-                population[0][1] != row[3] or m2[0][1] != row[4] or m3[0][1] != row[4] or
-                m2[0][2] != "M2" or m3[0][2] != "M3"):
-                raise HTTPException(503, "Milieux cloud source windows are incompatible")
-            for association in (m2[0],m3[0]):
-                current=conn.execute("SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=%s",
-                    (association[3],)).fetchone()
-                if not current or current[0] != association[4] or current[1] != marker[3]:
-                    raise HTTPException(503, "Milieux cloud OCS-GE publication is unavailable or incompatible")
+        # Fetch complete immutable population/state bindings for the whole selected set. These
+        # joins check the association's exact state axis and revision rather than trusting its
+        # denormalized clock columns. No per-peer/per-state round trips.
+        bindings = conn.execute("""SELECT b.territory_id,b.field_key,b.source_id,b.vintage_id,b.source_name,
+            b.source_version,b.reference_date,b.publication_date,b.observation_period,b.dataset_id,
+            b.dataset_content_version,b.state_role,b.axis_value,b.provenance_revision_id,b.population_revision_id,
+            p.source_id,p.vintage_id,p.source_name,p.source_version,p.reference_date,p.publication_date,
+            s.source_id,s.vintage_id,s.source_name,s.source_version,s.reference_date,s.publication_date,
+            o.state_role,o.observation_period,
+            ARRAY(SELECT a.provenance_revision_id FROM series_observation_provenance a
+              WHERE a.dataset_id=b.dataset_id AND a.indicator_id='artif_par_habitant'
+                AND a.territory_id=b.territory_id AND a.axis_value=b.axis_value
+              ORDER BY a.provenance_revision_id)
+            FROM milieux_reading_source b
+            LEFT JOIN milieux_population_provenance_revision p ON p.population_revision_id=b.population_revision_id
+            LEFT JOIN series_provenance_revision s ON s.provenance_revision_id=b.provenance_revision_id
+            LEFT JOIN series_dataset_observation o ON o.dataset_id=b.dataset_id AND o.indicator_id='artif_par_habitant'
+              AND o.territory_id=b.territory_id AND o.territory_type=b.territory_type AND o.axis_value=b.axis_value
+            WHERE b.territory_type=%s AND b.territory_id=ANY(%s::text[]) AND b.groupe=%s
+            ORDER BY b.territory_id,b.field_key,b.source_id,b.vintage_id,b.provenance_revision_id""",
+            (cohort_type,list(members),group)).fetchall()
+        publications = conn.execute("""SELECT dataset_id,content_version,reference_content_version
+            FROM series_dataset_publication WHERE dataset_id=ANY(%s::text[])""",
+            (list({b[9] for b in bindings if b[9] is not None}),)).fetchall()
+        published = {p[0]:p[1:] for p in publications}
+        by_peer = {}
+        for b in bindings:
+            (code,field,source,vintage,name,version,ref_date,pub_date,period,dataset,dataset_version,
+             role,axis,revision,pop_revision,p_source,p_vintage,p_name,p_version,p_ref,p_pub,
+             s_source,s_vintage,s_name,s_version,s_ref,s_pub,observed_role,observed_period,registered_revisions)=b
+            if field == "population":
+                valid = (pop_revision is not None and revision is None and p_source == source and p_vintage == vintage
+                    and p_name == name and p_version == version and p_ref == ref_date and p_pub == pub_date)
+            else:
+                valid = (revision is not None and pop_revision is None and s_source == source and s_vintage == vintage
+                    and s_name == name and s_version == version and s_ref == ref_date and s_pub == pub_date
+                    and observed_role == role and observed_period == period
+                    and revision in (registered_revisions or [])
+                    and role == ("M2" if field == "artif_m2_par_habitant" else "M3")
+                    and axis == role and published.get(dataset) == (dataset_version,marker[3]))
+            if not valid:
+                raise HTTPException(503, "Milieux cloud source binding is stale or incompatible")
+            by_peer.setdefault(code,{}).setdefault(field,[]).append((source,vintage,revision,pop_revision,period,axis,dataset,dataset_version,role,registered_revisions))
+        by_code = {row[0]:row for row in rows}
+        for code,row in by_code.items():
+            fields=by_peer.get(code,{})
+            population=fields.get("population",[])
+            m2=fields.get("artif_m2_par_habitant",[])
+            m3=fields.get("artif_m3_par_habitant",[])
+            if row[8] == "unavailable":
+                # Source-declared unavailable readings may have no resolved windows or state
+                # associations; their typed status is not a broken publication.
+                continue
+            if (not population or not m2 or not m3 or any(item[4]!=row[3] for item in population)
+                or any(item[4]!=row[4] or item[8]!="M2" for item in m2)
+                or any(item[4]!=row[4] or item[8]!="M3" for item in m3)):
+                raise HTTPException(503, "Milieux cloud source component sets/windows are incomplete")
+            for field_items in (m2,m3):
+                by_coordinate={}
+                for item in field_items:
+                    by_coordinate.setdefault((item[6],item[5]),{"bound":set(),"registered":set()})
+                    by_coordinate[(item[6],item[5])]["bound"].add(item[2])
+                    by_coordinate[(item[6],item[5])]["registered"].update(item[9] or [])
+                if any(not group["registered"] or group["bound"] != group["registered"]
+                       for group in by_coordinate.values()):
+                    raise HTTPException(503, "Milieux cloud state component set differs from published provenance")
+            if any(item[0]!=row[9] or item[1]!=row[10] for item in population):
+                raise HTTPException(503, "Milieux cloud population provenance differs from its reading")
+            # A source-declared unavailable peer is valid evidence but has no plot coordinate.
+            if row[8] != "measured":
+                continue
+            if any(value is None for value in row[5:8]):
+                # The fiche selector intentionally omits source-supported NA coordinates
+                # (e.g. zero mean population) rather than placing them at invented values.
+                continue
             points.append({"territory":{"territory_id":row[0],"territory_type":row[1],"name":row[2]},
                 "periode_pop":row[3],"periode_artif":row[4],"taux_variation_population":row[5],
                 "artif_m2_par_habitant":row[6],"artif_m3_par_habitant":row[7]})
     return {"status":"available" if points else "unavailable",
-        "reason":None if points else "no_selected_members","groupe":group,"scope":scope,
+        "reason":None if points else ("no_selected_members" if not members else "no_plottable_members"),"groupe":group,"scope":scope,
+        "selected_member_count":len(set(members)),"plotted_member_count":len(points),
         "content_version":marker[0],"points":points}
 
 
