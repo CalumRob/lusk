@@ -576,6 +576,17 @@ class NetworkPreparationTests(unittest.TestCase):
             self.assertEqual(prepare_shared.call_args.kwargs["context_cache_root"], shared_root)
             self.assertFalse(shared_root.exists(), "the explicitly selected shared source is read-only")
 
+    def test_drain_stage_report_clears_shared_buffer_in_place(self):
+        from network import NetworkAdapter
+        adapter = NetworkAdapter(Path("fixture-raw"))
+        buffer = adapter._stage_events
+        buffer.extend([{"stage": "one", "seconds": 0.1}, {"stage": "two", "features": 3}])
+        self.assertEqual(adapter.drain_stage_report(), [
+            {"stage": "one", "seconds": 0.1}, {"stage": "two", "features": 3}])
+        self.assertIs(adapter._stage_events, buffer)
+        self.assertEqual(buffer, [])
+        self.assertEqual(adapter.drain_stage_report(), [])
+
     def test_full_lifecycle_reports_actual_cache_high_water_and_releases_only_territory_state(self):
         from types import SimpleNamespace
         from network import NetworkAdapter

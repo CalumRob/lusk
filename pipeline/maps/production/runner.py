@@ -390,6 +390,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                 continue
             cached_outputs[key] = value
     from checkpoint import OutputCheckpoint
+    from stage_report import StageReportSpool
     groups = {}
     expected_outputs = []
     for features in binding.map_set.layers.values():
@@ -419,6 +420,18 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
     outputs = []
     failures = []
     identity_report = []
+    stage_report_spool = StageReportSpool() if scope == "full" else None
+    drain_adapter_report = getattr(adapter, "drain_stage_report", None)
+
+    def flush_adapter_report():
+        if stage_report_spool is not None and callable(drain_adapter_report):
+            stage_report_spool.append("adapter", drain_adapter_report())
+
+    def flush_identity_report():
+        if stage_report_spool is not None and identity_report:
+            stage_report_spool.append("identity", identity_report)
+            identity_report.clear()
+
     artifact_total = len(expected_outputs)
     artifact_number = 0
     input_hash_seconds = 0.0
@@ -439,6 +452,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
             prepare_run(recipe, binding, requested_profiles, output_dir, refresh=refresh)
             preparation_seconds = perf_counter() - preparation_started
             print(f"[maps] shared source preparation: {preparation_seconds:.1f}s", flush=True)
+        flush_adapter_report()
 
         geometry_hashes: dict[int, tuple[str, int]] = {}
         for territory_key, features in groups.items():
@@ -588,20 +602,33 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                 territory_succeeded = True
             finally:
                 geometry_hashes.clear()
-                if entered and callable(release_hook):
-                    release_hook(features[0], output_dir,
-                        success=territory_succeeded and len(failures) == failure_count_before)
+                try:
+                    if entered and callable(release_hook):
+                        release_hook(features[0], output_dir,
+                            success=territory_succeeded and len(failures) == failure_count_before)
+                finally:
+                    flush_adapter_report()
+                    flush_identity_report()
         scope_succeeded = True
     finally:
         if scope_started and callable(end_scope_hook):
             end_scope_hook(scope, output_dir, success=scope_succeeded and not failures)
+        flush_adapter_report()
     elapsed_seconds = perf_counter() - run_started
     stage_report = [{"stage": "adapter-preparation-total", "profile": "shared",
         "decision": "completed", "seconds": round(preparation_seconds, 3)}]
     report_hook = getattr(adapter, "stage_report", None)
-    if callable(report_hook):
-        stage_report.extend(report_hook())
-    stage_report.extend(identity_report)
+    if stage_report_spool is not None:
+        if callable(drain_adapter_report):
+            stage_report.extend(stage_report_spool.read("adapter"))
+        elif callable(report_hook):
+            stage_report.extend(report_hook())
+        stage_report.extend(stage_report_spool.read("identity"))
+        stage_report_spool.close()
+    else:
+        if callable(report_hook):
+            stage_report.extend(report_hook())
+        stage_report.extend(identity_report)
     fd, temporary_manifest = tempfile.mkstemp(prefix=".production-manifest-", suffix=".tmp", dir=output_dir)
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as stream:

@@ -92,6 +92,14 @@ features feed profile-scoped identities and the validated ground-stage cache.
 The approved paper texture is loaded once per run. Inline-only runs do not require
 inspection metadata, OCS-GE, fonts or furniture assets.
 
+Full-run diagnostics are flushed as fsynced JSONL rows
+to anonymous temporary streams at territory boundaries. The existing ordered
+`stage_report` fields are reconstructed for final manifest/QA evidence after
+rendering; the adapter retains only the current territory's scalar diagnostics,
+not prior territories' event dictionaries or QGIS geometry/raster objects.
+Expected-output coverage and output records remain in their authoritative
+manifest/checkpoint structures.
+
 Authoritative network providers are opened force-read-only: QGIS's default
 GeoPackage access can touch input timestamps even without editing features.
 The source signature includes its resolved path, byte size and nanosecond

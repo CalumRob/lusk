@@ -199,6 +199,58 @@ class ContractTests(unittest.TestCase):
             self.assertEqual(adapter.prepared, 0)
             self.assertFalse(Path(directory, ".production-manifest.json").exists())
 
+    def test_full_run_spools_diagnostics_per_territory_but_returns_same_qa_fields(self):
+        from qgis.core import QgsGeometry, QgsRectangle
+        recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
+        geometry = QgsGeometry.fromWkt("POLYGON ((0 0,10 0,10 10,0 10,0 0))")
+        feature = {"geometry": geometry, "extent": QgsRectangle(geometry.boundingBox()),
+            "territory": {"kind": "test", "code": "spool", "name": "Spool"}, "mode": "test"}
+
+        class DiagnosticAdapter(WebPFixtureAdapter):
+            def __init__(self):
+                super().__init__()
+                self.events = []
+                self.prepare_current_approval_members = lambda *args: []
+
+            def prepare_run(self, *args, **kwargs):
+                self.prepared += 1
+                self.events.append({"stage": "shared-preparation", "decision": "validated"})
+
+            def render(self, *args, **kwargs):
+                self.events.append({"stage": "territory-render", "decision": "completed"})
+                return super().render(*args, **kwargs)
+
+            def begin_territory(self, *args, **kwargs):
+                self.events.append({"stage": "territory-begin", "decision": "started"})
+
+            def end_territory(self, *args, **kwargs):
+                self.events.append({"stage": "territory-release", "decision": "released"})
+
+            def drain_stage_report(self):
+                events = list(self.events)
+                self.events.clear()
+                return events
+
+            def stage_report(self):
+                return list(self.events)
+
+        adapter = DiagnosticAdapter()
+        binding = Binding("fixture", MapSet({"shape": [feature]}))
+        with TemporaryDirectory() as directory, \
+             patch("approval.validate_approval_claim"), patch("approval.require_approval"):
+            result = run_production(recipe, binding, "full", ["inspection", "inline"],
+                adapter, directory, approval={"human_approved": True})
+        events = result.qa["stage_report"]
+        self.assertEqual(result.qa["status"], "passed")
+        self.assertEqual(result.qa["artifact_count"], 2)
+        self.assertEqual([row["stage"] for row in events if row["stage"].startswith("shared-")],
+            ["shared-preparation"])
+        self.assertTrue(any(row["stage"] == "territory-release" for row in events))
+        for stage in ("profile-input-identity", "profile-render-contract",
+                      "effective-identity-digest", "output-cache-verification"):
+            self.assertEqual(sum(row["stage"] == stage for row in events), 2, stage)
+        self.assertEqual(adapter.events, [], "streamed rows are not retained by the adapter")
+
     def test_subset_run_preserves_omitted_cached_output_records(self):
         recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
         features = [{"geometry": "polygon", "territory": {"kind": "test", "code": code}, "mode": "test"}

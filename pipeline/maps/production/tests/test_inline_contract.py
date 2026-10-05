@@ -693,6 +693,15 @@ class InlineProfileContractTests(unittest.TestCase):
 
         acquire_context(context_cache, bbox, fetch=fetch)
         adapter.context_loader = lambda _scratch, requested: load_context(context_cache, requested)
+        drained_stage_events = []
+        original_drain_stage_report = adapter.drain_stage_report
+
+        def capture_drained_stage_report():
+            events = original_drain_stage_report()
+            drained_stage_events.extend(events)
+            return events
+
+        adapter.drain_stage_report = capture_drained_stage_report
 
         def fixture_network_layers(project, features, _raw, _config,
                                    cache_root=None, *, force=False, read_only_cache=False, report=None):
@@ -753,7 +762,7 @@ class InlineProfileContractTests(unittest.TestCase):
                 self.assertTrue(all(path == context_cache for _, path in prepare_calls), prepare_calls)
                 self.assertEqual(context_load.call_count, 3)
                 self.assertTrue(any(item["stage"] == "official-mainland-context-source"
-                                    for item in adapter._stage_events))
+                                    for item in drained_stage_events))
         finally:
             QgsProject.instance().clear()
             gc.collect()

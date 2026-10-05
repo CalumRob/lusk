@@ -1214,6 +1214,12 @@ class NetworkAdapter:
     def stage_report(self):
         return list(self._stage_events)
 
+    def drain_stage_report(self):
+        """Transfer accumulated scalar diagnostics to the runner's bounded spool."""
+        events = list(self._stage_events)
+        self._stage_events.clear()
+        return events
+
     def visual_spot_check_outputs(self, outputs):
         """Select family-owned high-risk post-batch examples from the run results."""
         selected = []
