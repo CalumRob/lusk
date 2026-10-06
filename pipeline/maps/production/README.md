@@ -223,3 +223,36 @@ been visually reviewed and `record_spot_check.py` records the human outcome.
 The script also records a rejected outcome; rejection leaves production
 incomplete so the artifacts can be corrected and rerun/reviewed.
 Nothing in this workflow publishes assets to the application or Cloudflare.
+
+### Department-title-only repair
+
+After the display-name binding change, a full batch whose other inputs and
+artifacts remain verified can be repaired without rerunning the batch. The
+operator requires a **current affirmative human representative approval**;
+missing, rejected, or stale approval fails before output mutation. The command
+derives the department inspection cohort from the current full inventory,
+checks all prior batch artifact hashes, validates current representative
+identities and source versions, and requires each full-manifest record to agree
+with its `.production-manifest.json` cache entry. A missing or stale cache fails
+closed before rendering or promotion. It records the authoritative department-label
+registry path and hash, and stages/decodes all replacements under the selected
+output directory before promoting any. Full QA remains explicitly incomplete
+until the reconciled manifest, output cache, and promotion journal are durable.
+It preserves the prior full manifest, QA, and replaced images
+under `output/repair-evidence/`. Automated QA does not approve title wording:
+the reconciled QA returns to `awaiting-human-spot-check`.
+
+Run from a QGIS-enabled Python environment only after the new approval record
+exists; this command neither creates approval nor acquires inputs:
+
+```powershell
+& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+  pipeline/maps/production/repair_department_titles.py `
+  --approval pipeline/maps/production/output/human-approval.json
+```
+
+Use `--output-dir`, `--raw-dir`, `--network-cache-root`, and
+`--context-cache-root` only to point at the existing production output, raw
+sources, and validated local cache generations. A promotion interruption is
+marked incomplete in both the repair journal and full QA; use its evidence
+directory for manual recovery before retrying.

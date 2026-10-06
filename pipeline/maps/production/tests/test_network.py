@@ -459,6 +459,9 @@ class NetworkPreparationTests(unittest.TestCase):
         raw.mkdir(parents=True)
         metadata = root / "pipeline" / "inst" / "extdata"
         metadata.mkdir(parents=True)
+        registry = root / "territoires.json"
+        registry.write_text(json.dumps([{"territoire": "22", "type": "departement",
+            "nom": "Côtes-d'Armor"}]), encoding="utf-8")
         (metadata / "epci_geo_api.json").write_text(json.dumps({"labels": [
             {"code": "epci-a", "nom": "A"}, {"code": "epci-b", "nom": "B"}]}), encoding="utf-8")
         communes = QgsVectorLayer(
@@ -484,7 +487,8 @@ class NetworkPreparationTests(unittest.TestCase):
             communes, str(raw / "communes_limites.geojson"), project.transformContext(), options)
         self.assertEqual(result[0], QgsVectorFileWriter.NoError, result)
         binding = build_full_map_set(raw, project,
-            family_config={"scope": {"analytical_departments": ["22"]}})
+            family_config={"scope": {"analytical_departments": ["22"]}},
+            territory_registry_path=registry)
         adapter = NetworkAdapter(raw)
         adapter.family_config = {"scope": {"analytical_departments": ["22"]}}
         adapter.preflight_scope(None, binding, "full", ("inspection", "inline"))
@@ -494,12 +498,41 @@ class NetworkPreparationTests(unittest.TestCase):
         self.assertEqual(territories, {("commune", "22001"), ("commune", "22002"),
             ("epci", "epci-a"), ("epci", "epci-b"), ("departement", "22"), ("region", "53")})
         self.assertEqual(len(items), len(territories) * len({item["mode"] for item in items}))
+        department = next(item for item in items if item["territory"]["kind"] == "departement")
+        self.assertEqual(department["territory"]["name"], "Côtes-d'Armor")
+        registry.write_text(json.dumps([{"territoire": "22", "type": "departement",
+            "nom": "Côtes-d'Armor (updated)"}]), encoding="utf-8")
+        updated = build_full_map_set(raw, project,
+            family_config={"scope": {"analytical_departments": ["22"]}},
+            territory_registry_path=registry)
+        self.assertEqual(next(item for item in updated.map_set.layers["network-outputs"]
+            if item["territory"]["kind"] == "departement")["territory"]["name"],
+            "Côtes-d'Armor (updated)")
         epci_b = next(item for item in items if item["territory"]["code"] == "epci-b")
         self.assertEqual(epci_b["geometry"].boundingBox().xMaximum(), 50)
         self.assertEqual(epci_b["analytical_geometry"].boundingBox().xMaximum(), 30)
         incomplete = Binding("network", MapSet({"network-outputs": items[:-1]}))
         with self.assertRaisesRegex(ValueError, "does not cover exactly"):
             adapter.preflight_scope(None, incomplete, "full", ("inspection", "inline"))
+
+    def test_department_label_registry_fails_closed(self):
+        from network import _department_labels
+        root = Path(tempfile.mkdtemp(prefix="lusk-department-labels-"))
+        self.__class__.fixture_dirs.append(root)
+        registry = root / "territoires.json"
+        registry.write_text(json.dumps([{"territoire": "22", "type": "commune", "nom": "Wrong"}]),
+                            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "missing department labels"):
+            _department_labels(registry, {"22"})
+        registry.write_text(json.dumps([
+            {"territoire": "22", "type": "departement", "nom": "Côtes-d'Armor"},
+            {"territoire": "22", "type": "departement", "nom": "Duplicate"}]), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "duplicate department label"):
+            _department_labels(registry, {"22"})
+        registry.write_text(json.dumps([{"territoire": "22", "type": "departement", "nom": "22"}]),
+                            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "invalid department label"):
+            _department_labels(registry, {"22"})
 
     def test_real_network_adapter_recomputes_paired_current_review_identities(self):
         from dataclasses import replace
