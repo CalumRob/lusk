@@ -66,11 +66,18 @@ class DepartmentTitleRepairTests(unittest.TestCase):
             adapter = DepartmentTitleRepairAdapter(Path(folder) / "raw",
                 preparation_binding=full_binding, shared_output_dir=shared_output)
             recipe = Recipe("network", 1, Foundation("v1"), "network")
-            with patch.object(repair_module.NetworkAdapter, "prepare_run", autospec=True) as prepare:
+            with patch("map_ground.prepare_shared_ground", return_value=object()) as prepare_ground, \
+                    patch("network._prepare_network_layers", return_value={"car": []}):
                 adapter.prepare_run(recipe, subset, ("inspection",), stage_output)
-            args = prepare.call_args.args
-            self.assertIs(args[2], full_binding)
-            self.assertEqual(Path(args[4]), shared_output)
+            prepared_extent = prepare_ground.call_args.args[2]
+            self.assertEqual(prepared_extent.toString(),
+                full_binding.map_set.layers["all"][1]["extent"].toString())
+            self.assertNotEqual(prepared_extent.toString(),
+                subset.map_set.layers["department-title-repair"][0]["extent"].toString())
+            self.assertEqual(prepare_ground.call_args.kwargs["cache_root"],
+                shared_output / ".stage-cache" / "context-land")
+            self.assertEqual(prepare_ground.call_args.kwargs["context_cache_root"],
+                shared_output / ".stage-cache" / "official-context")
             adapter.begin_production_scope("representative", stage_output)
             self.assertFalse(adapter._persist_territory_stages)
             self.assertTrue(adapter._bounded_territory_state)
