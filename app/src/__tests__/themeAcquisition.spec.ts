@@ -3,10 +3,12 @@ import { acquireThemeComparison, acquireThemeFacts, ThemeAcquisitionCache, theme
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 
 describe('theme acquisition cache', () => {
-  it('enables the migrated path only for the explicit API flag', () => {
-    expect(themeAcquisitionEnabled({})).toBe(false)
-    expect(themeAcquisitionEnabled({ VITE_THEME_ACQUISITION_API: '0' })).toBe(false)
+  it('defaults the migrated path ON — the incumbent path is the explicit opt-out', () => {
+    // Le chemin migré est le DÉFAUT du produit ; l'incumbent statique ne
+    // survit que comme opt-out explicite (VITE_THEME_ACQUISITION_API='0').
+    expect(themeAcquisitionEnabled({})).toBe(true)
     expect(themeAcquisitionEnabled({ VITE_THEME_ACQUISITION_API: '1' })).toBe(true)
+    expect(themeAcquisitionEnabled({ VITE_THEME_ACQUISITION_API: '0' })).toBe(false)
   })
   it('posts typed selections and preserves omitted versus explicitly empty selection', async () => {
     const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, json: async () => ({ theme_id: 'habitat', complete_theme: false }) }))

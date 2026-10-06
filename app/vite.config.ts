@@ -133,5 +133,12 @@ export default defineConfig({
     environment: 'happy-dom',
     include: ['src/**/*.spec.ts'],
     setupFiles: ['src/__tests__/setup.ts'],
+    env: {
+      // Le chemin d'acquisition est le défaut du produit ; les tests qui
+      // n'expriment rien exercent le chemin incumbent EXPLICITE ('0').
+      // Les tests flag-on stubbent '1' localement — vi.unstubAllGlobals
+      // retombe sur cette valeur de base, jamais sur « unset ».
+      VITE_THEME_ACQUISITION_API: '0',
+    },
   },
 })

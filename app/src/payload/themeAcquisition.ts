@@ -107,8 +107,15 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
   }
 }
 
+/**
+ * Le chemin d'acquisition paresseuse est le DÉFAUT du produit (#627, décision
+ * propriétaire 2026-10-06) : l'incumbent statique ne survit que comme opt-out
+ * explicite — `VITE_THEME_ACQUISITION_API='0'`. Couplage de déploiement : un
+ * build par défaut attend que les routes POST de faits/thèmes soient servies
+ * par l'API déployée (sinon la fiche échoue fermé, jamais de repli statique).
+ */
 export function themeAcquisitionEnabled(env: Record<string, unknown>): boolean {
-  return env.VITE_THEME_ACQUISITION_API === '1'
+  return env.VITE_THEME_ACQUISITION_API !== '0'
 }
 
 async function postThemeResponse(url: string, body: Record<string, unknown>, expectedTheme: ThemeKey): Promise<ThemeResponse> {
