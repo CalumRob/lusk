@@ -212,6 +212,31 @@
     "vingt-minutes-sans-voiture",
     "ce-que-le-velo-preserve"
   ],
+  "selected_reading_contract": {
+    "unit": "types de services",
+    "direction": "low",
+    "allowed_levels": [
+      "commune",
+      "epci",
+      "departement",
+      "region"
+    ],
+    "missing_status": "unavailable",
+    "classification_values": [
+      "saillant",
+      "notable",
+      "non-saillant"
+    ],
+    "field_keys": [
+      "groupe",
+      "story_key",
+      "salience_reason",
+      "classification_saillance",
+      "div_loss_t",
+      "div_loss_b",
+      "status"
+    ]
+  },
   "sources": {
     "voitures_menage": "rp_logement_princ",
     "reseaux": "amenagements_cyclables",
@@ -1125,6 +1150,31 @@
         "partage_km_1000": "km / 1 000 hab",
         "total_longueur": "km"
       }
+    }
+  },
+  "distribution_contracts": {
+    "mobilite_density_distribution": {
+      "source_id": "mobilite_snapshot",
+      "allowed_focal_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "axis_ordinals": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10
+      ],
+      "density_unit": "1 / type de service perdu",
+      "decile_unit": "type de service perdu"
     }
   },
   "scalar_contracts": {

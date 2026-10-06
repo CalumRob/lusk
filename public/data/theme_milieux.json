@@ -196,7 +196,7 @@
     "conso_enaf_annuel": {
       "indicator": "conso_enaf_annuel",
       "series_dataset_id": "conso_enaf_annuel",
-      "series_publication": "legacy",
+      "series_publication": "owned",
       "label": "Consommation d’ENAF — série annuelle",
       "definition": "Consommation annuelle d’espaces naturels, agricoles et forestiers (le flux annuel).",
       "unit": "ha",
@@ -254,6 +254,28 @@
           "2024": "2024"
         }
       }
+    }
+  },
+  "owned_series_routes": {
+    "conso_enaf_annuel": {
+      "active_read_route": true,
+      "theme_id": "milieux",
+      "serving_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ]
+    },
+    "artif_par_habitant": {
+      "active_read_route": true,
+      "theme_id": "milieux",
+      "serving_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ]
     }
   },
   "source_records": {
