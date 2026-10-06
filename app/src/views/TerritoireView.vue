@@ -280,7 +280,7 @@ watch([prototypeAccesApi, typeRoute, idRoute,
       ? modeleTerritoire.model.value?.themes.mobilite?.comparisons.densite
       : resolutionComparaison.value?.contexte ?? undefined
     let combined = mobilityFactsFromThemeApi(presentation, code, data)
-    combined = applyThemeComparisonApiFacts(combined, data.default_comparison, initialContext)
+    combined = applyThemeComparisonApiFacts(combined, data.comparison, initialContext)
     const serviceScope = isRecord(data.essential_service_access) && isRecord(data.essential_service_access.scope)
       ? data.essential_service_access.scope : null
     combined = applyAccessApiFacts(combined, data.essential_service_access,

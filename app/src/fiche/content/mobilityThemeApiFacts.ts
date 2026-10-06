@@ -306,11 +306,19 @@ export function applyThemeComparisonApiFacts(
       scope: { mode, kind, label: context.scope.label }, rank, reference } }
   }
   const indicators = facts.mobility.indicators.map((fact) => comparisonFor(fact, fact.detail, fact.sex ?? null))
-  const updateModeFacts = (source: TerritoryFacts['mobility']['access']['summary']['accessibleEquipment']) =>
-    Object.fromEntries(Object.entries(source).map(([mode, fact]) => [mode, comparisonFor(fact)])) as unknown as typeof source
+  const updateModeFacts = <T>(source: T): T =>
+    Object.fromEntries(Object.entries(source as Record<string, unknown>)
+      .map(([mode, fact]) => [mode, comparisonFor(fact as NumericFact)])) as unknown as T
   const summary = { ...facts.mobility.access.summary,
     accessibleEquipment: updateModeFacts(facts.mobility.access.summary.accessibleEquipment),
     accessibleTypes: updateModeFacts(facts.mobility.access.summary.accessibleTypes),
+    // Symmetric with clearThemeComparisonApiFacts : sans cette mise à jour,
+    // les pertes moyennes gardent une comparaison dérivée du modèle statique
+    // (portée EPCI sans observations) qui fuit dans la présentation API.
+    averageLosses: {
+      diversity: updateModeFacts(facts.mobility.access.summary.averageLosses.diversity),
+      total: updateModeFacts(facts.mobility.access.summary.averageLosses.total),
+    },
   }
   const bpeAccess = { ...facts.mobility.bpeAccess, profiles: facts.mobility.bpeAccess.profiles.map((profile) => {
     const result = resultRows.find((candidate) => candidate.indicator_id === 'bpe_access_profile' &&
