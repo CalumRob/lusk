@@ -3,7 +3,7 @@ import { ThemeAcquisitionCache } from '../payload/themeAcquisition'
 
 describe('theme acquisition cache', () => {
   it('loads only requested themes and caches by territory, theme, and comparison context', async () => {
-    const acquire = vi.fn(async (theme: string) => ({ theme, focal: 42 }))
+    const acquire = vi.fn(async (theme: string) => ({ theme, focal: 42, tokens: {} }))
     const cache = new ThemeAcquisitionCache(acquire)
     await cache.get('commune', '22001', 'programmes')
     await cache.get('commune', '22001', 'programmes')
