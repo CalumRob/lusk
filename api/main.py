@@ -1257,7 +1257,9 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 "rank": rank, "rank_size": len(values) if rank is not None else None,
                 "comparison_sources": sources})
     profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id)
-    bpe_results = _bpe_profile_comparison(conn, territory_type, territory_id, selection)["results"] if bpe_available else []
+    bpe_comparison = (_bpe_profile_comparison(conn, territory_type, territory_id, selection)
+                      if bpe_available else None)
+    bpe_results = bpe_comparison["results"] if bpe_comparison else []
     owned_results,owned_markers,_,_,_=_owned_series_comparison_results(conn,
         [(dataset_id,theme_id,False,owned_indicator,None)
          for dataset_id,owned_indicator in owned_descriptors],
@@ -1273,11 +1275,24 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         reading_cloud = _milieux_reading_cloud(conn, milieux_marker, territory_type, territory_id,
             cohort_type, members, scope)
     return {"contract": "theme-comparison-v1", "complete_theme": False, "theme_id": theme_id,
-        "content_version": scalar_marker[0] if scalar_marker else (
-             next(iter(owned_markers.values()))[1] if owned_markers else collection_results[0]["content_version"] if collection_results else reading_marker[0] if reading_marker else milieux_marker[0] if milieux_marker else (_bpe_profile_publication(conn)[0] if bpe_available else None)),
+        "content_version": (
+            scalar_marker[0] if scalar_marker else
+            next(iter(owned_markers.values()))[1] if owned_markers else
+            collection_results[0]["content_version"] if collection_results else
+            reading_marker[0] if reading_marker else
+            milieux_marker[0] if milieux_marker else
+            bpe_comparison["content_version"] if bpe_comparison else None),
         "reading_content_version": reading_marker[0] if reading_marker else milieux_marker[0] if milieux_marker else None,
         "reading_cloud": reading_cloud,
         "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
+        "scalar_content_version": scalar_marker[0] if scalar_marker else None,
+        "owned_series_content_versions": {
+            dataset_id: {"content_version": marker[1], "reference_content_version": marker[2]}
+            for dataset_id, marker in owned_markers.items()},
+        "bpe_content_version": bpe_comparison["content_version"] if bpe_comparison else None,
+        "bpe_reference_content_version": bpe_comparison["reference_content_version"] if bpe_comparison else None,
+        "service_publication_id": None,
+        "building_publication_id": None,
         "reference_content_version": reference[0],
         "selection": None if selection is None else [
             {"territory_type": level, "territory_id": code} for level, code in selection],
@@ -2348,14 +2363,14 @@ def selected_theme_facts(
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             payload = _theme_facts_snapshot(
                 conn, territory_type, territory_id, theme_id, None, repository,
-                selection=selected)
+                selection=selected, include_selected_comparison=True)
             payload.pop("default_comparison", None)
             comparison = payload.pop("_selected_comparison")
             nested = {key: comparison[key] for key in (
                 "contract", "complete_theme", "theme_id", "content_version",
                 "reference_content_version", "selection", "scope", "results",
-                "collection_content_versions",
-                "collection_content_versions", "profile_content_version", "profile_comparisons",
+                "collection_content_versions", "scalar_content_version",
+                "profile_content_version", "profile_comparisons",
                 "reading_content_version", "reading_cloud", "owned_series_content_versions",
                 "bpe_content_version", "bpe_reference_content_version",
                 "service_publication_id", "building_publication_id")}
@@ -2367,7 +2382,7 @@ def selected_theme_facts(
 
 
 def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_comparison,
-                           repository, selection=None) -> dict:
+                           repository, selection=None, *, include_selected_comparison=False) -> dict:
     """Build the public theme-facts response from one caller-owned snapshot."""
     territory = conn.execute("""SELECT territory_id,name,territory_type FROM territory_reference
         WHERE territory_id=%s AND territory_type=%s""", (territory_id, territory_type)).fetchone()
@@ -2706,6 +2721,7 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
             service_snapshot = repository.read_selected(territory_type, territory_id, selection,
                                                         connection=conn)
         essential_service_access = compare(service_snapshot).model_dump(mode="json")
+        comparison["service_publication_id"] = service_snapshot["publication_id"]
         density_distribution=_mobility_density_distribution_snapshot(conn,territory_type,territory_id)
         try:
             building_access = repository.read_building_initial(
@@ -2713,6 +2729,7 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
                 service_mode if territory_type == "commune" else None,
                 selected=selection,
                 connection=conn)
+            comparison["building_publication_id"] = building_access["publication_id"]
         except HTTPException as exc:
             # Older installations can serve the existing theme facts
             # before the additive registered building publication is
@@ -2772,7 +2789,7 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
         "indicators":indicators,
          "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
                                "profile_comparisons":comparison["profile_comparisons"]}}
-    if selection is not None:
+    if include_selected_comparison:
         payload["_selected_comparison"] = comparison
     if building_access is not None:
         payload["building_access"] = building_access
@@ -2823,11 +2840,11 @@ def theme_comparison_only(
             response = {key: result[key] for key in (
                 "contract", "complete_theme", "theme_id", "content_version",
                 "reference_content_version", "selection", "scope", "results",
-                  "collection_content_versions", "profile_content_version", "profile_comparisons",
-                  "reading_content_version", "reading_cloud", "owned_series_content_versions",
-                  "bpe_content_version", "bpe_reference_content_version",
-                  "service_publication_id", "building_publication_id",
-            )}
+                "collection_content_versions", "scalar_content_version",
+                "profile_content_version", "profile_comparisons",
+                "reading_content_version", "reading_cloud", "owned_series_content_versions",
+                "bpe_content_version", "bpe_reference_content_version",
+                "service_publication_id", "building_publication_id")}
             response["results"] = [_comparison_result_without_focal_value(row)
                                    for row in response["results"]]
             response["profile_comparisons"] = [
@@ -2847,6 +2864,9 @@ def theme_comparison_only(
                 for service_item in service.get("services", []):
                     for facts in service_item.get("modes", {}).values():
                         facts.pop("value", None)
+                        for focal_field in ("source_id", "source_name", "source_version",
+                                            "reference_date", "source_publication_date"):
+                            facts.pop(focal_field, None)
                 service = _comparison_result_without_focal_value(service)
                 _cohort_type, peer_member_ids, _scope = _comparison_cohort(
                     conn, territory_type, territory_id, selected)
@@ -2865,6 +2885,19 @@ def theme_comparison_only(
                     for mode, facts in item.get("modes", {}).items():
                         facts["comparison_sources"] = cohort_sources.get((item["id"], mode), [])
                 response["essential_service_access"] = service
+                response["service_publication_id"] = service_snapshot["publication_id"]
+                building_publication_id = None
+                building_markers = conn.execute(
+                    "SELECT table_name,content_version FROM table_publication "
+                    "WHERE table_name IN ('territory_reference','building_ramp','building_grid')"
+                ).fetchall()
+                try:
+                    building_publication_id = _building_publication(building_markers)
+                except HTTPException as exc:
+                    if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
+                        raise
+                if building_publication_id is not None:
+                    response["building_publication_id"] = building_publication_id
                 if selected is None:
                     try:
                         building = repository.read_building_initial(
@@ -2875,6 +2908,7 @@ def theme_comparison_only(
                         if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
                             raise
                     else:
+                        response["building_publication_id"] = building["publication_id"]
                         response["building_access"] = {
                             "scope": building["scope"],
                             "ramp": building["peer_ramp"],
@@ -2888,6 +2922,7 @@ def theme_comparison_only(
                 else:
                     building = repository.read_building(
                         territory_type, territory_id, tuple(selected), connection=conn)
+                    response["building_publication_id"] = building["publication_id"]
                     try:
                         member_ids = resolve_commune_members(
                             building["reference"], tuple(selected),
