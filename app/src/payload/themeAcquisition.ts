@@ -1,6 +1,6 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
 import type { Theme } from './types'
-/** Every canonical theme is behind lazy acquisition unless an owner-owned flow handles it. */
+/** Every canonical theme is acquired (active priority, then background warm-up) unless an owner-owned flow handles it. */
 export const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux', 'mobilite']
 export type ThemeSelectionMember = { territory_type: 'commune' | 'epci' | 'departement' | 'region'; territory_id: string }
 
@@ -111,7 +111,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
 }
 
 /**
- * Le chemin d'acquisition paresseuse est le DÉFAUT du produit (#627, décision
+ * Le chemin d'acquisition API est le DÉFAUT du produit (#627, décision
  * propriétaire 2026-10-06) : l'incumbent statique ne survit que comme opt-out
  * explicite — `VITE_THEME_ACQUISITION_API='0'`. Couplage de déploiement : un
  * build par défaut attend que les routes POST de faits/thèmes soient servies

@@ -62,7 +62,7 @@ are deliberately NOT ignore-listed — they open the evidence base of the DESIGN
 - Every added indicator or theme ships behind the registered theme-acquisition switch (or an owner-owned acquisition path such as the Mobilité prototype E flow).
 - The incumbent static path is an explicit opt-out via `VITE_THEME_ACQUISITION_API='0'`, never a target for new work.
 - Keep the acquisition registry complete against `THEMES_CANONIQUES`; its contract test must fail when a canonical theme is omitted.
-- Domain vocabulary and owner decisions for this mode live in `CONTEXT.md` — « Acquisition paresseuse par thème ».
+- Domain vocabulary and owner decisions for this mode live in `CONTEXT.md` — « Acquisition par thème » (anciennement « Acquisition paresseuse par thème »).
 
 ### R / renv in worktrees (pipeline) — READ BEFORE RUNNING ANY R
 
