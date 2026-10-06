@@ -121,9 +121,6 @@ const payloadPourRendu = computed<Payload | null>(() => {
     const histoires = histoiresThemeRows.value === null
       ? payload.histoires.filter((row) => row.theme !== theme)
       : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
-    const histoires = histoiresThemeRows.value === null
-      ? payload.histoires.filter((row) => row.theme !== theme)
-      : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
         ...(theme === 'demographie' ? histoiresNuageDemographie.value : []),
         ...(theme === 'milieux' ? histoiresNuageMilieux.value : [])]
     // Les pairs du nuage Milieux ont besoin de leur identité dans le référentiel

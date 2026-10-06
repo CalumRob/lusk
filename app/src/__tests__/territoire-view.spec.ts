@@ -1451,10 +1451,17 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('ne précharge aucun autre thème et garde l’acquisition Milieux en cache à la revisite', async () => {
     const model = modeleMilieux()
-    const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () => reponseThemeMilieuxApi(model) }))
+    const fetchApi = vi.fn(async (url: string, _options?: RequestInit) => {
+      if (String(url).endsWith('/themes/programmes/facts')) {
+        return { ok: true, json: async () => reponseThemeProgrammesApi() }
+      }
+      return { ok: true, json: async () => reponseThemeMilieuxApi(model) }
+    })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    expect(fetchApi).not.toHaveBeenCalled()
+    // L'atterrissage par défaut n'acquiert que Programmes ; Milieux attend sa sélection.
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(0)
     await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
     await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
     await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
