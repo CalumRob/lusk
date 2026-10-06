@@ -1332,6 +1332,9 @@ class NetworkAdapter:
             metadata = self.raw_dir.parent.parent / "inst" / "extdata" / "theme-metadata"
             from inspection_plate import _source_citation
             digest.update(_source_citation(metadata, feature["mode"]).encode("utf-8"))
+            # The territory label is printed on the inspection plate. Bind it
+            # to this profile's identity only; inline exports have no title.
+            digest.update(feature["territory"]["name"].encode("utf-8"))
         identity = digest.hexdigest()
         self._stage_events.append({"stage": "effective-content-fingerprint-total", "profile": profile.name,
             "territory": f"{feature['territory']['kind']}/{feature['territory']['code']}",
