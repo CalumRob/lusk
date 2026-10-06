@@ -16,6 +16,10 @@ function faitsHabitat(champs: Record<string, unknown> = {}) {
   }
 }
 
+function faitsMilieux(champs: Record<string, unknown> = {}) {
+  return { ...faitsHabitat(), theme_id: 'milieux', ...champs }
+}
+
 const sources = () => [{
   source_id: 'habitat_api', name: 'Source API habitat', vintage_id: 'api-v1', version: 'api-v1',
   reference_date: null, publication_date: null,
@@ -137,6 +141,28 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       indicator_metadata: [], named_reference_evidence: [], indicators: [],
       readings: [{ groupe: 'g', story_key: 's', salience_reason: 'defaut', status: 'measured' }],
     }, cible)).toThrow(/non migré/)
+  })
+
+  it('mappe la lecture Milieux et sa provenance sans convertir les absences en zéros', () => {
+    const reading = {
+      groupe: 'land', story_key: 'se-densifier-setaler-ou-sen-aller', salience_reason: 'defaut', status: 'measured',
+      periode_pop: '2017-2023', periode_artif: '2020-2023', delta_population: 10, taux_variation_population: 1.4,
+      artif_m2_par_habitant: 8, artif_m3_par_habitant: 9, trajectoire_artif_par_habitant: 1.125,
+      classification: 'up', provenance: { source_id: 'rp', source_name: 'RP fixture', source_version: '2023',
+        source_reference_date: null, source_publication_date: null },
+    }
+    const result = themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [reading] }), cible)
+    const row = result.histoires[0] as unknown as Record<string, unknown>
+    expect(row.taux_variation_population).toBe(1.4)
+    expect(row.classification).toBe('up')
+    expect(row.vintage_source).toBe('RP fixture')
+    expect(themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [{ ...reading, status: 'unavailable',
+      periode_pop: null, periode_artif: null, taux_variation_population: null, artif_m2_par_habitant: null,
+      artif_m3_par_habitant: null, trajectoire_artif_par_habitant: null, classification: null }] }), cible)
+      .histoires[0]).toMatchObject({ periode_artif: null, taux_variation_population: null,
+        artif_m2_par_habitant: null, artif_m3_par_habitant: null, classification: null })
+    expect(() => themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [{ ...reading, story_key: 'wrong' }] }), cible)).toThrow(/non déclarée/)
+    expect(() => themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [{ ...reading, salience_reason: 'invented' }] }), cible)).toThrow(/non déclarée/)
   })
 
   it('valide l’écho de sélection d’une réponse de comparaison dans l’ordre du demandeur', () => {

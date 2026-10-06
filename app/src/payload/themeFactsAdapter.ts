@@ -1,4 +1,4 @@
-import type { Histoire, HistoireHabitat, Indicateur, TerritoireType, VintageStamp } from './types'
+import type { Histoire, HistoireHabitat, HistoireMilieux, Indicateur, TerritoireType, VintageStamp } from './types'
 import { RAISONS_SAILLANCE } from './types'
 import type { ThemeKey, ThemeSelectionMember } from './themeAcquisition'
 
@@ -144,6 +144,41 @@ function histoireHabitatDeSql(
   return lecture
 }
 
+/** Lecture Milieux typed: keep every source-absent coordinate null and stamp
+ * the reading with the population provenance supplied by the API. */
+function histoireMilieuxDeSql(target: { territoire: string; type: TerritoireType }, reading: Row): Histoire {
+  for (const key of ['groupe', 'story_key', 'salience_reason', 'status']) {
+    if (!texteNonVide(reading[key])) throw new Error(`Lecture SQL Milieux invalide : ${key}`)
+  }
+  if (reading.story_key !== 'se-densifier-setaler-ou-sen-aller' ||
+      !RAISONS_SAILLANCE.includes(reading.salience_reason as (typeof RAISONS_SAILLANCE)[number])) {
+    throw new Error('Lecture SQL Milieux non déclarée')
+  }
+  const nullableText = (key: string) => reading[key] === null || text(reading[key])
+  const nullableNumber = (key: string) => reading[key] === null || finite(reading[key])
+  if (!nullableText('periode_pop') || !nullableText('periode_artif') || !finite(reading.delta_population) ||
+      !nullableNumber('taux_variation_population') || !nullableNumber('artif_m2_par_habitant') ||
+      !nullableNumber('artif_m3_par_habitant') || !nullableNumber('trajectoire_artif_par_habitant') ||
+      !nullableText('classification')) throw new Error('Valeurs de lecture SQL Milieux invalides')
+  const provenance = isRecord(reading.provenance)
+    ? apiSources([{ source_id: reading.provenance.source_id, name: reading.provenance.source_name,
+        version: reading.provenance.source_version, reference_date: reading.provenance.source_reference_date,
+        publication_date: reading.provenance.source_publication_date }], 'lecture milieux') : []
+  const lecture: HistoireMilieux & VintageStamp = {
+    territoire: target.territoire, type: target.type, theme: 'milieux', groupe: reading.groupe as string,
+    story_key: 'se-densifier-setaler-ou-sen-aller', salience_reason: reading.salience_reason as HistoireMilieux['salience_reason'],
+    periode_pop: reading.periode_pop as string, periode_artif: reading.periode_artif as string | null,
+    delta_population: reading.delta_population as number, taux_variation_population: reading.taux_variation_population as number | null,
+    artif_m2: null, artif_m3: null, artif_m2_par_habitant: reading.artif_m2_par_habitant as number | null,
+    artif_m3_par_habitant: reading.artif_m3_par_habitant as number | null,
+    trajectoire_artif_par_habitant: reading.trajectoire_artif_par_habitant as number | null,
+    classification: reading.classification as string | null,
+    vintage_source: provenance[0]?.source ?? '', vintage_version: provenance[0]?.version ?? '',
+    vintage_date_reference: provenance[0]?.referenceDate ?? null, vintage_date_publication: provenance[0]?.publicationDate ?? null,
+  }
+  return lecture
+}
+
 export interface ThemeFactsRows {
   indicateurs: Indicateur[]
   histoires: Histoire[]
@@ -170,6 +205,8 @@ export function themeFactsRowsFromApi(
   let histoires: Histoire[] = []
   if (theme === 'habitat') {
     histoires = rows(response.readings, 'readings').map((row) => histoireHabitatDeSql(target, row))
+  } else if (theme === 'milieux') {
+    histoires = rows(response.readings, 'readings').map((row) => histoireMilieuxDeSql(target, row))
   } else if (response.readings.length > 0) {
     // Un thème non migré ne doit jamais franchir cette frontière : perdre une
     // lecture en silence serait un fait caché, pas une migration.
