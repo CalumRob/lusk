@@ -2,9 +2,10 @@
 
 ## Scope
 
-Completed the SQL-backed proof for the selected essential-service reader and
-the selected initial building-access reader, and closed the selected-comparison
-partial-peer gap. No route/refactor or deployment behavior was added.
+Completed SQL-backed proof for selected essential-service and initial
+building-access readers, closed the selected-comparison partial-peer gap, and
+added a PostgreSQL-to-FastAPI regression for the Mobilité comparison route.
+No deployment behavior was changed.
 
 ## RED → GREEN
 
@@ -48,18 +49,47 @@ All temporary schemas are uniquely named and only the owned schema is dropped
 under `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`; the disposable-database identity
 guard verified both configured roles before SQL tests ran.
 
-## Follow-up review corrections
+## Comparison-route acceptance and review corrections
 
-- The `/themes/{theme}/comparison` projection now forwards
-  `collection_content_versions` (as does the nested selected-facts projection).
-- Mobility service projection removes each `services[*].modes[*].value` at its
-  actual nested location. Service source attribution is restricted to the
-  resolved cohort member IDs, excluding focal-only rows when the focal is not
-  selected.
-- Re-ran the approved SQL-backed `test_selected_building_readers.py`: 1 passed,
-  zero skipped; this covers the reader only, **not** the FastAPI comparison
-  route. An end-to-end PostgreSQL?TestClient route regression remains
-  unimplemented; route leak/median/token behavior is therefore not claimed as
-  verified. `_theme_comparison_snapshot` currently exposes no bounded
-  publication tokens for owned series, BPE, service, or building, so those
-  tokens were not fabricated or added to the response projection.
+- The actual PostgreSQL→FastAPI `POST /api/territories/epci/E1/themes/mobilite/comparison`
+  now proves mixed EPCI+commune overlap deduplicates to two commune peers, with
+  independent SQL-backed medians and deltas for all five services × three modes.
+  The response retains the original typed selection, includes selected peer
+  source evidence (and excludes the focal-only source), contains no `value` in
+  service modes and no recursive `focal_value`, and returns selected building
+  summaries in the same snapshot.
+- The same route test checks explicit `[]` (zero peers, no medians/source
+  evidence, empty building summaries) against omitted selection (declared
+  same-level default). It counts exactly one checked-out DB connection and one
+  `REPEATABLE READ, READ ONLY` setup per request.
+- `/themes/{theme}/comparison` now returns bounded snapshot tokens: scalar,
+  profile, reading, collections, per-dataset owned-series content/reference,
+  BPE content/reference, territory reference, and Mobilité service/building
+  publication IDs. Selected facts nests corresponding tokens. The selected
+  facts POST now also handles omitted selection as the default; the GET facts
+  response remains unchanged. BPE token values come from the same comparison
+  snapshot rather than a fabricated release marker.
+- Focal essential-service measurement and provenance fields are stripped from
+  comparison-only modes; selected `comparison_sources` are built only from the
+  resolved peer IDs. This closes the earlier nested-value and focal-source
+  leaks found in review.
+- TDD evidence: with the comparison source-field stripping temporarily removed,
+  the PostgreSQL→FastAPI route regression failed because `focal-only` appeared
+  in the comparison response; restoring the stripping made it pass.
+- The route regression also seeds an active owned-series dataset
+  (`mobility_owned`, theme mobilite) with two selected commune observations: it
+  asserts the forwarded per-dataset content/reference tokens and the
+  selected-peer median without any focal value. Explicit-empty selection
+  returns zero-member scalar results (median None), and the omitted-selection
+  default returns the same-level cohort medians (car median 0.875 across
+  E1/E2) — each still stripped of focal mode values and focal-only sources.
+  All five services' medians and car/bike deltas are asserted, not just food.
+- Final focused guarded run:
+  `. 'E:/Temp/opencode/lusk-approved-test-env.ps1'; $env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP='1'; python -m pytest api/tests/integration/test_selected_building_readers.py api/tests/integration/test_milieux_cloud_http.py -q`
+  => **2 passed, 0 skipped** in 12.34s (one existing Starlette/httpx
+  deprecation warning). This covers the selected Mobilité comparison route,
+  selected facts default/empty/mixed Milieux behavior (including nested
+  non-applicable service/building tokens declared null), GET regression, and
+  the original selected building reader. `py_compile`, `git diff --check`, and
+  the focused comparison/building unit tests passed (22 tests). No push, PR
+  update, live activation or deployment was performed.

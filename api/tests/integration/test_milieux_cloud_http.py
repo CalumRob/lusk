@@ -209,6 +209,18 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
             assert all(set(p)=={"territory","periode_pop","periode_artif","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant"} for p in cloud["points"])
             assert all(p["periode_pop"]=="2017–2023" and p["periode_artif"]=="2020–2023" for p in cloud["points"])
             assert "focal_value" not in default.json() and "readings" not in default.json()
+            implicit=client.post(route,json={"theme_id":"milieux"})
+            assert implicit.status_code==200,implicit.text
+            implicit_body=implicit.json()
+            assert implicit_body["comparison"]["selection"] is None
+            assert implicit_body["comparison"]["scope"]["kind"]=="density_class"
+            assert len(implicit_body["readings"])==1
+            assert implicit_body["comparison"]["reading_content_version"]=="reading-v1"
+            assert implicit_body["comparison"]["collection_content_versions"]=={}
+            assert implicit_body["comparison"]["scalar_content_version"]=="scalar-v1"
+            assert implicit_body["comparison"]["service_publication_id"] is None
+            assert implicit_body["comparison"]["building_publication_id"] is None
+            assert "focal_value" not in implicit_body["comparison"]
             empty=client.post(route,json={"theme_id":"milieux","selection":[]})
             assert empty.status_code==200,empty.text
             assert empty.json()["complete_theme"] is False
