@@ -40,6 +40,13 @@ const plotPoints = computed(() => [
   ...props.trajectory.map(item => ({ item, series: 'territory' })),
   ...props.reference.map(item => ({ item, series: 'reference' })),
 ])
+const markerPoint = computed(() => props.metadata?.marker
+  ? props.trajectory.find(item => item.fact.detail === props.metadata?.marker?.detail && item.fact.value !== null)
+  : undefined)
+const marker = computed(() => props.metadata?.marker)
+function yPosition(value: number): number {
+  return geometry.margin.top + (1 - Math.max(0, Math.min(1, value))) * (geometry.height - geometry.margin.top - geometry.margin.bottom)
+}
 </script>
 
 <template>
@@ -47,17 +54,21 @@ const plotPoints = computed(() => [
     <CahierFigureScalar :value="offer.fact.value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(offer.fact.value)" :label="offer.label" :aria-label="`${offer.label} : ${offer.fact.value ?? 'indisponible'} ${offer.fact.unit}`" />
     <figure v-if="trajectory.length && metadata">
       <div class="transit-plot cahier-figure-plot" :style="{ aspectRatio: `${geometry.width} / ${geometry.height}` }">
-        <svg :viewBox="`0 0 ${geometry.width} ${geometry.height}`" role="img" :aria-label="`${metadata.axisLabels?.x ?? ''} — ${metadata.axisLabels?.y ?? ''}. ${metadata.reference?.label ?? ''}`">
+        <svg :viewBox="`0 0 ${geometry.width} ${geometry.height}`" role="img" :aria-label="`${metadata.axisLabels?.x ?? ''} — ${metadata.axisLabels?.y ?? ''}.${reference.length && metadata.reference ? ` ${metadata.reference.label}.` : ''}${markerPoint && metadata.marker ? ` Repère : ${metadata.marker.label}.` : ''}`">
           <CahierFigureAxes :geometry="geometry" :x-ticks="ticks" :y-ticks="yTicks" />
           <path v-if="seriesPath(reference)" class="transit-series transit-series--reference" data-series="reference" :data-label="metadata.reference?.label" :d="seriesPath(reference)" />
           <path v-if="seriesPath(trajectory)" class="transit-series transit-series--territory" data-series="territory" :d="seriesPath(trajectory)" />
           <circle v-for="point in plotPoints" :key="`${point.series}:${point.item.fact.detail}`" class="transit-point" :class="`transit-point--${point.series}`" :data-series="point.series" :data-detail="point.item.fact.detail" :data-value="point.item.fact.value" :cx="ticks.find(tick => tick.key === point.item.fact.detail)?.position" :cy="geometry.margin.top + (1 - (point.item.fact.value ?? 0)) * (geometry.height - geometry.margin.top - geometry.margin.bottom)" r="4" />
+          <g v-if="markerPoint && marker" class="transit-marker" :data-detail="marker?.detail" :aria-label="marker?.label">
+            <circle class="transit-marker-ring" :cx="ticks.find(tick => tick.key === marker?.detail)?.position" :cy="yPosition(markerPoint.fact.value!)" r="8" />
+            <text class="transit-marker-label" :x="(ticks.find(tick => tick.key === marker?.detail)?.position ?? 0) + 10" :y="yPosition(markerPoint.fact.value!) - 9">{{ marker?.label }}</text>
+          </g>
         </svg>
         <CahierFigureAxisLabels :geometry="geometry" :x-ticks="ticks" :y-ticks="yTicks" />
         <span class="cahier-figure-axis-title cahier-figure-axis-title--x">{{ metadata.axisLabels?.x }}</span>
         <span class="cahier-figure-axis-title cahier-figure-axis-title--y">{{ metadata.axisLabels?.y }}</span>
       </div>
-      <figcaption class="transit-legend"><span class="transit-legend-mark" />{{ metadata.reference?.label }} <span class="transit-legend-territory" />Territoire</figcaption>
+      <figcaption class="transit-legend"><span v-if="reference.length && metadata.reference" class="transit-legend-reference"><span class="transit-legend-mark" />{{ metadata.reference.label }}</span><span class="transit-legend-territory" />Territoire</figcaption>
     </figure>
     <p v-else class="transit-unavailable">Trajectoire et référence indisponibles.</p>
   </div>
@@ -74,7 +85,10 @@ const plotPoints = computed(() => [
 .transit-point { stroke-width: 2; fill: var(--cahier-paper); }
 .transit-point--territory { stroke: var(--cahier-theme); }
 .transit-point--reference { stroke: var(--cahier-region-emphasis); }
+.transit-marker-ring { fill: var(--cahier-paper); stroke: var(--cahier-theme); stroke-width: 3; }
+.transit-marker-label { fill: currentColor; font-size: 14px; font-weight: 700; }
 .transit-legend { display: flex; gap: var(--space-2); align-items: center; }
+.transit-legend-reference { display: contents; }
 .transit-legend-mark, .transit-legend-territory { width: 1.5rem; border-top: 3px dashed var(--cahier-region-emphasis); }
 .transit-legend-territory { border-top-style: solid; border-color: var(--cahier-theme); }
 .transit-unavailable { margin: 0; }

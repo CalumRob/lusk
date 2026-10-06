@@ -305,7 +305,16 @@ describe('figures des unités Mobilité ajoutées', () => {
     expect(wrapper.find('path[data-series="reference"]').attributes('d')).toContain('L')
     expect(wrapper.find('[data-series="reference"][data-detail="t0090"]').attributes('data-value')).toBe('0.6')
     expect(wrapper.text()).toContain(metadata.trajectory.reference?.label)
+    expect(wrapper.find('.transit-marker').attributes('data-detail')).toBe(metadata.trajectory.marker?.detail)
+    expect(wrapper.find('.transit-marker-label').text()).toBe(metadata.trajectory.marker?.label)
     expect(wrapper.findAll('.cahier-figure-axis').length).toBe(2)
+
+    const withoutReference = mount(CahierOffreTransportsFigure, {
+      props: { offer: contentFact('offre_tc', null, 0.4, 'Part des bâtiments près d’un arrêt'), trajectory, reference: [], metadata: metadata.trajectory },
+    })
+    expect(withoutReference.find('.transit-legend-reference').exists()).toBe(false)
+    expect(withoutReference.find('.transit-legend-territory').exists()).toBe(true)
+    expect(wrapper.find('.transit-legend-reference').exists()).toBe(true)
   })
 
   it('plots the payload-labeled household composition as separate bars with exact share values', () => {
