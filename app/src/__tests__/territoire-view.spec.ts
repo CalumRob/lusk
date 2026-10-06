@@ -96,7 +96,7 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
   return {
     contract: 'theme-facts-v1', theme_id: 'mobilite',
     territory: { territory_id: code, territory_type: type },
-    facts: theme.indicators.filter((row: any) => !row.detail).map((row: any) => ({ indicator_id: row.key, label: row.key,
+    indicators: theme.indicators.map((row: any) => ({ indicator_id: row.key, label: row.key,
       unit: row.unit, value: row.value, status: row.value === null ? 'unavailable' : 'measured',
       sources: sourceRows([row]) })),
     profiles: [...new Set<string>(theme.indicators.filter((row: any) => row.detail).map((row: any) => row.key))]

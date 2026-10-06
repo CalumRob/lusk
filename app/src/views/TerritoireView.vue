@@ -268,7 +268,8 @@ watch([prototypeAccesApi, typeRoute, idRoute,
   })
   const code = idRoute.value
   void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/themes/mobilite/facts`,
-    { signal: controller.signal }).then(async (response) => {
+    { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme_id: 'mobilite' }), signal: controller.signal }).then(async (response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return response.json() as Promise<unknown>
   }).then((data) => {

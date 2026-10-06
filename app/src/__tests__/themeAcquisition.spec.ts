@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import { acquireThemeComparison, acquireThemeFacts, ThemeAcquisitionCache } from '../payload/themeAcquisition'
+import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 
 describe('theme acquisition cache', () => {
   it('posts typed selections and preserves omitted versus explicitly empty selection', async () => {
@@ -33,7 +34,7 @@ describe('theme acquisition cache', () => {
 
   it('merges a comparison-only response while retaining focal facts and distinguishing empty from default', async () => {
     const facts = vi.fn(async () => ({ content_version: 'v1', reference_content_version: 'r1', focal: { value: 17 } }))
-    const comparison = vi.fn(async (selection: readonly string[] | undefined) => ({
+    const comparison = vi.fn(async (selection: readonly ThemeSelectionMember[] | undefined) => ({
       content_version: 'v1', reference_content_version: 'r1', selection: selection ?? 'default', values: [selection?.length ?? 99],
     }))
     const cache = new ThemeAcquisitionCache(facts, comparison)
