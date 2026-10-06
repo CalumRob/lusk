@@ -440,6 +440,9 @@ class ReadRepository:
     def read_level(self, territory_type: str, territory_id: str, *, connection=None) -> dict:
         return self._read(territory_type, territory_id, None, connection=connection)
 
+    def read_selected(self, territory_type: str, territory_id: str, selected, *, connection=None) -> dict:
+        return self._read(territory_type, territory_id, None, connection=connection, selected=selected)
+
     def read_building_catalog(self) -> dict:
         with self.connections.connection() as connection:
             with connection.transaction():
@@ -480,7 +483,8 @@ class ReadRepository:
                         "candidates": search_territory_rows(entries, query, limit)}
 
     def read_building_initial(self, territory_type: str, territory_id: str,
-                              comparison_mode: str | None = None, *, connection=None) -> dict:
+                              comparison_mode: str | None = None, *, connection=None,
+                              selected=None) -> dict:
         """Read canonical focal facts and same-level published default peers."""
         owns_connection = connection is None
         connection_context = self.connections.connection() if owns_connection else nullcontext(connection)
@@ -525,7 +529,15 @@ class ReadRepository:
                              for row in reference_rows]
                 members = None
                 peer_type = ttype
-                if ttype == "region":
+                if selected is not None:
+                    try:
+                        peer_type, members, _ = _comparison_cohort(connection, ttype, tid, selected)
+                    except HTTPException:
+                        raise
+                    except ComparisonInputError as exc:
+                        raise HTTPException(422, str(exc)) from exc
+                    kind = "explicit_selection"
+                elif ttype == "region":
                     kind = "regions"
                 elif ttype == "commune":
                     if comparison_mode == "densite":
@@ -540,19 +552,30 @@ class ReadRepository:
                     members = tuple(sorted(r[0] for r in reference_rows if r[1] == ttype))
                     kind = "epcis-bretagne" if ttype == "epci" else "departements-bretagne"
                 focal_and_peers = set(members or ()) | {tid}
-                ramp_rows = connection.execute(
-                    """SELECT territory_id, territory_type, availability, mode, quantile_index,
-                              quantile, accessible_types, total_buildings, source_id, source_version
-                       FROM building_ramp WHERE territory_type = %s AND territory_id = ANY(%s)""",
-                    (ttype, list(focal_and_peers))
-                ).fetchall()
-                grid_rows = connection.execute(
-                    """SELECT territory_id, territory_type, availability, mode, breadth_bucket,
-                              depth_bucket, building_count, total_buildings, source_id, source_version,
-                              building_count::double precision / NULLIF(total_buildings,0) AS share
-                       FROM building_grid WHERE territory_type = %s AND territory_id = ANY(%s)""",
-                    (ttype, list(focal_and_peers))
-                ).fetchall()
+                if selected is None:
+                    ramp_sql = """SELECT territory_id, territory_type, availability, mode, quantile_index,
+                               quantile, accessible_types, total_buildings, source_id, source_version
+                        FROM building_ramp WHERE territory_type = %s AND territory_id = ANY(%s)"""
+                    ramp_params = (ttype, list(focal_and_peers))
+                    grid_sql = """SELECT territory_id, territory_type, availability, mode, breadth_bucket,
+                               depth_bucket, building_count, total_buildings, source_id, source_version,
+                               building_count::double precision / NULLIF(total_buildings,0) AS share
+                        FROM building_grid WHERE territory_type = %s AND territory_id = ANY(%s)"""
+                    grid_params = ramp_params
+                else:
+                    ramp_sql = """SELECT territory_id, territory_type, availability, mode, quantile_index,
+                               quantile, accessible_types, total_buildings, source_id, source_version
+                        FROM building_ramp WHERE (territory_type='commune' AND territory_id=ANY(%s))
+                          OR (territory_type=%s AND territory_id=%s)"""
+                    ramp_params = (list(members or ()), ttype, tid)
+                    grid_sql = """SELECT territory_id, territory_type, availability, mode, breadth_bucket,
+                               depth_bucket, building_count, total_buildings, source_id, source_version,
+                               building_count::double precision / NULLIF(total_buildings,0) AS share
+                        FROM building_grid WHERE (territory_type='commune' AND territory_id=ANY(%s))
+                          OR (territory_type=%s AND territory_id=%s)"""
+                    grid_params = ramp_params
+                ramp_rows = connection.execute(ramp_sql, ramp_params).fetchall()
+                grid_rows = connection.execute(grid_sql, grid_params).fetchall()
                 ramp_data = [dict(zip(("territoire", "type", "availability", "mode", "quantile_index",
                                       "quantile", "accessible_types", "total_buildings", "source_id", "version"), row))
                              for row in ramp_rows]
@@ -563,8 +586,8 @@ class ReadRepository:
                     peer_ramp = (weighted_peer_ramp(ramp_data, members, max_members=len(reference),
                                                     member_type=peer_type) if members else None)
                     peer_distribution = (pooled_peer_distribution(grid_data, members,
-                                                                 max_members=len(reference),
-                                                                 member_type=peer_type) if members else None)
+                                                                  max_members=len(reference),
+                                                                  member_type=peer_type) if members else None)
                 except ComparisonInputError as exc:
                     raise HTTPException(503, "Incomplete building-access publication") from exc
                 target_ramp = [r for r in ramp_data if r["territoire"] == tid and r["type"] == ttype]
@@ -600,9 +623,11 @@ class ReadRepository:
                     "territory": {"id": tid, "type": ttype, "name": name},
                     "availability": availability,
                     "presentation": presentation,
-                    "scope": None if ttype == "region" else {
+                    "scope": None if ttype == "region" and selected is None else {
                         "kind": kind,
-                        "comparison_mode": comparison_mode if ttype == "commune" else "bretagne"},
+                        "comparison_mode": "selected" if selected is not None else
+                            comparison_mode if ttype == "commune" else "bretagne",
+                        **({"member_count": len(members)} if selected is not None else {})},
                     "sources": [{"source_id": row[0], "name": row[1], "version": row[2],
                         "reference_date": row[3].isoformat() if row[3] else None,
                         "publication_date": row[4].isoformat() if row[4] else None}
@@ -678,7 +703,7 @@ class ReadRepository:
                 }
 
     def _read(self, territory_type: str, territory_id: str, comparison: str | None,
-              *, connection=None) -> dict:
+              *, connection=None, selected=None) -> dict:
         # A caller may compose this projection into an existing read-only
         # repeatable-read transaction (the Mobility theme snapshot does so).
         # Standalone route callers retain ownership of connection/transaction.
@@ -706,7 +731,12 @@ class ReadRepository:
                 if target is None:
                     raise HTTPException(404, f"{territory_type.title()} not found")
                 code, name, _, epci, density, density_label = target
-                if territory_type == "epci":
+                selected_ids = None
+                if selected is not None:
+                    _, selected_ids, _ = _comparison_cohort(connection, territory_type, code, selected)
+                    condition, value = "territory_id", code
+                    kind, label = "explicit_selection", None
+                elif territory_type == "epci":
                     condition, value = "territory_type", "epci"
                     kind, label = "epcis-bretagne", None
                 elif territory_type == "departement":
@@ -749,8 +779,7 @@ class ReadRepository:
                     if (not markers or not markers[0] or not markers[1] or
                             markers[1] != markers[2]):
                         raise HTTPException(503, "Scalar service publication is unavailable or stale")
-                    scalar_rows = connection.execute(
-                        f"""SELECT o.indicator_id, o.territory_id, o.value, o.status,
+                    scalar_sql = f"""SELECT o.indicator_id, o.territory_id, o.value, o.status,
                                   d.label, d.direction, sd.source_id, sd.name,
                                   sv.version, sv.reference_date, sv.publication_date
                            FROM scalar_observation o
@@ -762,16 +791,21 @@ class ReadRepository:
                             JOIN source_dataset sd ON sd.source_id=os.source_id
                             JOIN source_vintage sv ON sv.source_id=os.source_id
                               AND sv.vintage_id=os.vintage_id
-                            WHERE o.indicator_id = ANY (
+                     WHERE o.indicator_id = ANY (
                               SELECT 'share_' || service || '_' || mode
                               FROM service_registry
                               CROSS JOIN unnest(ARRAY['t','b','c']::text[]) AS mode
                             )
-                             AND o.territory_type = %s AND t.{condition} = %s
+                               AND {{scope_clause}}
                              AND o.territory_type = ANY(d.allowed_levels)
-                           ORDER BY o.indicator_id, o.territory_id, sd.source_id, sv.vintage_id""",
-                        (territory_type, value),
-                    ).fetchall()
+                            ORDER BY o.indicator_id, o.territory_id, sd.source_id, sv.vintage_id"""
+                    if selected is None:
+                        scalar_sql = scalar_sql.format(scope_clause=f"o.territory_type = %s AND t.{condition} = %s")
+                        scalar_params = (territory_type, value)
+                    else:
+                        scalar_sql = scalar_sql.format(scope_clause="((o.territory_type='commune' AND o.territory_id=ANY(%s::text[])) OR (o.territory_type=%s AND o.territory_id=%s))")
+                        scalar_params = (list(selected_ids or ()), territory_type, code)
+                    scalar_rows = connection.execute(scalar_sql, scalar_params).fetchall()
                     converted = []
                     for row in scalar_rows:
                         indicator = row[0]
@@ -791,24 +825,36 @@ class ReadRepository:
                     return {"publication_id": publication,
                         "territory": {"id": code, "name": name, "type": territory_type},
                         "scope": {"kind": kind, **({"label": label} if label is not None else {})} if kind else None,
-                        "comparison": territory_type != "region", "rows": converted}
+                        "comparison": (bool(selected_ids) if selected is not None else territory_type != "region"),
+                        **({"peer_member_ids": list(selected_ids)} if selected is not None else {}),
+                        "rows": converted}
                 # `condition` is selected exclusively from the three literals above; all
                 # externally supplied values are parameters, never SQL identifiers.
-                rows = connection.execute(
-                    f"""SELECT a.territory_id, a.service, a.mode, a.share, a.indicator_label,
-                               a.effective_direction, a.source_id, a.source_name, a.source_version,
-                               a.reference_date, a.source_publication_date
-                        FROM essential_service_access a
-                         JOIN territory_reference t ON t.territory_id = a.territory_id
-                          WHERE t.territory_type = %s
-                           AND t.{condition} = %s""",
-                    (territory_type, value),
-                ).fetchall()
+                if selected is None:
+                    rows = connection.execute(
+                        f"""SELECT a.territory_id, a.service, a.mode, a.share, a.indicator_label,
+                                   a.effective_direction, a.source_id, a.source_name, a.source_version,
+                                   a.reference_date, a.source_publication_date
+                            FROM essential_service_access a JOIN territory_reference t ON t.territory_id=a.territory_id
+                            WHERE t.territory_type = %s AND t.{condition} = %s""",
+                        (territory_type, value),
+                    ).fetchall()
+                else:
+                    rows = connection.execute(
+                        """SELECT a.territory_id, a.service, a.mode, a.share, a.indicator_label,
+                                   a.effective_direction, a.source_id, a.source_name, a.source_version,
+                                   a.reference_date, a.source_publication_date
+                            FROM essential_service_access a JOIN territory_reference t ON t.territory_id=a.territory_id
+                            WHERE (t.territory_type='commune' AND a.territory_id=ANY(%s))
+                               OR (t.territory_type=%s AND a.territory_id=%s)""",
+                        (list(selected_ids or ()), territory_type, code),
+                    ).fetchall()
                 return {
                     "publication_id": publication,
                     "territory": {"id": code, "name": name, "type": territory_type},
                     "scope": {"kind": kind, **({"label": label} if label is not None else {})} if kind else None,
-                    "comparison": territory_type != "region",
+                    "comparison": (bool(selected_ids) if selected is not None else territory_type != "region"),
+                    **({"peer_member_ids": list(selected_ids)} if selected is not None else {}),
                     "rows": [dict(zip(("territory_id", "service", "mode", "share",
                                      "indicator_label", "direction", "source_id", "source_name",
                                      "source_version", "reference_date", "source_publication_date"), row)) for row in rows],
@@ -876,6 +922,8 @@ def custom_building_comparison(
 def compare(data: dict) -> ComparisonResponse:
     target = data["territory"]["id"]
     members = {row["territory_id"] for row in data["rows"]}
+    peer_member_ids = data.get("peer_member_ids")
+    peer_ids = set(peer_member_ids) if peer_member_ids is not None else members
     has_comparison = data.get("comparison", True)
     if target not in members:
         raise HTTPException(503, "Published comparison does not include its target")
@@ -897,9 +945,10 @@ def compare(data: dict) -> ComparisonResponse:
                 row["direction"] != direction for row in observations.values()
             ):
                 raise HTTPException(503, "Inconsistent published comparison direction")
-            values = [row["share"] for row in observations.values() if row["share"] is not None]
+            values = [row["share"] for member_id, row in observations.items()
+                      if member_id in peer_ids and row["share"] is not None]
             value = focal["share"]
-            rank = None if value is None or not has_comparison else Rank(
+            rank = None if value is None or target not in peer_ids or not has_comparison else Rank(
                 position=1 + sum(v > value if direction == "high" else v < value for v in values),
                 size=len(values),
             )
@@ -917,7 +966,7 @@ def compare(data: dict) -> ComparisonResponse:
             if first not in modes or second not in modes:
                 return None
             differences = [modes[first][tid]["share"] - modes[second][tid]["share"]
-                           for tid in modes[first].keys() & modes[second].keys()
+                            for tid in modes[first].keys() & modes[second].keys() & peer_ids
                            if modes[first][tid]["share"] is not None
                            and modes[second][tid]["share"] is not None]
             return round(median(differences), 12) if differences else None
@@ -929,7 +978,7 @@ def compare(data: dict) -> ComparisonResponse:
         ))
     return ComparisonResponse(
         publication_id=data["publication_id"], territory=data["territory"],
-        scope={**data["scope"], "member_count": len(members)} if data["scope"] else None,
+        scope={**data["scope"], "member_count": len(peer_ids)} if data["scope"] else None,
         services=services,
     )
 
