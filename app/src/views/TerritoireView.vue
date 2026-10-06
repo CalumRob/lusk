@@ -45,6 +45,9 @@ import { applyInitialBuildingApiFacts } from '@/fiche/content/initialBuildingApi
 import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFacts'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { chargerCohortesScalaires, indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
+import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache } from '@/payload/themeAcquisition'
+import { themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
+import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ComparisonScopeKind, TerritoryFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
@@ -52,7 +55,7 @@ import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
 import { trouverTerritoire } from '@/payload/selectors'
 import { THEMES_CANONIQUES } from '@/payload/types'
-import type { Payload, Theme } from '@/payload/types'
+import type { Histoire, Indicateur, Payload, Theme } from '@/payload/types'
 import { useTerritoryReadModel } from '@/payload/useTerritoryReadModel'
 import { payloadDepuisModeleTerritoire } from '@/payload/territoryReadModel'
 
@@ -76,9 +79,49 @@ const ficheScalairesEnregistres = ref<string[]>([])
 const ficheScalairesRegistrePresent = ref(false)
 const retryFicheScalaires = ref(0)
 let sequenceFicheScalaires = 0
+
+/**
+ * Acquisition paresseuse par thème derrière `VITE_THEME_ACQUISITION_API` (#627)
+ * : le modèle atomique gardé fournit l'identité, les métadonnées et la
+ * grammaire de présentation ; le POST faits du thème actif fournit TOUS ses
+ * numériques (aucune ligne statique du thème migré ne rend). Un thème hors de
+ * `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
+ */
+const acquisitionApiActivee = themeAcquisitionEnabled(import.meta.env)
+const THEMES_ACQUISITION_API: readonly Theme[] = ['habitat']
+/** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
+const themeMigre = (theme: Theme | null): boolean =>
+  acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme)
+const cacheAcquisition = new ThemeAcquisitionCache(
+  (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
+  (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
+)
+const faitsThemeRows = ref<Indicateur[] | null>(null)
+const histoiresThemeRows = ref<Histoire[] | null>(null)
+const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
+const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const retryAcquisition = ref(0)
+let sequenceAcquisition = 0
+let sequenceComparaison = 0
+let cleFaitsPrets: string | null = null
+
 const payloadPourRendu = computed<Payload | null>(() => {
   const payload = payloadModele.value
-  if (!payload || !scalarCohortEnabled(import.meta.env)) return payload
+  if (!payload) return null
+  if (themeMigre(selection.value)) {
+    // Chemin migré : les numériques du thème actif viennent de la seule
+    // réponse de faits API — pendant le chargement ou l'échec, AUCUNE ligne
+    // numérique statique du thème ne rend (pas de repli statique).
+    const theme = selection.value as Theme
+    const indicateurs = faitsThemeRows.value === null
+      ? payload.indicateurs.filter((row) => row.theme !== theme)
+      : [...payload.indicateurs.filter((row) => row.theme !== theme), ...faitsThemeRows.value]
+    const histoires = histoiresThemeRows.value === null
+      ? payload.histoires.filter((row) => row.theme !== theme)
+      : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value]
+    return { ...payload, indicateurs, histoires }
+  }
+  if (!scalarCohortEnabled(import.meta.env)) return payload
   const theme = selection.value
   if (!theme || ficheScalairesStatus.value !== 'ready' || ficheScalaires.value === null) {
     const registered = ficheScalairesStatus.value === 'error' && ficheScalairesRegistrePresent.value &&
@@ -167,7 +210,9 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     ficheScalairesEnregistres.value = []
     ficheScalairesRegistrePresent.value = false
     ficheScalairesStatus.value = 'loading'
-    if (!scalarCohortEnabled(import.meta.env) || !model || !theme) { ficheScalairesStatus.value = 'ready'; return }
+    // Le thème migré n'emprunte jamais le fan-out par indicateur (#627) : sa
+    // voie unique est la requête de faits du thème.
+    if (!scalarCohortEnabled(import.meta.env) || !model || !theme || themeMigre(theme)) { ficheScalairesStatus.value = 'ready'; return }
     const data = model.themes[theme]
     if (!data) { ficheScalairesStatus.value = 'ready'; return }
     let cancelled = false
@@ -191,6 +236,98 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     }
   }, { immediate: true })
 function retryScalaires(): void { retryFicheScalaires.value++ }
+
+/** Une acquisition de faits par thème non caché : l'atterrissage et le
+ * changement de territoire ou d'onglet vers un thème migré déclenchent UNE
+ * requête ; la revisite d'un thème déjà acquis n'en déclenche aucune. */
+watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryAcquisition],
+  async ([model, theme, code], _old, onCleanup) => {
+    if (!themeMigre(theme) || !model || !typeValide.value) {
+      faitsThemeRows.value = null
+      histoiresThemeRows.value = null
+      statutAcquisition.value = 'loading'
+      statutComparaison.value = 'idle'
+      cleFaitsPrets = null
+      return
+    }
+    // Revisite déjà acquise (même territoire, même thème) : les faits restent,
+    // aucune requête — le cache détient l'entrée, le rendu ne clignote pas.
+    const themeActif = theme as Theme
+    if (statutAcquisition.value === 'ready' && cleFaitsPrets === `${typeRoute.value}/${code}/${themeActif}`) return
+    const request = ++sequenceAcquisition
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    faitsThemeRows.value = null
+    histoiresThemeRows.value = null
+    statutAcquisition.value = 'loading'
+    statutComparaison.value = 'idle'
+    try {
+      const acquired = await cacheAcquisition.get(typeRoute.value, code, themeActif)
+      if (cancelled || request !== sequenceAcquisition) return
+      const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
+      if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
+      const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type })
+      faitsThemeRows.value = rows.indicateurs
+      histoiresThemeRows.value = rows.histoires
+      statutAcquisition.value = 'ready'
+      cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
+    } catch {
+      if (!cancelled && request === sequenceAcquisition) {
+        faitsThemeRows.value = null
+        histoiresThemeRows.value = null
+        statutAcquisition.value = 'error'
+      }
+    }
+  }, { immediate: true })
+
+/** Une seule requête comparison-only par changement de sélection : le défaut
+ * déclaré (classe de densité d'une commune, pairs de même niveau ailleurs)
+ * est déjà servi par la comparaison imbriquée de la réponse de faits ; une
+ * sélection explicite (EPCI, Bretagne) acquiert UNE réponse de comparaison et
+ * garde les faits focaux. Les tokens incompatibles échouent fermé (le cache
+ * rejette la fusion) et restent réessayables. */
+watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
+  () => resolutionComparaison.value?.mode, statutAcquisition, retryAcquisition],
+  async ([model, theme, code, mode], _old, onCleanup) => {
+    if (!themeMigre(theme) || statutAcquisition.value !== 'ready' || !model || !typeValide.value) {
+      statutComparaison.value = 'idle'
+      return
+    }
+    const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
+    if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'idle'; return }
+    // Le mode densité (défaut d'une commune) et les niveaux non communaux
+    // gardent la comparaison déclarée déjà acquise avec les faits.
+    if (target.type !== 'commune' || mode === 'densite' || mode === null || mode === undefined) {
+      statutComparaison.value = 'ready'
+      return
+    }
+    const cohort = model.cohortTerritories
+    if (!cohort) { statutComparaison.value = 'error'; return }
+    const themeActif = theme as Theme
+    const selectionMembres: ThemeSelectionMember[] = mode === 'bretagne'
+      ? cohort.filter((item) => item.type === 'commune')
+        .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+      : mode === 'epci' && target.epci
+        ? cohort.filter((item) => item.type === 'commune' && item.epci === target.epci)
+          .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+        : []
+    const request = ++sequenceComparaison
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    statutComparaison.value = 'loading'
+    try {
+      const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
+      if (cancelled || request !== sequenceComparaison) return
+      validerReponseComparaisonTheme(themeActif,
+        acquired.comparisons.get(cleSelectionComparaison(selectionMembres)), selectionMembres)
+      statutComparaison.value = 'ready'
+    } catch {
+      if (!cancelled && request === sequenceComparaison) statutComparaison.value = 'error'
+    }
+  }, { immediate: true })
+
+function retryAcquisitionTheme(): void { retryAcquisition.value++ }
+
 
 const echelons = computed(() =>
   payloadPourRendu.value ? echelleContexte(payloadPourRendu.value, idRoute.value) : [],
@@ -507,6 +644,24 @@ watch(
       <div v-if="scalarCohortActif && ficheScalairesStatus === 'error'" class="etat-erreur" role="alert">
         <p>Les indicateurs de ce thème ne sont pas disponibles.</p>
         <button type="button" @click="retryScalaires">Réessayer</button>
+      </div>
+      <!-- #627 : le thème migré échoue fermé — jamais de repli sur les
+           numériques statiques ; chaque échec reste réessayable. -->
+      <div
+        v-else-if="themeMigre(selection) && statutAcquisition === 'error'"
+        class="etat-erreur"
+        role="alert"
+      >
+        <p>Les indicateurs de ce thème ne sont pas disponibles.</p>
+        <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
+      </div>
+      <div
+        v-else-if="themeMigre(selection) && statutComparaison === 'error'"
+        class="etat-erreur"
+        role="alert"
+      >
+        <p>Les comparaisons de ce thème ne sont pas disponibles.</p>
+        <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
       </div>
       <div class="fiche-corps">
         <!-- Le contenu attend l'unique modèle atomique de la fiche : aucun

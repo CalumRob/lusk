@@ -162,9 +162,72 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
   }
 }
 
+/** Projette le thème Habitat publié dans le contrat réel theme-facts-v1 servi par
+ * le POST sélectionné (#627) — scalaires, cellules de profil et points de série
+ * possédée en lignes d'indicateurs dimensionnées — en remplaçant trois valeurs
+ * par des valeurs distinctes du modèle statique pour prouver la consommation. */
+export function reponseThemeHabitatApi(model: any, type = 'commune', code = '35238') {
+  const theme = model.themes.habitat
+  const payload = payloadDepuisModeleTerritoire(model)
+  const target = payload.territoires.find((item: any) => item.territoire === code)
+  const rows: any[] = theme.indicators.filter((row: any) => row.territoire === code)
+  const sources = () => [{
+    source_id: 'habitat_api', name: 'Source API habitat', vintage_id: 'api-v1', version: 'api-v1',
+    reference_date: null, publication_date: null,
+  }]
+  const indicatorSql = (row: any) => ({
+    indicator_id: row.key, label: row.key, unit: row.unit,
+    value: row.key === 'part_passoires' ? 0.42
+      : row.key === 'prix_m2' && row.detail === '2025' ? 4242 : row.value,
+    // Les millésimes supprimés (ventes < 10) restent déclarés et manquants.
+    status: row.key === 'part_passoires' || (row.key === 'prix_m2' && row.detail === '2025')
+      ? 'measured'
+      : row.value === null ? 'suppressed' : 'measured',
+    dimensions: row.key === 'prix_m2' && row.detail
+      ? { axis: row.detail }
+      : row.detail ? { detail: row.detail } : {},
+    sources: sources(),
+  })
+  const histoire = theme.histories.find((row: any) => row.territoire === code)
+  return {
+    contract: 'theme-facts-v1', complete_theme: false, theme_id: 'habitat',
+    territory: { territory_id: code, name: target?.nom, territory_type: type },
+    content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
+    profile_content_version: 'habitat-profile-v1', reading_content_version: 'habitat-reading-v1',
+    reading_descriptor_version: 'habitat-reading-v1', reading_availability: 'available',
+    owned_series_content_versions: ['dvf_prix_m2@series-v1'],
+    indicator_metadata: ['mix_logements', 'statut', 'type', 'age_du_bati', 'distribution_dpe']
+      .map((key) => ({
+        indicator_id: key, kind: 'declared_dimensions', label: key, unit: '%',
+        descriptor_version: 'v1', allowed_levels: ['commune'],
+        axes: [...new Set(rows.filter((row) => row.key === key && row.detail).map((row) => row.detail))]
+          .map((detail) => ({ name: 'detail', key: detail })),
+        comparison_point: null, comparison_scalar: null,
+      })),
+    named_reference_evidence: [], bpe_profile_evidence: null, collections: [],
+    indicators: rows.map(indicatorSql),
+    readings: [{
+      groupe: histoire.groupe, story_key: histoire.story_key, salience_reason: histoire.salience_reason,
+      classification: 'parc-performant', part_passoires: 0.42, part_abc: 0.62, n_dpe: histoire.n_dpe,
+      status: 'measured', source_id: 'habitat_api', vintage_id: 'api-v1',
+      provenance: { source_id: 'habitat_api', source_name: 'Source API habitat', vintage_id: 'api-v1',
+        source_version: 'api-v1', source_reference_date: null, source_publication_date: null },
+    }],
+    comparison: {
+      contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
+      content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
+      selection: null, scope: { kind: 'density_class', density_class_code: 'C', territory_type: 'commune', member_count: 14 },
+      results: [{ indicator_id: 'part_passoires', label: 'part_passoires', unit: '%', direction: 'low',
+        statistic: 'median', status: 'available', reason: null, selected_member_count: 14,
+        eligible_count: 14, missing_count: 0, median: 0.21, rank: 3, rank_size: 14, comparison_sources: [] }],
+      profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
+    },
+  }
+}
+
 /** Sert les POST faits/comparaison Mobilité comme la fiche montée les consomme :
  * faits complets sur /facts, comparaison sélectionnée répercutée sur /comparison. */
-function stubApiThemeMobilite(model: any, type = 'commune', code = '22001') {
+export function stubApiThemeMobilite(model: any, type = 'commune', code = '22001') {
   const contexts = model.themes.mobilite!.comparisons
   return vi.fn(async (url: string, options?: RequestInit) => {
     if (url.endsWith('/facts')) {
@@ -529,8 +592,248 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {
-    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
+  it('acquiert Habitat par la seule requête de faits du thème actif quand l’API d’acquisition est activée', async () => {
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/35238.json'), 'utf8'))
+    const model = validerModeleTerritoire(published, 'territoires/commune/35238.json',
+      { type: 'commune', territoire: '35238' })
+    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, _options?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/territories/commune/35238/themes/habitat/facts') {
+        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '35238') }
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/35238?theme=habitat', vi.fn(async () => model))
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
+    expect(JSON.parse(String(fetchApi.mock.calls[0]![1]!.body))).toEqual({ theme_id: 'habitat' })
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(true)
+    const text = wrapper.get('[role="tabpanel"]').text()
+    expect(text).toContain('42%Part de passoires thermiques')
+    expect(text).toContain('Source API habitat')
+    expect(text).toContain('performant')
+    expect(text).toContain('4 242')
+    expect(text).not.toContain('3 777,78')
+    expect(text).not.toContain('intermédiaire')
+    wrapper.unmount()
+  })
+
+  it('ne précharge aucun thème et revisite Habitat acquise sans nouvelle requête', async () => {
+    const model = modelFor('22001')
+    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
+        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    await flushPromises()
+    // Aucun préchargement : l'onglet par défaut (programmes, non migré) n'acquiert rien.
+    expect(fetchApi).not.toHaveBeenCalled()
+    await router.replace({ query: { theme: 'habitat' } })
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
+    // Un thème non migré garde le chemin incumbent — aucune requête API.
+    await router.replace({ query: { theme: 'demographie' } })
+    await flushPromises()
+    expect(fetchApi.mock.calls).toHaveLength(1)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Densité de population')
+    // Revisite du thème acquis : le cache détient l'entrée, aucune nouvelle requête.
+    await router.replace({ query: { theme: 'habitat' } })
+    await flushPromises()
+    expect(fetchApi.mock.calls).toHaveLength(1)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    wrapper.unmount()
+  })
+
+  it('n’expose aucun numérique statique du thème migré pendant que les faits API pendent', async () => {
+    const model = modelFor('22001')
+    let resoudreFaits: ((value: unknown) => void) | undefined
+    const requeteFacts = new Promise((resolve) => { resoudreFaits = resolve })
+    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/territories/commune/22001/themes/habitat/facts') return requeteFacts
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    await flushPromises()
+    const pendant = wrapper.get('[role="tabpanel"]').text()
+    expect(pendant).not.toContain('13%Part de passoires thermiques')
+    expect(pendant).not.toContain('2 450')
+    resoudreFaits?.({ ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') })
+    await flushPromises()
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    wrapper.unmount()
+  })
+
+  it('échoue fermé sans repli statique, puis réessaie la requête de faits', async () => {
+    const model = modelFor('22001')
+    let echecs = 0
+    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
+        if (++echecs === 1) throw new Error('API indisponible')
+        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    await flushPromises()
+    const alerte = wrapper.get('[role="alert"]')
+    expect(alerte.text()).toContain('Les indicateurs de ce thème ne sont pas disponibles.')
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('13%Part de passoires thermiques')
+    await alerte.get('button').trigger('click')
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    wrapper.unmount()
+  })
+
+  it('acquiert une seule comparaison par changement de sélection et garde les faits focaux', async () => {
+    const model = modeleAvecContextesComparaison()
+    const epciAttendu = model.cohortTerritories!.filter((item: any) =>
+      item.type === 'commune' && item.epci === model.territory.epci)
+      .map((item: any) => ({ territory_type: item.type, territory_id: item.territoire }))
+    const bretagneAttendue = model.cohortTerritories!.filter((item: any) => item.type === 'commune')
+      .map((item: any) => ({ territory_type: item.type, territory_id: item.territoire }))
+    expect(epciAttendu.length).toBeGreaterThan(0)
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
+        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
+      }
+      if (url === '/api/territories/commune/22001/themes/habitat/comparison') {
+        const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
+        return { ok: true, json: async () => ({
+          contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
+          content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
+          selection: demandee, scope: { kind: 'explicit_selection', member_count: demandee.length },
+          results: [], profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
+        }) }
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    await flushPromises()
+    // Le défaut déclaré (densité) est servi par la comparaison imbriquée des faits.
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/comparison'))).toHaveLength(0)
+    await router.replace({ query: { theme: 'habitat', comparaison: 'epci' } })
+    await flushPromises()
+    const comparaisons = fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/comparison'))
+    expect(comparaisons).toHaveLength(1)
+    expect(JSON.parse(String(comparaisons[0]![1]!.body))).toEqual({ theme_id: 'habitat', selection: epciAttendu })
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    await router.replace({ query: { theme: 'habitat', comparaison: 'bretagne' } })
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/comparison'))).toHaveLength(2)
+    expect(JSON.parse(String(fetchApi.mock.calls.at(-1)![1]!.body))).toEqual({ theme_id: 'habitat', selection: bretagneAttendue })
+    // Revisite de la comparaison déjà acquise : aucune nouvelle requête.
+    await router.replace({ query: { theme: 'habitat', comparaison: 'epci' } })
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/comparison'))).toHaveLength(2)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('échoue fermé sur des tokens de comparaison incompatibles, puis réessaie', async () => {
+    const model = modeleAvecContextesComparaison()
+    let comparaisons = 0
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
+        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
+      }
+      if (url === '/api/territories/commune/22001/themes/habitat/comparison') {
+        comparaisons += 1
+        const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
+        return { ok: true, json: async () => ({
+          contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
+          content_version: 'habitat-scalar-v1',
+          reference_content_version: comparaisons === 1 ? 'jetons-périmés' : 'territories-v1',
+          selection: demandee, scope: { kind: 'explicit_selection', member_count: demandee.length },
+          results: [], profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
+        }) }
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat&comparaison=bretagne',
+      vi.fn(async () => model))
+    await flushPromises()
+    const alerte = wrapper.get('[role="alert"]')
+    expect(alerte.text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
+    // Échec fermé : les faits focaux restent rendus, aucun état partiel.
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    await alerte.get('button').trigger('click')
+    await flushPromises()
+    expect(comparaisons).toBe(2)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    wrapper.unmount()
+  })
+
+  it('ignore une réponse de comparaison périmée après un changement de sélection', async () => {
+    const model = modeleAvecContextesComparaison()
+    let resoudreEpici: ((value: unknown) => void) | undefined
+    const requeteEpici = new Promise((resolve) => { resoudreEpici = resolve })
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
+        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
+      }
+      if (url === '/api/territories/commune/22001/themes/habitat/comparison') {
+        const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
+        if (demandee.length > 100) return requeteEpici
+        return { ok: true, json: async () => ({
+          contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
+          content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
+          selection: demandee, scope: { kind: 'explicit_selection', member_count: demandee.length },
+          results: [], profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
+        }) }
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    await router.replace({ query: { theme: 'habitat', comparaison: 'bretagne' } })
+    await flushPromises()
+    await router.replace({ query: { theme: 'habitat', comparaison: 'epci' } })
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    // La réponse bretagne périmée arrive TARD avec un écho incohérent : rejetée,
+    // aucun état ni bandeau corrompu.
+    resoudreEpici?.({ ok: true, json: async () => ({
+      contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
+      content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
+      selection: [], scope: { kind: 'explicit_selection', member_count: 0 },
+      results: [], profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
+    }) })
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/comparison'))).toHaveLength(2)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    wrapper.unmount()
+  })
+
+  it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
     const requests = vi.fn().mockRejectedValue(new Error('scalar API must stay off'))
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', requests)

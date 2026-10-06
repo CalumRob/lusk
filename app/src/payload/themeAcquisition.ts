@@ -30,6 +30,12 @@ export function normalizePublicationTokens(response: ThemeResponse): Record<stri
   return normalized
 }
 
+/** La clé de cache d'une sélection : « omitted » (défaut déclaré) se distingue
+ * toujours de la sélection explicitement vide `[]` (aucune comparaison). */
+export function cleSelectionComparaison(selection: readonly ThemeSelectionMember[] | undefined): string {
+  return selection === undefined ? 'omitted' : JSON.stringify(selection)
+}
+
 export interface AcquiredTheme<T extends ThemeResponse = ThemeResponse> {
   focal: T
   comparisons: Map<string, ThemeResponse>
@@ -67,7 +73,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     const cacheKey = this.key(key)
     const focal = await this.get(type, id, theme)
     if (!this.acquireComparison) return focal
-    const selectionKey = selection === undefined ? 'omitted' : JSON.stringify(selection)
+    const selectionKey = cleSelectionComparaison(selection)
     const existing = focal.comparisons.get(selectionKey)
     if (existing) return focal
     const generation = (this.generations.get(cacheKey) ?? 0) + 1
