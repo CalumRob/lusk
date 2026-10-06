@@ -1,4 +1,4 @@
-import type { Histoire, HistoireDemographie, HistoireEconomie, HistoireHabitat, HistoireMilieux, Indicateur, TerritoireType, VintageStamp } from './types'
+import type { Histoire, HistoireDemographie, HistoireEconomie, HistoireHabitat, HistoireMilieux, HistoireMobilite, Indicateur, TerritoireType, VintageStamp } from './types'
 import { RAISONS_SAILLANCE } from './types'
 import type { ThemeKey, ThemeSelectionMember } from './themeAcquisition'
 
@@ -233,6 +233,33 @@ function histoireMilieuxDeSql(target: { territoire: string; type: TerritoireType
   return lecture
 }
 
+function histoireMobiliteDeSql(target: { territoire: string; type: TerritoireType }, reading: Row): Histoire {
+  for (const key of ['groupe', 'story_key', 'salience_reason', 'status']) {
+    if (!texteNonVide(reading[key])) throw new Error(`Lecture SQL Mobilité invalide : ${key}`)
+  }
+  if (!['vingt-minutes-sans-voiture', 'ce-que-le-velo-preserve'].includes(String(reading.story_key)) ||
+      !RAISONS_SAILLANCE.includes(reading.salience_reason as (typeof RAISONS_SAILLANCE)[number])) {
+    throw new Error('Lecture SQL Mobilité non déclarée')
+  }
+  if (reading.status !== 'measured' || !finite(reading.div_loss_t) || !finite(reading.div_loss_b) ||
+      !(reading.classification_saillance === null || text(reading.classification_saillance)) ||
+      !texteNonVide(reading.unit) || !isRecord(reading.provenance)) throw new Error('Valeurs de lecture SQL Mobilité invalides')
+  const provenance = apiSources([{ source_id: reading.provenance.source_id, name: reading.provenance.source_name,
+    version: reading.provenance.source_version, reference_date: reading.provenance.source_reference_date,
+    publication_date: reading.provenance.source_publication_date }], 'lecture mobilité')[0]!
+  return { territoire: target.territoire, type: target.type, theme: 'mobilite', groupe: reading.groupe as string,
+    story_key: reading.story_key as HistoireMobilite['story_key'],
+    salience_reason: reading.salience_reason as HistoireMobilite['salience_reason'],
+    div_loss_t: reading.div_loss_t as number, div_loss_b: reading.div_loss_b as number,
+    delta: (reading.div_loss_t as number) - (reading.div_loss_b as number),
+    pct_iso_full_t: null, dens_min: null, dens_max: null,
+    ...Object.fromEntries([...Array(10)].flatMap((_, i) => [[`dens_${i + 1}`, null], [`dec_${i + 1}`, null]])),
+    classification_saillance: reading.classification_saillance as string ?? '',
+    vintage_source: provenance.source, vintage_version: provenance.version,
+    vintage_date_reference: provenance.referenceDate, vintage_date_publication: provenance.publicationDate,
+  } as HistoireMobilite
+}
+
 /** The comparison API deliberately returns only plotted peer coordinates. */
 export function histoiresMilieuxDuNuage(response: unknown): HistoireMilieux[] {
   if (!isRecord(response) || !isRecord(response.reading_cloud) || !Array.isArray(response.reading_cloud.points)) return []
@@ -387,6 +414,12 @@ export function themeFactsRowsFromApi(
     histoires = rows(response.readings, 'readings').map((row) => histoireMilieuxDeSql(target, row))
   } else if (theme === 'economie') {
     histoires = rows(response.readings, 'readings').map((row) => histoireEconomieDeSql(target, row))
+  } else if (theme === 'mobilite') {
+    const readings = rows(response.readings, 'readings')
+    if (readings.length && readings.some((row) => row.story_key !== 'vingt-minutes-sans-voiture' && row.story_key !== 'ce-que-le-velo-preserve')) {
+      throw new Error(`Thème non migré vers l’acquisition paresseuse : ${theme}`)
+    }
+    histoires = readings.map((row) => histoireMobiliteDeSql(target, row))
   } else if (response.readings.length > 0) {
     // Un thème non migré ne doit jamais franchir cette frontière : perdre une
     // lecture en silence serait un fait caché, pas une migration.

@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
 import { acquireThemeComparison, acquireThemeFacts, ThemeAcquisitionCache, themeAcquisitionEnabled } from '../payload/themeAcquisition'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
+import { THEMES_ACQUISITION_API } from '../payload/themeAcquisition'
+import { THEMES_CANONIQUES } from '../payload/types'
 
 describe('theme acquisition cache', () => {
+  it('registers every canonical theme for lazy acquisition', () => {
+    expect([...THEMES_ACQUISITION_API].sort()).toEqual([...THEMES_CANONIQUES].sort())
+  })
   it('defaults the migrated path ON — the incumbent path is the explicit opt-out', () => {
     // Le chemin migré est le DÉFAUT du produit ; l'incumbent statique ne
     // survit que comme opt-out explicite (VITE_THEME_ACQUISITION_API='0').

@@ -45,7 +45,7 @@ import { applyInitialBuildingApiFacts } from '@/fiche/content/initialBuildingApi
 import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFacts'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { chargerCohortesScalaires, indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
-import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache } from '@/payload/themeAcquisition'
+import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
 import { histoiresDemographieNuage, histoiresMilieuxDuNuage, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
@@ -88,12 +88,10 @@ let sequenceFicheScalaires = 0
  * `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
  */
 const acquisitionApiActivee = themeAcquisitionEnabled(import.meta.env)
-/** Thèmes coupés vers l'acquisition paresseuse (#627) — Mobilité reste hors
- * registre : sa surface de fiche est la variante E, intégration côté utilisateur. */
-const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux']
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
 const themeMigre = (theme: Theme | null): boolean =>
-  acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme)
+  acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme) &&
+  !(theme === 'mobilite' && prototypeCahierMobilite.value)
 const cacheAcquisition = new ThemeAcquisitionCache(
   (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
   (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
