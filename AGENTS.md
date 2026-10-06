@@ -46,6 +46,12 @@ are deliberately NOT ignore-listed — they open the evidence base of the DESIGN
 
 ### General implementation rule — derive decisions from contracts, not literals
 
+### Theme acquisition contract
+
+- Every added indicator or theme ships behind the registered theme-acquisition switch (or an owner-owned acquisition path such as the Mobilité prototype E flow).
+- The incumbent static path is an explicit opt-out via `VITE_THEME_ACQUISITION_API='0'`, never a target for new work.
+- Keep the acquisition registry complete against `THEMES_CANONIQUES`; its contract test must fail when a canonical theme is omitted.
+
 - Do not hardcode domain facts, derived values, territory names, indicator selections, comparison
   scopes, source metadata, or content decisions in a renderer or UI fixture when the value belongs
   in the pipeline, payload, metadata, typed facts, or semantic content layer.

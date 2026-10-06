@@ -1,4 +1,7 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
+import type { Theme } from './types'
+/** Every canonical theme is behind lazy acquisition unless an owner-owned flow handles it. */
+export const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux', 'mobilite']
 export type ThemeSelectionMember = { territory_type: 'commune' | 'epci' | 'departement' | 'region'; territory_id: string }
 
 export interface PublicationTokens {
