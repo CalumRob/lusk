@@ -1,4 +1,4 @@
-import type { Histoire, HistoireHabitat, Indicateur, TerritoireType, VintageStamp } from './types'
+import type { Histoire, HistoireHabitat, HistoireEconomie, Indicateur, TerritoireType, VintageStamp } from './types'
 import { RAISONS_SAILLANCE } from './types'
 import type { ThemeKey, ThemeSelectionMember } from './themeAcquisition'
 
@@ -144,6 +144,37 @@ function histoireHabitatDeSql(
   return lecture
 }
 
+
+function histoireEconomieDeSql(target: { territoire: string; type: TerritoireType }, reading: Row): Histoire {
+  for (const key of ['groupe', 'story_key', 'salience_reason', 'status']) {
+    if (!texteNonVide(reading[key])) throw new Error(`Lecture SQL ?conomie invalide : ${key}`)
+  }
+  if (reading.story_key !== 'ce-que-la-commune-abrite' ||
+      !RAISONS_SAILLANCE.includes(reading.salience_reason as (typeof RAISONS_SAILLANCE)[number])) {
+    throw new Error('Lecture SQL ?conomie non d?clar?e')
+  }
+  const provenance = isRecord(reading.provenance)
+    ? apiSources([{ source_id: reading.provenance.source_id, name: reading.provenance.source_name,
+        version: reading.provenance.source_version, reference_date: reading.provenance.source_reference_date,
+        publication_date: reading.provenance.source_publication_date }], 'lecture economie')
+    : []
+  const history: Record<string, unknown> = { territoire: target.territoire, type: target.type, theme: 'economie',
+    groupe: reading.groupe, story_key: reading.story_key, salience_reason: reading.salience_reason,
+    vintage_source: provenance[0]?.source ?? '', vintage_version: provenance[0]?.version ?? '',
+    vintage_date_reference: provenance[0]?.referenceDate ?? null, vintage_date_publication: provenance[0]?.publicationDate ?? null }
+  if (!Array.isArray(reading.activities)) throw new Error('Membres d?activit? SQL ?conomie invalides')
+  reading.activities.forEach((activity, index) => {
+    if (!isRecord(activity) || !texteNonVide(activity.activity_code) || !texteNonVide(activity.activity_label) ||
+        !(activity.lq === null || finite(activity.lq)) || !finite(activity.n) || !(activity.part_parc === null || finite(activity.part_parc))) throw new Error('Membre d?activit? SQL ?conomie invalide')
+    const rank = index + 1
+    if (rank > 5) throw new Error('Trop de membres d?activit? SQL ?conomie')
+    Object.assign(history, { [`top${rank}_activity_code`]: activity.activity_code,
+      [`top${rank}_activity_label`]: activity.activity_label, [`top${rank}_lq`]: activity.lq,
+      [`top${rank}_n`]: activity.n, [`top${rank}_part_parc`]: activity.part_parc })
+  })
+  return history as unknown as HistoireEconomie
+}
+
 export interface ThemeFactsRows {
   indicateurs: Indicateur[]
   histoires: Histoire[]
@@ -170,6 +201,8 @@ export function themeFactsRowsFromApi(
   let histoires: Histoire[] = []
   if (theme === 'habitat') {
     histoires = rows(response.readings, 'readings').map((row) => histoireHabitatDeSql(target, row))
+  } else if (theme === 'economie') {
+    histoires = rows(response.readings, 'readings').map((row) => histoireEconomieDeSql(target, row))
   } else if (response.readings.length > 0) {
     // Un thème non migré ne doit jamais franchir cette frontière : perdre une
     // lecture en silence serait un fait caché, pas une migration.

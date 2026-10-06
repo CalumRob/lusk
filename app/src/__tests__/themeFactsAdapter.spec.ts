@@ -130,8 +130,8 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
   })
 
   it('refuse les lectures d’un thème non migré plutôt que de les perdre en silence', () => {
-    expect(() => themeFactsRowsFromApi('economie', {
-      contract: 'theme-facts-v1', theme_id: 'economie',
+    expect(() => themeFactsRowsFromApi('milieux', {
+      contract: 'theme-facts-v1', theme_id: 'milieux',
       territory: { territory_id: '35238', name: 'Saint-Jacques', territory_type: 'commune' },
       content_version: 'v', reference_content_version: 'r',
       indicator_metadata: [], named_reference_evidence: [], indicators: [],

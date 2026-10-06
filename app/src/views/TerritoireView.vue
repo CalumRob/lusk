@@ -88,7 +88,7 @@ let sequenceFicheScalaires = 0
  * `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
  */
 const acquisitionApiActivee = themeAcquisitionEnabled(import.meta.env)
-const THEMES_ACQUISITION_API: readonly Theme[] = ['habitat']
+const THEMES_ACQUISITION_API: readonly Theme[] = ['habitat', 'economie']
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
 const themeMigre = (theme: Theme | null): boolean =>
   acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme)
