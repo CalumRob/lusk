@@ -213,6 +213,11 @@ const selection = computed<Theme | null>(() => {
   }
   return THEME_DEFAUT
 })
+const prototypeActif = import.meta.env.DEV
+/** [PROTOTYPE #531/#552] Cahier variants own the editorial Mobilité surface. */
+const prototypeCahierMobilite = computed(
+  () => prototypeActif && ['D', 'E'].includes(String(route.query.variant ?? '')) && selection.value === 'mobilite',
+)
 
 watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryFicheScalaires, scalarCohortScopeKey],
   async ([model, theme, code, _retry, scopeKey], _old, onCleanup) => {
@@ -383,12 +388,7 @@ const classesFond = computed(() =>
  * le prototype explore les cinq thèmes éditoriaux.
  */
 const variante = computed(() => varianteDeUrl(route.query.variant))
-const prototypeActif = import.meta.env.DEV
 const scalarCohortActif = scalarCohortEnabled(import.meta.env)
-/** [PROTOTYPE #531/#552] Cahier variants own the editorial Mobilité surface. */
-const prototypeCahierMobilite = computed(
-  () => prototypeActif && ['D', 'E'].includes(variante.value?.clef ?? '') && selection.value === 'mobilite',
-)
 const prototypeAccesApi = computed(() => prototypeCahierMobilite.value && variante.value?.clef === 'E')
 const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
 const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
