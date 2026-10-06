@@ -2330,10 +2330,44 @@ def theme_facts(
                 conn, territory_type, territory_id, theme_id, service_comparison, repository)
 
 
+@app.post("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
+def selected_theme_facts(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
+    territory_id: str = Path(min_length=1, max_length=32),
+    request: ThemeComparisonRequest = ...,
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Acquire focal theme facts and selected comparisons in one snapshot."""
+    if request.theme_id != theme_id:
+        raise HTTPException(422, "Body theme_id must match the theme facts route")
+    selected = None if request.selection is None else [
+        (item.territory_type, item.territory_id) for item in request.selection]
+    with repository.connections.connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            payload = _theme_facts_snapshot(
+                conn, territory_type, territory_id, theme_id, None, repository,
+                selection=selected)
+            payload.pop("default_comparison", None)
+            comparison = _theme_comparison_snapshot(
+                conn, territory_type, territory_id, theme_id, selected,
+                profiles=focal_profiles(conn, territory_type, territory_id, theme_id=theme_id)[0],
+                has_readings=bool(payload["readings"]))
+            nested = {key: comparison[key] for key in (
+                "contract", "complete_theme", "theme_id", "content_version",
+                "reference_content_version", "selection", "scope", "results",
+                "profile_content_version", "profile_comparisons", "reading_content_version", "reading_cloud")}
+            nested["results"] = [_comparison_result_without_focal_value(row) for row in nested["results"]]
+            nested["profile_comparisons"] = [_comparison_result_without_focal_value(row)
+                                               for row in nested["profile_comparisons"]]
+            payload["comparison"] = nested
+            return payload
+
+
 def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_comparison,
-                          repository, selection=None) -> dict:
+                           repository, selection=None) -> dict:
     """Build the public theme-facts response from one caller-owned snapshot."""
-    conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
     territory = conn.execute("""SELECT territory_id,name,territory_type FROM territory_reference
         WHERE territory_id=%s AND territory_type=%s""", (territory_id, territory_type)).fetchone()
     if not territory:
@@ -2663,15 +2697,20 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
         # density-class default; larger territory levels use their
         # same-level published peers. Do not open a nested connection.
         service_mode = service_comparison or "densite"
-        service_snapshot = (repository.read(territory_id, service_mode, connection=conn)
-            if territory_type == "commune"
-            else repository.read_level(territory_type, territory_id, connection=conn))
+        if selection is None:
+            service_snapshot = (repository.read(territory_id, service_mode, connection=conn)
+                if territory_type == "commune"
+                else repository.read_level(territory_type, territory_id, connection=conn))
+        else:
+            service_snapshot = repository.read_selected(territory_type, territory_id, selection,
+                                                        connection=conn)
         essential_service_access = compare(service_snapshot).model_dump(mode="json")
         density_distribution=_mobility_density_distribution_snapshot(conn,territory_type,territory_id)
         try:
             building_access = repository.read_building_initial(
                 territory_type, territory_id,
                 service_mode if territory_type == "commune" else None,
+                selected=selection,
                 connection=conn)
         except HTTPException as exc:
             # Older installations can serve the existing theme facts
