@@ -249,6 +249,21 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     }, cible)).toThrow(/non migré/)
   })
 
+  it('mappe les bins de distribution Mobilité servis et garde les bins absents à null', () => {
+    const reading = { groupe: 'acces-aux-services', story_key: 'vingt-minutes-sans-voiture', salience_reason: 'defaut',
+      status: 'measured', div_loss_t: 8, div_loss_b: 5, classification_saillance: null, unit: 'types',
+      provenance: { source_id: 'mob', source_name: 'Mobilité', source_version: 'v1', source_reference_date: null, source_publication_date: null } }
+    const response = { ...faitsHabitat({ theme_id: 'mobilite', readings: [reading] }), density_distribution: {
+      status: 'measured', range: { minimum: 2, maximum: 9, status: 'measured' }, points: [
+        { ordinal: 0, density: 0.25, density_status: 'measured', decile: 2, decile_status: 'measured' },
+        { ordinal: 1, density: null, density_status: 'not_available', decile: null, decile_status: 'not_available' },
+      ] } }
+    const mapped = themeFactsRowsFromApi('mobilite', response, cible).histoires[0] as unknown as Record<string, unknown>
+    expect(mapped).toMatchObject({ dens_min: 2, dens_max: 9, dens_1: .25, dec_1: 2, dens_2: null, dec_2: null })
+    const absent = themeFactsRowsFromApi('mobilite', { ...response, density_distribution: undefined }, cible).histoires[0]
+    expect(absent).toMatchObject({ dens_min: null, dens_max: null, dens_1: null })
+  })
+
   it('mappe la lecture Milieux et sa provenance sans convertir les absences en zéros', () => {
     const reading = {
       groupe: 'land', story_key: 'se-densifier-setaler-ou-sen-aller', salience_reason: 'defaut', status: 'measured',
