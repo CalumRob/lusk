@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '../views/TerritoireView.vue'
 import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
+import PuceRang from '../components/fiche/PuceRang.vue'
 import { varianteDeUrl } from '../fiche/prototype/variantes'
 import { histoiresDemographieNuage } from '../payload/themeFactsAdapter'
 import {
@@ -28,6 +29,7 @@ import type { ChargerModeleTerritoire } from '../payload/territoryReadModel'
 import { PayloadError } from '../payload/validate'
 import { payloadDepuisModeleTerritoire } from '../payload/territoryReadModel'
 import { territoryFactsFor } from '../fiche/content/territoryFacts'
+import { directionIndicateur } from '../fiche/figureGrammaire'
 import { routes } from '../router'
 
 const indicateurs: Indicateur[] = [
@@ -247,7 +249,10 @@ export function reponseThemeProgrammesApi(type = 'commune', code = '22001') {
     ],
     owned_series: [{ indicator_id: 'subventions_annuelles', theme_id: 'programmes', unit: '€',
       points: [{ axis: '2025', observation_period: '2025', value: 45678, status: 'measured', provenance: source }] }],
-    comparison: { collection_content_versions: { programme_membership: 'membership-v1' } },
+    comparison: { contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'programmes',
+      content_version: 'programmes-v1', reference_content_version: 'territories-v1', selection: null,
+      scope: null, results: [], profile_comparisons: [],
+      collection_content_versions: { programme_membership: 'membership-v1' } },
   }
 }
 function reponseThemeDemographieApi(model: any, type = 'commune', code = '22001', rates = [1.25, -0.75]) {
@@ -1614,5 +1619,64 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     resolveFacts({ ok: true, json: async () => reponseThemeMilieuxApi(model) }); await flushPromises()
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('Source API milieux')
     wrapper.unmount()
+  })
+
+  it('rend le rang de comparaison API sur la fiche Habitat puis actualise la portée sélectionnée', async () => {
+    expect(directionIndicateur('habitat', 'part_passoires')).toBe('moins-est-mieux')
+    const model = modeleAvecContextesComparaison()
+    const densite = model.themes.mobilite!.comparisons.densite!.scope.label
+    const epci = model.themes.mobilite!.comparisons.epci!.scope.label
+    let selectedRank = 8
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => {
+      if (url.endsWith('/facts')) return reponseThemeHabitatApi(model, 'commune', '22001')
+      const selection = JSON.parse(String(options?.body)).selection
+      return { contract: 'theme-comparison-v1', theme_id: 'habitat', selection,
+        content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
+        scope: { kind: 'explicit_selection' }, results: [{ indicator_id: 'part_passoires', status: 'available',
+          direction: 'low', rank: selectedRank, rank_size: 20 }], profile_comparisons: [] }
+    } }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    const chip = () => wrapper.findComponent(PuceRang)
+    expect(chip().exists()).toBe(true)
+    expect(chip().props('puce').rang).toContain('3e/14')
+    expect(chip().props('puce').rang).toContain(densite)
+    expect(directionIndicateur('habitat', 'part_passoires')).toBeTruthy()
+    selectedRank = 8
+    await router.replace({ query: { theme: 'habitat', comparaison: 'epci' } }); await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/comparison'))).toHaveLength(1)
+    expect(chip().props('puce').rang).toContain('8e/20')
+    expect(chip().props('puce').rang).toContain(epci)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42')
+    wrapper.unmount()
+  })
+
+  it('retire le chip si le résultat est indisponible et efface le chip après échec de comparaison', async () => {
+    const model = modeleAvecContextesComparaison()
+    let invalid = false
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => {
+      if (url.endsWith('/facts')) {
+        const facts = reponseThemeHabitatApi(model, 'commune', '22001')
+        if (invalid) facts.comparison.results[0].status = 'unavailable'
+        return facts
+      }
+      const selection = JSON.parse(String(options?.body)).selection
+      return { contract: 'theme-comparison-v1', theme_id: 'habitat', selection,
+        content_version: 'habitat-scalar-v1', reference_content_version: 'wrong-token',
+        results: [], profile_comparisons: [] }
+    } }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    invalid = true
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    expect(wrapper.findComponent(PuceRang).exists()).toBe(false)
+    wrapper.unmount()
+    invalid = false
+    const mounted = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    expect(mounted.wrapper.findComponent(PuceRang).exists()).toBe(true)
+    await mounted.router.replace({ query: { theme: 'habitat', comparaison: 'epci' } }); await flushPromises()
+    expect(mounted.wrapper.findComponent(PuceRang).exists()).toBe(false)
+    expect(mounted.wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles')
+    expect(mounted.wrapper.get('[role="tabpanel"]').text()).toContain('42')
+    mounted.wrapper.unmount()
   })
 })
