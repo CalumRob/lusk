@@ -308,7 +308,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(text).toContain('98 765 432')
     expect(text).not.toContain('0,92')
     wrapper.unmount()
-  })
+    // 22 requêtes de cohorte stubbées + deux rendus montés : la marge évite
+    // les faux positifs de timeout sous la charge parallèle de la suite.
+  }, 15000)
 
   it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {
     await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
@@ -403,7 +405,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('222 222 222')
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('111 111 111')
     wrapper.unmount()
-  })
+    // Même profil lourd que le test scalaire monté : marge de timeout.
+  }, 15000)
 
   it('renders a retryable error for malformed registration and recovers without showing static facts', async () => {
     await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
