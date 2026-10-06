@@ -2320,7 +2320,7 @@ def theme_facts(
             reading_version = None
             reading_descriptor_version = None
             reading_availability = None
-            if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat", "mobilite"):
+            if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat", "milieux", "mobilite"):
                 raise HTTPException(404, "No published facts for this theme and territory")
             readings = []
             reading_version = None
@@ -2505,12 +2505,12 @@ def theme_facts(
                 installed=conn.execute("SELECT to_regclass('milieux_typed_reading')").fetchone()[0]
                 if not installed:
                     raise HTTPException(503,"Milieux reading publication is unavailable")
-                marker=conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
+                milieux_marker=conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
                     FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
                     WHERE p.table_name='milieux_typed_reading'""").fetchone()
-                if not marker or marker[0] is None or marker[1] < 1 or marker[2] != marker[3]:
+                if not milieux_marker or milieux_marker[0] is None or milieux_marker[1] < 1 or milieux_marker[2] != milieux_marker[3]:
                     raise HTTPException(503,"Milieux reading publication is unavailable or incompatible")
-                rows=conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.periode_pop,r.periode_artif,
+                milieux_rows=conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.periode_pop,r.periode_artif,
                     r.delta_population,r.taux_variation_population,r.artif_m2_par_habitant,r.artif_m3_par_habitant,
                     r.trajectoire_artif_par_habitant,r.classification,r.status,r.source_id,r.vintage_id
                     FROM milieux_typed_reading r
@@ -2534,7 +2534,7 @@ def theme_facts(
                     if source_row[9] is not None:
                         current=conn.execute("SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=%s",
                             (source_row[9],)).fetchone()
-                        if not current or current[0]!=source_row[10] or current[1]!=marker[3]:
+                        if not current or current[0]!=source_row[10] or current[1]!=milieux_marker[3]:
                             raise HTTPException(503,"Milieux OCS-GE source association is stale or incompatible")
                     if (source_row[2]!=source_row[15] or source_row[4]!=source_row[16] or source_row[3]!=source_row[17] or
                         source_row[5]!=source_row[18] or source_row[6]!=source_row[19] or source_row[7]!=source_row[20] or
@@ -2549,7 +2549,7 @@ def theme_facts(
                         "provenance_revision_id":source_row[12],"population_revision_id":source_row[14],
                         "axis_value":source_row[13]})
                 readings=[]
-                for row in rows:
+                for row in milieux_rows:
                     associations=by_reading.get(row[0],[])
                     if not any(a["field"]=="population" for a in associations) or not any(a["field"]=="artif_m2_par_habitant" for a in associations) or not any(a["field"]=="artif_m3_par_habitant" for a in associations):
                         raise HTTPException(503,"Milieux reading source/window associations are incomplete")
@@ -2584,7 +2584,7 @@ def theme_facts(
                         "source_reference_date":population_associations[0]["source_reference_date"],
                         "source_publication_date":population_associations[0]["source_publication_date"],
                         "associations":associations}))
-                reading_version=marker[0]
+                reading_version=milieux_marker[0]
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
                 profiles=profiles, profile_version=profile_version, has_readings=bool(readings))
             building_access = None

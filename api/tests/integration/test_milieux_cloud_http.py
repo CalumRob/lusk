@@ -70,6 +70,20 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
             ("53","region","Fixture region",None,None,None)]
         pub.cursor().executemany("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code) VALUES(%s,%s,%s,%s,%s,%s)",territories)
         pub.execute("UPDATE table_publication SET content_version='ref-v1',row_count=%s WHERE table_name='territory_reference'",(len(territories),))
+        # One genuine scalar descriptor anchors this theme-facts response; its
+        # value is intentionally distinct from the typed story coordinates.
+        pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('scalar-fixture','Scalar fixture source')")
+        pub.execute("INSERT INTO source_vintage VALUES('scalar-fixture','v1','2026',NULL,NULL)")
+        pub.execute("BEGIN")
+        pub.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,
+            allowed_levels,denominator_semantics,completeness,descriptor_version)
+            VALUES('fixture_scalar','milieux','Surface test','m²','low','fixture_scalar',ARRAY['commune'],
+            'fixture units','sparse','scalar-v1')""")
+        pub.execute("INSERT INTO scalar_descriptor_source VALUES('fixture_scalar','scalar-fixture')")
+        pub.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES('fixture_scalar','35238','commune',42,'measured')")
+        pub.execute("INSERT INTO scalar_observation_source VALUES('fixture_scalar','35238','scalar-fixture','v1')")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('scalar_observation','scalar-v1',1,'ref-v1')")
+        pub.execute("COMMIT")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('milieux_typed_reading','reading-v1',4,'ref-v1')")
         pub.execute("INSERT INTO source_dataset VALUES('conso-fixture','CONSO fixture')")
         pub.execute("INSERT INTO source_vintage VALUES('conso-fixture','v2025/2025-01-01','v2025','2025-01-01','2025-02-01')")
@@ -150,6 +164,17 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
             route=f"/api/territories/commune/35238/themes/milieux/comparison"
             default=client.post(route,json={"theme_id":"milieux"})
             assert default.status_code==200,default.text
+            default_query_count=query_counts[-1]
+            payload=client.get("/api/territories/commune/35238/themes/milieux/facts")
+            assert payload.status_code==200,payload.text
+            facts=payload.json()
+            assert [item["indicator_id"] for item in facts["indicators"]]==["fixture_scalar"]
+            assert facts["indicators"][0]["value"]==42
+            assert facts["content_version"]=="scalar-v1"
+            assert facts["reading_content_version"]=="reading-v1"
+            assert len(facts["readings"])==1
+            assert facts["readings"][0]["groupe"]=="land"
+            assert facts["readings"][0]["artif_m2_par_habitant"]==8
             cloud=default.json()["reading_cloud"]
             assert cloud["scope"]["kind"]=="density_class" and cloud["selected_member_count"]==6
             assert cloud["plotted_member_count"]==3 and cloud["unavailable_member_count"]==3
@@ -159,8 +184,6 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
             assert all(set(p)=={"territory","periode_pop","periode_artif","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant"} for p in cloud["points"])
             assert all(p["periode_pop"]=="2017–2023" and p["periode_artif"]=="2020–2023" for p in cloud["points"])
             assert "focal_value" not in default.json() and "readings" not in default.json()
-            default_query_count=query_counts[-1]
-
             empty=client.post(route,json={"theme_id":"milieux","selection":[]})
             assert empty.status_code==200,empty.text
             assert empty.json()["reading_cloud"]=={"status":"unavailable","reason":"no_selected_members","groupe":None,
