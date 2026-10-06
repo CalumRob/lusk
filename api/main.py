@@ -1728,8 +1728,8 @@ def _theme_owned_series_contract(series_rows):
 
 def _theme_owned_series_indicator(series, point):
     """Project one real owned point without collapsing its axis or revision lineage."""
-    numeric_axis = next((value for axis, value in zip(series.get("axis_values", []),
-        series.get("axis_numeric_values", [])) if axis == point.get("axis")), None)
+    numeric_axis = next((value for axis, value in zip(series.get("axis_values") or [],
+        series.get("axis_numeric_values") or []) if axis == point.get("axis")), None)
     return {"indicator_id":series["indicator_id"],"label":series["label"],"unit":series["unit"],
         "value":point.get("value"),"status":point.get("status"),
         "sources":[{**source,"name":source.get("source_name")} for source in point.get("provenance", [])],

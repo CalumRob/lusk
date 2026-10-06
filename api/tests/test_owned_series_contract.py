@@ -4,7 +4,28 @@ import re
 import pytest
 from fastapi import HTTPException
 
-from api.main import ReadRepository, app
+from api.main import ReadRepository, _theme_owned_series_indicator, app
+
+
+def test_theme_owned_series_indicator_preserves_nullable_axis_metadata_and_point_coordinates():
+    source = {"source_name": "Canonical source", "vintage": "2025"}
+    categorical = _theme_owned_series_indicator(
+        {"indicator_id": "subventions_annuelles", "label": "Aides", "unit": "€",
+         "axis_values": ["2020", "2021"], "axis_numeric_values": None},
+        {"axis": "2021", "value": 0, "status": "measured", "provenance": [source],
+         "observation_period": "2021"},
+    )
+    assert categorical["dimensions"] == {"axis": "2021", "numeric_axis_value": None,
+        "observation_period": "2021"}
+    assert categorical["value"] == 0
+    assert categorical["sources"] == [{**source, "name": "Canonical source"}]
+
+    numeric = _theme_owned_series_indicator(
+        {"indicator_id": "prix_m2", "label": "Prix", "unit": "€/m²",
+         "axis_values": ["2024", "2025"], "axis_numeric_values": [2024, 2025]},
+        {"axis": "2025", "value": 525, "status": "measured", "provenance": []},
+    )
+    assert numeric["dimensions"] == {"axis": "2025", "numeric_axis_value": 2025}
 
 def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
     class Cursor:
