@@ -582,10 +582,18 @@ class ReadRepository:
                 grid_data = [dict(zip(("territoire", "type", "availability", "mode", "breadth_bucket",
                                       "depth_bucket", "building_count", "total_buildings", "source_id", "version", "share"), row))
                              for row in grid_rows]
+                # Selected reads also fetch focal facts, potentially at a different
+                # level. Aggregation helpers accept only declared peer rows.
+                peer_ramp_data = ([row for row in ramp_data
+                                   if row["type"] == peer_type and row["territoire"] in members]
+                                  if selected is not None else ramp_data)
+                peer_grid_data = ([row for row in grid_data
+                                   if row["type"] == peer_type and row["territoire"] in members]
+                                  if selected is not None else grid_data)
                 try:
-                    peer_ramp = (weighted_peer_ramp(ramp_data, members, max_members=len(reference),
+                    peer_ramp = (weighted_peer_ramp(peer_ramp_data, members, max_members=len(reference),
                                                     member_type=peer_type) if members else None)
-                    peer_distribution = (pooled_peer_distribution(grid_data, members,
+                    peer_distribution = (pooled_peer_distribution(peer_grid_data, members,
                                                                   max_members=len(reference),
                                                                   member_type=peer_type) if members else None)
                 except ComparisonInputError as exc:
