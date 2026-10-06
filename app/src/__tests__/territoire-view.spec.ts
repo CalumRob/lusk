@@ -8,6 +8,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import TerritoireView from '../views/TerritoireView.vue'
 import GraphiqueDistributionMobilite from '../components/fiche/GraphiqueDistributionMobilite.vue'
 import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
+import FigureTrajectoire from '../components/fiche/FigureTrajectoire.vue'
 import PuceRang from '../components/fiche/PuceRang.vue'
 import { varianteDeUrl } from '../fiche/prototype/variantes'
 import { histoiresDemographieNuage } from '../payload/themeFactsAdapter'
@@ -197,6 +198,22 @@ export function reponseThemeHabitatApi(model: any, type = 'commune', code = '352
       : row.detail ? { detail: row.detail } : {},
     sources: sources(),
   })
+  const prixFaits = rows.filter((row) => row.key === 'prix_m2' && row.detail)
+  // La serie annuelle prix_m2 est servie comme owned_series (le contrat reel :
+  // cf. test_theme_facts_habitat_http.py) - les lignes annuelles ne figurent
+  // PAS dans indicators, seule la valeur poolee y reste.
+  const seriePrix = {
+    indicator_id: 'prix_m2', theme_id: 'habitat', unit: '€/m²',
+    axis_kind: 'year', axis_values: prixFaits.map((row) => row.detail),
+    points: prixFaits.map((row) => ({
+      axis: row.detail, observation_period: row.detail,
+      value: row.detail === '2025' ? 4242 : row.value === null ? null : row.value,
+      status: row.detail === '2025' ? 'measured' : row.value === null ? 'not_available' : 'measured',
+      missing_reason: row.value === null && row.detail !== '2025' ? 'ventes insuffisantes' : null,
+      provenance: [{ source_id: 'habitat_api', source_name: 'Source API habitat',
+        version: 'api-v1', reference_date: null, publication_date: null }],
+    })),
+  }
   const histoire = theme.histories.find((row: any) => row.territoire === code)
   return {
     contract: 'theme-facts-v1', complete_theme: false, theme_id: 'habitat',
@@ -214,7 +231,8 @@ export function reponseThemeHabitatApi(model: any, type = 'commune', code = '352
         comparison_point: null, comparison_scalar: null,
       })),
     named_reference_evidence: [], bpe_profile_evidence: null, collections: [],
-    indicators: rows.map(indicatorSql),
+    indicators: rows.filter((row) => !(row.key === 'prix_m2' && row.detail)).map(indicatorSql),
+    owned_series: [seriePrix],
     readings: [{
       groupe: histoire.groupe, story_key: histoire.story_key, salience_reason: histoire.salience_reason,
       classification: 'parc-performant', part_passoires: 0.42, part_abc: 0.62, n_dpe: histoire.n_dpe,
@@ -728,6 +746,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(text).toContain('4 242')
     expect(text).not.toContain('3 777,78')
     expect(text).not.toContain('intermédiaire')
+    // La trajectoire prix_m2 rend depuis la SERIE servie (owned_series), pas
+    // depuis des lignes annuelles d'indicators : le contrat réel épinglé par
+    // test_theme_facts_habitat_http.py.
+    const trajectoire = wrapper.findAllComponents(FigureTrajectoire)
+      .find((figure) => figure.props('clef') === 'prix_m2')
+    expect(trajectoire, 'la figure trajectoire prix_m2 rend depuis la série servie').toBeDefined()
+    const lignesPrix = trajectoire!.props('lignes') as Indicateur[]
+    expect(lignesPrix.some((ligne) => ligne.detail === '2025' && ligne.value === 4242)).toBe(true)
+    expect(lignesPrix.filter((ligne) => ligne.detail !== null).length).toBeGreaterThanOrEqual(2)
     wrapper.unmount()
   })
 
