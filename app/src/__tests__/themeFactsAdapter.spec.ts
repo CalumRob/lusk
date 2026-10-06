@@ -22,6 +22,51 @@ const sources = () => [{
 }]
 
 describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#627)', () => {
+  it('projette les adhésions ancrées et les subventions depuis leurs collections/séries sans inventer absence', () => {
+    const source = [{ source_id: 'src', name: 'Source programmes', version: '2026', reference_date: '2026-01-01', publication_date: null }]
+    const rows = themeFactsRowsFromApi('programmes', {
+      contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
+      indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [],
+      collections: [
+        { indicator_id: 'programme_membership', kind: 'anchored_membership', availability: 'observed',
+          entries: [{ detail: 'ACV', rider: 'Aid rider', sources: source }],
+          relationships: [{ detail: 'CRTE', rider: null, sources: source, anchor: { id: '243500139', type: 'epci', name: 'EPCI' }, relation: 'covering_parent' }] },
+        { indicator_id: 'grants', kind: 'period_detail', availability: 'observed', unit: '€', entries: [
+          { observation_period: '2025', label: 'Mobilité', value: 1234, sources: source },
+        ], relationships: [] },
+      ],
+      owned_series: [{ indicator_id: 'subventions_annuelles', unit: '€', points: [
+        { axis: '2025', value: 5678, status: 'measured', provenance: source },
+      ] }],
+    }, cible)
+    expect(rows.histoires).toEqual([])
+    expect(rows.indicateurs.map((row) => [row.territoire, row.key, row.detail, row.dimension, row.value])).toEqual([
+      ['35238', 'couverture_programmes', 'ACV', undefined, null],
+      ['243500139', 'couverture_programmes', 'CRTE', undefined, null],
+      ['35238', 'subventions_par_domaine', 'Mobilité', '2025', 1234],
+      ['35238', 'subventions_annuelles', null, '2025', 5678],
+    ])
+    expect(rows.indicateurs[0]!.rider).toBe('convention valant ORT')
+    expect(rows.indicateurs[0]!.vintage_date_reference).toBe('2026-01-01')
+    const absent = themeFactsRowsFromApi('programmes', {
+      contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
+      indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [],
+      collections: [{ indicator_id: 'programme_membership', kind: 'anchored_membership', availability: 'no_record', entries: [], relationships: [] }],
+      owned_series: [],
+    }, cible)
+    expect(absent.indicateurs).toEqual([])
+  })
+
+  it('échoue fermé sur date de référence absente pour une adhésion', () => {
+    expect(() => themeFactsRowsFromApi('programmes', {
+      contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
+      indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [], owned_series: [],
+      collections: [{ indicator_id: 'membership', kind: 'anchored_membership', availability: 'observed', entries: [
+        { detail: 'ACV', rider: null, sources: [{ source_id: 's', name: 'S', version: 'v', reference_date: null, publication_date: null }] },
+      ], relationships: [] }],
+    }, cible)).toThrow(/Date de référence/)
+  })
+
   it('refuse une réponse dont le contrat, le thème ou le territoire ne correspondent pas', () => {
     expect(() => themeFactsRowsFromApi('habitat', { contract: 'autre' }, cible)).toThrow(/contrat|Réponse/i)
     expect(() => themeFactsRowsFromApi('habitat', faitsHabitat({ theme_id: 'milieux' }), cible)).toThrow()
