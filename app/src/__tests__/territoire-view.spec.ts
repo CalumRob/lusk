@@ -984,6 +984,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const programmes = reponseThemeProgrammesApi()
     const target = model.territories.find((item: any) => item.territoire === '22001')!
     const parent = model.territories.find((item: any) => item.territoire === target.epci)!
+    programmes.owned_series[0]!.points[0]!.value = 71395030.98
+    programmes.indicator_metadata = [{ indicator_id: 'subventions_annuelles', unit: '€', context: {
+      parent: { id: target.epci, type: 'epci', name: parent.nom },
+      points: [{ axis: '2025', observation_period: '2025', value: 91260697.91, status: 'measured', provenance: [
+        { source_id: 'programme-api', source_name: 'Source API programmes', version: 'programme-v1', reference_date: '2026-01-01', publication_date: '2026-02-01' },
+      ] }],
+    } }] as any
     programmes.collections[0]!.relationships[0]!.anchor.id = target.epci!
     programmes.collections[0]!.relationships[0]!.anchor.name = parent.nom
     const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
@@ -1006,9 +1013,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(rendered).toContain('Territoire couvert par le contrat')
     expect(rendered).toContain('convention valant ORT')
     expect(rendered).toContain('Source API programmes')
-    expect(rendered).toMatch(/45\s678/)
+    expect(rendered).toContain('71,40 M€')
     expect(rendered).toContain('Mobilité API')
-    expect(rendered).not.toContain('du total de') // Parent total is not served by this focal snapshot.
+    expect(rendered).toContain('78,23 % du total de l\'EPCI')
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
     await router.replace({ query: {} })
@@ -1027,6 +1034,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
     expect(wrapper.text()).not.toContain('0 €')
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('Subventions attribuées')
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('du total de l’EPCI')
     wrapper.unmount()
   })
 

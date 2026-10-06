@@ -287,7 +287,9 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       if (cancelled || request !== sequenceAcquisition) return
       const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
       if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
-      const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type })
+      const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type }, {
+        epci: target.epci, region: payloadModele.value?.territoires.find((item) => item.type === 'region')?.territoire ?? null,
+      })
        faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, acquired.focal.comparison,
          resolutionComparaison.value?.contexte?.scope.label ?? null)
       histoiresThemeRows.value = rows.histoires

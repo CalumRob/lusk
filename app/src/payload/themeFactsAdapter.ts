@@ -349,7 +349,7 @@ function vintageSql(sources: unknown, context: string) {
     fact_sources: provenance.map((item) => ({ ...item, sourceId: item.sourceId })) }
 }
 
-function programmesRows(response: Row, target: { territoire: string; type: TerritoireType }): Indicateur[] {
+function programmesRows(response: Row, target: { territoire: string; type: TerritoireType }, referential: { epci?: string | null; region?: string | null } = {}): Indicateur[] {
   const result: Indicateur[] = []
   for (const collection of rows(response.collections, 'collections')) {
     if (!texteNonVide(collection.indicator_id) || !texteNonVide(collection.kind) ||
@@ -406,6 +406,41 @@ function programmesRows(response: Row, target: { territoire: string; type: Terri
         rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })
     }
   }
+  const parentType = target.type === 'commune' ? 'epci' : target.type === 'region' ? null : 'region'
+  const parentId = parentType === 'epci' ? referential.epci : parentType === 'region' ? referential.region : null
+  const metadata = rows(response.indicator_metadata ?? [], 'indicator_metadata')
+    .filter((item) => item.indicator_id === 'subventions_annuelles')
+  if (parentType && parentId && metadata.length === 1) {
+    const context = metadata[0]!.context
+    if (isRecord(context) && isRecord(context.parent) && context.parent.id === parentId && context.parent.type === parentType &&
+        Array.isArray(context.points)) {
+      const focalYears = new Set<string>()
+      for (const fact of rows(response.indicators ?? [], 'indicators')) {
+        if (fact.indicator_id === 'subventions_annuelles' && fact.status === 'measured' && finite(fact.value) &&
+            isRecord(fact.dimensions) && text(fact.dimensions.axis)) focalYears.add(fact.dimensions.axis)
+      }
+      result.filter((row) => row.key === 'subventions_annuelles' && row.territoire === target.territoire && row.value !== null)
+        .map((row) => row.dimension).filter(text).forEach((year) => focalYears.add(year))
+      for (const point of context.points) {
+        if (!isRecord(point) || !text(point.axis) || point.observation_period !== point.axis ||
+            point.status !== 'measured' || !finite(point.value) || !focalYears.has(point.axis) ||
+            !Array.isArray(point.provenance)) continue
+        const provenance = point.provenance.map((source) => {
+          if (!isRecord(source) || !texteNonVide(source.source_id) || !texteNonVide(source.source_name) ||
+              !texteNonVide(source.version) || !(source.reference_date === null || text(source.reference_date)) ||
+              !(source.publication_date === null || text(source.publication_date))) return null
+          return { sourceId: source.source_id, source: source.source_name, version: source.version,
+            referenceDate: source.reference_date, publicationDate: source.publication_date, lineage: { ...source } }
+        }).filter((source): source is NonNullable<typeof source> => source !== null)
+        if (!provenance.length || provenance.length !== point.provenance.length) continue
+        result.push({ territoire: parentId, type: parentType as TerritoireType, theme: 'programmes', key: 'subventions_annuelles',
+          detail: null, dimension: point.axis, value: point.value as number, unit: metadata[0]!.unit as string,
+          rider: null, vintage_source: provenance[0]!.source, vintage_version: provenance[0]!.version,
+          vintage_date_reference: provenance[0]!.referenceDate, vintage_date_publication: provenance[0]!.publicationDate,
+          fact_sources: provenance.map((source) => ({ ...source, sourceId: source.sourceId })), rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })
+      }
+    }
+  }
   return result
 }
 
@@ -414,6 +449,7 @@ export function themeFactsRowsFromApi(
   theme: ThemeKey,
   response: unknown,
   target: { territoire: string; type: TerritoireType },
+  referential: { epci?: string | null; region?: string | null } = {},
 ): ThemeFactsRows {
   if (!isRecord(response) || response.contract !== 'theme-facts-v1' || response.theme_id !== theme ||
       !Array.isArray(response.indicators) || !Array.isArray(response.indicator_metadata) ||
@@ -427,7 +463,7 @@ export function themeFactsRowsFromApi(
   const metadata = rows(response.indicator_metadata, 'indicator_metadata')
   const indicateurs = rows(response.indicators, 'indicators')
     .map((fact) => indicateurDeSql(theme, target, fact, metadata))
-  if (theme === 'programmes') indicateurs.push(...programmesRows(response, target))
+  if (theme === 'programmes') indicateurs.push(...programmesRows(response, target, referential))
   if (theme === 'habitat') {
     for (const series of rows(response.owned_series ?? [], 'owned_series')) {
       if (series.indicator_id !== 'prix_m2') continue
