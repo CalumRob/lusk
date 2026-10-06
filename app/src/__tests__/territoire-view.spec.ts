@@ -93,17 +93,24 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
   const buildingSources = [{ source_id: 'mobilite_snapshot', name: ramp.provenance?.source ?? 'Source SQL',
     version: ramp.provenance?.version ?? 'sql-v1', reference_date: ramp.provenance?.referenceDate ?? null,
     publication_date: ramp.provenance?.publicationDate ?? null }]
+  const indicateurSql = (row: any, detail: string | null = null, sex: string | null = null) => ({
+    indicator_id: row.key, label: row.key, unit: row.unit, value: row.value,
+    status: row.value === null ? 'unavailable' : 'measured',
+    dimensions: detail ? { detail, sex } : {},
+    sources: sourceRows([row]),
+  })
   return {
-    contract: 'theme-facts-v1', theme_id: 'mobilite',
+    contract: 'theme-facts-v1', complete_theme: false, theme_id: 'mobilite',
     territory: { territory_id: code, territory_type: type },
-    indicators: theme.indicators.map((row: any) => ({ indicator_id: row.key, label: row.key,
-      unit: row.unit, value: row.value, status: row.value === null ? 'unavailable' : 'measured',
-      sources: sourceRows([row]) })),
-    profiles: [...new Set<string>(theme.indicators.filter((row: any) => row.detail).map((row: any) => row.key))]
-      .map((indicator) => ({ indicator, cells: theme.indicators.filter((row: any) => row.key === indicator && row.detail)
-        .map((row: any) => ({ detail: row.detail, sex: row.sex ?? null, unit: row.unit,
-          value: row.value, status: row.value === null ? 'unavailable' : 'measured', sources: sourceRows([row]) })) })),
-    series: [],
+    // La publication réelle expose scalaires et cellules de profil comme lignes
+    // d'indicateurs dimensionnées ; « profiles »/« series » n'existent pas.
+    indicators: [
+      ...theme.indicators.filter((row: any) => !row.detail).map((row: any) => indicateurSql(row)),
+      ...theme.indicators.filter((row: any) => row.detail)
+        .map((row: any) => indicateurSql(row, row.detail, row.sex ?? null)),
+    ],
+    indicator_metadata: [],
+    named_reference_evidence: [],
     readings: history ? [{ groupe: history.groupe, story_key: history.story_key,
       div_loss_t: history.div_loss_t, div_loss_b: history.div_loss_b, status: 'measured', unit: 'types de services',
       provenance: { source_id: 'mobilite_snapshot', source_name: history.vintage_source,
@@ -114,7 +121,9 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
       exemplar: row.exemplar_typequ ? { typequ: row.exemplar_typequ, label: row.exemplar_libelle,
         access: { car: row.exemplar_c, bike: row.exemplar_b, walk_transit: row.exemplar_t } } : null })),
       sources: buildingSources } : null,
-    default_comparison: { scope: { kind: 'density_class' }, results: defaultResults, profile_comparisons: [] },
+    comparison: { contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite',
+      scope: { kind: 'density_class', territory_type: 'commune', member_count: 38 },
+      results: defaultResults, profile_comparisons: [] },
     essential_service_access: reponseAccesApi(type, code, kind, label),
     building_access: {
       publication_id: 'building-v1', availability: 'complete',
@@ -151,6 +160,31 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
       })) } : null,
     },
   }
+}
+
+/** Sert les POST faits/comparaison Mobilité comme la fiche montée les consomme :
+ * faits complets sur /facts, comparaison sélectionnée répercutée sur /comparison. */
+function stubApiThemeMobilite(model: any, type = 'commune', code = '22001') {
+  const contexts = model.themes.mobilite!.comparisons
+  return vi.fn(async (url: string, options?: RequestInit) => {
+    if (url.endsWith('/facts')) {
+      return { ok: true, json: async () =>
+        reponseThemeMobiliteApi(model, type, code, contexts.densite!.scope.kind, contexts.densite!.scope.label) }
+    }
+    if (url.endsWith('/comparison')) {
+      const selection = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
+      return { ok: true, json: async () => ({
+        contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite',
+        selection,
+        scope: { kind: 'explicit_selection', member_count: selection.length },
+        results: ['admin', 'food', 'health', 'bank', 'school'].flatMap((service) =>
+          ['c', 'b', 't'].map((mode) => ({ indicator_id: `share_${service}_${mode}`,
+            status: 'available', direction: 'high', median: 0.3, rank: 19, rank_size: 38 }))),
+        profile_comparisons: [], building_access: null,
+      }) }
+    }
+    throw new Error(`Requête inattendue : ${url}`)
+  })
 }
 
 function modelFor(territoire: string) {
@@ -782,7 +816,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const varianteE = varianteDeUrl('E')
     expect(varianteE?.clef).toBe('E')
     await (varianteE?.composant as any).__asyncLoader?.()
-    const charger = vi.fn(async () => modeleAvecContextesComparaison())
+    const model = modeleAvecContextesComparaison()
+    vi.stubGlobal('fetch', stubApiThemeMobilite(model))
+    const charger = vi.fn(async () => model)
     const { router, wrapper } = await monter(
       `/territoire/commune/22001?theme=mobilite&variant=E&comparaison=${mode}`,
       charger,
@@ -795,7 +831,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it('expose le contexte sélectionné comme une divulgation synchronisable', async () => {
-    const charger = vi.fn(async () => modeleAvecContextesComparaison())
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const model = modeleAvecContextesComparaison()
+    vi.stubGlobal('fetch', stubApiThemeMobilite(model))
+    const charger = vi.fn(async () => model)
     const { router, wrapper } = await monter(
       '/territoire/commune/22001?theme=mobilite&variant=E&comparaison=densite',
       charger,
@@ -833,8 +872,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       contexts.epci!.scope.label,
     )
     const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
-    // Without a building API response, its two notes must not leak from JSON.
-    expect(comparisonNotes).toHaveLength(5)
+    // La réponse de faits sert les deux figures bâtiments : leurs notes
+    // viennent de l'API (puis effacées par la comparaison epci), pas du JSON
+    // statique ; la note des services porte le contexte sélectionné.
+    expect(comparisonNotes).toHaveLength(3)
     expect(comparisonNotes.every((note) => note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
     wrapper.unmount()
   })
@@ -857,7 +898,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it('permet de changer de contexte au clavier et expose l’aide de la densité', async () => {
-    const charger = vi.fn(async () => modeleAvecContextesComparaison())
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const model = modeleAvecContextesComparaison()
+    vi.stubGlobal('fetch', stubApiThemeMobilite(model))
+    const charger = vi.fn(async () => model)
     const { router, wrapper } = await monter(
       '/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci',
       charger,
