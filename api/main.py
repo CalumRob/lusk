@@ -2354,6 +2354,7 @@ def selected_theme_facts(
             nested = {key: comparison[key] for key in (
                 "contract", "complete_theme", "theme_id", "content_version",
                 "reference_content_version", "selection", "scope", "results",
+                "collection_content_versions",
                 "profile_content_version", "profile_comparisons", "reading_content_version", "reading_cloud")}
             nested["results"] = [_comparison_result_without_focal_value(row) for row in nested["results"]]
             nested["profile_comparisons"] = [_comparison_result_without_focal_value(row)
@@ -2827,6 +2828,36 @@ def theme_comparison_only(
                 _comparison_result_without_focal_value(row)
                 for row in response["profile_comparisons"]]
             if theme_id == "mobilite":
+                if selected is None:
+                    service_snapshot = (repository.read(territory_id, "densite", connection=conn)
+                        if territory_type == "commune" else
+                        repository.read_level(territory_type, territory_id, connection=conn))
+                else:
+                    service_snapshot = repository.read_selected(
+                        territory_type, territory_id, selected, connection=conn)
+                service = compare(service_snapshot).model_dump(mode="json")
+                # The comparison-only contract carries cohort measurements, never the
+                # focal observations included by the shared service comparison model.
+                service = _comparison_result_without_focal_value(service)
+                service.pop("value", None)
+                if isinstance(service.get("modes"), dict):
+                    service["modes"] = {
+                        mode: {key: value for key, value in facts.items() if key != "value"}
+                        for mode, facts in service["modes"].items()
+                    }
+                cohort_sources = {}
+                for row in service_snapshot.get("rows", []):
+                    key = (row["service"], row["mode"])
+                    source = {field: row.get(field) for field in (
+                        "source_id", "source_name", "source_version", "reference_date",
+                        "source_publication_date")}
+                    bucket = cohort_sources.setdefault(key, [])
+                    if source not in bucket:
+                        bucket.append(source)
+                for item in service.get("services", []):
+                    for mode, facts in item.get("modes", {}).items():
+                        facts["comparison_sources"] = cohort_sources.get((item["id"], mode), [])
+                response["essential_service_access"] = service
                 if selected is None:
                     try:
                         building = repository.read_building_initial(
