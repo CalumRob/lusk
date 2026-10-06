@@ -97,6 +97,37 @@ class WebPFixtureAdapter(FixtureAdapter):
 
 
 class ContractTests(unittest.TestCase):
+    def test_department_name_change_invalidates_only_department_inspection_inputs(self):
+        from runner import PROFILES, _profile_input_sha256
+        original = []
+        corrected = []
+        for kind, code, name in (("departement", "22", "22"),
+                                 ("departement", "29", "29"),
+                                 ("departement", "35", "35"),
+                                 ("departement", "56", "56"),
+                                 ("commune", "35238", "Rennes"),
+                                 ("epci", "243500741", "Redon"),
+                                 ("region", "53", "Bretagne")):
+            for mode in ("car", "walk", "bike"):
+                base = {"territory": {"kind": kind, "code": code, "name": name},
+                    "mode": mode, "geometry": f"geometry-{kind}-{code}",
+                    "analytical_geometry": f"analysis-{kind}-{code}",
+                    "extent": [0, 0, 1, 1], "region_geometry": "region"}
+                updated = {**base, "territory": {**base["territory"],
+                    "name": f"Department {code}" if kind == "departement" else name}}
+                original.append((base, updated))
+        changed = {"inspection": set(), "inline": set()}
+        for before, after in original:
+            key = (before["territory"]["kind"], before["territory"]["code"], before["mode"])
+            for profile_name in ("inspection", "inline"):
+                profile = PROFILES[profile_name]
+                if _profile_input_sha256(before, profile, {}) != _profile_input_sha256(after, profile, {}):
+                    changed[profile_name].add(key)
+        self.assertEqual(changed["inspection"], {
+            ("departement", code, mode) for code in ("22", "29", "35", "56")
+            for mode in ("car", "walk", "bike")})
+        self.assertEqual(changed["inline"], set())
+
     def test_webp_canonical_output_is_promoted_qaed_and_legacy_png_is_not_reused(self):
         from webp_encoding import validate_webp
         recipe = Recipe("fixture", 1, Foundation("shared-v1"), "fixture")
