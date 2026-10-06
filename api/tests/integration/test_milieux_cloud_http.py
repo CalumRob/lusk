@@ -367,8 +367,13 @@ DBI::dbDisconnect(con)
                 assert restored.status_code==200,(column,restored.text)
             pub.execute("DELETE FROM milieux_typed_reading WHERE territory_id='35238' AND territory_type='commune'")
             empty_without_focal=client.post(route,json={"theme_id":"milieux","selection":[]})
-            assert empty_without_focal.status_code==200,empty_without_focal.text
-            assert empty_without_focal.json()["comparison"]["reading_cloud"]["reason"]=="no_selected_members"
+            assert empty_without_focal.status_code==404,empty_without_focal.text
+            empty_comparison_without_focal=client.post(
+                "/api/territories/commune/35238/themes/milieux/comparison",
+                json={"theme_id":"milieux","selection":[]})
+            assert empty_comparison_without_focal.status_code==200,empty_comparison_without_focal.text
+            assert empty_comparison_without_focal.json()["reading_cloud"]["reason"]=="no_selected_members"
+            assert "readings" not in empty_comparison_without_focal.json()
     finally:
         app.dependency_overrides.pop(get_repository,None)
         if prior is not None:

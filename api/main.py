@@ -2614,7 +2614,7 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
             FROM milieux_typed_reading r
             WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
             (territory_id,territory_type)).fetchall()
-        if not milieux_rows and selection != []:
+        if not milieux_rows:
             raise HTTPException(404,"No selected Milieux reading for this territory")
         source_rows=conn.execute("""SELECT b.groupe,b.field_key,b.source_id,b.source_name,b.vintage_id,b.source_version,
             b.reference_date,b.publication_date,b.observation_period,b.dataset_id,b.dataset_content_version,
