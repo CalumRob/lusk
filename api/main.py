@@ -2355,7 +2355,10 @@ def selected_theme_facts(
                 "contract", "complete_theme", "theme_id", "content_version",
                 "reference_content_version", "selection", "scope", "results",
                 "collection_content_versions",
-                "profile_content_version", "profile_comparisons", "reading_content_version", "reading_cloud")}
+                "collection_content_versions", "profile_content_version", "profile_comparisons",
+                "reading_content_version", "reading_cloud", "owned_series_content_versions",
+                "bpe_content_version", "bpe_reference_content_version",
+                "service_publication_id", "building_publication_id")}
             nested["results"] = [_comparison_result_without_focal_value(row) for row in nested["results"]]
             nested["profile_comparisons"] = [_comparison_result_without_focal_value(row)
                                                for row in nested["profile_comparisons"]]
@@ -2820,7 +2823,10 @@ def theme_comparison_only(
             response = {key: result[key] for key in (
                 "contract", "complete_theme", "theme_id", "content_version",
                 "reference_content_version", "selection", "scope", "results",
-                "profile_content_version", "profile_comparisons", "reading_content_version", "reading_cloud",
+                  "collection_content_versions", "profile_content_version", "profile_comparisons",
+                  "reading_content_version", "reading_cloud", "owned_series_content_versions",
+                  "bpe_content_version", "bpe_reference_content_version",
+                  "service_publication_id", "building_publication_id",
             )}
             response["results"] = [_comparison_result_without_focal_value(row)
                                    for row in response["results"]]
@@ -2838,15 +2844,16 @@ def theme_comparison_only(
                 service = compare(service_snapshot).model_dump(mode="json")
                 # The comparison-only contract carries cohort measurements, never the
                 # focal observations included by the shared service comparison model.
+                for service_item in service.get("services", []):
+                    for facts in service_item.get("modes", {}).values():
+                        facts.pop("value", None)
                 service = _comparison_result_without_focal_value(service)
-                service.pop("value", None)
-                if isinstance(service.get("modes"), dict):
-                    service["modes"] = {
-                        mode: {key: value for key, value in facts.items() if key != "value"}
-                        for mode, facts in service["modes"].items()
-                    }
+                _cohort_type, peer_member_ids, _scope = _comparison_cohort(
+                    conn, territory_type, territory_id, selected)
                 cohort_sources = {}
                 for row in service_snapshot.get("rows", []):
+                    if row.get("territory_id") not in peer_member_ids:
+                        continue
                     key = (row["service"], row["mode"])
                     source = {field: row.get(field) for field in (
                         "source_id", "source_name", "source_version", "reference_date",

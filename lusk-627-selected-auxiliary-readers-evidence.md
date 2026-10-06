@@ -47,3 +47,19 @@ partial-peer gap. No route/refactor or deployment behavior was added.
 All temporary schemas are uniquely named and only the owned schema is dropped
 under `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`; the disposable-database identity
 guard verified both configured roles before SQL tests ran.
+
+## Follow-up review corrections
+
+- The `/themes/{theme}/comparison` projection now forwards
+  `collection_content_versions` (as does the nested selected-facts projection).
+- Mobility service projection removes each `services[*].modes[*].value` at its
+  actual nested location. Service source attribution is restricted to the
+  resolved cohort member IDs, excluding focal-only rows when the focal is not
+  selected.
+- Re-ran the approved SQL-backed `test_selected_building_readers.py`: 1 passed,
+  zero skipped; this covers the reader only, **not** the FastAPI comparison
+  route. An end-to-end PostgreSQL?TestClient route regression remains
+  unimplemented; route leak/median/token behavior is therefore not claimed as
+  verified. `_theme_comparison_snapshot` currently exposes no bounded
+  publication tokens for owned series, BPE, service, or building, so those
+  tokens were not fabricated or added to the response projection.
