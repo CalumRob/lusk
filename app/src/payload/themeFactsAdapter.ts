@@ -428,6 +428,29 @@ export function themeFactsRowsFromApi(
   const indicateurs = rows(response.indicators, 'indicators')
     .map((fact) => indicateurDeSql(theme, target, fact, metadata))
   if (theme === 'programmes') indicateurs.push(...programmesRows(response, target))
+  if (theme === 'habitat') {
+    for (const series of rows(response.owned_series ?? [], 'owned_series')) {
+      if (series.indicator_id !== 'prix_m2') continue
+      if (!texteNonVide(series.unit)) throw new Error('Unité de série Habitat absente')
+      for (const point of rows(series.points, 'series.points')) {
+        if (!texteNonVide(point.axis) || !(point.status === 'measured' ? finite(point.value) : point.value === null)) {
+          throw new Error('Point annuel Habitat invalide')
+        }
+        const provenance = rows(point.provenance, 'series provenance')
+        const converted = apiSources(provenance.map((source) => ({ source_id: source.source_id,
+          name: source.source_name, version: source.version, reference_date: source.reference_date,
+          publication_date: source.publication_date })), 'prix_m2')
+        indicateurs.push({ territoire: target.territoire, type: target.type, theme, key: series.indicator_id,
+          detail: point.axis, sex: null, dimension: null, value: point.status === 'measured' ? point.value as number : null,
+          unit: series.unit as string, rider: point.status === 'measured' ? null : text(point.missing_reason) ? point.missing_reason as string : point.status as string,
+          observation_status: point.status === 'measured' ? 'measured' : 'missing', observation_period: text(point.observation_period) ? point.observation_period : null,
+          vintage_source: converted[0]?.source ?? '', vintage_version: converted[0]?.version ?? '',
+          vintage_date_reference: converted[0]?.referenceDate ?? null, vintage_date_publication: converted[0]?.publicationDate ?? null,
+          rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
+          fact_sources: converted.map((source) => ({ ...source, sourceId: source.sourceId ?? '' })) })
+      }
+    }
+  }
   let histoires: Histoire[] = []
   if (theme === 'habitat') {
     histoires = rows(response.readings, 'readings').map((row) => histoireHabitatDeSql(target, row))

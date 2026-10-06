@@ -144,6 +144,25 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       row.vintage_version === 'api-v1')).toBe(true)
   })
 
+  it('projette les prix DVF publiés en détails annuels et conserve le scalaire groupé', () => {
+    // Capture live : habitat-facts.json, commune de Rennes (35238). La réponse
+    // live observée ne portait que le scalaire; la série jointe est le contrat servi.
+    const rows = themeFactsRowsFromApi('habitat', faitsHabitat({
+      indicators: [{ indicator_id: 'prix_m2', label: 'Prix au m²', unit: '€/m²', value: 3819.44,
+        status: 'measured', dimensions: {}, sources: sources() }],
+      owned_series: [{ indicator_id: 'prix_m2', unit: '€/m²', points: [
+        { axis: '2024', value: 3700, status: 'measured', provenance: [{ source_id: 's', source_name: 'DVF', version: '2025', reference_date: null, publication_date: null }] },
+        { axis: '2025', value: 3819.44, status: 'measured', provenance: [{ source_id: 's', source_name: 'DVF', version: '2025', reference_date: null, publication_date: null }] },
+      ] }],
+    }), cible)
+    expect(rows.indicateurs.map((row) => [row.key, row.detail, row.value, row.unit])).toEqual([
+      ['prix_m2', null, 3819.44, '€/m²'], ['prix_m2', '2024', 3700, '€/m²'], ['prix_m2', '2025', 3819.44, '€/m²'],
+    ])
+    expect(themeFactsRowsFromApi('habitat', faitsHabitat({ indicators: [{ indicator_id: 'prix_m2', label: 'Prix',
+      unit: '€/m²', value: 3819.44, status: 'measured', dimensions: {}, sources: sources() }] }), cible)
+      .indicateurs).toHaveLength(1)
+  })
+
   it('refuse une coordonnée de détail non déclarée par les métadonnées du contrat', () => {
     expect(() => themeFactsRowsFromApi('habitat', faitsHabitat({
       indicator_metadata: [{ indicator_id: 'distribution_dpe', axes: [{ name: 'detail', key: 'A' }] }],

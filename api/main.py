@@ -2785,8 +2785,9 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
          "readings":readings,"reading_content_version":reading_version,"reading_descriptor_version":reading_descriptor_version,
          "reading_availability":reading_availability,
          "bpe_profile_evidence":bpe_profile,
-        "collections":collections,
-        "indicators":indicators,
+         "collections":collections,
+         "owned_series":owned_series,
+         "indicators":indicators,
          "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
                                "profile_comparisons":comparison["profile_comparisons"]}}
     if include_selected_comparison:
