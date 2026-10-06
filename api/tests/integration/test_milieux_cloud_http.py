@@ -182,7 +182,12 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
                 periode_pop,periode_artif,delta_population,taux_variation_population,artif_m2_par_habitant,
                 artif_m3_par_habitant,trajectoire_artif_par_habitant,classification,status,source_id,vintage_id)
                 VALUES('35238','commune','land','fixture','fixture','2017–2023','2020–2023',10,1.0,8,9,1.1,'up','measured','rp','v2023')""")
-            pub.execute("DELETE FROM scalar_descriptor WHERE indicator_id='fixture_scalar'")
+            pub.cursor().executemany("""INSERT INTO milieux_reading_source(territory_id,territory_type,groupe,field_key,source_id,vintage_id,
+                source_name,source_version,reference_date,publication_date,observation_period,dataset_id,dataset_content_version,
+                state_role,axis_value,provenance_revision_id,population_revision_id)
+                VALUES(%s,'commune','land',%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)""",
+                [binding for binding in bindings if binding[0] == '35238'])
+            pub.execute("DELETE FROM scalar_observation WHERE indicator_id='fixture_scalar'")
             typed_only=client.get("/api/territories/commune/35238/themes/milieux/facts")
             assert typed_only.status_code==200,typed_only.text
             assert typed_only.json()["indicators"]==[]
