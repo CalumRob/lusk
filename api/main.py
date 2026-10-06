@@ -2437,7 +2437,7 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
     reading_version = None
     reading_descriptor_version = None
     reading_availability = None
-    if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat", "milieux", "mobilite"):
+    if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat", "economie", "milieux", "mobilite"):
         raise HTTPException(404, "No published facts for this theme and territory")
     readings = []
     reading_version = None
