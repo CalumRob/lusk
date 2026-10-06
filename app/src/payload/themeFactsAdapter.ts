@@ -1,4 +1,4 @@
-import type { Histoire, HistoireHabitat, Indicateur, TerritoireType, VintageStamp } from './types'
+import type { Histoire, HistoireDemographie, HistoireHabitat, Indicateur, TerritoireType, VintageStamp } from './types'
 import { RAISONS_SAILLANCE } from './types'
 import type { ThemeKey, ThemeSelectionMember } from './themeAcquisition'
 
@@ -71,6 +71,14 @@ function indicateurDeSql(
     throw new Error('Axe numérique SQL du thème invalide')
   }
   const descriptor = metadata.find((item) => item.indicator_id === fact.indicator_id)
+  if (theme === 'demographie' && fact.indicator_id === 'structure_age') {
+    if (!descriptor || !Array.isArray(descriptor.axes)) throw new Error('Axes SQL Démographie absents : structure_age')
+    for (const key of ['detail', 'sex'] as const) {
+      if (!texteNonVide(dimensions[key]) || !descriptor.axes.some((axis) => isRecord(axis) && axis.name === key && axis.key === dimensions[key])) {
+        throw new Error(`Coordonnée SQL Démographie non déclarée : ${key}`)
+      }
+    }
+  }
   if (descriptor && Array.isArray(descriptor.axes)) {
     for (const key of ['detail', 'sex'] as const) {
       if (dimensions[key] !== undefined && dimensions[key] !== null &&
@@ -142,6 +150,52 @@ function histoireHabitatDeSql(
     vintage_date_publication: provenance[0]?.publicationDate ?? null,
   }
   return lecture
+}
+
+function histoireDemographieDeSql(target: { territoire: string; type: TerritoireType }, reading: Row): Histoire {
+  for (const key of ['groupe', 'story_key', 'salience_reason', 'status', 'classification', 'rate_unit']) {
+    if (!texteNonVide(reading[key])) throw new Error(`Lecture SQL Démographie invalide : ${key}`)
+  }
+  if (reading.story_key !== 'trajectoire-demographique' || reading.salience_reason !== 'defaut' ||
+      reading.rate_unit !== '‰' || !(reading.periode === null || text(reading.periode))) {
+    throw new Error('Lecture SQL Démographie non déclarée')
+  }
+  for (const key of ['solde_naturel', 'solde_migratoire', 'taux_solde_naturel', 'taux_solde_migratoire']) {
+    if (!finite(reading[key])) throw new Error(`Valeur SQL Démographie invalide : ${key}`)
+  }
+  if (!isRecord(reading.provenance)) throw new Error('Provenance SQL Démographie absente')
+  const source = apiSources([{ source_id: reading.provenance.source_id, name: reading.provenance.source_name,
+    version: reading.provenance.source_version, reference_date: reading.provenance.source_reference_date,
+    publication_date: reading.provenance.source_publication_date }], 'lecture démographie')[0]!
+  const row: HistoireDemographie & VintageStamp = {
+    territoire: target.territoire, type: target.type, theme: 'demographie', groupe: reading.groupe as string,
+    story_key: 'trajectoire-demographique', salience_reason: 'defaut', periode: reading.periode as string | null,
+    solde_naturel: reading.solde_naturel as number, solde_migratoire: reading.solde_migratoire as number,
+    taux_solde_naturel: reading.taux_solde_naturel as number, taux_solde_migratoire: reading.taux_solde_migratoire as number,
+    classification: reading.classification as string, vintage_source: source.source, vintage_version: source.version,
+    vintage_date_reference: source.referenceDate, vintage_date_publication: source.publicationDate,
+  }
+  return row
+}
+
+/** Maps only complete peer coordinate records; incomplete clouds remain honestly empty. */
+export function histoiresDemographieNuage(response: unknown): HistoireDemographie[] {
+  if (!isRecord(response) || !isRecord(response.reading_cloud)) return []
+  const cloud = response.reading_cloud
+  if (cloud.status !== 'available' || cloud.story_key !== 'trajectoire-demographique' ||
+      !texteNonVide(cloud.groupe) || !Array.isArray(cloud.points)) return []
+  return cloud.points.flatMap((point): HistoireDemographie[] => {
+    if (!isRecord(point) || !isRecord(point.territory) || !texteNonVide(point.territory.territory_id) ||
+        !['commune', 'epci', 'departement', 'region'].includes(String(point.territory.territory_type)) ||
+        !finite(point.taux_solde_naturel) || !finite(point.taux_solde_migratoire) ||
+        !(point.periode === null || text(point.periode))) return []
+    return [{ territoire: point.territory.territory_id, type: point.territory.territory_type as TerritoireType,
+      theme: 'demographie', groupe: cloud.groupe, story_key: 'trajectoire-demographique', salience_reason: 'defaut',
+      periode: point.periode as string | null, solde_naturel: 0, solde_migratoire: 0,
+      taux_solde_naturel: point.taux_solde_naturel, taux_solde_migratoire: point.taux_solde_migratoire,
+      classification: '', vintage_source: '', vintage_version: '', vintage_date_reference: null,
+      vintage_date_publication: null, nom: point.territory.name, nuageDemographieApi: true } as HistoireDemographie]
+  })
 }
 
 export interface ThemeFactsRows {
@@ -228,6 +282,8 @@ export function themeFactsRowsFromApi(
   let histoires: Histoire[] = []
   if (theme === 'habitat') {
     histoires = rows(response.readings, 'readings').map((row) => histoireHabitatDeSql(target, row))
+  } else if (theme === 'demographie') {
+    histoires = rows(response.readings, 'readings').map((row) => histoireDemographieDeSql(target, row))
   } else if (response.readings.length > 0) {
     // Un thème non migré ne doit jamais franchir cette frontière : perdre une
     // lecture en silence serait un fait caché, pas une migration.

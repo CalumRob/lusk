@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '../views/TerritoireView.vue'
 import { varianteDeUrl } from '../fiche/prototype/variantes'
+import { histoiresDemographieNuage } from '../payload/themeFactsAdapter'
 import {
   histoiresDemographieFixture,
   histoiresHabitatFixture,
@@ -247,6 +248,35 @@ export function reponseThemeProgrammesApi(type = 'commune', code = '22001') {
       points: [{ axis: '2025', observation_period: '2025', value: 45678, status: 'measured', provenance: source }] }],
     comparison: { collection_content_versions: { programme_membership: 'membership-v1' } },
   }
+}
+function reponseThemeDemographieApi(model: any, type = 'commune', code = '22001', rates = [1.25, -0.75]) {
+  const theme = model.themes.demographie
+  const indicators = theme.indicators.filter((row: any) => row.territoire === code)
+  const reading = theme.histories.find((row: any) => row.territoire === code)
+  const source = { source_id: 'demo_api', name: 'Source API démographie', version: '2026', reference_date: null, publication_date: null }
+  const comparison = { contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'demographie',
+    content_version: 'demo-v1', reference_content_version: 'territories-v1', selection: null,
+    scope: { kind: 'density_class', member_count: 1 }, results: [], profile_comparisons: [],
+    reading_content_version: 'demo-v1', reading_cloud: { status: 'available', reason: null,
+      groupe: reading.groupe, story_key: 'trajectoire-demographique', scope: { kind: 'density_class' }, rate_unit: '‰',
+      source, content_version: 'demo-v1', points: [{ territory: { territory_id: '22002', territory_type: 'commune', name: 'Peer Demo' },
+        periode: '2020', taux_solde_naturel: rates[0], taux_solde_migratoire: rates[1] }] } }
+  return { contract: 'theme-facts-v1', complete_theme: false, theme_id: 'demographie',
+    content_version: 'demo-v1', reference_content_version: 'territories-v1', reading_content_version: 'demo-v1',
+    territory: { territory_id: code, territory_type: type }, indicator_metadata: [...new Set(indicators.map((row: any) => row.key))].map((key) => ({
+      indicator_id: key, axes: key === 'structure_age' ? [
+        ...[...new Set(indicators.filter((row: any) => row.key === key).map((row: any) => row.detail))].map((value) => ({ name: 'detail', key: value })),
+        ...[...new Set(indicators.filter((row: any) => row.key === key).map((row: any) => row.sex))].map((value) => ({ name: 'sex', key: value })),
+      ] : [],
+    })), named_reference_evidence: [],
+    indicators: indicators.map((row: any) => ({ indicator_id: row.key, label: row.key, unit: row.unit,
+      value: row.key === 'densite' ? 4321 : row.value, status: row.value === null ? 'suppressed' : 'measured',
+      dimensions: row.detail ? { detail: row.detail, ...(row.sex ? { sex: row.sex } : {}) } : {}, sources: [source] })),
+    readings: [{ groupe: reading.groupe, story_key: 'trajectoire-demographique', salience_reason: 'defaut',
+      periode: '2020', solde_naturel: reading.solde_naturel, solde_migratoire: reading.solde_migratoire,
+      taux_solde_naturel: 0.5, taux_solde_migratoire: -0.25, classification: reading.classification,
+      status: 'measured', rate_unit: '‰', provenance: { source_id: 'demo_api', source_name: source.name,
+        source_version: source.version, source_reference_date: null, source_publication_date: null } }], comparison }
 }
 
 /** Sert les POST faits/comparaison Mobilité comme la fiche montée les consomme :
@@ -656,6 +686,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       if (url === '/api/territories/commune/22001/themes/habitat/facts') {
         return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
       }
+      if (url === '/api/territories/commune/22001/themes/demographie/facts') {
+        return { ok: true, json: async () => reponseThemeDemographieApi(model, 'commune', '22001') }
+      }
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
@@ -667,15 +700,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
-    // Un thème non migré garde le chemin incumbent — aucune requête API.
+    // Démographie acquiert désormais ses faits à la sélection explicite.
     await router.replace({ query: { theme: 'demographie' } })
     await flushPromises()
-    expect(fetchApi.mock.calls).toHaveLength(2)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/demographie/facts'))).toHaveLength(1)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Densité de population')
     // Revisite du thème acquis : le cache détient l'entrée, aucune nouvelle requête.
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
-    expect(fetchApi.mock.calls).toHaveLength(2)
+    expect(fetchApi.mock.calls).toHaveLength(3)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
     wrapper.unmount()
   })
@@ -905,8 +938,36 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => response })))
     const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    expect(wrapper.text()).not.toContain('0 €')
+    expect(wrapper.text()).not.toContain('0 €')
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('Subventions attribuées')
+    wrapper.unmount()
+  })
+
+  it('acquiert Démographie à la demande et alimente le soldes cloud depuis les faits', async () => {
+    const published = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
+    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    const api = reponseThemeDemographieApi(model)
+    expect(histoiresDemographieNuage(api.comparison)).toHaveLength(1)
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => {
+      if (url.endsWith('/facts')) return api
+      const selection = JSON.parse(String(options?.body)).selection
+      return { ...api.comparison, selection, reading_cloud: { ...api.comparison.reading_cloud,
+        points: [{ ...api.comparison.reading_cloud.points[0], taux_solde_naturel: 8.5, taux_solde_migratoire: -9.5 }] } }
+    } }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
+    await flushPromises()
+    expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/22001/themes/demographie/facts', expect.objectContaining({ method: 'POST', body: JSON.stringify({ theme_id: 'demographie' }) }))
+    const chart = wrapper.findComponent({ name: 'GraphiqueSoldes' })
+    expect(chart.exists()).toBe(true)
+    expect(chart.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22002', tauxNaturel: 1.25, tauxMigratoire: -0.75 }))
+    expect(chart.props('tauxNaturel')).toBe(0.5)
+    await router.replace({ query: { theme: 'demographie', comparaison: 'epci' } })
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(1)
+    expect(chart.props('tauxNaturel')).toBe(0.5)
+    expect(chart.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22002', tauxNaturel: 8.5, tauxMigratoire: -9.5 }))
     wrapper.unmount()
   })
 
