@@ -1355,7 +1355,7 @@ def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_ty
                     and observed_role == role and observed_period == period
                     and revision in (registered_revisions or [])
                     and role == ("M2" if field == "artif_m2_par_habitant" else "M3")
-                    and axis == role and published.get(dataset) == (dataset_version,marker[3]))
+                    and published.get(dataset) == (dataset_version,marker[3]))
             if not valid:
                 raise HTTPException(503, "Milieux cloud source binding is stale or incompatible")
             by_peer.setdefault(code,{}).setdefault(field,[]).append((source,vintage,revision,pop_revision,period,axis,dataset,dataset_version,role,registered_revisions))

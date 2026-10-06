@@ -68,26 +68,29 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http():
             VALUES('milieux_state','series-v1','ref-v1',6)""")
         pub.execute("""INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,completeness,
             comparison_point,label,unit,direction,allowed_levels,descriptor_version,theme_id)
-            VALUES('milieux_state','artif_par_habitant','declared_detail',ARRAY['M2','M3'],'dense_complete',NULL,
+            VALUES('milieux_state','artif_par_habitant','declared_detail',ARRAY['2020','2021','2022','2023','2024','2025'],'dense_complete',NULL,
             'État artificialisé','m²/hab','none',ARRAY['commune'],'series-v1','milieux')""")
+        axes={"35238":("2020","2023"),"35001":("2021","2025"),"35002":("2022","2024")}
         for code,m2,m3 in (("35238",8,9),("35001",7,8),("35002",6,8)):
-            for role,value,source,revision in (("M2",m2,"ocs-a","ocs-a-r1"),("M2",m2,"ocs-b","ocs-b-r1"),
-                ("M3",m3,"ocs-a","ocs-a-r1"),("M3",m3,"ocs-b","ocs-b-r1")):
+            m2_axis,m3_axis=axes[code]
+            for role,axis,value,source,revision in (("M2",m2_axis,m2,"ocs-a","ocs-a-r1"),("M2",m2_axis,m2,"ocs-b","ocs-b-r1"),
+                ("M3",m3_axis,m3,"ocs-a","ocs-a-r1"),("M3",m3_axis,m3,"ocs-b","ocs-b-r1")):
                 # One declared state axis may have multiple independent source revisions.
                 with pub.transaction():
-                    if not pub.execute("SELECT 1 FROM series_dataset_observation WHERE territory_id=%s AND axis_value=%s",(code,role)).fetchone():
+                    if not pub.execute("SELECT 1 FROM series_dataset_observation WHERE territory_id=%s AND axis_value=%s",(code,axis)).fetchone():
                         pub.execute("INSERT INTO series_dataset_observation VALUES('milieux_state','artif_par_habitant',%s,'commune',%s,%s,'2020–2023',%s,NULL,'measured')",
-                            (code,role,role,value))
+                            (code,axis,role,value))
                     pub.execute("INSERT INTO series_observation_provenance VALUES('milieux_state','artif_par_habitant',%s,%s,%s) ON CONFLICT DO NOTHING",
-                        (code,role,revision))
+                        (code,axis,revision))
         pub.execute("COMMIT")
         bindings=[]
         for code in ("35238","35001","35002"):
             bindings.append((code,"population","rp","v2023","RP fixture","2023",None,None,"2017–2023",None,None,None,None,None,"pop-rev"))
             for field,role in (("artif_m2_par_habitant","M2"),("artif_m3_par_habitant","M3")):
                 for source,vintage,revision,name in (("ocs-a","v1","ocs-a-r1","OCS fixture A"),("ocs-b","v2","ocs-b-r1","OCS fixture B")):
+                    axis=axes[code][0 if role=="M2" else 1]
                     bindings.append((code,field,source,vintage,name,"2025","2025-01-01","2025-02-01","2020–2023",
-                        "milieux_state","series-v1",role,role,revision,None))
+                        "milieux_state","series-v1",role,axis,revision,None))
         pub.cursor().executemany("""INSERT INTO milieux_reading_source(territory_id,territory_type,groupe,field_key,source_id,vintage_id,
             source_name,source_version,reference_date,publication_date,observation_period,dataset_id,dataset_content_version,
             state_role,axis_value,provenance_revision_id,population_revision_id)
@@ -146,7 +149,7 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http():
             assert unavailable.json()["reading_cloud"]["reason"]=="no_plottable_members"
 
             # Same-version association corruption must fail closed; restoring each field recovers.
-            cases=[("axis_value","wrong-axis","M2","source_id='ocs-a'"),
+            cases=[("axis_value","wrong-axis",axes["35001"][0],"source_id='ocs-a'"),
                 ("source_id","wrong-source","ocs-a","provenance_revision_id='ocs-a-r1'"),
                 ("vintage_id","wrong-vintage","v1","source_id='ocs-a'"),
                 ("provenance_revision_id","ocs-b-r1","ocs-a-r1","source_id='ocs-a'"),
