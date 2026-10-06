@@ -1959,7 +1959,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         selection: demandee, scope: { kind: 'explicit_selection', member_count: demandee.length },
         results: [], profile_comparisons: [], reading_content_version: 'mobilite-v1', reading_cloud: null }) }
     })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubEnv('VITE_SCALAR_COHORT_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
     await flushPromises()
     // Le défaut déclaré est servi par la comparaison imbriquée : aucun POST de comparaison.
@@ -1968,6 +1968,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } }); await flushPromises()
     const comparaisons = fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))
     expect(comparaisons).toHaveLength(1)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
     expect(JSON.parse(String(comparaisons[0]![1]!.body))).toEqual({ theme_id: 'mobilite', selection: epciAttendu })
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
     // Revisite de la comparaison acquise : aucune nouvelle requête, faits inchangés.
@@ -1975,6 +1976,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } }); await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(2)
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
     wrapper.unmount()
   })
 

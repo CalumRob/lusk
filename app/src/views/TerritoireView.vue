@@ -229,7 +229,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     ficheScalairesStatus.value = 'loading'
     // Le thème migré n'emprunte jamais le fan-out par indicateur (#627) : sa
     // voie unique est la requête de faits du thème.
-    if (!scalarCohortEnabled(import.meta.env) || !model || !theme || themeMigre(theme)) { ficheScalairesStatus.value = 'ready'; return }
+    if (!scalarCohortEnabled(import.meta.env) || !model || !theme || themeMigre(theme) ||
+        (theme === 'mobilite' && prototypeCahierMobilite.value)) { ficheScalairesStatus.value = 'ready'; return }
     const data = model.themes[theme]
     if (!data) { ficheScalairesStatus.value = 'ready'; return }
     let cancelled = false
