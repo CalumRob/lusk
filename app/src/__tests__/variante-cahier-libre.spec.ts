@@ -25,7 +25,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '@/payload/fixtures'
-import type { Indicateur, Payload, RampeAccesBatimentsRow } from '@/payload/types'
+import type { Indicateur, Payload, RampeAccesBatimentsRow, ThemeMetadata } from '@/payload/types'
 import { routes } from '@/router'
 
 const vintage = {
@@ -315,6 +315,20 @@ describe('figures des unités Mobilité ajoutées', () => {
     expect(withoutReference.find('.transit-legend-reference').exists()).toBe(false)
     expect(withoutReference.find('.transit-legend-territory').exists()).toBe(true)
     expect(wrapper.find('.transit-legend-reference').exists()).toBe(true)
+    expect(wrapper.find('.transit-legend-reference').attributes('aria-label')).toBe(`Série de référence : ${metadata.trajectory.reference?.label}`)
+    expect(wrapper.find('.transit-legend-territory').attributes('aria-label')).toBe('Série du territoire')
+    expect(wrapper.find('svg[role="img"]').attributes('aria-label')).toContain('Territoire')
+
+    const riderFigure = mount(CahierOffreTransportsFigure, {
+      props: {
+        offer: { ...contentFact('offre_tc', null, 0, 'Part des bâtiments près d’un arrêt'), fact: { ...contentFact('offre_tc', null, 0, 'Part des bâtiments près d’un arrêt').fact, value: null, reason: 'Aucune station desservie' } },
+        trajectory: [{ ...contentFact('raccordement_courbe', 't0090', 0, '1 h 30'), fact: { ...contentFact('raccordement_courbe', 't0090', 0, '1 h 30').fact, value: null, reason: 'Courbe non calculable' } }],
+        reference: [], metadata: metadata.trajectory,
+      },
+    })
+    expect(riderFigure.text()).toContain('Indisponible')
+    expect(riderFigure.text()).toContain('Aucune station desservie')
+    expect(riderFigure.text()).toContain('Courbe non calculable')
   })
 
   it('plots the payload-labeled household composition as separate bars with exact share values', () => {
@@ -329,6 +343,39 @@ describe('figures des unités Mobilité ajoutées', () => {
     expect(wrapper.findAll('.motorisation-part').map(row => row.attributes('data-value'))).toEqual(['0.25', '0.5', '0.25'])
     expect(wrapper.text()).toContain('Ménages avec 2 voitures ou plus')
     expect(bars.map(bar => bar.attributes('style'))).toEqual(expect.arrayContaining([expect.stringContaining('25%'), expect.stringContaining('50%')]))
+  })
+
+  it('keeps only payload-present motorisation facts and carries a null fact rider into the figure', () => {
+    const metadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8')) as ThemeMetadata
+    const original = factsForTarget()
+    const sansVoiture = original.mobility.indicators.find(fact => fact.key === 'voitures_menage' && fact.detail === 'sans_voiture')
+    expect(sansVoiture).toBeDefined()
+    const withoutPart = {
+      ...original,
+      mobility: { ...original.mobility, indicators: original.mobility.indicators.filter(fact => fact !== sansVoiture && fact.key !== 'bornes_recharge' && fact.key !== 'bornes_ev_par_station_service') },
+    }
+    const absentContent = resolveMobiliteThemeContent(withoutPart, metadata)
+    const absentEvidence = absentContent.units[2]!.sections[0]!.evidence
+    expect(absentEvidence?.kind).toBe('motorisation')
+    if (absentEvidence?.kind !== 'motorisation') throw new Error('Motorisation evidence should include remaining published facts')
+    expect(absentEvidence.composition.some(part => part.fact.detail === 'sans_voiture')).toBe(false)
+    expect(absentEvidence.charging).toHaveLength(0)
+    expect(absentContent.units.map(unit => unit.label)).toEqual(metadata.subgroups.map(subgroup => subgroup.label))
+    expect(absentContent.units[2]!.sections[0]!.label).toBe(metadata.subgroups.find(subgroup => subgroup.key === 'motorisation')?.label)
+    expect(absentContent.units[3]!.sections[0]!.label).toBe(metadata.subgroups.find(subgroup => subgroup.key === 'offre-transports-commun')?.label)
+
+    const baseFact = original.mobility.indicators.find(fact => fact.key === 'bornes_recharge')!
+    const rider = { ...baseFact, key: 'bornes_ev_par_station_service', value: null, reason: 'Aucune station-service sur le territoire' }
+    const withRider = {
+      ...withoutPart,
+      mobility: { ...withoutPart.mobility, indicators: [...withoutPart.mobility.indicators, rider] },
+    }
+    const riderEvidence = resolveMobiliteThemeContent(withRider, metadata).units[2]!.sections[0]!.evidence
+    if (riderEvidence?.kind !== 'motorisation') throw new Error('Motorisation evidence should keep its declared null fact')
+    const wrapper = mount(CahierMotorisationFigure, { props: riderEvidence })
+    expect(wrapper.text()).toContain('Indisponible')
+    expect(wrapper.text()).toContain('Aucune station-service sur le territoire')
+    expect(wrapper.findAll('.motorisation-part')).toHaveLength(metadata.detail_labels.voitures_menage ? Object.keys(metadata.detail_labels.voitures_menage).length - 1 : 2)
   })
 })
 

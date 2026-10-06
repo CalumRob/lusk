@@ -192,7 +192,7 @@ export type ContentEvidence =
   | CyclingOfferEvidence
   | SharingParkingEvidence
   | { kind: 'motorisation'; composition: readonly ContentFact[]; charging: readonly ContentFact[] }
-  | { kind: 'public-transport'; offer: ContentFact; trajectory: readonly ContentFact[]; reference: readonly ContentFact[]; trajectoryMetadata: TrajectoryMetadata | null }
+  | { kind: 'public-transport'; offer: ContentFact | null; trajectory: readonly ContentFact[]; reference: readonly ContentFact[]; trajectoryMetadata: TrajectoryMetadata | null }
 
 interface ContentSectionBase<Key extends string, Evidence> {
   key: Key
@@ -239,8 +239,8 @@ export interface StationnementSection
   label: 'Stationnement'
 }
 
-export interface MotorisationSection extends ContentSectionBase<'motorisation', Extract<ContentEvidence, {kind:'motorisation'}>> { label: 'Motorisation' }
-export interface OffreTransportsSection extends ContentSectionBase<'offre-transports-commun', Extract<ContentEvidence, {kind:'public-transport'}>> { label: 'Offre de transports en commun' }
+export interface MotorisationSection extends ContentSectionBase<'motorisation', Extract<ContentEvidence, {kind:'motorisation'}>> { label: string }
+export interface OffreTransportsSection extends ContentSectionBase<'offre-transports-commun', Extract<ContentEvidence, {kind:'public-transport'}>> { label: string }
 
 export type MobiliteContentSection =
   | ResumeSection
@@ -257,7 +257,7 @@ export type ContentSection = MobiliteContentSection
 
 export interface AccesAuxServicesContentUnit {
   key: 'acces-aux-services'
-  label: 'Accès aux services'
+  label: string
   introduction: readonly TextBlock[]
   rundown: readonly TextBlock[]
   sections: readonly [
@@ -270,14 +270,14 @@ export interface AccesAuxServicesContentUnit {
 
 export interface PartageEspacePublicContentUnit {
   key: 'partage-de-lespace-public'
-  label: 'Partage de l’espace public'
+  label: string
   introduction: readonly TextBlock[]
   rundown: readonly TextBlock[]
   sections: readonly [ReseauxSection, OffreCyclableSection, StationnementSection]
 }
 
-export interface MotorisationContentUnit { key: 'motorisation'; label: 'Motorisation'; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [MotorisationSection] }
-export interface OffreTransportsContentUnit { key: 'offre-transports-commun'; label: 'Offre de transports en commun'; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [OffreTransportsSection] }
+export interface MotorisationContentUnit { key: 'motorisation'; label: string; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [MotorisationSection] }
+export interface OffreTransportsContentUnit { key: 'offre-transports-commun'; label: string; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [OffreTransportsSection] }
 
 export type MobiliteContentUnit = AccesAuxServicesContentUnit | PartageEspacePublicContentUnit | MotorisationContentUnit | OffreTransportsContentUnit
 export type ContentUnit = MobiliteContentUnit
@@ -1702,55 +1702,66 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     sharingCyclingOfferSection(facts),
     sharingParkingSection(facts),
   ] as const
-  const factFor = (key: string, unit: string) => contentFact(
-    indicatorFor(facts, key) ?? absentFact(key, unit),
-    indicatorFor(facts, key)?.label ?? key,
-  )
+  const factFor = (key: string): ContentFact | null => {
+    const fact = indicatorFor(facts, key)
+    return fact ? contentFact(fact, fact.label ?? key) : null
+  }
+  const subgroupLabel = (key: string, fallback: string): string =>
+    metadata?.subgroups.find((subgroup) => subgroup.key === key)?.label ?? fallback
   const compositionDetails = metadata?.detail_labels.voitures_menage ? Object.keys(metadata.detail_labels.voitures_menage) : ['sans_voiture', 'une_voiture', 'deux_plus']
-  const composition = compositionDetails.map((detail) => ({
-    ...contentDetailFact(facts, 'voitures_menage', detail, '%'),
-    label: metadata?.detail_labels.voitures_menage?.[detail] ?? detailLabelFor('voitures_menage', detail),
-  }))
-  const motorFacts = [...composition, factFor('bornes_recharge', ''), factFor('bornes_ev_par_station_service', '')]
-  const motorEvidence = motorFacts.some(({fact}) => hasValue(fact)) ? {
-    kind: 'motorisation' as const, composition, charging: motorFacts.slice(composition.length),
+  const composition = compositionDetails.flatMap((detail) => {
+    const fact = facts.mobility.indicators.find((candidate) => candidate.key === 'voitures_menage' && candidate.detail === detail)
+    return fact ? [{ ...contentFact(fact, metadata?.detail_labels.voitures_menage?.[detail] ?? detailLabelFor('voitures_menage', detail)) }] : []
+  })
+  const charging = ['bornes_recharge', 'bornes_ev_par_station_service'].flatMap((key) => {
+    const fact = factFor(key)
+    return fact ? [fact] : []
+  })
+  const motorFacts = [...composition, ...charging]
+  const motorEvidence = motorFacts.length ? {
+    kind: 'motorisation' as const, composition, charging,
   } : null
   const motorSection: MotorisationSection = {
-    key: 'motorisation', label: 'Motorisation', indicators: indicatorsFor(facts, ['voitures_menage', 'bornes_recharge', 'bornes_ev_par_station_service']),
+    key: 'motorisation', label: subgroupLabel('motorisation', 'Motorisation'), indicators: indicatorsFor(facts, ['voitures_menage', 'bornes_recharge', 'bornes_ev_par_station_service']),
     availability: !motorEvidence ? 'absent' : motorFacts.every(({fact}) => complete(fact)) ? 'complete' : 'incomplete',
     evidence: motorEvidence, provenance: sourceIdsFor(motorFacts), lecture: null,
     explorationTargets: targetsFor(motorFacts.map(({fact}) => fact), facts.territory),
   }
   const curve = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
   const reference = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_reference').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
-  const transitFacts = [factFor('offre_tc', ''), ...curve, ...reference]
-  const transitEvidence = transitFacts.some(({fact}) => hasValue(fact)) ? {
-    kind: 'public-transport' as const, offer: transitFacts[0]!, trajectory: curve, reference,
+  const offer = factFor('offre_tc')
+  const transitFacts = [...(offer ? [offer] : []), ...curve, ...reference]
+  const transitEvidence = transitFacts.length ? {
+    kind: 'public-transport' as const, offer, trajectory: curve, reference,
     trajectoryMetadata: metadata?.indicator_pages?.raccordement_courbe?.family === 'trajectory'
       ? metadata.indicator_pages.raccordement_courbe.trajectory : null,
   } : null
   const transitSection: OffreTransportsSection = {
-    key: 'offre-transports-commun', label: 'Offre de transports en commun', indicators: indicatorsFor(facts, ['offre_tc', 'raccordement_courbe', 'raccordement_reference']),
+    key: 'offre-transports-commun', label: subgroupLabel('offre-transports-commun', 'Offre de transports en commun'), indicators: indicatorsFor(facts, ['offre_tc', 'raccordement_courbe', 'raccordement_reference']),
     availability: !transitEvidence ? 'absent' : transitFacts.every(({fact}) => complete(fact)) ? 'complete' : 'incomplete',
     evidence: transitEvidence, provenance: sourceIdsFor(transitFacts), lecture: null,
     explorationTargets: targetsFor(transitFacts.map(({fact}) => fact), facts.territory),
   }
   const accessUnit: AccesAuxServicesContentUnit = {
     key: 'acces-aux-services',
-    label: 'Accès aux services',
+    label: subgroupLabel('acces-aux-services', 'Accès aux services'),
     introduction: introductionFor(facts),
     rundown: mobiliteRundown(facts),
     sections: accessSections,
   }
   const sharingUnit: PartageEspacePublicContentUnit = {
     key: 'partage-de-lespace-public',
-    label: 'Partage de l’espace public',
+    label: subgroupLabel('partage-de-lespace-public', 'Partage de l’espace public'),
     introduction: sharingIntroduction(),
     rundown: sharingRundown(facts),
     sections: sharingSections,
   }
-  const motorUnit: MotorisationContentUnit = { key: 'motorisation', label: 'Motorisation', introduction: [], rundown: [], sections: [motorSection] }
-  const transitUnit: OffreTransportsContentUnit = { key: 'offre-transports-commun', label: 'Offre de transports en commun', introduction: [], rundown: [], sections: [transitSection] }
+  const motorLabel = subgroupLabel('motorisation', 'Motorisation')
+  const transitLabel = subgroupLabel('offre-transports-commun', 'Offre de transports en commun')
+  motorSection.label = motorLabel
+  transitSection.label = transitLabel
+  const motorUnit: MotorisationContentUnit = { key: 'motorisation', label: motorLabel, introduction: [], rundown: [], sections: [motorSection] }
+  const transitUnit: OffreTransportsContentUnit = { key: 'offre-transports-commun', label: transitLabel, introduction: [], rundown: [], sections: [transitSection] }
 
   return {
     theme: 'mobilite',

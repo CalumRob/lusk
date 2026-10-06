@@ -8,7 +8,7 @@ import CahierFigureAxes from './CahierFigureAxes.vue'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 
-const props = defineProps<{ offer: ContentFact; trajectory: readonly ContentFact[]; reference: readonly ContentFact[]; metadata: TrajectoryMetadata | null }>()
+const props = defineProps<{ offer: ContentFact | null; trajectory: readonly ContentFact[]; reference: readonly ContentFact[]; metadata: TrajectoryMetadata | null }>()
 const geometry = CAHIER_FIGURE_GEOMETRY
 const details = computed(() => props.metadata?.ticks?.map(tick => tick.detail)
   ?? [...new Set([...props.trajectory, ...props.reference].map(item => item.fact.detail).filter((item): item is string => item !== null))])
@@ -40,10 +40,23 @@ const plotPoints = computed(() => [
   ...props.trajectory.map(item => ({ item, series: 'territory' })),
   ...props.reference.map(item => ({ item, series: 'reference' })),
 ])
+const hasReferenceMarks = computed(() => props.reference.some(item => item.fact.value !== null && item.fact.detail !== null))
 const markerPoint = computed(() => props.metadata?.marker
   ? props.trajectory.find(item => item.fact.detail === props.metadata?.marker?.detail && item.fact.value !== null)
   : undefined)
 const marker = computed(() => props.metadata?.marker)
+const seriesDescription = computed(() => {
+  const declaredEndpoints = props.metadata?.endpoints ?? []
+  const points = declaredEndpoints.flatMap((detail) => {
+    const item = props.trajectory.find(candidate => candidate.fact.detail === detail)
+    if (!item || item.fact.value === null) return []
+    const tickLabel = props.metadata?.ticks?.find(tick => tick.detail === detail)?.label ?? detail
+    const value = new Intl.NumberFormat('fr-FR', { style: 'percent', maximumFractionDigits: 1 }).format(item.fact.value)
+    return [`${tickLabel} : ${value}`]
+  })
+  return points.length ? `Territoire — ${props.metadata?.axisLabels?.x ?? 'temps'} / ${props.metadata?.axisLabels?.y ?? 'valeur'} : ${points.join(' ; ')}.` : 'Aucune valeur de trajectoire disponible.'
+})
+const factsWithRiders = computed(() => [...props.trajectory, ...props.reference].filter((fact) => fact.fact.reason !== null))
 function yPosition(value: number): number {
   return geometry.margin.top + (1 - Math.max(0, Math.min(1, value))) * (geometry.height - geometry.margin.top - geometry.margin.bottom)
 }
@@ -51,10 +64,13 @@ function yPosition(value: number): number {
 
 <template>
   <div class="cahier-figure-frame transit-trajectory">
-    <CahierFigureScalar :value="offer.fact.value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(offer.fact.value)" :label="offer.label" :aria-label="`${offer.label} : ${offer.fact.value ?? 'indisponible'} ${offer.fact.unit}`" />
+    <div v-if="offer" class="transit-offer">
+      <CahierFigureScalar :value="offer.fact.value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(offer.fact.value)" :label="offer.label" :aria-label="`${offer.label} : ${offer.fact.value ?? 'indisponible'} ${offer.fact.unit}`" />
+      <p v-if="offer.fact.reason" class="transit-rider">{{ offer.fact.reason }}</p>
+    </div>
     <figure v-if="trajectory.length && metadata">
       <div class="transit-plot cahier-figure-plot" :style="{ aspectRatio: `${geometry.width} / ${geometry.height}` }">
-        <svg :viewBox="`0 0 ${geometry.width} ${geometry.height}`" role="img" :aria-label="`${metadata.axisLabels?.x ?? ''} — ${metadata.axisLabels?.y ?? ''}.${reference.length && metadata.reference ? ` ${metadata.reference.label}.` : ''}${markerPoint && metadata.marker ? ` Repère : ${metadata.marker.label}.` : ''}`">
+        <svg :viewBox="`0 0 ${geometry.width} ${geometry.height}`" role="img" :aria-label="`${metadata.axisLabels?.x ?? ''} — ${metadata.axisLabels?.y ?? ''}. ${seriesDescription}${hasReferenceMarks && metadata.reference ? ` Série de référence : ${metadata.reference.label}.` : ''}${markerPoint && metadata.marker ? ` Repère : ${metadata.marker.label}.` : ''}`">
           <CahierFigureAxes :geometry="geometry" :x-ticks="ticks" :y-ticks="yTicks" />
           <path v-if="seriesPath(reference)" class="transit-series transit-series--reference" data-series="reference" :data-label="metadata.reference?.label" :d="seriesPath(reference)" />
           <path v-if="seriesPath(trajectory)" class="transit-series transit-series--territory" data-series="territory" :d="seriesPath(trajectory)" />
@@ -68,15 +84,21 @@ function yPosition(value: number): number {
         <span class="cahier-figure-axis-title cahier-figure-axis-title--x">{{ metadata.axisLabels?.x }}</span>
         <span class="cahier-figure-axis-title cahier-figure-axis-title--y">{{ metadata.axisLabels?.y }}</span>
       </div>
-      <figcaption class="transit-legend"><span v-if="reference.length && metadata.reference" class="transit-legend-reference"><span class="transit-legend-mark" />{{ metadata.reference.label }}</span><span class="transit-legend-territory" />Territoire</figcaption>
+      <figcaption class="transit-legend"><span v-if="hasReferenceMarks && metadata.reference" class="transit-legend-reference" role="img" :aria-label="`Série de référence : ${metadata.reference.label}`"><span class="transit-legend-mark" aria-hidden="true" />{{ metadata.reference.label }}</span><span class="transit-legend-territory" role="img" aria-label="Série du territoire"><span aria-hidden="true" />Territoire</span></figcaption>
     </figure>
     <p v-else class="transit-unavailable">Trajectoire et référence indisponibles.</p>
+    <ul v-if="factsWithRiders.length" class="transit-riders">
+      <li v-for="fact in factsWithRiders" :key="`${fact.fact.key}:${fact.fact.detail}`"><strong>{{ fact.label }} :</strong> {{ fact.fact.reason }}</li>
+    </ul>
   </div>
 </template>
 
 <style src="./cahierFigure.css"></style>
 <style scoped>
 .transit-trajectory { display: grid; gap: var(--space-5); }
+.transit-offer { display: grid; gap: var(--space-2); justify-items: start; }
+.transit-rider, .transit-riders { margin: 0; }
+.transit-riders { padding-inline-start: 1.25rem; }
 .transit-plot { position: relative; width: 100%; }
 .transit-plot svg { width: 100%; height: auto; overflow: visible; }
 .transit-series { fill: none; stroke-width: 3; }
@@ -88,7 +110,7 @@ function yPosition(value: number): number {
 .transit-marker-ring { fill: var(--cahier-paper); stroke: var(--cahier-theme); stroke-width: 3; }
 .transit-marker-label { fill: currentColor; font-size: 14px; font-weight: 700; }
 .transit-legend { display: flex; gap: var(--space-2); align-items: center; }
-.transit-legend-reference { display: contents; }
+.transit-legend-reference, .transit-legend-territory { display: inline-flex; align-items: center; gap: var(--space-2); }
 .transit-legend-mark, .transit-legend-territory { width: 1.5rem; border-top: 3px dashed var(--cahier-region-emphasis); }
 .transit-legend-territory { border-top-style: solid; border-color: var(--cahier-theme); }
 .transit-unavailable { margin: 0; }

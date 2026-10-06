@@ -513,8 +513,11 @@ describe('resolveMobiliteThemeContent', () => {
     if (networks?.kind === 'sharing-networks') {
       expect(networks.absoluteNetworks.map((fact) => fact.fact.value)).toEqual([10, 20, 30])
     }
-    expect(content.units[2].sections[0].availability).toBe('incomplete')
+    expect(content.units[2].sections[0].availability).toBe('complete')
     expect(content.units[2].sections[0].evidence?.kind).toBe('motorisation')
+    if (content.units[2].sections[0].evidence?.kind === 'motorisation') {
+      expect(content.units[2].sections[0].evidence.charging).toHaveLength(1)
+    }
     expect(content.units[3].sections[0].availability).toBe('absent')
   })
 

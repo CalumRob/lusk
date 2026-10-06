@@ -13,12 +13,15 @@ function number(value: number | null): string {
     <div class="motorisation-composition" role="img" :aria-label="`Composition des ménages selon le nombre de voitures : ${composition.map(part => `${part.label}, ${number(part.fact.value)}`).join('; ')}`">
       <div v-for="part in composition" :key="part.fact.detail ?? part.label" class="motorisation-part" :data-detail="part.fact.detail" :data-value="part.fact.value">
         <span class="motorisation-part-label">{{ part.label }}</span>
-        <span class="motorisation-track"><span class="motorisation-bar" :style="{ width: `${Math.max(0, Math.min(1, part.fact.value ?? 0)) * 100}%` }" /></span>
+        <span class="motorisation-track"><span v-if="part.fact.value !== null" class="motorisation-bar" :style="{ width: `${Math.max(0, Math.min(1, part.fact.value)) * 100}%` }" /></span>
         <strong>{{ number(part.fact.value) }}</strong>
       </div>
     </div>
     <div class="motorisation-charging">
-      <CahierFigureScalar v-for="fact in charging" :key="fact.fact.key" :value="fact.fact.value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(fact.fact.value)" :label="fact.label" :aria-label="`${fact.label} : ${fact.fact.value ?? 'indisponible'} ${fact.fact.unit}`" />
+      <div v-for="fact in charging" :key="fact.fact.key" class="motorisation-charging-item">
+        <CahierFigureScalar :value="fact.fact.value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(fact.fact.value)" :label="fact.label" :aria-label="`${fact.label} : ${fact.fact.value ?? 'indisponible'} ${fact.fact.unit}`" />
+        <p v-if="fact.fact.reason" class="motorisation-rider">{{ fact.fact.reason }}</p>
+      </div>
     </div>
   </div>
 </template>
