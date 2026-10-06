@@ -44,7 +44,7 @@ import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
 import { applyInitialBuildingApiFacts } from '@/fiche/content/initialBuildingApiFacts'
 import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFacts'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
-import { chargerCohortesScalaires, indicateursScalairesPourNiveau, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
+import { chargerCohortesScalaires, indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ComparisonScopeKind, TerritoryFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
@@ -177,7 +177,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       if (!focal) throw new Error('Territoire focal absent')
       if (!('scalar_contracts' in data.metadata)) { ficheScalairesStatus.value = 'ready'; return }
       ficheScalairesRegistrePresent.value = true
-      const registered = indicateursScalairesPourNiveau(data.metadata, focal.type)
+      const registered = pagesScalairesEnregistrees(data.metadata,
+        indicateursScalairesPourNiveau(data.metadata, focal.type))
       ficheScalairesEnregistres.value = registered
       if (!registered.length) { ficheScalairesStatus.value = 'ready'; return }
       const scope = String(scopeKey).startsWith('epci:') ? { epci: focal.epci ?? undefined } : {}
