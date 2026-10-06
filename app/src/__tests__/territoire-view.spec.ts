@@ -587,6 +587,33 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     }
   })
 
+  it('ne déclenche pas le fan-out scalaire avec un registre Mobilité actif sur la variante E', async () => {
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const catalogue = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const model = modeleAvecContextesComparaison()
+    model.themes.mobilite!.metadata.scalar_contracts = catalogue.scalar_contracts
+    model.themes.mobilite!.metadata.indicator_pages = catalogue.indicator_pages
+    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    const baseFetch = stubApiThemeMobilite(model)
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
+      if (url.includes('/indicator-cohorts/')) throw new Error('cohort fan-out must not fire on the E path')
+      return baseFetch(url, options)
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/themes/mobilite/facts'))).toHaveLength(1)
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(0)
+    await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'epci' } })
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/themes/mobilite/facts'))).toHaveLength(1)
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(1)
+    expect(fetchApi.mock.calls.some(([url]) => url.includes('/indicator-cohorts/'))).toBe(false)
+    expect(wrapper.findAll('[data-section="services-essentiels"] .access-foot-summary')).toHaveLength(5)
+    wrapper.unmount()
+  })
+
   it('n’affiche jamais les anneaux statiques si l’API échoue, et réessaie', async () => {
     await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
     const scope = modeleAvecContextesComparaison().themes.mobilite!.comparisons.epci!.scope
