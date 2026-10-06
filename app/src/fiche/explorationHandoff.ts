@@ -161,6 +161,8 @@ const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string>> = 
   reseaux: 'reseaux',
   'offre-cyclable': 'offre_cyclable',
   stationnement: 'places_stationnement_velo_1000',
+  motorisation: 'voitures_menage',
+  'offre-transports-commun': 'offre_tc',
 }
 
 export function routePourSectionExploration(

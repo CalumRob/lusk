@@ -165,6 +165,7 @@ export interface SharingNetworksEvidence {
   roadSurface: ContentFact
   roadSurfaceLecture: readonly TextBlock[]
   networks: readonly NetworkModeEvidence[]
+  absoluteNetworks: readonly ContentFact[]
   comparisonLabel: string | null
   figureLecture: readonly TextBlock[]
 }
@@ -189,6 +190,8 @@ export type ContentEvidence =
   | SharingNetworksEvidence
   | CyclingOfferEvidence
   | SharingParkingEvidence
+  | { kind: 'motorisation'; composition: readonly ContentFact[]; charging: readonly ContentFact[] }
+  | { kind: 'public-transport'; offer: ContentFact; trajectory: readonly ContentFact[]; reference: readonly ContentFact[] }
 
 interface ContentSectionBase<Key extends string, Evidence> {
   key: Key
@@ -235,6 +238,9 @@ export interface StationnementSection
   label: 'Stationnement'
 }
 
+export interface MotorisationSection extends ContentSectionBase<'motorisation', Extract<ContentEvidence, {kind:'motorisation'}>> { label: 'Motorisation' }
+export interface OffreTransportsSection extends ContentSectionBase<'offre-transports-commun', Extract<ContentEvidence, {kind:'public-transport'}>> { label: 'Offre de transports en commun' }
+
 export type MobiliteContentSection =
   | ResumeSection
   | ProfilsAccesParModeSection
@@ -243,6 +249,8 @@ export type MobiliteContentSection =
   | ReseauxSection
   | OffreCyclableSection
   | StationnementSection
+  | MotorisationSection
+  | OffreTransportsSection
 
 export type ContentSection = MobiliteContentSection
 
@@ -267,7 +275,10 @@ export interface PartageEspacePublicContentUnit {
   sections: readonly [ReseauxSection, OffreCyclableSection, StationnementSection]
 }
 
-export type MobiliteContentUnit = AccesAuxServicesContentUnit | PartageEspacePublicContentUnit
+export interface MotorisationContentUnit { key: 'motorisation'; label: 'Motorisation'; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [MotorisationSection] }
+export interface OffreTransportsContentUnit { key: 'offre-transports-commun'; label: 'Offre de transports en commun'; introduction: readonly TextBlock[]; rundown: readonly TextBlock[]; sections: readonly [OffreTransportsSection] }
+
+export type MobiliteContentUnit = AccesAuxServicesContentUnit | PartageEspacePublicContentUnit | MotorisationContentUnit | OffreTransportsContentUnit
 export type ContentUnit = MobiliteContentUnit
 
 export interface ThemeContent {
@@ -275,7 +286,7 @@ export interface ThemeContent {
   label: 'Mobilité'
   territory: TerritoryIdentity
   introduction: readonly TextBlock[]
-  units: readonly [AccesAuxServicesContentUnit, PartageEspacePublicContentUnit]
+  units: readonly [AccesAuxServicesContentUnit, PartageEspacePublicContentUnit, MotorisationContentUnit, OffreTransportsContentUnit]
   sourceRegister: readonly ContentSource[]
 }
 
@@ -332,6 +343,9 @@ const CONTENT_LABELS: Readonly<Record<string, string>> = {
 }
 
 const CONTENT_DETAIL_LABELS: Readonly<Record<string, string>> = {
+  'voitures_menage:sans_voiture': 'Ménages sans voiture',
+  'voitures_menage:une_voiture': 'Ménages avec 1 voiture',
+  'voitures_menage:deux_plus': 'Ménages avec 2 voitures ou plus',
   'reseaux_par_habitant:t_km_1000': `Longueur — ${MOBILITE_RESEAU_MODE_LABELS.walkTransit}`,
   'reseaux_par_habitant:b_km_1000': `Longueur — ${MOBILITE_RESEAU_MODE_LABELS.bike}`,
   'reseaux_par_habitant:c_km_1000': `Longueur — ${MOBILITE_RESEAU_MODE_LABELS.car}`,
@@ -513,7 +527,8 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
   const sources = new Map<string, ContentSource>()
   const sourceKey = (source: ContentSource): string =>
     [source.id, source.version, source.referenceDate, source.publicationDate].join('\u0000')
-  const add = (value: ContentFact): void => {
+  const add = (value: ContentFact | null | undefined): void => {
+    if (!value?.fact) return
     const source = sourceFrom(value.fact.provenance)
     if (source && !sources.has(sourceKey(source))) sources.set(sourceKey(source), source)
   }
@@ -552,6 +567,7 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
       }
     }
     if (section.evidence?.kind === 'sharing-networks') {
+      for (const fact of section.evidence.absoluteNetworks) add(fact)
       for (const network of section.evidence.networks) {
         add(network.length)
       }
@@ -568,6 +584,14 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
       add(section.evidence.bikeSpaces)
       add(section.evidence.carSpaces)
       add(section.evidence.bikePerCar)
+    }
+    if (section.evidence?.kind === 'motorisation') {
+      for (const fact of [...section.evidence.composition, ...section.evidence.charging]) add(fact)
+    }
+    if (section.evidence?.kind === 'public-transport') {
+      add(section.evidence.offer)
+      for (const fact of section.evidence.trajectory) add(fact)
+      for (const fact of section.evidence.reference) add(fact)
     }
   }
   return [...sources.values()]
@@ -959,7 +983,9 @@ function summarySection(facts: TerritoryFacts): ResumeSection {
     losses.diversity.bike,
     losses.total.walkTransit,
     losses.total.bike,
-  ].filter(({ fact }) => hasValue(fact))
+  ].filter(({ fact }) => hasValue(fact)).concat(indicatorsFor(facts, [
+    'avg_tot_car', 'avg_tot_b', 'avg_tot_t', 'avg_div_car', 'avg_div_b', 'avg_div_t', 'nb_buildings',
+  ]))
   return {
     key: 'resume',
     label: 'Résumé',
@@ -1034,11 +1060,12 @@ function accessEvidence(facts: TerritoryFacts): AccessEvidence | null {
 }
 
 function essentialsSection(facts: TerritoryFacts): ServicesEssentielsSection {
-  const indicators = indicatorsFor(facts, ESSENTIAL_INDICATOR_KEYS)
+  const indicators = indicatorsFor(facts, [...ESSENTIAL_INDICATOR_KEYS,
+    'iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque',
+  ])
   const evidence = accessEvidence(facts)
   const allIndicatorsComplete =
-    indicators.length === ESSENTIAL_INDICATOR_KEYS.length &&
-    indicators.every((indicator) => complete(indicator.fact))
+    ESSENTIAL_INDICATOR_KEYS.every((key) => indicators.some((indicator) => indicator.fact.key === key && complete(indicator.fact)))
   const allAccessComplete =
     evidence !== null &&
     complete(evidence.totalBuildings.fact) &&
@@ -1091,6 +1118,10 @@ function comparisonLabelForFacts(
 }
 
 function sharingNetworksSection(facts: TerritoryFacts): ReseauxSection {
+  const absoluteNetworks = ['t_longueur', 'b_longueur', 'c_longueur'].map((detail) => {
+    const fact = facts.mobility.indicators.find((candidate) => candidate.key === 'reseaux' && candidate.detail === detail) ?? absentFact('reseaux', 'km', detail)
+    return contentFact(fact, fact.label ?? detail)
+  })
   const networks = NETWORK_MODES.map(({ mode, label, length }) => ({
     mode,
     label,
@@ -1101,10 +1132,10 @@ function sharingNetworksSection(facts: TerritoryFacts): ReseauxSection {
     CONTENT_LABELS.surface_reseaux_routiers,
   )
   const networkFacts = networks.map((network) => network.length)
-  const allFacts = [...networkFacts, roadSurface]
+  const allFacts = [...networkFacts, roadSurface, ...absoluteNetworks]
   const indicators = [
     ...indicatorsFor(facts, SHARING_NETWORK_INDICATOR_KEYS),
-    ...indicatorsFor(facts, ['surface_reseaux_routiers']),
+    ...indicatorsFor(facts, ['surface_reseaux_routiers', 'reseaux']),
   ]
   const hasAny = allFacts.some((value) => hasValue(value.fact))
   const availability: FactAvailability = !hasAny
@@ -1117,6 +1148,7 @@ function sharingNetworksSection(facts: TerritoryFacts): ReseauxSection {
         kind: 'sharing-networks',
         territoryName: facts.territory.name,
         networks,
+        absoluteNetworks,
         roadSurface,
         roadSurfaceLecture: [[
           text("L'emprise routière décrit la part de la surface totale du territoire qui est dédiée aux Réseaux routiers (code d'usage 4.1.1)."),
@@ -1669,6 +1701,33 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent
     sharingCyclingOfferSection(facts),
     sharingParkingSection(facts),
   ] as const
+  const factFor = (key: string, unit: string) => contentFact(
+    indicatorFor(facts, key) ?? absentFact(key, unit),
+    indicatorFor(facts, key)?.label ?? key,
+  )
+  const composition = ['sans_voiture', 'une_voiture', 'deux_plus'].map((detail) => contentDetailFact(facts, 'voitures_menage', detail, '%'))
+  const motorFacts = [...composition, factFor('bornes_recharge', ''), factFor('bornes_ev_par_station_service', '')]
+  const motorEvidence = motorFacts.some(({fact}) => hasValue(fact)) ? {
+    kind: 'motorisation' as const, composition, charging: motorFacts.slice(composition.length),
+  } : null
+  const motorSection: MotorisationSection = {
+    key: 'motorisation', label: 'Motorisation', indicators: indicatorsFor(facts, ['voitures_menage', 'bornes_recharge', 'bornes_ev_par_station_service']),
+    availability: !motorEvidence ? 'absent' : motorFacts.every(({fact}) => complete(fact)) ? 'complete' : 'incomplete',
+    evidence: motorEvidence, provenance: sourceIdsFor(motorFacts), lecture: null,
+    explorationTargets: targetsFor(motorFacts.map(({fact}) => fact), facts.territory),
+  }
+  const curve = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
+  const reference = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_reference').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
+  const transitFacts = [factFor('offre_tc', ''), ...curve, ...reference]
+  const transitEvidence = transitFacts.some(({fact}) => hasValue(fact)) ? {
+    kind: 'public-transport' as const, offer: transitFacts[0]!, trajectory: curve, reference,
+  } : null
+  const transitSection: OffreTransportsSection = {
+    key: 'offre-transports-commun', label: 'Offre de transports en commun', indicators: indicatorsFor(facts, ['offre_tc', 'raccordement_courbe', 'raccordement_reference']),
+    availability: !transitEvidence ? 'absent' : transitFacts.every(({fact}) => complete(fact)) ? 'complete' : 'incomplete',
+    evidence: transitEvidence, provenance: sourceIdsFor(transitFacts), lecture: null,
+    explorationTargets: targetsFor(transitFacts.map(({fact}) => fact), facts.territory),
+  }
   const accessUnit: AccesAuxServicesContentUnit = {
     key: 'acces-aux-services',
     label: 'Accès aux services',
@@ -1683,13 +1742,15 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent
     rundown: sharingRundown(facts),
     sections: sharingSections,
   }
+  const motorUnit: MotorisationContentUnit = { key: 'motorisation', label: 'Motorisation', introduction: [], rundown: [], sections: [motorSection] }
+  const transitUnit: OffreTransportsContentUnit = { key: 'offre-transports-commun', label: 'Offre de transports en commun', introduction: [], rundown: [], sections: [transitSection] }
 
   return {
     theme: 'mobilite',
     label: 'Mobilité',
     territory: facts.territory,
     introduction: accessUnit.introduction,
-    units: [accessUnit, sharingUnit],
-    sourceRegister: registerFor([...accessSections, ...sharingSections]),
+    units: [accessUnit, sharingUnit, motorUnit, transitUnit],
+    sourceRegister: registerFor([...accessSections, ...sharingSections, motorSection, transitSection]),
   }
 }

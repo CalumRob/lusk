@@ -62,6 +62,7 @@ import BivariateDistributionFigureCahier from './BivariateDistributionFigureCahi
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
 import CahierSharingFigure from './CahierSharingFigure.vue'
+import CahierMobiliteCompletionFigure from './CahierMobiliteCompletionFigure.vue'
 import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
@@ -705,8 +706,8 @@ onBeforeUnmount(() => {
                      <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                    </figure>
 
-                   <figure
-                     v-else-if="section.evidence?.kind === 'sharing-parking'"
+                    <figure
+                      v-else-if="section.evidence?.kind === 'sharing-parking'"
                     class="evidence-side evidence-figure sharing-parking-evidence"
                   >
                     <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.evidence.figureTitle }}</figcaption>
@@ -718,7 +719,16 @@ onBeforeUnmount(() => {
                       <CahierProse :blocks="section.evidence.figureLecture" />
                     </CahierFigureLecture>
                     <CahierComparisonNote :label="section.evidence.comparisonLabel" />
-                  </figure>
+                   </figure>
+
+                   <figure v-else-if="section.evidence?.kind === 'motorisation'" class="evidence-side evidence-figure">
+                     <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
+                     <CahierMobiliteCompletionFigure kind="motorisation" :facts="[...section.evidence.composition, ...section.evidence.charging]" />
+                   </figure>
+                   <figure v-else-if="section.evidence?.kind === 'public-transport'" class="evidence-side evidence-figure">
+                     <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
+                     <CahierMobiliteCompletionFigure kind="public-transport" :facts="[section.evidence.offer, ...section.evidence.trajectory, ...section.evidence.reference]" />
+                   </figure>
 
                   <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">
                   <figcaption class="cahier-figure-title cahier-baseline-anchor">Quantité et Diversité d'Équipements accessibles en 20 min (moyennes)</figcaption>

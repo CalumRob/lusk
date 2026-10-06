@@ -904,16 +904,20 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.findAll('.cahier-page h2').map((heading) => heading.text())).toEqual([
       'Accès aux services',
       'Partage de l’espace public',
+      'Motorisation',
+      'Offre de transports en commun',
     ])
     expect(wrapper.findAll('.cahier-page .page-number').map((number) => number.text())).toEqual([
-      'page 01/02',
-      'page 02/02',
+      'page 01/04',
+      'page 02/04',
+      'page 03/04',
+      'page 04/04',
     ])
     for (const page of wrapper.findAll('.cahier-page')) {
       const groups = page.findAll('.concept-group')
       expect(groups.every((group) => !group.attributes('style'))).toBe(true)
     }
-    expect(wrapper.findAll('.page-rundown').map((rundown) => rundown.text())).toHaveLength(2)
+    expect(wrapper.findAll('.page-rundown').map((rundown) => rundown.text())).toHaveLength(4)
     expect(wrapper.findAll('.page-rundown')[1]!.text()).toContain('réseau cyclable')
     expect(wrapper.findAll('.concept-group-narrative').map((heading) => heading.text())).toEqual([
       'Ce que l’on perd sans voiture',
@@ -936,7 +940,7 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.findAll('.sharing-cycling-reading')).toHaveLength(5)
     expect(wrapper.findAll('.sharing-parking-reading')).toHaveLength(3)
     expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(7)
-    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(6)
+    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(8)
     expect(wrapper.text()).toContain('Groupe comparé')
   })
 
