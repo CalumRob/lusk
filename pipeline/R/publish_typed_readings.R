@@ -683,18 +683,27 @@ publish_milieux_reading <- function(con, facts, canonical) {
      any(bindings$source_name[population_indices]!=population_revisions$source_name[[1L]]) ||
      any(bindings$source_version[population_indices]!=population_revisions$source_version[[1L]]))
     stop("Milieux population associations are detached from their immutable producer revision",call.=FALSE)
-  for(i in which(bindings$field_key!="population")) {
-    revision <- DBI::dbGetQuery(con,"SELECT source_id,vintage_id,source_name,source_version,reference_date,publication_date FROM series_provenance_revision WHERE provenance_revision_id=$1",
-      params=list(bindings$provenance_revision_id[[i]]))
+  ocs_indices <- which(bindings$field_key!="population")
+  # Validate the complete OCS association set with three set-based reads. The
+  # previous per-binding reads made six round trips for every source link.
+  if(length(ocs_indices)) {
+    revision_ids <- unique(bindings$provenance_revision_id[ocs_indices])
+    dataset_ids <- unique(bindings$dataset_id[ocs_indices])
+    in_params <- function(values, start=1L) paste0("$",seq.int(start,length.out=length(values)),collapse=",")
+    revisions <- DBI::dbGetQuery(con,paste0("SELECT provenance_revision_id,source_id,vintage_id,source_name,source_version,reference_date,publication_date FROM series_provenance_revision WHERE provenance_revision_id IN (",in_params(revision_ids),")"),params=as.list(revision_ids))
+    dataset_params <- as.list(dataset_ids)
+    observations <- DBI::dbGetQuery(con,paste0("SELECT dataset_id,territory_id,territory_type,axis_value,state_role,observation_period,value FROM series_dataset_observation WHERE indicator_id='artif_par_habitant' AND dataset_id IN (",in_params(dataset_ids),")"),params=dataset_params)
+    links <- DBI::dbGetQuery(con,paste0("SELECT dataset_id,territory_id,axis_value,provenance_revision_id FROM series_observation_provenance WHERE indicator_id='artif_par_habitant' AND dataset_id IN (",in_params(dataset_ids),")"),params=dataset_params)
+  }
+  for(i in ocs_indices) {
+    revision <- revisions[revisions$provenance_revision_id==bindings$provenance_revision_id[[i]],,drop=FALSE]
     if(nrow(revision)!=1L || !identical(as.character(revision$source_id[[1L]]),as.character(bindings$source_id[[i]])) ||
        !identical(as.character(revision$vintage_id[[1L]]),as.character(bindings$vintage_id[[i]])) ||
        !identical(as.character(revision$source_version[[1L]]),as.character(bindings$source_version[[i]])) ||
        !identical(as.character(revision$source_name[[1L]]),as.character(bindings$source_name[[i]])))
       stop("Milieux OCS-GE binding differs from immutable registered series provenance",call.=FALSE)
-    observation <- DBI::dbGetQuery(con,"SELECT state_role,observation_period,status,value FROM series_dataset_observation WHERE dataset_id=$1 AND indicator_id='artif_par_habitant' AND territory_id=$2 AND territory_type=$3 AND axis_value=$4",
-      params=list(bindings$dataset_id[[i]],bindings$territory_id[[i]],bindings$territory_type[[i]],bindings$axis_value[[i]]))
-    linked <- DBI::dbGetQuery(con,"SELECT 1 FROM series_observation_provenance WHERE dataset_id=$1 AND indicator_id='artif_par_habitant' AND territory_id=$2 AND axis_value=$3 AND provenance_revision_id=$4",
-      params=list(bindings$dataset_id[[i]],bindings$territory_id[[i]],bindings$axis_value[[i]],bindings$provenance_revision_id[[i]]))
+    observation <- observations[observations$dataset_id==bindings$dataset_id[[i]] & observations$territory_id==bindings$territory_id[[i]] & observations$territory_type==bindings$territory_type[[i]] & observations$axis_value==bindings$axis_value[[i]],,drop=FALSE]
+    linked <- links[links$dataset_id==bindings$dataset_id[[i]] & links$territory_id==bindings$territory_id[[i]] & links$axis_value==bindings$axis_value[[i]] & links$provenance_revision_id==bindings$provenance_revision_id[[i]],,drop=FALSE]
     expected_value <- facts[[if(bindings$field_key[[i]]=="artif_m2_par_habitant") "artif_m2_par_habitant" else "artif_m3_par_habitant"]][match(paste(bindings$territory_id[[i]],bindings$territory_type[[i]],bindings$groupe[[i]]),paste(facts$territory_id,facts$territory_type,facts$groupe))]
     if(nrow(observation)!=1L || nrow(linked)!=1L || !identical(as.character(observation$state_role[[1L]]),as.character(bindings$state_role[[i]])) ||
        !identical(as.character(observation$observation_period[[1L]]),as.character(bindings$observation_period[[i]])) ||
