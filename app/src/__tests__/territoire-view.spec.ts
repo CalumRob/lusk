@@ -758,7 +758,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('ne précharge aucun thème et revisite Habitat acquise sans nouvelle requête', async () => {
+  it('réchauffe les autres thèmes après Programmes et revisite Habitat sans nouvelle requête', async () => {
     const model = modelFor('22001')
     const programmes = reponseThemeProgrammesApi()
     const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
@@ -770,14 +770,20 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       if (url === '/api/territories/commune/22001/themes/demographie/facts') {
         return { ok: true, json: async () => reponseThemeDemographieApi(model, 'commune', '22001') }
       }
+      const theme = url.match(/\/themes\/([^/]+)\/facts$/)?.[1]
+      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
+        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
+          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
     await flushPromises()
-    // Le défaut Programmes s'acquiert une fois; les autres thèmes ne sont pas préchargés.
+    // Le POST actif est prioritaire puis le registre complet est réchauffé.
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
+    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
@@ -789,7 +795,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // Revisite du thème acquis : le cache détient l'entrée, aucune nouvelle requête.
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
-    expect(fetchApi.mock.calls).toHaveLength(3)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
     wrapper.unmount()
   })
@@ -1063,21 +1069,42 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () => api }))
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model))
+    await flushPromises()
     const text = wrapper.get('[role="tabpanel"]').text()
-    expect(fetchApi).toHaveBeenCalledTimes(1); expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'economie' })
+    // Le POST actif part en premier, puis le registre entier se réchauffe.
+    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/economie/facts')
+    expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'economie' })
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
     expect(text).toContain('23%'); expect(text).toContain('Activit\u00e9 API distinctive'); expect(text).toContain('99,3')
     expect(text).not.toContain('7,1%'); expect(text).not.toContain('Agriculture, sylviculture et p?che')
     expect(text).not.toContain('LQ 0'); wrapper.unmount()
   })
-  it('Economie mounted: does not prefetch and cached revisit makes no extra facts POST', async () => {
-    const model = economieModel(); const fetchApi = vi.fn(async (url: string) => ({ ok: true, json: async () => String(url).endsWith('/themes/programmes/facts') ? reponseThemeProgrammesApi() : reponseThemeEconomieApi(model) }))
+  it('Economie mounted: le registre se réchauffe après Programmes et une bascule réchauffée n’acquiert rien', async () => {
+    const model = economieModel()
+    const fetchApi = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/themes/programmes/facts')) return { ok: true, json: async () => reponseThemeProgrammesApi() }
+      if (String(url).endsWith('/themes/economie/facts')) return { ok: true, json: async () => reponseThemeEconomieApi(model) }
+      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
+      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
+        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
+          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
+      throw new Error(`Unexpected request: ${url}`)
+    })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    // L'atterrissage par défaut n'acquiert que Programmes ; Économie attend sa sélection.
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(0)
+    await flushPromises()
+    // L'atterrissage acquiert Programmes en priorité puis réchauffe le registre
+    // entier — Économie comprise — en arrière-plan.
+    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
     await router.replace({ query: { theme: 'economie' } }); await flushPromises()
+    // La bascule vers un thème réchauffé n'acquiert rien : le cache détient l'entrée.
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activité API distinctive')
     await router.replace({ query: { theme: 'habitat' } }); await flushPromises(); await router.replace({ query: { theme: 'economie' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter((x:any[])=>String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1); wrapper.unmount()
+    expect(fetchApi.mock.calls.filter((x:any[])=>String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
+    wrapper.unmount()
   })
   it('Economie mounted: pending facts never expose incumbent numeric values', async () => {
     const model = economieModel(); let resolve!: (v: any) => void; const pending = new Promise(r => { resolve = r })
@@ -1087,10 +1114,56 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     resolve({ ok: true, json: async () => reponseThemeEconomieApi(model) }); await flushPromises(); expect(wrapper.get('[role="tabpanel"]').text()).toContain('23%'); wrapper.unmount()
   })
   it('Economie mounted: failed facts show retry and recover', async () => {
-    const model = economieModel(); let n = 0; const fetchApi = vi.fn(async () => ++n === 1 ? Promise.reject(Error()) : ({ ok: true, json: async () => reponseThemeEconomieApi(model) }))
+    const model = economieModel(); let n = 0
+    const fetchApi = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/themes/economie/facts')) {
+        if (++n === 1) throw new Error('offline')
+        return { ok: true, json: async () => reponseThemeEconomieApi(model) }
+      }
+      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
+      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
+        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
+          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
+      throw new Error(`Unexpected request: ${url}`)
+    })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model)); expect(wrapper.get('[role="alert"]').text()).toContain('Les indicateurs')
-    await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises(); expect(fetchApi).toHaveBeenCalledTimes(2); expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive'); wrapper.unmount()
+    await flushPromises()
+    // L'échec du thème actif ne suspend pas le réchauffage d'arrière-plan.
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
+    await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises()
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(2)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive'); wrapper.unmount()
+  })
+  it('Economie mounted: un échec de réchauffage d’arrière-plan n’entache pas le thème actif et devient réessayable à sa visite', async () => {
+    const model = economieModel(); let milieuxDown = true
+    const fetchApi = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/themes/economie/facts')) return { ok: true, json: async () => reponseThemeEconomieApi(model) }
+      if (String(url).endsWith('/themes/milieux/facts')) {
+        if (milieuxDown) throw new Error('milieux down')
+        return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: 'milieux', territory: { territory_id: '22001', territory_type: 'commune', name: '22001' },
+          indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: 'milieux',
+            content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
+      }
+      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
+      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
+        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
+          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model))
+    await flushPromises()
+    // Le thème actif rend normalement ; l'échec d'arrière-plan ne s'affiche pas.
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('23%')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
+    // La visite du thème défaillant expose SA propre erreur réessayable.
+    expect(wrapper.get('[role="alert"]').text()).toContain('ne sont pas disponibles')
+    milieuxDown = false
+    await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
   })
   it('Economie mounted: selected comparisons POST exact members, cache revisits, and retain focal facts', async () => {
     const model = economieModel(); const expected = model.cohortTerritories!.filter((x: any) => x.type === 'commune' && x.epci === model.territory.epci).map((x: any) => ({ territory_type: x.type, territory_id: x.territoire }))
@@ -1552,19 +1625,28 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('ne précharge aucun autre thème et garde l’acquisition Milieux en cache à la revisite', async () => {
+  it('réchauffe le registre après Programmes et garde l’acquisition Milieux en cache à la revisite', async () => {
     const model = modeleMilieux()
     const fetchApi = vi.fn(async (url: string, _options?: RequestInit) => {
       if (String(url).endsWith('/themes/programmes/facts')) {
         return { ok: true, json: async () => reponseThemeProgrammesApi() }
       }
-      return { ok: true, json: async () => reponseThemeMilieuxApi(model) }
+      if (String(url).endsWith('/themes/milieux/facts')) {
+        return { ok: true, json: async () => reponseThemeMilieuxApi(model) }
+      }
+      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
+      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
+        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
+          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
+      throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    // L'atterrissage par défaut n'acquiert que Programmes ; Milieux attend sa sélection.
+    await flushPromises()
+    // Programmes part en priorité ; Milieux se réchauffe en arrière-plan.
+    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(0)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(1)
     await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
     await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
     await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
@@ -1587,14 +1669,26 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('échoue fermé sur les faits Milieux puis réessaie', async () => {
     const model = modeleMilieux()
     let calls = 0
-    const fetchApi = vi.fn(async () => ++calls === 1 ? Promise.reject(new Error('offline')) :
-      ({ ok: true, json: async () => reponseThemeMilieuxApi(model) }))
+    const fetchApi = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/themes/milieux/facts')) {
+        if (++calls === 1) throw new Error('offline')
+        return { ok: true, json: async () => reponseThemeMilieuxApi(model) }
+      }
+      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
+      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
+        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
+          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
+      throw new Error(`Unexpected request: ${url}`)
+    })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
     const alert = wrapper.get('[role="alert"]')
     expect(alert.text()).toContain('indicateurs de ce thème ne sont pas disponibles')
+    await flushPromises()
+    // Le réchauffage d'arrière-plan part malgré l'échec du thème actif.
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
     await alert.get('button').trigger('click'); await flushPromises()
-    expect(fetchApi).toHaveBeenCalledTimes(2)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(2)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Source API milieux')
     wrapper.unmount()
   })
@@ -1757,20 +1851,66 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('Mobilité : ni préchargement d’un autre thème, ni nouvelle requête à la revisite acquise', async () => {
+  it('Mobilité : réchauffée en arrière-plan après Programmes, aucune nouvelle requête à la revisite', async () => {
     const model = modeleAvecContextesComparaison()
-    const fetchApi = vi.fn(async (url: string) => ({ ok: true, json: async () =>
-      String(url).endsWith('/themes/programmes/facts') ? reponseThemeProgrammesApi()
-        : reponseThemeMobiliteApi(model, 'commune', '22001', null) }))
+    const fetchApi = vi.fn(async (url: string) => {
+      if (String(url).endsWith('/themes/programmes/facts')) return { ok: true, json: async () => reponseThemeProgrammesApi() }
+      if (String(url).endsWith('/themes/mobilite/facts')) return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
+      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
+      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
+        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
+          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
+      throw new Error(`Unexpected request: ${url}`)
+    })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { router } = await monter('/territoire/commune/22001', vi.fn(async () => model))
     await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(0)
+    // Programmes prioritaire ; Mobilité se réchauffe avec le reste du registre.
+    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
     await router.replace({ query: { theme: 'mobilite' } }); await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
     await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
     await router.replace({ query: { theme: 'mobilite' } }); await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
+  })
+
+  it('un changement de territoire réchauffe pour le nouveau et une réponse tardive de l’ancien ne se fond jamais', async () => {
+    // Programmes actif sur 22001 ; le réchauffage Habitat de 22001 pends.
+    let resolveHabitat22001!: (value: unknown) => void
+    const pending = new Promise((resolve) => { resolveHabitat22001 = resolve })
+    const generique = (type: string, code: string, theme: string) => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
+      territory: { territory_id: code, territory_type: type, name: code },
+      indicators: [], readings: [],
+      comparison: { contract: 'theme-comparison-v1', theme_id: theme, content_version: 'v1',
+        reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } })
+    const fetchApi = vi.fn(async (url: string) => {
+      const m = String(url).match(/^\/api\/territories\/(commune|epci|departement|region)\/([^/]+)\/themes\/([^/]+)\/facts$/)
+      if (!m) throw new Error(`Unexpected request: ${url}`)
+      if (m[2] === '22001' && m[3] === 'habitat') return pending
+      return { ok: true, json: async () => generique(m[1]!, m[2]!, m[3]!) }
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async (_type, territoire) => modelFor(territoire)))
+    await flushPromises()
+    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
+    // 22001 : Programmes résolu + quatre réchauffages résolus + Habitat pendants.
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22001/themes/'))).toHaveLength(6)
+    // Navigation vers 22002 pendant que le réchauffage 22001/Habitat pends.
+    await router.push('/territoire/commune/22002'); await flushPromises()
+    // Le nouveau territoire acquiert son actif puis réchauffe SON registre.
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22002/themes/'))).toHaveLength(6)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    // La réponse tardive de 22001/Habitat arrive APRÈS la navigation : elle ne
+    // peut peupler que sa propre clé de cache.
+    resolveHabitat22001({ ok: true, json: async () => generique('commune', '22001', 'habitat') })
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    // Retour sur 22001 : tout est en cache — aucune nouvelle requête de faits.
+    await router.push('/territoire/commune/22001'); await flushPromises()
+    await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(12)
+    wrapper.unmount()
   })
 
   it('Mobilité : les faits en attente n’exposent aucune valeur statique, puis rendent', async () => {

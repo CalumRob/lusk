@@ -81,11 +81,12 @@ const retryFicheScalaires = ref(0)
 let sequenceFicheScalaires = 0
 
 /**
- * Acquisition paresseuse par thème derrière `VITE_THEME_ACQUISITION_API` (#627)
- * : le modèle atomique gardé fournit l'identité, les métadonnées et la
- * grammaire de présentation ; le POST faits du thème actif fournit TOUS ses
- * numériques (aucune ligne statique du thème migré ne rend). Un thème hors de
- * `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
+ * Acquisition par thème derrière `VITE_THEME_ACQUISITION_API` (#627) : le
+ * modèle atomique gardé fournit l'identité, les métadonnées et la grammaire de
+ * présentation ; le POST faits du thème actif fournit TOUS ses numériques
+ * (aucune ligne statique du thème migré ne rend), puis le registre entier se
+ * réchauffe en arrière-plan (décision propriétaire 2026-10-07). Un thème hors
+ * de `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
  */
 const acquisitionApiActivee = themeAcquisitionEnabled(import.meta.env)
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
@@ -253,9 +254,9 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
   }, { immediate: true })
 function retryScalaires(): void { retryFicheScalaires.value++ }
 
-/** Une acquisition de faits par thème non caché : l'atterrissage et le
- * changement de territoire ou d'onglet vers un thème migré déclenchent UNE
- * requête ; la revisite d'un thème déjà acquis n'en déclenche aucune. */
+/** Le thème actif est prioritaire ; après son acquisition — réussie ou non —
+ * les autres thèmes migrés se réchauffent en arrière-plan. Le rendu ne lit
+ * que l'actif. */
 watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryAcquisition],
   async ([model, theme, code], _old, onCleanup) => {
     if (!themeMigre(theme) || !model || !typeValide.value) {
@@ -301,6 +302,21 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
         faitsThemeRows.value = null
         histoiresThemeRows.value = null
         statutAcquisition.value = 'error'
+      }
+    }
+    // Réchauffage d'arrière-plan (décision propriétaire 2026-10-07) : le thème
+    // actif garde la priorité — sa requête est déjà partie — puis tout le
+    // registre se réchauffe pour ce territoire, SANS jamais toucher l'état de
+    // rendu des thèmes inactifs. Il part aussi quand l'acquisition active
+    // échoue : l'onglet défaillant expose SA propre erreur réessayable à sa
+    // visite, jamais les autres. Mobilité reste au prototype E tant que
+    // celui-ci en est propriétaire. Le cache isole les entrées par
+    // (territoire, thème) : une réponse tardive d'un ancien territoire ne peut
+    // se fondre nulle part ailleurs que dans sa propre clé.
+    if (!cancelled && request === sequenceAcquisition) {
+      for (const autreTheme of THEMES_ACQUISITION_API) {
+        if (autreTheme === themeActif || !themeMigre(autreTheme)) continue
+        void cacheAcquisition.get(typeRoute.value, code, autreTheme).catch(() => {})
       }
     }
   }, { immediate: true })
