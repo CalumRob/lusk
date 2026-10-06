@@ -145,9 +145,14 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
         pub.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO "{reader}"')
 
         query_counts=[]
+        checked_out=[]
         class RecordingConnection:
-            def __init__(self,conn): self.conn=conn; self.count=0
-            def execute(self,*args,**kwargs): self.count+=1; return self.conn.execute(*args,**kwargs)
+            def __init__(self,conn): self.conn=conn; self.count=0; self.transaction_commands=[]
+            def execute(self,*args,**kwargs):
+                self.count+=1
+                if args and isinstance(args[0],str) and args[0].upper().startswith("SET TRANSACTION"):
+                    self.transaction_commands.append(args[0])
+                return self.conn.execute(*args,**kwargs)
             def __getattr__(self,name): return getattr(self.conn,name)
         class Connections:
             def connection(self):
@@ -155,14 +160,15 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
                     def __enter__(self):
                         self.conn=psycopg.connect(scoped(os.environ["LUSK_TEST_READ_DSN"]))
                         self.recording=RecordingConnection(self.conn)
+                        checked_out.append(self.recording)
                         return self.recording
                     def __exit__(self,*args): query_counts.append(self.recording.count); self.conn.close()
                 return Context()
         app.dependency_overrides[get_repository]=lambda: ReadRepository(Connections())
         pool.cache_clear()
         with TestClient(app) as client:
-            route=f"/api/territories/commune/35238/themes/milieux/comparison"
-            default=client.post(route,json={"theme_id":"milieux"})
+            route=f"/api/territories/commune/35238/themes/milieux/facts"
+            default=client.post("/api/territories/commune/35238/themes/comparison",json={"theme_id":"milieux"})
             assert default.status_code==200,default.text
             default_query_count=query_counts[-1]
             payload=client.get("/api/territories/commune/35238/themes/milieux/facts")
@@ -203,41 +209,75 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
             assert all(set(p)=={"territory","periode_pop","periode_artif","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant"} for p in cloud["points"])
             assert all(p["periode_pop"]=="2017–2023" and p["periode_artif"]=="2020–2023" for p in cloud["points"])
             assert "focal_value" not in default.json() and "readings" not in default.json()
+            implicit=client.post(route,json={"theme_id":"milieux"})
+            assert implicit.status_code==200,implicit.text
+            implicit_body=implicit.json()
+            assert implicit_body["comparison"]["selection"] is None
+            assert implicit_body["comparison"]["scope"]["kind"]=="density_class"
+            assert len(implicit_body["readings"])==1
+            assert implicit_body["comparison"]["reading_content_version"]=="reading-v1"
+            assert implicit_body["comparison"]["collection_content_versions"]=={}
+            assert implicit_body["comparison"]["scalar_content_version"]=="scalar-v1"
+            assert implicit_body["comparison"]["service_publication_id"] is None
+            assert implicit_body["comparison"]["building_publication_id"] is None
+            assert "focal_value" not in implicit_body["comparison"]
             empty=client.post(route,json={"theme_id":"milieux","selection":[]})
             assert empty.status_code==200,empty.text
-            assert empty.json()["reading_cloud"]=={"status":"unavailable","reason":"no_selected_members","groupe":None,
+            assert empty.json()["complete_theme"] is False
+            assert empty.json()["comparison"]["selection"]==[]
+            assert empty.json()["comparison"]["scope"]=={"kind":"explicit_selection","member_count":0}
+            assert all(not row.get("peer_points") and "focal_value" not in row
+                for row in empty.json()["comparison"]["results"])
+            assert "focal_value" not in empty.json()["comparison"]
+            assert empty.json()["comparison"]["reading_cloud"]=={"status":"unavailable","reason":"no_selected_members","groupe":None,
                 "scope":{"kind":"explicit_selection"},"selected_member_count":0,
                 "plotted_member_count":0,"content_version":"reading-v1","points":[]}
             single=client.post(route,json={"theme_id":"milieux","selection":[{"territory_type":"commune","territory_id":"35238"}]})
-            assert single.status_code==200 and len(single.json()["reading_cloud"]["points"])==1
+            assert single.status_code==200 and len(single.json()["comparison"]["reading_cloud"]["points"])==1
             mixed=client.post(route,json={"theme_id":"milieux","selection":[
                 {"territory_type":"epci","territory_id":"243500139"},
                 {"territory_type":"commune","territory_id":"35238"}]})
-            assert mixed.status_code==200 and mixed.json()["reading_cloud"]["selected_member_count"]==6
-            assert mixed.json()["reading_cloud"]["plotted_member_count"]==3
-            assert len(mixed.json()["reading_cloud"]["points"])==3
-            assert query_counts[-1]==default_query_count
+            assert mixed.status_code==200 and mixed.json()["comparison"]["reading_cloud"]["selected_member_count"]==6
+            assert mixed.json()["comparison"]["reading_cloud"]["plotted_member_count"]==3
+            assert len(mixed.json()["comparison"]["reading_cloud"]["points"])==3
+            assert mixed.json()["comparison"]["selection"]==[{"territory_type":"epci","territory_id":"243500139"},
+                {"territory_type":"commune","territory_id":"35238"}]
+            cloud=mixed.json()["comparison"]["reading_cloud"]
+            assert cloud["unavailable_member_count"]==3 and cloud["source_absent_member_count"]==2
+            assert {item["territory_id"] for item in cloud["unavailable_members"]}=={"35004","35005"}
+            def contains_focal_value(value):
+                if isinstance(value,dict):
+                    return "focal_value" in value or any(contains_focal_value(v) for v in value.values())
+                if isinstance(value,list): return any(contains_focal_value(v) for v in value)
+                return False
+            assert not contains_focal_value(mixed.json()["comparison"])
+            mismatch=client.post(route,json={"theme_id":"habitat","selection":[]})
+            assert mismatch.status_code==422
+            assert all(len(item.transaction_commands)==1 and "REPEATABLE READ, READ ONLY" in item.transaction_commands[0]
+                for item in checked_out)
+            assert len(checked_out)==len(query_counts)
+            assert default_query_count > 0
             unavailable=client.post(route,json={"theme_id":"milieux","selection":[{"territory_type":"commune","territory_id":"35003"}]})
             assert unavailable.status_code==200
-            assert unavailable.json()["reading_cloud"]["reason"]=="no_plottable_members"
+            assert unavailable.json()["comparison"]["reading_cloud"]["reason"]=="no_plottable_members"
             source_absent=client.post(route,json={"theme_id":"milieux","selection":[
                 {"territory_type":"commune","territory_id":"35004"}]})
             assert source_absent.status_code==200
-            assert source_absent.json()["reading_cloud"]["status"]=="unavailable"
-            assert source_absent.json()["reading_cloud"]["reason"]=="source_records_absent"
-            assert source_absent.json()["reading_cloud"]["selected_member_count"]==1
-            assert source_absent.json()["reading_cloud"]["plotted_member_count"]==0
-            assert source_absent.json()["reading_cloud"]["unavailable_member_count"]==1
-            assert source_absent.json()["reading_cloud"]["source_absent_member_count"]==1
-            assert source_absent.json()["reading_cloud"]["unavailable_members"][0]["source_snapshot_sha256"]=="a"*64
+            assert source_absent.json()["comparison"]["reading_cloud"]["status"]=="unavailable"
+            assert source_absent.json()["comparison"]["reading_cloud"]["reason"]=="source_records_absent"
+            assert source_absent.json()["comparison"]["reading_cloud"]["selected_member_count"]==1
+            assert source_absent.json()["comparison"]["reading_cloud"]["plotted_member_count"]==0
+            assert source_absent.json()["comparison"]["reading_cloud"]["unavailable_member_count"]==1
+            assert source_absent.json()["comparison"]["reading_cloud"]["source_absent_member_count"]==1
+            assert source_absent.json()["comparison"]["reading_cloud"]["unavailable_members"][0]["source_snapshot_sha256"]=="a"*64
             all_absent=client.post(route,json={"theme_id":"milieux","selection":[
                 {"territory_type":"commune","territory_id":"35004"},
                 {"territory_type":"commune","territory_id":"35005"}]})
             assert all_absent.status_code==200
-            assert all_absent.json()["reading_cloud"]["reason"]=="source_records_absent"
-            assert all_absent.json()["reading_cloud"]["selected_member_count"]==2
-            assert all_absent.json()["reading_cloud"]["plotted_member_count"]==0
-            assert all_absent.json()["reading_cloud"]["points"]==[]
+            assert all_absent.json()["comparison"]["reading_cloud"]["reason"]=="source_records_absent"
+            assert all_absent.json()["comparison"]["reading_cloud"]["selected_member_count"]==2
+            assert all_absent.json()["comparison"]["reading_cloud"]["plotted_member_count"]==0
+            assert all_absent.json()["comparison"]["reading_cloud"]["points"]==[]
             undeclared=client.post(route,json={"theme_id":"milieux","selection":[
                 {"territory_type":"commune","territory_id":"35006"}]})
             assert undeclared.status_code==503
@@ -339,8 +379,13 @@ DBI::dbDisconnect(con)
                 assert restored.status_code==200,(column,restored.text)
             pub.execute("DELETE FROM milieux_typed_reading WHERE territory_id='35238' AND territory_type='commune'")
             empty_without_focal=client.post(route,json={"theme_id":"milieux","selection":[]})
-            assert empty_without_focal.status_code==200,empty_without_focal.text
-            assert empty_without_focal.json()["reading_cloud"]["reason"]=="no_selected_members"
+            assert empty_without_focal.status_code==404,empty_without_focal.text
+            empty_comparison_without_focal=client.post(
+                "/api/territories/commune/35238/themes/milieux/comparison",
+                json={"theme_id":"milieux","selection":[]})
+            assert empty_comparison_without_focal.status_code==200,empty_comparison_without_focal.text
+            assert empty_comparison_without_focal.json()["reading_cloud"]["reason"]=="no_selected_members"
+            assert "readings" not in empty_comparison_without_focal.json()
     finally:
         app.dependency_overrides.pop(get_repository,None)
         if prior is not None:

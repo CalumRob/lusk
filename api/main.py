@@ -1257,7 +1257,9 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 "rank": rank, "rank_size": len(values) if rank is not None else None,
                 "comparison_sources": sources})
     profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id)
-    bpe_results = _bpe_profile_comparison(conn, territory_type, territory_id, selection)["results"] if bpe_available else []
+    bpe_comparison = (_bpe_profile_comparison(conn, territory_type, territory_id, selection)
+                      if bpe_available else None)
+    bpe_results = bpe_comparison["results"] if bpe_comparison else []
     owned_results,owned_markers,_,_,_=_owned_series_comparison_results(conn,
         [(dataset_id,theme_id,False,owned_indicator,None)
          for dataset_id,owned_indicator in owned_descriptors],
@@ -1273,11 +1275,24 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         reading_cloud = _milieux_reading_cloud(conn, milieux_marker, territory_type, territory_id,
             cohort_type, members, scope)
     return {"contract": "theme-comparison-v1", "complete_theme": False, "theme_id": theme_id,
-        "content_version": scalar_marker[0] if scalar_marker else (
-             next(iter(owned_markers.values()))[1] if owned_markers else collection_results[0]["content_version"] if collection_results else reading_marker[0] if reading_marker else milieux_marker[0] if milieux_marker else (_bpe_profile_publication(conn)[0] if bpe_available else None)),
+        "content_version": (
+            scalar_marker[0] if scalar_marker else
+            next(iter(owned_markers.values()))[1] if owned_markers else
+            collection_results[0]["content_version"] if collection_results else
+            reading_marker[0] if reading_marker else
+            milieux_marker[0] if milieux_marker else
+            bpe_comparison["content_version"] if bpe_comparison else None),
         "reading_content_version": reading_marker[0] if reading_marker else milieux_marker[0] if milieux_marker else None,
         "reading_cloud": reading_cloud,
         "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
+        "scalar_content_version": scalar_marker[0] if scalar_marker else None,
+        "owned_series_content_versions": {
+            dataset_id: {"content_version": marker[1], "reference_content_version": marker[2]}
+            for dataset_id, marker in owned_markers.items()},
+        "bpe_content_version": bpe_comparison["content_version"] if bpe_comparison else None,
+        "bpe_reference_content_version": bpe_comparison["reference_content_version"] if bpe_comparison else None,
+        "service_publication_id": None,
+        "building_publication_id": None,
         "reference_content_version": reference[0],
         "selection": None if selection is None else [
             {"territory_type": level, "territory_id": code} for level, code in selection],
@@ -2326,356 +2341,406 @@ def theme_facts(
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            territory = conn.execute("""SELECT territory_id,name,territory_type FROM territory_reference
-                WHERE territory_id=%s AND territory_type=%s""", (territory_id, territory_type)).fetchone()
-            if not territory:
-                raise HTTPException(404, "Territory not found")
-            descriptors = conn.execute(
-                "SELECT indicator_id FROM scalar_descriptor WHERE theme_id=%s ORDER BY indicator_id",
-                (theme_id,)).fetchall()
-            rows = []
-            marker = None
-            if descriptors:
-                marker = conn.execute("""SELECT s.content_version,s.reference_content_version,
-                     t.content_version FROM table_publication s LEFT JOIN table_publication t
-                     ON t.table_name='territory_reference' WHERE s.table_name='scalar_observation'""").fetchone()
-                if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
-                    raise HTTPException(503, "Scalar publication is unavailable or incompatible")
-                rows = conn.execute("""SELECT d.indicator_id,d.label,d.unit,d.direction,d.comparison_facet,
-                     d.descriptor_version,o.value,o.status,o.support_count,o.denominator_count,
-                     COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,'name',sd.name,
-                       'vintage_id',os.vintage_id,'version',sv.version,'reference_date',sv.reference_date,
-                       'publication_date',sv.publication_date) ORDER BY os.source_id,os.vintage_id)
-                       FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
-                       JOIN source_vintage sv USING(source_id,vintage_id)
-                       WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
-                     FROM scalar_descriptor d JOIN scalar_observation o USING(indicator_id)
-                     WHERE d.theme_id=%s AND o.territory_id=%s AND o.territory_type=%s
-                       AND o.territory_type=ANY(d.allowed_levels) ORDER BY d.indicator_id""",
-                     (theme_id, territory_id, territory_type)).fetchall()
-            profiles, profile_version = focal_profiles(conn, territory_type, territory_id, theme_id=theme_id)
-            owned_series=[]
-            collections=[]
-            bpe_profile=None
-            density_distribution=None
-            if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
-                has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
-                    WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
-                has_route=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
-                    WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
-                if has_theme and has_route:
-                    routes=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
-                        WHERE theme_id=%s AND active_read_route ORDER BY indicator_id""",(theme_id,)).fetchall()
-                    owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator)
-                                  for dataset_id,indicator in routes]
-            bpe_profile = (_bpe_profile_snapshot(conn,territory_type,territory_id,default_comparison=False)
-                if theme_id == "mobilite" and conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]
-                and conn.execute("SELECT 1 FROM bpe_profile_evidence_descriptor WHERE singleton AND indicator_id='bpe_access_profile'").fetchone()
-                else None)
-            collections = [collection_snapshot(conn,descriptor,territory_type,territory_id)
-                           for descriptor in collection_descriptors(conn,theme_id=theme_id)
-                           if territory_type in descriptor["allowed_levels"]]
-            readings = []
-            reading_version = None
-            reading_descriptor_version = None
-            reading_availability = None
-            if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat", "milieux", "mobilite"):
-                raise HTTPException(404, "No published facts for this theme and territory")
-            readings = []
-            reading_version = None
-            if theme_id == "demographie":
-                reading_table = conn.execute("SELECT to_regclass('demographic_typed_reading')").fetchone()[0]
-                reading_marker = conn.execute("""SELECT p.content_version,p.row_count,
-                    p.reference_content_version,t.content_version,d.descriptor_version,
-                    d.source_id,sd.name,sv.vintage_id,sv.version,sv.reference_date,sv.publication_date
-                    ,d.rate_unit
-                    FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
-                    JOIN demographic_reading_descriptor d ON d.singleton
-                    JOIN source_dataset sd ON sd.source_id=d.source_id
-                    JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
-                    WHERE p.table_name='demographic_typed_reading'""").fetchone() if reading_table else None
-                if reading_marker and (not reading_marker[0] or reading_marker[1] <= 0 or
-                        reading_marker[2] != reading_marker[3]):
-                    raise HTTPException(503, "Demographic reading publication is unavailable or incompatible")
-                reading_rows = conn.execute("""SELECT groupe,story_key,salience_reason,periode,
-                    solde_naturel,solde_migratoire,taux_solde_naturel,taux_solde_migratoire,
-                    classification,status,source_id,vintage_id
-                    FROM demographic_typed_reading WHERE territory_id=%s AND territory_type=%s
-                    ORDER BY groupe""", (territory_id, territory_type)).fetchall() if reading_marker else []
-                if reading_marker and not reading_rows:
-                    raise HTTPException(404, "No selected demographic reading for this territory")
-                reading_version = reading_marker[0] if reading_marker else None
-                reading_names = ("groupe","story_key","salience_reason","periode","solde_naturel",
-                    "solde_migratoire","taux_solde_naturel","taux_solde_migratoire","classification",
-                    "status","source_id","vintage_id")
-                provenance = ({"source_id":reading_marker[5],"source_name":reading_marker[6],
-                    "vintage_id":reading_marker[7],"source_version":reading_marker[8],
-                    "source_reference_date":reading_marker[9],"source_publication_date":reading_marker[10]}
-                    if reading_marker else None)
-                readings = [{**dict(zip(reading_names,row)),"provenance":provenance}
-                    for row in reading_rows]
-                for reading in readings:
-                    reading["rate_unit"] = reading_marker[11]
-            elif theme_id == "mobilite":
-                installed = conn.execute("SELECT to_regclass('mobility_typed_reading')").fetchone()[0]
-                if not installed:
-                    raise HTTPException(503,"Mobility reading publication is unavailable")
-                reading_marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
-                    t.content_version,d.descriptor_version,d.source_id,d.vintage_id,d.source_name,d.dataset_name,
-                    d.source_version,d.reference_date,d.publication_date,d.unit,d.direction,d.allowed_levels,
-                    d.missing_status,d.classification_values,d.field_keys,d.story_count,d.clock_count,
-                    sd.name,sv.version,sv.reference_date,sv.publication_date
-                    FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
-                    JOIN mobility_reading_descriptor d ON d.singleton
-                    JOIN source_dataset sd ON sd.source_id=d.source_id
-                    JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
-                    WHERE p.table_name='mobility_typed_reading'""").fetchone()
-                if not reading_marker or not reading_marker[0] or reading_marker[1] < 1 or reading_marker[2] != reading_marker[3]:
-                    raise HTTPException(503,"Mobility reading publication is unavailable or incompatible")
-                if (not reading_marker[4] or not reading_marker[5] or not reading_marker[6] or
-                    reading_marker[7] != reading_marker[20] or reading_marker[9] != reading_marker[21] or
-                    reading_marker[10] != reading_marker[22] or reading_marker[11] != reading_marker[23] or
-                    not reading_marker[8] or not reading_marker[12] or
-                    reading_marker[13] not in ("high","low","none") or not reading_marker[14] or
-                    reading_marker[15] != "unavailable" or not reading_marker[16] or
-                    not {"groupe","story_key","salience_reason","classification_saillance","div_loss_t","div_loss_b","status"}.issubset(set(reading_marker[17]))):
-                    raise HTTPException(503,"Mobility reading descriptor differs from its registered source contract")
-                reading_availability = "available" if territory_type in reading_marker[14] else "unsupported"
-                clocks = conn.execute("""SELECT clock_name,frequency,reference,trigger FROM mobility_reading_clock
-                    ORDER BY ordinal""").fetchall()
-                story_descriptors = conn.execute("""SELECT story_key,groupe,salience_reason FROM mobility_reading_story
-                    ORDER BY ordinal""").fetchall()
-                if len(clocks)!=reading_marker[19] or len(story_descriptors)!=reading_marker[18]:
-                    raise HTTPException(503,"Mobility reading semantic descriptor is incomplete")
-                source_provenance={"source_id":reading_marker[5],"source_name":reading_marker[7],
-                    "dataset_name":reading_marker[8],"vintage_id":reading_marker[6],
-                    "source_version":reading_marker[9],"source_reference_date":reading_marker[10],
-                    "source_publication_date":reading_marker[11],
-                    "windows":[dict(zip(("name","frequency","reference","trigger"),clock)) for clock in clocks]}
-                story_bindings={(story,group,reason) for story,group,reason in story_descriptors}
-                reading_rows = conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.classification_saillance,
-                    r.div_loss_t,r.div_loss_b,r.status,r.source_id,r.vintage_id,s.story_key
-                    FROM mobility_typed_reading r LEFT JOIN mobility_reading_story s
-                      ON s.groupe=r.groupe AND s.story_key=r.story_key AND s.salience_reason=r.salience_reason
-                    WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
-                    (territory_id,territory_type)).fetchall() if reading_availability == "available" else []
-                if reading_availability == "available" and not reading_rows:
-                    raise HTTPException(503,"Declared eligible Mobility reading is absent for this territory")
-                for row in reading_rows:
-                    if (row[9] is None or (row[1],row[0],row[2]) not in story_bindings or
-                        row[7]!=reading_marker[5] or row[8]!=reading_marker[6] or row[2] is None or
-                        (row[3] is not None and row[3] not in reading_marker[16]) or
-                        (row[6]=="measured" and (row[4] is None or row[5] is None)) or
-                        (row[6]==reading_marker[15] and row[4] is not None and row[5] is not None) or
-                        (row[6] not in ("measured",reading_marker[15]))):
-                        raise HTTPException(503,"Mobility reading fields differ from their registered descriptor")
-                    readings.append(dict(zip(("groupe","story_key","salience_reason","classification_saillance",
-                        "div_loss_t","div_loss_b","status","source_id","vintage_id"),row[:9]),
-                        unit=reading_marker[12],direction=reading_marker[13],provenance=source_provenance))
-                reading_version = reading_marker[0]
-                reading_descriptor_version = reading_marker[4]
-            elif theme_id == "habitat":
-                installed = conn.execute("SELECT to_regclass('habitat_typed_reading')").fetchone()[0]
-                if installed:
-                    selected_marker = conn.execute("""SELECT p.content_version,p.reference_content_version,
-                        t.content_version,p.row_count,d.descriptor_version,d.source_id,sd.name,sv.vintage_id,
-                        sv.version,sv.reference_date,sv.publication_date,d.linked_content_version,
-                        dp.content_version,sp.content_version,dp.reference_content_version,pd.required_scalar_version,
-                        st.content_version,st.row_count,st.reference_content_version
-                        FROM selected_reading_publication p JOIN selected_reading_descriptor d USING(theme_id)
-                        JOIN table_publication t ON t.table_name='territory_reference'
-                        JOIN table_publication dp ON dp.table_name='declared_profile'
-                        JOIN table_publication sp ON sp.table_name='scalar_observation'
-                        JOIN table_publication st ON st.table_name='selected_reading'
-                        JOIN profile_descriptor pd ON pd.indicator_id='distribution_dpe'
-                        JOIN source_dataset sd ON sd.source_id=d.source_id
-                        JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
-                        WHERE p.theme_id=%s""",(theme_id,)).fetchone()
-                    if not selected_marker:
-                        selected_exists=conn.execute("SELECT 1 FROM selected_reading_publication WHERE theme_id='habitat'").fetchone()
-                        if selected_exists:
-                            raise HTTPException(503,"Selected habitat reading dependencies are unavailable")
-                    if selected_marker:
-                        if (selected_marker[0]!=selected_marker[4] or selected_marker[1]!=selected_marker[2] or
-                            not selected_marker[11] or selected_marker[3]<1 or
-                            selected_marker[15] != selected_marker[13] or
-                            not selected_marker[11].endswith(f"-{selected_marker[12]}-{selected_marker[13]}-{selected_marker[14]}") or
-                            selected_marker[16] != selected_marker[0] or selected_marker[17] != selected_marker[3] or
-                            selected_marker[18] != selected_marker[1]):
-                            raise HTTPException(503,"Selected reading publication is unavailable or incompatible")
-                        provenance={"source_id":selected_marker[5],"source_name":selected_marker[6],
-                            "vintage_id":selected_marker[7],"source_version":selected_marker[8],
-                            "source_reference_date":selected_marker[9],"source_publication_date":selected_marker[10]}
-                        habitat_rows=conn.execute("""SELECT groupe,story_key,salience_reason,classification,
-                            part_passoires,part_abc,n_dpe,status,source_id,vintage_id FROM habitat_typed_reading
-                            WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",(territory_id,territory_type)).fetchall()
-                        if any(row[8]!=selected_marker[5] or row[9]!=selected_marker[7] for row in habitat_rows):
-                            raise HTTPException(503,"Selected habitat reading provenance is incompatible")
-                        readings=[dict(zip(("groupe","story_key","salience_reason","classification","part_passoires",
-                            "part_abc","n_dpe","status","source_id","vintage_id"),row),provenance=provenance) for row in habitat_rows]
-                        if not readings: raise HTTPException(404,"No selected reading for this territory")
-                        reading_version=selected_marker[0]
-            elif theme_id == "economie":
-                installed=conn.execute("SELECT to_regclass('economy_typed_reading')").fetchone()[0]
-                if not installed:
-                    raise HTTPException(503,"Economy reading publication is unavailable")
-                if installed:
-                    selected_marker=conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
-                        t.content_version,e.content_version,e.row_count,e.reference_content_version
-                        FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
-                        JOIN table_publication e ON e.table_name='economy_activity_evidence'
-                        WHERE p.table_name='economy_typed_reading'""").fetchone()
-                    if not selected_marker:
-                        raise HTTPException(503,"Economy reading publication is unavailable")
-                    if (selected_marker[0]!=selected_marker[4] or selected_marker[1]<1 or
-                        selected_marker[2]!=selected_marker[3] or selected_marker[6]!=selected_marker[3] or
-                        selected_marker[5]<0):
-                        raise HTTPException(503,"Economy reading publication is unavailable or incompatible")
-                    reading_rows=conn.execute("""SELECT groupe,story_key,salience_reason,status,source_id,vintage_id
-                        FROM economy_typed_reading WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",
-                        (territory_id,territory_type)).fetchall()
-                    reading_availability = "available" if reading_rows else "unsupported"
-                    reading_source_id=reading_rows[0][4] if reading_rows else None
-                    source=conn.execute("""SELECT sd.name,v.version,v.reference_date,v.publication_date
-                        FROM source_vintage v JOIN source_dataset sd USING(source_id)
-                        WHERE v.source_id=%s AND v.vintage_id=%s""",
-                        (reading_source_id,reading_rows[0][5])).fetchone() if reading_rows else None
-                    if reading_rows and (not source or any(row[4]!=reading_source_id or row[5]!=reading_rows[0][5] for row in reading_rows)):
-                        raise HTTPException(503,"Economy reading provenance is incompatible")
-                    provenance=({"source_id":reading_source_id,"source_name":source[0],"vintage_id":reading_rows[0][5],
-                        "source_version":source[1],"source_reference_date":source[2],"source_publication_date":source[3]}
-                        if reading_rows else None)
-                    evidence=conn.execute("""SELECT groupe,rank,activity_code,activity_label,lq,establishment_count,park_share,source_id,vintage_id
-                        FROM economy_activity_evidence WHERE territory_id=%s AND territory_type=%s ORDER BY groupe,rank""",
-                        (territory_id,territory_type)).fetchall()
-                    by_group={}
-                    for row in evidence:
-                        if row[7]!=reading_source_id or row[8]!=reading_rows[0][5]:
-                            raise HTTPException(503,"Economy activity evidence provenance is incompatible")
-                        by_group.setdefault(row[0],[]).append({"rank":row[1],"activity_code":row[2],"activity_label":row[3],
-                            "lq":row[4],"n":row[5],"part_parc":row[6]})
-                    if any([item["rank"] for item in items] != list(range(1,len(items)+1)) for items in by_group.values()) or any(
-                        row[3]=="measured" and not by_group.get(row[0]) for row in reading_rows):
-                        raise HTTPException(503,"Economy activity evidence is incomplete")
-                    readings=[{"groupe":row[0],"story_key":row[1],"salience_reason":row[2],"status":row[3],
-                        "activities":by_group.get(row[0],[]),"provenance":provenance} for row in reading_rows]
-                    reading_version=selected_marker[0]
-            elif theme_id == "milieux":
-                installed=conn.execute("SELECT to_regclass('milieux_typed_reading')").fetchone()[0]
-                if not installed:
-                    raise HTTPException(503,"Milieux reading publication is unavailable")
-                milieux_marker=conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
-                    FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
-                    WHERE p.table_name='milieux_typed_reading'""").fetchone()
-                if not milieux_marker or milieux_marker[0] is None or milieux_marker[1] < 1 or milieux_marker[2] != milieux_marker[3]:
-                    raise HTTPException(503,"Milieux reading publication is unavailable or incompatible")
-                milieux_rows=conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.periode_pop,r.periode_artif,
-                    r.delta_population,r.taux_variation_population,r.artif_m2_par_habitant,r.artif_m3_par_habitant,
-                    r.trajectoire_artif_par_habitant,r.classification,r.status,r.source_id,r.vintage_id
-                    FROM milieux_typed_reading r
-                    WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
-                    (territory_id,territory_type)).fetchall()
-                if not milieux_rows:
-                    raise HTTPException(404,"No selected Milieux reading for this territory")
-                source_rows=conn.execute("""SELECT b.groupe,b.field_key,b.source_id,b.source_name,b.vintage_id,b.source_version,
-                    b.reference_date,b.publication_date,b.observation_period,b.dataset_id,b.dataset_content_version,
-                    b.state_role,b.provenance_revision_id,b.axis_value,b.population_revision_id,
-                    COALESCE(p.source_id,s.source_id),COALESCE(p.vintage_id,s.vintage_id),
-                    COALESCE(p.source_name,s.source_name),COALESCE(p.source_version,s.source_version),
-                    COALESCE(p.reference_date,s.reference_date),COALESCE(p.publication_date,s.publication_date)
-                    FROM milieux_reading_source b
-                    LEFT JOIN milieux_population_provenance_revision p ON p.population_revision_id=b.population_revision_id
-                    LEFT JOIN series_provenance_revision s ON s.provenance_revision_id=b.provenance_revision_id
-                    WHERE b.territory_id=%s AND b.territory_type=%s
-                    ORDER BY b.groupe,b.field_key,b.source_id,b.vintage_id""",(territory_id,territory_type)).fetchall()
-                by_reading={}
-                for source_row in source_rows:
-                    if source_row[9] is not None:
-                        current=conn.execute("SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=%s",
-                            (source_row[9],)).fetchone()
-                        if not current or current[0]!=source_row[10] or current[1]!=milieux_marker[3]:
-                            raise HTTPException(503,"Milieux OCS-GE source association is stale or incompatible")
-                    if (source_row[2]!=source_row[15] or source_row[4]!=source_row[16] or source_row[3]!=source_row[17] or
-                        source_row[5]!=source_row[18] or source_row[6]!=source_row[19] or source_row[7]!=source_row[20] or
-                        (source_row[1]=="population" and (source_row[14] is None or source_row[12] is not None)) or
-                        (source_row[1]!="population" and (source_row[12] is None or source_row[14] is not None))):
-                        raise HTTPException(503,"Milieux source clock differs from its immutable provenance revision")
-                    by_reading.setdefault(source_row[0],[]).append({"field":source_row[1],"source_id":source_row[15],
-                        "source_name":source_row[17],"vintage_id":source_row[16],"source_version":source_row[18],
-                        "source_reference_date":source_row[19],"source_publication_date":source_row[20],
-                        "observation_period":source_row[8],"dataset_id":source_row[9],
-                        "dataset_content_version":source_row[10],"state_role":source_row[11],
-                        "provenance_revision_id":source_row[12],"population_revision_id":source_row[14],
-                        "axis_value":source_row[13]})
-                readings=[]
-                for row in milieux_rows:
-                    associations=by_reading.get(row[0],[])
-                    if not any(a["field"]=="population" for a in associations) or not any(a["field"]=="artif_m2_par_habitant" for a in associations) or not any(a["field"]=="artif_m3_par_habitant" for a in associations):
-                        raise HTTPException(503,"Milieux reading source/window associations are incomplete")
-                    population_associations=[a for a in associations if a["field"]=="population"]
-                    if len(population_associations)!=1 or population_associations[0]["source_id"]!=row[12] or population_associations[0]["vintage_id"]!=row[13]:
-                        raise HTTPException(503,"Milieux population reading is detached from its canonical vintage")
-                    for association in associations:
-                        expected_period=row[3] if association["field"]=="population" else row[4]
-                        expected_role={"artif_m2_par_habitant":"M2","artif_m3_par_habitant":"M3"}.get(association["field"])
-                        if association["observation_period"]!=expected_period or (expected_role and association["state_role"]!=expected_role):
-                            raise HTTPException(503,"Milieux reading source/window association disagrees with selected producer window")
-                        if expected_role:
-                            registered=conn.execute("""SELECT r.source_id,r.vintage_id,r.provenance_revision_id,o.state_role,o.observation_period
-                                FROM series_dataset_observation o JOIN series_observation_provenance a
-                                  USING(dataset_id,indicator_id,territory_id,axis_value)
-                                JOIN series_provenance_revision r USING(provenance_revision_id)
-                                WHERE o.dataset_id=%s AND o.indicator_id='artif_par_habitant' AND o.territory_id=%s
-                                  AND o.territory_type=%s AND o.axis_value=%s""",
-                                (association["dataset_id"],territory_id,territory_type,association["axis_value"])).fetchall()
-                            actual_for_field=[a for a in associations if a["field"]==association["field"]]
-                            registered_keys={(r[0],r[1],r[2]) for r in registered}
-                            bound_keys={(a["source_id"],a["vintage_id"],a["provenance_revision_id"]) for a in actual_for_field}
-                            if not registered or registered_keys!=bound_keys or any(r[3]!=expected_role or r[4]!=expected_period for r in registered):
-                                raise HTTPException(503,"Milieux source-component bindings differ from the registered OCS-GE state publication")
-                    readings.append(dict(zip(("groupe","story_key","salience_reason","periode_pop","periode_artif",
-                        "delta_population","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant",
-                        "trajectoire_artif_par_habitant","classification","status","source_id","vintage_id"),row[:14]),
-                        provenance={"source_id":population_associations[0]["source_id"],
-                        "source_name":population_associations[0]["source_name"],
-                        "vintage_id":population_associations[0]["vintage_id"],
-                        "source_version":population_associations[0]["source_version"],
-                        "source_reference_date":population_associations[0]["source_reference_date"],
-                        "source_publication_date":population_associations[0]["source_publication_date"],
-                        "associations":associations}))
-                reading_version=milieux_marker[0]
-            comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, None,
-                profiles=profiles, profile_version=profile_version, has_readings=bool(readings))
-            building_access = None
-            service_reference = None
-            essential_service_access = None
-            if theme_id == "mobilite":
-                # Reuse the registered essential-service reader inside this
-                # endpoint's snapshot. For communes this is the established
-                # density-class default; larger territory levels use their
-                # same-level published peers. Do not open a nested connection.
-                service_mode = service_comparison or "densite"
-                service_snapshot = (repository.read(territory_id, service_mode, connection=conn)
-                    if territory_type == "commune"
-                    else repository.read_level(territory_type, territory_id, connection=conn))
-                essential_service_access = compare(service_snapshot).model_dump(mode="json")
-                density_distribution=_mobility_density_distribution_snapshot(conn,territory_type,territory_id)
-                try:
-                    building_access = repository.read_building_initial(
-                        territory_type, territory_id,
-                        service_mode if territory_type == "commune" else None,
-                        connection=conn)
-                except HTTPException as exc:
-                    # Older installations can serve the existing theme facts
-                    # before the additive registered building publication is
-                    # installed. Keep that pre-existing theme contract intact.
-                    if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
-                        raise
-                service_contract = conn.execute("""SELECT EXISTS(
-                    SELECT 1 FROM scalar_descriptor WHERE theme_id='mobilite'
-                      AND indicator_id LIKE 'share_%')""").fetchone()[0]
-                if service_contract:
-                    service_reference = _mobility_service_reference_snapshot(conn)
+            return _theme_facts_snapshot(
+                conn, territory_type, territory_id, theme_id, service_comparison, repository)
+
+
+@app.post("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
+def selected_theme_facts(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
+    territory_id: str = Path(min_length=1, max_length=32),
+    request: ThemeComparisonRequest = ...,
+    repository: ReadRepository = Depends(get_repository),
+) -> dict:
+    """Acquire focal theme facts and selected comparisons in one snapshot."""
+    if request.theme_id != theme_id:
+        raise HTTPException(422, "Body theme_id must match the theme facts route")
+    selected = None if request.selection is None else [
+        (item.territory_type, item.territory_id) for item in request.selection]
+    with repository.connections.connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            payload = _theme_facts_snapshot(
+                conn, territory_type, territory_id, theme_id, None, repository,
+                selection=selected, include_selected_comparison=True)
+            payload.pop("default_comparison", None)
+            comparison = payload.pop("_selected_comparison")
+            nested = {key: comparison[key] for key in (
+                "contract", "complete_theme", "theme_id", "content_version",
+                "reference_content_version", "selection", "scope", "results",
+                "collection_content_versions", "scalar_content_version",
+                "profile_content_version", "profile_comparisons",
+                "reading_content_version", "reading_cloud", "owned_series_content_versions",
+                "bpe_content_version", "bpe_reference_content_version",
+                "service_publication_id", "building_publication_id")}
+            nested["results"] = [_comparison_result_without_focal_value(row) for row in nested["results"]]
+            nested["profile_comparisons"] = [_comparison_result_without_focal_value(row)
+                                               for row in nested["profile_comparisons"]]
+            payload["comparison"] = nested
+            return payload
+
+
+def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_comparison,
+                           repository, selection=None, *, include_selected_comparison=False) -> dict:
+    """Build the public theme-facts response from one caller-owned snapshot."""
+    territory = conn.execute("""SELECT territory_id,name,territory_type FROM territory_reference
+        WHERE territory_id=%s AND territory_type=%s""", (territory_id, territory_type)).fetchone()
+    if not territory:
+        raise HTTPException(404, "Territory not found")
+    descriptors = conn.execute(
+        "SELECT indicator_id FROM scalar_descriptor WHERE theme_id=%s ORDER BY indicator_id",
+        (theme_id,)).fetchall()
+    rows = []
+    marker = None
+    if descriptors:
+        marker = conn.execute("""SELECT s.content_version,s.reference_content_version,
+             t.content_version FROM table_publication s LEFT JOIN table_publication t
+             ON t.table_name='territory_reference' WHERE s.table_name='scalar_observation'""").fetchone()
+        if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
+            raise HTTPException(503, "Scalar publication is unavailable or incompatible")
+        rows = conn.execute("""SELECT d.indicator_id,d.label,d.unit,d.direction,d.comparison_facet,
+             d.descriptor_version,o.value,o.status,o.support_count,o.denominator_count,
+             COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,'name',sd.name,
+               'vintage_id',os.vintage_id,'version',sv.version,'reference_date',sv.reference_date,
+               'publication_date',sv.publication_date) ORDER BY os.source_id,os.vintage_id)
+               FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
+               JOIN source_vintage sv USING(source_id,vintage_id)
+               WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
+             FROM scalar_descriptor d JOIN scalar_observation o USING(indicator_id)
+             WHERE d.theme_id=%s AND o.territory_id=%s AND o.territory_type=%s
+               AND o.territory_type=ANY(d.allowed_levels) ORDER BY d.indicator_id""",
+             (theme_id, territory_id, territory_type)).fetchall()
+    profiles, profile_version = focal_profiles(conn, territory_type, territory_id, theme_id=theme_id)
+    owned_series=[]
+    collections=[]
+    bpe_profile=None
+    density_distribution=None
+    if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
+        has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
+        has_route=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
+        if has_theme and has_route:
+            routes=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
+                WHERE theme_id=%s AND active_read_route ORDER BY indicator_id""",(theme_id,)).fetchall()
+            owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator)
+                          for dataset_id,indicator in routes]
+    bpe_profile = (_bpe_profile_snapshot(conn,territory_type,territory_id,default_comparison=False)
+        if theme_id == "mobilite" and conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]
+        and conn.execute("SELECT 1 FROM bpe_profile_evidence_descriptor WHERE singleton AND indicator_id='bpe_access_profile'").fetchone()
+        else None)
+    collections = [collection_snapshot(conn,descriptor,territory_type,territory_id)
+                   for descriptor in collection_descriptors(conn,theme_id=theme_id)
+                   if territory_type in descriptor["allowed_levels"]]
+    readings = []
+    reading_version = None
+    reading_descriptor_version = None
+    reading_availability = None
+    if not rows and not profiles and not owned_series and not bpe_profile and not collections and theme_id not in ("demographie", "habitat", "economie", "milieux", "mobilite"):
+        raise HTTPException(404, "No published facts for this theme and territory")
+    readings = []
+    reading_version = None
+    if theme_id == "demographie":
+        reading_table = conn.execute("SELECT to_regclass('demographic_typed_reading')").fetchone()[0]
+        reading_marker = conn.execute("""SELECT p.content_version,p.row_count,
+            p.reference_content_version,t.content_version,d.descriptor_version,
+            d.source_id,sd.name,sv.vintage_id,sv.version,sv.reference_date,sv.publication_date
+            ,d.rate_unit
+            FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+            JOIN demographic_reading_descriptor d ON d.singleton
+            JOIN source_dataset sd ON sd.source_id=d.source_id
+            JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+            WHERE p.table_name='demographic_typed_reading'""").fetchone() if reading_table else None
+        if reading_marker and (not reading_marker[0] or reading_marker[1] <= 0 or
+                reading_marker[2] != reading_marker[3]):
+            raise HTTPException(503, "Demographic reading publication is unavailable or incompatible")
+        reading_rows = conn.execute("""SELECT groupe,story_key,salience_reason,periode,
+            solde_naturel,solde_migratoire,taux_solde_naturel,taux_solde_migratoire,
+            classification,status,source_id,vintage_id
+            FROM demographic_typed_reading WHERE territory_id=%s AND territory_type=%s
+            ORDER BY groupe""", (territory_id, territory_type)).fetchall() if reading_marker else []
+        if reading_marker and not reading_rows:
+            raise HTTPException(404, "No selected demographic reading for this territory")
+        reading_version = reading_marker[0] if reading_marker else None
+        reading_names = ("groupe","story_key","salience_reason","periode","solde_naturel",
+            "solde_migratoire","taux_solde_naturel","taux_solde_migratoire","classification",
+            "status","source_id","vintage_id")
+        provenance = ({"source_id":reading_marker[5],"source_name":reading_marker[6],
+            "vintage_id":reading_marker[7],"source_version":reading_marker[8],
+            "source_reference_date":reading_marker[9],"source_publication_date":reading_marker[10]}
+            if reading_marker else None)
+        readings = [{**dict(zip(reading_names,row)),"provenance":provenance}
+            for row in reading_rows]
+        for reading in readings:
+            reading["rate_unit"] = reading_marker[11]
+    elif theme_id == "mobilite":
+        installed = conn.execute("SELECT to_regclass('mobility_typed_reading')").fetchone()[0]
+        if not installed:
+            raise HTTPException(503,"Mobility reading publication is unavailable")
+        reading_marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
+            t.content_version,d.descriptor_version,d.source_id,d.vintage_id,d.source_name,d.dataset_name,
+            d.source_version,d.reference_date,d.publication_date,d.unit,d.direction,d.allowed_levels,
+            d.missing_status,d.classification_values,d.field_keys,d.story_count,d.clock_count,
+            sd.name,sv.version,sv.reference_date,sv.publication_date
+            FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+            JOIN mobility_reading_descriptor d ON d.singleton
+            JOIN source_dataset sd ON sd.source_id=d.source_id
+            JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+            WHERE p.table_name='mobility_typed_reading'""").fetchone()
+        if not reading_marker or not reading_marker[0] or reading_marker[1] < 1 or reading_marker[2] != reading_marker[3]:
+            raise HTTPException(503,"Mobility reading publication is unavailable or incompatible")
+        if (not reading_marker[4] or not reading_marker[5] or not reading_marker[6] or
+            reading_marker[7] != reading_marker[20] or reading_marker[9] != reading_marker[21] or
+            reading_marker[10] != reading_marker[22] or reading_marker[11] != reading_marker[23] or
+            not reading_marker[8] or not reading_marker[12] or
+            reading_marker[13] not in ("high","low","none") or not reading_marker[14] or
+            reading_marker[15] != "unavailable" or not reading_marker[16] or
+            not {"groupe","story_key","salience_reason","classification_saillance","div_loss_t","div_loss_b","status"}.issubset(set(reading_marker[17]))):
+            raise HTTPException(503,"Mobility reading descriptor differs from its registered source contract")
+        reading_availability = "available" if territory_type in reading_marker[14] else "unsupported"
+        clocks = conn.execute("""SELECT clock_name,frequency,reference,trigger FROM mobility_reading_clock
+            ORDER BY ordinal""").fetchall()
+        story_descriptors = conn.execute("""SELECT story_key,groupe,salience_reason FROM mobility_reading_story
+            ORDER BY ordinal""").fetchall()
+        if len(clocks)!=reading_marker[19] or len(story_descriptors)!=reading_marker[18]:
+            raise HTTPException(503,"Mobility reading semantic descriptor is incomplete")
+        source_provenance={"source_id":reading_marker[5],"source_name":reading_marker[7],
+            "dataset_name":reading_marker[8],"vintage_id":reading_marker[6],
+            "source_version":reading_marker[9],"source_reference_date":reading_marker[10],
+            "source_publication_date":reading_marker[11],
+            "windows":[dict(zip(("name","frequency","reference","trigger"),clock)) for clock in clocks]}
+        story_bindings={(story,group,reason) for story,group,reason in story_descriptors}
+        reading_rows = conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.classification_saillance,
+            r.div_loss_t,r.div_loss_b,r.status,r.source_id,r.vintage_id,s.story_key
+            FROM mobility_typed_reading r LEFT JOIN mobility_reading_story s
+              ON s.groupe=r.groupe AND s.story_key=r.story_key AND s.salience_reason=r.salience_reason
+            WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
+            (territory_id,territory_type)).fetchall() if reading_availability == "available" else []
+        if reading_availability == "available" and not reading_rows:
+            raise HTTPException(503,"Declared eligible Mobility reading is absent for this territory")
+        for row in reading_rows:
+            if (row[9] is None or (row[1],row[0],row[2]) not in story_bindings or
+                row[7]!=reading_marker[5] or row[8]!=reading_marker[6] or row[2] is None or
+                (row[3] is not None and row[3] not in reading_marker[16]) or
+                (row[6]=="measured" and (row[4] is None or row[5] is None)) or
+                (row[6]==reading_marker[15] and row[4] is not None and row[5] is not None) or
+                (row[6] not in ("measured",reading_marker[15]))):
+                raise HTTPException(503,"Mobility reading fields differ from their registered descriptor")
+            readings.append(dict(zip(("groupe","story_key","salience_reason","classification_saillance",
+                "div_loss_t","div_loss_b","status","source_id","vintage_id"),row[:9]),
+                unit=reading_marker[12],direction=reading_marker[13],provenance=source_provenance))
+        reading_version = reading_marker[0]
+        reading_descriptor_version = reading_marker[4]
+    elif theme_id == "habitat":
+        installed = conn.execute("SELECT to_regclass('habitat_typed_reading')").fetchone()[0]
+        if installed:
+            selected_marker = conn.execute("""SELECT p.content_version,p.reference_content_version,
+                t.content_version,p.row_count,d.descriptor_version,d.source_id,sd.name,sv.vintage_id,
+                sv.version,sv.reference_date,sv.publication_date,d.linked_content_version,
+                dp.content_version,sp.content_version,dp.reference_content_version,pd.required_scalar_version,
+                st.content_version,st.row_count,st.reference_content_version
+                FROM selected_reading_publication p JOIN selected_reading_descriptor d USING(theme_id)
+                JOIN table_publication t ON t.table_name='territory_reference'
+                JOIN table_publication dp ON dp.table_name='declared_profile'
+                JOIN table_publication sp ON sp.table_name='scalar_observation'
+                JOIN table_publication st ON st.table_name='selected_reading'
+                JOIN profile_descriptor pd ON pd.indicator_id='distribution_dpe'
+                JOIN source_dataset sd ON sd.source_id=d.source_id
+                JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+                WHERE p.theme_id=%s""",(theme_id,)).fetchone()
+            if not selected_marker:
+                selected_exists=conn.execute("SELECT 1 FROM selected_reading_publication WHERE theme_id='habitat'").fetchone()
+                if selected_exists:
+                    raise HTTPException(503,"Selected habitat reading dependencies are unavailable")
+            if selected_marker:
+                if (selected_marker[0]!=selected_marker[4] or selected_marker[1]!=selected_marker[2] or
+                    not selected_marker[11] or selected_marker[3]<1 or
+                    selected_marker[15] != selected_marker[13] or
+                    not selected_marker[11].endswith(f"-{selected_marker[12]}-{selected_marker[13]}-{selected_marker[14]}") or
+                    selected_marker[16] != selected_marker[0] or selected_marker[17] != selected_marker[3] or
+                    selected_marker[18] != selected_marker[1]):
+                    raise HTTPException(503,"Selected reading publication is unavailable or incompatible")
+                provenance={"source_id":selected_marker[5],"source_name":selected_marker[6],
+                    "vintage_id":selected_marker[7],"source_version":selected_marker[8],
+                    "source_reference_date":selected_marker[9],"source_publication_date":selected_marker[10]}
+                habitat_rows=conn.execute("""SELECT groupe,story_key,salience_reason,classification,
+                    part_passoires,part_abc,n_dpe,status,source_id,vintage_id FROM habitat_typed_reading
+                    WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",(territory_id,territory_type)).fetchall()
+                if any(row[8]!=selected_marker[5] or row[9]!=selected_marker[7] for row in habitat_rows):
+                    raise HTTPException(503,"Selected habitat reading provenance is incompatible")
+                readings=[dict(zip(("groupe","story_key","salience_reason","classification","part_passoires",
+                    "part_abc","n_dpe","status","source_id","vintage_id"),row),provenance=provenance) for row in habitat_rows]
+                if not readings: raise HTTPException(404,"No selected reading for this territory")
+                reading_version=selected_marker[0]
+    elif theme_id == "economie":
+        installed=conn.execute("SELECT to_regclass('economy_typed_reading')").fetchone()[0]
+        if not installed:
+            raise HTTPException(503,"Economy reading publication is unavailable")
+        if installed:
+            selected_marker=conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,
+                t.content_version,e.content_version,e.row_count,e.reference_content_version
+                FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+                JOIN table_publication e ON e.table_name='economy_activity_evidence'
+                WHERE p.table_name='economy_typed_reading'""").fetchone()
+            if not selected_marker:
+                raise HTTPException(503,"Economy reading publication is unavailable")
+            if (selected_marker[0]!=selected_marker[4] or selected_marker[1]<1 or
+                selected_marker[2]!=selected_marker[3] or selected_marker[6]!=selected_marker[3] or
+                selected_marker[5]<0):
+                raise HTTPException(503,"Economy reading publication is unavailable or incompatible")
+            reading_rows=conn.execute("""SELECT groupe,story_key,salience_reason,status,source_id,vintage_id
+                FROM economy_typed_reading WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",
+                (territory_id,territory_type)).fetchall()
+            reading_availability = "available" if reading_rows else "unsupported"
+            reading_source_id=reading_rows[0][4] if reading_rows else None
+            source=conn.execute("""SELECT sd.name,v.version,v.reference_date,v.publication_date
+                FROM source_vintage v JOIN source_dataset sd USING(source_id)
+                WHERE v.source_id=%s AND v.vintage_id=%s""",
+                (reading_source_id,reading_rows[0][5])).fetchone() if reading_rows else None
+            if reading_rows and (not source or any(row[4]!=reading_source_id or row[5]!=reading_rows[0][5] for row in reading_rows)):
+                raise HTTPException(503,"Economy reading provenance is incompatible")
+            provenance=({"source_id":reading_source_id,"source_name":source[0],"vintage_id":reading_rows[0][5],
+                "source_version":source[1],"source_reference_date":source[2],"source_publication_date":source[3]}
+                if reading_rows else None)
+            evidence=conn.execute("""SELECT groupe,rank,activity_code,activity_label,lq,establishment_count,park_share,source_id,vintage_id
+                FROM economy_activity_evidence WHERE territory_id=%s AND territory_type=%s ORDER BY groupe,rank""",
+                (territory_id,territory_type)).fetchall()
+            by_group={}
+            for row in evidence:
+                if row[7]!=reading_source_id or row[8]!=reading_rows[0][5]:
+                    raise HTTPException(503,"Economy activity evidence provenance is incompatible")
+                by_group.setdefault(row[0],[]).append({"rank":row[1],"activity_code":row[2],"activity_label":row[3],
+                    "lq":row[4],"n":row[5],"part_parc":row[6]})
+            if any([item["rank"] for item in items] != list(range(1,len(items)+1)) for items in by_group.values()) or any(
+                row[3]=="measured" and not by_group.get(row[0]) for row in reading_rows):
+                raise HTTPException(503,"Economy activity evidence is incomplete")
+            readings=[{"groupe":row[0],"story_key":row[1],"salience_reason":row[2],"status":row[3],
+                "activities":by_group.get(row[0],[]),"provenance":provenance} for row in reading_rows]
+            reading_version=selected_marker[0]
+    elif theme_id == "milieux":
+        installed=conn.execute("SELECT to_regclass('milieux_typed_reading')").fetchone()[0]
+        if not installed:
+            raise HTTPException(503,"Milieux reading publication is unavailable")
+        milieux_marker=conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
+            FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+            WHERE p.table_name='milieux_typed_reading'""").fetchone()
+        if not milieux_marker or milieux_marker[0] is None or milieux_marker[1] < 1 or milieux_marker[2] != milieux_marker[3]:
+            raise HTTPException(503,"Milieux reading publication is unavailable or incompatible")
+        milieux_rows=conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.periode_pop,r.periode_artif,
+            r.delta_population,r.taux_variation_population,r.artif_m2_par_habitant,r.artif_m3_par_habitant,
+            r.trajectoire_artif_par_habitant,r.classification,r.status,r.source_id,r.vintage_id
+            FROM milieux_typed_reading r
+            WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
+            (territory_id,territory_type)).fetchall()
+        if not milieux_rows:
+            raise HTTPException(404,"No selected Milieux reading for this territory")
+        source_rows=conn.execute("""SELECT b.groupe,b.field_key,b.source_id,b.source_name,b.vintage_id,b.source_version,
+            b.reference_date,b.publication_date,b.observation_period,b.dataset_id,b.dataset_content_version,
+            b.state_role,b.provenance_revision_id,b.axis_value,b.population_revision_id,
+            COALESCE(p.source_id,s.source_id),COALESCE(p.vintage_id,s.vintage_id),
+            COALESCE(p.source_name,s.source_name),COALESCE(p.source_version,s.source_version),
+            COALESCE(p.reference_date,s.reference_date),COALESCE(p.publication_date,s.publication_date)
+            FROM milieux_reading_source b
+            LEFT JOIN milieux_population_provenance_revision p ON p.population_revision_id=b.population_revision_id
+            LEFT JOIN series_provenance_revision s ON s.provenance_revision_id=b.provenance_revision_id
+            WHERE b.territory_id=%s AND b.territory_type=%s
+            ORDER BY b.groupe,b.field_key,b.source_id,b.vintage_id""",(territory_id,territory_type)).fetchall()
+        by_reading={}
+        for source_row in source_rows:
+            if source_row[9] is not None:
+                current=conn.execute("SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=%s",
+                    (source_row[9],)).fetchone()
+                if not current or current[0]!=source_row[10] or current[1]!=milieux_marker[3]:
+                    raise HTTPException(503,"Milieux OCS-GE source association is stale or incompatible")
+            if (source_row[2]!=source_row[15] or source_row[4]!=source_row[16] or source_row[3]!=source_row[17] or
+                source_row[5]!=source_row[18] or source_row[6]!=source_row[19] or source_row[7]!=source_row[20] or
+                (source_row[1]=="population" and (source_row[14] is None or source_row[12] is not None)) or
+                (source_row[1]!="population" and (source_row[12] is None or source_row[14] is not None))):
+                raise HTTPException(503,"Milieux source clock differs from its immutable provenance revision")
+            by_reading.setdefault(source_row[0],[]).append({"field":source_row[1],"source_id":source_row[15],
+                "source_name":source_row[17],"vintage_id":source_row[16],"source_version":source_row[18],
+                "source_reference_date":source_row[19],"source_publication_date":source_row[20],
+                "observation_period":source_row[8],"dataset_id":source_row[9],
+                "dataset_content_version":source_row[10],"state_role":source_row[11],
+                "provenance_revision_id":source_row[12],"population_revision_id":source_row[14],
+                "axis_value":source_row[13]})
+        readings=[]
+        for row in milieux_rows:
+            associations=by_reading.get(row[0],[])
+            if not any(a["field"]=="population" for a in associations) or not any(a["field"]=="artif_m2_par_habitant" for a in associations) or not any(a["field"]=="artif_m3_par_habitant" for a in associations):
+                raise HTTPException(503,"Milieux reading source/window associations are incomplete")
+            population_associations=[a for a in associations if a["field"]=="population"]
+            if len(population_associations)!=1 or population_associations[0]["source_id"]!=row[12] or population_associations[0]["vintage_id"]!=row[13]:
+                raise HTTPException(503,"Milieux population reading is detached from its canonical vintage")
+            for association in associations:
+                expected_period=row[3] if association["field"]=="population" else row[4]
+                expected_role={"artif_m2_par_habitant":"M2","artif_m3_par_habitant":"M3"}.get(association["field"])
+                if association["observation_period"]!=expected_period or (expected_role and association["state_role"]!=expected_role):
+                    raise HTTPException(503,"Milieux reading source/window association disagrees with selected producer window")
+                if expected_role:
+                    registered=conn.execute("""SELECT r.source_id,r.vintage_id,r.provenance_revision_id,o.state_role,o.observation_period
+                        FROM series_dataset_observation o JOIN series_observation_provenance a
+                          USING(dataset_id,indicator_id,territory_id,axis_value)
+                        JOIN series_provenance_revision r USING(provenance_revision_id)
+                        WHERE o.dataset_id=%s AND o.indicator_id='artif_par_habitant' AND o.territory_id=%s
+                          AND o.territory_type=%s AND o.axis_value=%s""",
+                        (association["dataset_id"],territory_id,territory_type,association["axis_value"])).fetchall()
+                    actual_for_field=[a for a in associations if a["field"]==association["field"]]
+                    registered_keys={(r[0],r[1],r[2]) for r in registered}
+                    bound_keys={(a["source_id"],a["vintage_id"],a["provenance_revision_id"]) for a in actual_for_field}
+                    if not registered or registered_keys!=bound_keys or any(r[3]!=expected_role or r[4]!=expected_period for r in registered):
+                        raise HTTPException(503,"Milieux source-component bindings differ from the registered OCS-GE state publication")
+            readings.append(dict(zip(("groupe","story_key","salience_reason","periode_pop","periode_artif",
+                "delta_population","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant",
+                "trajectoire_artif_par_habitant","classification","status","source_id","vintage_id"),row[:14]),
+                provenance={"source_id":population_associations[0]["source_id"],
+                "source_name":population_associations[0]["source_name"],
+                "vintage_id":population_associations[0]["vintage_id"],
+                "source_version":population_associations[0]["source_version"],
+                "source_reference_date":population_associations[0]["source_reference_date"],
+                "source_publication_date":population_associations[0]["source_publication_date"],
+                "associations":associations}))
+        reading_version=milieux_marker[0]
+    comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
+        profiles=profiles, profile_version=profile_version, has_readings=bool(readings))
+    building_access = None
+    service_reference = None
+    essential_service_access = None
+    if theme_id == "mobilite":
+        # Reuse the registered essential-service reader inside this
+        # endpoint's snapshot. For communes this is the established
+        # density-class default; larger territory levels use their
+        # same-level published peers. Do not open a nested connection.
+        service_mode = service_comparison or "densite"
+        if selection is None:
+            service_snapshot = (repository.read(territory_id, service_mode, connection=conn)
+                if territory_type == "commune"
+                else repository.read_level(territory_type, territory_id, connection=conn))
+        else:
+            service_snapshot = repository.read_selected(territory_type, territory_id, selection,
+                                                        connection=conn)
+        essential_service_access = compare(service_snapshot).model_dump(mode="json")
+        comparison["service_publication_id"] = service_snapshot["publication_id"]
+        density_distribution=_mobility_density_distribution_snapshot(conn,territory_type,territory_id)
+        try:
+            building_access = repository.read_building_initial(
+                territory_type, territory_id,
+                service_mode if territory_type == "commune" else None,
+                selected=selection,
+                connection=conn)
+            comparison["building_publication_id"] = building_access["publication_id"]
+        except HTTPException as exc:
+            # Older installations can serve the existing theme facts
+            # before the additive registered building publication is
+            # installed. Keep that pre-existing theme contract intact.
+            if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
+                raise
+        service_contract = conn.execute("""SELECT EXISTS(
+            SELECT 1 FROM scalar_descriptor WHERE theme_id='mobilite'
+              AND indicator_id LIKE 'share_%')""").fetchone()[0]
+        if service_contract:
+            service_reference = _mobility_service_reference_snapshot(conn)
     names=("indicator_id","label","unit","direction","comparison_facet","descriptor_version",
            "value","status","support_count","denominator_count","sources")
     # A public theme response exposes observations as indicator facts, rather
@@ -2722,8 +2787,10 @@ def theme_facts(
          "bpe_profile_evidence":bpe_profile,
         "collections":collections,
         "indicators":indicators,
-        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
-                              "profile_comparisons":comparison["profile_comparisons"]}}
+         "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
+                               "profile_comparisons":comparison["profile_comparisons"]}}
+    if include_selected_comparison:
+        payload["_selected_comparison"] = comparison
     if building_access is not None:
         payload["building_access"] = building_access
     if density_distribution is not None:
@@ -2773,14 +2840,64 @@ def theme_comparison_only(
             response = {key: result[key] for key in (
                 "contract", "complete_theme", "theme_id", "content_version",
                 "reference_content_version", "selection", "scope", "results",
-                "profile_content_version", "profile_comparisons", "reading_content_version", "reading_cloud",
-            )}
+                "collection_content_versions", "scalar_content_version",
+                "profile_content_version", "profile_comparisons",
+                "reading_content_version", "reading_cloud", "owned_series_content_versions",
+                "bpe_content_version", "bpe_reference_content_version",
+                "service_publication_id", "building_publication_id")}
             response["results"] = [_comparison_result_without_focal_value(row)
                                    for row in response["results"]]
             response["profile_comparisons"] = [
                 _comparison_result_without_focal_value(row)
                 for row in response["profile_comparisons"]]
             if theme_id == "mobilite":
+                if selected is None:
+                    service_snapshot = (repository.read(territory_id, "densite", connection=conn)
+                        if territory_type == "commune" else
+                        repository.read_level(territory_type, territory_id, connection=conn))
+                else:
+                    service_snapshot = repository.read_selected(
+                        territory_type, territory_id, selected, connection=conn)
+                service = compare(service_snapshot).model_dump(mode="json")
+                # The comparison-only contract carries cohort measurements, never the
+                # focal observations included by the shared service comparison model.
+                for service_item in service.get("services", []):
+                    for facts in service_item.get("modes", {}).values():
+                        facts.pop("value", None)
+                        for focal_field in ("source_id", "source_name", "source_version",
+                                            "reference_date", "source_publication_date"):
+                            facts.pop(focal_field, None)
+                service = _comparison_result_without_focal_value(service)
+                _cohort_type, peer_member_ids, _scope = _comparison_cohort(
+                    conn, territory_type, territory_id, selected)
+                cohort_sources = {}
+                for row in service_snapshot.get("rows", []):
+                    if row.get("territory_id") not in peer_member_ids:
+                        continue
+                    key = (row["service"], row["mode"])
+                    source = {field: row.get(field) for field in (
+                        "source_id", "source_name", "source_version", "reference_date",
+                        "source_publication_date")}
+                    bucket = cohort_sources.setdefault(key, [])
+                    if source not in bucket:
+                        bucket.append(source)
+                for item in service.get("services", []):
+                    for mode, facts in item.get("modes", {}).items():
+                        facts["comparison_sources"] = cohort_sources.get((item["id"], mode), [])
+                response["essential_service_access"] = service
+                response["service_publication_id"] = service_snapshot["publication_id"]
+                building_publication_id = None
+                building_markers = conn.execute(
+                    "SELECT table_name,content_version FROM table_publication "
+                    "WHERE table_name IN ('territory_reference','building_ramp','building_grid')"
+                ).fetchall()
+                try:
+                    building_publication_id = _building_publication(building_markers)
+                except HTTPException as exc:
+                    if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
+                        raise
+                if building_publication_id is not None:
+                    response["building_publication_id"] = building_publication_id
                 if selected is None:
                     try:
                         building = repository.read_building_initial(
@@ -2791,6 +2908,7 @@ def theme_comparison_only(
                         if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
                             raise
                     else:
+                        response["building_publication_id"] = building["publication_id"]
                         response["building_access"] = {
                             "scope": building["scope"],
                             "ramp": building["peer_ramp"],
@@ -2804,6 +2922,7 @@ def theme_comparison_only(
                 else:
                     building = repository.read_building(
                         territory_type, territory_id, tuple(selected), connection=conn)
+                    response["building_publication_id"] = building["publication_id"]
                     try:
                         member_ids = resolve_commune_members(
                             building["reference"], tuple(selected),
