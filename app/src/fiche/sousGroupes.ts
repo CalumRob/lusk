@@ -380,6 +380,12 @@ export function figureLecturePour(
 
   if (lecture.story_key === 'vingt-minutes-sans-voiture' || lecture.story_key === 'ce-que-le-velo-preserve') {
     const h = histoire as HistoireMobilite
+    // La figure exige SA matière servie (les bornes de la distribution du
+    // contrat statique) : la lecture API mobilité ne porte que les pertes —
+    // sans bornes, la figure s'absente honnêtement (le texte porte les
+    // paramètres), jamais des bins fabriqués. Miroir de la discipline
+    // Milieux (#243 : jamais un point fabriqué).
+    if (h.dens_min === null || h.dens_max === null) return null
     // Mode wording is resolved from the payload's shared reseaux vocabulary;
     // classification_labels describes reading values, not transport modes.
     const modes = modesDepuisMetadata(metadata)

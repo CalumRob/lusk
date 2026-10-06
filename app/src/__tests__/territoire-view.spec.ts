@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '../views/TerritoireView.vue'
+import GraphiqueDistributionMobilite from '../components/fiche/GraphiqueDistributionMobilite.vue'
 import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
 import PuceRang from '../components/fiche/PuceRang.vue'
 import { varianteDeUrl } from '../fiche/prototype/variantes'
@@ -98,7 +99,8 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
     version: ramp.provenance?.version ?? 'sql-v1', reference_date: ramp.provenance?.referenceDate ?? null,
     publication_date: ramp.provenance?.publicationDate ?? null }]
   const indicateurSql = (row: any, detail: string | null = null, sex: string | null = null) => ({
-    indicator_id: row.key, label: row.key, unit: row.unit, value: row.value,
+    indicator_id: row.key, label: row.key, unit: row.unit,
+    value: row.key === 'iso_alimentation' ? 0.87 : row.value,
     status: row.value === null ? 'unavailable' : 'measured',
     dimensions: detail ? { detail, sex } : {},
     sources: sourceRows([row]),
@@ -106,6 +108,7 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
   return {
     contract: 'theme-facts-v1', complete_theme: false, theme_id: 'mobilite',
     territory: { territory_id: code, territory_type: type },
+    content_version: 'mobilite-v1', reference_content_version: 'territories-v1',
     // La publication réelle expose scalaires et cellules de profil comme lignes
     // d'indicateurs dimensionnées ; « profiles »/« series » n'existent pas.
     indicators: [
@@ -116,6 +119,7 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
     indicator_metadata: [],
     named_reference_evidence: [],
     readings: history ? [{ groupe: history.groupe, story_key: history.story_key,
+      salience_reason: history.salience_reason, classification_saillance: history.classification_saillance ?? null,
       div_loss_t: history.div_loss_t, div_loss_b: history.div_loss_b, status: 'measured', unit: 'types de services',
       provenance: { source_id: 'mobilite_snapshot', source_name: history.vintage_source,
         source_version: history.vintage_version, source_reference_date: history.vintage_date_reference,
@@ -126,6 +130,7 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
         access: { car: row.exemplar_c, bike: row.exemplar_b, walk_transit: row.exemplar_t } } : null })),
       sources: buildingSources } : null,
     comparison: { contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite',
+      content_version: 'mobilite-v1', reference_content_version: 'territories-v1',
       scope: { kind: 'density_class', territory_type: 'commune', member_count: 38 },
       results: defaultResults, profile_comparisons: [] },
     essential_service_access: reponseAccesApi(type, code, kind, label),
@@ -1703,6 +1708,149 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const facts = fetchApi.mock.calls.filter(([url]) => String(url).includes('/themes/mobilite/facts'))
     expect(facts).toHaveLength(1)
     expect(JSON.parse(String(facts[0]![1]?.body))).toEqual({ theme_id: 'mobilite' })
+    wrapper.unmount()
+  })
+
+  it('rend Mobilité depuis l’API : la valeur servie remplace la statique, la lecture sans figure fabriquée', async () => {
+    const model = modeleAvecContextesComparaison()
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) })))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    await flushPromises()
+    const texte = wrapper.get('[role="tabpanel"]').text()
+    // La valeur API (0,87 → 87) rend ; la valeur statique (1 → 100) est absente.
+    expect(texte).toContain('87')
+    expect(texte).not.toContain('100%Alimentation')
+    // La lecture rend ses paramètres servis (le texte porte 38)…
+    const lecture = wrapper.get('[data-groupe="acces-aux-services"]')
+    expect(lecture.text()).toContain('38')
+    // …mais SA figure de distribution exige les bornes/bins du contrat statique :
+    // l'API mobilité ne les porte pas — la figure s'absente, jamais de bins fabriqués.
+    expect(wrapper.findComponent(GraphiqueDistributionMobilite).exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('Mobilité : ni préchargement d’un autre thème, ni nouvelle requête à la revisite acquise', async () => {
+    const model = modeleAvecContextesComparaison()
+    const fetchApi = vi.fn(async (url: string) => ({ ok: true, json: async () =>
+      String(url).endsWith('/themes/programmes/facts') ? reponseThemeProgrammesApi()
+        : reponseThemeMobiliteApi(model, 'commune', '22001', null) }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(0)
+    await router.replace({ query: { theme: 'mobilite' } }); await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
+    await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
+    await router.replace({ query: { theme: 'mobilite' } }); await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
+  })
+
+  it('Mobilité : les faits en attente n’exposent aucune valeur statique, puis rendent', async () => {
+    const model = modeleAvecContextesComparaison()
+    let resolveFacts!: (value: unknown) => void
+    const pending = new Promise((resolve) => { resolveFacts = resolve })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', vi.fn(() => pending))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('100%Alimentation')
+    resolveFacts({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) })
+    await flushPromises()
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
+    wrapper.unmount()
+  })
+
+  it('Mobilité : échec fermé sans repli statique, puis réessai', async () => {
+    const model = modeleAvecContextesComparaison()
+    let echecs = 0
+    const fetchApi = vi.fn(async () => {
+      if (++echecs === 1) throw new Error('API indisponible')
+      return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    await flushPromises()
+    const alerte = wrapper.get('[role="alert"]')
+    expect(alerte.text()).toContain('Les indicateurs de ce thème ne sont pas disponibles.')
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('100%Alimentation')
+    await alerte.get('button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
+    wrapper.unmount()
+  })
+
+  it('Mobilité : une seule comparaison par changement de sélection, écho exact, faits focaux gardés', async () => {
+    const model = modeleAvecContextesComparaison()
+    const epciAttendu = model.cohortTerritories!.filter((item: any) =>
+      item.type === 'commune' && item.epci === model.territory.epci)
+      .map((item: any) => ({ territory_type: item.type, territory_id: item.territoire }))
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
+      if (String(url).endsWith('/facts')) return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
+      const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
+      return { ok: true, json: async () => ({ contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite',
+        content_version: 'mobilite-v1', reference_content_version: 'territories-v1',
+        selection: demandee, scope: { kind: 'explicit_selection', member_count: demandee.length },
+        results: [], profile_comparisons: [], reading_content_version: 'mobilite-v1', reading_cloud: null }) }
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    await flushPromises()
+    // Le défaut déclaré est servi par la comparaison imbriquée : aucun POST de comparaison.
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/comparison'))).toHaveLength(0)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } }); await flushPromises()
+    const comparaisons = fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))
+    expect(comparaisons).toHaveLength(1)
+    expect(JSON.parse(String(comparaisons[0]![1]!.body))).toEqual({ theme_id: 'mobilite', selection: epciAttendu })
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
+    // Revisite de la comparaison acquise : aucune nouvelle requête, faits inchangés.
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' } }); await flushPromises()
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } }); await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(2)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('Mobilité : tokens de comparaison incompatibles → échec fermé réessayable, puis réponse périmée ignorée', async () => {
+    const model = modeleAvecContextesComparaison()
+    let comparaisons = 0
+    let resolveBretagne: ((value: unknown) => void) | undefined
+    const bretagne = new Promise((resolve) => { resolveBretagne = resolve })
+    const reponseComparaison = (selection: unknown, tokens = 'territories-v1') => ({
+      contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite',
+      content_version: 'mobilite-v1', reference_content_version: tokens,
+      selection, scope: { kind: 'explicit_selection', member_count: (Array.isArray(selection) ? selection.length : 0) },
+      results: [], profile_comparisons: [], reading_content_version: 'mobilite-v1', reading_cloud: null })
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
+      if (String(url).endsWith('/facts')) return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
+      const demandee = JSON.parse(String(options?.body)).selection
+      comparaisons += 1
+      if (demandee.length > 100) return bretagne
+      return { ok: true, json: async () => reponseComparaison(demandee, comparaisons === 1 ? 'jetons-périmés' : 'territories-v1') }
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci', vi.fn(async () => model))
+    await flushPromises()
+    // Le premier POST échoue sur tokens incompatibles : bandeau, faits focaux intacts, réessayable.
+    expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    // La sélection bretagne lance une requête qui traîne ; on REPART vers epci
+    // (la comparaison acquise en cache, aucune nouvelle requête) — puis la
+    // réponse bretagne arrive TARD avec un écho vide : requête périmée, rejetée
+    // sans corrompre l'état ni lever de bandeau.
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' } }); await flushPromises()
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } }); await flushPromises()
+    // Trois POST de comparaison ont eu lieu : épci (jetons périmés), son réessai, bretagne —
+    // le retour à épci est servi par le cache, aucune nouvelle requête.
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(3)
+    resolveBretagne?.(reponseComparaison([]))
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
     wrapper.unmount()
   })
 })
