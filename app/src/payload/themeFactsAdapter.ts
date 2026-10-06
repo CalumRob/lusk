@@ -293,6 +293,26 @@ export interface ThemeFactsRows {
   histoires: Histoire[]
 }
 
+/** Attach API-ranked facts without deriving anything from retired rank columns or changing focal values. */
+export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unknown, portee: string | null): Indicateur[] {
+  if (comparison === null || comparison === undefined) return lignes.map(({ comparaisonApi: _rank, ...row }) => row)
+  if (!isRecord(comparison) || !Array.isArray(comparison.results) || !Array.isArray(comparison.profile_comparisons)) {
+    throw new Error('Réponse de comparaison du thème invalide')
+  }
+  const results = rows(comparison.results, 'results')
+  const profiles = rows(comparison.profile_comparisons, 'profile_comparisons')
+  return lignes.map(({ comparaisonApi: _old, ...row }) => {
+    const match = results.find((item) => item.indicator_id === row.key) ?? profiles.find((item) => {
+      if (item.indicator !== row.key) return false
+      const facet = isRecord(item.facet) ? item.facet : {}
+      return (facet.detail ?? null) === (row.detail ?? null) && (facet.sex ?? null) === (row.sex ?? null)
+    })
+    if (!match || match.status !== 'available' || !['high', 'low'].includes(String(match.direction)) || !finite(match.rank)) return row
+    if (!(match.rank_size === null || finite(match.rank_size))) throw new Error('Taille de rang API invalide')
+    return { ...row, comparaisonApi: { rang: match.rank, taille: match.rank_size as number | null, portee } }
+  })
+}
+
 function vintageSql(sources: unknown, context: string) {
   const provenance = apiSources(sources, context)
   const source = provenance[0]!

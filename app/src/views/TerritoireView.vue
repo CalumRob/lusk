@@ -46,7 +46,7 @@ import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFac
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { chargerCohortesScalaires, indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache } from '@/payload/themeAcquisition'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
+import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ComparisonScopeKind, TerritoryFacts } from '@/fiche/content/territoryFacts'
@@ -284,7 +284,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
       if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
       const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type })
-      faitsThemeRows.value = rows.indicateurs
+       faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, acquired.focal.comparison,
+         resolutionComparaison.value?.contexte?.scope.label ?? null)
       histoiresThemeRows.value = rows.histoires
       histoiresNuageDemographie.value = themeActif === 'demographie' && isRecord(acquired.focal.comparison)
         ? histoiresDemographieNuage(acquired.focal.comparison) : []
@@ -349,11 +350,17 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
         histoiresNuageDemographie.value = histoiresDemographieNuage(
           acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
       }
-      if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(
-        acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
-      statutComparaison.value = 'ready'
+       if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(
+         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
+       faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
+         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)),
+         resolutionComparaison.value?.contexte?.scope.label ?? null)
+       statutComparaison.value = 'ready'
     } catch {
-      if (!cancelled && request === sequenceComparaison) statutComparaison.value = 'error'
+       if (!cancelled && request === sequenceComparaison) {
+         faitsThemeRows.value = faitsThemeRows.value?.map(({ comparaisonApi: _rank, ...row }) => row) ?? null
+         statutComparaison.value = 'error'
+       }
     }
   }, { immediate: true })
 

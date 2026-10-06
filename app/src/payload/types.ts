@@ -122,6 +122,8 @@ export interface Indicateur extends VintageStamp {
   rang_epci_n: number | null
   rang_dep_n: number | null
   rang_reg_n: number | null
+  /** Rank returned by the acquired comparison API. Never copied from retired legacy rang_* columns. */
+  comparaisonApi?: { rang: number; taille: number | null; portee: string | null }
 }
 
 /**

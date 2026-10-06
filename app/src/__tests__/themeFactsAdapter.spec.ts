@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
+import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 
 const cible = { territoire: '35238', type: 'commune' as const }
@@ -26,6 +26,24 @@ const sources = () => [{
 }]
 
 describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#627)', () => {
+  it('attache uniquement les rangs disponibles de la comparaison API sans modifier les valeurs focales', () => {
+    const row = { territoire: '35238', type: 'commune' as const, theme: 'habitat' as const, key: 'part_passoires', detail: null,
+      vintage_source: '', vintage_version: '', vintage_date_reference: null, vintage_date_publication: null,
+      value: 0.2, unit: '%', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }
+    const result = lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires', status: 'available', direction: 'low', rank: 3, rank_size: 14 }], profile_comparisons: [] }, 'Densité')
+    expect(result[0]).toMatchObject({ value: 0.2, rang_epci: null, comparaisonApi: { rang: 3, taille: 14, portee: 'Densité' } })
+    expect(lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires', status: 'unavailable', direction: 'low', rank: 3, rank_size: 14 }], profile_comparisons: [] }, null)[0]?.comparaisonApi).toBeUndefined()
+    expect(lignesAvecComparaisonApi([row], null, null)[0]?.comparaisonApi).toBeUndefined()
+    expect(() => lignesAvecComparaisonApi([row], { results: {}, profile_comparisons: [] }, null)).toThrow()
+  })
+
+  it('associe les comparaisons de profil à la même facette', () => {
+    const row = { territoire: '35238', type: 'commune' as const, theme: 'habitat' as const, key: 'structure_age', detail: 'ancien', sex: 'F' as const,
+      vintage_source: '', vintage_version: '', vintage_date_reference: null, vintage_date_publication: null,
+      value: 0.4, unit: '%', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }
+    const comparison = { results: [], profile_comparisons: [{ indicator: 'structure_age', facet: { detail: 'ancien', sex: 'M' }, status: 'available', direction: 'high', rank: 1, rank_size: 10 }] }
+    expect(lignesAvecComparaisonApi([row], comparison, null)[0]?.comparaisonApi).toBeUndefined()
+  })
   it('projette les adhésions ancrées et les subventions depuis leurs collections/séries sans inventer absence', () => {
     const source = [{ source_id: 'src', name: 'Source programmes', version: '2026', reference_date: '2026-01-01', publication_date: null }]
     const rows = themeFactsRowsFromApi('programmes', {
