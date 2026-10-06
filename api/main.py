@@ -2350,10 +2350,7 @@ def selected_theme_facts(
                 conn, territory_type, territory_id, theme_id, None, repository,
                 selection=selected)
             payload.pop("default_comparison", None)
-            comparison = _theme_comparison_snapshot(
-                conn, territory_type, territory_id, theme_id, selected,
-                profiles=focal_profiles(conn, territory_type, territory_id, theme_id=theme_id)[0],
-                has_readings=bool(payload["readings"]))
+            comparison = payload.pop("_selected_comparison")
             nested = {key: comparison[key] for key in (
                 "contract", "complete_theme", "theme_id", "content_version",
                 "reference_content_version", "selection", "scope", "results",
@@ -2617,7 +2614,7 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
             FROM milieux_typed_reading r
             WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
             (territory_id,territory_type)).fetchall()
-        if not milieux_rows:
+        if not milieux_rows and selection != []:
             raise HTTPException(404,"No selected Milieux reading for this territory")
         source_rows=conn.execute("""SELECT b.groupe,b.field_key,b.source_id,b.source_name,b.vintage_id,b.source_version,
             b.reference_date,b.publication_date,b.observation_period,b.dataset_id,b.dataset_content_version,
@@ -2769,8 +2766,10 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
          "bpe_profile_evidence":bpe_profile,
         "collections":collections,
         "indicators":indicators,
-        "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
-                              "profile_comparisons":comparison["profile_comparisons"]}}
+         "default_comparison":{"scope":comparison["scope"],"results":comparison["results"],
+                               "profile_comparisons":comparison["profile_comparisons"]}}
+    if selection is not None:
+        payload["_selected_comparison"] = comparison
     if building_access is not None:
         payload["building_access"] = building_access
     if density_distribution is not None:
