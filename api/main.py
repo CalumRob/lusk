@@ -1292,6 +1292,12 @@ def _milieux_reading_marker(conn):
         raise HTTPException(503, "Milieux reading publication is unavailable")
     if not marker[0] or marker[1] < 1 or marker[2] != marker[3]:
         raise HTTPException(503, "Milieux reading publication is unavailable or incompatible")
+    absence_exists = conn.execute("SELECT to_regclass('milieux_reading_absence')").fetchone()[0]
+    if absence_exists:
+        absence = conn.execute("SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='milieux_reading_absence'").fetchone()
+        if absence and (absence[0] != marker[0] or absence[2] != marker[2]):
+            raise HTTPException(503, "Milieux source-absence publication is stale or incompatible")
+        marker = (*marker, bool(absence), absence[0] if absence else None)
     return marker
 
 
@@ -1314,7 +1320,22 @@ def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_ty
               ON t.territory_id=r.territory_id AND t.territory_type=r.territory_type
             WHERE r.groupe=%s AND r.territory_type=%s AND r.territory_id=ANY(%s::text[])
             ORDER BY t.name,r.territory_id""", (group,cohort_type,list(members))).fetchall()
-        if len(rows) != len(set(members)):
+        selected_members = set(members)
+        by_code = {row[0]:row for row in rows}
+        absent = []
+        missing = selected_members - set(by_code)
+        if missing and len(marker) > 5 and marker[5]:
+            declarations = conn.execute("""SELECT territory_id,territory_type,reason,source_id,vintage_id,source_snapshot_sha256
+                FROM milieux_reading_absence WHERE territory_type=%s AND territory_id=ANY(%s::text[])""",
+                (cohort_type,sorted(missing))).fetchall()
+            declared = {row[0]:row for row in declarations}
+            if set(declared) != missing or any(d[2] != "source_record_absent" or not d[5] for d in declarations):
+                raise HTTPException(503, "Selected Milieux members have undeclared or invalid reading absence")
+            absence_pub = conn.execute("SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='milieux_reading_absence'").fetchone()
+            if (absence_pub is None or absence_pub[0] != marker[6] or absence_pub[2] != marker[2]):
+                raise HTTPException(503, "Milieux source-absence publication is stale or incomplete")
+            absent = declarations
+        elif missing:
             raise HTTPException(503, "Selected Milieux cloud members have missing reading facts")
         # Fetch complete immutable population/state bindings for the whole selected set. These
         # joins check the association's exact state axis and revision rather than trusting its
@@ -1359,7 +1380,6 @@ def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_ty
             if not valid:
                 raise HTTPException(503, "Milieux cloud source binding is stale or incompatible")
             by_peer.setdefault(code,{}).setdefault(field,[]).append((source,vintage,revision,pop_revision,period,axis,dataset,dataset_version,role,registered_revisions))
-        by_code = {row[0]:row for row in rows}
         for code,row in by_code.items():
             fields=by_peer.get(code,{})
             population=fields.get("population",[])
@@ -1395,8 +1415,10 @@ def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_ty
                 "periode_pop":row[3],"periode_artif":row[4],"taux_variation_population":row[5],
                 "artif_m2_par_habitant":row[6],"artif_m3_par_habitant":row[7]})
     return {"status":"available" if points else "unavailable",
-        "reason":None if points else ("no_selected_members" if not members else "no_plottable_members"),"groupe":group,"scope":scope,
+        "reason":None if points else ("no_selected_members" if not members else "source_records_absent" if 'absent' in locals() and absent else "no_plottable_members"),"groupe":group,"scope":scope,
         "selected_member_count":len(set(members)),"plotted_member_count":len(points),
+        "unavailable_member_count":len(absent) if 'absent' in locals() else 0,
+        "unavailable_members":[{"territory_id":r[0],"territory_type":r[1],"reason":r[2],"source_id":r[3],"vintage_id":r[4],"source_snapshot_sha256":r[5]} for r in absent] if 'absent' in locals() else [],
         "content_version":marker[0],"points":points}
 
 

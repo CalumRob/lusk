@@ -3,13 +3,13 @@
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
         'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','mobility_typed_reading','mobility_density_distribution')),
+        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','mobility_typed_reading','mobility_density_distribution')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','mobility_typed_reading','mobility_density_distribution') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','mobility_typed_reading','mobility_density_distribution') OR reference_content_version IS NOT NULL)
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -1007,9 +1007,18 @@ CREATE TABLE milieux_reading_source (
  FOREIGN KEY(territory_id,territory_type,groupe) REFERENCES milieux_typed_reading(territory_id,territory_type,groupe) ON DELETE CASCADE,
  FOREIGN KEY(dataset_id) REFERENCES series_dataset_publication(dataset_id),
  CHECK ((field_key='population' AND dataset_id IS NULL AND dataset_content_version IS NULL AND state_role IS NULL AND provenance_revision_id IS NULL AND population_revision_id IS NOT NULL)
-     OR (field_key IN ('artif_m2_par_habitant','artif_m3_par_habitant') AND dataset_id IS NOT NULL AND dataset_content_version IS NOT NULL AND state_role IN ('M2','M3') AND provenance_revision_id IS NOT NULL AND population_revision_id IS NULL)));
+      OR (field_key IN ('artif_m2_par_habitant','artif_m3_par_habitant') AND dataset_id IS NOT NULL AND dataset_content_version IS NOT NULL AND state_role IN ('M2','M3') AND provenance_revision_id IS NOT NULL AND population_revision_id IS NULL)));
+CREATE TABLE milieux_reading_absence (
+ territory_id text NOT NULL, territory_type text NOT NULL CHECK (territory_type='commune'),
+ reason text NOT NULL CHECK (reason='source_record_absent'), source_id text NOT NULL, vintage_id text NOT NULL,
+ source_snapshot_sha256 text NOT NULL CHECK (source_snapshot_sha256 ~ '^[0-9a-f]{64}$'),
+ PRIMARY KEY (territory_id,territory_type),
+ FOREIGN KEY (territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
+ FOREIGN KEY (source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
 GRANT SELECT ON milieux_typed_reading,milieux_reading_source TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_typed_reading,milieux_reading_source TO lusk_publisher;
+GRANT SELECT ON milieux_reading_absence TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_reading_absence TO lusk_publisher;
 GRANT SELECT ON mobility_typed_reading,mobility_reading_descriptor,mobility_reading_story,mobility_reading_clock TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON mobility_typed_reading,mobility_reading_descriptor,mobility_reading_story,mobility_reading_clock TO lusk_publisher;
 GRANT SELECT ON milieux_population_provenance_revision TO lusk_reader;
