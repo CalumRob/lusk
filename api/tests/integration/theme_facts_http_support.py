@@ -76,6 +76,7 @@ def common(client, checked, theme):
     empty=client.post(route,json={"theme_id":theme,"selection":[]})
     assert empty.status_code==200,empty.text
     assert empty.json()["comparison"]["selection"]==[]
-    assert empty.json().get("readings")
+    if theme != "programmes": assert empty.json().get("readings")
+    else: assert empty.json().get("collections")
     assert checked and all(len(c.commands)==1 and "REPEATABLE READ, READ ONLY" in c.commands[0] for c in checked)
     return route
