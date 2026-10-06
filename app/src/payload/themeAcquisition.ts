@@ -1,13 +1,38 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
+export type ThemeSelectionMember = { territory_type: 'commune' | 'epci' | 'departement' | 'region'; territory_id: string }
+
+export interface PublicationTokens {
+  reference_content_version?: unknown
+  content_version?: unknown
+  profile_content_version?: unknown
+  reading_content_version?: unknown
+  scalar_content_version?: unknown
+  collection_content_versions?: unknown
+  owned_series_content_versions?: unknown
+  bpe_content_version?: unknown
+  bpe_reference_content_version?: unknown
+  service_publication_id?: unknown
+  building_publication_id?: unknown
+}
 
 export interface ThemeResponse {
-  tokens: Record<string, unknown>
+  tokens?: Record<string, unknown>
   [key: string]: unknown
+}
+
+export function normalizePublicationTokens(response: ThemeResponse): Record<string, unknown> {
+  const fields = ['reference_content_version', 'content_version', 'scalar_content_version',
+    'profile_content_version', 'reading_content_version', 'collection_content_versions',
+    'bpe_content_version', 'bpe_reference_content_version', 'service_publication_id',
+    'building_publication_id'] as const
+  const normalized: Record<string, unknown> = {}
+  for (const field of fields) if (field in response) normalized[field] = response[field]
+  return normalized
 }
 
 export interface AcquiredTheme<T extends ThemeResponse = ThemeResponse> {
   focal: T
-  comparison?: ThemeResponse
+  comparisons: Map<string, ThemeResponse>
 }
 
 type Key = { type: string; id: string; theme: ThemeKey }
@@ -19,7 +44,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
 
   constructor(
     private readonly acquireFacts: (theme: ThemeKey, key?: Key) => Promise<T>,
-    private readonly acquireComparison?: (selection: readonly string[] | undefined, theme: ThemeKey, key?: Key) => Promise<ThemeResponse>,
+    private readonly acquireComparison?: (selection: readonly ThemeSelectionMember[] | undefined, theme: ThemeKey, key?: Key) => Promise<ThemeResponse>,
   ) {}
 
   private key({ type, id, theme }: Key): string { return JSON.stringify([type, id, theme]) }
@@ -32,24 +57,33 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     const generation = this.generations.get(cacheKey) ?? 0
     const focal = await this.acquireFacts(theme, key)
     if (generation !== (this.generations.get(cacheKey) ?? 0)) throw new Error('Stale theme acquisition response')
-    const result = { focal }
+    const result = { focal, comparisons: new Map<string, ThemeResponse>() }
     this.entries.set(cacheKey, result)
     return result
   }
 
-  async select(type: string, id: string, theme: ThemeKey, selection: readonly string[] | undefined): Promise<AcquiredTheme<T>> {
+  async select(type: string, id: string, theme: ThemeKey, selection: readonly ThemeSelectionMember[] | undefined): Promise<AcquiredTheme<T>> {
     const key = { type, id, theme }
     const cacheKey = this.key(key)
     const focal = await this.get(type, id, theme)
     if (!this.acquireComparison) return focal
+    const selectionKey = selection === undefined ? 'omitted' : JSON.stringify(selection)
+    const existing = focal.comparisons.get(selectionKey)
+    if (existing) return focal
     const generation = (this.generations.get(cacheKey) ?? 0) + 1
     this.generations.set(cacheKey, generation)
     const comparison = await this.acquireComparison(selection, theme, key)
     if (generation !== this.generations.get(cacheKey)) throw new Error('Stale theme comparison response')
-    if (JSON.stringify(comparison.tokens) !== JSON.stringify(focal.focal.tokens)) {
+    const actualTokens = normalizePublicationTokens(comparison)
+    const focalTokens = normalizePublicationTokens(focal.focal)
+    const compatible = 'reference_content_version' in actualTokens && 'reference_content_version' in focalTokens &&
+      actualTokens.reference_content_version === focalTokens.reference_content_version &&
+      ['content_version', 'profile_content_version', 'reading_content_version'].every((name) =>
+        !(name in actualTokens && name in focalTokens) || actualTokens[name] === focalTokens[name])
+    if (!compatible) {
       throw new Error('Theme publication tokens do not match; retry comparison')
     }
-    const result = { focal: focal.focal, comparison }
+    const result = { ...focal, comparisons: new Map(focal.comparisons).set(selectionKey, comparison) }
     this.entries.set(cacheKey, result)
     return result
   }
@@ -69,4 +103,27 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
 
 export function themeAcquisitionEnabled(env: Record<string, unknown>): boolean {
   return env.VITE_THEME_ACQUISITION_API === '1'
+}
+
+async function postThemeResponse(url: string, body: Record<string, unknown>, expectedTheme: ThemeKey): Promise<ThemeResponse> {
+  const response = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+  if (!response.ok) throw new Error(`Theme acquisition failed (HTTP ${response.status})`)
+  const value: unknown = await response.json()
+  if (typeof value !== 'object' || value === null || Array.isArray(value) ||
+      (value as Record<string, unknown>).theme_id !== expectedTheme) {
+    throw new Error('Theme acquisition returned an incompatible response')
+  }
+  return value as ThemeResponse
+}
+
+export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
+  selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
+  const path = `/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(id)}/themes/${theme}/facts`
+  return postThemeResponse(path, { theme_id: theme, ...(selection === undefined ? {} : { selection }) }, theme)
+}
+
+export function acquireThemeComparison(type: string, id: string, theme: ThemeKey,
+  selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
+  const path = `/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(id)}/themes/${theme}/comparison`
+  return postThemeResponse(path, { theme_id: theme, ...(selection === undefined ? {} : { selection }) }, theme)
 }
