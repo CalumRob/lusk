@@ -45,6 +45,8 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(lignesAvecComparaisonApi([row], comparison, null)[0]?.comparaisonApi).toBeUndefined()
   })
   it('projette les adhésions ancrées et les subventions depuis leurs collections/séries sans inventer absence', () => {
+    // Trimmed served capture: E:/Temp/opencode/lusk-live-captured/programmes-facts.json;
+    // period_detail omits relationships in the live theme-facts-v1 contract.
     const source = [{ source_id: 'src', name: 'Source programmes', version: '2026', reference_date: '2026-01-01', publication_date: null }]
     const rows = themeFactsRowsFromApi('programmes', {
       contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
@@ -55,7 +57,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
           relationships: [{ detail: 'CRTE', rider: null, sources: source, anchor: { id: '243500139', type: 'epci', name: 'EPCI' }, relation: 'covering_parent' }] },
         { indicator_id: 'grants', kind: 'period_detail', availability: 'observed', unit: '€', entries: [
           { observation_period: '2025', label: 'Mobilité', value: 1234, sources: source },
-        ], relationships: [] },
+        ] },
       ],
       owned_series: [{ indicator_id: 'subventions_annuelles', unit: '€', points: [
         { axis: '2025', value: 5678, status: 'measured', provenance: source },

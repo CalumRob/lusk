@@ -353,7 +353,8 @@ function programmesRows(response: Row, target: { territoire: string; type: Terri
   const result: Indicateur[] = []
   for (const collection of rows(response.collections, 'collections')) {
     if (!texteNonVide(collection.indicator_id) || !texteNonVide(collection.kind) ||
-        !Array.isArray(collection.entries) || !Array.isArray(collection.relationships)) {
+        !Array.isArray(collection.entries) ||
+        (collection.kind === 'anchored_membership' && !Array.isArray(collection.relationships))) {
       throw new Error('Collection Programmes invalide')
     }
     if (collection.kind === 'anchored_membership') {
@@ -377,6 +378,8 @@ function programmesRows(response: Row, target: { territoire: string; type: Terri
         add(relationship.anchor as { id: unknown; type: unknown }, relationship)
       }
     } else if (collection.kind === 'period_detail') {
+      // Le contrat servi theme-facts-v1 réserve relationships aux anchored_membership;
+      // period_detail n'en requiert pas (et accepte un champ additionnel s'il est fourni).
       if (collection.availability === 'no_record') continue
       // L'unité vient du descripteur publié — jamais de « € » implicite : une
       // collection sans unité est une publication incomplète, pas un défaut.
