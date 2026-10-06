@@ -85,7 +85,7 @@ def test_selected_mobility_comparison_route_and_building_reader(building_db_env,
                     VALUES ('access-fixture','v1','v1','2025-01-01','2026-01-01')""")
                 connection.execute("""INSERT INTO series_dataset_publication
                     (dataset_id,content_version,reference_content_version,row_count)
-                    VALUES ('mobility_owned','owned-v1','ref-fixture-v1',2)""")
+                    VALUES ('mobility_owned','owned-v1','ref-fixture-v1',4)""")
                 connection.execute("""INSERT INTO series_dataset_descriptor
                     (dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,
                      label,unit,comparison_statistic,comparison_scope,direction,allowed_levels,
@@ -98,12 +98,13 @@ def test_selected_mobility_comparison_route_and_building_reader(building_db_env,
                      reference_date,publication_date,revision_hash)
                     VALUES ('owned-rev','access-fixture','v1','Access fixture','Mobility fixture','v1',
                      '2025-01-01','2026-01-01',%s)""", ("a" * 64,))
-                for code, value in (("B", .2), ("C", .6)):
+                for code, level, value in (("B", "commune", .2), ("C", "commune", .6),
+                                           ("E1", "epci", .5), ("E2", "epci", .6)):
                     connection.execute("""INSERT INTO series_dataset_observation
                         (dataset_id,indicator_id,territory_id,territory_type,axis_value,
                          observation_period,value,status)
-                        VALUES ('mobility_owned','active_network',%s,'commune','2025','2025',%s,'measured')""",
-                        (code, value))
+                        VALUES ('mobility_owned','active_network',%s,%s,'2025','2025',%s,'measured')""",
+                        (code, level, value))
                     connection.execute("""INSERT INTO series_observation_provenance
                         (dataset_id,indicator_id,territory_id,axis_value,provenance_revision_id)
                         VALUES ('mobility_owned','active_network',%s,'2025','owned-rev')""", (code,))
@@ -124,10 +125,74 @@ def test_selected_mobility_comparison_route_and_building_reader(building_db_env,
                             VALUES ('share_food_c',%s,'access-fixture','v1')""", (code,))
                     connection.execute("""INSERT INTO table_publication
                         (table_name,content_version,row_count,reference_content_version)
-                        VALUES ('scalar_observation','scalar-access-v1',4,'ref-fixture-v1')""")
-                connection.execute("UPDATE table_publication SET row_count=5 WHERE table_name='territory_reference'")
+                        VALUES ('scalar_observation','scalar-access-v1',5,'ref-fixture-v1')""")
+                # The registered regional service denominator (the services
+                # family's building count at region level) + its territory row.
+                connection.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('R','region','Region fixture')")
+                with connection.transaction():
+                    connection.execute("""INSERT INTO scalar_descriptor
+                        (indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,
+                         denominator_semantics,completeness,descriptor_version)
+                        VALUES ('nb_buildings','mobilite','Buildings','count','high','nb_buildings',
+                                ARRAY['region'],'fixture','dense_complete','scalar-v1')""")
+                    connection.execute("INSERT INTO scalar_descriptor_source VALUES ('nb_buildings','access-fixture')")
+                    connection.execute("""INSERT INTO scalar_observation
+                        (indicator_id,territory_id,territory_type,value,status)
+                        VALUES ('nb_buildings','R','region',150,'measured')""")
+                    connection.execute("""INSERT INTO scalar_observation_source
+                        (indicator_id,territory_id,source_id,vintage_id)
+                        VALUES ('nb_buildings','R','access-fixture','v1')""")
+                connection.execute("UPDATE table_publication SET row_count=6 WHERE table_name='territory_reference'")
                 connection.execute("UPDATE table_publication SET row_count=165 WHERE table_name='building_ramp'")
                 connection.execute("UPDATE table_publication SET row_count=150 WHERE table_name='building_grid'")
+                # Mobility reading + focal density-distribution fixtures: the
+                # theme-facts route composes both into one snapshot, and the
+                # distribution publication shares the reading's source identity
+                # (migration 024's marker contract).
+                connection.execute("INSERT INTO source_dataset VALUES ('mobilite_snapshot','Mobility snapshot fixture')")
+                connection.execute("""INSERT INTO source_vintage
+                    VALUES ('mobilite_snapshot','dist-v1','v1','2025-01-01','2026-01-01')""")
+                connection.execute("""INSERT INTO mobility_reading_descriptor
+                    (singleton,descriptor_version,source_id,vintage_id,source_name,dataset_name,
+                     source_version,reference_date,publication_date,unit,direction,allowed_levels,
+                     missing_status,classification_values,field_keys,story_count,clock_count)
+                    VALUES (true,'reading-v1','mobilite_snapshot','dist-v1','Mobility snapshot fixture',
+                     'Mobility fixture','v1','2025-01-01','2026-01-01','types de service perdu','none',
+                     ARRAY['commune','epci'],'unavailable',ARRAY['fixture'],
+                     ARRAY['groupe','story_key','salience_reason','classification_saillance',
+                            'div_loss_t','div_loss_b','status'],1,1)""")
+                connection.execute("""INSERT INTO mobility_reading_story(story_key,groupe,salience_reason,ordinal)
+                    VALUES ('fixture-story','fixture','defaut',1)""")
+                connection.execute("""INSERT INTO mobility_reading_clock(ordinal,clock_name,frequency,reference,trigger)
+                    VALUES (1,'Fixture clock','fixture','fixture','fixture')""")
+                for epci_code in ("E1", "E2"):
+                    connection.execute("""INSERT INTO mobility_typed_reading
+                        (territory_id,territory_type,groupe,story_key,salience_reason,classification_saillance,
+                         div_loss_t,div_loss_b,status,source_id,vintage_id)
+                        VALUES (%s,'epci','fixture','fixture-story','defaut',NULL,5,4,'measured',
+                         'mobilite_snapshot','dist-v1')""", (epci_code,))
+                connection.execute("""INSERT INTO table_publication
+                    (table_name,content_version,row_count,reference_content_version)
+                    VALUES ('mobility_typed_reading','reading-v1',2,'ref-fixture-v1')""")
+                connection.execute("""INSERT INTO mobility_density_distribution_descriptor
+                    (singleton,descriptor_version,source_id,vintage_id,axis_count,allowed_levels,
+                     density_unit,decile_unit)
+                    VALUES (true,'dist-v1','mobilite_snapshot','dist-v1',10,ARRAY['commune','epci'],
+                     'part des batiments','minutes')""")
+                connection.execute("""INSERT INTO mobility_density_distribution_range
+                    (territory_id,territory_type,minimum,maximum,status,source_id,vintage_id)
+                    VALUES ('E1','epci',1.0,52.0,'measured','mobilite_snapshot','dist-v1')""")
+                for ordinal in range(10):
+                    connection.execute("""INSERT INTO mobility_density_distribution_point
+                        (territory_id,territory_type,ordinal,density,density_status,decile,decile_status,
+                         source_id,vintage_id)
+                        VALUES ('E1','epci',%s,%s,'measured',%s,%s,'mobilite_snapshot','dist-v1')""",
+                        (ordinal, (ordinal + 1) / 100,
+                         None if ordinal == 5 else float(ordinal * 5 + 2),
+                         "not_available" if ordinal == 5 else "measured"))
+                connection.execute("""INSERT INTO table_publication
+                    (table_name,content_version,row_count,reference_content_version)
+                    VALUES ('mobility_density_distribution','dist-v1',11,'ref-fixture-v1')""")
 
             class NoConnections:
                 def connection(self):
@@ -295,8 +360,41 @@ def test_selected_mobility_comparison_route_and_building_reader(building_db_env,
                     assert default_body["essential_service_access"]["publication_id"] == "access-v1"
                     assert default_body["service_publication_id"] == "access-v1"
                     assert default_body["building_publication_id"] == selected["publication_id"]
-                assert len(checked_out) == 3
-                assert len(transactions) == 3
+
+                    # The theme-facts snapshot composes the focal density
+                    # distribution (migration 024's contract): a measured range
+                    # with complete ordinal points, per-value statuses honoured
+                    # (a non-measured decile stays null — never fabricated),
+                    # and the honest "unsupported" state for a territory
+                    # without a published range.
+                    facts_response = client.post("/api/territories/epci/E1/themes/mobilite/facts",
+                                                 json={"theme_id": "mobilite"})
+                    assert facts_response.status_code == 200, facts_response.text
+                    distribution = facts_response.json()["density_distribution"]
+                    assert distribution["status"] == "measured"
+                    assert distribution["range"] == {"minimum": 1.0, "maximum": 52.0, "status": "measured"}
+                    assert distribution["units"] == {"density": "part des batiments", "decile": "minutes"}
+                    assert [point["ordinal"] for point in distribution["points"]] == list(range(10))
+                    assert [point["density"] for point in distribution["points"]] == pytest.approx(
+                        [(ordinal + 1) / 100 for ordinal in range(10)])
+                    absent_decile = distribution["points"][5]
+                    assert absent_decile["decile"] is None
+                    assert absent_decile["decile_status"] == "not_available"
+                    assert all(point["decile"] is not None
+                               for point in distribution["points"] if point["ordinal"] != 5)
+                    assert all(point["density_status"] == "measured" for point in distribution["points"])
+                    assert distribution["provenance"]["source_id"] == "mobilite_snapshot"
+                    assert distribution["content_version"] == "dist-v1"
+                    e2_facts = client.post("/api/territories/epci/E2/themes/mobilite/facts",
+                                           json={"theme_id": "mobilite"})
+                    assert e2_facts.status_code == 200, e2_facts.text
+                    e2_distribution = e2_facts.json()["density_distribution"]
+                    assert e2_distribution["status"] == "unsupported"
+                    assert e2_distribution["range"]["minimum"] is None
+                    assert e2_distribution["range"]["maximum"] is None
+                    assert e2_distribution["points"] == []
+                assert len(checked_out) == 5
+                assert len(transactions) == 5
                 assert all(len(commands) == 1 for commands in transactions)
                 assert all("REPEATABLE READ, READ ONLY" in commands[0] for commands in transactions)
             finally:
