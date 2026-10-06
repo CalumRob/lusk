@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import VarianteCahierLibreE from '@/fiche/prototype/VarianteCahierLibreE.vue'
 import CartographicBreakoutPrototype from '@/fiche/prototype/CartographicBreakoutPrototype.vue'
+import CahierMotorisationFigure from '@/fiche/prototype/CahierMotorisationFigure.vue'
+import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
@@ -23,7 +25,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '@/payload/fixtures'
-import type { Indicateur, Payload, RampeAccesBatimentsRow } from '@/payload/types'
+import type { Indicateur, Payload, RampeAccesBatimentsRow, ThemeMetadata } from '@/payload/types'
 import { routes } from '@/router'
 
 const vintage = {
@@ -280,6 +282,102 @@ async function render(content: ThemeContent, presentation: 'ruled' | 'plain' = '
   await flushPromises()
   return wrapper
 }
+
+describe('figures des unités Mobilité ajoutées', () => {
+  const contentFact = (key: string, detail: string | null, value: number, label: string, unit = '%') => ({
+    label,
+    fact: {
+      key, detail, value, label, unit, availability: 'complete' as const, provenance: null,
+      comparison: null, comparisonBasis: 'territory-median' as const, reason: null,
+    },
+  })
+
+  it('trace les deux séries raccordement sur les mêmes détails et identifie les marques de référence', () => {
+    const trajectory = [contentFact('raccordement_courbe', 't0000', 0.1, '0'), contentFact('raccordement_courbe', 't0090', 0.7, '1 h 30')]
+    const reference = [contentFact('raccordement_reference', 't0000', 0.2, '0'), contentFact('raccordement_reference', 't0090', 0.6, '1 h 30')]
+    const published = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
+    const metadata = published.indicator_pages.raccordement_courbe
+    if (metadata.family !== 'trajectory') throw new Error('Fixture must declare a trajectory')
+    const wrapper = mount(CahierOffreTransportsFigure, {
+      props: { offer: contentFact('offre_tc', null, 0.4, 'Part des bâtiments près d’un arrêt'), trajectory, reference, metadata: metadata.trajectory },
+    })
+    expect(wrapper.find('path[data-series="territory"]').attributes('d')).toContain('M')
+    expect(wrapper.find('path[data-series="reference"]').attributes('d')).toContain('L')
+    expect(wrapper.find('[data-series="reference"][data-detail="t0090"]').attributes('data-value')).toBe('0.6')
+    expect(wrapper.text()).toContain(metadata.trajectory.reference?.label)
+    expect(wrapper.find('.transit-marker').attributes('data-detail')).toBe(metadata.trajectory.marker?.detail)
+    expect(wrapper.find('.transit-marker-label').text()).toBe(metadata.trajectory.marker?.label)
+    expect(wrapper.findAll('.cahier-figure-axis').length).toBe(2)
+
+    const withoutReference = mount(CahierOffreTransportsFigure, {
+      props: { offer: contentFact('offre_tc', null, 0.4, 'Part des bâtiments près d’un arrêt'), trajectory, reference: [], metadata: metadata.trajectory },
+    })
+    expect(withoutReference.find('.transit-legend-reference').exists()).toBe(false)
+    expect(withoutReference.find('.transit-legend-territory').exists()).toBe(true)
+    expect(wrapper.find('.transit-legend-reference').exists()).toBe(true)
+    expect(wrapper.find('.transit-legend-reference').attributes('aria-label')).toBe(`Série de référence : ${metadata.trajectory.reference?.label}`)
+    expect(wrapper.find('.transit-legend-territory').attributes('aria-label')).toBe('Série du territoire')
+    expect(wrapper.find('svg[role="img"]').attributes('aria-label')).toContain('Territoire')
+
+    const riderFigure = mount(CahierOffreTransportsFigure, {
+      props: {
+        offer: { ...contentFact('offre_tc', null, 0, 'Part des bâtiments près d’un arrêt'), fact: { ...contentFact('offre_tc', null, 0, 'Part des bâtiments près d’un arrêt').fact, value: null, reason: 'Aucune station desservie' } },
+        trajectory: [{ ...contentFact('raccordement_courbe', 't0090', 0, '1 h 30'), fact: { ...contentFact('raccordement_courbe', 't0090', 0, '1 h 30').fact, value: null, reason: 'Courbe non calculable' } }],
+        reference: [], metadata: metadata.trajectory,
+      },
+    })
+    expect(riderFigure.text()).toContain('Indisponible')
+    expect(riderFigure.text()).toContain('Aucune station desservie')
+    expect(riderFigure.text()).toContain('Courbe non calculable')
+  })
+
+  it('plots the payload-labeled household composition as separate bars with exact share values', () => {
+    const composition = [
+      contentFact('voitures_menage', 'sans_voiture', 0.25, 'Ménages sans voiture'),
+      contentFact('voitures_menage', 'une_voiture', 0.5, 'Ménages avec 1 voiture'),
+      contentFact('voitures_menage', 'deux_plus', 0.25, 'Ménages avec 2 voitures ou plus'),
+    ]
+    const wrapper = mount(CahierMotorisationFigure, { props: { composition, charging: [] } })
+    const bars = wrapper.findAll('.motorisation-bar')
+    expect(bars).toHaveLength(3)
+    expect(wrapper.findAll('.motorisation-part').map(row => row.attributes('data-value'))).toEqual(['0.25', '0.5', '0.25'])
+    expect(wrapper.text()).toContain('Ménages avec 2 voitures ou plus')
+    expect(bars.map(bar => bar.attributes('style'))).toEqual(expect.arrayContaining([expect.stringContaining('25%'), expect.stringContaining('50%')]))
+  })
+
+  it('keeps only payload-present motorisation facts and carries a null fact rider into the figure', () => {
+    const metadata = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8')) as ThemeMetadata
+    const original = factsForTarget()
+    const sansVoiture = original.mobility.indicators.find(fact => fact.key === 'voitures_menage' && fact.detail === 'sans_voiture')
+    expect(sansVoiture).toBeDefined()
+    const withoutPart = {
+      ...original,
+      mobility: { ...original.mobility, indicators: original.mobility.indicators.filter(fact => fact !== sansVoiture && fact.key !== 'bornes_recharge' && fact.key !== 'bornes_ev_par_station_service') },
+    }
+    const absentContent = resolveMobiliteThemeContent(withoutPart, metadata)
+    const absentEvidence = absentContent.units[2]!.sections[0]!.evidence
+    expect(absentEvidence?.kind).toBe('motorisation')
+    if (absentEvidence?.kind !== 'motorisation') throw new Error('Motorisation evidence should include remaining published facts')
+    expect(absentEvidence.composition.some(part => part.fact.detail === 'sans_voiture')).toBe(false)
+    expect(absentEvidence.charging).toHaveLength(0)
+    expect(absentContent.units.map(unit => unit.label)).toEqual(metadata.subgroups.map(subgroup => subgroup.label))
+    expect(absentContent.units[2]!.sections[0]!.label).toBe(metadata.subgroups.find(subgroup => subgroup.key === 'motorisation')?.label)
+    expect(absentContent.units[3]!.sections[0]!.label).toBe(metadata.subgroups.find(subgroup => subgroup.key === 'offre-transports-commun')?.label)
+
+    const baseFact = original.mobility.indicators.find(fact => fact.key === 'bornes_recharge')!
+    const rider = { ...baseFact, key: 'bornes_ev_par_station_service', value: null, reason: 'Aucune station-service sur le territoire' }
+    const withRider = {
+      ...withoutPart,
+      mobility: { ...withoutPart.mobility, indicators: [...withoutPart.mobility.indicators, rider] },
+    }
+    const riderEvidence = resolveMobiliteThemeContent(withRider, metadata).units[2]!.sections[0]!.evidence
+    if (riderEvidence?.kind !== 'motorisation') throw new Error('Motorisation evidence should keep its declared null fact')
+    const wrapper = mount(CahierMotorisationFigure, { props: riderEvidence })
+    expect(wrapper.text()).toContain('Indisponible')
+    expect(wrapper.text()).toContain('Aucune station-service sur le territoire')
+    expect(wrapper.findAll('.motorisation-part')).toHaveLength(metadata.detail_labels.voitures_menage ? Object.keys(metadata.detail_labels.voitures_menage).length - 1 : 2)
+  })
+})
 
 describe('Variante D — le seam ThemeContent → Cahier', () => {
   it('uses the payload-owned EPCI name verbatim', () => {
@@ -904,16 +1002,20 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.findAll('.cahier-page h2').map((heading) => heading.text())).toEqual([
       'Accès aux services',
       'Partage de l’espace public',
+      'Motorisation',
+      'Offre de transports en commun',
     ])
     expect(wrapper.findAll('.cahier-page .page-number').map((number) => number.text())).toEqual([
-      'page 01/02',
-      'page 02/02',
+      'page 01/04',
+      'page 02/04',
+      'page 03/04',
+      'page 04/04',
     ])
     for (const page of wrapper.findAll('.cahier-page')) {
       const groups = page.findAll('.concept-group')
       expect(groups.every((group) => !group.attributes('style'))).toBe(true)
     }
-    expect(wrapper.findAll('.page-rundown').map((rundown) => rundown.text())).toHaveLength(2)
+    expect(wrapper.findAll('.page-rundown').map((rundown) => rundown.text())).toHaveLength(4)
     expect(wrapper.findAll('.page-rundown')[1]!.text()).toContain('réseau cyclable')
     expect(wrapper.findAll('.concept-group-narrative').map((heading) => heading.text())).toEqual([
       'Ce que l’on perd sans voiture',
@@ -936,7 +1038,7 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.findAll('.sharing-cycling-reading')).toHaveLength(5)
     expect(wrapper.findAll('.sharing-parking-reading')).toHaveLength(3)
     expect(wrapper.findAll('.cahier-figure-lecture')).toHaveLength(7)
-    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(6)
+    expect(wrapper.findAll('.cahier-section-exploration--unit-footer')).toHaveLength(8)
     expect(wrapper.text()).toContain('Groupe comparé')
   })
 

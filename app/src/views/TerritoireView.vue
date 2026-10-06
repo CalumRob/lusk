@@ -321,7 +321,7 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
   const contentFacts = prototypeAccesApi.value && statutAccesApi.value === 'ready' && accesApi.value
     ? { ...withBuilding, mobility: { ...withBuilding.mobility, access: accesApi.value } }
     : withBuilding
-  return resolveMobiliteThemeContent(contentFacts)
+  return resolveMobiliteThemeContent(contentFacts, payloadPourRendu.value.themeMetadata?.mobilite)
 })
 const paginationCahier = computed(() =>
   payloadPourRendu.value && contenuMobilite.value

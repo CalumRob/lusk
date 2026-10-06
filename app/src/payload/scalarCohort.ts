@@ -165,5 +165,19 @@ export async function chargerCohortesScalaires(
 /** Replace only registered facts in a selected theme; all other payload data is untouched. */
 export function remplacerFaitsScalaires(themeRows: Indicateur[], replacement: Indicateur[], registered: string[]): Indicateur[] {
   const keys = new Set(registered)
-  return [...themeRows.filter((row) => !(row.theme === replacement[0]?.theme && keys.has(row.key))), ...replacement]
+  const signature = (row: Indicateur) => JSON.stringify([
+    row.territoire, row.theme, row.key, row.detail ?? null, row.sex ?? null, row.dimension ?? null,
+  ])
+  const originalBySignature = new Map(
+    themeRows
+      .filter((row) => row.theme === replacement[0]?.theme && keys.has(row.key) && row.rider)
+      .map((row) => [signature(row), row]),
+  )
+  const replacementsWithRiders = replacement.map((row) => ({
+    ...row,
+    // Scalar cohorts replace numeric observations, not content-owned riders
+    // such as "no service station on this territory" from the published row.
+    rider: row.rider ?? originalBySignature.get(signature(row))?.rider ?? null,
+  }))
+  return [...themeRows.filter((row) => !(row.theme === replacement[0]?.theme && keys.has(row.key))), ...replacementsWithRiders]
 }

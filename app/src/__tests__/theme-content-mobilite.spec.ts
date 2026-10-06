@@ -495,6 +495,32 @@ function sharingIndicator(
 }
 
 describe('resolveMobiliteThemeContent', () => {
+  it('orders all four published Mobilité subgroup units and carries their published facts', () => {
+    const facts = structuredClone(completeFacts)
+    facts.mobility.indicators = [
+      ...facts.mobility.indicators,
+      sharingIndicator('reseaux', 't_longueur', 10, 'km'),
+      sharingIndicator('reseaux', 'b_longueur', 20, 'km'),
+      sharingIndicator('reseaux', 'c_longueur', 30, 'km'),
+      sharingIndicator('bornes_recharge', null, 7, 'bornes'),
+    ]
+    const content = resolveMobiliteThemeContent(facts)
+    expect(content.units.map((unit) => unit.key)).toEqual([
+      'acces-aux-services', 'partage-de-lespace-public', 'motorisation', 'offre-transports-commun',
+    ])
+    const networks = content.units[1].sections[0].evidence
+    expect(networks?.kind).toBe('sharing-networks')
+    if (networks?.kind === 'sharing-networks') {
+      expect(networks.absoluteNetworks.map((fact) => fact.fact.value)).toEqual([10, 20, 30])
+    }
+    expect(content.units[2].sections[0].availability).toBe('complete')
+    expect(content.units[2].sections[0].evidence?.kind).toBe('motorisation')
+    if (content.units[2].sections[0].evidence?.kind === 'motorisation') {
+      expect(content.units[2].sections[0].evidence.charging).toHaveLength(1)
+    }
+    expect(content.units[3].sections[0].availability).toBe('absent')
+  })
+
   it('names an unavailable comparison without inventing a reference value', () => {
     const facts = structuredClone(completeFacts)
     const comparison = facts.mobility.access.summary.averageLosses.diversity.walkTransit.comparison
@@ -585,6 +611,8 @@ describe('resolveMobiliteThemeContent', () => {
     expect(content.units.map((unit) => unit.key)).toEqual([
       'acces-aux-services',
       'partage-de-lespace-public',
+      'motorisation',
+      'offre-transports-commun',
     ])
     expect(sharing).toBeDefined()
     expect(sharing?.label).toBe('Partage de l’espace public')

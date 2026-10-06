@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, inject, onMounted, ref } from 'vue'
+import { computed, inject, onBeforeUnmount, onMounted, ref } from 'vue'
 
 import {
   FILIGRANE_ALEA_KEY,
@@ -22,16 +22,32 @@ const alea = inject(FILIGRANE_ALEA_KEY, Math.random)
 
 const racine = ref<HTMLElement | null>(null)
 const tirage = ref<TirageFiligrane | null>(null)
+let observateur: ResizeObserver | null = null
 
-onMounted(() => {
-  const zone = racine.value?.parentElement?.getBoundingClientRect()
-  if (!zone) return
+function dessiner(zoneElement: HTMLElement): boolean {
+  const zone = zoneElement.getBoundingClientRect()
+  if (zone.width <= 0 || zone.height <= 0) return false
   tirage.value = tirerFiligrane(
     { largeur: zone.width, hauteur: zone.height },
     alea,
     bornesLargeurFiligrane(window.innerWidth),
   )
+  return true
+}
+
+onMounted(() => {
+  const zone = racine.value?.parentElement
+  if (!zone || dessiner(zone)) return
+  observateur = new ResizeObserver(() => {
+    if (tirage.value) return
+    if (!dessiner(zone)) return
+    observateur?.disconnect()
+    observateur = null
+  })
+  observateur.observe(zone)
 })
+
+onBeforeUnmount(() => observateur?.disconnect())
 
 const styleFiligrane = computed<Record<string, string>>(() => ({
   opacity: 'var(--filigrane-opacity)',
