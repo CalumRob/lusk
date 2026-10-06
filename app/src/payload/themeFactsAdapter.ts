@@ -277,6 +277,9 @@ function histoireEconomieDeSql(target: { territoire: string; type: TerritoireTyp
     if (!isRecord(activity) || !texteNonVide(activity.activity_code) || !texteNonVide(activity.activity_label) ||
         !(activity.lq === null || finite(activity.lq)) || !finite(activity.n) || !(activity.part_parc === null || finite(activity.part_parc))) throw new Error('Membre d’activité SQL Économie invalide')
     const rank = index + 1
+    // Le contrat sert « jusqu'à cinq identités d'activité ordonnées et
+    // réellement peuplées » (spéc #627 — preuves requises, Économie) ; le
+    // rang suit l'ordre du producteur, la limite est validée, jamais choisie.
     if (rank > 5) throw new Error('Trop de membres d’activité SQL Économie')
     Object.assign(history, { [`top${rank}_activity_code`]: activity.activity_code,
       [`top${rank}_activity_label`]: activity.activity_label, [`top${rank}_lq`]: activity.lq,
@@ -311,6 +314,11 @@ function programmesRows(response: Row, target: { territoire: string; type: Terri
       const add = (territory: { id: unknown; type: unknown }, entry: Row) => {
         if (!texteNonVide(territory.id) || !['commune', 'epci', 'departement', 'region'].includes(String(territory.type)) ||
             !texteNonVide(entry.detail) || !(entry.rider === null || text(entry.rider))) throw new Error('Adhésion Programmes invalide')
+        // La grammaire incumbent lit le rider par correspondance exacte
+        // (programmesPourTerritoire : `ligne.rider === 'convention valant ORT'`)
+        // — le libellé produit est booléen dans cette collection (rider_label
+        // servi seulement quand convention_valant_ort), la clé sémantique est
+        // donc la constante requise par le contrat de la ligne.
         result.push({ territoire: territory.id, type: territory.type as TerritoireType, theme: 'programmes',
           key: 'couverture_programmes', detail: entry.detail, value: null, unit: 'count',
           rider: entry.rider ? 'convention valant ORT' : null, ...vintageSql(entry.sources, entry.detail),
@@ -323,10 +331,13 @@ function programmesRows(response: Row, target: { territoire: string; type: Terri
       }
     } else if (collection.kind === 'period_detail') {
       if (collection.availability === 'no_record') continue
+      // L'unité vient du descripteur publié — jamais de « € » implicite : une
+      // collection sans unité est une publication incomplète, pas un défaut.
+      if (!texteNonVide(collection.unit)) throw new Error('Unité de collection Programmes absente')
       for (const entry of rows(collection.entries, 'collection.entries')) {
         if (!texteNonVide(entry.observation_period) || !texteNonVide(entry.label) || !finite(entry.value)) throw new Error('Subvention Programmes invalide')
         result.push({ territoire: target.territoire, type: target.type, theme: 'programmes', key: 'subventions_par_domaine',
-          detail: entry.label, dimension: entry.observation_period, value: entry.value, unit: text(collection.unit) ? collection.unit : '€',
+          detail: entry.label, dimension: entry.observation_period, value: entry.value, unit: collection.unit,
           rider: null, ...vintageSql(entry.sources, entry.label), rang_epci: null, rang_epci_n: null,
           rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })
       }
@@ -335,11 +346,12 @@ function programmesRows(response: Row, target: { territoire: string; type: Terri
   for (const series of rows(response.owned_series ?? [], 'owned_series')) {
     if (!texteNonVide(series.indicator_id)) throw new Error('Série Programmes invalide')
     if (series.indicator_id !== 'subventions_annuelles') continue
+    if (!texteNonVide(series.unit)) throw new Error('Unité de série Programmes absente')
     for (const point of rows(series.points, 'series.points')) {
       if (!texteNonVide(point.axis) || !(point.status === 'measured' ? finite(point.value) : point.value === null)) throw new Error('Point annuel Programmes invalide')
       result.push({ territoire: target.territoire, type: target.type, theme: 'programmes', key: 'subventions_annuelles',
         detail: null, dimension: point.axis, value: point.status === 'measured' ? point.value as number : null,
-        unit: text(series.unit) ? series.unit : '€', rider: point.status === 'measured' ? null : text(point.missing_reason) ? point.missing_reason : String(point.status),
+        unit: series.unit, rider: point.status === 'measured' ? null : text(point.missing_reason) ? point.missing_reason : String(point.status),
         ...vintageSql(point.provenance, point.axis), rang_epci: null, rang_epci_n: null,
         rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })
     }
