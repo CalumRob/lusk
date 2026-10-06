@@ -1,6 +1,8 @@
 """Tiny disposable-Postgres exercise of the public Milieux comparison-only route."""
 import os
 import re
+import shutil
+import subprocess
 import uuid
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
 
@@ -9,7 +11,7 @@ import pytest
 pytestmark = pytest.mark.integration
 
 
-def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http():
+def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tmp_path):
     required = ("LUSK_TEST_PUBLISH_DSN", "LUSK_TEST_READ_DSN", "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX")
     if not all(os.getenv(key) for key in required):
         pytest.skip("requires explicitly guarded private PostgreSQL test configuration")
@@ -212,6 +214,57 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http():
                 {"territory_type":"commune","territory_id":"35004"}]})
             assert undercount.status_code==503
             pub.execute("UPDATE table_publication SET row_count=2 WHERE table_name='milieux_reading_absence'")
+
+            # Run the real R publisher against this isolated fixture with a BEFORE INSERT
+            # trigger that silently drops absence rows. Its transactional count guard must
+            # reject publication before either marker can advance and roll all deletes back.
+            rscript=shutil.which("Rscript")
+            if rscript:
+                pub.execute("""CREATE FUNCTION skip_milieux_absence_insert() RETURNS trigger
+                    LANGUAGE plpgsql AS $$ BEGIN RETURN NULL; END $$""")
+                pub.execute("CREATE TRIGGER skip_milieux_absence BEFORE INSERT ON milieux_reading_absence FOR EACH ROW EXECUTE FUNCTION skip_milieux_absence_insert()")
+                script=tmp_path/"verify_milieux_absence_rollback.R"
+                script.write_text(r'''args <- commandArgs(TRUE)
+schema <- args[[1]]
+root <- args[[2]]
+source(file.path(root,"pipeline","R","publish_scalar.R"),local=FALSE)
+source(file.path(root,"pipeline","R","publish_typed_readings.R"),local=FALSE)
+    con <- DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_R_DBNAME"),
+      host=Sys.getenv("LUSK_TEST_R_HOST"),port=as.integer(Sys.getenv("LUSK_TEST_R_PORT")),
+      user=Sys.getenv("LUSK_TEST_R_USER"),options=paste0("-csearch_path=",schema))
+facts <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,story_key,salience_reason,periode_pop,periode_artif,
+  delta_population,taux_variation_population,artif_m2_par_habitant,artif_m3_par_habitant,trajectoire_artif_par_habitant,
+  classification,status,source_id,vintage_id FROM milieux_typed_reading WHERE territory_id='35001'")
+bindings <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,field_key,source_id,vintage_id,source_name,source_version,
+  reference_date,publication_date,observation_period,dataset_id,dataset_content_version,state_role,axis_value,
+  provenance_revision_id,population_revision_id FROM milieux_reading_source WHERE territory_id='35001'")
+population <- DBI::dbGetQuery(con,"SELECT population_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,
+  reference_date,publication_date,revision_hash FROM milieux_population_provenance_revision WHERE population_revision_id='pop-rev'")
+absences <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,reason,source_id,vintage_id,source_snapshot_sha256 FROM milieux_reading_absence")
+stopifnot(nrow(facts)==1L,nrow(bindings)==5L,nrow(population)==1L,nrow(absences)==2L)
+attr(facts,"source_bindings") <- bindings
+attr(facts,"population_revisions") <- population
+attr(facts,"source_absences") <- absences
+failure <- tryCatch({publish_milieux_reading(con,facts,list()); NULL},error=function(e)e)
+stopifnot(inherits(failure,"error"),grepl("fact/source/absence counts",conditionMessage(failure)))
+stopifnot(DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_typed_reading")$n[[1]]==4L,
+  DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_source")$n[[1]]==15L,
+  DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_absence")$n[[1]]==2L,
+  DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name IN ('milieux_typed_reading','milieux_reading_absence') ORDER BY table_name")$content_version[[1]]=="reading-v1",
+  all(DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name IN ('milieux_typed_reading','milieux_reading_absence')")$content_version=="reading-v1"))
+cat("R absence publisher count guard rolled back facts, bindings, declarations and markers\\n")
+DBI::dbDisconnect(con)
+''',encoding="utf-8")
+                env=os.environ.copy()
+                writer=urlsplit(env["LUSK_TEST_PUBLISH_DSN"])
+                env["LUSK_TEST_R_DBNAME"]=writer.path.lstrip("/")
+                env["LUSK_TEST_R_HOST"]=writer.hostname or "localhost"
+                env["LUSK_TEST_R_PORT"]=str(writer.port or 5432)
+                env["LUSK_TEST_R_USER"]=writer.username or ""
+                r_result=subprocess.run([rscript,"--vanilla",str(script),schema,str(root)],check=False,env=env,capture_output=True,text=True)
+                assert r_result.returncode==0,r_result.stdout+"\n"+r_result.stderr
+                pub.execute("DROP TRIGGER skip_milieux_absence ON milieux_reading_absence")
+                pub.execute("DROP FUNCTION skip_milieux_absence_insert()")
 
             # Same-version association corruption must fail closed; restoring each field recovers.
             cases=[("axis_value","wrong-axis",axes["35001"][0],"source_id='ocs-a'"),
