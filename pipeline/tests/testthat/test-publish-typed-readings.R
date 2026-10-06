@@ -51,6 +51,7 @@ test_that("Milieux source absence declarations are derived only from the normali
   expect_equal(declared$territory_id,c("29083","29084"))
   expect_true(all(declared$reason=="source_record_absent"))
   expect_true(all(grepl("^[0-9a-f]{64}$",declared$source_snapshot_sha256)))
+  expect_equal(attr(declared,"source_coverage")$source_present_communes,"29001")
   bad_path <- tempfile(fileext=".csv")
   writeLines(readLines(source_path),bad_path)
   on.exit(unlink(bad_path),add=TRUE)

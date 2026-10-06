@@ -1332,7 +1332,8 @@ def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_ty
             if set(declared) != missing or any(d[2] != "source_record_absent" or not d[5] for d in declarations):
                 raise HTTPException(503, "Selected Milieux members have undeclared or invalid reading absence")
             absence_pub = conn.execute("SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='milieux_reading_absence'").fetchone()
-            if (absence_pub is None or absence_pub[0] != marker[6] or absence_pub[2] != marker[2]):
+            if (absence_pub is None or absence_pub[0] != marker[6] or absence_pub[2] != marker[2] or
+                    absence_pub[1] < len(declarations)):
                 raise HTTPException(503, "Milieux source-absence publication is stale or incomplete")
             absent = declarations
         elif missing:
@@ -1417,7 +1418,8 @@ def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_ty
     return {"status":"available" if points else "unavailable",
         "reason":None if points else ("no_selected_members" if not members else "source_records_absent" if 'absent' in locals() and absent else "no_plottable_members"),"groupe":group,"scope":scope,
         "selected_member_count":len(set(members)),"plotted_member_count":len(points),
-        "unavailable_member_count":len(absent) if 'absent' in locals() else 0,
+        "unavailable_member_count":len(set(members))-len(points),
+        "source_absent_member_count":len(absent) if 'absent' in locals() else 0,
         "unavailable_members":[{"territory_id":r[0],"territory_type":r[1],"reason":r[2],"source_id":r[3],"vintage_id":r[4],"source_snapshot_sha256":r[5]} for r in absent] if 'absent' in locals() else [],
         "content_version":marker[0],"points":points}
 

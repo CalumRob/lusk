@@ -316,6 +316,18 @@ project_milieux_reading <- function(histories, vintages, metadata, canonical) {
        if(is.na(conso_vintage$date_reference[[1L]])) "NA" else as.character(conso_vintage$date_reference[[1L]]),sep="/")) ||
      length(unique(absences$source_snapshot_sha256))!=1L))
     stop("Milieux source-absence declarations do not match the registered CONSOENAF snapshot",call.=FALSE)
+  coverage <- attr(absences,"source_coverage")
+  if (!is.null(canonical$source_absences) && (is.null(coverage) || !is.data.frame(canonical$territoires) ||
+      !all(c("territoire","type") %in% names(canonical$territoires))))
+    stop("Milieux source-absence declarations require complete canonical source coverage",call.=FALSE)
+  if (!is.null(coverage)) {
+    commune_universe <- unique(as.character(canonical$territoires$territoire[canonical$territoires$type=="commune"]))
+    covered <- c(as.character(coverage$source_present_communes),as.character(absences$territory_id))
+    readings <- unique(as.character(facts$territory_id[facts$territory_type=="commune"]))
+    if (anyDuplicated(covered) || !setequal(covered,commune_universe) ||
+        !setequal(as.character(coverage$source_present_communes),readings))
+      stop("Milieux canonical reading universe differs from CONSOENAF source coverage",call.=FALSE)
+  }
   if (nrow(absences) && any(paste(absences$territory_id,absences$territory_type) %in% paste(facts$territory_id,facts$territory_type)))
     stop("Milieux source-absence declaration overlaps a selected reading",call.=FALSE)
   facts$status <- ifelse(is.na(facts$classification) | is.na(facts$periode_pop) |
@@ -368,7 +380,7 @@ project_milieux_reading <- function(histories, vintages, metadata, canonical) {
   }
   attr(facts,"source_bindings") <- do.call(rbind,binding_rows)
   attr(facts,"population_revisions") <- population_revision
-  attr(facts,"source_absences") <- absences[absence_fields]
+  if (!is.null(canonical$source_absences)) attr(facts,"source_absences") <- absences[absence_fields]
   facts
 }
 
@@ -672,21 +684,24 @@ milieux_source_absence_declarations <- function(source_path, territories, vintag
   if (is.null(source_id) || length(source_id)!=1L || is.na(source_id)) stop("CONSOENAF source identity is missing from metadata",call.=FALSE)
   vintage <- vintages[vintages$id==source_id,,drop=FALSE]
   if (nrow(vintage)!=1L) stop("CONSOENAF source vintage is missing or ambiguous",call.=FALSE)
+  if (!requireNamespace("digest",quietly=TRUE)) stop("SHA-256 support is required for CONSOENAF absence provenance",call.=FALSE)
+  sha_before <- digest::digest(file=source_path,algo="sha256",serialize=FALSE)
   raw <- lire_consoenaf(source_path)
   if (!"idcom" %in% names(raw)) stop("CONSOENAF source snapshot lacks commune identity",call.=FALSE)
   normalized <- normaliser_consoenaf(raw)
   universe <- unique(as.character(territories$territoire[territories$type=="commune"]))
   absent <- setdiff(universe,unique(as.character(normalized$code)))
-  if (!length(absent)) return(data.frame(territory_id=character(),territory_type=character(),reason=character(),source_id=character(),vintage_id=character(),source_snapshot_sha256=character()))
-  if (!requireNamespace("digest",quietly=TRUE)) stop("SHA-256 support is required for CONSOENAF absence provenance",call.=FALSE)
-  sha <- digest::digest(file=source_path,algo="sha256",serialize=FALSE)
-  data.frame(territory_id=absent,territory_type="commune",reason="source_record_absent",
+  sha_after <- digest::digest(file=source_path,algo="sha256",serialize=FALSE)
+  if (!identical(sha_before,sha_after)) stop("CONSOENAF source snapshot changed while deriving source coverage",call.=FALSE)
+  declarations <- data.frame(territory_id=absent,territory_type="commune",reason="source_record_absent",
     source_id=as.character(source_id),vintage_id=paste(as.character(vintage$version[[1L]]),
       if(is.na(vintage$date_reference[[1L]])) "NA" else as.character(vintage$date_reference[[1L]]),sep="/"),
-    source_snapshot_sha256=sha,stringsAsFactors=FALSE)
+    source_snapshot_sha256=sha_before,stringsAsFactors=FALSE)
+  attr(declarations,"source_coverage") <- list(source_present_communes=unique(as.character(normalized$code)))
+  declarations
 }
 
-publish_canonical_milieux_reading <- function(con, sortie="../public/data", conso_source_path="data/raw/conso-com.csv") {
+publish_canonical_milieux_reading <- function(con, sortie="../public/data", conso_source_path=NULL) {
   history_path <- file.path(sortie,"histoires_milieux.parquet")
   indicator_path <- file.path(sortie,"indicateurs_milieux.parquet")
   vintage_path <- file.path(sortie,"vintages.parquet")
@@ -697,7 +712,7 @@ publish_canonical_milieux_reading <- function(con, sortie="../public/data", cons
     indicateurs=nanoparquet::read_parquet(indicator_path),vintages=nanoparquet::read_parquet(vintage_path),
     territoires=nanoparquet::read_parquet(file.path(sortie,"territoires.parquet")),
     metadata=lire_theme_metadata("milieux"))
-  canonical$source_absences <- milieux_source_absence_declarations(conso_source_path,canonical$territoires,canonical$vintages,canonical$metadata)
+  if(!is.null(conso_source_path)) canonical$source_absences <- milieux_source_absence_declarations(conso_source_path,canonical$territoires,canonical$vintages,canonical$metadata)
   population <- canonical$vintages[canonical$vintages$id=="serie_historique",,drop=FALSE]
   if(nrow(population)!=1L || anyNA(population[c("source","version")]))
     stop("Canonical Milieux population-history source clock is missing or ambiguous",call.=FALSE)
@@ -784,25 +799,32 @@ publish_milieux_reading <- function(con, facts, canonical) {
       stop("Milieux population provenance revision identity collision or immutable-field mismatch",call.=FALSE)
     marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='milieux_typed_reading'")
     source_count <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_source")$n[[1L]]
-     absence_marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='milieux_reading_absence'")
-     absence_count <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_absence")$n[[1L]]
-     if(nrow(marker)==1L && identical(as.character(marker$content_version[[1L]]),version) && marker$row_count[[1L]]==expected_count &&
-        identical(as.character(marker$reference_content_version[[1L]]),as.character(reference[[1L]])) && source_count==expected_sources &&
-        nrow(absence_marker)==1L && identical(as.character(absence_marker$content_version[[1L]]),version) &&
-        absence_marker$row_count[[1L]]==nrow(absences) && absence_count==nrow(absences) &&
-        identical(as.character(absence_marker$reference_content_version[[1L]]),as.character(reference[[1L]]))) unchanged <- TRUE
+    absence_marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='milieux_reading_absence'")
+    absence_count <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_absence")$n[[1L]]
+    if(nrow(marker)==1L && identical(as.character(marker$content_version[[1L]]),version) && marker$row_count[[1L]]==expected_count &&
+       identical(as.character(marker$reference_content_version[[1L]]),as.character(reference[[1L]])) && source_count==expected_sources &&
+       nrow(absence_marker)==1L && identical(as.character(absence_marker$content_version[[1L]]),version) &&
+       absence_marker$row_count[[1L]]==nrow(absences) && absence_count==nrow(absences) &&
+       identical(as.character(absence_marker$reference_content_version[[1L]]),as.character(reference[[1L]]))) unchanged <- TRUE
     if(!unchanged) {
-     DBI::dbExecute(con,"DELETE FROM milieux_typed_reading")
-       DBI::dbExecute(con,"DELETE FROM milieux_reading_absence")
+     if(is.null(attr(facts,"source_absences"))) {
+       existing_absence_marker <- DBI::dbGetQuery(con,"SELECT row_count FROM table_publication WHERE table_name='milieux_reading_absence'")
+       if(nrow(existing_absence_marker)==1L && existing_absence_marker$row_count[[1L]]>0L)
+         stop("Complete CONSOENAF source coverage is required to replace existing Milieux absence declarations",call.=FALSE)
+     }
+      DBI::dbExecute(con,"DELETE FROM milieux_typed_reading")
+      DBI::dbExecute(con,"DELETE FROM milieux_reading_absence")
       persisted <- facts[c("territory_id","territory_type","groupe","story_key","salience_reason","periode_pop","periode_artif","delta_population","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant","trajectoire_artif_par_habitant","classification","status","source_id","vintage_id")]
       DBI::dbWriteTable(con,"milieux_typed_reading",persisted,append=TRUE,row.names=FALSE)
-       DBI::dbWriteTable(con,"milieux_reading_source",bindings[binding_fields],append=TRUE,row.names=FALSE)
-       if(nrow(absences)) DBI::dbWriteTable(con,"milieux_reading_absence",absences,append=TRUE,row.names=FALSE)
+      DBI::dbWriteTable(con,"milieux_reading_source",bindings[binding_fields],append=TRUE,row.names=FALSE)
+      if(nrow(absences)) DBI::dbWriteTable(con,"milieux_reading_absence",absences,append=TRUE,row.names=FALSE)
       inserted <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_typed_reading")$n[[1L]]
       inserted_sources <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_source")$n[[1L]]
-      if(inserted!=expected_count || inserted_sources!=expected_sources) stop("Milieux reading inserted fact/source counts do not match projection",call.=FALSE)
-       DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('milieux_typed_reading',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=now()",params=list(version,inserted,reference[[1L]]))
-       DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('milieux_reading_absence',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=now()",params=list(version,nrow(absences),reference[[1L]]))
+      inserted_absences <- DBI::dbGetQuery(con,"SELECT count(*) n FROM milieux_reading_absence")$n[[1L]]
+      if(inserted!=expected_count || inserted_sources!=expected_sources || inserted_absences!=nrow(absences))
+        stop("Milieux reading inserted fact/source/absence counts do not match projection",call.=FALSE)
+      DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('milieux_typed_reading',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=now()",params=list(version,inserted,reference[[1L]]))
+      DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('milieux_reading_absence',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=now()",params=list(version,nrow(absences),reference[[1L]]))
     }
   })
   invisible(list(content_version=version,row_count=expected_count,source_row_count=expected_sources,changed=!unchanged))

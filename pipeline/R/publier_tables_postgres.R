@@ -164,7 +164,7 @@ configuration_service_postgres <- function() {
        user = env[["LUSK_PUBLISH_USER"]], passfile = passfile)
 }
 
-publier_tables_service_depuis_parquet <- function(sortie = "../public/data") {
+publier_tables_service_depuis_parquet <- function(sortie = "../public/data", conso_source_path = NULL) {
   config <- configuration_service_postgres()
   donnees <- preparer_tables_service(sortie)
   snapshot <- project_service_scalar_snapshot(donnees, sortie)
@@ -183,7 +183,7 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data") {
     economy_input$content_version <- economy_reading_content_version(economy_input$histories,economy_input$vintages,economy_input$metadata)
     economy_reading <- publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_input,conn)
     mobility_reading <- publish_canonical_mobility_reading(conn,sortie)
-    milieux_reading <- publish_canonical_milieux_reading(conn,sortie)
+    milieux_reading <- publish_canonical_milieux_reading(conn,sortie,conso_source_path=conso_source_path)
     list(access=access, scalar=scalar, economy_reading=economy_reading,mobility_reading=mobility_reading,
       milieux_reading=milieux_reading$reading, milieux_state_series=milieux_reading$owned_series)
   },

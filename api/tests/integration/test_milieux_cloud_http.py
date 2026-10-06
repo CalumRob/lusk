@@ -38,16 +38,43 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http():
         pub.execute(f'CREATE SCHEMA "{schema}"'); created=True
         pub.execute(f'SET search_path TO "{schema}"')
         pub.execute((root/"api/schema.sql").read_text(encoding="utf-8"))
+        # Exercise 027 as an additive upgrade, not merely fresh-schema DDL.
+        # Reconstruct the pre-027 marker constraints and preserve an existing marker.
+        pub.execute("DROP TABLE milieux_reading_absence")
+        pub.execute("ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check")
+        pub.execute("""ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check CHECK(table_name IN (
+            'territory_reference','service_registry','essential_service_access','building_ramp','building_grid',
+            'scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading',
+            'bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading',
+            'mobility_typed_reading','mobility_density_distribution'))""")
+        pub.execute("ALTER TABLE table_publication DROP CONSTRAINT shared_fact_publication_requires_reference")
+        pub.execute("""ALTER TABLE table_publication ADD CONSTRAINT shared_fact_publication_requires_reference CHECK (
+            table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading',
+            'bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading',
+            'mobility_typed_reading','mobility_density_distribution') OR reference_content_version IS NOT NULL)""")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','legacy-marker',0)")
+        pub.execute((root/"api/migrations/027_milieux_reading_absence.sql").read_text(encoding="utf-8"))
+        assert pub.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()==("legacy-marker",)
+        assert pub.execute("SELECT to_regclass('milieux_reading_absence')").fetchone()[0] is not None
         territories=[("35238","commune","Focal","35","243500139","D1"),
             ("35001","commune","Peer A","35","243500139","D1"),
             ("35002","commune","Peer B","35","243500139","D1"),
             ("35003","commune","Unavailable","35","243500139","D1"),
+            ("35004","commune","Source absent A","35","243500139","D1"),
+            ("35005","commune","Source absent B","35","243500139","D1"),
+            ("35006","commune","Undeclared missing","35",None,"D2"),
             ("243500139","epci","Fixture EPCI","35",None,None),
             ("35","departement","Fixture dept",None,None,None),
             ("53","region","Fixture region",None,None,None)]
         pub.cursor().executemany("INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code) VALUES(%s,%s,%s,%s,%s,%s)",territories)
-        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','ref-v1',%s)",(len(territories),))
+        pub.execute("UPDATE table_publication SET content_version='ref-v1',row_count=%s WHERE table_name='territory_reference'",(len(territories),))
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('milieux_typed_reading','reading-v1',4,'ref-v1')")
+        pub.execute("INSERT INTO source_dataset VALUES('conso-fixture','CONSO fixture')")
+        pub.execute("INSERT INTO source_vintage VALUES('conso-fixture','v2025/2025-01-01','v2025','2025-01-01','2025-02-01')")
+        pub.execute("""INSERT INTO milieux_reading_absence VALUES
+            ('35004','commune','source_record_absent','conso-fixture','v2025/2025-01-01',%s),
+            ('35005','commune','source_record_absent','conso-fixture','v2025/2025-01-01',%s)""",("a"*64,"a"*64))
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('milieux_reading_absence','reading-v1',2,'ref-v1')")
         pub.execute("""INSERT INTO milieux_typed_reading(territory_id,territory_type,groupe,story_key,salience_reason,
             periode_pop,periode_artif,delta_population,taux_variation_population,artif_m2_par_habitant,
             artif_m3_par_habitant,trajectoire_artif_par_habitant,classification,status,source_id,vintage_id) VALUES
@@ -122,7 +149,10 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http():
             default=client.post(route,json={"theme_id":"milieux"})
             assert default.status_code==200,default.text
             cloud=default.json()["reading_cloud"]
-            assert cloud["scope"]["kind"]=="density_class" and cloud["selected_member_count"]==4
+            assert cloud["scope"]["kind"]=="density_class" and cloud["selected_member_count"]==6
+            assert cloud["plotted_member_count"]==3 and cloud["unavailable_member_count"]==3
+            assert cloud["source_absent_member_count"]==2
+            assert {m["territory_id"] for m in cloud["unavailable_members"]}=={"35004","35005"}
             assert {p["territory"]["territory_id"] for p in cloud["points"]}=={"35238","35001","35002"}
             assert all(set(p)=={"territory","periode_pop","periode_artif","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant"} for p in cloud["points"])
             assert all(p["periode_pop"]=="2017–2023" and p["periode_artif"]=="2020–2023" for p in cloud["points"])
@@ -136,17 +166,52 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http():
                 "plotted_member_count":0,"content_version":"reading-v1","points":[]}
             single=client.post(route,json={"theme_id":"milieux","selection":[{"territory_type":"commune","territory_id":"35238"}]})
             assert single.status_code==200 and len(single.json()["reading_cloud"]["points"])==1
-            singleton_query_count=query_counts[-1]
             mixed=client.post(route,json={"theme_id":"milieux","selection":[
                 {"territory_type":"epci","territory_id":"243500139"},
                 {"territory_type":"commune","territory_id":"35238"}]})
-            assert mixed.status_code==200 and mixed.json()["reading_cloud"]["selected_member_count"]==4
+            assert mixed.status_code==200 and mixed.json()["reading_cloud"]["selected_member_count"]==6
             assert mixed.json()["reading_cloud"]["plotted_member_count"]==3
             assert len(mixed.json()["reading_cloud"]["points"])==3
-            assert query_counts[-1]==singleton_query_count==default_query_count
+            assert query_counts[-1]==default_query_count
             unavailable=client.post(route,json={"theme_id":"milieux","selection":[{"territory_type":"commune","territory_id":"35003"}]})
             assert unavailable.status_code==200
             assert unavailable.json()["reading_cloud"]["reason"]=="no_plottable_members"
+            source_absent=client.post(route,json={"theme_id":"milieux","selection":[
+                {"territory_type":"commune","territory_id":"35004"}]})
+            assert source_absent.status_code==200
+            assert source_absent.json()["reading_cloud"]["status"]=="unavailable"
+            assert source_absent.json()["reading_cloud"]["reason"]=="source_records_absent"
+            assert source_absent.json()["reading_cloud"]["selected_member_count"]==1
+            assert source_absent.json()["reading_cloud"]["plotted_member_count"]==0
+            assert source_absent.json()["reading_cloud"]["unavailable_member_count"]==1
+            assert source_absent.json()["reading_cloud"]["source_absent_member_count"]==1
+            assert source_absent.json()["reading_cloud"]["unavailable_members"][0]["source_snapshot_sha256"]=="a"*64
+            all_absent=client.post(route,json={"theme_id":"milieux","selection":[
+                {"territory_type":"commune","territory_id":"35004"},
+                {"territory_type":"commune","territory_id":"35005"}]})
+            assert all_absent.status_code==200
+            assert all_absent.json()["reading_cloud"]["reason"]=="source_records_absent"
+            assert all_absent.json()["reading_cloud"]["selected_member_count"]==2
+            assert all_absent.json()["reading_cloud"]["plotted_member_count"]==0
+            assert all_absent.json()["reading_cloud"]["points"]==[]
+            undeclared=client.post(route,json={"theme_id":"milieux","selection":[
+                {"territory_type":"commune","territory_id":"35006"}]})
+            assert undeclared.status_code==503
+            pub.execute("DELETE FROM milieux_reading_absence WHERE territory_id='35004'")
+            deleted=client.post(route,json={"theme_id":"milieux","selection":[
+                {"territory_type":"commune","territory_id":"35004"}]})
+            assert deleted.status_code==503
+            pub.execute("INSERT INTO milieux_reading_absence VALUES('35004','commune','source_record_absent','conso-fixture','v2025/2025-01-01',%s)",("a"*64,))
+            pub.execute("UPDATE table_publication SET content_version='stale' WHERE table_name='milieux_reading_absence'")
+            stale=client.post(route,json={"theme_id":"milieux","selection":[
+                {"territory_type":"commune","territory_id":"35004"}]})
+            assert stale.status_code==503
+            pub.execute("UPDATE table_publication SET content_version='reading-v1' WHERE table_name='milieux_reading_absence'")
+            pub.execute("UPDATE table_publication SET row_count=0 WHERE table_name='milieux_reading_absence'")
+            undercount=client.post(route,json={"theme_id":"milieux","selection":[
+                {"territory_type":"commune","territory_id":"35004"}]})
+            assert undercount.status_code==503
+            pub.execute("UPDATE table_publication SET row_count=2 WHERE table_name='milieux_reading_absence'")
 
             # Same-version association corruption must fail closed; restoring each field recovers.
             cases=[("axis_value","wrong-axis",axes["35001"][0],"source_id='ocs-a'"),

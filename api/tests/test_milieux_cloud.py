@@ -74,6 +74,7 @@ def test_milieux_cloud_returns_only_selected_plot_facts_and_provenance_windows()
     assert "focal_value" not in cloud and "focal" not in repr(cloud)
     assert cloud["selected_member_count"] == 2 and cloud["plotted_member_count"] == 1
     assert cloud["unavailable_member_count"] == 1
+    assert cloud["source_absent_member_count"] == 1
     assert len(connection.queries) == 4  # fixed core query count, independent of peer/component count
 
 
