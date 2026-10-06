@@ -450,6 +450,48 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
+  it('Habitat scalar cohort replaces only the scalar page and preserves the price trajectory', async () => {
+    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_habitat.json'), 'utf8'))
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/35238.json'), 'utf8'))
+    const page = metadata.indicator_pages.part_passoires
+    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/data/theme_habitat.json') return new Response(JSON.stringify(metadata), { status: 200 })
+      if (url !== '/api/territories/commune/35238/indicator-cohorts/part_passoires?scope_level=commune') {
+        throw new Error(`Unexpected request: ${url}`)
+      }
+      return new Response(JSON.stringify({ indicator_id: 'part_passoires', territory_type: 'commune',
+        label: page.label, unit: page.unit, direction: page.direction,
+        comparison_facet: page.comparison?.indicator ?? 'part_passoires', completeness: 'sparse',
+        content_version: 'habitat-fiche-v1', territory_reference_version: 'territories-v1',
+        observations: [{ territory_id: '35238', name: published.territory.nom, value: 0.123, status: 'measured',
+          rang_epci: 1, rang_epci_n: 43, rang_dep: 1, rang_dep_n: 333, rang_reg: 1, rang_reg_n: 1200,
+          sources: [{ source_id: page.sources[0], name: 'ADEME — Observatoire DPE, logements existants',
+            vintage_id: '2026-08-11/NA', version: '2026-08-11', reference_date: null,
+            publication_date: '2026-08-11' }] }] }), { status: 200 })
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    published.themes.habitat.theme_metadata.scalar_contracts = metadata.scalar_contracts
+    published.themes.habitat.theme_metadata.indicator_pages = metadata.indicator_pages
+    const model = validerModeleTerritoire(published, 'territoires/commune/35238.json',
+      { type: 'commune', territoire: '35238' })
+    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    const { wrapper } = await monter('/territoire/commune/35238?theme=habitat', vi.fn(async () => model))
+    await flushPromises()
+    const cohortUrls = fetchApi.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/indicator-cohorts/'))
+    expect(cohortUrls.some((url) => url.includes('/part_passoires'))).toBe(true)
+    expect(cohortUrls.some((url) => url.includes('/prix_m2'))).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    const habitatText = wrapper.get('[role="tabpanel"]').text()
+    expect(habitatText).toContain('12%Part de passoires thermiques')
+    expect(habitatText).toContain('Médiane prix au m²')
+    expect(habitatText).toContain('3 777,78 €/m²')
+    wrapper.unmount()
+  })
+
   it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {
     await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
     const requests = vi.fn().mockRejectedValue(new Error('scalar API must stay off'))
