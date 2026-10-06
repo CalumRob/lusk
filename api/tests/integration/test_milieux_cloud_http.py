@@ -175,6 +175,20 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
             assert len(facts["readings"])==1
             assert facts["readings"][0]["groupe"]=="land"
             assert facts["readings"][0]["artif_m2_par_habitant"]==8
+            pub.execute("DELETE FROM milieux_typed_reading WHERE territory_id='35238'")
+            typed_reading_absent=client.get("/api/territories/commune/35238/themes/milieux/facts")
+            assert typed_reading_absent.status_code==404,typed_reading_absent.text
+            pub.execute("""INSERT INTO milieux_typed_reading(territory_id,territory_type,groupe,story_key,salience_reason,
+                periode_pop,periode_artif,delta_population,taux_variation_population,artif_m2_par_habitant,
+                artif_m3_par_habitant,trajectoire_artif_par_habitant,classification,status,source_id,vintage_id)
+                VALUES('35238','commune','land','fixture','fixture','2017–2023','2020–2023',10,1.0,8,9,1.1,'up','measured','rp','v2023')""")
+            pub.execute("DELETE FROM scalar_descriptor WHERE indicator_id='fixture_scalar'")
+            typed_only=client.get("/api/territories/commune/35238/themes/milieux/facts")
+            assert typed_only.status_code==200,typed_only.text
+            assert typed_only.json()["indicators"]==[]
+            assert typed_only.json()["readings"]==facts["readings"]
+            assert typed_only.json()["content_version"]==facts["content_version"]
+            assert typed_only.json()["reading_content_version"]==facts["reading_content_version"]
             cloud=default.json()["reading_cloud"]
             assert cloud["scope"]["kind"]=="density_class" and cloud["selected_member_count"]==6
             assert cloud["plotted_member_count"]==3 and cloud["unavailable_member_count"]==3
