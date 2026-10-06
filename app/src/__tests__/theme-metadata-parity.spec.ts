@@ -131,7 +131,7 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
   it('garde l’offre cyclable dans le domaine des longueurs protégées/partagées', () => {
     const page = (lire(canonicalDir, 'mobilite') as any).indicator_pages.offre_cyclable
     expect(page.composition.parts).toEqual(['protege_longueur', 'partage_longueur'])
-    expect(page.comparison.details).toEqual(['protege_longueur', 'partage_longueur', 'total_longueur'])
+    expect(page.comparison.details).toEqual(['protege_longueur', 'protege_km_1000', 'partage_longueur', 'partage_km_1000', 'total_longueur'])
     expect(page.comparison.unit).toBe('km')
     expect(page.composition.parts.some((part: string) => part.includes('km_1000'))).toBe(false)
   })
