@@ -1,8 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { acquireThemeComparison, acquireThemeFacts, ThemeAcquisitionCache } from '../payload/themeAcquisition'
+import { acquireThemeComparison, acquireThemeFacts, ThemeAcquisitionCache, themeAcquisitionEnabled } from '../payload/themeAcquisition'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 
 describe('theme acquisition cache', () => {
+  it('enables the migrated path only for the explicit API flag', () => {
+    expect(themeAcquisitionEnabled({})).toBe(false)
+    expect(themeAcquisitionEnabled({ VITE_THEME_ACQUISITION_API: '0' })).toBe(false)
+    expect(themeAcquisitionEnabled({ VITE_THEME_ACQUISITION_API: '1' })).toBe(true)
+  })
   it('posts typed selections and preserves omitted versus explicitly empty selection', async () => {
     const fetcher = vi.fn(async (_url: string, _init?: RequestInit) => ({ ok: true, json: async () => ({ theme_id: 'habitat', complete_theme: false }) }))
     vi.stubGlobal('fetch', fetcher)
