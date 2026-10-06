@@ -232,8 +232,13 @@ operator requires a **current affirmative human representative approval**;
 missing, rejected, or stale approval fails before output mutation. The command
 derives the department inspection cohort from the current full inventory,
 checks all prior batch artifact hashes, validates current representative
-identities and source versions, and stages/decodes all replacements before
-promoting any. It preserves the prior full manifest, QA, and replaced images
+identities and source versions, and requires each full-manifest record to agree
+with its `.production-manifest.json` cache entry. A missing or stale cache fails
+closed before rendering or promotion. It records the authoritative department-label
+registry path and hash, and stages/decodes all replacements under the selected
+output directory before promoting any. Full QA remains explicitly incomplete
+until the reconciled manifest, output cache, and promotion journal are durable.
+It preserves the prior full manifest, QA, and replaced images
 under `output/repair-evidence/`. Automated QA does not approve title wording:
 the reconciled QA returns to `awaiting-human-spot-check`.
 
