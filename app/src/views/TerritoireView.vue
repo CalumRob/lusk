@@ -121,7 +121,12 @@ const payloadPourRendu = computed<Payload | null>(() => {
       ? payload.histoires.filter((row) => row.theme !== theme)
       : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
         ...(theme === 'milieux' ? histoiresNuageMilieux.value : [])]
-    return { ...payload, indicateurs, histoires }
+    const peerIds = new Set(theme === 'milieux' ? histoiresNuageMilieux.value.map((row) => row.territoire) : [])
+    const peers = modeleTerritoire.model.value?.cohortTerritories
+      ?.filter((territory) => peerIds.has(territory.territoire)) ?? []
+    const territoires = [...payload.territoires, ...peers.filter((peer) =>
+      !payload.territoires.some((existing) => existing.territoire === peer.territoire))]
+    return { ...payload, territoires, indicateurs, histoires }
   }
   if (!scalarCohortEnabled(import.meta.env)) return payload
   const theme = selection.value

@@ -6,6 +6,7 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '../views/TerritoireView.vue'
+import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
 import { varianteDeUrl } from '../fiche/prototype/variantes'
 import {
   histoiresDemographieFixture,
@@ -248,6 +249,42 @@ export function stubApiThemeMobilite(model: any, type = 'commune', code = '22001
     }
     throw new Error(`Requête inattendue : ${url}`)
   })
+}
+
+function reponseThemeMilieuxApi(model: any, type = 'commune', code = '22001', peerId?: string) {
+  const theme = model.themes.milieux
+  const history = theme.histories.find((row: any) => row.territoire === code)
+  const indicators = theme.indicators.filter((row: any) => row.territoire === code)
+  const peer = peerId ?? model.cohortTerritories?.find((item: any) => item.type === 'commune' &&
+    item.epci === model.territory.epci && item.territoire !== code)?.territoire ?? '22002'
+  const source = { source_id: 'milieux_api', name: 'Source API milieux', version: '2026', reference_date: null, publication_date: null }
+  const comparison = { contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'milieux',
+    content_version: 'milieux-v1', reference_content_version: 'territories-v1', reading_content_version: 'milieux-v1',
+    selection: null, scope: { kind: 'density_class', member_count: 1 }, results: [], profile_comparisons: [],
+    reading_cloud: { status: 'available', reason: null, groupe: history.groupe,
+      scope: { kind: 'density_class' }, selected_member_count: 1, plotted_member_count: 1,
+      points: [{ territory: { territory_id: peer, territory_type: 'commune', name: 'Peer Milieux' },
+        periode_pop: '2017-2023', periode_artif: '2021-2025', taux_variation_population: 2.75,
+        artif_m2_par_habitant: 100, artif_m3_par_habitant: 125 }] } }
+  return { contract: 'theme-facts-v1', complete_theme: false, theme_id: 'milieux',
+    content_version: 'milieux-v1', reference_content_version: 'territories-v1', reading_content_version: 'milieux-v1',
+    territory: { territory_id: code, territory_type: type }, indicator_metadata: [], named_reference_evidence: [],
+    indicators: indicators.map((row: any) => ({ indicator_id: row.key, label: row.key, unit: row.unit,
+      value: row.key === 'artif_par_habitant' && row.detail === 'M3' ? 777 : row.value,
+      status: row.value === null ? 'unavailable' : 'measured', dimensions: row.detail ? { axis: row.detail } : {}, sources: [source] })),
+    readings: [{ groupe: history.groupe, story_key: history.story_key, salience_reason: history.salience_reason,
+      periode_pop: history.periode_pop, periode_artif: history.periode_artif,
+      delta_population: history.delta_population, taux_variation_population: 2.75,
+      artif_m2_par_habitant: history.artif_m2_par_habitant, artif_m3_par_habitant: history.artif_m3_par_habitant,
+      trajectoire_artif_par_habitant: history.trajectoire_artif_par_habitant, classification: 'grandir-en-se-densifiant',
+      status: 'measured', provenance: { source_id: source.source_id, source_name: source.name,
+        source_version: source.version, source_reference_date: null, source_publication_date: null } }], comparison }
+}
+
+function modeleMilieux() {
+  const model = modeleAvecContextesComparaison()
+  model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+  return model
 }
 
 function modelFor(territoire: string) {
@@ -1256,5 +1293,115 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('.etat-erreur').exists()).toBe(false)
     expect(wrapper.find('.fiche-titre h1').text()).toBe('Commune C')
     expect(charger).toHaveBeenCalledTimes(2)
+  })
+  it('acquiert Milieux paresseusement, consomme la lecture API et rend son nuage imbriqué', async () => {
+    const model = modeleMilieux()
+    const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () => reponseThemeMilieuxApi(model) }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(1)
+    expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'milieux' })
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Source API milieux')
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('se vide, et consomme quand même')
+    const graph = wrapper.findComponent(GraphiqueQuadrantMilieux)
+    expect(graph.exists()).toBe(true)
+    expect(graph.props('tauxVariationPopulation')).toBe(2.75)
+    expect(graph.props('classification')).toContain('grandit')
+    expect(graph.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22033', tauxVariationPopulation: 2.75, deltaM2ParHabitant: 25 }))
+    wrapper.unmount()
+  })
+
+  it('ne précharge aucun autre thème et garde l’acquisition Milieux en cache à la revisite', async () => {
+    const model = modeleMilieux()
+    const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () => reponseThemeMilieuxApi(model) }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    expect(fetchApi).not.toHaveBeenCalled()
+    await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
+    await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
+    await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('masque les valeurs statiques pendant l’acquisition Milieux en attente', async () => {
+    const model = modeleMilieux()
+    let resolveFacts!: (value: unknown) => void
+    const pending = new Promise((resolve) => { resolveFacts = resolve })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', vi.fn(() => pending))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('Source API milieux')
+    resolveFacts({ ok: true, json: async () => reponseThemeMilieuxApi(model) }); await flushPromises()
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Source API milieux')
+    wrapper.unmount()
+  })
+
+  it('échoue fermé sur les faits Milieux puis réessaie', async () => {
+    const model = modeleMilieux()
+    let calls = 0
+    const fetchApi = vi.fn(async () => ++calls === 1 ? Promise.reject(new Error('offline')) :
+      ({ ok: true, json: async () => reponseThemeMilieuxApi(model) }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('indicateurs de ce thème ne sont pas disponibles')
+    await alert.get('button').trigger('click'); await flushPromises()
+    expect(fetchApi).toHaveBeenCalledTimes(2)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Source API milieux')
+    wrapper.unmount()
+  })
+
+  it('n’écrase pas la lecture focale lors des comparaisons et réutilise le cache de sélection', async () => {
+    const model = modeleMilieux()
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => url.endsWith('/facts')
+      ? reponseThemeMilieuxApi(model) : { contract: 'theme-comparison-v1', theme_id: 'milieux', selection: JSON.parse(String(options?.body)).selection,
+        reference_content_version: 'territories-v1', content_version: 'milieux-v1', reading_content_version: 'milieux-v1',
+        results: [], profile_comparisons: [], reading_cloud: reponseThemeMilieuxApi(model).comparison.reading_cloud } }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(0)
+    await router.replace({ query: { theme: 'milieux', comparaison: 'epci' } }); await flushPromises()
+    const call = fetchApi.mock.calls.find(([url]) => url.endsWith('/comparison'))!
+    const expected = model.cohortTerritories!.filter((t: any) => t.type === 'commune' && t.epci === model.territory.epci)
+      .map((t: any) => ({ territory_type: t.type, territory_id: t.territoire }))
+    expect(JSON.parse(String(call[1]?.body))).toEqual({ theme_id: 'milieux', selection: expected })
+    expect(wrapper.findComponent(GraphiqueQuadrantMilieux).props('tauxVariationPopulation')).toBe(2.75)
+    await router.replace({ query: { theme: 'milieux', comparaison: 'bretagne' } }); await flushPromises()
+    const allCommunes = model.cohortTerritories!.filter((t: any) => t.type === 'commune')
+      .map((t: any) => ({ territory_type: t.type, territory_id: t.territoire }))
+    const comparisons = fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))
+    expect(comparisons).toHaveLength(2)
+    expect(JSON.parse(String(comparisons[1]![1]?.body))).toEqual({ theme_id: 'milieux', selection: allCommunes })
+    await router.replace({ query: { theme: 'milieux', comparaison: 'epci' } }); await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(2)
+    wrapper.unmount()
+  })
+
+  it('refuse les jetons de comparaison incompatibles et réessaie la comparaison', async () => {
+    const model = modeleMilieux()
+    let comparison = 0
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => url.endsWith('/facts')
+      ? reponseThemeMilieuxApi(model) : { contract: 'theme-comparison-v1', theme_id: 'milieux', selection: JSON.parse(String(options?.body)).selection,
+        reference_content_version: ++comparison === 1 ? 'bad' : 'territories-v1', content_version: 'milieux-v1',
+        reading_content_version: 'milieux-v1', results: [], profile_comparisons: [], reading_cloud: null } }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=milieux&comparaison=bretagne', vi.fn(async () => model))
+    const alert = wrapper.get('[role="alert"]')
+    expect(alert.text()).toContain('comparaisons de ce thème ne sont pas disponibles')
+    await alert.get('button').trigger('click'); await flushPromises()
+    expect(comparison).toBe(2)
+    wrapper.unmount()
+  })
+
+  it('ignore une réponse de faits Milieux tardive après avoir quitté le thème', async () => {
+    const model = modeleMilieux()
+    let resolveFacts!: (value: unknown) => void
+    const pending = new Promise((resolve) => { resolveFacts = resolve })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', vi.fn(() => pending))
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
+    await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
+    resolveFacts({ ok: true, json: async () => reponseThemeMilieuxApi(model) }); await flushPromises()
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('Source API milieux')
+    wrapper.unmount()
   })
 })
