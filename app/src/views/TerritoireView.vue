@@ -88,7 +88,9 @@ let sequenceFicheScalaires = 0
  * `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
  */
 const acquisitionApiActivee = themeAcquisitionEnabled(import.meta.env)
-const THEMES_ACQUISITION_API: readonly Theme[] = ['habitat', 'programmes', 'demographie', 'milieux']
+/** Thèmes coupés vers l'acquisition paresseuse (#627) — Mobilité reste hors
+ * registre : sa surface de fiche est la variante E, intégration côté utilisateur. */
+const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux']
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
 const themeMigre = (theme: Theme | null): boolean =>
   acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme)

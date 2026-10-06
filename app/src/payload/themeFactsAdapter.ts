@@ -1,4 +1,4 @@
-import type { Histoire, HistoireDemographie, HistoireHabitat, HistoireMilieux, Indicateur, TerritoireType, VintageStamp } from './types'
+import type { Histoire, HistoireDemographie, HistoireEconomie, HistoireHabitat, HistoireMilieux, Indicateur, TerritoireType, VintageStamp } from './types'
 import { RAISONS_SAILLANCE } from './types'
 import type { ThemeKey, ThemeSelectionMember } from './themeAcquisition'
 
@@ -253,6 +253,38 @@ export function histoiresMilieuxDuNuage(response: unknown): HistoireMilieux[] {
   })
 }
 
+/** Lecture Économie typée : les membres d'activité PUBLIÉS deviennent les
+ * lignes top-N du modèle incumbent ; un membre absent reste absent. */
+function histoireEconomieDeSql(target: { territoire: string; type: TerritoireType }, reading: Row): Histoire {
+  for (const key of ['groupe', 'story_key', 'salience_reason', 'status']) {
+    if (!texteNonVide(reading[key])) throw new Error(`Lecture SQL Économie invalide : ${key}`)
+  }
+  if (reading.story_key !== 'ce-que-la-commune-abrite' ||
+      !RAISONS_SAILLANCE.includes(reading.salience_reason as (typeof RAISONS_SAILLANCE)[number])) {
+    throw new Error('Lecture SQL Économie non déclarée')
+  }
+  const provenance = isRecord(reading.provenance)
+    ? apiSources([{ source_id: reading.provenance.source_id, name: reading.provenance.source_name,
+        version: reading.provenance.source_version, reference_date: reading.provenance.source_reference_date,
+        publication_date: reading.provenance.source_publication_date }], 'lecture economie')
+    : []
+  const history: Record<string, unknown> = { territoire: target.territoire, type: target.type, theme: 'economie',
+    groupe: reading.groupe, story_key: reading.story_key, salience_reason: reading.salience_reason,
+    vintage_source: provenance[0]?.source ?? '', vintage_version: provenance[0]?.version ?? '',
+    vintage_date_reference: provenance[0]?.referenceDate ?? null, vintage_date_publication: provenance[0]?.publicationDate ?? null }
+  if (!Array.isArray(reading.activities)) throw new Error('Membres d’activité SQL Économie invalides')
+  reading.activities.forEach((activity, index) => {
+    if (!isRecord(activity) || !texteNonVide(activity.activity_code) || !texteNonVide(activity.activity_label) ||
+        !(activity.lq === null || finite(activity.lq)) || !finite(activity.n) || !(activity.part_parc === null || finite(activity.part_parc))) throw new Error('Membre d’activité SQL Économie invalide')
+    const rank = index + 1
+    if (rank > 5) throw new Error('Trop de membres d’activité SQL Économie')
+    Object.assign(history, { [`top${rank}_activity_code`]: activity.activity_code,
+      [`top${rank}_activity_label`]: activity.activity_label, [`top${rank}_lq`]: activity.lq,
+      [`top${rank}_n`]: activity.n, [`top${rank}_part_parc`]: activity.part_parc })
+  })
+  return history as unknown as HistoireEconomie
+}
+
 export interface ThemeFactsRows {
   indicateurs: Indicateur[]
   histoires: Histoire[]
@@ -341,6 +373,8 @@ export function themeFactsRowsFromApi(
     histoires = rows(response.readings, 'readings').map((row) => histoireDemographieDeSql(target, row))
   } else if (theme === 'milieux') {
     histoires = rows(response.readings, 'readings').map((row) => histoireMilieuxDeSql(target, row))
+  } else if (theme === 'economie') {
+    histoires = rows(response.readings, 'readings').map((row) => histoireEconomieDeSql(target, row))
   } else if (response.readings.length > 0) {
     // Un thème non migré ne doit jamais franchir cette frontière : perdre une
     // lecture en silence serait un fait caché, pas une migration.

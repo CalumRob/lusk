@@ -341,6 +341,13 @@ function modeleMilieux() {
   return model
 }
 
+export function reponseThemeEconomieApi(model: any, type = 'commune', code = '22001') {
+  const theme = model.themes.economie; const h = theme.histories.find((x: any) => x.territoire === code)
+  const source = { source_id: 'economy_api', name: 'Source API économie', version: 'api-v1', reference_date: null, publication_date: null }
+  const activities = [1].flatMap(rank => h?.[`top${rank}_activity_label`] ? [{rank,activity_code:h[`top${rank}_activity_code`],activity_label:'Activité API distinctive',lq:99.25,n:h[`top${rank}_n`],part_parc:h[`top${rank}_part_parc`]}] : [])
+  return { contract:'theme-facts-v1', complete_theme:false, theme_id:'economie', content_version:'economie-api-v1', reference_content_version:'territories-v1', reading_content_version:'economie-api-v1', territory:{territory_id:code,territory_type:type}, indicator_metadata:[], named_reference_evidence:[], indicators:theme.indicators.filter((x:any)=>x.territoire===code&&['chomage','effectifs_salaries'].includes(x.key)).map((x:any)=>({indicator_id:x.key,label:x.key,unit:x.unit,value:x.key==='chomage'?0.2345:x.value,status:'measured',dimensions:{},sources:[source]})), readings:h?[{groupe:h.groupe,story_key:h.story_key,salience_reason:h.salience_reason,status:'measured',activities,provenance:{source_id:source.source_id,source_name:source.name,source_version:source.version,source_reference_date:null,source_publication_date:null}}]:[], comparison:{contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:'territories-v1',reading_content_version:'economie-api-v1',selection:null,scope:{kind:'density_class'},results:[],profile_comparisons:[]} }
+}
+
 function modelFor(territoire: string) {
   const target = territoiresFixture.find((candidate) => candidate.territoire === territoire)!
   const themes = Object.fromEntries(
@@ -1006,6 +1013,65 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(chart.props('tauxNaturel')).toBe(0.5)
     expect(chart.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22002', tauxNaturel: 8.5, tauxMigratoire: -9.5 }))
     wrapper.unmount()
+  })
+
+  const economieModel = () => {
+    const published = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
+    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    return model
+  }
+  it('Economie mounted: landing consumes API scalar and activity reading, while absent list ranks stay absent', async () => {
+    const model = economieModel(); const api = reponseThemeEconomieApi(model)
+    const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () => api }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model))
+    const text = wrapper.get('[role="tabpanel"]').text()
+    expect(fetchApi).toHaveBeenCalledTimes(1); expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'economie' })
+    expect(text).toContain('23%'); expect(text).toContain('Activit\u00e9 API distinctive'); expect(text).toContain('99,3')
+    expect(text).not.toContain('7,1%'); expect(text).not.toContain('Agriculture, sylviculture et p?che')
+    expect(text).not.toContain('LQ 0'); wrapper.unmount()
+  })
+  it('Economie mounted: does not prefetch and cached revisit makes no extra facts POST', async () => {
+    const model = economieModel(); const fetchApi = vi.fn(async (url: string) => ({ ok: true, json: async () => String(url).endsWith('/themes/programmes/facts') ? reponseThemeProgrammesApi() : reponseThemeEconomieApi(model) }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    // L'atterrissage par défaut n'acquiert que Programmes ; Économie attend sa sélection.
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(0)
+    await router.replace({ query: { theme: 'economie' } }); await flushPromises()
+    await router.replace({ query: { theme: 'habitat' } }); await flushPromises(); await router.replace({ query: { theme: 'economie' } }); await flushPromises()
+    expect(fetchApi.mock.calls.filter((x:any[])=>String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1); wrapper.unmount()
+  })
+  it('Economie mounted: pending facts never expose incumbent numeric values', async () => {
+    const model = economieModel(); let resolve!: (v: any) => void; const pending = new Promise(r => { resolve = r })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', vi.fn(() => pending))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model))
+    const text = wrapper.get('[role="tabpanel"]').text(); expect(text).not.toContain('7,1%'); expect(text).not.toContain('Agriculture, sylviculture et p?che')
+    resolve({ ok: true, json: async () => reponseThemeEconomieApi(model) }); await flushPromises(); expect(wrapper.get('[role="tabpanel"]').text()).toContain('23%'); wrapper.unmount()
+  })
+  it('Economie mounted: failed facts show retry and recover', async () => {
+    const model = economieModel(); let n = 0; const fetchApi = vi.fn(async () => ++n === 1 ? Promise.reject(Error()) : ({ ok: true, json: async () => reponseThemeEconomieApi(model) }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model)); expect(wrapper.get('[role="alert"]').text()).toContain('Les indicateurs')
+    await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises(); expect(fetchApi).toHaveBeenCalledTimes(2); expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive'); wrapper.unmount()
+  })
+  it('Economie mounted: selected comparisons POST exact members, cache revisits, and retain focal facts', async () => {
+    const model = economieModel(); const expected = model.cohortTerritories!.filter((x: any) => x.type === 'commune' && x.epci === model.territory.epci).map((x: any) => ({ territory_type: x.type, territory_id: x.territoire }))
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => url.endsWith('/facts') ? ({ ok: true, json: async () => reponseThemeEconomieApi(model) }) : ({ ok: true, json: async () => ({ contract:'theme-comparison-v1', theme_id:'economie', content_version:'economie-api-v1', reference_content_version:'territories-v1', reading_content_version:'economie-api-v1', selection:JSON.parse(String(options?.body)).selection, results:[], profile_comparisons:[] }) }))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API','1'); vi.stubGlobal('fetch',fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=economie',vi.fn(async()=>model)); expect(fetchApi.mock.calls.filter(x=>String(x[0]).endsWith('/comparison'))).toHaveLength(0)
+    await router.replace({query:{theme:'economie',comparaison:'epci'}}); await flushPromises(); const compCall=fetchApi.mock.calls.find((x:any[])=>String(x[0]).endsWith('/comparison'))!; expect(JSON.parse(String(compCall[1]?.body))).toEqual({theme_id:'economie',selection:expected})
+    await router.replace({query:{theme:'economie',comparaison:'bretagne'}}); await flushPromises(); await router.replace({query:{theme:'economie',comparaison:'epci'}}); await flushPromises()
+    expect(fetchApi.mock.calls.filter(x=>String(x[0]).endsWith('/comparison'))).toHaveLength(2); expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive'); wrapper.unmount()
+  })
+  it('Economie mounted: incompatible comparison tokens fail closed and retry without losing focal reading', async () => {
+    const model=economieModel(); let count=0; const fetchApi=vi.fn(async(url:string,options?:RequestInit)=>url.endsWith('/facts')?({ok:true,json:async()=>reponseThemeEconomieApi(model)}):({ok:true,json:async()=>({contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:++count===1?'stale':'territories-v1',reading_content_version:'economie-api-v1',selection:JSON.parse(String(options?.body)).selection,results:[],profile_comparisons:[]})}))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API','1');vi.stubGlobal('fetch',fetchApi);const {wrapper}=await monter('/territoire/commune/22001?theme=economie&comparaison=bretagne',vi.fn(async()=>model));await flushPromises()
+    expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons');expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive');await wrapper.get('[role="alert"] button').trigger('click');await flushPromises();expect(count).toBe(2);expect(wrapper.find('[role="alert"]').exists()).toBe(false);wrapper.unmount()
+  })
+  it('Economie mounted: ignores late stale comparison response after selection changes', async () => {
+    const model=economieModel();let resolve!: (v:any)=>void;const pending=new Promise(r=>resolve=r);const fetchApi=vi.fn(async(url:string,options?:RequestInit)=>url.endsWith('/facts')?({ok:true,json:async()=>reponseThemeEconomieApi(model)}):JSON.parse(String(options?.body)).selection.length>100?pending:({ok:true,json:async()=>({contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:'territories-v1',reading_content_version:'economie-api-v1',selection:JSON.parse(String(options?.body)).selection,results:[],profile_comparisons:[]})}))
+    vi.stubEnv('VITE_THEME_ACQUISITION_API','1');vi.stubGlobal('fetch',fetchApi);const {router,wrapper}=await monter('/territoire/commune/22001?theme=economie',vi.fn(async()=>model));await router.replace({query:{theme:'economie',comparaison:'bretagne'}});await flushPromises();await router.replace({query:{theme:'economie',comparaison:'epci'}});await flushPromises();resolve({contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:'territories-v1',reading_content_version:'economie-api-v1',selection:[],results:[],profile_comparisons:[]});await flushPromises();expect(wrapper.find('[role="alert"]').exists()).toBe(false);expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive');wrapper.unmount()
   })
 
   it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
