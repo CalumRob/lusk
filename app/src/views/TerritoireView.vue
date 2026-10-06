@@ -46,7 +46,7 @@ import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFac
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { chargerCohortesScalaires, indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache } from '@/payload/themeAcquisition'
-import { histoiresDemographieNuage, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
+import { histoiresDemographieNuage, histoiresMilieuxDuNuage, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ComparisonScopeKind, TerritoryFacts } from '@/fiche/content/territoryFacts'
@@ -88,7 +88,7 @@ let sequenceFicheScalaires = 0
  * `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
  */
 const acquisitionApiActivee = themeAcquisitionEnabled(import.meta.env)
-const THEMES_ACQUISITION_API: readonly Theme[] = ['habitat', 'programmes', 'demographie']
+const THEMES_ACQUISITION_API: readonly Theme[] = ['habitat', 'programmes', 'demographie', 'milieux']
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
 const themeMigre = (theme: Theme | null): boolean =>
   acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme)
@@ -99,6 +99,7 @@ const cacheAcquisition = new ThemeAcquisitionCache(
 const faitsThemeRows = ref<Indicateur[] | null>(null)
 const histoiresThemeRows = ref<Histoire[] | null>(null)
 const histoiresNuageDemographie = ref<Histoire[]>([])
+const histoiresNuageMilieux = ref<Histoire[]>([])
 const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
 const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const retryAcquisition = ref(0)
@@ -120,8 +121,19 @@ const payloadPourRendu = computed<Payload | null>(() => {
     const histoires = histoiresThemeRows.value === null
       ? payload.histoires.filter((row) => row.theme !== theme)
       : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
-        ...(theme === 'demographie' ? histoiresNuageDemographie.value : [])]
-    return { ...payload, indicateurs, histoires }
+    const histoires = histoiresThemeRows.value === null
+      ? payload.histoires.filter((row) => row.theme !== theme)
+      : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
+        ...(theme === 'demographie' ? histoiresNuageDemographie.value : []),
+        ...(theme === 'milieux' ? histoiresNuageMilieux.value : [])]
+    // Les pairs du nuage Milieux ont besoin de leur identité dans le référentiel
+    // du payload (le sélecteur résout leurs noms) — jamais d'autres territoires.
+    const peerIds = new Set(theme === 'milieux' ? histoiresNuageMilieux.value.map((row) => row.territoire) : [])
+    const peers = modeleTerritoire.model.value?.cohortTerritories
+      ?.filter((territory) => peerIds.has(territory.territoire)) ?? []
+    const territoires = [...payload.territoires, ...peers.filter((peer) =>
+      !payload.territoires.some((existing) => existing.territoire === peer.territoire))]
+    return { ...payload, territoires, indicateurs, histoires }
   }
   if (!scalarCohortEnabled(import.meta.env)) return payload
   const theme = selection.value
@@ -248,6 +260,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       faitsThemeRows.value = null
       histoiresThemeRows.value = null
       histoiresNuageDemographie.value = []
+      histoiresNuageMilieux.value = []
       statutAcquisition.value = 'loading'
       statutComparaison.value = 'idle'
       cleFaitsPrets = null
@@ -263,6 +276,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     faitsThemeRows.value = null
     histoiresThemeRows.value = null
     histoiresNuageDemographie.value = []
+    histoiresNuageMilieux.value = []
     statutAcquisition.value = 'loading'
     statutComparaison.value = 'idle'
     try {
@@ -273,8 +287,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type })
       faitsThemeRows.value = rows.indicateurs
       histoiresThemeRows.value = rows.histoires
-      histoiresNuageDemographie.value = themeActif === 'demographie'
+      histoiresNuageDemographie.value = themeActif === 'demographie' && isRecord(acquired.focal.comparison)
         ? histoiresDemographieNuage(acquired.focal.comparison) : []
+      histoiresNuageMilieux.value = themeActif === 'milieux' && isRecord(acquired.focal.comparison)
+        ? histoiresMilieuxDuNuage(acquired.focal.comparison) : []
       statutAcquisition.value = 'ready'
       cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
     } catch {
@@ -321,6 +337,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
     let cancelled = false
     onCleanup(() => { cancelled = true })
     statutComparaison.value = 'loading'
+    // Pendant le chargement de la nouvelle sélection, le nuage de l'ancienne
+    // ne rend pas (le flux E Mobilité nettoie de même avant la requête).
+    if (themeActif === 'milieux') histoiresNuageMilieux.value = []
+    if (themeActif === 'demographie') histoiresNuageDemographie.value = []
     try {
       const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
       if (cancelled || request !== sequenceComparaison) return
@@ -330,6 +350,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
         histoiresNuageDemographie.value = histoiresDemographieNuage(
           acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
       }
+      if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(
+        acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
       statutComparaison.value = 'ready'
     } catch {
       if (!cancelled && request === sequenceComparaison) statutComparaison.value = 'error'
