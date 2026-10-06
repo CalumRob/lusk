@@ -23,6 +23,30 @@ from network import NetworkAdapter, build_full_map_set, network_recipe
 from runner import Binding, MapSet, PROFILES, _effective_identity_for, run_production
 
 
+class DepartmentTitleRepairAdapter(NetworkAdapter):
+    """Prepare full-run shared inputs while rendering through a narrow binding."""
+
+    def __init__(self, raw_dir, *, preparation_binding, shared_output_dir,
+                 cache_root=None, context_cache_root=None, read_only_source_cache=True):
+        super().__init__(raw_dir, cache_root=cache_root,
+            context_cache_root=context_cache_root,
+            read_only_source_cache=read_only_source_cache)
+        self._preparation_binding = preparation_binding
+        self._shared_output_dir = Path(shared_output_dir)
+
+    def prepare_run(self, recipe, binding, profiles, output_dir, *, refresh=False,
+                    context_cache_root=None):
+        """Use the full production frame/cache, not the subset's different bbox."""
+        return super().prepare_run(recipe, self._preparation_binding, profiles,
+            self._shared_output_dir, refresh=refresh,
+            context_cache_root=context_cache_root)
+
+    def begin_production_scope(self, scope, output_dir):
+        # Keep bounded per-territory lifecycle while disabling subset-specific
+        # on-disk stage writes into the shared full-run cache.
+        return super().begin_production_scope("full", output_dir)
+
+
 def _read_json(path):
     value = json.loads(Path(path).read_text(encoding="utf-8"))
     if not isinstance(value, dict):
@@ -130,9 +154,9 @@ def repair(output_dir, raw_dir, network_cache_root, context_cache_root, approval
     binding = build_full_map_set(raw_dir)
     department_label_source = _department_label_provenance()
     recipe = network_recipe()
-    adapter = NetworkAdapter(raw_dir, cache_root=network_cache_root,
+    approval_adapter = NetworkAdapter(raw_dir, cache_root=network_cache_root,
         context_cache_root=context_cache_root, read_only_source_cache=True)
-    renderer, current_members = _approval_gate(approval, recipe, adapter, binding, output_dir)
+    renderer, current_members = _approval_gate(approval, recipe, approval_adapter, binding, output_dir)
 
     manifest_path, qa_path = output_dir / "full-manifest.json", output_dir / "full-qa.json"
     old_manifest, old_qa = _read_json(manifest_path), _read_json(qa_path)
@@ -141,7 +165,7 @@ def repair(output_dir, raw_dir, network_cache_root, context_cache_root, approval
     if old_qa.get("status") != "passed" or old_qa.get("production_status") not in {
             "awaiting-human-spot-check", "complete"}:
         raise ValueError("existing full batch must have passed automated QA before repair")
-    if old_manifest.get("authoritative_inputs") != adapter.input_identity():
+    if old_manifest.get("authoritative_inputs") != approval_adapter.input_identity():
         raise ValueError("authoritative production inputs differ from the existing full batch")
     old_records = _verified_records(old_manifest, output_dir)
     cache_path = output_dir / ".production-manifest.json"
@@ -177,6 +201,12 @@ def repair(output_dir, raw_dir, network_cache_root, context_cache_root, approval
     with TemporaryDirectory(prefix=".department-title-repair-", dir=output_dir) as scratch:
         stage_root = Path(scratch)
         stage_binding = Binding(subset.family, MapSet(subset.map_set.layers))
+        adapter = DepartmentTitleRepairAdapter(raw_dir,
+            preparation_binding=binding, shared_output_dir=output_dir,
+            cache_root=network_cache_root, context_cache_root=context_cache_root,
+            read_only_source_cache=True)
+        if adapter.render_identity() != renderer:
+            raise ValueError("repair renderer identity differs from the current approval gate")
         result = run_production(recipe, stage_binding, "representative", ("inspection",),
             adapter, stage_root, approval=None)
         rendered = {_record_key(item): item for item in result.outputs}

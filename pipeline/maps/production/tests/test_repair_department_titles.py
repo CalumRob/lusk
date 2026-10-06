@@ -5,10 +5,12 @@ import sys
 from tempfile import TemporaryDirectory
 import unittest
 from unittest.mock import patch
+from qgis.core import QgsRectangle
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 import repair_department_titles as repair_module
-from repair_department_titles import _department_inspection_binding, _verified_records
+from repair_department_titles import (DepartmentTitleRepairAdapter,
+    _department_inspection_binding, _verified_records)
 from runner import Binding, Foundation, MapSet, Recipe
 
 
@@ -47,6 +49,39 @@ class DepartmentTitleRepairTests(unittest.TestCase):
                 _verified_records(manifest, root)
             self.assertEqual(json.dumps(manifest, sort_keys=True), before)
 
+    def test_repair_adapter_prepares_full_frame_cache_but_keeps_subset_render_scope(self):
+        with TemporaryDirectory() as folder:
+            full_binding = Binding("network", MapSet({"all": [
+                {"territory": {"kind": "departement", "code": "22", "name": "Department 22"},
+                 "mode": "car", "extent": QgsRectangle(0, 0, 10, 10)},
+                {"territory": {"kind": "region", "code": "53", "name": "Bretagne"},
+                 "mode": "car", "extent": QgsRectangle(-100, -100, 100, 100)},
+            ]}))
+            subset, _ = _department_inspection_binding(full_binding)
+            self.assertNotEqual(
+                subset.map_set.layers["department-title-repair"][0]["extent"].toString(),
+                full_binding.map_set.layers["all"][1]["extent"].toString())
+            shared_output = Path(folder) / "production-output"
+            stage_output = shared_output / ".department-title-repair-stage"
+            adapter = DepartmentTitleRepairAdapter(Path(folder) / "raw",
+                preparation_binding=full_binding, shared_output_dir=shared_output)
+            recipe = Recipe("network", 1, Foundation("v1"), "network")
+            with patch("map_ground.prepare_shared_ground", return_value=object()) as prepare_ground, \
+                    patch("network._prepare_network_layers", return_value={"car": []}):
+                adapter.prepare_run(recipe, subset, ("inspection",), stage_output)
+            prepared_extent = prepare_ground.call_args.args[2]
+            self.assertEqual(prepared_extent.toString(),
+                full_binding.map_set.layers["all"][1]["extent"].toString())
+            self.assertNotEqual(prepared_extent.toString(),
+                subset.map_set.layers["department-title-repair"][0]["extent"].toString())
+            self.assertEqual(prepare_ground.call_args.kwargs["cache_root"],
+                shared_output / ".stage-cache" / "context-land")
+            self.assertEqual(prepare_ground.call_args.kwargs["context_cache_root"],
+                shared_output / ".stage-cache" / "official-context")
+            adapter.begin_production_scope("representative", stage_output)
+            self.assertFalse(adapter._persist_territory_stages)
+            self.assertTrue(adapter._bounded_territory_state)
+
     def _operator_fixture(self, folder):
         root = Path(folder) / "production-output"
         root.mkdir()
@@ -54,15 +89,19 @@ class DepartmentTitleRepairTests(unittest.TestCase):
             "mode": mode, "geometry": f"geometry-{code}-{mode}"}
             for code, name in (("22", "Côtes-d'Armor"), ("29", "Finistère"))
             for mode in ("car", "walk", "bike")]
+        features.append({"territory": {"kind": "region", "code": "53", "name": "Bretagne"},
+            "mode": "car", "geometry": "region-geometry",
+            "extent": QgsRectangle(-100, -100, 100, 100)})
         binding = Binding("network", MapSet({"all": features}))
         records, expected = [], []
         for feature in features:
             territory = feature["territory"]
             for profile in ("inspection", "inline"):
-                key = f"departement/{territory['code']}/{feature['mode']}/{profile}"
+                key = f"{territory['kind']}/{territory['code']}/{feature['mode']}/{profile}"
                 artifact = root / f"{territory['code']}-{feature['mode']}-{profile}.webp"
                 artifact.write_bytes(f"old:{key}".encode())
-                row = {"territory": {**territory, "name": territory["code"]},
+                old_name = territory["code"] if territory["kind"] == "departement" else territory["name"]
+                row = {"territory": {**territory, "name": old_name},
                     "mode": feature["mode"], "profile": profile, "path": str(artifact),
                     "effective_identity": self._identity(territory["code"], feature["mode"],
                         profile, territory["code"] if profile == "inspection" else ""),
@@ -93,6 +132,7 @@ class DepartmentTitleRepairTests(unittest.TestCase):
     def _run_operator_fixture(self, folder, *, fail_write=None, corrupt_cache=False):
         root, binding, features, old_manifest, old_qa, old_cache = self._operator_fixture(folder)
         render_calls = []
+        preparation_calls = []
         if corrupt_cache:
             old_cache["outputs"][next(iter(old_cache["outputs"]))]["output_sha256"] = "0" * 64
             (root / ".production-manifest.json").write_text(json.dumps(old_cache), encoding="utf-8")
@@ -102,10 +142,30 @@ class DepartmentTitleRepairTests(unittest.TestCase):
             def input_identity(self):
                 return {"source": "unchanged"}
 
+        class RepairAdapter:
+            def __init__(self, raw_dir, *, preparation_binding, shared_output_dir, **kwargs):
+                self.preparation_binding = preparation_binding
+                self.shared_output_dir = Path(shared_output_dir)
+
+            def render_identity(self):
+                return new_renderer
+
+            def begin_production_scope(self, scope, output_dir):
+                self.scope = "full-bounded"
+
+            def prepare_run(self, recipe, render_binding, profiles, output_dir, **kwargs):
+                preparation_calls.append((self.preparation_binding, render_binding,
+                    self.shared_output_dir, self.scope))
+
         def fake_run(recipe, selected_binding, scope, profiles, adapter, stage_root, approval=None):
             render_calls.append(True)
             outputs = []
-            for feature in features:
+            selected_features = [feature for rows in selected_binding.map_set.layers.values() for feature in rows]
+            self.assertTrue(all(feature["territory"]["kind"] == "departement"
+                for feature in selected_features))
+            adapter.begin_production_scope(scope, stage_root)
+            adapter.prepare_run(recipe, selected_binding, profiles, stage_root)
+            for feature in selected_features:
                 key = ("departement", feature["territory"]["code"], feature["mode"], "inspection")
                 staged = Path(stage_root) / f"{key[1]}-{key[2]}-inspection.webp"
                 staged.write_bytes(f"new:{key}".encode())
@@ -128,6 +188,7 @@ class DepartmentTitleRepairTests(unittest.TestCase):
             patch.object(repair_module, "build_full_map_set", return_value=binding),
             patch.object(repair_module, "network_recipe", return_value=Recipe("network", 1, Foundation("v1"), "network")),
             patch.object(repair_module, "NetworkAdapter", return_value=Adapter()),
+            patch.object(repair_module, "DepartmentTitleRepairAdapter", side_effect=RepairAdapter),
             patch.object(repair_module, "_approval_gate", return_value=(new_renderer, [("rep", "member")])),
             patch.object(repair_module, "_effective_identity_for", side_effect=lambda recipe, adapter, renderer,
                 feature, profile, hashes: self._identity(feature["territory"]["code"], feature["mode"],
@@ -135,18 +196,18 @@ class DepartmentTitleRepairTests(unittest.TestCase):
             patch.object(repair_module, "run_production", side_effect=fake_run),
             patch.object(repair_module, "_write_json_atomic", side_effect=write),
         )
-        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7]:
+        with patches[0], patches[1], patches[2], patches[3], patches[4], patches[5], patches[6], patches[7], patches[8]:
             try:
                 repair_module.repair(root, Path(folder) / "raw", Path(folder) / "cache",
                     Path(folder) / "context", Path(folder) / "approval.json")
                 error = None
             except Exception as caught:
                 error = caught
-        return root, old_manifest, old_qa, old_cache, error, render_calls
+        return root, old_manifest, old_qa, old_cache, error, render_calls, preparation_calls
 
     def test_operator_success_reconciles_selected_outputs_and_retains_other_records(self):
         with TemporaryDirectory() as folder:
-            root, old_manifest, old_qa, old_cache, error, _ = self._run_operator_fixture(folder)
+            root, old_manifest, old_qa, old_cache, error, _, preparation_calls = self._run_operator_fixture(folder)
             self.assertIsNone(error)
             manifest = json.loads((root / "full-manifest.json").read_text(encoding="utf-8"))
             qa = json.loads((root / "full-qa.json").read_text(encoding="utf-8"))
@@ -179,10 +240,17 @@ class DepartmentTitleRepairTests(unittest.TestCase):
             evidence = Path(manifest["repair_provenance"]["evidence_directory"])
             self.assertTrue((evidence / "full-qa.json").is_file())
             self.assertEqual(old_qa["status"], "passed")
+            prepared_binding, rendered_binding, shared_cache_root, scope = preparation_calls[0]
+            self.assertIn("region", {feature["territory"]["kind"]
+                for rows in prepared_binding.map_set.layers.values() for feature in rows})
+            self.assertEqual({feature["territory"]["kind"]
+                for rows in rendered_binding.map_set.layers.values() for feature in rows}, {"departement"})
+            self.assertEqual(shared_cache_root, root)
+            self.assertEqual(scope, "full-bounded")
 
     def test_cache_write_failure_never_leaves_full_qa_passed(self):
         with TemporaryDirectory() as folder:
-            root, _, _, _, error, _ = self._run_operator_fixture(folder,
+            root, _, _, _, error, _, _ = self._run_operator_fixture(folder,
                 fail_write=lambda path, value: Path(path).name == ".production-manifest.json")
             self.assertIsNotNone(error)
             qa = json.loads((root / "full-qa.json").read_text(encoding="utf-8"))
@@ -193,7 +261,7 @@ class DepartmentTitleRepairTests(unittest.TestCase):
 
     def test_journal_completion_failure_never_leaves_full_qa_passed(self):
         with TemporaryDirectory() as folder:
-            root, _, _, _, error, _ = self._run_operator_fixture(folder,
+            root, _, _, _, error, _, _ = self._run_operator_fixture(folder,
                 fail_write=lambda path, value: Path(path).name == "department-title-repair-journal.json"
                 and value.get("status") == "complete-awaiting-human-review")
             self.assertIsNotNone(error)
@@ -204,7 +272,7 @@ class DepartmentTitleRepairTests(unittest.TestCase):
 
     def test_stale_cache_fails_before_render_and_leaves_approved_products_unchanged(self):
         with TemporaryDirectory() as folder:
-            root, old_manifest, old_qa, _, error, render_calls = self._run_operator_fixture(
+            root, old_manifest, old_qa, _, error, render_calls, _ = self._run_operator_fixture(
                 folder, corrupt_cache=True)
             self.assertIsInstance(error, ValueError)
             self.assertIn("cache disagrees", str(error))

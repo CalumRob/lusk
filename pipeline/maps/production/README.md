@@ -242,6 +242,12 @@ It preserves the prior full manifest, QA, and replaced images
 under `output/repair-evidence/`. Automated QA does not approve title wording:
 the reconciled QA returns to `awaiting-human-spot-check`.
 
+Shared preparation uses the current full map binding and the existing
+`output/.stage-cache` root, preserving the exact pre-acquired official-context
+frame and reusable full-run ground/frontier caches. The runner still receives
+only department features for staged rendering; repair scope never broadens to
+the full output matrix.
+
 Run from a QGIS-enabled Python environment only after the new approval record
 exists; this command neither creates approval nor acquires inputs:
 
