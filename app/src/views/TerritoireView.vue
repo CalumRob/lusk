@@ -223,9 +223,9 @@ watch(
     const code = idRoute.value
     const mode = resolutionComparaison.value?.mode
     const query = type === 'commune' && mode ? `?comparison=${encodeURIComponent(mode)}` : ''
-    void Promise.resolve().then(() => fetch(`/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(code)}/essential-services${query}`, {
+    void fetch(`/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(code)}/essential-services${query}`, {
       signal: abort.signal,
-    })).then(async (response) => {
+    }).then(async (response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       return response.json() as Promise<unknown>
     }).then((data) => {
@@ -268,8 +268,8 @@ watch([mobiliteEditorialeActive, typeRoute, idRoute, () => resolutionComparaison
   onCleanup(() => controller.abort())
   const code = idRoute.value
   const query = mode ? `?comparison=${encodeURIComponent(mode)}` : ''
-  void Promise.resolve().then(() => fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/building-access${query}`,
-    { signal: controller.signal })).then(async (response) => {
+  void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/building-access${query}`,
+    { signal: controller.signal }).then(async (response) => {
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     return response.json() as Promise<unknown>
   }).then((data) => {

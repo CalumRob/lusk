@@ -42,4 +42,16 @@ describe('shared E editorial foundation', () => {
     expect(tokens).toContain('--font-global-header: var(--font-mozilla-text)')
     expect(tokens).not.toContain('--editorial-rank-outline')
   })
+
+  it('reflows the page margin in mobile flow and keeps a compact margin line', () => {
+    const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
+    const mobile = cahier.match(/@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*?)(?=\n\})/)?.[1] ?? ''
+    expect(mobile).toContain('--margin-line: 12px')
+    expect(mobile).toMatch(/\.page-margin\s*\{[^}]*position:\s*static/s)
+  })
+
+  it('loads the cartographic prototype only through a DEV-conditional async import', () => {
+    const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
+    expect(cahier).toMatch(/const CartographicBreakoutPrototype\s*=\s*import\.meta\.env\.DEV\s*\?\s*defineAsyncComponent\(\(\)\s*=>\s*import\('\.\/CartographicBreakoutPrototype\.vue'\)\)/)
+  })
 })

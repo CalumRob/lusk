@@ -117,7 +117,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   afterEach(() => vi.unstubAllGlobals())
   it('keeps the building figures without exposing an interactive peer selector', async () => {
     await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
       vi.fn(async () => modeleAvecContextesComparaison()))
     await flushPromises()
     expect(wrapper.find('#building-peer-search').exists()).toBe(false)
@@ -128,7 +128,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
     const fetchApi = vi.fn().mockRejectedValue(new Error('API indisponible'))
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
       vi.fn(async () => modeleAvecContextesComparaison()))
     await flushPromises()
     expect(fetchApi.mock.calls.some(([url]) => String(url) ===
@@ -175,7 +175,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       url.includes('/building-access?') ? figure : reponseAccesApi('commune', '22001', context.scope.kind, context.scope.label),
     }))
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
     await flushPromises()
     const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
     expect(section.find('.access-ramp-evidence').exists()).toBe(true)
@@ -193,7 +193,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const model = validerModeleTerritoire(published, `${type}/${code}.json`, { type, territoire: code })
     const fetchApi = vi.fn().mockRejectedValue(new Error('API indisponible'))
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
+    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite`, vi.fn(async () => model))
     expect(fetchApi.mock.calls.some(([url]) => String(url) ===
       `/api/territories/${type}/${code}/building-access`)).toBe(true)
     const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
@@ -208,7 +208,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const fetchApi = vi.fn(async () => ({ ok: true, json: async () => reponseAccesApi('commune', '22001', scope.kind, scope.label) }))
     vi.stubGlobal('fetch', fetchApi)
     try {
-      const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
+      const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
         vi.fn(async () => modeleAvecContextesComparaison()))
       await flushPromises()
       expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/22001/essential-services?comparison=densite', expect.anything())
@@ -231,7 +231,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         : Promise.resolve({ ok: true, json: async () => reponseAccesApi('commune', '22001', scope.kind, scope.label) }))
     vi.stubGlobal('fetch', fetchApi)
     try {
-      const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci',
+      const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci',
         vi.fn(async () => modeleAvecContextesComparaison()))
       await flushPromises()
       const section = wrapper.get('[data-section="services-essentiels"]')
@@ -260,6 +260,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const pending: Array<() => void> = []
     const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url.includes('/essential-services') || url.includes('/building-access')) {
+        return Promise.reject(new Error('Mobility evidence API not configured in scalar cohort test'))
+      }
       if (url === '/data/modeles-lecture/territoires/commune/22001.json') return new Response(JSON.stringify(published), { status: 200 })
       if (url === '/data/territoires.json') return new Response(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'), { status: 200 })
       if (url.startsWith('/data/theme_') && url.endsWith('.json')) {
@@ -364,6 +367,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const newResponses: Array<() => void> = []
     const fetchApi = vi.fn((input: RequestInfo | URL) => {
       const url = new URL(String(input), 'http://localhost')
+      // The folded cahier also acquires these two facts. Reject them asynchronously
+      // at the fetch seam so the production .catch() paths own the unavailable state.
+      if (url.pathname.endsWith('/essential-services') || url.pathname.endsWith('/building-access')) {
+        return Promise.reject(new Error('Mobility evidence API not configured in scalar cohort test'))
+      }
       const indicator = url.pathname.split('/').at(-1)!
       const page = metadata.indicator_pages[indicator]
       const value = url.searchParams.has('epci_id') ? 111111111 : 222222222
@@ -406,6 +414,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
       { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
     const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).includes('/essential-services') || String(input).includes('/building-access')) {
+        return Promise.reject(new Error('Mobility evidence API not configured in scalar cohort test'))
+      }
       const indicator = String(input).split('/').at(-1)!.split('?')[0]!
       const page = metadata.indicator_pages[indicator]
       return new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune', label: page.label,
@@ -445,7 +456,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const label = model.themes.mobilite?.comparisons.bretagne?.scope.label
     const fetchApi = vi.fn(async (_url: string) => ({ ok: true, json: async () => reponseAccesApi(type, code, kind, label) }))
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
+    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite`, vi.fn(async () => model))
     await flushPromises()
     expect(fetchApi.mock.calls.some(([url]) => String(url) === `/api/territories/${type}/${code}/essential-services`)).toBe(true)
     expect(wrapper.findAll('[data-section="services-essentiels"] .access-figure')).toHaveLength(5)
@@ -464,9 +475,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         : Promise.resolve({ ok: true, json: async () => reponseAccesApi('commune', '22001', contexts.epci!.scope.kind, contexts.epci!.scope.label) })
       : Promise.reject(new Error('Not part of access API')))
     vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
       vi.fn(async () => modeleAvecContextesComparaison()))
-    await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'epci' } })
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
     await flushPromises()
     const section = wrapper.get('[data-section="services-essentiels"]')
     expect(section.findAll('.access-figure')).toHaveLength(5)
@@ -571,9 +582,50 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('canonicalise obsolete variant and invalid comparison without losing the theme', async () => {
     const { router } = await monter(
-      '/territoire/commune/29002?theme=mobilite&comparaison=inconnu&variant=E',
+      '/territoire/commune/29002?theme=mobilite&comparaison=inconnu&variant=E&campaign=test',
     )
-    expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite' })
+    expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite', campaign: 'test' })
+  })
+
+  it('removes the obsolete variant while preserving a valid comparison and unrelated query state', async () => {
+    const { router } = await monter(
+      '/territoire/commune/22001?theme=mobilite&comparaison=epci&variant=E&campaign=test',
+      vi.fn(async () => modeleAvecContextesComparaison()),
+    )
+    expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite', comparaison: 'epci', campaign: 'test' })
+  })
+
+  it.each([
+    ['epci', '242200715'],
+    ['departement', '22'],
+    ['region', '53'],
+  ] as const)('renders all four folded cahier units and honest API absence for %s on a normal URL', async (type, code) => {
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      `../public/data/modeles-lecture/territoires/${type}/${code}.json`), 'utf8'))
+    const model = validerModeleTerritoire(published, `${type}/${code}.json`, { type, territoire: code })
+    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite`, vi.fn(async () => model))
+    const pages = wrapper.findAll('.cahier-page')
+    expect(pages).toHaveLength(4)
+    expect(wrapper.text()).toContain('Contenu indisponible pour ce territoire.')
+    expect(wrapper.find('.cahier-cover').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('preserves representative #683 content, riders and honest missing state through ProductionMobilite', async () => {
+    const context = modeleAvecContextesComparaison().themes.mobilite!.comparisons.densite!
+    const fetchApi = vi.fn(async () => ({ ok: true, json: async () =>
+      reponseAccesApi('commune', '22001', context.scope.kind, context.scope.label) }))
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
+      vi.fn(async () => modeleAvecContextesComparaison()))
+    const text = wrapper.get('.cahier').text()
+    expect(wrapper.findAll('.cahier-page')).toHaveLength(4)
+    expect(text).toContain('À pied + TC')
+    expect(text).toContain('À vélo + TC')
+    expect(text).toContain('Source API')
+    expect(text).toContain('Exemple :')
+    expect(text).toContain('Indisponible')
+    wrapper.unmount()
   })
 
   it.each(['densite', 'epci', 'bretagne'] as const)(
