@@ -149,6 +149,63 @@ export interface ThemeFactsRows {
   histoires: Histoire[]
 }
 
+function vintageSql(sources: unknown, context: string) {
+  const provenance = apiSources(sources, context)
+  const source = provenance[0]!
+  if (source.referenceDate === null) throw new Error(`Date de référence absente : ${context}`)
+  return { vintage_source: source.source, vintage_version: source.version,
+    vintage_date_reference: source.referenceDate, vintage_date_publication: source.publicationDate,
+    fact_sources: provenance.map((item) => ({ ...item, sourceId: item.sourceId })) }
+}
+
+function programmesRows(response: Row, target: { territoire: string; type: TerritoireType }): Indicateur[] {
+  const result: Indicateur[] = []
+  for (const collection of rows(response.collections, 'collections')) {
+    if (!texteNonVide(collection.indicator_id) || !texteNonVide(collection.kind) ||
+        !Array.isArray(collection.entries) || !Array.isArray(collection.relationships)) {
+      throw new Error('Collection Programmes invalide')
+    }
+    if (collection.kind === 'anchored_membership') {
+      if (collection.availability === 'no_record') continue
+      const add = (territory: { id: unknown; type: unknown }, entry: Row) => {
+        if (!texteNonVide(territory.id) || !['commune', 'epci', 'departement', 'region'].includes(String(territory.type)) ||
+            !texteNonVide(entry.detail) || !(entry.rider === null || text(entry.rider))) throw new Error('Adhésion Programmes invalide')
+        result.push({ territoire: territory.id, type: territory.type as TerritoireType, theme: 'programmes',
+          key: 'couverture_programmes', detail: entry.detail, value: null, unit: 'count',
+          rider: entry.rider ? 'convention valant ORT' : null, ...vintageSql(entry.sources, entry.detail),
+          rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })
+      }
+      for (const entry of rows(collection.entries, 'collection.entries')) add({ id: target.territoire, type: target.type }, entry)
+      for (const relationship of rows(collection.relationships, 'collection.relationships')) {
+        if (!isRecord(relationship.anchor)) throw new Error('Ancrage Programmes invalide')
+        add(relationship.anchor as { id: unknown; type: unknown }, relationship)
+      }
+    } else if (collection.kind === 'period_detail') {
+      if (collection.availability === 'no_record') continue
+      for (const entry of rows(collection.entries, 'collection.entries')) {
+        if (!texteNonVide(entry.observation_period) || !texteNonVide(entry.label) || !finite(entry.value)) throw new Error('Subvention Programmes invalide')
+        result.push({ territoire: target.territoire, type: target.type, theme: 'programmes', key: 'subventions_par_domaine',
+          detail: entry.label, dimension: entry.observation_period, value: entry.value, unit: text(collection.unit) ? collection.unit : '€',
+          rider: null, ...vintageSql(entry.sources, entry.label), rang_epci: null, rang_epci_n: null,
+          rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })
+      }
+    } else throw new Error(`Collection Programmes non prise en charge : ${collection.kind}`)
+  }
+  for (const series of rows(response.owned_series ?? [], 'owned_series')) {
+    if (!texteNonVide(series.indicator_id)) throw new Error('Série Programmes invalide')
+    if (series.indicator_id !== 'subventions_annuelles') continue
+    for (const point of rows(series.points, 'series.points')) {
+      if (!texteNonVide(point.axis) || !(point.status === 'measured' ? finite(point.value) : point.value === null)) throw new Error('Point annuel Programmes invalide')
+      result.push({ territoire: target.territoire, type: target.type, theme: 'programmes', key: 'subventions_annuelles',
+        detail: null, dimension: point.axis, value: point.status === 'measured' ? point.value as number : null,
+        unit: text(series.unit) ? series.unit : '€', rider: point.status === 'measured' ? null : text(point.missing_reason) ? point.missing_reason : String(point.status),
+        ...vintageSql(point.provenance, point.axis), rang_epci: null, rang_epci_n: null,
+        rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })
+    }
+  }
+  return result
+}
+
 /** Projette une réponse `theme-facts-v1` en lignes consommables par la fiche. */
 export function themeFactsRowsFromApi(
   theme: ThemeKey,
@@ -167,6 +224,7 @@ export function themeFactsRowsFromApi(
   const metadata = rows(response.indicator_metadata, 'indicator_metadata')
   const indicateurs = rows(response.indicators, 'indicators')
     .map((fact) => indicateurDeSql(theme, target, fact, metadata))
+  if (theme === 'programmes') indicateurs.push(...programmesRows(response, target))
   let histoires: Histoire[] = []
   if (theme === 'habitat') {
     histoires = rows(response.readings, 'readings').map((row) => histoireHabitatDeSql(target, row))

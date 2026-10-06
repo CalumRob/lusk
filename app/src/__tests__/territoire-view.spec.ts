@@ -225,6 +225,30 @@ export function reponseThemeHabitatApi(model: any, type = 'commune', code = '352
   }
 }
 
+export function reponseThemeProgrammesApi(type = 'commune', code = '22001') {
+  const source = [{ source_id: 'programme-api', name: 'Source API programmes', vintage_id: 'programme-v1',
+    version: 'programme-v1', reference_date: '2026-01-01', publication_date: '2026-02-01' }]
+  return {
+    contract: 'theme-facts-v1', complete_theme: false, theme_id: 'programmes',
+    territory: { territory_id: code, territory_type: type, name: 'Territoire API' },
+    content_version: 'programmes-v1', reference_content_version: 'territories-v1',
+    indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [],
+    collections: [
+      { indicator_id: 'programme_membership', theme_id: 'programmes', kind: 'anchored_membership',
+        completeness: 'observed_sparse', availability: 'observed',
+        entries: [{ detail: 'ACV', label: 'Action Cœur de Ville', rider: 'Aid rider', sources: source }],
+        relationships: [{ detail: 'CRTE', label: 'Contrat', rider: null, sources: source,
+          anchor: { id: '222222222', type: 'epci', name: 'EPCI API' }, relation: 'covering_parent' }], summaries: [] },
+      { indicator_id: 'subventions_par_domaine', theme_id: 'programmes', kind: 'period_detail',
+        unit: '€', availability: 'observed', entries: [{ detail: 'mobilite', label: 'Mobilité API',
+          observation_period: '2025', value: 9876, status: 'measured', sources: source }], relationships: [] },
+    ],
+    owned_series: [{ indicator_id: 'subventions_annuelles', theme_id: 'programmes', unit: '€',
+      points: [{ axis: '2025', observation_period: '2025', value: 45678, status: 'measured', provenance: source }] }],
+    comparison: { collection_content_versions: { programme_membership: 'membership-v1' } },
+  }
+}
+
 /** Sert les POST faits/comparaison Mobilité comme la fiche montée les consomme :
  * faits complets sur /facts, comparaison sélectionnée répercutée sur /comparison. */
 export function stubApiThemeMobilite(model: any, type = 'commune', code = '22001') {
@@ -294,7 +318,7 @@ async function monter(
 
 describe('TerritoireView — modèle atomique par territoire', () => {
   beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('API not configured in tests'))))
-  afterEach(() => vi.unstubAllGlobals())
+  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
   it.skipIf(!process.env.LUSK_MOUNTED_E_HTTP_FIXTURE)('consumes real PostgreSQL HTTP responses in mounted E', async () => {
     const evidence = JSON.parse(readFileSync(process.env.LUSK_MOUNTED_E_HTTP_FIXTURE!, 'utf8'))
     const model = validerModeleTerritoire(evidence.model, 'gate/22001.json', { type: 'commune', territoire: '22001' })
@@ -625,8 +649,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('ne précharge aucun thème et revisite Habitat acquise sans nouvelle requête', async () => {
     const model = modelFor('22001')
+    const programmes = reponseThemeProgrammesApi()
     const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
       const url = String(input)
+      if (url.endsWith('/themes/programmes/facts')) return { ok: true, json: async () => programmes }
       if (url === '/api/territories/commune/22001/themes/habitat/facts') {
         return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
       }
@@ -636,20 +662,20 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
     await flushPromises()
-    // Aucun préchargement : l'onglet par défaut (programmes, non migré) n'acquiert rien.
-    expect(fetchApi).not.toHaveBeenCalled()
+    // Le défaut Programmes s'acquiert une fois; les autres thèmes ne sont pas préchargés.
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
     // Un thème non migré garde le chemin incumbent — aucune requête API.
     await router.replace({ query: { theme: 'demographie' } })
     await flushPromises()
-    expect(fetchApi.mock.calls).toHaveLength(1)
+    expect(fetchApi.mock.calls).toHaveLength(2)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Densité de population')
     // Revisite du thème acquis : le cache détient l'entrée, aucune nouvelle requête.
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
-    expect(fetchApi.mock.calls).toHaveLength(1)
+    expect(fetchApi.mock.calls).toHaveLength(2)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
     wrapper.unmount()
   })
@@ -830,6 +856,57 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/comparison'))).toHaveLength(2)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    wrapper.unmount()
+  })
+
+  it('acquiert Programmes sur l’atterrissage par défaut, consomme les collections et réutilise le cache', async () => {
+    const model = modeleAvecContextesComparaison()
+    const programmes = reponseThemeProgrammesApi()
+    const target = model.territories.find((item: any) => item.territoire === '22001')!
+    const parent = model.territories.find((item: any) => item.territoire === target.epci)!
+    programmes.collections[0]!.relationships[0]!.anchor.id = target.epci!
+    programmes.collections[0]!.relationships[0]!.anchor.name = parent.nom
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      void options
+      const url = String(input)
+      if (url.endsWith('/themes/programmes/facts')) return { ok: true, json: async () => programmes }
+      if (url.endsWith('/themes/habitat/facts')) return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
+    expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'programmes' })
+    const rendered = wrapper.get('[role="tabpanel"]').text()
+    expect(rendered).toContain('ACV')
+    expect(rendered).toContain('lauréate')
+    expect(rendered).toContain('CRTE')
+    expect(rendered).toContain('Territoire couvert par le contrat')
+    expect(rendered).toContain('convention valant ORT')
+    expect(rendered).toContain('Source API programmes')
+    expect(rendered).toMatch(/45\s678/)
+    expect(rendered).toContain('Mobilité API')
+    expect(rendered).not.toContain('du total de') // Parent total is not served by this focal snapshot.
+    await router.replace({ query: { theme: 'habitat' } })
+    await flushPromises()
+    await router.replace({ query: {} })
+    await flushPromises()
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('rend une absence de subventions sans section ni total nul', async () => {
+    const model = modeleAvecContextesComparaison()
+    const response = reponseThemeProgrammesApi()
+    response.collections = response.collections.filter((collection: any) => collection.kind === 'anchored_membership')
+    response.owned_series = []
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => response })))
+    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    expect(wrapper.text()).not.toContain('0 €')
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('Subventions attribuées')
     wrapper.unmount()
   })
 
