@@ -12,6 +12,7 @@ import type {
   ColonneRang,
   ColonneTailleRang,
   Histoire,
+  HistoireDemographie,
   HistoireEconomie,
   HistoireMobilite,
   Indicateur,
@@ -352,10 +353,19 @@ export interface PointNuage {
  * among — and a click navigates to that point's own fiche (territoire/type).
  */
 export function nuageComparaison(payload: Payload, territoire: string): PointNuage[] | null {
-  return construireNuage(payload, territoire, 'demographie', (histoire) => ({
-      tauxNaturel: histoire.taux_solde_naturel,
-      tauxMigratoire: histoire.taux_solde_migratoire,
-  }))
+  const incumbent = construireNuage(payload, territoire, 'demographie', (histoire) => ({
+       tauxNaturel: histoire.taux_solde_naturel,
+       tauxMigratoire: histoire.taux_solde_migratoire,
+   })) ?? []
+  const api = payload.histoires.filter((row) => row.theme === 'demographie' &&
+    (row as unknown as { nuageDemographieApi?: boolean }).nuageDemographieApi)
+    .flatMap((row) => {
+      const point = row as HistoireDemographie & { nom?: string }
+      return point.nom ? [{ territoire: row.territoire, type: row.type, nom: point.nom,
+        tauxNaturel: (row as HistoireDemographie).taux_solde_naturel,
+        tauxMigratoire: (row as HistoireDemographie).taux_solde_migratoire }] : []
+    })
+  return [...incumbent.filter((point) => !api.some((peer) => peer.territoire === point.territoire)), ...api]
 }
 
 /** One point of the Milieux story chart's context cloud (issue #241, ADR-0017). */

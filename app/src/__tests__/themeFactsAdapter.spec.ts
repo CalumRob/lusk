@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
+import { histoiresDemographieNuage, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 
 const cible = { territoire: '35238', type: 'commune' as const }
@@ -22,6 +22,26 @@ const sources = () => [{
 }]
 
 describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#627)', () => {
+  it('mappe la lecture démographique avec provenance et rejette story/salience/taux incohérents', () => {
+    const response = { ...faitsHabitat({ theme_id: 'demographie' }), readings: [{
+      groupe: 'trajectoire-demographique', story_key: 'trajectoire-demographique', salience_reason: 'defaut',
+      periode: '2020', solde_naturel: 1, solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2,
+      classification: 'balanced', status: 'measured', rate_unit: '‰', provenance: {
+        source_id: 's', source_name: 'Insee', source_version: '2026', source_reference_date: null, source_publication_date: null,
+      },
+    }] }
+    const histoire = themeFactsRowsFromApi('demographie', response, cible).histoires[0] as any
+    expect([histoire.periode, histoire.taux_solde_naturel, histoire.vintage_source]).toEqual(['2020', 0.3, 'Insee'])
+    for (const patch of [{ story_key: 'bad' }, { salience_reason: 'bad' }, { taux_solde_naturel: null }]) {
+      expect(() => themeFactsRowsFromApi('demographie', { ...response, readings: [{ ...response.readings[0], ...patch }] }, cible)).toThrow()
+    }
+  })
+  it('ne fabrique aucun point si la comparaison ne déclare pas de cloud', () => {
+    expect(histoiresDemographieNuage({ reading_cloud: null })).toEqual([])
+    expect(histoiresDemographieNuage({ reading_cloud: { status: 'available', story_key: 'trajectoire-demographique',
+      groupe: 'g', points: [{ territory: { territory_id: '1', territory_type: 'commune', name: 'T' },
+        periode: null, taux_solde_naturel: null, taux_solde_migratoire: 2 }] } })).toEqual([])
+  })
   it('refuse une réponse dont le contrat, le thème ou le territoire ne correspondent pas', () => {
     expect(() => themeFactsRowsFromApi('habitat', { contract: 'autre' }, cible)).toThrow(/contrat|Réponse/i)
     expect(() => themeFactsRowsFromApi('habitat', faitsHabitat({ theme_id: 'milieux' }), cible)).toThrow()
