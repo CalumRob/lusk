@@ -62,7 +62,8 @@ import BivariateDistributionFigureCahier from './BivariateDistributionFigureCahi
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
 import CahierSharingFigure from './CahierSharingFigure.vue'
-import CahierMobiliteCompletionFigure from './CahierMobiliteCompletionFigure.vue'
+import CahierMotorisationFigure from './CahierMotorisationFigure.vue'
+import CahierOffreTransportsFigure from './CahierOffreTransportsFigure.vue'
 import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
@@ -723,11 +724,11 @@ onBeforeUnmount(() => {
 
                    <figure v-else-if="section.evidence?.kind === 'motorisation'" class="evidence-side evidence-figure">
                      <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
-                     <CahierMobiliteCompletionFigure kind="motorisation" :facts="[...section.evidence.composition, ...section.evidence.charging]" />
+                     <CahierMotorisationFigure :composition="section.evidence.composition" :charging="section.evidence.charging" />
                    </figure>
                    <figure v-else-if="section.evidence?.kind === 'public-transport'" class="evidence-side evidence-figure">
                      <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
-                     <CahierMobiliteCompletionFigure kind="public-transport" :facts="[section.evidence.offer, ...section.evidence.trajectory, ...section.evidence.reference]" />
+                     <CahierOffreTransportsFigure :offer="section.evidence.offer" :trajectory="section.evidence.trajectory" :reference="section.evidence.reference" :metadata="section.evidence.trajectoryMetadata" />
                    </figure>
 
                   <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">

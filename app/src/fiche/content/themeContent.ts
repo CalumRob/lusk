@@ -4,6 +4,7 @@ import {
   MOBILITE_RESEAU_MODE_LABELS,
 } from './territoryFacts'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import type { ThemeMetadata, TrajectoryMetadata } from '@/payload/types'
 import type {
   BpeAccessProfileFact,
   ComparisonScope,
@@ -191,7 +192,7 @@ export type ContentEvidence =
   | CyclingOfferEvidence
   | SharingParkingEvidence
   | { kind: 'motorisation'; composition: readonly ContentFact[]; charging: readonly ContentFact[] }
-  | { kind: 'public-transport'; offer: ContentFact; trajectory: readonly ContentFact[]; reference: readonly ContentFact[] }
+  | { kind: 'public-transport'; offer: ContentFact; trajectory: readonly ContentFact[]; reference: readonly ContentFact[]; trajectoryMetadata: TrajectoryMetadata | null }
 
 interface ContentSectionBase<Key extends string, Evidence> {
   key: Key
@@ -1689,7 +1690,7 @@ function mobiliteRundown(facts: TerritoryFacts): readonly TextBlock[] {
   return [complements.reduce((prose, complement) => [...prose, text(' '), ...complement], anchor.prose)]
 }
 
-export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent {
+export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: ThemeMetadata): ThemeContent {
   const accessSections = [
     summarySection(facts),
     profilesSection(facts),
@@ -1705,7 +1706,11 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent
     indicatorFor(facts, key) ?? absentFact(key, unit),
     indicatorFor(facts, key)?.label ?? key,
   )
-  const composition = ['sans_voiture', 'une_voiture', 'deux_plus'].map((detail) => contentDetailFact(facts, 'voitures_menage', detail, '%'))
+  const compositionDetails = metadata?.detail_labels.voitures_menage ? Object.keys(metadata.detail_labels.voitures_menage) : ['sans_voiture', 'une_voiture', 'deux_plus']
+  const composition = compositionDetails.map((detail) => ({
+    ...contentDetailFact(facts, 'voitures_menage', detail, '%'),
+    label: metadata?.detail_labels.voitures_menage?.[detail] ?? detailLabelFor('voitures_menage', detail),
+  }))
   const motorFacts = [...composition, factFor('bornes_recharge', ''), factFor('bornes_ev_par_station_service', '')]
   const motorEvidence = motorFacts.some(({fact}) => hasValue(fact)) ? {
     kind: 'motorisation' as const, composition, charging: motorFacts.slice(composition.length),
@@ -1721,6 +1726,8 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts): ThemeContent
   const transitFacts = [factFor('offre_tc', ''), ...curve, ...reference]
   const transitEvidence = transitFacts.some(({fact}) => hasValue(fact)) ? {
     kind: 'public-transport' as const, offer: transitFacts[0]!, trajectory: curve, reference,
+    trajectoryMetadata: metadata?.indicator_pages?.raccordement_courbe?.family === 'trajectory'
+      ? metadata.indicator_pages.raccordement_courbe.trajectory : null,
   } : null
   const transitSection: OffreTransportsSection = {
     key: 'offre-transports-commun', label: 'Offre de transports en commun', indicators: indicatorsFor(facts, ['offre_tc', 'raccordement_courbe', 'raccordement_reference']),

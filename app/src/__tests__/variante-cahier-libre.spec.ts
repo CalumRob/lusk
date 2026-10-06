@@ -7,6 +7,8 @@ import { describe, expect, it } from 'vitest'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import VarianteCahierLibreE from '@/fiche/prototype/VarianteCahierLibreE.vue'
 import CartographicBreakoutPrototype from '@/fiche/prototype/CartographicBreakoutPrototype.vue'
+import CahierMotorisationFigure from '@/fiche/prototype/CahierMotorisationFigure.vue'
+import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
@@ -280,6 +282,46 @@ async function render(content: ThemeContent, presentation: 'ruled' | 'plain' = '
   await flushPromises()
   return wrapper
 }
+
+describe('figures des unités Mobilité ajoutées', () => {
+  const contentFact = (key: string, detail: string | null, value: number, label: string, unit = '%') => ({
+    label,
+    fact: {
+      key, detail, value, label, unit, availability: 'complete' as const, provenance: null,
+      comparison: null, comparisonBasis: 'territory-median' as const, reason: null,
+    },
+  })
+
+  it('trace les deux séries raccordement sur les mêmes détails et identifie les marques de référence', () => {
+    const trajectory = [contentFact('raccordement_courbe', 't0000', 0.1, '0'), contentFact('raccordement_courbe', 't0090', 0.7, '1 h 30')]
+    const reference = [contentFact('raccordement_reference', 't0000', 0.2, '0'), contentFact('raccordement_reference', 't0090', 0.6, '1 h 30')]
+    const published = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
+    const metadata = published.indicator_pages.raccordement_courbe
+    if (metadata.family !== 'trajectory') throw new Error('Fixture must declare a trajectory')
+    const wrapper = mount(CahierOffreTransportsFigure, {
+      props: { offer: contentFact('offre_tc', null, 0.4, 'Part des bâtiments près d’un arrêt'), trajectory, reference, metadata: metadata.trajectory },
+    })
+    expect(wrapper.find('path[data-series="territory"]').attributes('d')).toContain('M')
+    expect(wrapper.find('path[data-series="reference"]').attributes('d')).toContain('L')
+    expect(wrapper.find('[data-series="reference"][data-detail="t0090"]').attributes('data-value')).toBe('0.6')
+    expect(wrapper.text()).toContain(metadata.trajectory.reference?.label)
+    expect(wrapper.findAll('.cahier-figure-axis').length).toBe(2)
+  })
+
+  it('plots the payload-labeled household composition as separate bars with exact share values', () => {
+    const composition = [
+      contentFact('voitures_menage', 'sans_voiture', 0.25, 'Ménages sans voiture'),
+      contentFact('voitures_menage', 'une_voiture', 0.5, 'Ménages avec 1 voiture'),
+      contentFact('voitures_menage', 'deux_plus', 0.25, 'Ménages avec 2 voitures ou plus'),
+    ]
+    const wrapper = mount(CahierMotorisationFigure, { props: { composition, charging: [] } })
+    const bars = wrapper.findAll('.motorisation-bar')
+    expect(bars).toHaveLength(3)
+    expect(wrapper.findAll('.motorisation-part').map(row => row.attributes('data-value'))).toEqual(['0.25', '0.5', '0.25'])
+    expect(wrapper.text()).toContain('Ménages avec 2 voitures ou plus')
+    expect(bars.map(bar => bar.attributes('style'))).toEqual(expect.arrayContaining([expect.stringContaining('25%'), expect.stringContaining('50%')]))
+  })
+})
 
 describe('Variante D — le seam ThemeContent → Cahier', () => {
   it('uses the payload-owned EPCI name verbatim', () => {
