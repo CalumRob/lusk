@@ -940,6 +940,8 @@ def compare(data: dict) -> ComparisonResponse:
             focal = observations.get(target)
             if focal is None:
                 raise HTTPException(503, "Incomplete published target")
+            if peer_member_ids is not None and not peer_ids.issubset(observations):
+                raise HTTPException(503, "Incomplete published selected comparison")
             direction = focal["direction"]
             if direction not in ("high", "low") or any(
                 row["direction"] != direction for row in observations.values()

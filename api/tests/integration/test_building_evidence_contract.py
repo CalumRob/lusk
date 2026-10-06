@@ -280,6 +280,8 @@ def test_initial_building_response_resolves_vintage_identity_not_display_version
             with connection.transaction():
                 connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 data = ReadRepository(None).read_building_initial("commune", "A", "bretagne", connection=connection)
+                selected_data = ReadRepository(None).read_building_initial(
+                    "commune", "A", connection=connection, selected=[])
             assert data["availability"] == "complete"
             assert len(data["ramp"]) == 33
             assert len(data["distribution"]) == 30
@@ -287,6 +289,12 @@ def test_initial_building_response_resolves_vintage_identity_not_display_version
             assert data["presentation"]["building_grid"] == {"mode_label": "Publisher label sentinel"}
             assert data["sources"] == [{"source_id": "snapshot", "name": "Canonical fixture source",
                 "version": "Descriptive version", "reference_date": None, "publication_date": "2026-02-01"}]
+            assert selected_data["availability"] == "complete"
+            assert selected_data["scope"] == {"kind": "explicit_selection", "comparison_mode": "selected",
+                "member_count": 0}
+            assert selected_data["ramp"] == data["ramp"]
+            assert selected_data["distribution"] == data["distribution"]
+            assert selected_data["peer_ramp"] is None and selected_data["peer_distribution"] is None
     finally:
         if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(building_db_env["publish_dsn"], autocommit=True) as connection:

@@ -1,6 +1,8 @@
 """The HTTP response is the comparison contract; SQL is not the test seam."""
 
+from fastapi import HTTPException
 from fastapi.testclient import TestClient
+import pytest
 
 from api.main import ReadRepository, app, compare, get_repository
 
@@ -294,3 +296,16 @@ def test_selected_service_focal_rank_requires_explicit_peer_membership():
         "scope": {"kind": "explicit_selection"}, "comparison": True,
         "peer_member_ids": ["peer"], "rows": rows})
     assert result.services[0].modes["car"].rank is None
+
+
+def test_selected_service_comparison_rejects_partial_peer_facts():
+    rows = [{"territory_id": territory_id, "service": "health", "mode": mode,
+        "share": .4, "indicator_label": mode, "direction": "high", "source_id": "source",
+        "source_name": "Source", "source_version": "v1", "reference_date": None,
+        "source_publication_date": None}
+        for territory_id in ("focal", "peer-a") for mode in ("car", "bike", "walk_transit")]
+    with pytest.raises(HTTPException) as error:
+        compare({"publication_id": "v1", "territory": {"id": "focal", "name": "Focal", "type": "commune"},
+            "scope": {"kind": "explicit_selection"}, "comparison": True,
+            "peer_member_ids": ["peer-a", "peer-b"], "rows": rows})
+    assert error.value.status_code == 503
