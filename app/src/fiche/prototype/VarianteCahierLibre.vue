@@ -18,7 +18,7 @@ import {
   Utensils,
   WalletCards,
 } from 'lucide-vue-next'
-import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import type { Component } from 'vue'
 
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
@@ -64,7 +64,9 @@ import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
 import CahierSharingFigure from './CahierSharingFigure.vue'
 import CahierMotorisationFigure from './CahierMotorisationFigure.vue'
 import CahierOffreTransportsFigure from './CahierOffreTransportsFigure.vue'
-import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
+const CartographicBreakoutPrototype = import.meta.env.DEV
+  ? defineAsyncComponent(() => import('./CartographicBreakoutPrototype.vue'))
+  : null
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
 const props = defineProps<{
@@ -1264,7 +1266,7 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 600px) {
   .cahier--sans-grille { --cahier-page-left-inset: 18px; --cahier-page-right-inset: 96px; }
-  .cahier { --margin-line: 74px; }
+  .cahier { --margin-line: 12px; }
   .cahier-cover { padding: 18px 20px 44px; }
   .cahier-local-nav { padding-left: 44px; font-size: 10px; }
   .cahier-home-link { display: none; }
@@ -1276,7 +1278,10 @@ onBeforeUnmount(() => {
   .cahier-reader { padding: 48px 20px 88px; }
   .cahier-pages { gap: 64px; }
   .cahier-page, .sources-page { --page-left-inset: 96px; --page-right-inset: 18px; padding: 36px var(--page-right-inset) 40px var(--page-left-inset); }
-  .page-margin { top: 36px; left: 10px; width: 48px; }
+  .page-margin { position: static; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; width: auto; margin: 0 0 var(--space-5); text-align: left; }
+  .margin-sources { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 6px 12px; }
+  .margin-sources .margin-label { flex-basis: 100%; text-align: right; }
+  .margin-sources a { font-size: 14px; line-height: 1.4; }
   .page-number { font-size: 24px; }
   .page-heading h2 { font-size: clamp(1.35rem, 7vw, 1.85rem); }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }

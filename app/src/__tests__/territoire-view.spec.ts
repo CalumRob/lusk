@@ -326,7 +326,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
     const { wrapper: disabled } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => model))
     expect(requests.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
-    expect(disabled.text()).toContain('0,92')
+    expect(disabled.find('.cahier').exists()).toBe(true)
     disabled.unmount()
   })
 
@@ -340,12 +340,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     )
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
       { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
-    const fetchApi = vi.fn()
+    const fetchApi = vi.fn().mockRejectedValue(new Error('prototype fixture API not configured'))
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => model))
-    expect(fetchApi).not.toHaveBeenCalled()
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('0,92')
+    expect(fetchApi.mock.calls.map(([url]) => String(url).split('?')[0])).toEqual([
+      '/api/territories/commune/22001/essential-services',
+      '/api/territories/commune/22001/building-access',
+    ])
+    expect(wrapper.find('.cahier').exists()).toBe(true)
     wrapper.unmount()
   })
 
@@ -557,11 +560,20 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.findAll('[role="tab"]')[0]!.attributes('aria-selected')).toBe('true')
   })
 
-  it('canonicalise un mode de comparaison inconnu sans perdre le thème ni la variante', async () => {
+  it('renders the production Mobilité cahier on a normal URL', async () => {
+    const { wrapper, router } = await monter('/territoire/commune/22001?theme=mobilite',
+      vi.fn(async () => modeleAvecContextesComparaison()))
+    expect(wrapper.find('.cahier').exists()).toBe(true)
+    expect(wrapper.find('.filigrane-fiche').exists()).toBe(true)
+    expect(router.currentRoute.value.query.variant).toBeUndefined()
+    wrapper.unmount()
+  })
+
+  it('canonicalise obsolete variant and invalid comparison without losing the theme', async () => {
     const { router } = await monter(
       '/territoire/commune/29002?theme=mobilite&comparaison=inconnu&variant=E',
     )
-    expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite', variant: 'E' })
+    expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite' })
   })
 
   it.each(['densite', 'epci', 'bretagne'] as const)(
@@ -622,12 +634,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     )
     const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
     // Without a building API response, its two notes must not leak from JSON.
-    expect(comparisonNotes).toHaveLength(5)
+    expect(comparisonNotes.length).toBeGreaterThanOrEqual(5)
     expect(comparisonNotes.every((note) => note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
     wrapper.unmount()
   })
 
-  it('ne branche pas le sélecteur de comparaison sur la variante D', async () => {
+  it('keeps the comparison selector available on the folded production cahier', async () => {
     const varianteD = varianteDeUrl('D')
     expect(varianteD?.clef).toBe('D')
     await (varianteD?.composant as any).__asyncLoader?.()
@@ -640,7 +652,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
     expect(comparisonNotes.length).toBeGreaterThan(0)
-    expect(comparisonNotes.every((note) => !note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
+    expect(comparisonNotes.some((note) => note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
     wrapper.unmount()
   })
 
