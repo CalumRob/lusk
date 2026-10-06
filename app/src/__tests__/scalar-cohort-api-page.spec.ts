@@ -7,7 +7,7 @@ import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { indicateursDemographieFixture, indicateursEconomieFixture, territoiresFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { validerThemeMetadata } from '../payload/validate'
-import { chargerCohorteScalaire, chargerCohortesScalaires, indicateursScalairesEnregistres, remplacerFaitsScalaires } from '../payload/scalarCohort'
+import { chargerCohorteScalaire, chargerCohortesScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires, validerEnregistrementScalaires } from '../payload/scalarCohort'
 import { formaterRang } from '../payload/selectors'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
@@ -16,6 +16,7 @@ const economyMetadata = { ...JSON.parse(readFileSync(join(process.cwd(), '..', '
   scalar_contracts: ['effectifs_salaries', 'chomage'] }
 const demographyMetadataRaw = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_demographie.json'), 'utf8'))
 const mobilityMetadataRaw = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
+const habitatMetadataRaw = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_habitat.json'), 'utf8'))
 const productionThemeMetadata = { economie: economyMetadata, demographie: demographyMetadataRaw, mobilite: mobilityMetadataRaw }
 // Rank parity reference only: API-selected page tests never load this static fact payload as a fallback.
 const canonicalEconomyFacts = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'indicateurs_economie.json'), 'utf8')) as Array<Record<string, unknown>>
@@ -61,6 +62,19 @@ async function mountEconomy(initial = '/indicateurs/economie/effectifs_salaries?
 }
 
 describe('Page indicateur économie - cohorte scalaire API', () => {
+  it('keeps registered non-scalar Habitat pages out of fiche cohort replacement', () => {
+    const registered = indicateursScalairesEnregistres(habitatMetadataRaw)
+    expect(registered).toContain('prix_m2')
+    expect(habitatMetadataRaw.indicator_pages.prix_m2.family).toBe('trajectory')
+    expect(habitatMetadataRaw.indicator_pages.part_passoires.family).toBe('scalar')
+    expect(() => validerThemeMetadata(habitatMetadataRaw, 'theme_habitat.json')).not.toThrow()
+    const metadata = validerThemeMetadata(habitatMetadataRaw, 'theme_habitat.json')
+    const selected = pagesScalairesEnregistrees(metadata, registered)
+    expect(selected).toEqual(['part_passoires'])
+    expect(() => validerEnregistrementScalaires(metadata, selected)).not.toThrow()
+    const priceTrajectory = { theme: 'habitat', key: 'prix_m2' } as never
+    expect(remplacerFaitsScalaires([priceTrajectory], [], selected)).toEqual([priceTrajectory])
+  })
   it('acquires registered facts concurrently and replaces only those theme rows', async () => {
     const metadata = validerThemeMetadata(economyMetadata, 'theme_economie.json')
     const registered = indicateursScalairesEnregistres(economyMetadata)
