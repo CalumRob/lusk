@@ -294,12 +294,35 @@ def build_representative_map_set(
     return Binding("network", MapSet({"network-outputs": tuple(features)}))
 
 
+def _department_labels(registry_path: Path, departments: set[str]) -> dict[str, str]:
+    """Load authoritative published territory labels for in-scope departments."""
+    records = json.loads(registry_path.read_text(encoding="utf-8"))
+    labels = {}
+    for row in records:
+        if row.get("type") != "departement" or str(row.get("territoire")) not in departments:
+            continue
+        code = str(row["territoire"])
+        name = row.get("nom")
+        if code in labels:
+            raise ValueError(f"duplicate department label in territory registry: {code}")
+        if not isinstance(name, str) or not name.strip() or name.strip() == code:
+            raise ValueError(f"invalid department label in territory registry: {code}")
+        labels[code] = name.strip()
+    missing = departments - labels.keys()
+    if missing:
+        raise ValueError(f"missing department labels in territory registry: {sorted(missing)}")
+    return labels
+
+
 def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
-                       family_config: Mapping | None = None) -> Binding:
+                       family_config: Mapping | None = None,
+                       territory_registry_path: str | Path | None = None) -> Binding:
     """Derive the full supported territory inventory from current map-ready sources."""
     raw_dir = Path(raw_dir)
     family_config = family_config or _load_network_family_config()
     departments = {str(code) for code in family_config["scope"]["analytical_departments"]}
+    registry_path = Path(territory_registry_path) if territory_registry_path else Path(__file__).resolve().parents[3] / "public" / "data" / "territoires.json"
+    department_labels = _department_labels(registry_path, departments)
     metadata_path = _metadata_path(raw_dir)
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     epci_labels = {str(item["code"]): str(item["nom"]) for item in metadata["labels"]}
@@ -355,7 +378,7 @@ def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
     for code, parts in sorted(department_parts.items()):
         if not parts:
             raise ValueError(f"supported department {code} has no communes")
-        territories.append({"kind": "departement", "code": code, "name": code,
+        territories.append({"kind": "departement", "code": code, "name": department_labels[code],
             "geometry": _union(parts, f"department {code}"),
             "analytical_geometry": _union(parts, f"department analysis {code}")})
     if not region_parts:
