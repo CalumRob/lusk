@@ -179,6 +179,26 @@ function histoireMilieuxDeSql(target: { territoire: string; type: TerritoireType
   return lecture
 }
 
+/** The comparison API deliberately returns only plotted peer coordinates. */
+export function histoiresMilieuxDuNuage(response: unknown): HistoireMilieux[] {
+  if (!isRecord(response) || !isRecord(response.reading_cloud) || !Array.isArray(response.reading_cloud.points)) return []
+  return response.reading_cloud.points.flatMap((point): HistoireMilieux[] => {
+    if (!isRecord(point) || !isRecord(point.territory) ||
+        !texteNonVide(point.territory.territory_id) || !texteNonVide(point.territory.territory_type) ||
+        !(point.territory.territory_type === 'commune' || point.territory.territory_type === 'epci' ||
+          point.territory.territory_type === 'departement' || point.territory.territory_type === 'region') ||
+        !(point.periode_pop === null || text(point.periode_pop)) || !(point.periode_artif === null || text(point.periode_artif)) ||
+        !finite(point.taux_variation_population) || !finite(point.artif_m2_par_habitant) || !finite(point.artif_m3_par_habitant)) return []
+    return [{ territoire: point.territory.territory_id, type: point.territory.territory_type, theme: 'milieux',
+      groupe: 'land', story_key: 'se-densifier-setaler-ou-sen-aller', salience_reason: 'defaut',
+      periode_pop: point.periode_pop as string, periode_artif: point.periode_artif as string | null,
+      delta_population: 0, taux_variation_population: point.taux_variation_population as number,
+      artif_m2: null, artif_m3: null, artif_m2_par_habitant: point.artif_m2_par_habitant as number,
+      artif_m3_par_habitant: point.artif_m3_par_habitant as number,
+      trajectoire_artif_par_habitant: null, classification: null }]
+  })
+}
+
 export interface ThemeFactsRows {
   indicateurs: Indicateur[]
   histoires: Histoire[]

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
+import { histoiresMilieuxDuNuage, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 
 const cible = { territoire: '35238', type: 'commune' as const }
@@ -163,6 +163,20 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         artif_m2_par_habitant: null, artif_m3_par_habitant: null, classification: null })
     expect(() => themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [{ ...reading, story_key: 'wrong' }] }), cible)).toThrow(/non déclarée/)
     expect(() => themeFactsRowsFromApi('milieux', faitsMilieux({ readings: [{ ...reading, salience_reason: 'invented' }] }), cible)).toThrow(/non déclarée/)
+  })
+
+  it('projette uniquement les points du reading cloud dont toutes les coordonnées sont valides', () => {
+    const points = histoiresMilieuxDuNuage({ reading_cloud: { points: [
+      { territory: { territory_id: '35001', territory_type: 'commune' }, periode_pop: '2017-2023',
+        periode_artif: '2020-2023', taux_variation_population: 0.8,
+        artif_m2_par_habitant: 7, artif_m3_par_habitant: 8 },
+      { territory: { territory_id: '35002', territory_type: 'commune' }, periode_pop: null,
+        periode_artif: null, taux_variation_population: null,
+        artif_m2_par_habitant: 6, artif_m3_par_habitant: 7 },
+    ] } })
+    expect(points).toHaveLength(1)
+    expect(points[0]).toMatchObject({ territoire: '35001', taux_variation_population: 0.8,
+      artif_m2_par_habitant: 7, artif_m3_par_habitant: 8 })
   })
 
   it('valide l’écho de sélection d’une réponse de comparaison dans l’ordre du demandeur', () => {

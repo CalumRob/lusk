@@ -46,7 +46,7 @@ import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFac
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { chargerCohortesScalaires, indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache } from '@/payload/themeAcquisition'
-import { themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
+import { histoiresMilieuxDuNuage, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ComparisonScopeKind, TerritoryFacts } from '@/fiche/content/territoryFacts'
@@ -98,6 +98,7 @@ const cacheAcquisition = new ThemeAcquisitionCache(
 )
 const faitsThemeRows = ref<Indicateur[] | null>(null)
 const histoiresThemeRows = ref<Histoire[] | null>(null)
+const histoiresNuageMilieux = ref<Histoire[]>([])
 const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
 const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const retryAcquisition = ref(0)
@@ -118,7 +119,8 @@ const payloadPourRendu = computed<Payload | null>(() => {
       : [...payload.indicateurs.filter((row) => row.theme !== theme), ...faitsThemeRows.value]
     const histoires = histoiresThemeRows.value === null
       ? payload.histoires.filter((row) => row.theme !== theme)
-      : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value]
+      : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
+        ...(theme === 'milieux' ? histoiresNuageMilieux.value : [])]
     return { ...payload, indicateurs, histoires }
   }
   if (!scalarCohortEnabled(import.meta.env)) return payload
@@ -245,6 +247,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     if (!themeMigre(theme) || !model || !typeValide.value) {
       faitsThemeRows.value = null
       histoiresThemeRows.value = null
+      histoiresNuageMilieux.value = []
       statutAcquisition.value = 'loading'
       statutComparaison.value = 'idle'
       cleFaitsPrets = null
@@ -259,6 +262,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     onCleanup(() => { cancelled = true })
     faitsThemeRows.value = null
     histoiresThemeRows.value = null
+    histoiresNuageMilieux.value = []
     statutAcquisition.value = 'loading'
     statutComparaison.value = 'idle'
     try {
@@ -269,6 +273,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type })
       faitsThemeRows.value = rows.indicateurs
       histoiresThemeRows.value = rows.histoires
+      histoiresNuageMilieux.value = themeActif === 'milieux' && isRecord(acquired.focal.comparison)
+        ? histoiresMilieuxDuNuage(acquired.focal.comparison) : []
       statutAcquisition.value = 'ready'
       cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
     } catch {
@@ -315,11 +321,14 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
     let cancelled = false
     onCleanup(() => { cancelled = true })
     statutComparaison.value = 'loading'
+    if (themeActif === 'milieux') histoiresNuageMilieux.value = []
     try {
       const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
       if (cancelled || request !== sequenceComparaison) return
       validerReponseComparaisonTheme(themeActif,
         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)), selectionMembres)
+      if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(
+        acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
       statutComparaison.value = 'ready'
     } catch {
       if (!cancelled && request === sequenceComparaison) statutComparaison.value = 'error'
