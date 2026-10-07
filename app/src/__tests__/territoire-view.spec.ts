@@ -470,8 +470,40 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/22001/themes/mobilite/facts', expect.anything())
       expect(wrapper.findAll('[data-section="services-essentiels"] .access-foot-summary')[0]?.text()).toContain('42')
       expect(wrapper.get('[data-section="services-essentiels"] .cahier-comparison-note').text()).toContain(scope.label)
+      expect(wrapper.get('#figure-offre-transports-commun .transit-plot svg').attributes('role')).toBe('img')
+      expect(wrapper.find('#figure-offre-transports-commun .transit-series--territory').exists()).toBe(true)
       expect(wrapper.text()).toContain('Source API · api-v1')
       expect(wrapper.find('[data-section="resume"]').exists()).toBe(true)
+      wrapper.unmount()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it.each([
+    ['epci', '242200715', 'epcis-bretagne'],
+    ['departement', '22', 'departements-bretagne'],
+    ['region', '53', null],
+  ] as const)('renders mobility access, building access, and raccordement for %s %s', async (type, code, kind) => {
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      `../public/data/modeles-lecture/territoires/${type}/${code}.json`), 'utf8'))
+    const model = validerModeleTerritoire(published, `${type}/${code}.json`, { type, territoire: code })
+    const label = model.themes.mobilite?.comparisons.bretagne?.scope.label
+    const fetchApi = vi.fn(async () => ({ ok: true, json: async () =>
+      reponseThemeMobiliteApi(model, type, code, kind, label) }))
+    vi.stubGlobal('fetch', fetchApi)
+    try {
+      const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
+      await flushPromises()
+      expect(wrapper.findAll('[data-section="services-essentiels"] .access-figure')).toHaveLength(5)
+      const building = wrapper.get('[data-section="distribution-acces-par-batiment"]')
+      expect(building.find('.access-ramp-evidence').exists()).toBe(true)
+      expect(building.find('.bivariate-evidence').exists()).toBe(true)
+      const plot = wrapper.get('#figure-offre-transports-commun .transit-plot svg')
+      expect(plot.attributes('role')).toBe('img')
+      expect(wrapper.find('#figure-offre-transports-commun .transit-series--territory').exists()).toBe(true)
+      expect(wrapper.find('#figure-offre-transports-commun .transit-unavailable').exists()).toBe(false)
       wrapper.unmount()
     } finally {
       vi.unstubAllGlobals()

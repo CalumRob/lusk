@@ -868,7 +868,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
     }
     if (is.null(page$levels) || length(page$levels) == 0L ||
         anyDuplicated(unlist(page$levels, use.names = FALSE)) ||
-        any(!page$levels %in% c("commune", "epci", "departement"))) {
+        any(!page$levels %in% c("commune", "epci", "departement", "region"))) {
       manquer("indicator_pages.levels", "les niveaux comparables sont invalides")
     }
     if (is.null(page$sources) || !is.list(page$sources) || length(page$sources) == 0L ||

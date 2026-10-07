@@ -61,4 +61,14 @@ describe('applyAccessApiFacts', () => {
     invalid.services[4].modes.walk_transit.value = 1.1
     expect(() => applyAccessApiFacts(base, invalid, 'communes-epci', 'Pairs API')).toThrow()
   })
+
+  it.each([
+    ['epcis-bretagne', 61, 'EPCI bretons'],
+    ['departements-bretagne', 4, 'départements bretons'],
+  ] as const)('accepts deployed %s scope without an optional display label', (kind, member_count, label) => {
+    const body = responseFor({ scope: { kind, member_count } })
+    const result = applyAccessApiFacts(facts(), body, kind, null)
+    expect(result.mobility.access.byService.administration.car.value).toBe(0.8)
+    expect(result.mobility.access.byService.administration.car.comparison?.scope.label).toBe(label)
+  })
 })

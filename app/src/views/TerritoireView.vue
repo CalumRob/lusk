@@ -579,7 +579,7 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
       resolutionComparaison.value?.contexte ?? undefined)
   if (!facts) return null
   const contentFacts = facts
-  return resolveMobiliteThemeContent(contentFacts)
+  return resolveMobiliteThemeContent(contentFacts, payloadPourRendu.value.themeMetadata?.mobilite)
 })
 const paginationCahier = computed(() =>
   payloadPourRendu.value && contenuMobilite.value

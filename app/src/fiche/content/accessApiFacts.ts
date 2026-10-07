@@ -10,6 +10,7 @@ import type {
   TerritoryFacts,
 } from './territoryFacts'
 import { ACCESS_INDICATOR_KEYS } from './territoryFacts'
+import { comparisonScopeLabel } from './comparisonScopeLabel'
 
 // The semantic facts already declare the served service/mode grammar; do not
 // independently select indicators or service groups in the API adapter.
@@ -23,13 +24,12 @@ const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 function invalid(): never { throw new Error('Publication API accès invalide') }
-
 /** Replace only service access observations with a fully validated API publication. */
 export function applyAccessApiFacts(
   facts: TerritoryFacts,
   response: unknown,
   expectedScope: ComparisonScopeKind | null,
-  expectedLabel: string | null,
+  expectedLabel?: string | null,
 ): TerritoryFacts {
   if (!record(response) || typeof response.publication_id !== 'string' || !response.publication_id ||
       !record(response.territory) || !Array.isArray(response.services)) invalid()
@@ -38,9 +38,12 @@ export function applyAccessApiFacts(
   const region = facts.territory.type === 'region'
   if ((!region && (typeof kind !== 'string' || !scopeKinds.has(kind as ComparisonScopeKind))) ||
       (region && response.scope !== null)) invalid()
-  if (!region && (kind !== expectedScope || !expectedLabel ||
+  if (!region && (kind !== expectedScope ||
       !record(response.scope) ||
       !Number.isInteger(response.scope.member_count) || (response.scope.member_count as number) < 1)) invalid()
+  const resolvedLabel = typeof kind === 'string'
+    ? comparisonScopeLabel(kind as ComparisonScopeKind, expectedLabel, facts.territory.epciName)
+    : null
   const services = Object.keys(facts.mobility.access.byService) as MobiliteService[]
   const byId = new Map<unknown, Record<string, unknown>>()
   for (const item of response.services) {
@@ -79,9 +82,9 @@ export function applyAccessApiFacts(
         referenceDate: raw.reference_date, publicationDate: raw.source_publication_date,
       }
       const availability: FactAvailability = raw.value === null ? 'incomplete' : 'complete'
-      const comparison = region ? null : {
+      const comparison = region || !resolvedLabel ? null : {
         direction: 'plus-est-mieux' as const,
-        scope: { kind: kind as ComparisonScopeKind, label: expectedLabel! },
+        scope: { kind: kind as ComparisonScopeKind, label: resolvedLabel! },
         rank: raw.rank && (raw.rank as { size: number }).size >= 2 ? raw.rank as { position: number; size: number } : null,
         reference: raw.median === null ? null : { kind: 'median' as const, value: raw.median },
       }
@@ -100,9 +103,9 @@ export function applyAccessApiFacts(
         key: `access.${service}.${name}`, detail: null,
         value: a.value === null || b.value === null ? null : a.value - b.value,
         unit: '%', availability: a.value === null || b.value === null ? 'incomplete' : 'complete',
-        provenance: a.provenance, comparison: region ? null : {
+        provenance: a.provenance, comparison: region || !resolvedLabel ? null : {
           direction: name === 'carGap' ? 'moins-est-mieux' : 'plus-est-mieux',
-           scope: { kind: kind as ComparisonScopeKind, label: expectedLabel! },
+           scope: { kind: kind as ComparisonScopeKind, label: resolvedLabel! },
           rank: null, reference: peer === null ? null : { kind: 'median', value: peer },
         }, comparisonBasis: 'territory-median', reason: null,
       }
