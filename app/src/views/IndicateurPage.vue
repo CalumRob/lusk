@@ -25,7 +25,7 @@ import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } fro
 import { PayloadError, validerThemeMetadata } from '@/payload/validate'
 import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, orderedSeriesReaderEnabled, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
-import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
+import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
 import type { Indicateur, ThemeMetadata } from '@/payload/types'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
@@ -189,8 +189,18 @@ async function chargerMetadataScalaireApi(currentTheme: string): Promise<ThemeMe
   const registered = indicateursScalairesEnregistres(raw)
   const metadata = validerThemeMetadata(raw, file)
   if (metadata.theme !== currentTheme) throw new PayloadError('validation', file, 'Métadonnées du thème incompatibles.')
-  validerEnregistrementScalaires(metadata, registered)
-  indicateursScalairesCourants.value = registered
+  const unbound = registered.filter((id) => {
+    const page = metadata.indicator_pages?.[id]
+    return !page || page.indicator !== id
+  })
+  if (unbound.length) throw new PayloadError('validation', file,
+    `Contrat scalaire sans page déclarée : ${unbound.join(', ')}.`)
+  // A scalar contract may also serve a page's scalar headline (e.g. prix_m2)
+  // while the page itself is a trajectory. Only scalar-family pages use the
+  // scalar cohort reader; their other contract remains on its declared path.
+  const registeredPages = pagesScalairesEnregistrees(metadata, registered)
+  validerEnregistrementScalaires(metadata, registeredPages)
+  indicateursScalairesCourants.value = registeredPages
   return metadata
 }
 watch(() => [scalaireApiOptionnelle.value, theme.value, indicator.value, porte.value.territoire,
