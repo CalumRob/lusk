@@ -61,9 +61,12 @@ function indicatorFromSql(
 
 function buckets(value: unknown): { key: string; min: number; max: number | null; label: string }[] {
   return rows(value, 'building_access.presentation.bins').map((bin) => {
+    // The deployed API publishes the open-ended R bucket as the literal "NA";
+    // at the figure boundary that means no upper bound, like canonical JSON null.
+    const max = bin.max_value === 'NA' ? null : bin.max_value
     if (!text(bin.key) || !text(bin.label) || !finite(bin.min_value) ||
-        !(bin.max_value === null || finite(bin.max_value))) throw new Error('Classe SQL de distribution invalide')
-    return { key: bin.key, min: bin.min_value, max: bin.max_value, label: bin.label }
+        !(max === null || finite(max))) throw new Error('Classe SQL de distribution invalide')
+    return { key: bin.key, min: bin.min_value, max, label: bin.label }
   })
 }
 
