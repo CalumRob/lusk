@@ -7,11 +7,13 @@ if (!requireNamespace("pkgload", quietly = TRUE)) {
 pkgload::load_all(".", quiet = TRUE)
 
 args <- commandArgs(trailingOnly = TRUE)
-indicator_id <- NULL
-publish_all <- "--all" %in% args
-if ("--indicator-id" %in% args) {
+selector_count <- sum(args=="--indicator-id")
+all_count <- sum(args=="--all")
+if (selector_count>1L || all_count>1L) stop("Duplicate selector flags",call.=FALSE)
+indicator_id <- NULL; publish_all <- all_count==1L
+if (selector_count==1L) {
   index <- match("--indicator-id",args)
-  if (index==length(args)) stop("--indicator-id requires a value",call.=FALSE)
+  if (index==length(args) || startsWith(args[[index+1L]],"--")) stop("--indicator-id requires a value",call.=FALSE)
   indicator_id <- args[[index+1L]]
   args <- args[-c(index,index+1L)]
 }
@@ -23,9 +25,15 @@ if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets"
                                                 "--owned-series-check", "--owned-series-publish",
                                                 "--programme-series-check", "--programme-series-publish",
                                                 "--programme-check", "--programme-publish")) {
-   stop("Usage: Rscript scripts/publish-serving-tables.R --check|--publish|--targets|--scalar-fixture-check|--scalar-fixture-publish|--series-fixture-check|--series-fixture-publish|--series-check|--series-publish|--owned-series-check|--owned-series-publish|--programme-series-check|--programme-series-publish|--programme-check|--programme-publish (from pipeline/)",
+    stop("Usage: Rscript scripts/publish-serving-tables.R <command> [--indicator-id ID | --all]; --indicator-id applies to owned-series check/publish, --all only to --owned-series-publish (from pipeline/)",
        call. = FALSE)
-}
+ }
+command <- args[[1L]]
+owned_command <- command %in% c("--owned-series-check","--owned-series-publish")
+if ((selector_count || all_count) && !owned_command && !command %in% c("--programme-series-check","--programme-series-publish"))
+  stop("--indicator-id/--all apply only to owned-series commands",call.=FALSE)
+if (all_count && command!="--owned-series-publish") stop("--all applies only to --owned-series-publish",call.=FALSE)
+if (command=="--owned-series-check" && publish_all) stop("--all is publish-only",call.=FALSE)
 if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
   inputs <- read_programme_serving_inputs(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")))
   annual_registry <- register_programme_series_publishers(list(),inputs$metadata)
@@ -53,7 +61,7 @@ if (args[[1L]] %in% c("--programme-series-check","--programme-series-publish")) 
   projections <- read_programme_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")))
   connect <- function() do.call(DBI::dbConnect,
     c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
-   result <- dispatch_owned_series_cli(mode,projections,connect,indicator_id=indicator_id,all=publish_all)
+   result <- dispatch_owned_series_cli(mode,projections,connect,require_scope=FALSE)
   for (name in names(projections)) {
     projection <- projections[[name]]
     cat(name, nrow(projection$points), "canonical observations; version", result$versions[[name]], "\n")
@@ -66,7 +74,7 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   connect <- function() {
     do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
   }
-  result <- dispatch_owned_series_cli(mode,projections,connect)
+   result <- dispatch_owned_series_cli(mode,projections,connect,indicator_id=indicator_id,all=publish_all)
   for (name in names(projections)) {
     p <- projections[[name]]; d <- p$descriptor
     excluded <- attr(projections,"excluded")[[name]]

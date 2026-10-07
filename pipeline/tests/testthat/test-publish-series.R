@@ -311,6 +311,11 @@ test_that("stable artifact reader detects replacement during the read window", {
 
 test_that("owned series CLI validates before connecting and enforces explicit publish guards", {
   expect_identical(series_revision_hash("abc"),"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
+  fields <- c("s","v","n","d","v","2025-01-01","2025-01-02")
+  exact_hash <- "4d208ad8b6f3c729d6dc423a9bee8f97fc5e513589e2e9fb441fda926883ce28"
+  revision_hash <- do.call(series_revision_hash,as.list(fields))
+  expect_identical(revision_hash,exact_hash)
+  expect_identical(paste0("s-v-",substr(revision_hash,1L,16L)),"s-v-4d208ad8b6f3c729")
   points <- data.frame(dataset_id="enaf",indicator_id="i",territory_id="t",
     territory_type="commune",axis_value="2024",observation_period="2024",
     value=1,status="measured")
@@ -333,8 +338,31 @@ test_that("owned series CLI validates before connecting and enforces explicit pu
   expect_error(dispatch_owned_series_cli("publish",list(enaf=projection),connect,opt_in="1"),"--indicator-id or explicit --all")
   expect_error(dispatch_owned_series_cli("publish",list(enaf=projection),connect,opt_in="1",lusk_mode="cron"),"cron")
   bad <- projection; bad$points$value <- Inf
-  expect_error(dispatch_owned_series_cli("publish",list(enaf=bad),connect,opt_in="1",all=TRUE),"validate")
+  expect_error(dispatch_owned_series_cli("publish",list(enaf=bad),connect,opt_in="1",all=TRUE),"observation")
   expect_equal(connects,0L)
+})
+
+test_that("owned-series selectors resolve only their owner and preserve all-check", {
+  base <- local({
+    points <- data.frame(dataset_id="d",indicator_id="placeholder",territory_id="t",territory_type="commune",
+      axis_value="2024",observation_period="2024",value=1,status="measured")
+    hash <- series_revision_hash("s","v","n","d","v","2025-01-01","2025-01-02"); rid <- paste0("s-v-",substr(hash,1,16))
+    list(dataset_id="d",points=points,descriptor=list(dataset_id="d",indicator_id="x",axis_kind="year",axis_values="2024",
+      completeness="may_be_missing",comparison_point="2024",label="x",unit="ha",direction="low",allowed_levels="commune",descriptor_version="1"),
+      provenance=data.frame(provenance_revision_id=rid,source_id="s",vintage_id="v",source_name="n",dataset_name="d",source_version="v",
+        reference_date=as.Date("2025-01-01"),publication_date=as.Date("2025-01-02"),revision_hash=hash),
+      point_provenance=data.frame(dataset_id="d",indicator_id="x",territory_id="t",axis_value="2024",provenance_revision_id=rid))
+  })
+  ids <- c("conso_enaf_annuel","artif_par_habitant","prix_m2","raccordement_courbe")
+  projections <- setNames(lapply(ids,function(id) {p<-base;p$descriptor$indicator_id<-id;p$points$indicator_id<-id;p$point_provenance$indicator_id<-id;p}),ids)
+  connect <- function() stop("check must not connect")
+  expect_setequal(names(dispatch_owned_series_cli("check",projections,connect)$projections),ids)
+  for (id in ids) expect_identical(names(dispatch_owned_series_cli("check",projections,connect,indicator_id=id)$projections),id)
+  md <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_mobilite.json"),simplifyVector=FALSE)
+  expect_identical(owned_series_indicator_owner("raccordement_reference",list(),list(),md),"raccordement_courbe")
+  expect_error(dispatch_owned_series_cli("check",projections,connect,indicator_id="not_registered"),"Unknown owned-series indicator_id")
+  expect_error(dispatch_owned_series_cli("publish",projections,connect,opt_in="1"),"--indicator-id or explicit --all")
+  expect_error(dispatch_owned_series_cli("publish",projections,connect,opt_in="1",indicator_id="not_registered"),"Unknown owned-series indicator_id")
 })
 
 test_that("production owned-series reader and check route project both canonical fixture units", {
@@ -373,13 +401,17 @@ test_that("production owned-series reader and check route project both canonical
   expect_equal(attr(projections,"excluded")$conso_enaf_annuel_owned$region$row_count,
     0L)
   expect_equal(producer$excluded$region$row_count,14L)
+  unlink(file.path(sortie,c("histoires_milieux.parquet","indicateurs_habitat.parquet")))
+  scoped <- read_owned_series_projections(sortie,metadata_path,habitat_metadata_path,indicator_id="conso_enaf_annuel")
+  expect_identical(names(scoped),"conso_enaf_annuel_owned")
+  expect_identical(scoped$conso_enaf_annuel_owned$descriptor$indicator_id,"conso_enaf_annuel")
   connect <- function() stop("check route must not connect")
   checked <- dispatch_owned_series_cli("check",projections,connect)
   expect_identical(unlist(checked$versions),vapply(projections,scalar_content_version,character(1)))
   script <- paste(readLines(testthat::test_path("../../scripts/publish-serving-tables.R"),warn=FALSE),collapse="\n")
   expect_true(grepl("--owned-series-check",script,fixed=TRUE))
   expect_true(grepl("--owned-series-publish",script,fixed=TRUE))
-  expect_true(grepl("dispatch_owned_series_cli(mode,projections,connect)",script,fixed=TRUE))
+  expect_true(grepl("dispatch_owned_series_cli(mode,projections,connect,indicator_id=indicator_id,all=publish_all)",script,fixed=TRUE))
 })
 
 test_that("canonical annual rows outside descriptor axes or levels are rejected", {
