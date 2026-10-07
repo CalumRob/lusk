@@ -310,6 +310,7 @@ test_that("stable artifact reader detects replacement during the read window", {
 })
 
 test_that("owned series CLI validates before connecting and enforces explicit publish guards", {
+  expect_identical(series_revision_hash("abc"),"ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad")
   points <- data.frame(dataset_id="enaf",indicator_id="i",territory_id="t",
     territory_type="commune",axis_value="2024",observation_period="2024",
     value=1,status="measured")
@@ -329,9 +330,10 @@ test_that("owned series CLI validates before connecting and enforces explicit pu
   expect_equal(length(dispatch_owned_series_cli("check",list(enaf=projection),connect)$versions),1L)
   expect_equal(connects,0L)
   expect_error(dispatch_owned_series_cli("publish",list(enaf=projection),connect,opt_in="0"),"LUSK_PUBLISH_OWNED_SERIES=1")
+  expect_error(dispatch_owned_series_cli("publish",list(enaf=projection),connect,opt_in="1"),"--indicator-id or explicit --all")
   expect_error(dispatch_owned_series_cli("publish",list(enaf=projection),connect,opt_in="1",lusk_mode="cron"),"cron")
   bad <- projection; bad$points$value <- Inf
-  expect_error(dispatch_owned_series_cli("publish",list(enaf=bad),connect,opt_in="1"),"validate")
+  expect_error(dispatch_owned_series_cli("publish",list(enaf=bad),connect,opt_in="1",all=TRUE),"validate")
   expect_equal(connects,0L)
 })
 

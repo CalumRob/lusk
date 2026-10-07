@@ -444,13 +444,7 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
 
 series_revision_hash <- function(...) {
   text <- paste(..., collapse="\x1f")
-  if (requireNamespace("digest", quietly=TRUE)) digest::digest(text, algo="sha256", serialize=FALSE)
-  else {
-    path <- tempfile("series-provenance-")
-    on.exit(unlink(path),add=TRUE)
-    writeBin(charToRaw(text),path)
-    unname(tools::md5sum(path))
-  }
+  unclass(as.character(openssl::sha256(charToRaw(text))))
 }
 
 validate_owned_series_projection <- function(projection) {
@@ -754,7 +748,7 @@ read_conso_enaf_series_projection <- function(sortie = "../public/data",
 read_owned_series_projections <- function(sortie="../public/data",
     metadata_path="inst/extdata/theme-metadata/theme_milieux.json",
     habitat_metadata_path="inst/extdata/theme-metadata/theme_habitat.json",
-    mobility_metadata_path="inst/extdata/theme-metadata/theme_mobilite.json") {
+    mobility_metadata_path="inst/extdata/theme-metadata/theme_mobilite.json", indicator_id=NULL) {
   paths <- c(indicators=file.path(sortie,"indicateurs_milieux.parquet"),
     histories=file.path(sortie,"histoires_milieux.parquet"),
     habitat_indicators=file.path(sortie,"indicateurs_habitat.parquet"),
@@ -770,10 +764,20 @@ read_owned_series_projections <- function(sortie="../public/data",
       vintages=nanoparquet::read_parquet(input[["vintages"]]))
     metadata <- jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE)
     habitat_metadata <- jsonlite::read_json(input[["habitat_metadata"]],simplifyVector=FALSE)
-     registry <- register_owned_series_publishers(list(),metadata,habitat_metadata)
-     mobility_metadata <- if("mobility_metadata" %in% names(input)) jsonlite::read_json(input[["mobility_metadata"]],simplifyVector=FALSE) else NULL
-     if(!is.null(mobility_metadata)) registry <- register_raccordement_owned_publisher(registry,mobility_metadata)
-    projections <- lapply(registry,function(publisher) publisher$project(canonical))
+      registry <- register_owned_series_publishers(list(),metadata,habitat_metadata)
+      mobility_metadata <- if("mobility_metadata" %in% names(input)) jsonlite::read_json(input[["mobility_metadata"]],simplifyVector=FALSE) else NULL
+      if(!is.null(mobility_metadata)) registry <- register_raccordement_owned_publisher(registry,mobility_metadata)
+     if (!is.null(indicator_id)) {
+       owner <- if (indicator_id=="raccordement_reference") "raccordement_courbe" else indicator_id
+       # Registry names are stable publication-owner identities; reference aliases
+       # deliberately resolve to their atomic curve publication.
+       keys <- c(conso_enaf_annuel_owned="conso_enaf_annuel",artif_par_habitant_owned="artif_par_habitant",
+         prix_m2_owned="prix_m2",raccordement_courbe_owned="raccordement_courbe")
+       selected <- names(keys)[keys==owner]
+       registry <- registry[intersect(selected,names(registry))]
+       if (!length(registry)) stop("Unknown owned-series indicator_id: ",indicator_id,call.=FALSE)
+     }
+     projections <- lapply(registry,function(publisher) publisher$project(canonical))
     lapply(projections,validate_owned_series_projection)
     # Reporting-only exclusion metadata belongs to the reader result, not the
     # owned projection whose serialized identity is the publication version.
@@ -795,11 +799,20 @@ require_owned_series_publish_opt_in <- function(value=Sys.getenv("LUSK_PUBLISH_O
 # Injectable dispatch keeps operational ordering testable without a database.
 dispatch_owned_series_cli <- function(mode, projections, connect,
     opt_in=Sys.getenv("LUSK_PUBLISH_OWNED_SERIES",unset=""),
-    lusk_mode=Sys.getenv("LUSK_MODE",unset="full")) {
+    lusk_mode=Sys.getenv("LUSK_MODE",unset="full"), indicator_id=NULL, all=FALSE) {
   if (!mode %in% c("check","publish")) stop("Unknown owned series action",call.=FALSE)
   if (mode=="publish") {
     require_owned_series_publish_opt_in(opt_in)
     if (identical(lusk_mode,"cron")) stop("Owned series publication is not enabled for cron mode",call.=FALSE)
+    if (is.null(indicator_id) && !isTRUE(all))
+      stop("Owned series publication requires --indicator-id or explicit --all",call.=FALSE)
+  }
+  if (!is.null(indicator_id)) {
+    aliases <- c(raccordement_reference="raccordement_courbe")
+    selected <- unname(aliases[[indicator_id]] %||% indicator_id)
+    owners <- vapply(projections,function(p) p$descriptor$indicator_id,character(1))
+    if (!selected %in% owners) stop("Unknown owned-series indicator_id: ",indicator_id,call.=FALSE)
+    projections <- projections[owners==selected]
   }
   if (!length(projections) || any(!vapply(projections,function(p) {
     tryCatch({validate_owned_series_projection(p); TRUE},error=function(e) FALSE)

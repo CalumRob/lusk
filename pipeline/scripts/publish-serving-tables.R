@@ -7,6 +7,15 @@ if (!requireNamespace("pkgload", quietly = TRUE)) {
 pkgload::load_all(".", quiet = TRUE)
 
 args <- commandArgs(trailingOnly = TRUE)
+indicator_id <- NULL
+publish_all <- "--all" %in% args
+if ("--indicator-id" %in% args) {
+  index <- match("--indicator-id",args)
+  if (index==length(args)) stop("--indicator-id requires a value",call.=FALSE)
+  indicator_id <- args[[index+1L]]
+  args <- args[-c(index,index+1L)]
+}
+args <- args[args!="--all"]
 if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets",
                                                 "--scalar-fixture-check", "--scalar-fixture-publish",
                                                 "--series-fixture-check", "--series-fixture-publish",
@@ -44,7 +53,7 @@ if (args[[1L]] %in% c("--programme-series-check","--programme-series-publish")) 
   projections <- read_programme_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")))
   connect <- function() do.call(DBI::dbConnect,
     c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
-  result <- dispatch_owned_series_cli(mode,projections,connect)
+   result <- dispatch_owned_series_cli(mode,projections,connect,indicator_id=indicator_id,all=publish_all)
   for (name in names(projections)) {
     projection <- projections[[name]]
     cat(name, nrow(projection$points), "canonical observations; version", result$versions[[name]], "\n")
@@ -53,7 +62,7 @@ if (args[[1L]] %in% c("--programme-series-check","--programme-series-publish")) 
 }
 if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   mode <- if (args[[1L]]=="--owned-series-check") "check" else "publish"
-  projections <- read_owned_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")))
+   projections <- read_owned_series_projections(Sys.getenv("LUSK_SORTIE",file.path("..","public","data")),indicator_id=indicator_id)
   connect <- function() {
     do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
   }
