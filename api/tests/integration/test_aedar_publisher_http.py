@@ -97,24 +97,27 @@ def test_aedar_r_publication_is_read_through_bounded_http():
 
         rscript = r'''pkgload::load_all('.',quiet=TRUE)
 schema <- Sys.getenv('AEDAR_IT_SCHEMA')
-measures <- as.data.frame(as.list(stats::setNames(rep(0,length(AEDAR_AGGREGATE_MEASURES)),AEDAR_AGGREGATE_MEASURES)))
+source_axis <- readr::read_csv(file.path("tests","testthat","fixtures","aedar-region-2026v1-typequ.csv"),
+  col_types=readr::cols(.default=readr::col_character()),show_col_types=FALSE)
+measures <- as.data.frame(matrix(0,nrow=nrow(source_axis),ncol=length(AEDAR_AGGREGATE_MEASURES),
+  dimnames=list(NULL,AEDAR_AGGREGATE_MEASURES)))
 measures$count_5_walk_share <- NA_real_
 make <- function(level,idcol,id,namecol,name) {
- x <- measures
- for (nm in AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]]) x[[nm]] <- NA
- x[[idcol]] <- id; x[['TYPEQU']] <- 'A104'; x[['LIB_TYPEQU']] <- 'GENDARMERIE'
- ids <- list(code_insee='22001',epci_code='200000001',code_departement='22',code_region='53')
- for (nm in intersect(names(ids),names(x))) x[[nm]] <- ids[[nm]]
- x[[idcol]] <- id
- x[['n_addresses']] <- 2L; x[['n_observed']] <- 1L; x[['coverage_status']] <- 'covered'
- if (!is.null(namecol)) x[[namecol]] <- name
-        x
+  x <- measures
+  for (nm in AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]]) x[[nm]] <- NA
+  x[[idcol]] <- id; x[['TYPEQU']] <- source_axis$TYPEQU; x[['LIB_TYPEQU']] <- source_axis$LIB_TYPEQU
+  ids <- list(code_insee='22001',epci_code='200000001',code_departement='22',code_region='53')
+  for (nm in intersect(names(ids),names(x))) x[[nm]] <- ids[[nm]]
+  x[[idcol]] <- id
+  x[['n_addresses']] <- 2L; x[['n_observed']] <- 1L; x[['coverage_status']] <- 'covered'
+  if (!is.null(namecol)) x[[namecol]] <- name
+  x
 }
 inputs <- list(
- commune=make('commune','code_insee','22001','nom_commune','Fixture commune'),
- epci=make('epci','epci_code','200000001','nom_epci','Fixture EPCI'),
- departement=make('departement','code_departement','22','nom_departement','Fixture département'),
- region=make('region','code_region','53','nom_region','Fixture région'))
+  commune=make('commune','code_insee','22001','nom_commune','Fixture commune'),
+  epci=make('epci','epci_code','200000001','nom_epci','Fixture EPCI'),
+  departement=make('departement','code_departement','22','nom_departement','Fixture département'),
+  region=make('region','code_region','53','nom_region','Fixture région'))
 projection <- project_aedar_aggregates(inputs)
 canonical_dir <- tempfile('aedar-canonical-')
 write_aedar_canonical(projection,canonical_dir)
@@ -125,7 +128,7 @@ on.exit(DBI::dbDisconnect(con))
 DBI::dbExecute(con,sprintf('SET search_path TO "%s"',schema))
 first <- publish_aedar_aggregates(projection,con)
 second <- publish_aedar_aggregates(projection,con)
-stopifnot(first$changed,!second$changed,first$row_count==4L)
+stopifnot(first$changed,!second$changed,first$row_count==4L * nrow(source_axis))
 before <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced rollback'; END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_insert BEFORE INSERT ON aedar_territorial_aggregate FOR EACH ROW EXECUTE FUNCTION reject_aedar_insert()")
@@ -134,7 +137,7 @@ failed <- tryCatch({publish_aedar_aggregates(projection,con); FALSE},error=funct
 DBI::dbExecute(con,"DROP TRIGGER reject_aedar_insert ON aedar_territorial_aggregate")
 DBI::dbExecute(con,"DROP FUNCTION reject_aedar_insert()")
 after <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
-stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_territorial_aggregate")$n[[1]]==4L)
+stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_territorial_aggregate")$n[[1]]==4L * nrow(source_axis))
 '''
         with tempfile.TemporaryDirectory(prefix="aedar-it-",dir="E:/Temp/opencode") as tmp:
             script = Path(tmp) / "fixture.R"; script.write_text(rscript,encoding="utf-8")

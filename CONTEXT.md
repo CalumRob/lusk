@@ -400,6 +400,10 @@ _Avoid_: famille de services (the aggregate five-service unit), inventaire des �
 The shared payload metadata registry mapping every canonical BPE type code to its French product label. Fiche and Page d’indicateur surfaces resolve labels from this registry, while selected cases carry the stable code and never a duplicated or raw fallback label.
 _Avoid_: libellés locaux, table des exemples (the registry covers the whole universe), code affiché
 
+**Registre TYPEQU BPE 2025**:
+The complete 235-code INSEE TYPEQU/label nomenclature for the BPE 2025 vintage. It defines the closed TYPEQU axis of the 2026-v1 AEDAR territorial aggregates at every territory level, including types with no address-routing observations; it is not interchangeable with the legacy 53-type mobility registry or a set inferred from observed rows.
+_Avoid_: Bretagne-observed types, kept list, address-observation axis
+
 **Tension d’accès**:
 A meaningful contrast in the access of one type d’équipement across voiture, vélo + TC, and à pied + TC; a selected type earns space by making that contrast legible, never merely by being numerically unusual. The three mode values are read together so the role names a relationship rather than declaring a single winning mode.
 _Avoid_: score d’accessibilité, classement des modes, saillance (retired Story-selection vocabulary)

@@ -10,6 +10,11 @@ AEDAR_AGGREGATE_LEVEL_COLUMNS <- list(
   epci=c("epci_code","code_region","TYPEQU","nom_epci","LIB_TYPEQU","n_addresses","n_observed","coverage_status"),
   departement=c("code_departement","code_region","TYPEQU","nom_departement","LIB_TYPEQU","n_addresses","n_observed","coverage_status"),
   region=c("code_region","TYPEQU","nom_region","LIB_TYPEQU","n_addresses","n_observed","coverage_status"))
+AEDAR_TYPEQU_REGISTRY_FILE <- "aedar-typequ-2025.csv"
+AEDAR_TYPEQU_REGISTRY_COUNT <- 235L
+# Minimal code/label extract of the official INSEE TYPEQU_2025.csv. Upstream
+# SHA-256: 5598b5939f6491e266276934c5526e442f773921d9baddb3873077cd2bce360e.
+AEDAR_TYPEQU_REGISTRY_SHA256 <- "97e7b10f4cae822d765e594ac74daa54062cd03f52f84c86f5a541d07576a915"
 AEDAR_AGGREGATE_MEASURES <- as.vector(unlist(lapply(c(5,10,15,20), function(m)
   unlist(lapply(c("walk","transit","transit_gain","bike_lts2","bike_lts4","car"), function(mode)
     paste0("count_",m,"_",mode,"_",c("share","min","max",paste0("decile",1:9),"mean")))))))
@@ -30,6 +35,24 @@ verify_aedar_resource_hash <- function(path, level) {
   actual <- paste(as.character(openssl::sha1(bytes)),collapse="")
   if (!identical(tolower(actual),expected)) stop(paste("Pinned AEDAR checksum mismatch:",level),call.=FALSE)
   invisible(TRUE)
+}
+
+read_aedar_typequ_registry <- function() {
+  path <- system.file("extdata",AEDAR_TYPEQU_REGISTRY_FILE,package="lusk")
+  if (!nzchar(path)) path <- file.path("inst","extdata",AEDAR_TYPEQU_REGISTRY_FILE)
+  if (!file.exists(path)) stop("Pinned 2025 BPE TYPEQU registry is missing",call.=FALSE)
+  bytes <- readBin(path,"raw",n=file.info(path)$size)
+  actual <- paste(as.character(openssl::sha256(bytes)),collapse="")
+  if (!identical(tolower(actual),AEDAR_TYPEQU_REGISTRY_SHA256))
+    stop("Pinned 2025 BPE TYPEQU registry checksum mismatch",call.=FALSE)
+  registry <- readr::read_csv(path,col_types=readr::cols(.default=readr::col_character()),
+    show_col_types=FALSE,progress=FALSE)
+  if (!identical(names(registry),c("TYPEQU","LIB_TYPEQU")) ||
+      nrow(registry)!=AEDAR_TYPEQU_REGISTRY_COUNT || anyNA(registry$TYPEQU) ||
+      any(!grepl("^[A-Z][0-9]{3}$",registry$TYPEQU)) || anyDuplicated(registry$TYPEQU) ||
+      anyNA(registry$LIB_TYPEQU) || any(!nzchar(trimws(registry$LIB_TYPEQU))))
+    stop("Pinned 2025 BPE TYPEQU registry has an invalid code/label contract",call.=FALSE)
+  registry
 }
 
 download_aedar_aggregates <- function(raw_dir=file.path("data","raw")) {
@@ -68,16 +91,15 @@ validate_aedar_aggregates <- function(inputs, measure_columns=AEDAR_AGGREGATE_ME
     x$territory_type <- level
     x
   }) |> stats::setNames(AEDAR_AGGREGATE_LEVELS)
-  axis <- unique(out$region[c("TYPEQU","LIB_TYPEQU")])
-  if (anyDuplicated(axis$TYPEQU)) stop("AEDAR source TYPEQU registry has duplicate codes",call.=FALSE)
-  axis <- axis[order(axis$TYPEQU),,drop=FALSE]
+  axis <- read_aedar_typequ_registry()
+  axis_key <- paste(axis$TYPEQU,axis$LIB_TYPEQU,sep="\r")
   for (level in AEDAR_AGGREGATE_LEVELS) {
     x <- out[[level]]
-    axis_key <- paste(axis$TYPEQU,axis$LIB_TYPEQU,sep="\r")
-    labels_key <- with(unique(x[c("TYPEQU","LIB_TYPEQU")]),paste(TYPEQU,LIB_TYPEQU,sep="\r"))
-    if (!setequal(unique(x$TYPEQU),axis$TYPEQU) || nrow(unique(x[c("TYPEQU","LIB_TYPEQU")]))!=nrow(axis) ||
-        !setequal(axis_key,labels_key))
-      stop(paste("AEDAR dense TYPEQU axis/labels differ from source registry at",level),call.=FALSE)
+    pairs <- unique(data.frame(TYPEQU=as.character(x$TYPEQU),LIB_TYPEQU=as.character(x$LIB_TYPEQU),
+      stringsAsFactors=FALSE))
+    labels_key <- paste(pairs$TYPEQU,pairs$LIB_TYPEQU,sep="\r")
+    if (!setequal(pairs$TYPEQU,axis$TYPEQU) || nrow(pairs)!=nrow(axis) || !setequal(axis_key,labels_key))
+      stop(paste("AEDAR dense TYPEQU axis/labels differ from the pinned 2025 BPE TYPEQU registry at",level),call.=FALSE)
     groups <- split(x$TYPEQU,x[[unname(AEDAR_AGGREGATE_ID_COLUMNS[[level]])]])
     if (any(vapply(groups,function(g) !setequal(g,axis$TYPEQU),logical(1))))
       stop(paste("AEDAR territory × TYPEQU coverage is not dense at",level),call.=FALSE)
