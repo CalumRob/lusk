@@ -61,6 +61,23 @@ async function mountEconomy(initial = '/indicateurs/economie/effectifs_salaries?
   return { wrapper, router, payloadCalls }
 }
 
+async function mountHabitat(initial = '/indicateurs/habitat/part_passoires?territoire=22001&niveau=commune') {
+  const payloadCalls: string[] = []
+  const loader: ChargerFichier = async (file) => {
+    payloadCalls.push(file)
+    if (file === 'territoires') return territoiresFixture
+    throw new Error(`static Habitat facts must not be requested for an API scalar page: ${file}`)
+  }
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push(initial); await router.isReady()
+  const empty = { type: 'FeatureCollection' as const, features: [] }
+  const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+    [PAYLOAD_CHARGER_KEY]: loader,
+    [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+  } } })
+  return { wrapper, router, payloadCalls }
+}
+
 describe('Page indicateur économie - cohorte scalaire API', () => {
   it('keeps registered non-scalar Habitat pages out of fiche cohort replacement', () => {
     const registered = indicateursScalairesEnregistres(habitatMetadataRaw)
@@ -74,6 +91,31 @@ describe('Page indicateur économie - cohorte scalaire API', () => {
     expect(() => validerEnregistrementScalaires(metadata, selected)).not.toThrow()
     const priceTrajectory = { theme: 'habitat', key: 'prix_m2' } as never
     expect(remplacerFaitsScalaires([priceTrajectory], [], selected)).toEqual([priceTrajectory])
+  })
+  it('loads a registered Habitat scalar page without rejecting the registered prix_m2 trajectory', async () => {
+    const page = validerThemeMetadata(habitatMetadataRaw, 'theme_habitat.json').indicator_pages!.part_passoires!
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      if (url === '/data/theme_habitat.json') return new Response(JSON.stringify(habitatMetadataRaw), { status: 200 })
+      if (url === '/api/territories/commune/22001/indicator-cohorts/part_passoires?scope_level=commune') {
+        return new Response(JSON.stringify({ indicator_id: 'part_passoires', territory_type: 'commune', label: page.label,
+          unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? 'part_passoires',
+          completeness: 'sparse', content_version: 'habitat-v1', territory_reference_version: 'territories-v1',
+          observations: [{ territory_id: '22001', name: 'Commune A1', value: 0.12, status: 'measured',
+            rang_epci: 1, rang_epci_n: 2, rang_dep: 2, rang_dep_n: 4, rang_reg: 3, rang_reg_n: 8,
+            sources: [{ source_id: page.sources[0], name: 'Source DPE', vintage_id: 'v1', version: '2024',
+              reference_date: null, publication_date: null }] }] }), { status: 200 })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const { wrapper, payloadCalls } = await mountHabitat()
+    await flushPromises()
+    expect(payloadCalls).toEqual(['territoires'])
+    expect(fetcher).toHaveBeenCalledWith('/api/territories/commune/22001/indicator-cohorts/part_passoires?scope_level=commune')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.text()).toContain('Part de passoires thermiques')
+    wrapper.unmount()
   })
   it('acquires registered facts concurrently and replaces only those theme rows', async () => {
     const metadata = validerThemeMetadata(economyMetadata, 'theme_economie.json')
