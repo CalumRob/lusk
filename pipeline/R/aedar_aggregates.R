@@ -46,7 +46,7 @@ read_aedar_typequ_registry <- function() {
   if (!identical(tolower(actual),AEDAR_TYPEQU_REGISTRY_SHA256))
     stop("Pinned 2025 BPE TYPEQU registry checksum mismatch",call.=FALSE)
   registry <- readr::read_csv(path,col_types=readr::cols(.default=readr::col_character()),
-    show_col_types=FALSE,progress=FALSE)
+    trim_ws=FALSE,show_col_types=FALSE,progress=FALSE)
   if (!identical(names(registry),c("TYPEQU","LIB_TYPEQU")) ||
       nrow(registry)!=AEDAR_TYPEQU_REGISTRY_COUNT || anyNA(registry$TYPEQU) ||
       any(!grepl("^[A-Z][0-9]{3}$",registry$TYPEQU)) || anyDuplicated(registry$TYPEQU) ||

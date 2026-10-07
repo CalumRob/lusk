@@ -1,6 +1,6 @@
 read_aedar_region_typequ_fixture <- function() {
   readr::read_csv(testthat::test_path("fixtures","aedar-region-2026v1-typequ.csv"),
-    col_types=readr::cols(.default=readr::col_character()),show_col_types=FALSE)
+    col_types=readr::cols(.default=readr::col_character()),trim_ws=FALSE,show_col_types=FALSE)
 }
 
 make_aedar_test_inputs <- function() {
