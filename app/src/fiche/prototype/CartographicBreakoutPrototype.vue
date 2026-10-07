@@ -6,7 +6,7 @@
 import { Bike, CarFront, Footprints } from 'lucide-vue-next'
 import Viewer from 'viewerjs'
 import 'viewerjs/dist/viewer.css'
-import { computed, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import type { Component } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import { mapAssetUrl } from '@/fiche/mapAssetUrl'
@@ -302,8 +302,13 @@ function onGalleryHidden(): void {
 }
 
 function galleryIndexFor(mode: ModeKey): number {
-  return modes.findIndex((candidate) => candidate.key === mode)
+  return inspectionModes.value.findIndex((candidate) => candidate.key === mode)
 }
+
+const inspectionModes = computed(() => modes.filter((mode) => {
+  const network = networkFor(mode.key)
+  return network !== null && network.length.fact.value !== 0 && !unavailableInspectionModes.value.has(mode.key)
+}))
 
 function isModeKey(value: string): value is ModeKey {
   return value === 'car' || value === 'walk' || value === 'bike'
@@ -332,12 +337,29 @@ function mapUrl(mode: ModeKey): string {
 
 function inspectionUrl(mode: ModeKey): string { return mapAssetUrl(props.territory.code, mode, 'inspection') }
 
-const unavailableModes = ref(new Set<ModeKey>())
-const loadedModes = ref(new Set<ModeKey>())
-function mapLoaded(mode: ModeKey): void { loadedModes.value = new Set(loadedModes.value).add(mode) }
-function mapFailed(mode: ModeKey): void { unavailableModes.value = new Set([...unavailableModes.value, mode]) }
+const unavailableInlineModes = ref(new Set<ModeKey>())
+const loadedInlineModes = ref(new Set<ModeKey>())
+const unavailableInspectionModes = ref(new Set<ModeKey>())
+const galleryOpened = ref(false)
+const failedInspectionMode = ref<ModeKey | null>(null)
+function inlineLoaded(mode: ModeKey): void { loadedInlineModes.value = new Set(loadedInlineModes.value).add(mode) }
+function inlineFailed(mode: ModeKey): void { unavailableInlineModes.value = new Set([...unavailableInlineModes.value, mode]) }
+function inspectionFailed(mode: ModeKey): void {
+  unavailableInspectionModes.value = new Set([...unavailableInspectionModes.value, mode])
+  failedInspectionMode.value = mode
+  galleryInstance.value?.update()
+}
 
-function inspect(mode: ModeKey): void {
+async function inspect(mode: ModeKey): Promise<void> {
+  const length = numericContentFact(networkFor(mode)?.length ?? null)
+  if (length === null || length === 0) {
+    failedInspectionMode.value = mode
+    return
+  }
+  failedInspectionMode.value = null
+  galleryOpened.value = true
+  await nextTick()
+  galleryInstance.value?.update()
   galleryInstance.value?.view(galleryIndexFor(mode))
 }
 
@@ -421,9 +443,9 @@ onBeforeUnmount(() => {
             @click="inspect(mode.key)"
           >
             <span class="map-panel-number" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
-            <img v-if="!unavailableModes.has(mode.key)" :src="mapUrl(mode.key)" :alt="`${modeLabel(mode.key)} — ${props.territory.name}`" @load="mapLoaded(mode.key)" @error="mapFailed(mode.key)" />
-            <span v-if="!loadedModes.has(mode.key) && !unavailableModes.has(mode.key)" role="status" class="map-loading">Chargement de la carte…</span>
-            <span v-else-if="unavailableModes.has(mode.key)" role="status">Carte indisponible</span>
+            <img v-if="!unavailableInlineModes.has(mode.key)" :src="mapUrl(mode.key)" :alt="`${modeLabel(mode.key)} — ${props.territory.name}`" @load="inlineLoaded(mode.key)" @error="inlineFailed(mode.key)" />
+            <span v-if="!loadedInlineModes.has(mode.key) && !unavailableInlineModes.has(mode.key)" role="status" class="map-loading">Chargement de la carte…</span>
+            <span v-else-if="unavailableInlineModes.has(mode.key)" role="status">Carte indisponible</span>
           </button>
         </section>
 
@@ -495,13 +517,15 @@ onBeforeUnmount(() => {
   <div ref="gallerySource" class="map-gallery-source" aria-hidden="true">
     <template v-for="mode in modes" :key="mode.key">
       <img
-        v-if="!unavailableModes.has(mode.key)"
-        :src="inspectionUrl(mode.key)"
+        v-if="inspectionModes.some((available) => available.key === mode.key)"
+        :src="galleryOpened ? inspectionUrl(mode.key) : undefined"
         :alt="`${modeLabel(mode.key)} — ${props.territory.name}`"
-        @error="mapFailed(mode.key)"
+        @error="inspectionFailed(mode.key)"
       />
     </template>
   </div>
+  <p v-if="failedInspectionMode && numericContentFact(networkFor(failedInspectionMode)?.length ?? null) === 0" role="status" class="inspection-unavailable">Aucune carte détaillée : {{ modeLabel(failedInspectionMode) }} sans réseau recensé.</p>
+  <p v-else-if="failedInspectionMode" role="status" class="inspection-unavailable">Carte détaillée indisponible pour {{ modeLabel(failedInspectionMode) }}.</p>
 
 </template>
 
