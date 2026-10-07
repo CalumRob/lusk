@@ -470,6 +470,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/22001/themes/mobilite/facts', expect.anything())
       expect(wrapper.findAll('[data-section="services-essentiels"] .access-foot-summary')[0]?.text()).toContain('42')
       expect(wrapper.get('[data-section="services-essentiels"] .cahier-comparison-note').text()).toContain(scope.label)
+      expect(wrapper.get('#figure-offre-transports-commun .transit-plot svg').attributes('role')).toBe('img')
+      expect(wrapper.find('#figure-offre-transports-commun .transit-series--territory').exists()).toBe(true)
       expect(wrapper.text()).toContain('Source API · api-v1')
       expect(wrapper.find('[data-section="resume"]').exists()).toBe(true)
       wrapper.unmount()
