@@ -1,5 +1,13 @@
 # Interactive data-serving spike (#569)
 
+## PostgreSQL integration tests
+
+Database-backed API tests are opt-in and use guarded, test-only PostgreSQL targets. Before
+running them, follow [`tests/integration/README.md`](tests/integration/README.md) for the
+database/role checks and private `PGPASSFILE` setup. The persistent test database is
+`lusk_it_contract`; each run uses its own disposable schema. Never use the serving database
+`lusk` for integration tests or place credentials in the repository.
+
 Owned ENAF and OCS-GE series can be checked from fresh canonical Milieux
 Parquet with `Rscript scripts/publish-serving-tables.R --owned-series-check`
 (run from `pipeline/`). Explicit publication uses

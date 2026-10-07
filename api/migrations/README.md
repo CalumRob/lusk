@@ -23,6 +23,19 @@ schema migrations (including 008 and 015) against both a fresh schema and a
 populated disposable rehearsal schema. Do not apply it to the serving database
 as part of a code change; production rollout remains operator-managed.
 
+# Migration 028: AEDAR territorial aggregates
+
+Migration 028 adds the source-shaped AEDAR `territory × TYPEQU` aggregate table
+for the four pinned Bretagne 2026-v1 Parquets. It stores the producer's complete
+312-measure map as JSONB together with source identity, denominators, coverage,
+ODbL attribution, and publication dates; the measure map is not an indicator
+catalogue. The table has its own `table_publication` content version and is
+reference-versioned to `territory_reference`. Apply 028 after 027. It updates
+the marker allow-list/reference constraint and grants reader SELECT plus
+publisher DML. The named API route bounds each read to a territory, optional
+TYPEQU selection, and at most 100 rows. Fresh installs contain the same schema
+and grants. No production migration or publication is performed by this change.
+
 # Migration 010: building ramp floating-point correction
 
 The original 008 trigger compared the R-published `double precision` quantile
