@@ -25,6 +25,30 @@ def test_aedar_source_measure_contract_has_312_fields_and_four_level_identity():
     assert "never derive" in source
 
 
+def test_aedar_migration_updates_markers_and_grants_database_roles():
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[2]
+    migration = (root / "api/migrations/028_aedar_territorial_aggregates.sql").read_text()
+    fresh = (root / "api/schema.sql").read_text()
+    for sql in (migration, fresh):
+        assert "aedar_territorial_aggregate" in sql
+        assert "shared_fact_publication_requires_reference" in sql
+        assert "lusk_reader" in sql and "GRANT SELECT" in sql
+        normalized = "".join(sql.split()).upper()
+        assert "LUSK_PUBLISHER" in normalized and "GRANTSELECT,INSERT,UPDATE,DELETE" in normalized
+
+
+def test_aedar_typed_response_rejects_incomplete_measure_maps():
+    from api.main import AEDARFactResponse
+    import pytest
+    with pytest.raises(Exception, match="312"):
+        AEDARFactResponse(territory_id="x", territory_type="commune", typequ="A104",
+            typequ_label="GENDARMERIE", identity={"code_insee":"x"}, n_addresses=1,
+            n_observed=1, coverage_status="covered", measures={"count_5_walk_share":0},
+            source_id="aedar_bretagne", vintage_id="2026-v1", source_url="https://example.test",
+            licence="ODbL", attribution="AEDAR", reference_date=None, publication_date="2026-09-30")
+
+
 def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
     from contextlib import contextmanager
     from fastapi.testclient import TestClient
@@ -34,14 +58,21 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
         description = [type("Column", (), {"name": n}) for n in
                        ("territory_id", "territory_type", "typequ", "typequ_label",
                         "identity", "n_addresses", "n_observed", "coverage_status",
-                        "measures", "source_id", "vintage_id", "source_url", "licence", "attribution")]
-        def fetchone(self): return ("aedar_territorial_aggregate",)
+                        "measures", "source_id", "vintage_id", "source_url", "licence", "attribution",
+                        "reference_date", "publication_date")]
+        def fetchone(self): return ("aedar-v1", 1, "ref-v1", "ref-v1")
         def fetchall(self):
             return [("id", "commune", "A104", "GENDARMERIE", {"code_insee": "id"},
-                     10, 8, "covered", {"count_5_walk_share": 0}, "aedar_bretagne",
-                     "2026-v1", "https://example.test", "ODbL", "AEDAR")]
+                     10, 8, "covered", {key: (0 if key == "count_5_walk_share" else None)
+                       for key in main._AEDAR_MEASURE_KEYS}, "aedar_bretagne",
+                     "2026-v1", "https://example.test", "ODbL", "AEDAR", None, "2026-09-30")]
     class Connection:
-        def execute(self, *_args, **_kwargs): return Cursor()
+        def execute(self, sql, *_args, **_kwargs):
+            if "SELECT p.content_version" in sql:
+                return type("Marker",(),{"fetchone":lambda self:("aedar-v1",1,"ref-v1","ref-v1")})()
+            return Cursor()
+        @contextmanager
+        def transaction(self): yield self
     class FakePool:
         @contextmanager
         def connection(self): yield Connection()
@@ -51,7 +82,9 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
         response = client.get(f"/api/aedar/territories/{level}/id/aggregates?limit=1&typequ=A104")
         assert response.status_code == 200
         body = response.json()
-        assert body["territory"] == {"type": level, "id": "id"}
+        assert body["territory"] == {"territory_type": level, "territory_id": "id"}
         assert len(body["facts"]) == 1
         assert body["facts"][0]["licence"] == "ODbL"
         assert body["facts"][0]["measures"]["count_5_walk_share"] == 0
+        assert len(body["facts"][0]["measures"]) == 312
+        assert body["facts"][0]["publication_date"] == "2026-09-30"

@@ -1,0 +1,140 @@
+"""Source-shaped AEDAR fixture -> R publisher -> disposable PostgreSQL -> HTTP."""
+from __future__ import annotations
+
+import os
+import re
+import subprocess
+import tempfile
+import uuid
+from pathlib import Path
+from urllib.parse import parse_qs, unquote, urlencode, urlsplit, urlunsplit
+
+import pytest
+
+pytestmark = pytest.mark.integration
+
+
+def test_aedar_r_publication_is_read_through_bounded_http():
+    required = ("LUSK_TEST_PUBLISH_DSN", "LUSK_TEST_READ_DSN", "LUSK_TEST_READ_USER",
+                "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX")
+    if not all(os.getenv(k) for k in required):
+        pytest.skip("requires explicitly configured disposable PostgreSQL publisher/read DSNs")
+    assert os.environ["LUSK_TEST_DATABASE_PREFIX"] == "lusk_it_"
+    assert os.environ["LUSK_TEST_DATABASE_NAME"].startswith("lusk_it_")
+    psycopg = pytest.importorskip("psycopg")
+    from fastapi.testclient import TestClient
+    from api.main import app, pool
+
+    root = Path(__file__).resolve().parents[3]
+    pipeline = root / "pipeline"
+    schema = "it_aedar_" + uuid.uuid4().hex[:16]
+
+    def scoped(dsn):
+        p = urlsplit(dsn); q = parse_qs(p.query); q["options"] = [f"-csearch_path={schema}"]
+        return urlunsplit((p.scheme,p.netloc,p.path,urlencode(q,doseq=True),p.fragment))
+
+    publish_dsn, read_dsn = os.environ["LUSK_TEST_PUBLISH_DSN"], os.environ["LUSK_TEST_READ_DSN"]
+    for dsn in (publish_dsn,read_dsn):
+        parsed=urlsplit(dsn)
+        assert parsed.path.lstrip("/")==os.environ["LUSK_TEST_DATABASE_NAME"]
+        assert parsed.hostname in ("localhost","127.0.0.1","::1"), "integration DB must be local/disposable"
+    pub = psycopg.connect(publish_dsn, autocommit=True)
+    created = False
+    try:
+        assert pub.execute("SELECT current_database()").fetchone()[0] == os.environ["LUSK_TEST_DATABASE_NAME"]
+        pub.execute(f'CREATE SCHEMA "{schema}"'); created = True
+        pub.execute(f'SET search_path TO "{schema}"')
+        pub.execute((root / "api/schema.sql").read_text(encoding="utf-8"))
+        read_role = os.environ["LUSK_TEST_READ_USER"]
+        assert re.fullmatch(r"[A-Za-z0-9_$-]+",read_role)
+        pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{read_role}"')
+        pub.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO "{read_role}"')
+        pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name) VALUES
+          ('22001','commune','Fixture commune'),('200000001','epci','Fixture EPCI'),
+          ('22','departement','Fixture département'),('53','region','Fixture région'),
+          ('mob-1','commune','Mobility unchanged')""")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',5)")
+        pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('fixture-mobility','Fixture incumbent mobility')")
+        pub.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES('fixture-mobility','v1','v1')")
+        pub.execute("INSERT INTO mobility_reading_story(story_key,groupe,salience_reason,ordinal) VALUES('fixture-story','fixture-group','fixture',1)")
+        pub.execute("INSERT INTO mobility_typed_reading(territory_id,territory_type,groupe,story_key,salience_reason,div_loss_t,div_loss_b,status,source_id,vintage_id) VALUES('mob-1','commune','fixture-group','fixture-story','fixture',0.4,0.2,'measured','fixture-mobility','v1')")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('mobility_typed_reading','mobility-fixture-v1',1,'fixture-ref-v1')")
+
+        rscript = r'''pkgload::load_all('.',quiet=TRUE)
+schema <- Sys.getenv('AEDAR_IT_SCHEMA')
+measures <- as.data.frame(as.list(stats::setNames(rep(0,length(AEDAR_AGGREGATE_MEASURES)),AEDAR_AGGREGATE_MEASURES)))
+measures$count_5_walk_share <- NA_real_
+make <- function(level,idcol,id,namecol,name) {
+ x <- measures
+ for (nm in AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]]) x[[nm]] <- NA
+ x[[idcol]] <- id; x[['TYPEQU']] <- 'A104'; x[['LIB_TYPEQU']] <- 'GENDARMERIE'
+ ids <- list(code_insee='22001',epci_code='200000001',code_departement='22',code_region='53')
+ for (nm in intersect(names(ids),names(x))) x[[nm]] <- ids[[nm]]
+ x[[idcol]] <- id
+ x[['n_addresses']] <- 2L; x[['n_observed']] <- 1L; x[['coverage_status']] <- 'covered'
+ if (!is.null(namecol)) x[[namecol]] <- name
+        x
+}
+inputs <- list(
+ commune=make('commune','code_insee','22001','nom_commune','Fixture commune'),
+ epci=make('epci','epci_code','200000001','nom_epci','Fixture EPCI'),
+ departement=make('departement','code_departement','22','nom_departement','Fixture département'),
+ region=make('region','code_region','53','nom_region','Fixture région'))
+projection <- project_aedar_aggregates(inputs)
+con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
+ dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'),password=Sys.getenv('PGPASSWORD'))
+on.exit(DBI::dbDisconnect(con))
+DBI::dbExecute(con,sprintf('SET search_path TO "%s"',schema))
+first <- publish_aedar_aggregates(projection,con)
+second <- publish_aedar_aggregates(projection,con)
+stopifnot(first$changed,!second$changed,first$row_count==4L)
+before <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
+DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced rollback'; END $$")
+DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_insert BEFORE INSERT ON aedar_territorial_aggregate FOR EACH ROW EXECUTE FUNCTION reject_aedar_insert()")
+projection$facts$count_5_walk_min[1] <- 7
+failed <- tryCatch({publish_aedar_aggregates(projection,con); FALSE},error=function(e) TRUE)
+DBI::dbExecute(con,"DROP TRIGGER reject_aedar_insert ON aedar_territorial_aggregate")
+DBI::dbExecute(con,"DROP FUNCTION reject_aedar_insert()")
+after <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
+stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_territorial_aggregate")$n[[1]]==4L)
+'''
+        with tempfile.TemporaryDirectory(prefix="aedar-it-",dir="E:/Temp/opencode") as tmp:
+            script = Path(tmp) / "fixture.R"; script.write_text(rscript,encoding="utf-8")
+            parts = urlsplit(publish_dsn)
+            env = os.environ.copy(); env["AEDAR_IT_SCHEMA"] = schema
+            env["PGHOST"] = parts.hostname or "localhost"; env["PGPORT"] = str(parts.port or 5432)
+            env["PGDATABASE"] = parts.path.lstrip("/"); env["PGUSER"] = unquote(parts.username or "")
+            env["PGPASSWORD"] = unquote(parts.password or "")
+            done = subprocess.run(["Rscript",str(script)],cwd=pipeline,env=env,capture_output=True,text=True)
+            assert done.returncode == 0, done.stdout + done.stderr
+
+        dbread = psycopg.connect(scoped(read_dsn))
+        class Connections:
+            def connection(self):
+                class Ctx:
+                    def __enter__(self): return dbread
+                    def __exit__(self,*_): pass
+                return Ctx()
+        # Route obtains the standard app pool; point it at the guarded reader DSN.
+        pool.cache_clear()
+        original_database_url=os.environ.get("DATABASE_URL")
+        os.environ["DATABASE_URL"] = scoped(read_dsn)
+        pool.cache_clear()
+        try:
+            with TestClient(app) as client:
+                for level, territory_id in (("commune","22001"),("epci","200000001"),("departement","22"),("region","53")):
+                    resp = client.get(f"/api/aedar/territories/{level}/{territory_id}/aggregates?typequ=A104&limit=1")
+                    assert resp.status_code == 200, resp.text
+                    fact = resp.json()["facts"][0]
+                    assert fact["measures"]["count_5_walk_share"] is None
+                    assert fact["measures"]["count_5_walk_min"] == 0
+                    assert fact["licence"] == "ODbL" and fact["publication_date"] == "2026-09-30"
+                assert client.get("/api/aedar/territories/region/53/aggregates?limit=101").status_code == 422
+                assert dbread.execute("SELECT div_loss_t,div_loss_b FROM mobility_typed_reading WHERE territory_id='mob-1'").fetchone() == (0.4,0.2)
+        finally:
+            dbread.close(); pool.cache_clear()
+            if original_database_url is None: os.environ.pop("DATABASE_URL",None)
+            else: os.environ["DATABASE_URL"]=original_database_url
+    finally:
+        if created: pub.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
+        pub.close()

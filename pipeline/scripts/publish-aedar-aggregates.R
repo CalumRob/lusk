@@ -3,7 +3,12 @@ pkgload::load_all(".",quiet=TRUE)
 args <- commandArgs(trailingOnly=TRUE)
 if (length(args)!=1L || !args[[1]] %in% c("--check","--publish","--full-vintage"))
   stop("Usage: Rscript scripts/publish-aedar-aggregates.R --check|--publish|--full-vintage (from pipeline/)",call.=FALSE)
-projection <- read_aedar_aggregate_projection()
+canonical_dir <- Sys.getenv("LUSK_AEDAR_CANONICAL_DIR",file.path("data","processed","aedar"))
+canonical_facts <- file.exists(file.path(canonical_dir,"aedar_territorial_aggregate.parquet")) &&
+  file.exists(file.path(canonical_dir,"aedar_territorial_aggregate_source.parquet"))
+projection <- if (args[[1]]=="--publish" && canonical_facts) read_aedar_canonical(canonical_dir) else
+  read_aedar_aggregate_projection()
+if (!(args[[1]]=="--publish" && canonical_facts)) write_aedar_canonical(projection,canonical_dir)
 if (args[[1]]=="--full-vintage") {
   for (level in AEDAR_AGGREGATE_LEVELS) {
     x <- projection$facts[projection$facts$territory_type==level,,drop=FALSE]

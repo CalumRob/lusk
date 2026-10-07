@@ -11,7 +11,8 @@ from statistics import median
 from typing import Literal
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+from datetime import date
 from psycopg_pool import ConnectionPool
 from api.profile_reads import focal_profiles
 from api.observed_collections import collection_descriptors, collection_snapshot, collection_comparison
@@ -82,6 +83,46 @@ class BuildingSelection(BaseModel):
 
 
 MAX_TERRITORY_SEARCH_SCAN = 1500
+
+_AEDAR_MEASURE_KEYS = {
+    f"count_{duration}_{mode}_{statistic}"
+    for duration in (5, 10, 15, 20)
+    for mode in ("walk", "transit", "transit_gain", "bike_lts2", "bike_lts4", "car")
+    for statistic in ("share", "min", "max", *(f"decile{i}" for i in range(1, 10)), "mean")
+}
+
+
+class AEDARFactResponse(BaseModel):
+    territory_id: str
+    territory_type: Literal["commune", "epci", "departement", "region"]
+    typequ: str
+    typequ_label: str
+    identity: dict[str, str | None]
+    n_addresses: int = Field(ge=0)
+    n_observed: int = Field(ge=0)
+    coverage_status: str
+    measures: dict[str, float | None]
+    source_id: str
+    vintage_id: str
+    source_url: str
+    licence: str
+    attribution: str
+    reference_date: date | None
+    publication_date: date | None
+
+    @field_validator("measures")
+    @classmethod
+    def exact_aedar_measure_schema(cls, value):
+        if set(value) != _AEDAR_MEASURE_KEYS:
+            raise ValueError("AEDAR fact must contain the complete 312-measure map")
+        return value
+
+
+class AEDARTerritorialAggregateResponse(BaseModel):
+    territory: ThemeTerritorySelection
+    limit: int = Field(ge=1, le=100)
+    offset: int = Field(ge=0, le=10000)
+    facts: list[AEDARFactResponse]
 
 
 @lru_cache(maxsize=1)
@@ -3405,7 +3446,7 @@ def region_essential_services(territory_id: str, repository: ReadRepository = De
     return compare(repository.read_level("region", territory_id))
 
 
-@app.get("/api/aedar/territories/{territory_type}/{territory_id}/aggregates")
+@app.get("/api/aedar/territories/{territory_type}/{territory_id}/aggregates", response_model=AEDARTerritorialAggregateResponse)
 def aedar_territorial_aggregates(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str = Path(min_length=1, max_length=32),
@@ -3417,16 +3458,25 @@ def aedar_territorial_aggregates(
     if typequ is not None and (not typequ or any(not item or len(item)>32 for item in typequ)):
         raise HTTPException(422, "typequ must contain non-empty source codes")
     with pool().connection() as conn:
-        installed = conn.execute("SELECT to_regclass('aedar_territorial_aggregate')").fetchone()[0]
-        if installed is None:
-            raise HTTPException(503, "AEDAR territorial aggregates are not installed")
-        cursor = conn.execute("""SELECT territory_id,territory_type,typequ,typequ_label,identity,
-          n_addresses,n_observed,coverage_status,measures,source_id,vintage_id,source_url,licence,attribution
-          FROM aedar_territorial_aggregate
-          WHERE territory_type=%s AND territory_id=%s AND (%s::text[] IS NULL OR typequ=ANY(%s))
-          ORDER BY typequ LIMIT %s OFFSET %s""",
-          (territory_type,territory_id,typequ,typequ,limit,offset))
-        names = [d.name for d in cursor.description]
-        rows = [dict(zip(names,row)) for row in cursor.fetchall()]
-    return {"territory":{"type":territory_type,"id":territory_id},"limit":limit,"offset":offset,
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
+              FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+              WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
+            if not marker or not marker[0] or marker[1] < 1 or marker[2] != marker[3]:
+                raise HTTPException(503,"AEDAR territorial publication is unavailable or incompatible")
+            supported = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
+                                     (territory_type,territory_id)).fetchone()
+            if not supported:
+                raise HTTPException(404,"Unknown territory type/id")
+            cursor = conn.execute("""SELECT territory_id,territory_type,typequ,typequ_label,identity,
+              n_addresses,n_observed,coverage_status,measures,source_id,vintage_id,source_url,licence,attribution,
+              reference_date,publication_date
+              FROM aedar_territorial_aggregate
+              WHERE territory_type=%s AND territory_id=%s AND (%s::text[] IS NULL OR typequ=ANY(%s))
+              ORDER BY typequ LIMIT %s OFFSET %s""",
+              (territory_type,territory_id,typequ,typequ,limit,offset))
+            names = [d.name for d in cursor.description]
+            rows = [dict(zip(names,row)) for row in cursor.fetchall()]
+    return {"territory":{"territory_type":territory_type,"territory_id":territory_id},"limit":limit,"offset":offset,
       "facts":rows}

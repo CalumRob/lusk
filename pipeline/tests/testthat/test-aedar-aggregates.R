@@ -29,3 +29,41 @@ test_that("AEDAR projection rejects duplicate territory TYPEQU coordinates", {
   inputs$commune <- rbind(inputs$commune, inputs$commune)
   expect_error(project_aedar_aggregates(inputs), "Invalid AEDAR")
 })
+
+test_that("AEDAR labels follow the source TYPEQU registry across all aggregate files", {
+  inputs <- stats::setNames(lapply(AEDAR_AGGREGATE_LEVELS,function(level) {
+    x<-as.data.frame(as.list(stats::setNames(rep(0,length(AEDAR_AGGREGATE_MEASURES)),AEDAR_AGGREGATE_MEASURES)))
+    x$code_insee<-"22001"; x$epci_code<-"200000001"; x$code_departement<-"22"; x$code_region<-"53"
+    x$nom_commune<-"Commune"; x$nom_epci<-"EPCI"; x$nom_departement<-"Département"; x$nom_region<-"Bretagne"
+    x$TYPEQU<-"A104"; x$LIB_TYPEQU<-if(level=="epci") "Wrong" else "GENDARMERIE"
+    x$n_addresses<-1L; x$n_observed<-1L; x$coverage_status<-"covered"
+    x[,c(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],AEDAR_AGGREGATE_MEASURES),drop=FALSE]
+  }),AEDAR_AGGREGATE_LEVELS)
+  expect_error(project_aedar_aggregates(inputs),"labels differ")
+})
+
+test_that("AEDAR publication refuses territory identities absent from the serving reference", {
+  facts <- data.frame(territory_type="commune",territory_id="22001")
+  expect_error(validate_aedar_territory_reference(facts,
+    data.frame(territory_type="epci",territory_id="200000001")),
+    "do not exist in published territory_reference")
+})
+
+test_that("canonical Parquet round trip keeps source columns, null/zero and provenance", {
+  levels <- AEDAR_AGGREGATE_LEVELS
+  inputs <- stats::setNames(lapply(levels,function(level) {
+    x<-as.data.frame(as.list(stats::setNames(rep(0,length(AEDAR_AGGREGATE_MEASURES)),AEDAR_AGGREGATE_MEASURES)))
+    x$code_insee<-"22001"; x$epci_code<-"200000001"; x$code_departement<-"22"; x$code_region<-"53"
+    x$nom_commune<-"Commune"; x$nom_epci<-"EPCI"; x$nom_departement<-"Département"; x$nom_region<-"Bretagne"
+    x$TYPEQU<-"A104"; x$LIB_TYPEQU<-"GENDARMERIE"; x$n_addresses<-2L; x$n_observed<-1L; x$coverage_status<-"covered"
+    x$count_5_walk_share<-NA_real_
+    x[,c(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],AEDAR_AGGREGATE_MEASURES),drop=FALSE]
+  }),levels)
+  original<-project_aedar_aggregates(inputs); path<-tempfile("aedar-canonical-")
+  write_aedar_canonical(original,path)
+  restored<-read_aedar_canonical(path)
+  expect_equal(restored$facts$count_5_walk_share,rep(NA_real_,4))
+  expect_equal(restored$facts$count_5_walk_min,rep(0,4))
+  expect_equal(restored$facts$territory_type,levels)
+  expect_equal(restored$source$licence,"ODbL")
+})
