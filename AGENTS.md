@@ -14,6 +14,13 @@ Issues move through the five default triage labels: `needs-triage`, `needs-info`
 
 Single-context layout: `CONTEXT.md` at the repo root, ADRs in `docs/adr/`. See `docs/agents/domain.md`.
 
+### PostgreSQL integration tests
+
+Before running database-backed API tests, read `api/tests/integration/README.md` for the guarded
+test-only database, dedicated roles, and private passfile setup. The persistent target is
+`lusk_it_contract`; per-run random schemas are disposable. Never point tests at the serving
+database `lusk` or copy credentials into the repository.
+
 ### UI/UX workflow (impeccable + intent) — READ BEFORE ANY UI WORK ON `app/`
 
 `.opencode/skills/` holds **impeccable** (design craft + a deterministic anti-slop detector) and five

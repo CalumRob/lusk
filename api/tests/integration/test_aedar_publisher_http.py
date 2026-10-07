@@ -34,21 +34,37 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         return urlunsplit((p.scheme,p.netloc,p.path,urlencode(q,doseq=True),p.fragment))
 
     publish_dsn, read_dsn = os.environ["LUSK_TEST_PUBLISH_DSN"], os.environ["LUSK_TEST_READ_DSN"]
-    for dsn in (publish_dsn,read_dsn):
-        parsed=urlsplit(dsn)
-        assert parsed.path.lstrip("/")==os.environ["LUSK_TEST_DATABASE_NAME"]
-        assert parsed.hostname in ("localhost","127.0.0.1","::1"), "integration DB must be local/disposable"
+    publisher, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
+    database_name = os.environ["LUSK_TEST_DATABASE_NAME"]
+    read_role = os.environ["LUSK_TEST_READ_USER"]
+    allowed_hosts = {"localhost", "127.0.0.1", "::1", "192.168.1.120"}
+    assert publisher.hostname in allowed_hosts and reader.hostname in allowed_hosts, \
+        "integration DSNs must use loopback or the documented test PostgreSQL host"
+    assert publisher.hostname == reader.hostname and publisher.port == reader.port
+    assert publisher.path.lstrip("/") == database_name
+    assert reader.path.lstrip("/") == database_name
+    assert publisher.username and reader.username == read_role
+    assert publisher.username != reader.username, "publisher and reader roles must differ"
+    if publisher.hostname == "192.168.1.120":
+        assert database_name == "lusk_it_contract"
+        assert publisher.port == 5432
+        assert publisher.username == "lusk_it_contract_pub"
+        assert reader.username == "lusk_it_contract_read"
+
     pub = psycopg.connect(publish_dsn, autocommit=True)
     created = False
     try:
-        assert pub.execute("SELECT current_database()").fetchone()[0] == os.environ["LUSK_TEST_DATABASE_NAME"]
+        assert pub.execute("SELECT current_database(),current_user").fetchone() == (
+            database_name, publisher.username)
+        with psycopg.connect(read_dsn) as identity:
+            assert identity.execute("SELECT current_database(),current_user").fetchone() == (
+                database_name, read_role)
         pub.execute(f'CREATE SCHEMA "{schema}"'); created = True
         pub.execute(f'SET search_path TO "{schema}"')
         pub.execute((root / "api/schema.sql").read_text(encoding="utf-8"))
         # Rehearse the actual additive migration against the disposable schema
         # as well as parsing the fresh-install DDL above.
         pub.execute((root / "api/migrations/028_aedar_territorial_aggregates.sql").read_text(encoding="utf-8"))
-        read_role = os.environ["LUSK_TEST_READ_USER"]
         assert re.fullmatch(r"[A-Za-z0-9_$-]+",read_role)
         pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{read_role}"')
         pub.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO "{read_role}"')
@@ -56,7 +72,16 @@ def test_aedar_r_publication_is_read_through_bounded_http():
           ('22001','commune','Fixture commune'),('200000001','epci','Fixture EPCI'),
           ('22','departement','Fixture département'),('53','region','Fixture région'),
           ('mob-1','commune','Mobility unchanged')""")
+        pub.execute("UPDATE territory_reference SET density_class_code='fixture-density',density_class_label='Fixture density' WHERE territory_id='mob-1'")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',5)")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('essential_service_access','mobility-access-v1',3,'fixture-ref-v1')")
+        pub.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES(true,'communes-bretagne','Fixture communes')")
+        pub.execute("INSERT INTO service_registry(service) VALUES('fixture-service')")
+        pub.execute("""INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,
+          source_id,source_name,source_version,reference_date,source_publication_date) VALUES
+          ('mob-1','fixture-service','walk_transit',0.6,'Fixture access','high','fixture-mobility','Fixture incumbent mobility','v1',NULL,'2026-10-07'),
+          ('mob-1','fixture-service','bike',0.4,'Fixture access','high','fixture-mobility','Fixture incumbent mobility','v1',NULL,'2026-10-07'),
+          ('mob-1','fixture-service','car',0.8,'Fixture access','high','fixture-mobility','Fixture incumbent mobility','v1',NULL,'2026-10-07')""")
         pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('fixture-mobility','Fixture incumbent mobility')")
         pub.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES('fixture-mobility','v1','v1')")
         pub.execute("""INSERT INTO mobility_reading_descriptor(singleton,descriptor_version,source_id,vintage_id,
@@ -135,7 +160,7 @@ stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n 
         pool.cache_clear()
         try:
             with TestClient(app) as client:
-                mobility_url="/api/territories/commune/mob-1/themes/mobilite/facts"
+                mobility_url="/api/territories/commune/mob-1/essential-services"
                 mobility_before=client.get(mobility_url)
                 assert mobility_before.status_code == 200, mobility_before.text
                 for level, territory_id in (("commune","22001"),("epci","200000001"),("departement","22"),("region","53")):
