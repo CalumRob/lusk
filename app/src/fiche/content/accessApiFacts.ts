@@ -23,6 +23,13 @@ const record = (value: unknown): value is Record<string, unknown> =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 function invalid(): never { throw new Error('Publication API accès invalide') }
+const scopeLabel = (kind: string): string => ({
+  'communes-densite': 'communes de densité comparable',
+  'communes-epci': 'communes de l’EPCI',
+  'communes-bretagne': 'communes bretonnes',
+  'epcis-bretagne': 'EPCI bretons',
+  'departements-bretagne': 'départements bretons',
+}[kind] ?? kind)
 
 /** Replace only service access observations with a fully validated API publication. */
 export function applyAccessApiFacts(
@@ -38,9 +45,10 @@ export function applyAccessApiFacts(
   const region = facts.territory.type === 'region'
   if ((!region && (typeof kind !== 'string' || !scopeKinds.has(kind as ComparisonScopeKind))) ||
       (region && response.scope !== null)) invalid()
-  if (!region && (kind !== expectedScope || !expectedLabel ||
+  if (!region && (kind !== expectedScope ||
       !record(response.scope) ||
       !Number.isInteger(response.scope.member_count) || (response.scope.member_count as number) < 1)) invalid()
+  const resolvedLabel = expectedLabel ?? (typeof kind === 'string' ? scopeLabel(kind) : null)
   const services = Object.keys(facts.mobility.access.byService) as MobiliteService[]
   const byId = new Map<unknown, Record<string, unknown>>()
   for (const item of response.services) {
@@ -81,7 +89,7 @@ export function applyAccessApiFacts(
       const availability: FactAvailability = raw.value === null ? 'incomplete' : 'complete'
       const comparison = region ? null : {
         direction: 'plus-est-mieux' as const,
-        scope: { kind: kind as ComparisonScopeKind, label: expectedLabel! },
+        scope: { kind: kind as ComparisonScopeKind, label: resolvedLabel! },
         rank: raw.rank && (raw.rank as { size: number }).size >= 2 ? raw.rank as { position: number; size: number } : null,
         reference: raw.median === null ? null : { kind: 'median' as const, value: raw.median },
       }
@@ -102,7 +110,7 @@ export function applyAccessApiFacts(
         unit: '%', availability: a.value === null || b.value === null ? 'incomplete' : 'complete',
         provenance: a.provenance, comparison: region ? null : {
           direction: name === 'carGap' ? 'moins-est-mieux' : 'plus-est-mieux',
-           scope: { kind: kind as ComparisonScopeKind, label: expectedLabel! },
+           scope: { kind: kind as ComparisonScopeKind, label: resolvedLabel! },
           rank: null, reference: peer === null ? null : { kind: 'median', value: peer },
         }, comparisonBasis: 'territory-median', reason: null,
       }
