@@ -18,7 +18,7 @@ import {
   Utensils,
   WalletCards,
 } from 'lucide-vue-next'
-import { computed, defineAsyncComponent, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
 import type { Component } from 'vue'
 
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
@@ -64,9 +64,7 @@ import CahierRoadSurfaceFigure from './CahierRoadSurfaceFigure.vue'
 import CahierSharingFigure from './CahierSharingFigure.vue'
 import CahierMotorisationFigure from './CahierMotorisationFigure.vue'
 import CahierOffreTransportsFigure from './CahierOffreTransportsFigure.vue'
-const CartographicBreakoutPrototype = import.meta.env.DEV
-  ? defineAsyncComponent(() => import('./CartographicBreakoutPrototype.vue'))
-  : null
+import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
 const props = defineProps<{
@@ -93,8 +91,7 @@ const units = computed(() => props.showAllUnits ? props.content.units : props.co
 const unit = computed(() => units.value[0] ?? null)
 
 function isMapPrototypeSection(unitKey: string, sectionKey: string): boolean {
-  return props.showMapPrototype === true
-    && unitKey === 'partage-de-lespace-public'
+  return unitKey === 'partage-de-lespace-public'
     && sectionKey === 'reseaux'
 }
 
@@ -565,6 +562,7 @@ onBeforeUnmount(() => {
                   :sources="mapSourcesFor(currentUnit)"
                   :tagline="mapTaglineFor(currentUnit)"
                   :exploration-to="mapExplorationFor(currentUnit)"
+                  :territory="props.content.territory"
                 />
               </div>
 

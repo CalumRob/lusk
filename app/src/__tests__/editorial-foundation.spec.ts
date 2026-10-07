@@ -50,8 +50,12 @@ describe('shared E editorial foundation', () => {
     expect(mobile).toMatch(/\.page-margin\s*\{[^}]*position:\s*static/s)
   })
 
-  it('loads the cartographic prototype only through a DEV-conditional async import', () => {
+  it('ships the Mobilité map plate in the production cahier without prototype query switches', () => {
     const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
-    expect(cahier).toMatch(/const CartographicBreakoutPrototype\s*=\s*import\.meta\.env\.DEV\s*\?\s*defineAsyncComponent\(\(\)\s*=>\s*import\('\.\/CartographicBreakoutPrototype\.vue'\)\)/)
+    expect(cahier).toContain("import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'")
+    expect(cahier).not.toContain('import.meta.env.DEV')
+    const plate = read('src/fiche/prototype/CartographicBreakoutPrototype.vue')
+    expect(plate).not.toContain('route.query')
+    expect(plate).not.toContain('import.meta.env.DEV')
   })
 })

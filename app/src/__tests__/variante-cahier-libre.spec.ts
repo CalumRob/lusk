@@ -1058,16 +1058,17 @@ describe('Variante E — partage de l’espace public', () => {
     }
 
     const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push({ path: '/', query: { plate: 'C', map: 'redon' } })
+    await router.push({ path: '/' })
     await router.isReady()
+    document.querySelectorAll('.lusk-map-gallery').forEach((element) => element.remove())
     const wrapper = mount(CartographicBreakoutPrototype, {
-      props: { evidence: sharing.evidence, cyclingEvidence: cycling.evidence },
+      props: { evidence: sharing.evidence, cyclingEvidence: cycling.evidence, territory: content.territory },
       global: { plugins: [router] },
     })
     await flushPromises()
 
     expect(wrapper.find('.map-breakout--c').exists()).toBe(true)
-    expect(wrapper.find('.plate').attributes('aria-label')).toContain('CA Redon Agglomération*')
+    expect(wrapper.find('.plate').attributes('aria-label')).toContain(content.territory.name)
     expect(wrapper.find('.map-breakout .plate > .cahier-figure-title').text()).toBe('Cartes des réseaux de mobilité, par mode')
     expect(wrapper.find('.plate-apparatus-heading h3').text()).toBe('Réseaux')
     expect(wrapper.find('.map-breakout-tagline').text()).toBe('Trois réseaux, trois empreintes')
@@ -1087,8 +1088,8 @@ describe('Variante E — partage de l’espace public', () => {
     expect(wrapper.find('.cahier-network-bar-row--bike .cahier-network-bar-row__segments').text()).toContain('Protégé')
     expect(wrapper.find('.cahier-network-bar-row--bike .cahier-network-bar-row__segments').text()).toContain('Partagé')
     expect(wrapper.find('.border-legend').exists()).toBe(true)
-    expect(wrapper.find('.border-legend').text()).toContain('CA Redon Agglomération')
-    expect(wrapper.find('.border-legend').text()).toContain('Bretagne')
+    expect(wrapper.find('.border-legend').text()).toContain(content.territory.name)
+    expect(wrapper.findAll('.map-panel img').map((image) => image.attributes('src'))).toEqual(['car', 'walk', 'bike'].map((mode) => `https://images.calumrobertson.fr/maps/v1/${content.territory.code}-${mode}-inline.webp`))
     expect(wrapper.find('.plate-subfigure--road').exists()).toBe(true)
     expect(wrapper.find('.plate-subfigure--road .cahier-network-bar-row').exists()).toBe(true)
     expect(wrapper.find('.plate-subfigure--road .cahier-network-bar-chart__unit').text()).toBe('%')
@@ -1102,14 +1103,60 @@ describe('Variante E — partage de l’espace public', () => {
     await wrapper.find('.map-panel--bike').trigger('mouseenter')
     expect(wrapper.find('.map-panel--car').classes()).toContain('map-panel--dimmed')
     expect(wrapper.findAll('.map-gallery-source img')).toHaveLength(3)
-    await wrapper.find('.map-viewport').trigger('click')
+    expect(wrapper.findAll('.map-gallery-source img').map((image) => image.attributes('src'))).toEqual([undefined, undefined, undefined])
+    await wrapper.find('.map-panel img').trigger('error')
     await flushPromises()
+    expect(wrapper.find('.map-panel--car img').exists()).toBe(false)
+    expect(wrapper.find('.map-panel--car [role="status"]').text()).toBe('Carte indisponible')
+    expect(wrapper.find('.map-panel--bike img').exists()).toBe(true)
+    await wrapper.find('.map-panel--car .map-viewport').trigger('click')
+    await flushPromises()
+    expect(wrapper.findAll('.map-gallery-source img').map((image) => image.attributes('src'))).toEqual(['car', 'walk', 'bike'].map((mode) => `https://images.calumrobertson.fr/maps/v1/${content.territory.code}-${mode}-inspection.webp`))
     const viewer = document.querySelector('.lusk-map-gallery')
     expect(viewer).not.toBeNull()
     expect(viewer?.querySelector('.viewer-navbar')).not.toBeNull()
     expect(viewer?.querySelector('.viewer-list')).not.toBeNull()
     expect(viewer?.querySelector('.viewer-navigation')).not.toBeNull()
     expect(viewer?.querySelector('.viewer-button')).not.toBeNull()
+  })
+
+  it('keeps Andel’s inline bike map and omits zero-coverage inspection while opening car and walk', async () => {
+    const content = resolveMobiliteThemeContent(factsForTarget())
+    const sharing = content.units.find((unit) => unit.key === 'partage-de-lespace-public')?.sections.find((section) => section.key === 'reseaux')
+    if (!sharing?.evidence || sharing.evidence.kind !== 'sharing-networks') throw new Error('Expected sharing-network evidence')
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/')
+    await router.isReady()
+    document.querySelectorAll('.lusk-map-gallery').forEach((element) => element.remove())
+    const andelEvidence = {
+      ...sharing.evidence,
+      networks: sharing.evidence.networks.map((network) => network.mode === 'bike'
+        ? { ...network, length: { ...network.length, fact: { ...network.length.fact, value: 0 } } }
+        : network),
+    }
+    const wrapper = mount(CartographicBreakoutPrototype, {
+      props: { evidence: andelEvidence, territory: { code: '22002', name: 'Andel' } },
+      global: { plugins: [router] },
+    })
+    await flushPromises()
+    const bikeInline = wrapper.find('.map-panel--bike img')
+    expect(bikeInline.attributes('src')).toBe('https://images.calumrobertson.fr/maps/v1/22002-bike-inline.webp')
+    expect(wrapper.findAll('.map-gallery-source img')).toHaveLength(2)
+    expect(wrapper.findAll('.map-gallery-source img').every((image) => image.attributes('src') === undefined)).toBe(true)
+    await bikeInline.trigger('load')
+    await wrapper.find('.map-panel--bike .map-viewport').trigger('click')
+    await flushPromises()
+    expect(document.querySelector('.lusk-map-gallery')).toBeNull()
+    expect(wrapper.find('.inspection-unavailable').text()).toContain('Réseau cyclable sans réseau recensé')
+    for (const mode of ['car', 'walk'] as const) {
+      await wrapper.find(`.map-panel--${mode} .map-viewport`).trigger('click')
+      await flushPromises()
+      expect(wrapper.findAll('.map-gallery-source img').map((image) => image.attributes('src'))).toEqual(['car', 'walk'].map((m) => `https://images.calumrobertson.fr/maps/v1/22002-${m}-inspection.webp`))
+      expect(document.querySelector('.lusk-map-gallery .viewer-navbar')).not.toBeNull()
+    }
+    expect(wrapper.find('.inspection-unavailable').exists()).toBe(false)
+    expect(wrapper.find('.map-panel--bike img').attributes('src')).toBe('https://images.calumrobertson.fr/maps/v1/22002-bike-inline.webp')
+    expect(wrapper.find('.map-panel--bike [role="status"]').exists()).toBe(false)
   })
 
   it('uses the cartographic plate in place of the old Réseaux subgroup', async () => {

@@ -1,16 +1,15 @@
 <script setup lang="ts">
 /**
  * [PROTOTYPE JETABLE] Two ways a cartographic breakout could interrupt the
- * existing Variant E layout. Switch with ?plate=A|C and ?map=rennes|bretagne|redon.
- * Existing QGIS PNGs are loaded directly through Vite's dev-only /@fs seam.
+ * Production Atlas circulaire plate for the Mobilité cahier.
  */
-import { Bike, CarFront, ChevronLeft, ChevronRight, Footprints } from 'lucide-vue-next'
+import { Bike, CarFront, Footprints } from 'lucide-vue-next'
 import Viewer from 'viewerjs'
 import 'viewerjs/dist/viewer.css'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef, watch } from 'vue'
+import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
 import type { Component } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
-import { useRoute, useRouter } from 'vue-router'
+import { mapAssetUrl } from '@/fiche/mapAssetUrl'
 
 import type { CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type { CyclingOfferEvidence, SharingNetworksEvidence } from '@/fiche/content/themeContent'
@@ -24,43 +23,10 @@ import CahierComparisonNote from './CahierComparisonNote.vue'
 import type { CahierNetworkBarRow } from './CahierNetworkBarChart.vue'
 import CahierNetworkBarChart from './CahierNetworkBarChart.vue'
 
-type PlateVariant = 'A' | 'B' | 'C'
-type TerritoryKey = 'rennes' | 'bretagne' | 'redon'
 type ModeKey = 'walk' | 'bike' | 'car'
 
-interface MapMetadata {
-  scale?: {
-    units?: string
-    total?: number
-  }
-}
+const props = defineProps<{ territory: { code: string; name: string }; evidence?: SharingNetworksEvidence | null; cyclingEvidence?: CyclingOfferEvidence | null; sectionNumber?: string; sources?: readonly string[]; tagline?: string | null; explorationTo?: RouteLocationRaw | null }>()
 
-interface TerritoryPrototype {
-  label: string
-  type: 'commune' | 'region' | 'epci'
-  file: string
-  regionalLabel: string
-}
-
-const route = useRoute()
-const router = useRouter()
-
-const variants: readonly PlateVariant[] = ['A', 'C']
-const variantLabels: Readonly<Record<PlateVariant, string>> = {
-  A: 'Triptyque',
-  B: 'Déroulé',
-  C: 'Atlas circulaire',
-}
-const territories: Readonly<Record<TerritoryKey, TerritoryPrototype>> = {
-  rennes: { label: 'Rennes', type: 'commune', file: '35238_Rennes.png', regionalLabel: 'Bretagne' },
-  bretagne: { label: 'Bretagne', type: 'region', file: '53_Bretagne.png', regionalLabel: 'Bretagne' },
-  redon: {
-    label: 'CA Redon Agglomération*',
-    type: 'epci',
-    file: '243500741_CA Redon Agglomération.png',
-    regionalLabel: 'Bretagne',
-  },
-}
 const modes: readonly { key: ModeKey; label: string; icon: Component }[] = [
   { key: 'car', label: 'Réseau automobile', icon: CarFront },
   { key: 'walk', label: 'Réseau piéton', icon: Footprints },
@@ -71,17 +37,8 @@ const modeToEvidence: Readonly<Record<ModeKey, SharingNetworksEvidence['networks
   bike: 'bike',
   car: 'car',
 }
-const props = defineProps<{
-  evidence?: SharingNetworksEvidence | null
-  cyclingEvidence?: CyclingOfferEvidence | null
-  sectionNumber?: string
-  sources?: readonly string[]
-  tagline?: string | null
-  explorationTo?: RouteLocationRaw | null
-}>()
 const activeMode = ref<ModeKey | null>(null)
 const tooltipTop = ref<string | null>(null)
-const mapMetadata = ref<MapMetadata | null>(null)
 const gallerySource = ref<HTMLElement | null>(null)
 const galleryInstance = shallowRef<Viewer | null>(null)
 const galleryImage = ref<HTMLImageElement | null>(null)
@@ -91,26 +48,8 @@ let galleryPointerStart: { x: number; y: number } | null = null
 let galleryIgnoreNextClick = false
 let galleryIgnoreResetTimer: ReturnType<typeof setTimeout> | null = null
 
-const variant = computed<PlateVariant>(() => {
-  const requested = route.query.plate
-  return typeof requested === 'string' && variants.includes(requested as PlateVariant)
-    ? requested as PlateVariant
-    : 'C'
-})
-const territoryKey = computed<TerritoryKey>(() => {
-  const requested = route.query.map
-  return typeof requested === 'string' && requested in territories
-    ? requested as TerritoryKey
-    : 'rennes'
-})
-const territory = computed(() => territories[territoryKey.value])
-const territoryLabel = computed(() => territory.value.label.replace(/\*$/, ''))
-const borderLegendEntries = computed<readonly FigureLegendEntry[]>(() => [
-  { key: 'territory-boundary', label: territoryLabel.value, marker: 'line' },
-  ...(territoryLabel.value === territory.value.regionalLabel
-    ? []
-    : [{ key: 'regional-frontier', label: territory.value.regionalLabel, marker: 'dash' as const }]),
-])
+const territoryLabel = computed(() => props.territory.name)
+const borderLegendEntries = computed<readonly FigureLegendEntry[]>(() => [{ key: 'territory-boundary', label: territoryLabel.value, marker: 'line' }])
 const borderLegendColors: Readonly<Record<string, string>> = {
   'territory-boundary': 'var(--cahier-default)',
   'regional-frontier': 'var(--cahier-default)',
@@ -363,22 +302,13 @@ function onGalleryHidden(): void {
 }
 
 function galleryIndexFor(mode: ModeKey): number {
-  return modes.findIndex((candidate) => candidate.key === mode)
+  return inspectionModes.value.findIndex((candidate) => candidate.key === mode)
 }
 
-const sharedScaleLabel = computed(() => {
-  const scale = mapMetadata.value?.scale
-  return scale?.total && scale.units
-    ? `${formatNumber(scale.total, scale.units === 'km' ? 1 : 0)} ${scale.units}`
-    : 'Échelle commune'
-})
-
-const sharedScaleWidth = computed(() => {
-  const total = mapMetadata.value?.scale?.total
-  if (!total || total <= 0) return '92px'
-  const width = Math.min(132, Math.max(76, 76 + Math.log2(total) * 20))
-  return `${Math.round(width)}px`
-})
+const inspectionModes = computed(() => modes.filter((mode) => {
+  const network = networkFor(mode.key)
+  return network !== null && network.length.fact.value !== 0 && !unavailableInspectionModes.value.has(mode.key)
+}))
 
 function isModeKey(value: string): value is ModeKey {
   return value === 'car' || value === 'walk' || value === 'bike'
@@ -402,35 +332,34 @@ function clearActiveMode(): void {
 }
 
 function mapUrl(mode: ModeKey): string {
-  const selected = territory.value
-  return `/@fs/E:/Lusk/pipeline/maps/${selected.type}/${mode}/${encodeURIComponent(selected.file)}`
+  return mapAssetUrl(props.territory.code, mode, 'inline')
 }
 
-async function loadMapMetadata(): Promise<void> {
-  mapMetadata.value = null
-  try {
-    const response = await fetch(`${mapUrl('car').replace(/\.png$/, '')}.json`)
-    if (!response.ok) return
-    mapMetadata.value = await response.json() as MapMetadata
-  } catch {
-    // The prototype also works with pre-metadata map assets.
+function inspectionUrl(mode: ModeKey): string { return mapAssetUrl(props.territory.code, mode, 'inspection') }
+
+const unavailableInlineModes = ref(new Set<ModeKey>())
+const loadedInlineModes = ref(new Set<ModeKey>())
+const unavailableInspectionModes = ref(new Set<ModeKey>())
+const galleryOpened = ref(false)
+const failedInspectionMode = ref<ModeKey | null>(null)
+function inlineLoaded(mode: ModeKey): void { loadedInlineModes.value = new Set(loadedInlineModes.value).add(mode) }
+function inlineFailed(mode: ModeKey): void { unavailableInlineModes.value = new Set([...unavailableInlineModes.value, mode]) }
+function inspectionFailed(mode: ModeKey): void {
+  unavailableInspectionModes.value = new Set([...unavailableInspectionModes.value, mode])
+  failedInspectionMode.value = mode
+  galleryInstance.value?.update()
+}
+
+async function inspect(mode: ModeKey): Promise<void> {
+  const length = numericContentFact(networkFor(mode)?.length ?? null)
+  if (length === null || length === 0) {
+    failedInspectionMode.value = mode
+    return
   }
-}
-
-function replaceQuery(next: Record<string, string>): void {
-  router.replace({ query: { ...route.query, ...next } })
-}
-
-function selectVariant(next: PlateVariant): void {
-  replaceQuery({ plate: next })
-}
-
-function cycle(direction: -1 | 1): void {
-  const current = variants.indexOf(variant.value)
-  selectVariant(variants[(current + direction + variants.length) % variants.length]!)
-}
-
-function inspect(mode: ModeKey): void {
+  failedInspectionMode.value = null
+  galleryOpened.value = true
+  await nextTick()
+  galleryInstance.value?.update()
   galleryInstance.value?.view(galleryIndexFor(mode))
 }
 
@@ -438,8 +367,6 @@ function onKeydown(event: KeyboardEvent): void {
   const target = event.target
   if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)) return
   if (galleryOpen.value) return
-  if (event.key === 'ArrowLeft') cycle(-1)
-  if (event.key === 'ArrowRight') cycle(1)
 }
 
 onMounted(() => {
@@ -472,17 +399,13 @@ onBeforeUnmount(() => {
   galleryInstance.value?.destroy()
   galleryInstance.value = null
 })
-watch(territoryKey, () => {
-  void loadMapMetadata()
-  void nextTick(() => galleryInstance.value?.update())
-}, { immediate: true })
 </script>
 
 <template>
-  <figure class="map-breakout" :class="`map-breakout--${variant.toLowerCase()}`">
+  <figure class="map-breakout map-breakout--c">
     <CahierFigureFrame size="wide">
-      <div class="plate" :aria-label="`${variantLabels[variant]} — trois réseaux à ${territory.label}`">
-        <div v-if="variant === 'C'" class="plate-header">
+      <div class="plate" :aria-label="`Atlas circulaire — trois réseaux à ${props.territory.name}`">
+        <div class="plate-header">
           <div class="plate-apparatus-heading">
             <span v-if="props.sectionNumber" class="map-section-number">{{ props.sectionNumber }}</span>
             <div>
@@ -514,17 +437,19 @@ watch(territoryKey, () => {
           <button
             type="button"
             class="map-viewport"
-            :aria-label="`Agrandir : ${modeLabel(mode.key)} à ${territory.label}`"
+            :aria-label="`Agrandir : ${modeLabel(mode.key)} à ${props.territory.name}`"
             @focus="setActiveMode(mode.key)"
             @blur="clearActiveMode"
             @click="inspect(mode.key)"
           >
             <span class="map-panel-number" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
-            <img :src="mapUrl(mode.key)" :alt="`${modeLabel(mode.key)} à ${territory.label}`" />
+            <img v-if="!unavailableInlineModes.has(mode.key)" :src="mapUrl(mode.key)" :alt="`${modeLabel(mode.key)} — ${props.territory.name}`" @load="inlineLoaded(mode.key)" @error="inlineFailed(mode.key)" />
+            <span v-if="!loadedInlineModes.has(mode.key) && !unavailableInlineModes.has(mode.key)" role="status" class="map-loading">Chargement de la carte…</span>
+            <span v-else-if="unavailableInlineModes.has(mode.key)" role="status">Carte indisponible</span>
           </button>
         </section>
 
-        <div v-if="variant === 'C'" class="plate-keys">
+        <div class="plate-keys">
           <CahierFigureLegend
             class="border-legend"
             :entries="borderLegendEntries"
@@ -537,13 +462,12 @@ watch(territoryKey, () => {
               <svg viewBox="0 0 12 12" aria-hidden="true"><path d="M6 11V2M3 5l3-3 3 3" /></svg>
             </span>
             <div class="shared-scale" aria-label="Échelle identique sur les trois cartes">
-              <span aria-hidden="true" :style="{ width: sharedScaleWidth }" />
-              <small>{{ sharedScaleLabel }}</small>
+              <span aria-hidden="true" />
             </div>
           </div>
         </div>
 
-        <aside v-if="variant === 'C'" class="plate-apparatus">
+        <aside class="plate-apparatus">
           <div v-if="props.evidence?.roadSurface" class="plate-subfigure plate-subfigure--road">
             <CahierNetworkBarChart
               :rows="roadSurfaceRows"
@@ -588,33 +512,21 @@ watch(territoryKey, () => {
         </aside>
       </div>
     </CahierFigureFrame>
-     <CahierFigureLecture v-if="variant === 'A' && hasFigureLecture">
-       <CahierProse v-if="figureLectureBlocks.length > 0" :blocks="figureLectureBlocks" />
-       <p v-if="props.sources?.length" class="plate-sources">Sources : {{ props.sources.join(' · ') }}</p>
-     </CahierFigureLecture>
-    <CahierFigureLegend
-      v-if="variant === 'A'"
-      class="border-legend border-legend--a"
-      :entries="borderLegendEntries"
-      :mark-colors="borderLegendColors"
-      label="Limites cartographiées"
-    />
   </figure>
 
   <div ref="gallerySource" class="map-gallery-source" aria-hidden="true">
-    <img
-      v-for="mode in modes"
-      :key="mode.key"
-      :src="mapUrl(mode.key)"
-      :alt="`${modeLabel(mode.key)} à ${territory.label}`"
-    />
+    <template v-for="mode in modes" :key="mode.key">
+      <img
+        v-if="inspectionModes.some((available) => available.key === mode.key)"
+        :src="galleryOpened ? inspectionUrl(mode.key) : undefined"
+        :alt="`${modeLabel(mode.key)} — ${props.territory.name}`"
+        @error="inspectionFailed(mode.key)"
+      />
+    </template>
   </div>
+  <p v-if="failedInspectionMode && numericContentFact(networkFor(failedInspectionMode)?.length ?? null) === 0" role="status" class="inspection-unavailable">Aucune carte détaillée : {{ modeLabel(failedInspectionMode) }} sans réseau recensé.</p>
+  <p v-else-if="failedInspectionMode" role="status" class="inspection-unavailable">Carte détaillée indisponible pour {{ modeLabel(failedInspectionMode) }}.</p>
 
-  <nav class="plate-switcher" aria-label="Variantes du prototype cartographique">
-    <button type="button" aria-label="Variante précédente" @click="cycle(-1)"><ChevronLeft :size="16" aria-hidden="true" /></button>
-    <span><strong>{{ variant }}</strong> — {{ variantLabels[variant] }}</span>
-    <button type="button" aria-label="Variante suivante" @click="cycle(1)"><ChevronRight :size="16" aria-hidden="true" /></button>
-  </nav>
 </template>
 
 <style scoped>
