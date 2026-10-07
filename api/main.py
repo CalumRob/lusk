@@ -3403,3 +3403,30 @@ def department_essential_services(territory_id: str, repository: ReadRepository 
 @app.get("/api/territories/region/{territory_id}/essential-services", response_model=ComparisonResponse)
 def region_essential_services(territory_id: str, repository: ReadRepository = Depends(get_repository)) -> ComparisonResponse:
     return compare(repository.read_level("region", territory_id))
+
+
+@app.get("/api/aedar/territories/{territory_type}/{territory_id}/aggregates")
+def aedar_territorial_aggregates(
+    territory_type: Literal["commune", "epci", "departement", "region"],
+    territory_id: str = Path(min_length=1, max_length=32),
+    typequ: list[str] | None = Query(default=None, max_length=100),
+    limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0, le=10000),
+):
+    """Bounded source-grain AEDAR read; no SQL or unbounded territory dump."""
+    if typequ is not None and (not typequ or any(not item or len(item)>32 for item in typequ)):
+        raise HTTPException(422, "typequ must contain non-empty source codes")
+    with pool().connection() as conn:
+        installed = conn.execute("SELECT to_regclass('aedar_territorial_aggregate')").fetchone()[0]
+        if installed is None:
+            raise HTTPException(503, "AEDAR territorial aggregates are not installed")
+        cursor = conn.execute("""SELECT territory_id,territory_type,typequ,typequ_label,identity,
+          n_addresses,n_observed,coverage_status,measures,source_id,vintage_id,source_url,licence,attribution
+          FROM aedar_territorial_aggregate
+          WHERE territory_type=%s AND territory_id=%s AND (%s::text[] IS NULL OR typequ=ANY(%s))
+          ORDER BY typequ LIMIT %s OFFSET %s""",
+          (territory_type,territory_id,typequ,typequ,limit,offset))
+        names = [d.name for d in cursor.description]
+        rows = [dict(zip(names,row)) for row in cursor.fetchall()]
+    return {"territory":{"type":territory_type,"id":territory_id},"limit":limit,"offset":offset,
+      "facts":rows}
