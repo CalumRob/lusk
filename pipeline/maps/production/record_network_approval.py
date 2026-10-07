@@ -6,7 +6,7 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from approval import record_human_approval
+from approval import canonical_approval_members, record_human_approval
 
 
 def main():
@@ -28,9 +28,9 @@ def main():
     if len(manifest.get("approval_members", [])) != 18:
         raise SystemExit("representative manifest does not contain all 18 paired identities")
     outputs = manifest.get("outputs", [])
-    output_members = sorted((item["territory"]["kind"], item["territory"]["code"],
+    output_members = canonical_approval_members((item["territory"]["kind"], item["territory"]["code"],
         item["mode"], item["profile"], item["effective_identity"]) for item in outputs)
-    if output_members != sorted(manifest["approval_members"]):
+    if output_members != canonical_approval_members(manifest["approval_members"]):
         raise SystemExit("representative outputs do not match the approval identity set")
     for item in outputs:
         artifact = Path(item["path"])

@@ -92,6 +92,14 @@ features feed profile-scoped identities and the validated ground-stage cache.
 The approved paper texture is loaded once per run. Inline-only runs do not require
 inspection metadata, OCS-GE, fonts or furniture assets.
 
+Full-run diagnostics are flushed as fsynced JSONL rows
+to anonymous temporary streams at territory boundaries. The existing ordered
+`stage_report` fields are reconstructed for final manifest/QA evidence after
+rendering; the adapter retains only the current territory's scalar diagnostics,
+not prior territories' event dictionaries or QGIS geometry/raster objects.
+Expected-output coverage and output records remain in their authoritative
+manifest/checkpoint structures.
+
 Authoritative network providers are opened force-read-only: QGIS's default
 GeoPackage access can touch input timestamps even without editing features.
 The source signature includes its resolved path, byte size and nanosecond
@@ -112,11 +120,29 @@ Run the fixture suites from the repository root with QGIS-enabled Python:
 python -m unittest pipeline.maps.production.tests.test_contract pipeline.maps.production.tests.test_network_cache pipeline.maps.production.tests.test_network -v
 python -m unittest pipeline.maps.production.tests.test_inline_contract -v
 python -m unittest pipeline.maps.production.tests.test_approval -v
+python -m unittest pipeline.maps.production.tests.test_checkpoint pipeline.maps.production.tests.test_webp_encoding -v
 ```
+
+Network map products use a pipeline-local, pinned Pillow WebP encoder rather
+than QGIS's bundled Pillow. Install it with the QGIS Python launcher before
+running production renders:
+
+```powershell
+& .\pipeline\maps\production\install_webp_encoder.ps1
+```
+
+The setup pins Pillow 12.3.0 and installs only under
+`pipeline/maps/production/.runtime/site-packages`; it does not modify QGIS,
+global Python, or other pipeline runtimes. The network artifact contract is
+WebP RGB quality 80, method 4, exact transparent RGB preservation, lossless
+alpha quality 100, native 2400×2400 inspection and 900×900 inline. Contract
+settings and dimensions participate in renderer, effective-output and approval
+identities. Existing reviewed PNG artifacts are historical evidence and are
+not overwritten or reused as canonical WebP outputs.
 
 `tests/render_rennes_car.py` is the bounded car-pair visual/alpha contract check.
 `tests/render_representative.py` renders all three territories, all three modes,
-and both profiles through `run_production()`. It checks the 18-output identity
+and both profiles through `run_production()` at the canonical native sizes. It checks the 18-output identity
 set and writes `output/manifest.json` and `output/qa.json` only after the run
 passes. The manifest records input fingerprints, a render identity covering the
 recipe/foundation/profile contract, hashed family code/config/assets, and the
@@ -124,6 +150,27 @@ QGIS/Qt/Python runtime; it also lists authoritative source paths and file
 versions plus a SHA-256 per rendered artifact. Render/QA timings and preparation
 progress are printed during execution. Outputs and source caches remain ignored
 local pipeline artifacts, never application publication assets. This representative
+verification does not publish anything.
+
+For a separate native WebP review run that must not touch historical PNG evidence,
+pass a worktree-owned output directory and explicit read-only paths for the
+existing main-checkout raw sources, source-cache generations and validated
+official-context generation. `--read-only-source-cache` fails closed on any
+missing/invalid source generation instead of creating or mutating one:
+
+```powershell
+& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+  pipeline/maps/production/tests/render_representative.py `
+  --output-dir pipeline/maps/production/output/webp-native-review `
+  --raw-dir E:\Lusk\pipeline\data\raw `
+  --network-cache-root E:\Lusk\pipeline\maps\.cache\network-sources `
+  --read-only-source-cache `
+  --context-cache-root E:\Lusk\pipeline\maps\production\output\.stage-cache\official-context
+```
+
+Run this proof only after scoped implementation review; then inspect its fresh
+WebP artifacts and QA before recording a new human approval. The worker does
+not create approval records or run a full batch.
 
 ## Approval-gated full network batch
 
@@ -148,7 +195,7 @@ python pipeline/maps/production/record_spot_check.py --qa pipeline/maps/producti
 
 The reviewer must open the representative pair for all three territories and
 modes before recording approval. The resulting record is bound to each of the
-18 current effective visible-input/profile identities and the recipe,
+18 current effective visible-input/profile/encoding identities and the recipe,
 foundation and renderer identity. Full runs first reject malformed, wrong
 recipe/renderer, partial-cohort or non-affirmative records cheaply. They then
 prepare only the bounded representative footprint in a temporary stage area,
@@ -176,3 +223,42 @@ been visually reviewed and `record_spot_check.py` records the human outcome.
 The script also records a rejected outcome; rejection leaves production
 incomplete so the artifacts can be corrected and rerun/reviewed.
 Nothing in this workflow publishes assets to the application or Cloudflare.
+
+### Department-title-only repair
+
+After the display-name binding change, a full batch whose other inputs and
+artifacts remain verified can be repaired without rerunning the batch. The
+operator requires a **current affirmative human representative approval**;
+missing, rejected, or stale approval fails before output mutation. The command
+derives the department inspection cohort from the current full inventory,
+checks all prior batch artifact hashes, validates current representative
+identities and source versions, and requires each full-manifest record to agree
+with its `.production-manifest.json` cache entry. A missing or stale cache fails
+closed before rendering or promotion. It records the authoritative department-label
+registry path and hash, and stages/decodes all replacements under the selected
+output directory before promoting any. Full QA remains explicitly incomplete
+until the reconciled manifest, output cache, and promotion journal are durable.
+It preserves the prior full manifest, QA, and replaced images
+under `output/repair-evidence/`. Automated QA does not approve title wording:
+the reconciled QA returns to `awaiting-human-spot-check`.
+
+Shared preparation uses the current full map binding and the existing
+`output/.stage-cache` root, preserving the exact pre-acquired official-context
+frame and reusable full-run ground/frontier caches. The runner still receives
+only department features for staged rendering; repair scope never broadens to
+the full output matrix.
+
+Run from a QGIS-enabled Python environment only after the new approval record
+exists; this command neither creates approval nor acquires inputs:
+
+```powershell
+& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+  pipeline/maps/production/repair_department_titles.py `
+  --approval pipeline/maps/production/output/human-approval.json
+```
+
+Use `--output-dir`, `--raw-dir`, `--network-cache-root`, and
+`--context-cache-root` only to point at the existing production output, raw
+sources, and validated local cache generations. A promotion interruption is
+marked incomplete in both the repair journal and full QA; use its evidence
+directory for manual recovery before retrying.

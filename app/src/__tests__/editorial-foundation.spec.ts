@@ -13,15 +13,17 @@ describe('shared E editorial foundation', () => {
     }
   })
 
-  it('applies the same shared paper surface to E, territory, and normal indicator roots', () => {
+  it('keeps surface roots on the site ground; paper stays on the notebook pages', () => {
     const css = read('src/styles/editorial.css')
     const sharedSurface = css.match(/\.presentation-editorial\s*\{([^}]*)\}/)?.[1] ?? ''
-    expect(sharedSurface).toContain('background-color: var(--editorial-paper)')
-    expect(sharedSurface).not.toContain('--surface-primary')
-    expect(sharedSurface).not.toContain('border-inline-start')
+    expect(sharedSurface).toContain('background-color: transparent')
+    expect(sharedSurface).not.toContain('background-color: var(--editorial-paper)')
+    expect(sharedSurface).toContain('color: var(--editorial-ink)')
     for (const path of ['src/fiche/prototype/VarianteCahierLibre.vue', 'src/components/fiche/OngletTheme.vue', 'src/views/IndicateurPage.vue']) {
       expect(read(path)).toMatch(/class="[^"]*presentation-editorial/)
     }
+    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toMatch(/\.cahier\s*\{[^}]*background:\s*transparent/s)
+    expect(read('src/fiche/prototype/VarianteCahierLibre.vue')).toContain('background-color: var(--paper)')
     expect(read('src/main.ts')).toContain("'./styles/editorial.css'")
   })
 
@@ -39,5 +41,17 @@ describe('shared E editorial foundation', () => {
     expect(tokens).toContain('--font-wordmark: var(--font-serif)')
     expect(tokens).toContain('--font-global-header: var(--font-mozilla-text)')
     expect(tokens).not.toContain('--editorial-rank-outline')
+  })
+
+  it('reflows the page margin in mobile flow and keeps a compact margin line', () => {
+    const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
+    const mobile = cahier.match(/@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*?)(?=\n\})/)?.[1] ?? ''
+    expect(mobile).toContain('--margin-line: 12px')
+    expect(mobile).toMatch(/\.page-margin\s*\{[^}]*position:\s*static/s)
+  })
+
+  it('loads the cartographic prototype only through a DEV-conditional async import', () => {
+    const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
+    expect(cahier).toMatch(/const CartographicBreakoutPrototype\s*=\s*import\.meta\.env\.DEV\s*\?\s*defineAsyncComponent\(\(\)\s*=>\s*import\('\.\/CartographicBreakoutPrototype\.vue'\)\)/)
   })
 })

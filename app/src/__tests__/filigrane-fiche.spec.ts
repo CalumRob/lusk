@@ -125,6 +125,52 @@ describe('FiligraneFiche — le tirage', () => {
     )
   })
 
+  it('waits for a zero-sized zone, then draws exactly once when it gains size', async () => {
+    let observerCallback: ResizeObserverCallback | undefined
+    let disconnect = vi.fn()
+    class ResizeObserverMock {
+      constructor(callback: ResizeObserverCallback) { observerCallback = callback }
+      observe = vi.fn()
+      unobserve = vi.fn()
+      disconnect = disconnect
+    }
+    vi.stubGlobal('ResizeObserver', ResizeObserverMock)
+    const host = document.createElement('div')
+    let bounds = { width: 0, height: 0 }
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(() => ({
+      x: 0, y: 0, top: 0, left: 0,
+      right: bounds.width, bottom: bounds.height,
+      width: bounds.width, height: bounds.height,
+      toJSON: () => ({}),
+    } as DOMRect))
+    const alea = vi.fn(() => 0.5)
+    const wrapper = mount(FiligraneFiche, {
+      attachTo: host,
+      props: { theme: null },
+      global: { provide: { [FILIGRANE_ALEA_KEY]: alea } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find('svg').exists()).toBe(false)
+    expect(alea).not.toHaveBeenCalled()
+    expect(observerCallback).toBeDefined()
+
+    bounds = { width: 1000, height: 800 }
+    observerCallback!([], {} as ResizeObserver)
+    await flushPromises()
+
+    expect(wrapper.find('svg').exists()).toBe(true)
+    expect(alea).toHaveBeenCalledTimes(3)
+    expect(parseFloat(valeurStyle(wrapper.attributes('style'), 'width')!)).toBeCloseTo(348.16, 1)
+    expect(disconnect).toHaveBeenCalledTimes(1)
+
+    observerCallback!([], {} as ResizeObserver)
+    expect(alea).toHaveBeenCalledTimes(3)
+    expect(disconnect).toHaveBeenCalledTimes(1)
+    wrapper.unmount()
+    host.remove()
+  })
+
   it('stays put across re-renders within the same mount (draw-once)', async () => {
     const wrapper = mount(FiligraneFiche, {
       props: { theme: null },

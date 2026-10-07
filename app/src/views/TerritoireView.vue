@@ -27,11 +27,7 @@ import ContexteSwitcher from '@/components/fiche/ContexteSwitcher.vue'
 import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
-// [PROTOTYPE #499 — JETABLE] le registre des variantes de lecture — dev seul.
-import {
-  CommutateurPrototype,
-  varianteDeUrl,
-} from '@/fiche/prototype/variantes'
+import ProductionMobilite from '@/fiche/mobilite/ProductionMobilite.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import {
   PARAM_COMPARAISON,
@@ -89,10 +85,18 @@ let sequenceFicheScalaires = 0
  * de `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
  */
 const acquisitionApiActivee = themeAcquisitionEnabled(import.meta.env)
+const selection = computed<Theme | null>(() => {
+  const demande = route.query.theme
+  if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
+    return demande as Theme
+  }
+  return THEME_DEFAUT
+})
+const productionMobilite = computed(() => selection.value === 'mobilite')
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
 const themeMigre = (theme: Theme | null): boolean =>
   acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme) &&
-  !(theme === 'mobilite' && prototypeCahierMobilite.value)
+  theme !== 'mobilite'
 const cacheAcquisition = new ThemeAcquisitionCache(
   (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
   (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
@@ -207,18 +211,6 @@ const ongletsFiche: readonly Theme[] = [
   ...THEMES_CANONIQUES.filter((theme) => theme !== THEME_DEFAUT),
 ]
 
-const selection = computed<Theme | null>(() => {
-  const demande = route.query.theme
-  if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
-    return demande as Theme
-  }
-  return THEME_DEFAUT
-})
-const prototypeActif = import.meta.env.DEV
-/** [PROTOTYPE #531/#552] Cahier variants own the editorial Mobilité surface. */
-const prototypeCahierMobilite = computed(
-  () => prototypeActif && ['D', 'E'].includes(String(route.query.variant ?? '')) && selection.value === 'mobilite',
-)
 
 watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryFicheScalaires, scalarCohortScopeKey],
   async ([model, theme, code, _retry, scopeKey], _old, onCleanup) => {
@@ -230,7 +222,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     // Le thème migré n'emprunte jamais le fan-out par indicateur (#627) : sa
     // voie unique est la requête de faits du thème.
     if (!scalarCohortEnabled(import.meta.env) || !model || !theme || themeMigre(theme) ||
-        (theme === 'mobilite' && prototypeCahierMobilite.value)) { ficheScalairesStatus.value = 'ready'; return }
+        (theme === 'mobilite' && productionMobilite.value)) { ficheScalairesStatus.value = 'ready'; return }
     const data = model.themes[theme]
     if (!data) { ficheScalairesStatus.value = 'ready'; return }
     let cancelled = false
@@ -406,16 +398,10 @@ const classesFond = computed(() =>
 )
 
 /**
- * [PROTOTYPE #499 — JETABLE] La variante de lecture demandée par
- * ?variant=A|B|C|D|E — null hors développement ou sans paramètre valide. Le
- * chargement et l'état restent CI-DESSUS : la variante reçoit le payload
- * déjà réglé et ne fetch jamais. L'onglet « Programmes et subventions »
- * garde SA présentation propre (BlocProgrammes) dans toutes les variantes —
- * le prototype explore les cinq thèmes éditoriaux.
+ * Mobilité's production cahier owns the editorial body whenever its theme is selected.
  */
-const variante = computed(() => varianteDeUrl(route.query.variant))
+const mobiliteEditorialeActive = productionMobilite
 const scalarCohortActif = scalarCohortEnabled(import.meta.env)
-const prototypeAccesApi = computed(() => prototypeCahierMobilite.value && variante.value?.clef === 'E')
 const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
 const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const mobilityFocal = ref<TerritoryFacts | null>(null)
@@ -431,9 +417,9 @@ let lastFocalModel: object | null = null
 let lastComparisonKey: string | null = null
 let lastComparisonModel: object | null = null
 
-watch([prototypeAccesApi, typeRoute, idRoute,
+watch([productionMobilite, typeRoute, idRoute,
   () => modeleTerritoire.model.value, retryMobilityFacts], (_values, _oldValues, onCleanup) => {
-  if (!prototypeAccesApi.value) return
+  if (!productionMobilite.value) return
   const model = modeleTerritoire.model.value
   const key = `${typeRoute.value}/${idRoute.value}/${retryMobilityFacts.value}`
   if (model && lastFocalKey === key && lastFocalModel === model) return
@@ -500,10 +486,10 @@ watch([prototypeAccesApi, typeRoute, idRoute,
   })
 }, { immediate: true })
 
-watch([prototypeAccesApi, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
+watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
   mobilityFocal, () => modeleTerritoire.model.value],
   (_values, _oldValues, onCleanup) => {
-    if (!prototypeAccesApi.value || !mobilityFocal.value || !payloadPourRendu.value) return
+    if (!productionMobilite.value || !mobilityFocal.value || !payloadPourRendu.value) return
     const model = modeleTerritoire.model.value
     const requestKey = `${typeRoute.value}/${idRoute.value}/${resolutionComparaison.value?.mode ?? ''}`
     if (lastComparisonKey === requestKey && lastComparisonModel === model) return
@@ -578,12 +564,12 @@ watch([prototypeAccesApi, typeRoute, idRoute, () => resolutionComparaison.value?
 function rechargerMobilityFacts(): void { retryMobilityFacts.value += 1 }
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
-    !prototypeCahierMobilite.value ||
+    !productionMobilite.value ||
     chargementFiche.value ||
     !payloadPourRendu.value ||
     !typeValide.value
   ) return null
-  const facts = prototypeAccesApi.value
+  const facts = productionMobilite.value
     ? mobilityFocal.value
       ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
       : mobilityFactsFromThemeApi(
@@ -597,17 +583,27 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
 })
 const paginationCahier = computed(() =>
   payloadPourRendu.value && contenuMobilite.value
-    ? cahierPaginationFor(payloadPourRendu.value, contenuMobilite.value, variante.value?.clef === 'E')
+    ? cahierPaginationFor(payloadPourRendu.value, contenuMobilite.value, mobiliteEditorialeActive.value)
     : null,
 )
 function choisirOnglet(slug: SlugOnglet): void {
   // La fiche n'émet que des slugs de thème (pas de pseudo-onglet depuis
   // #408) — la garde garde la jointure de type pour les autres shells.
   if (slug === null || !(THEMES_CANONIQUES as readonly string[]).includes(slug)) return
-  // Les AUTRES paramètres de requête sont conservés (?variant= du prototype
-  // #499 survit au changement d'onglet).
+  // Preserve the comparison context and unrelated query state.
   router.replace({ query: { ...route.query, theme: slug } })
 }
+
+watch(
+  () => route.query.variant,
+  (variant) => {
+    if (variant === undefined) return
+    const query = { ...route.query }
+    delete query.variant
+    router.replace({ query })
+  },
+  { immediate: true },
+)
 
 watch(
   () => route.query.theme,
@@ -628,6 +624,7 @@ watch(
     if (!resolution?.canonicaliser) return
     const query = { ...route.query }
     delete query[PARAM_COMPARAISON]
+    delete query.variant
     router.replace({ query })
   },
   { immediate: true },
@@ -638,7 +635,7 @@ watch(
 <template>
   <section
     class="fiche"
-    :class="[classesFond, { 'fiche--prototype': prototypeActif, 'fiche--prototype-d': prototypeCahierMobilite }]"
+    :class="[classesFond, { 'fiche--mobilite-editoriale': productionMobilite, 'presentation-editorial': mobiliteEditorialeActive }]"
     :aria-busy="chargementFiche ? 'true' : 'false'"
   >
     <div class="fiche-en-tete-surface">
@@ -747,20 +744,11 @@ watch(
             :id="idPanneau(selection)"
             :aria-labelledby="idOnglet(selection)"
           >
-            <!-- [PROTOTYPE #531] D replaces only the Mobilité body; the fiche
-                 identity header, theme tabs, background and tabpanel stay owned
-                 by this shell. -->
-            <component
-              :is="variante.composant"
-              v-if="prototypeCahierMobilite && contenuMobilite && paginationCahier && variante"
-              :content="contenuMobilite"
-              :pagination="paginationCahier"
-               :comparison-options="variante.clef === 'E' ? optionsComparaison : []"
-                 :access-status="variante.clef === 'E' ? statutAccesApi : undefined"
-                 :retry-access="rechargerMobilityFacts"
-                 :building-status="variante.clef === 'E' ? buildingStatus : undefined"
-                 :retry-building="rechargerMobilityFacts"
-            />
+            <!-- The production cahier owns Mobilit?'s editorial body. -->
+            <ProductionMobilite v-if="productionMobilite && contenuMobilite && paginationCahier"
+              :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
+              :access-status="statutAccesApi" :retry-access="rechargerMobilityFacts"
+              :building-status="buildingStatus" :retry-building="rechargerMobilityFacts" />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation
                  pliée) lit SA paire hermétique ; les autres thèmes passent
@@ -768,15 +756,6 @@ watch(
             <BlocProgrammes
               v-else-if="selection === 'programmes' && payloadPourRendu"
               :payload="payloadPourRendu"
-              :territoire="idRoute"
-            />
-            <!-- [PROTOTYPE #499] la variante remplace OngletTheme sur les
-                 cinq thèmes éditoriaux — même props, zéro fetch propre. -->
-            <component
-              :is="variante.composant"
-              v-else-if="ongletTheme && variante && !['D', 'E'].includes(variante.clef)"
-              :theme="ongletTheme.theme"
-              :payload="ongletTheme.payload"
               :territoire="idRoute"
             />
             <OngletTheme
@@ -790,8 +769,6 @@ watch(
       </div>
     </template>
 
-    <!-- [PROTOTYPE #499] le commutateur fixe du bas — dev uniquement. -->
-    <CommutateurPrototype v-if="prototypeActif && CommutateurPrototype" />
   </section>
 </template>
 
@@ -984,12 +961,7 @@ watch(
   padding: var(--space-6) var(--grid-margin-mobile) var(--space-12);
 }
 
-/* [PROTOTYPE #499] la place du commutateur fixe du bas. */
-.fiche--prototype {
-  padding-bottom: 96px;
-}
-
-.fiche--prototype-d .fiche-contenu {
+.fiche--mobilite-editoriale .fiche-contenu {
   max-width: 1640px;
 }
 </style>

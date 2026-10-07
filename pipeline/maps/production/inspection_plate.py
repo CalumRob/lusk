@@ -33,46 +33,49 @@ from qgis.PyQt.QtSvg import QSvgRenderer
 from map_ground import geometry_mask
 
 
-OUTPUT_SIZE = 3200
+OUTPUT_SIZE = 2400
+_DESIGN_REFERENCE_SIZE = 3200
+_pixel = lambda value: round(value * OUTPUT_SIZE / _DESIGN_REFERENCE_SIZE)
 INK_COLOUR = QColor("#273A37")
 PRIMARY_GREEN = QColor("#57726F")
 SUBTITLE_GREEN = PRIMARY_GREEN
 MAP_FURNITURE_GREEN = QColor("#4B746E")
-TITLE_SIZE = 166
+TITLE_SIZE = _pixel(166)
 TITLE_WEIGHT = 600
 TITLE_TRACKING_EM = -0.01
-TITLE_TOP = 120
-TITLE_LEFT_MARGIN = 100
-TITLE_WORDMARK_GAP = 72
-TITLE_MAX_WIDTH = 2400
-TITLE_BACKING_PADDING_X = 18
-TITLE_BACKING_PADDING_Y = 12
-SUBTITLE_SIZE = 100
+TITLE_TOP = _pixel(120)
+TITLE_LEFT_MARGIN = _pixel(100)
+TITLE_WORDMARK_GAP = _pixel(72)
+TITLE_MAX_WIDTH = _pixel(2400)
+TITLE_BACKING_PADDING_X = _pixel(18)
+TITLE_BACKING_PADDING_Y = _pixel(12)
+SUBTITLE_SIZE = _pixel(100)
 SUBTITLE_WEIGHT = 700
-SUBTITLE_TOP = 352
+SUBTITLE_TOP = _pixel(352)
 WORDMARK_TEXT = "lusk"
 WORDMARK_TRACKING_EM = -0.01
 WORDMARK_WEIGHT = 600
-WORDMARK_WIDTH = 250
-WORDMARK_RIGHT_MARGIN = 100
-WORDMARK_TOP = 100
+WORDMARK_WIDTH = _pixel(250)
+WORDMARK_RIGHT_MARGIN = _pixel(100)
+WORDMARK_TOP = _pixel(100)
 WORDMARK_SHEAR = -0.25
 WORDMARK_OPACITY = 0.30
 TITLE_OPACITY = 0.55
-TEXT_BAND_PADDING_X = 34
-TEXT_BAND_PADDING_Y = 22
+TEXT_BAND_PADDING_X = _pixel(34)
+TEXT_BAND_PADDING_Y = _pixel(22)
 TEXTURE_OPACITY = 0.50
 ENGRAVED_TITLE = "deep-ink"
-FOOTER_HEIGHT = 128
-FOOTER_INSET_X = 72
-FOOTER_SIZE = 38
-SOURCE_SIZE = 30
+FOOTER_HEIGHT = _pixel(128)
+FOOTER_INSET_X = _pixel(72)
+FOOTER_SIZE = _pixel(38)
+SOURCE_SIZE = _pixel(30)
+SOURCE_METHOD_GAP = _pixel(96)
 NORTH_ARROW_SVG_NAME = "NorthArrow_11.svg"
-NORTH_ARROW_HEIGHT = 92
-NORTH_ARROW_RIGHT_INSET = 96
-FURNITURE_GAP = 32
-FURNITURE_SAFE_PADDING_X = 26
-FURNITURE_SAFE_PADDING_Y = 20
+NORTH_ARROW_HEIGHT = _pixel(92)
+NORTH_ARROW_RIGHT_INSET = _pixel(96)
+FURNITURE_GAP = _pixel(32)
+FURNITURE_SAFE_PADDING_X = _pixel(26)
+FURNITURE_SAFE_PADDING_Y = _pixel(20)
 
 
 @dataclass(frozen=True)
@@ -94,7 +97,7 @@ class PreparedTitle:
     wordmark_path: QPainterPath
 
 
-TITLE_RELIEF = Engraving("ink-deep", "Deeper cut · ink at 55%", 0.065, 0.100, 0.130, 3)
+TITLE_RELIEF = Engraving("ink-deep", "Deeper cut · ink at 55%", 0.065, 0.100, 0.130, _pixel(3))
 STATIC_FACE_CACHE: dict[tuple[str, int], str] = {}
 
 
@@ -370,7 +373,7 @@ def _prepare_title(
     subtitle = _text_path(territory_label, _font(headline_bold, SUBTITLE_SIZE, SUBTITLE_WEIGHT))
     bounds = subtitle.boundingRect()
     subtitle.translate(TITLE_LEFT_MARGIN - bounds.left(), SUBTITLE_TOP - bounds.top())
-    wordmark = _text_path(WORDMARK_TEXT, _font(wordmark_family, 100, WORDMARK_WEIGHT, WORDMARK_TRACKING_EM))
+    wordmark = _text_path(WORDMARK_TEXT, _font(wordmark_family, _pixel(100), WORDMARK_WEIGHT, WORDMARK_TRACKING_EM))
     wordmark = QTransform().shear(WORDMARK_SHEAR, 0).map(wordmark)
     wordmark_bounds = wordmark.boundingRect()
     if wordmark_bounds.width() <= 0:
@@ -419,13 +422,13 @@ def _map_furniture_layout(extent: QgsRectangle, scale_spec: tuple[str, float]):
     unit, units_per_segment = scale_spec
     scale_width = round(units_per_segment * (1000 if unit == "km" else 1) * 2 / extent.width() * OUTPUT_SIZE)
     arrow_width = round(NORTH_ARROW_HEIGHT * 61.000001 / 76.826002)
-    baseline = OUTPUT_SIZE - FOOTER_HEIGHT - 92
+    baseline = OUTPUT_SIZE - FOOTER_HEIGHT - _pixel(92)
     arrow = QRect(OUTPUT_SIZE - NORTH_ARROW_RIGHT_INSET - arrow_width,
                   baseline - NORTH_ARROW_HEIGHT, arrow_width, NORTH_ARROW_HEIGHT)
     right = arrow.left() - FURNITURE_GAP
     left = right - scale_width
     safe_left, safe_top = left - FURNITURE_SAFE_PADDING_X, arrow.top() - FURNITURE_SAFE_PADDING_Y
-    safe_right, safe_bottom = arrow.right() + FURNITURE_SAFE_PADDING_X, baseline + 42 + FURNITURE_SAFE_PADDING_Y
+    safe_right, safe_bottom = arrow.right() + FURNITURE_SAFE_PADDING_X, baseline + _pixel(42) + FURNITURE_SAFE_PADDING_Y
     clear = QRect(safe_left, safe_top, safe_right - safe_left + 1, safe_bottom - safe_top + 1)
     return arrow, clear, left, right, baseline, f"{units_per_segment * 2:g} {unit}"
 
@@ -444,14 +447,16 @@ def _draw_map_furniture(image: QImage, extent: QgsRectangle, scale_spec: tuple[s
     painter.setRenderHint(QPainter.Antialiasing, True)
     painter.setRenderHint(QPainter.TextAntialiasing, True)
     painter.setOpacity(0.78)
-    painter.setPen(QPen(MAP_FURNITURE_GREEN, 3, Qt.SolidLine, Qt.FlatCap))
+    painter.setPen(QPen(MAP_FURNITURE_GREEN, _pixel(3), Qt.SolidLine, Qt.FlatCap))
     painter.drawLine(left, baseline, right, baseline)
     for position in (left, (left + right) // 2, right):
-        painter.drawLine(position, baseline - 8, position, baseline + 8)
+        painter.drawLine(position, baseline - _pixel(8), position, baseline + _pixel(8))
     painter.setPen(MAP_FURNITURE_GREEN)
-    painter.setFont(_font(text_family, 26, 400))
-    painter.drawText(QRect(left - 2, baseline + 10, 48, 30), Qt.AlignLeft | Qt.AlignVCenter, "0")
-    painter.drawText(QRect(right - 150, baseline + 10, 150, 30), Qt.AlignRight | Qt.AlignVCenter, label)
+    painter.setFont(_font(text_family, _pixel(26), 400))
+    painter.drawText(QRect(left - _pixel(2), baseline + _pixel(10), _pixel(48), _pixel(30)),
+                     Qt.AlignLeft | Qt.AlignVCenter, "0")
+    painter.drawText(QRect(right - _pixel(150), baseline + _pixel(10), _pixel(150), _pixel(30)),
+                     Qt.AlignRight | Qt.AlignVCenter, label)
     renderer.render(painter, QRectF(arrow))
     painter.end()
     return clear
@@ -544,7 +549,7 @@ def _draw_footer(image: QImage, mode: str, family_regular: str, family_semibold:
         body_font = _font(family_regular, FOOTER_SIZE, 400)
         lead_metrics, body_metrics = QFontMetricsF(lead_font), QFontMetricsF(body_font)
         method_width = lead_metrics.horizontalAdvance(lead_text) + body_metrics.horizontalAdvance(body_text)
-        if method_width + 96 + source_width > available:
+        if method_width + SOURCE_METHOD_GAP + source_width > available:
             raise RuntimeError(f"{mode} method ({method_width:.0f}px) and source citation do not fit")
     elif source_width > available:
         raise RuntimeError(f"{mode} citation is too wide for the approved footer")
@@ -554,7 +559,7 @@ def _draw_footer(image: QImage, mode: str, family_regular: str, family_semibold:
     painter.setPen(Qt.NoPen)
     painter.setBrush(QColor("#FFFFFF"))
     painter.drawRect(strip)
-    painter.setPen(QPen(QColor("#D4DEDB"), 2))
+    painter.setPen(QPen(QColor("#D4DEDB"), _pixel(2)))
     painter.drawLine(0, strip.top(), OUTPUT_SIZE, strip.top())
     baseline = strip.top() + round((FOOTER_HEIGHT - source_metrics.height()) / 2) + round(source_metrics.ascent())
     if footer is not None:
@@ -587,9 +592,9 @@ def compose_inspection(
     scale_spec: tuple[str, float],
     desaturate_outside_land: bool = True,
 ) -> QImage:
-    """Produce the complete, independent 3200px approved inspection profile."""
+    """Produce the native 2400px inspection profile at the existing layout scale."""
     if ground.size().width() != OUTPUT_SIZE or ground.size().height() != OUTPUT_SIZE:
-        raise ValueError("Inspection composition requires a 3200×3200 ground render")
+        raise ValueError("Inspection composition requires a 2400×2400 ground render")
     assets = Path(assets)
     with tempfile.TemporaryDirectory(prefix="lusk-inspection-fonts-") as temp_name:
         temp = Path(temp_name)

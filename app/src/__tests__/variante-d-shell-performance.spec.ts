@@ -50,10 +50,10 @@ const readModel = validerModeleTerritoire({
   },
 }, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
 
-describe('Variant D — shell performance seam', () => {
-  it('resolves content from the atomic territory model after it settles', async () => {
+describe('Production Mobilité — shell performance seam', () => {
+  it('resolves cahier content from the atomic territory model on the normal route', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push('/territoire/commune/22001?theme=mobilite&variant=D')
+    await router.push('/territoire/commune/22001?theme=mobilite')
     await router.isReady()
 
     const factsSpy = vi.spyOn(territoryFacts, 'territoryFactsFor')
@@ -70,7 +70,7 @@ describe('Variant D — shell performance seam', () => {
     await flushPromises()
 
     expect(factsSpy).toHaveBeenCalledTimes(1)
-    expect(isReactive(factsSpy.mock.calls[0]?.[0])).toBe(false)
+    expect(factsSpy.mock.calls.every(([facts]) => !isReactive(facts))).toBe(true)
     expect(wrapper.find('.fiche-en-tete-surface').exists()).toBe(true)
     expect(wrapper.find('.fiche--theme-mobilite').exists()).toBe(true)
     expect(wrapper.find('.fiche-contenu').exists()).toBe(true)
@@ -80,7 +80,7 @@ describe('Variant D — shell performance seam', () => {
 
   it('keeps the global header and footer around the cahier body', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push('/territoire/commune/22001?theme=mobilite&variant=D')
+    await router.push('/territoire/commune/22001?theme=mobilite')
     await router.isReady()
 
     const wrapper = mount(App, {

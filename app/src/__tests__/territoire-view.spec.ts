@@ -6,7 +6,6 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '../views/TerritoireView.vue'
-import GraphiqueDistributionMobilite from '../components/fiche/GraphiqueDistributionMobilite.vue'
 import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
 import FigureTrajectoire from '../components/fiche/FigureTrajectoire.vue'
 import PuceRang from '../components/fiche/PuceRang.vue'
@@ -532,15 +531,17 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it('renders registered scalar API values in the mounted fiche instead of the static model value', async () => {
-    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    // La famille overlay vit sur un thème NON-mobilité : le cahier plié
+    // (productionMobilite) possède l'acquisition Mobilité — le fan-out par
+    // indicateur ne s'y déclenche jamais, qu'importe le drapeau.
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     const registered = Object.keys(metadata.scalar_contracts) as string[]
     const referenceTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
     const peer = referenceTerritories.find((territory: any) => territory.type === 'commune' &&
       territory.epci === published.territory.epci && territory.territoire !== published.territory.territoire)
-    expect(published.themes.mobilite.theme_metadata.scalar_contracts).toBeUndefined()
+    expect(published.themes.demographie.theme_metadata.scalar_contracts).toBeUndefined()
     const pending: Array<() => void> = []
     const requestedIndicators: string[] = []
     const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
@@ -548,7 +549,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       if (url === '/data/modeles-lecture/territoires/commune/22001.json') return new Response(JSON.stringify(published), { status: 200 })
       if (url === '/data/territoires.json') return new Response(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'), { status: 200 })
       if (url.startsWith('/data/theme_') && url.endsWith('.json')) {
-        const themeMetadata = url === '/data/theme_mobilite.json' ? metadata : JSON.parse(readFileSync(
+        const themeMetadata = url === '/data/theme_demographie.json' ? metadata : JSON.parse(readFileSync(
           resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'))
         return new Response(JSON.stringify(themeMetadata), { status: 200 })
       }
@@ -573,16 +574,15 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     })
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A&comparaison=epci', chargerModeleTerritoire)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci', chargerModeleTerritoire)
     expect(requestedIndicators).toEqual(registered)
     expect(pending).toHaveLength(registered.length)
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('987 654 321')
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('0,92')
     pending.forEach((resolve) => resolve())
     await flushPromises()
     const text = wrapper.get('[role="tabpanel"]').text()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/indicator-cohorts/'))).toHaveLength(registered.length)
-    expect(fetchApi).toHaveBeenCalledWith('/data/theme_mobilite.json')
+    expect(fetchApi).toHaveBeenCalledWith('/data/theme_demographie.json')
     const cohortUrls = fetchApi.mock.calls.map(([url]) => new URL(String(url), 'http://localhost'))
       .filter((url) => url.pathname.includes('/indicator-cohorts/'))
     expect(cohortUrls.every((url) => url.searchParams.get('epci_id') === published.territory.epci &&
@@ -590,7 +590,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(text).toContain('987')
     expect(text).toContain('98 765 432')
-    expect(text).not.toContain('0,92')
+    expect(text).not.toContain('24,45')
     wrapper.unmount()
   })
 
@@ -701,7 +701,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // Le POST actif est prioritaire puis le registre complet est réchauffé.
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(5)
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
@@ -713,7 +713,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // Revisite du thème acquis : le cache détient l'entrée, aucune nouvelle requête.
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(5)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
     wrapper.unmount()
   })
@@ -997,10 +997,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model))
     await flushPromises()
     const text = wrapper.get('[role="tabpanel"]').text()
-    // Le POST actif part en premier, puis le registre entier se réchauffe.
+    // Le POST actif part en premier, puis le registre se réchauffe — SANS
+    // Mobilité : le cahier plié possède son acquisition (décision #638), le
+    // réchauffage n'y touche jamais.
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/economie/facts')
     expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'economie' })
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(5)
+    expect(fetchApi.mock.calls.some((x: any[]) => String(x[0]).endsWith('/themes/mobilite/facts'))).toBe(false)
     const ecoActivites = model.themes.economie!.indicators.find((row: any) => row.territoire === '22001' && row.key === 'eco_activites')!
     expect(api.indicators).toContainEqual(expect.objectContaining({ indicator_id: 'eco_activites', value: ecoActivites.value }))
     expect(text).toContain(`${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Number(ecoActivites.value) * 100)}%`)
@@ -1026,7 +1029,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // entier — Économie comprise — en arrière-plan.
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
     expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(5)
     await router.replace({ query: { theme: 'economie' } }); await flushPromises()
     // La bascule vers un thème réchauffé n'acquiert rien : le cache détient l'entrée.
     expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
@@ -1059,7 +1062,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model)); expect(wrapper.get('[role="alert"]').text()).toContain('Les indicateurs')
     await flushPromises()
     // L'échec du thème actif ne suspend pas le réchauffage d'arrière-plan.
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(5)
     await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises()
     expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(2)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive'); wrapper.unmount()
@@ -1122,25 +1125,24 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(requests.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
     unregistered.unmount()
 
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    published.themes.mobilite.theme_metadata.scalar_contracts = metadata.scalar_contracts
+    published.themes.demographie.theme_metadata.scalar_contracts = metadata.scalar_contracts
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
       { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
-    const { wrapper: disabled } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => model))
+    const { wrapper: disabled } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
     expect(requests.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
-    expect(disabled.text()).toContain('0,92')
+    expect(disabled.text()).toContain('24,45')
     disabled.unmount()
   })
 
   it('keeps unregistered facts when a valid registration has no eligible pages at this level', async () => {
-    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    published.themes.mobilite.theme_metadata.scalar_contracts = Object.fromEntries(
+    published.themes.demographie.theme_metadata.scalar_contracts = Object.fromEntries(
       Object.keys(metadata.scalar_contracts).map((key) => [key, { allowed_levels: ['epci'] }]),
     )
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
@@ -1148,20 +1150,24 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const fetchApi = vi.fn()
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
     expect(fetchApi).not.toHaveBeenCalled()
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('0,92')
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('24,45')
     wrapper.unmount()
   })
 
   it('reloads scalar facts when comparison scope changes and ignores the previous response', async () => {
-    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    published.themes.mobilite.theme_metadata.scalar_contracts = metadata.scalar_contracts
+    published.themes.demographie.theme_metadata.scalar_contracts = metadata.scalar_contracts
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
       { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
+    // La validation du cohort vise les pages MÉTADONNÉES DU MODÈLE (le loader
+    // du modèle embarqué ne recharge pas le catalogue ici) — la fixture
+    // construit donc la réponse depuis les pages du modèle, pas du catalogue
+    // (l'unité « densité » y diffère).
+    const modelPages = model.themes.demographie!.metadata.indicator_pages
     const oldResponses: Array<() => void> = []
     const newResponses: Array<() => void> = []
     const oldIndicators: string[] = []
@@ -1169,7 +1175,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const fetchApi = vi.fn((input: RequestInfo | URL) => {
       const url = new URL(String(input), 'http://localhost')
       const indicator = url.pathname.split('/').at(-1)!
-       const page = metadata.indicator_pages[indicator]
+      const page = modelPages![indicator]!
       const value = url.searchParams.has('epci_id') ? 111111111 : 222222222
       const response = new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune',
         label: page.label, unit: page.unit, direction: page.direction,
@@ -1188,13 +1194,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     })
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A&comparaison=epci', vi.fn(async () => model))
-    // nb_buildings is invariant to the commune peer selection and is served
-    // without an epci_id; the other 21 scoped scalar contracts use that group.
-    expect(oldResponses, JSON.stringify({ oldIndicators, missing: Object.keys(metadata.scalar_contracts).filter((id) => !oldIndicators.includes(id)) })).toHaveLength(Object.keys(metadata.scalar_contracts).length - 1)
-    await router.push('/territoire/commune/22001?theme=mobilite&variant=A&comparaison=bretagne')
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci', vi.fn(async () => model))
+    expect(oldResponses, JSON.stringify({ oldIndicators, missing: Object.keys(metadata.scalar_contracts).filter((id) => !oldIndicators.includes(id)) })).toHaveLength(Object.keys(metadata.scalar_contracts).length)
+    await router.push('/territoire/commune/22001?theme=demographie&comparaison=bretagne')
     await flushPromises()
-    expect(newResponses, JSON.stringify({ newIndicators })).toHaveLength(Object.keys(metadata.scalar_contracts).length - 1)
+    expect(newResponses, JSON.stringify({ newIndicators })).toHaveLength(Object.keys(metadata.scalar_contracts).length)
     expect(new URL(String(fetchApi.mock.calls.at(-1)![0]), 'http://localhost').searchParams.has('epci_id')).toBe(false)
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('111 111 111')
     newResponses.forEach((resolve) => resolve())
@@ -1208,16 +1212,16 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   })
 
   it('renders a retryable error for malformed registration and recovers without showing static facts', async () => {
-    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
-    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    published.themes.mobilite.theme_metadata.scalar_contracts = { avg_tot_t: { allowed_levels: 'commune' } }
+    published.themes.demographie.theme_metadata.scalar_contracts = { densite: { allowed_levels: 'commune' } }
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
       { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
+    const modelPages = model.themes.demographie!.metadata.indicator_pages
     const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
       const indicator = String(input).split('/').at(-1)!.split('?')[0]!
-       const page = metadata.indicator_pages[indicator]
+       const page = modelPages![indicator]!
       return new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune', label: page.label,
         unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? indicator,
         completeness: 'sparse', content_version: 'retry-v1', territory_reference_version: 'territories-v1',
@@ -1228,19 +1232,19 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     })
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=A', vi.fn(async () => model))
+    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
     expect(wrapper.find('[role="alert"]').text()).toContain('pas disponibles')
-    expect(wrapper.text()).not.toContain('0,92')
+    expect(wrapper.text()).not.toContain('24,45')
     expect(fetchApi).not.toHaveBeenCalled()
 
-    model.themes.mobilite!.metadata.scalar_contracts = metadata.scalar_contracts
+    model.themes.demographie!.metadata.scalar_contracts = metadata.scalar_contracts
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(fetchApi).toHaveBeenCalled()
     expect(wrapper.text()).toContain('987 654 321')
-    expect(wrapper.text()).not.toContain('0,92')
+    expect(wrapper.text()).not.toContain('24,45')
     wrapper.unmount()
   })
 
@@ -1386,11 +1390,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.findAll('[role="tab"]')[0]!.attributes('aria-selected')).toBe('true')
   })
 
-  it('canonicalise un mode de comparaison inconnu sans perdre le thème ni la variante', async () => {
+  it('canonicalise un mode de comparaison inconnu sans perdre le thème', async () => {
     const { router } = await monter(
       '/territoire/commune/29002?theme=mobilite&comparaison=inconnu&variant=E',
     )
-    expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite', variant: 'E' })
+    expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite' })
   })
 
   it.each(['densite', 'epci', 'bretagne'] as const)(
@@ -1463,7 +1467,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('ne branche pas le sélecteur de comparaison sur la variante D', async () => {
+  it('garde le sélecteur de comparaison disponible sur le cahier plié', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', stubApiThemeMobilite(modeleAvecContextesComparaison()))
     const varianteD = varianteDeUrl('D')
     expect(varianteD?.clef).toBe('D')
     await (varianteD?.composant as any).__asyncLoader?.()
@@ -1476,7 +1482,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
     expect(comparisonNotes.length).toBeGreaterThan(0)
-    expect(comparisonNotes.every((note) => !note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
+    expect(comparisonNotes.some((note) => note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
     wrapper.unmount()
   })
 
@@ -1615,7 +1621,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(alert.text()).toContain('indicateurs de ce thème ne sont pas disponibles')
     await flushPromises()
     // Le réchauffage d'arrière-plan part malgré l'échec du thème actif.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(5)
     await alert.get('button').trigger('click'); await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(2)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Source API milieux')
@@ -1763,8 +1769,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('rend Mobilité et sa figure depuis les bins servis, mais garde la figure absente sans bins', async () => {
     const model = modeleAvecContextesComparaison()
+    const context = model.themes.mobilite!.comparisons.densite!
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null, undefined, true) })))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () =>
+      reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label, true) })))
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
     await flushPromises()
     const texte = wrapper.get('[role="tabpanel"]').text()
@@ -1772,22 +1780,45 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(texte).toContain('87')
     expect(texte).not.toContain('100%Alimentation')
     // La lecture rend ses paramètres servis (le texte porte 38)…
-    const lecture = wrapper.get('[data-groupe="acces-aux-services"]')
+    const lecture = wrapper.get('.cahier-figure-lecture')
     expect(lecture.text()).toContain('38')
-    expect(wrapper.findComponent(GraphiqueDistributionMobilite).exists()).toBe(true)
     wrapper.unmount()
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) })))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () =>
+      reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) })))
     const absent = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
     await flushPromises()
-    expect(absent.wrapper.findComponent(GraphiqueDistributionMobilite).exists()).toBe(false)
     absent.wrapper.unmount()
   })
 
-  it('Mobilité : réchauffée en arrière-plan après Programmes, aucune nouvelle requête à la revisite', async () => {
+  it('preserves representative #683 content, riders and honest missing state through ProductionMobilite', async () => {
     const model = modeleAvecContextesComparaison()
+    const context = model.themes.mobilite!.comparisons.densite!
+    const fetchApi = vi.fn(async (url: string) => {
+      expect(url).toContain('/themes/mobilite/facts')
+      return { ok: true, json: async () =>
+        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    await flushPromises()
+    const text = wrapper.get('.cahier').text()
+    expect(fetchApi.mock.calls.some(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toBe(true)
+    expect(text).toContain('À pied + TC')
+    expect(text).toContain('À vélo + TC')
+    expect(text).toContain('Source API')
+    expect(text).toContain('Exemple :')
+    expect(text).toContain('Indisponible')
+    wrapper.unmount()
+  })
+
+  it('Mobilité : le cahier plié garde son acquisition propre, aucune requête au réchauffage du registre', async () => {
+    const model = modeleAvecContextesComparaison()
+    const context = model.themes.mobilite!.comparisons.densite!
     const fetchApi = vi.fn(async (url: string) => {
       if (String(url).endsWith('/themes/programmes/facts')) return { ok: true, json: async () => reponseThemeProgrammesApi() }
-      if (String(url).endsWith('/themes/mobilite/facts')) return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
+      if (String(url).endsWith('/themes/mobilite/facts')) return { ok: true, json: async () =>
+        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
       const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
       if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
         indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
@@ -1797,9 +1828,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { router } = await monter('/territoire/commune/22001', vi.fn(async () => model))
     await flushPromises()
-    // Programmes prioritaire ; Mobilité se réchauffe avec le reste du registre.
+    // Programmes prioritaire ; le registre se réchauffe SANS Mobilité — le
+    // cahier plié possède sa propre acquisition (décision #638) : aucun POST
+    // de faits Mobilité ne part tant que l'onglet n'est pas visité.
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(5)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toBe(false)
+    // La visite déclenche LE POST du cahier ; la revisite n'en déclenche aucun.
     await router.replace({ query: { theme: 'mobilite' } }); await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
     await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
@@ -1827,11 +1862,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
     // 22001 : Programmes résolu + quatre réchauffages résolus + Habitat pendants.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22001/themes/'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22001/themes/'))).toHaveLength(5)
     // Navigation vers 22002 pendant que le réchauffage 22001/Habitat pends.
     await router.push('/territoire/commune/22002'); await flushPromises()
     // Le nouveau territoire acquiert son actif puis réchauffe SON registre.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22002/themes/'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22002/themes/'))).toHaveLength(5)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     // La réponse tardive de 22001/Habitat arrive APRÈS la navigation : elle ne
     // peut peupler que sa propre clé de cache.
@@ -1841,18 +1876,20 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // Retour sur 22001 : tout est en cache — aucune nouvelle requête de faits.
     await router.push('/territoire/commune/22001'); await flushPromises()
     await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(12)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(10)
     wrapper.unmount()
   })
 
   it('Mobilité : les faits en attente n’exposent aucune valeur statique, puis rendent', async () => {
     const model = modeleAvecContextesComparaison()
+    const context = model.themes.mobilite!.comparisons.densite!
     let resolveFacts!: (value: unknown) => void
     const pending = new Promise((resolve) => { resolveFacts = resolve })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', vi.fn(() => pending))
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('100%Alimentation')
-    resolveFacts({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) })
+    resolveFacts({ ok: true, json: async () =>
+      reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) })
     await flushPromises()
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
     wrapper.unmount()
@@ -1860,18 +1897,20 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('Mobilité : échec fermé sans repli statique, puis réessai', async () => {
     const model = modeleAvecContextesComparaison()
+    const context = model.themes.mobilite!.comparisons.densite!
     let echecs = 0
     const fetchApi = vi.fn(async () => {
       if (++echecs === 1) throw new Error('API indisponible')
-      return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
+      return { ok: true, json: async () =>
+        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
     })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
     await flushPromises()
-    const alerte = wrapper.get('[role="alert"]')
-    expect(alerte.text()).toContain('Les indicateurs de ce thème ne sont pas disponibles.')
+    // Le cahier plié rend ses états honnêtes par section — aucun numérique statique.
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('100%Alimentation')
-    await alerte.get('button').trigger('click')
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Impossible de charger les données')
+    await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
@@ -1880,11 +1919,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('Mobilité : une seule comparaison par changement de sélection, écho exact, faits focaux gardés', async () => {
     const model = modeleAvecContextesComparaison()
+    const context = model.themes.mobilite!.comparisons.densite!
     const epciAttendu = model.cohortTerritories!.filter((item: any) =>
       item.type === 'commune' && item.epci === model.territory.epci)
       .map((item: any) => ({ territory_type: item.type, territory_id: item.territoire }))
     const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
-      if (String(url).endsWith('/facts')) return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
+      if (String(url).endsWith('/facts')) return { ok: true, json: async () =>
+        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
       const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
       return { ok: true, json: async () => ({ contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite',
         content_version: 'mobilite-v1', reference_content_version: 'territories-v1',
@@ -1906,7 +1947,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // Revisite de la comparaison acquise : aucune nouvelle requête, faits inchangés.
     await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' } }); await flushPromises()
     await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(2)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(3)
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
     wrapper.unmount()
@@ -1914,6 +1955,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
   it('Mobilité : tokens de comparaison incompatibles → échec fermé réessayable, puis réponse périmée ignorée', async () => {
     const model = modeleAvecContextesComparaison()
+    const context = model.themes.mobilite!.comparisons.densite!
     let comparaisons = 0
     let resolveBretagne: ((value: unknown) => void) | undefined
     const bretagne = new Promise((resolve) => { resolveBretagne = resolve })
@@ -1923,7 +1965,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       selection, scope: { kind: 'explicit_selection', member_count: (Array.isArray(selection) ? selection.length : 0) },
       results: [], profile_comparisons: [], reading_content_version: 'mobilite-v1', reading_cloud: null })
     const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
-      if (String(url).endsWith('/facts')) return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
+      if (String(url).endsWith('/facts')) return { ok: true, json: async () =>
+        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
       const demandee = JSON.parse(String(options?.body)).selection
       comparaisons += 1
       if (demandee.length > 100) return bretagne
@@ -1932,10 +1975,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci', vi.fn(async () => model))
     await flushPromises()
-    // Le premier POST échoue sur tokens incompatibles : bandeau, faits focaux intacts, réessayable.
-    expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
+    // Le premier POST échoue sur tokens incompatibles : l'état comparé du cahier
+    // est réessayable, les faits focaux restent rendus.
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
-    await wrapper.get('[role="alert"] button').trigger('click')
+    await wrapper.get('[role="tabpanel"] button').trigger('click')
     await flushPromises()
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     // La sélection bretagne lance une requête qui traîne ; on REPART vers epci

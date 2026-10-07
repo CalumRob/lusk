@@ -128,6 +128,25 @@ class PreparedNetworkCacheTests(unittest.TestCase):
             self.assertEqual(validations["osm"], 2)
             self.assertNotEqual(initial["osm"], rebuilt["osm"])
 
+    def test_read_only_cache_reuses_valid_generation_and_fails_without_building(self):
+        with tempfile.TemporaryDirectory() as temp:
+            cache_root = Path(temp) / "readonly-network-source-cache"
+            calls = {"osm": 0}
+            preparation = family({"source": "fixture-v1"}, {"lines": "network.fgb"}, calls, "osm")
+            with self.assertRaisesRegex(RuntimeError, "read-only.*no validated current generation"):
+                prepare_network_sources(cache_root, {"osm": preparation}, read_only=True)
+            self.assertFalse(cache_root.exists())
+            self.assertEqual(calls["osm"], 0)
+
+            original = prepare_network_sources(cache_root, {"osm": preparation})
+            before = (cache_root / "osm" / "current.json").read_bytes()
+            reused = prepare_network_sources(cache_root, {"osm": preparation}, read_only=True)
+            self.assertEqual(reused, original)
+            self.assertEqual((cache_root / "osm" / "current.json").read_bytes(), before)
+            self.assertEqual(calls["osm"], 1)
+            with self.assertRaisesRegex(ValueError, "cannot be force-refreshed"):
+                prepare_network_sources(cache_root, {"osm": preparation}, read_only=True, force=True)
+
 
 if __name__ == "__main__":
     unittest.main()

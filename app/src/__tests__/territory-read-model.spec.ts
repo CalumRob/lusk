@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
+import { mount } from '@vue/test-utils'
 
 import {
   indicateursMobiliteFixture,
@@ -14,14 +15,48 @@ import {
   validerModeleTerritoire,
 } from '@/payload/territoryReadModel'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
+import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
+import CahierMotorisationFigure from '@/fiche/prototype/CahierMotorisationFigure.vue'
+import { remplacerFaitsScalaires } from '@/payload/scalarCohort'
 
 const target = territoiresFixture.find((territoire) => territoire.territoire === '22001')!
 const modelePublie22001 = JSON.parse(readFileSync(
   resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'),
   'utf8',
 ))
+const modelePublie22002 = JSON.parse(readFileSync(
+  resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22002.json'),
+  'utf8',
+))
 
 describe('le modèle de lecture d’un territoire', () => {
+  it('transporte le rider réel de la chaîne statique jusqu’à la figure de motorisation', () => {
+    const modele = validerModeleTerritoire(
+      modelePublie22002,
+      'territoires/commune/22002.json',
+      { type: 'commune', territoire: '22002' },
+      { requireAllThemes: true },
+    )
+    const mobilite = modele.themes.mobilite!
+    const payload = payloadDepuisModeleTerritoire(modele)
+    const bornesRow = payload.indicateurs.find((row) => row.key === 'bornes_ev_par_station_service')!
+    const scalarOverlay = remplacerFaitsScalaires(
+      payload.indicateurs,
+      [{ ...bornesRow, rider: null }],
+      ['bornes_ev_par_station_service'],
+    )
+    const facts = territoryFactsFor({ ...payload, indicateurs: scalarOverlay }, '22002')!
+    const motorisation = resolveMobiliteThemeContent(facts, mobilite.metadata).units[2]!.sections[0]!.evidence
+    expect(motorisation?.kind).toBe('motorisation')
+    if (motorisation?.kind !== 'motorisation') throw new Error('Éléments de motorisation attendus')
+    const bornes = motorisation.charging.find(({ fact }) => fact.key === 'bornes_ev_par_station_service')!
+    expect(bornes.fact.reason).toBe('Aucune station-service sur le territoire')
+    const rendered = mount(CahierMotorisationFigure, { props: motorisation })
+    expect(rendered.text()).toContain('Indisponible')
+    expect(rendered.find('.motorisation-rider').exists()).toBe(true)
+    expect(rendered.find('.motorisation-rider').text()).toBe('Aucune station-service sur le territoire')
+  })
+
   it('refuse au chargement un artefact de production qui ne porte pas les six thèmes', async () => {
     const fetchMock = vi.fn(async () => ({
       ok: true,

@@ -345,7 +345,7 @@ class NetworkPreparationTests(unittest.TestCase):
             osm_path.write_bytes(b"osm source placeholder")
             geovelo_path.write_bytes(b"geovelo source placeholder")
 
-            def build_caches(cache_root, preparations, *, force=False, report=None):
+            def build_caches(cache_root, preparations, *, force=False, report=None, read_only=False):
                 for family, preparation in preparations.items():
                     preparation.build(root / f"built-{family}")
                 return {}
@@ -459,6 +459,9 @@ class NetworkPreparationTests(unittest.TestCase):
         raw.mkdir(parents=True)
         metadata = root / "pipeline" / "inst" / "extdata"
         metadata.mkdir(parents=True)
+        registry = root / "territoires.json"
+        registry.write_text(json.dumps([{"territoire": "22", "type": "departement",
+            "nom": "Côtes-d'Armor"}]), encoding="utf-8")
         (metadata / "epci_geo_api.json").write_text(json.dumps({"labels": [
             {"code": "epci-a", "nom": "A"}, {"code": "epci-b", "nom": "B"}]}), encoding="utf-8")
         communes = QgsVectorLayer(
@@ -484,7 +487,8 @@ class NetworkPreparationTests(unittest.TestCase):
             communes, str(raw / "communes_limites.geojson"), project.transformContext(), options)
         self.assertEqual(result[0], QgsVectorFileWriter.NoError, result)
         binding = build_full_map_set(raw, project,
-            family_config={"scope": {"analytical_departments": ["22"]}})
+            family_config={"scope": {"analytical_departments": ["22"]}},
+            territory_registry_path=registry)
         adapter = NetworkAdapter(raw)
         adapter.family_config = {"scope": {"analytical_departments": ["22"]}}
         adapter.preflight_scope(None, binding, "full", ("inspection", "inline"))
@@ -494,12 +498,41 @@ class NetworkPreparationTests(unittest.TestCase):
         self.assertEqual(territories, {("commune", "22001"), ("commune", "22002"),
             ("epci", "epci-a"), ("epci", "epci-b"), ("departement", "22"), ("region", "53")})
         self.assertEqual(len(items), len(territories) * len({item["mode"] for item in items}))
+        department = next(item for item in items if item["territory"]["kind"] == "departement")
+        self.assertEqual(department["territory"]["name"], "Côtes-d'Armor")
+        registry.write_text(json.dumps([{"territoire": "22", "type": "departement",
+            "nom": "Côtes-d'Armor (updated)"}]), encoding="utf-8")
+        updated = build_full_map_set(raw, project,
+            family_config={"scope": {"analytical_departments": ["22"]}},
+            territory_registry_path=registry)
+        self.assertEqual(next(item for item in updated.map_set.layers["network-outputs"]
+            if item["territory"]["kind"] == "departement")["territory"]["name"],
+            "Côtes-d'Armor (updated)")
         epci_b = next(item for item in items if item["territory"]["code"] == "epci-b")
         self.assertEqual(epci_b["geometry"].boundingBox().xMaximum(), 50)
         self.assertEqual(epci_b["analytical_geometry"].boundingBox().xMaximum(), 30)
         incomplete = Binding("network", MapSet({"network-outputs": items[:-1]}))
         with self.assertRaisesRegex(ValueError, "does not cover exactly"):
             adapter.preflight_scope(None, incomplete, "full", ("inspection", "inline"))
+
+    def test_department_label_registry_fails_closed(self):
+        from network import _department_labels
+        root = Path(tempfile.mkdtemp(prefix="lusk-department-labels-"))
+        self.__class__.fixture_dirs.append(root)
+        registry = root / "territoires.json"
+        registry.write_text(json.dumps([{"territoire": "22", "type": "commune", "nom": "Wrong"}]),
+                            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "missing department labels"):
+            _department_labels(registry, {"22"})
+        registry.write_text(json.dumps([
+            {"territoire": "22", "type": "departement", "nom": "Côtes-d'Armor"},
+            {"territoire": "22", "type": "departement", "nom": "Duplicate"}]), encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "duplicate department label"):
+            _department_labels(registry, {"22"})
+        registry.write_text(json.dumps([{"territoire": "22", "type": "departement", "nom": "22"}]),
+                            encoding="utf-8")
+        with self.assertRaisesRegex(ValueError, "invalid department label"):
+            _department_labels(registry, {"22"})
 
     def test_real_network_adapter_recomputes_paired_current_review_identities(self):
         from dataclasses import replace
@@ -519,8 +552,9 @@ class NetworkPreparationTests(unittest.TestCase):
         binding = Binding("network", MapSet({"network-outputs": features}))
         adapter.effective_input_identity = lambda feature, profile: {"visible": feature["mode"]}
         recipe = network_recipe()
+        renderer_identity = adapter.render_identity()
         current = adapter.current_approval_members(recipe, binding,
-            ("inspection", "inline"), adapter.render_identity())
+            ("inspection", "inline"), renderer_identity)
         changed_recipe = replace(recipe, foundation=replace(recipe.foundation,
             composition={**recipe.foundation.composition,
                 "inline": {"shadow": "changed-profile-rule"}}))
@@ -533,6 +567,11 @@ class NetworkPreparationTests(unittest.TestCase):
                               for name in ("inspection", "inline")}
         self.assertEqual(by_profile["inspection"], changed_by_profile["inspection"])
         self.assertNotEqual(by_profile["inline"], changed_by_profile["inline"])
+        current_output_contract = adapter.output_contract
+        adapter.output_contract = lambda profile: {**current_output_contract(profile), "quality": 79}
+        changed_encoding = adapter.current_approval_members(recipe, binding,
+            ("inspection", "inline"), renderer_identity)
+        self.assertNotEqual({item[4] for item in current}, {item[4] for item in changed_encoding})
 
     def test_network_adapter_approval_seam_prepares_only_representative_binding(self):
         from network import NetworkAdapter, network_recipe
@@ -551,6 +590,228 @@ class NetworkPreparationTests(unittest.TestCase):
         self.assertNotEqual(prepare.call_args.args[3], output_root)
         self.assertEqual(prepare.call_args.kwargs["context_cache_root"],
                          output_root / ".stage-cache" / "official-context")
+
+    def test_network_adapter_uses_explicit_read_only_context_cache_root(self):
+        from network import NetworkAdapter, network_recipe
+        from runner import Binding, MapSet
+        raw = Path("fixture-raw")
+        shared_root = Path("fixture-shared-context-read-only")
+        adapter = NetworkAdapter(raw, context_cache_root=shared_root)
+        extent = QgsRectangle(0, 0, 10, 10)
+        feature = {"geometry": QgsGeometry.fromRect(extent),
+            "territory": {"kind": "commune", "code": "1", "name": "One"},
+            "mode": "car", "analytical_geometry": QgsGeometry.fromRect(extent), "extent": extent}
+        binding = Binding("network", MapSet({"network-outputs": [feature]}))
+        with TemporaryDirectory() as directory:
+            with (patch("map_ground.prepare_shared_ground", return_value=object()) as prepare_shared,
+                  patch("network._prepare_network_layers", return_value={"car": [], "walk": [], "bike": []})):
+                adapter.prepare_run(network_recipe(), binding, ("inspection",), Path(directory))
+            self.assertEqual(prepare_shared.call_args.kwargs["context_cache_root"], shared_root)
+            self.assertFalse(shared_root.exists(), "the explicitly selected shared source is read-only")
+
+    def test_drain_stage_report_clears_shared_buffer_in_place(self):
+        from network import NetworkAdapter
+        adapter = NetworkAdapter(Path("fixture-raw"))
+        buffer = adapter._stage_events
+        buffer.extend([{"stage": "one", "seconds": 0.1}, {"stage": "two", "features": 3}])
+        self.assertEqual(adapter.drain_stage_report(), [
+            {"stage": "one", "seconds": 0.1}, {"stage": "two", "features": 3}])
+        self.assertIs(adapter._stage_events, buffer)
+        self.assertEqual(buffer, [])
+        self.assertEqual(adapter.drain_stage_report(), [])
+
+    def test_full_lifecycle_reports_actual_cache_high_water_and_releases_only_territory_state(self):
+        from types import SimpleNamespace
+        from network import NetworkAdapter
+        adapter = NetworkAdapter(Path("unused-raw"))
+        feature = {"territory": {"kind": "commune", "code": "35238"}}
+        shared_frontiers = {b"bretagne": object()}
+        adapter._shared_ground = SimpleNamespace(_frontiers=shared_frontiers)
+        adapter.begin_production_scope("full", Path("unused-output"))
+        self.assertFalse(adapter._persist_territory_stages)
+        adapter.begin_territory(feature, ("inspection", "inline"), Path("unused-output"))
+        adapter._ground_cache["inspection"] = object()
+        adapter._ground_cache["inline"] = object()
+        adapter._identity_cache["ground-id"] = "sha256"
+        adapter._ocsge_identity_cache["ocsge-id"] = (b"digest", 10)
+        adapter._network_scope_cache["scope"] = (object(), object())
+        adapter._visible_ground_parts_cache["visible"] = (b"context", b"territory", b"frontier")
+        adapter._context_scope_cache["context"] = b"scope-bytes"
+        adapter.observe_territory_state(feature)
+        adapter.end_territory(feature, Path("unused-output"), success=False)
+        report = adapter.stage_report()[-1]
+        self.assertEqual(report["stage"], "territory-working-set-release")
+        self.assertEqual(report["high_water_objects"], {
+            "ground_preparations": 2, "ground_identities": 1, "ocsge_identities": 1,
+            "network_scopes_and_engines": 1, "visible_ground_derivatives": 1,
+            "visible_context_scopes": 1})
+        self.assertTrue(all(value == 0 for value in report["retained_objects"].values()))
+        self.assertEqual(shared_frontiers, {b"bretagne": shared_frontiers[b"bretagne"]})
+        self.assertTrue(report["success"] is False)
+        adapter.end_production_scope("full", Path("unused-output"), success=False)
+        self.assertTrue(adapter._persist_territory_stages)
+
+    def test_reused_final_output_report_does_not_read_or_claim_terrain_cache(self):
+        from network import NetworkAdapter
+        adapter = NetworkAdapter(Path("unused-raw"))
+        feature = {"territory": {"kind": "commune", "code": "35238"}}
+        with patch.object(adapter, "_ground_id", side_effect=AssertionError("must not inspect ground cache")):
+            adapter.record_reused_output(feature, type("Profile", (), {"name": "inspection"})(),
+                Path("unused-output"))
+        event = adapter.stage_report()[-1]
+        self.assertEqual(event["decision"], "not-loaded-reused-output")
+
+    def test_full_scope_real_adapter_render_shares_ground_in_ram_without_disk_stage(self):
+        from types import SimpleNamespace
+        from qgis.core import QgsRectangle
+        from network import NetworkAdapter, network_recipe
+        from runner import PROFILES
+        from map_ground import PreparedGround
+
+        adapter = NetworkAdapter(Path("unused-raw"))
+        adapter._shared_ground = object()
+        adapter._network_layers = {"car": [], "walk": []}
+        adapter.begin_production_scope("full", Path("unused-output"))
+        extent = QgsRectangle(0, 0, 10, 10)
+        feature = {"extent": extent, "territory": {"kind": "commune", "code": "1", "name": "One"},
+            "mode": "car", "analytical_geometry": QgsGeometry.fromRect(extent)}
+        second_mode = {**feature, "mode": "walk"}
+        prepared = PreparedGround(QImage(4, 4, QImage.Format_ARGB32), QImage(4, 4, QImage.Format_ARGB32),
+            QImage(4, 4, QImage.Format_ARGB32), QgsGeometry(), __import__("numpy").zeros((4, 4)), extent)
+        profile = type("TinyInspection", (), {"name": "inspection", "size": (4, 4),
+            "transparent_outside": False})()
+        opaque = QImage(4, 4, QImage.Format_RGBA8888)
+        opaque.fill(QColor(20, 30, 40, 255))
+        with TemporaryDirectory() as folder:
+            with (patch("network.NetworkAdapter._ground_id", return_value="ground-identity"),
+                  patch("map_ground.prepare_ground", return_value=prepared) as prepare_ground,
+                  patch("map_ground.render_layers", return_value=opaque),
+                  patch("inspection_plate.compose_inspection", return_value=opaque),
+                  patch.object(adapter, "_read_ground_stage") as read_stage,
+                  patch.object(adapter, "_write_ground_stage") as write_stage):
+                adapter.begin_territory(feature, ("inspection", "inline"), Path(folder))
+                first = adapter.render(network_recipe(), feature, profile, Path(folder))
+                second = adapter.render(network_recipe(), second_mode, profile, Path(folder))
+                adapter.observe_territory_state(feature)
+                self.assertTrue(first.is_file() and second.is_file())
+                self.assertEqual(prepare_ground.call_count, 1)
+                read_stage.assert_not_called()
+                write_stage.assert_not_called()
+                self.assertEqual(len(adapter._ground_cache), 1)
+                adapter.end_territory(feature, Path(folder), success=True)
+                self.assertEqual(adapter.stage_report()[-1]["high_water_objects"]["ground_preparations"], 1)
+                self.assertEqual(adapter._ground_cache, {})
+                self.assertFalse((Path(folder) / ".stage-cache" / "ground").exists())
+        adapter.end_production_scope("full", Path("unused-output"), success=True)
+
+    def test_full_scope_visible_ground_and_network_scopes_are_memory_only(self):
+        from types import SimpleNamespace
+        from qgis.core import QgsGeometry, QgsPointXY, QgsRectangle
+        from network import NetworkAdapter
+        from runner import PROFILES
+
+        adapter = NetworkAdapter(Path("unused-raw"))
+        extent = QgsRectangle(0, 0, 10, 10)
+        territory = QgsGeometry.fromRect(extent)
+        region = QgsGeometry.fromRect(QgsRectangle(-10, -10, 20, 20))
+        boundary = QgsGeometry.fromPolylineXY([QgsPointXY(0, 0), QgsPointXY(10, 10)])
+        adapter._shared_ground = SimpleNamespace(context_geometry=region,
+            context_geometries=(region,), frontier_for=lambda _region: boundary)
+        with TemporaryDirectory() as folder:
+            stage_root = Path(folder) / ".stage-cache"
+            adapter._network_scope_cache_root = stage_root / "network-influence-scope"
+            adapter._visible_ground_parts_cache_root = stage_root / "visible-ground-derivatives"
+            adapter.begin_production_scope("full", Path(folder))
+            feature = {"territory": {"kind": "commune", "code": "1"},
+                "geometry": territory, "region_geometry": region,
+                "analytical_geometry": territory, "extent": extent, "mode": "car"}
+            adapter.begin_territory(feature, ("inline",), Path(folder))
+            _, _, network_decision, _ = adapter._network_influence_scope(feature, PROFILES["inline"])
+            _, parts_decision, _ = adapter._visible_ground_parts(feature, PROFILES["inline"])
+            adapter.observe_territory_state(feature)
+            self.assertEqual(network_decision, "built-in-memory")
+            self.assertEqual(parts_decision, "built-in-memory")
+            self.assertEqual(len(adapter._network_scope_cache), 1)
+            self.assertEqual(len(adapter._visible_ground_parts_cache), 1)
+            self.assertFalse(adapter._network_scope_cache_root.exists())
+            self.assertFalse(adapter._visible_ground_parts_cache_root.exists())
+            adapter.end_territory(feature, Path(folder), success=True)
+            self.assertEqual(adapter._network_scope_cache, {})
+            self.assertEqual(adapter._visible_ground_parts_cache, {})
+
+    def test_public_full_runner_wires_real_adapter_territory_lifecycle_and_bounds_high_water(self):
+        sys.path.insert(0, str(Path(__file__).parent))
+        from test_contract import png
+        from network import NetworkAdapter, network_recipe
+        from runner import Binding, MapSet, run_production
+        from approval import approval_payload
+
+        adapter = NetworkAdapter(Path("unused-raw"))
+        recipe = network_recipe()
+        renderer_identity = {"renderer": "network-lifecycle-fixture"}
+        representatives = [(kind, code, mode, profile,
+            __import__("hashlib").sha256(f"{kind}/{code}/{mode}/{profile}".encode()).hexdigest())
+            for kind, code in (("commune", "35238"), ("region", "53"), ("epci", "243500741"))
+            for mode in ("car", "walk", "bike") for profile in ("inspection", "inline")]
+        claim = {"scope": "representative", "approval_pairs_complete": True,
+            "recipe": recipe.name, "recipe_version": recipe.version,
+            "foundation_version": recipe.foundation.version, "renderer_identity": renderer_identity,
+            "approval_members": representatives}
+        approval = approval_payload(claim)
+        approval.update({"human_approved": True, "reviewer": "fixture reviewer", "visual_outcome": "approved"})
+        features = [{"geometry": f"polygon-{code}", "territory": {"kind": "fixture", "code": code,
+            "name": f"Territory {code}"}, "mode": mode,
+            "analytical_geometry": f"analysis-{code}", "extent": f"extent-{code}"}
+            for mode in ("car", "walk", "bike") for code in ("1", "2")]
+        binding = Binding(recipe.family, MapSet({"outputs": features}))
+        adapter.render_identity = lambda: renderer_identity
+        adapter.output_contract = lambda profile: {"format": "png", "dimensions": list(profile.size)}
+        adapter.expected_output_path = lambda feature, profile, output_dir: (
+            Path(output_dir) / f"{feature['territory']['code']}-{feature['mode']}-{profile.name}.png")
+        adapter.input_identity = lambda: {"source": "fixture"}
+        adapter.profile_identity = lambda *_args: {"profile-renderer": "fixture"}
+        adapter.effective_input_identity = lambda feature, profile: {
+            "visible_content_sha256": __import__("hashlib").sha256(
+                f"{feature['territory']['code']}/{feature['mode']}/{profile.name}".encode()).hexdigest()}
+        adapter.preflight_profiles = lambda *_args: None
+        adapter.preflight_scope = lambda *_args: None
+        adapter.prepare_current_approval_members = lambda *_args: representatives
+        adapter.prepare_run = lambda *_args, **_kwargs: None
+        adapter.validate = lambda *_args: None
+
+        def fake_render(_recipe, feature, profile, output_dir):
+            territory = feature["territory"]["code"]
+            adapter._ground_cache[(territory, profile.name)] = object()
+            adapter._identity_cache[(territory, feature["mode"], profile.name)] = "digest"
+            if profile.name == "inspection":
+                adapter._ocsge_identity_cache[(territory, feature["mode"])] = (b"digest", 2)
+            adapter._network_scope_cache[(territory, feature["mode"], profile.name)] = (object(), object())
+            adapter._visible_ground_parts_cache[(territory, feature["mode"], profile.name)] = (b"a", b"b", b"c")
+            adapter._context_scope_cache[(territory, profile.name)] = b"context"
+            path = adapter.expected_output_path(feature, profile, output_dir)
+            output_dir.mkdir(parents=True, exist_ok=True)
+            png(path, *profile.size, rgba=profile.transparent_outside,
+                transparent=profile.transparent_outside)
+            return path
+        adapter.render = fake_render
+
+        with TemporaryDirectory() as folder:
+            result = run_production(recipe, binding, "full", ("inspection", "inline"),
+                adapter, folder, approval=approval)
+            self.assertEqual(result.qa["artifact_count"], 12)
+            self.assertEqual(result.qa["status"], "passed")
+            release = [item for item in result.manifest["stage_report"]
+                       if item["stage"] == "territory-working-set-release"]
+            self.assertEqual([item["territory"] for item in release], ["fixture/1", "fixture/2"])
+            for item in release:
+                self.assertEqual(item["high_water_objects"], {
+                    "ground_preparations": 2, "ground_identities": 6, "ocsge_identities": 3,
+                    "network_scopes_and_engines": 6, "visible_ground_derivatives": 6,
+                    "visible_context_scopes": 2})
+                self.assertTrue(all(value == 0 for value in item["retained_objects"].values()))
+            self.assertFalse((Path(folder) / ".stage-cache" / "ground").exists())
+        self.assertEqual(adapter._ground_cache, {})
+        self.assertTrue(adapter._persist_territory_stages)
 
     def test_post_batch_visual_review_selection_is_family_metadata_owned(self):
         from network import NetworkAdapter
@@ -653,8 +914,12 @@ class NetworkPreparationTests(unittest.TestCase):
         adapter = NetworkAdapter(Path(__file__).parents[3] / "data" / "raw")
 
         with TemporaryDirectory() as directory:
-            path = Path(directory) / "inline.png"
-            self.assertTrue(image.save(str(path), "PNG"))
+            from webp_encoding import encode_qimage
+            path = Path(directory) / "inline.webp"
+            def write_webp(source):
+                path.unlink(missing_ok=True)
+                encode_qimage(source, path, preserve_alpha=True)
+            write_webp(image)
             with patch("network.QgsGeometry.createGeometryEngine",
                        wraps=QgsGeometry.createGeometryEngine) as engine:
                 adapter.validate(path, feature, PROFILES["inline"])
@@ -668,7 +933,7 @@ class NetworkPreparationTests(unittest.TestCase):
                 with self.subTest(label=label):
                     invalid = image.copy()
                     invalid.setPixelColor(x, y, QColor(255, 255, 255, alpha))
-                    self.assertTrue(invalid.save(str(path), "PNG"))
+                    write_webp(invalid)
                     with self.assertRaisesRegex(ValueError, error):
                         adapter.validate(path, feature, PROFILES["inline"])
 
