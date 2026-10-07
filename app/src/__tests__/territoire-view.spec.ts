@@ -480,6 +480,32 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     }
   })
 
+  it.each([
+    ['epci', '242200715', 'epcis-bretagne'],
+    ['departement', '22', 'departements-bretagne'],
+    ['region', '53', null],
+  ] as const)('renders the raccordement curve from API facts for %s %s', async (type, code, kind) => {
+    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
+    const published = JSON.parse(readFileSync(resolve(process.cwd(),
+      `../public/data/modeles-lecture/territoires/${type}/${code}.json`), 'utf8'))
+    const model = validerModeleTerritoire(published, `${type}/${code}.json`, { type, territoire: code })
+    const label = model.themes.mobilite?.comparisons.bretagne?.scope.label
+    const fetchApi = vi.fn(async () => ({ ok: true, json: async () =>
+      reponseThemeMobiliteApi(model, type, code, kind, label) }))
+    vi.stubGlobal('fetch', fetchApi)
+    try {
+      const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
+      await flushPromises()
+      const plot = wrapper.get('#figure-offre-transports-commun .transit-plot svg')
+      expect(plot.attributes('role')).toBe('img')
+      expect(wrapper.find('#figure-offre-transports-commun .transit-series--territory').exists()).toBe(true)
+      expect(wrapper.find('#figure-offre-transports-commun .transit-unavailable').exists()).toBe(false)
+      wrapper.unmount()
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
   it('ne déclenche pas le fan-out scalaire avec un registre Mobilité actif sur la variante E', async () => {
     await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
     const catalogue = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))

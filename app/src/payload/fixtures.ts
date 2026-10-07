@@ -2059,7 +2059,7 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
   const pageBase = {
     unit: '%',
     direction: 'high' as const,
-    levels: ['commune', 'epci', 'departement', 'region'] as ('commune' | 'epci' | 'departement' | 'region')[],
+    levels: ['commune', 'epci', 'departement'] as ('commune' | 'epci' | 'departement')[],
     sources: ['matrice_temps_mairies'],
   }
   const caveat = base.indicator_caveats?.raccordement_tc ?? 'La couverture réellement mesurée par le réseau est signalée.'

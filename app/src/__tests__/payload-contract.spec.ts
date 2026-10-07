@@ -142,7 +142,8 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(metadonneesMobiliteRaccordementFixture.indicator_keys).toEqual(
       expect.arrayContaining(['raccordement_tc', 'raccordement_courbe', 'raccordement_reference']),
     )
-    expect(metadonneesMobiliteRaccordementFixture.indicator_pages.raccordement_courbe.levels)
+    const publishedMobility = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    expect(publishedMobility.indicator_pages.raccordement_courbe.levels)
       .toEqual(['commune', 'epci', 'departement', 'region'])
     expect(metadonneesMobiliteRaccordementFixture.subgroups.find((group) => group.key === 'offre-transports-commun')).toMatchObject({
       indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
