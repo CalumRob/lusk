@@ -49,6 +49,7 @@ type Key = { type: string; id: string; theme: ThemeKey }
 /** Lazy per-theme cache. A comparison is independently acquired and can never replace focal facts. */
 export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
   private readonly entries = new Map<string, AcquiredTheme<T>>()
+  private readonly pendingFacts = new Map<string, Promise<AcquiredTheme<T>>>()
   private readonly generations = new Map<string, number>()
 
   constructor(
@@ -63,12 +64,19 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     const cacheKey = this.key(key)
     const cached = this.entries.get(cacheKey)
     if (cached) return cached
+    const pending = this.pendingFacts.get(cacheKey)
+    if (pending) return pending
     const generation = this.generations.get(cacheKey) ?? 0
-    const focal = await this.acquireFacts(theme, key)
-    if (generation !== (this.generations.get(cacheKey) ?? 0)) throw new Error('Stale theme acquisition response')
-    const result = { focal, comparisons: new Map<string, ThemeResponse>() }
-    this.entries.set(cacheKey, result)
-    return result
+    const request = this.acquireFacts(theme, key).then((focal) => {
+      if (generation !== (this.generations.get(cacheKey) ?? 0)) throw new Error('Stale theme acquisition response')
+      const result = { focal, comparisons: new Map<string, ThemeResponse>() }
+      this.entries.set(cacheKey, result)
+      return result
+    }).finally(() => {
+      if (this.pendingFacts.get(cacheKey) === request) this.pendingFacts.delete(cacheKey)
+    })
+    this.pendingFacts.set(cacheKey, request)
+    return request
   }
 
   async select(type: string, id: string, theme: ThemeKey, selection: readonly ThemeSelectionMember[] | undefined): Promise<AcquiredTheme<T>> {
@@ -106,6 +114,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     for (const selectedTheme of themes) {
       const key = this.key({ type, id, theme: selectedTheme })
       this.generations.set(key, (this.generations.get(key) ?? 0) + 1)
+      this.pendingFacts.delete(key)
     }
   }
 }

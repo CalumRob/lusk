@@ -44,6 +44,38 @@ describe('theme acquisition cache', () => {
     expect(acquire.mock.calls.map(([theme]) => theme)).toEqual(['programmes', 'habitat', 'programmes'])
   })
 
+  it('deduplicates concurrent facts requests and evicts a rejected in-flight request for retry', async () => {
+    let resolve!: (value: { theme_id: string }) => void
+    const deferred = new Promise<{ theme_id: string }>((yes) => { resolve = yes })
+    const acquire = vi.fn().mockReturnValueOnce(deferred).mockResolvedValueOnce({ theme_id: 'mobilite', attempt: 2 })
+    const cache = new ThemeAcquisitionCache(acquire)
+    const first = cache.get('commune', '22001', 'mobilite')
+    const concurrent = cache.get('commune', '22001', 'mobilite')
+    expect(acquire).toHaveBeenCalledTimes(1)
+    resolve({ theme_id: 'mobilite' })
+    expect((await first).focal).toEqual((await concurrent).focal)
+
+    const failing = vi.fn().mockRejectedValueOnce(new Error('offline')).mockResolvedValueOnce({ theme_id: 'mobilite' })
+    const retryCache = new ThemeAcquisitionCache(failing)
+    await expect(retryCache.get('commune', '22001', 'mobilite')).rejects.toThrow('offline')
+    expect((await retryCache.get('commune', '22001', 'mobilite')).focal.theme_id).toBe('mobilite')
+    expect(failing).toHaveBeenCalledTimes(2)
+  })
+
+  it('does not cache an invalidated in-flight response and starts a fresh generation', async () => {
+    let resolveOld!: (value: { generation: string }) => void
+    const oldRequest = new Promise<{ generation: string }>((yes) => { resolveOld = yes })
+    const acquire = vi.fn().mockReturnValueOnce(oldRequest).mockResolvedValueOnce({ generation: 'new' })
+    const cache = new ThemeAcquisitionCache(acquire)
+    const stale = cache.get('commune', '22001', 'mobilite')
+    cache.invalidate('commune', '22001', 'mobilite')
+    expect((await cache.get('commune', '22001', 'mobilite')).focal.generation).toBe('new')
+    resolveOld({ generation: 'old' })
+    await expect(stale).rejects.toThrow(/stale/i)
+    expect((await cache.get('commune', '22001', 'mobilite')).focal.generation).toBe('new')
+    expect(acquire).toHaveBeenCalledTimes(2)
+  })
+
   it('merges a comparison-only response while retaining focal facts and distinguishing empty from default', async () => {
     const facts = vi.fn(async () => ({ content_version: 'v1', reference_content_version: 'r1', focal: { value: 17 } }))
     const comparison = vi.fn(async (selection: readonly ThemeSelectionMember[] | undefined) => ({
