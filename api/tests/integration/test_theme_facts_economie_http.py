@@ -16,4 +16,5 @@ def test_economie_selected_facts_http_snapshot():
         assert result.status_code==200,result.text
         row=result.json()['readings'][0]
         assert row['activities'][0]['activity_code']=='A'
-        # eco_activites has no registered ordinary scalar contract; typed evidence is served above.
+        # This fixture isolates typed activity evidence; canonical eco_activites scalar coverage
+        # is exercised through the guarded registered-publisher HTTP test.
