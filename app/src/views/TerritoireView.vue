@@ -583,7 +583,9 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
   const facts = prototypeAccesApi.value
     ? mobilityFocal.value
       ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
-      : mobilityFactsFromThemeApi(toRaw(payloadPourRendu.value), idRoute.value, null)
+      : mobilityFactsFromThemeApi(
+        toRaw(payloadPourRendu.value), idRoute.value, null, resolutionComparaison.value?.contexte ?? undefined,
+      )
     : territoryFactsFor(toRaw(payloadPourRendu.value), idRoute.value,
       resolutionComparaison.value?.contexte ?? undefined)
   if (!facts) return null
