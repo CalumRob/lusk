@@ -69,7 +69,7 @@ describe('Production Mobilité — shell performance seam', () => {
 
     await flushPromises()
 
-    expect(factsSpy).toHaveBeenCalledTimes(2)
+    expect(factsSpy).toHaveBeenCalledTimes(1)
     expect(factsSpy.mock.calls.every(([facts]) => !isReactive(facts))).toBe(true)
     expect(wrapper.find('.fiche-en-tete-surface').exists()).toBe(true)
     expect(wrapper.find('.fiche--theme-mobilite').exists()).toBe(true)

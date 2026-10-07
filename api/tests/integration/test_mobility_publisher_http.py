@@ -34,7 +34,8 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             response = client.get(f"/api/territories/commune/{territory}/themes/mobilite/facts")
             assert response.status_code == 200, response.text
             body = response.json()
-            profiles = {profile["indicator"]: profile for profile in body["profiles"]}
+            profiles = {profile["indicator_id"]: profile for profile in body["indicator_metadata"]
+                        if profile["kind"] == "declared_dimensions"}
             expected_counts = {"voitures_menage": 3, "reseaux": 3,
                                "reseaux_par_habitant": 3, "offre_cyclable": 5}
             expected_details = {
@@ -73,9 +74,9 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             assert set(expected_counts).issubset(profiles)
             for indicator, count in expected_counts.items():
                 profile = profiles[indicator]
-                cells = profile["cells"]
+                cells = [row for row in body["indicators"] if row["indicator_id"] == indicator]
                 assert len(cells) == count
-                assert [cell["detail"] for cell in cells] == expected_details[indicator]
+                assert [cell["dimensions"]["detail"] for cell in cells] == expected_details[indicator]
                 assert [cell["value"] for cell in cells] == [index / 10 for index in range(1, count + 1)]
                 assert [cell["unit"] for cell in cells] == expected_units[indicator]
                 assert all(cell["status"] == "measured" for cell in cells)
@@ -117,7 +118,8 @@ def test_mobility_profile_publisher_output_is_served_over_http():
                                 for row in body["default_comparison"]["profile_comparisons"]}
             for indicator, detail in comparison_details.items():
                 result = comparison_by_id[indicator]
-                cell = next(cell for cell in profiles[indicator]["cells"] if cell["detail"] == detail)
+                cell = next(cell for cell in body["indicators"] if cell["indicator_id"] == indicator
+                            and cell["dimensions"]["detail"] == detail)
                 assert result["facet"] == {"detail": detail, "sex": None}
                 assert result["unit"] == cell["unit"]
                 assert result["denominator_semantics"] == profiles[indicator]["denominator_semantics"]
@@ -139,8 +141,8 @@ def test_mobility_profile_publisher_output_is_served_over_http():
             assert all("focal_value" not in row for row in mixed["profile_comparisons"])
             mixed_by_id = {row["indicator"]: row for row in mixed["profile_comparisons"]}
             assert {row["median"] for row in mixed_by_id.values()} == {
-                profiles[indicator]["cells"][next(i for i, c in enumerate(profiles[indicator]["cells"])
-                    if c["detail"] == comparison_details[indicator])]["value"]
+                next(c for c in body["indicators"] if c["indicator_id"] == indicator
+                     and c["dimensions"]["detail"] == comparison_details[indicator])["value"]
                 for indicator in comparison_details}
 
             empty = client.post(comparison_url, json={"theme_id": "mobilite", "selection": []})

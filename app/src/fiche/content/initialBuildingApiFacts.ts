@@ -108,7 +108,7 @@ export function applyInitialBuildingApiFacts(facts: TerritoryFacts, response: un
     const peer = peerGrid?.get(key)
     if (!focal || (hasPeer && !peer)) invalid()
     return { ...cell, buildingCount: focal.building_count as number,
-      share: (focal.building_count as number) / gridTotal,
+      share: finite(focal.share) ? focal.share as number : (focal.building_count as number) / gridTotal,
       comparisonBuildingCount: peer ? peer.building_count as number : null,
       comparisonShare: peer ? peer.share as number : null }
   })

@@ -205,7 +205,7 @@ def test_canonical_mobility_reading_publication_matches_artifacts_and_four_focal
                         "territory_type": expected["territory_type"], "name": expected["territory_name"]}
                     assert body["reading_content_version"]
                     assert body["reading_descriptor_version"]
-                    assert body["profiles"] == []
+                    assert body["indicators"] == []
                     assert len(body["readings"]) == 1
                     reading = body["readings"][0]
                     expected_reading = {key: value for key, value in expected.items()

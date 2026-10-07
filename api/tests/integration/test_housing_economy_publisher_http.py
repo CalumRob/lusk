@@ -85,6 +85,12 @@ def test_registered_economy_scalar_publication_is_readable_over_http():
             assert "focal_value" not in empty.json()["result"]
             fiche = client.get(f"/api/territories/commune/{territory}/themes/economie/facts")
             assert fiche.status_code == 200, fiche.text
+            scalar = next(item for item in fiche.json()["indicators"]
+                          if item["indicator_id"] == "eco_activites")
+            assert scalar["value"] == canonical[0]
+            assert scalar["status"] == canonical[1]
+            assert scalar["unit"] == canonical[4] == "%"
+            assert scalar["sources"] == canonical[7]
             economy = next(item for item in fiche.json()["readings"] if item["groupe"] == "sante-et-taille")
             assert [tuple(item.get(key) for key in ("rank","activity_code","activity_label","lq","n","part_parc"))
                     for item in economy["activities"]] == expected_activities

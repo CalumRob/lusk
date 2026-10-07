@@ -3,6 +3,20 @@ test_that("le builder refuse un Parquet canonique manquant", {
   expect_error(preparer_tables_service(d), "Parquet canonique absent")
 })
 
+test_that("les libellés et bornes bâtimentiers sont publiés depuis le producteur", {
+  contract <- contrat_publication_batiments(list(statistic = "mean", direction = "high"))
+  ramp <- contract$building_ramp$presentation
+  grid <- contract$building_grid$presentation
+  expect_identical(ramp$modes$t, RAMPE_ACCES_BATIMENTS_MODES$mode_label[RAMPE_ACCES_BATIMENTS_MODES$mode == "t"])
+  expect_identical(ramp$x_axis_label, RAMPE_ACCES_BATIMENTS_X_LABEL)
+  expect_identical(grid$breadth_axis_label, DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL)
+  expect_identical(grid$depth[[6]]$label, "500 ou +")
+  expect_true(is.na(grid$depth[[6]]$max_value))
+  wire <- jsonlite::fromJSON(jsonlite::toJSON(contract, auto_unbox = TRUE, na = "null"), simplifyVector = FALSE)
+  expect_null(wire$building_grid$presentation$depth[[6]]$max_value)
+  expect_identical(wire$building_ramp$presentation$quantile_labels[[4]], "30 %")
+})
+
 test_that("versions sémantiques isolent les tables et ignorent l'ordre des lignes", {
   tables <- list(territory_reference=data.frame(id=c("b","a")),
     service_registry=data.frame(service=c("x","y")),

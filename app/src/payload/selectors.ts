@@ -12,6 +12,7 @@ import type {
   ColonneRang,
   ColonneTailleRang,
   Histoire,
+  HistoireDemographie,
   HistoireEconomie,
   HistoireMobilite,
   Indicateur,
@@ -352,10 +353,19 @@ export interface PointNuage {
  * among — and a click navigates to that point's own fiche (territoire/type).
  */
 export function nuageComparaison(payload: Payload, territoire: string): PointNuage[] | null {
-  return construireNuage(payload, territoire, 'demographie', (histoire) => ({
-      tauxNaturel: histoire.taux_solde_naturel,
-      tauxMigratoire: histoire.taux_solde_migratoire,
-  }))
+  const incumbent = construireNuage(payload, territoire, 'demographie', (histoire) => ({
+       tauxNaturel: histoire.taux_solde_naturel,
+       tauxMigratoire: histoire.taux_solde_migratoire,
+   })) ?? []
+  const api = payload.histoires.filter((row) => row.theme === 'demographie' &&
+    (row as unknown as { nuageDemographieApi?: boolean }).nuageDemographieApi)
+    .flatMap((row) => {
+      const point = row as HistoireDemographie & { nom?: string }
+      return point.nom ? [{ territoire: row.territoire, type: row.type, nom: point.nom,
+        tauxNaturel: (row as HistoireDemographie).taux_solde_naturel,
+        tauxMigratoire: (row as HistoireDemographie).taux_solde_migratoire }] : []
+    })
+  return [...incumbent.filter((point) => !api.some((peer) => peer.territoire === point.territoire)), ...api]
 }
 
 /** One point of the Milieux story chart's context cloud (issue #241, ADR-0017). */
@@ -526,6 +536,7 @@ const COLONNES_RANG: readonly ColonneRang[] = ['rang_epci', 'rang_dep', 'rang_re
  * level is always carried (« 1er/41 de l'EPCI », ADR-0015).
  */
 export function rangEnContexte(indicateur: Indicateur): string | null {
+  if (indicateur.comparaisonApi) return formaterRangApi(indicateur.comparaisonApi.rang, indicateur.comparaisonApi.taille, indicateur.comparaisonApi.portee)
   for (const colonne of COLONNES_RANG) {
     const libelle = formaterRang(indicateur[colonne], indicateur[TAILLE_RANG[colonne]], colonne)
     if (libelle !== null) return libelle
@@ -548,6 +559,10 @@ export interface DetailsRang {
 }
 
 export function detailsRangEnContexte(indicateur: Indicateur): DetailsRang | null {
+  if (indicateur.comparaisonApi) {
+    const { rang, taille, portee } = indicateur.comparaisonApi
+    return { rang, taille, libelle: formaterRangApi(rang, taille, portee) }
+  }
   for (const colonne of COLONNES_RANG) {
     const rang = indicateur[colonne]
     if (rang === null) continue
@@ -556,6 +571,10 @@ export function detailsRangEnContexte(indicateur: Indicateur): DetailsRang | nul
     if (libelle !== null) return { rang, taille, libelle }
   }
   return null
+}
+
+function formaterRangApi(rang: number, taille: number | null, portee: string | null): string {
+  return `${ordinalFrancais(rang)}${taille === null ? '' : `/${taille}`}${portee === null ? '' : ` · ${portee}`}`
 }
 
 /** French number: comma decimal separator, thin-space thousands, zeros trimmed. */

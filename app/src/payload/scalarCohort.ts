@@ -38,6 +38,11 @@ export function validerEnregistrementScalaires(metadata: ThemeMetadata, register
   }
 }
 
+/** A producer may publish a scalar observation for an indicator whose fiche page is another family. */
+export function pagesScalairesEnregistrees(metadata: ThemeMetadata, registered: string[]): string[] {
+  return registered.filter((id) => metadata.indicator_pages?.[id]?.family === 'scalar')
+}
+
 export function choisirFocalCohorte(territories: Territoire[], level: TerritoireType,
   selectedId: string | undefined, scope: { department?: string; epci?: string }): Territoire | null {
   const eligible = territories.filter((t) => t.type === level &&

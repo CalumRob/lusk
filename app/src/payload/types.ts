@@ -80,6 +80,9 @@ export interface VintageStamp {
   vintage_date_reference: string | null
   /** The publication date — null for a continuous-follow source (ORT, #175). */
   vintage_date_publication: string | null
+  /** Complete source lineage for SQL-backed read-model facts. */
+  fact_sources?: Array<{ sourceId: string; source: string; version: string;
+    referenceDate: string | null; publicationDate: string | null; lineage?: Record<string, unknown> }>
 }
 
 /** One facts row per (territoire × key × detail × sex × dimension). */
@@ -119,6 +122,8 @@ export interface Indicateur extends VintageStamp {
   rang_epci_n: number | null
   rang_dep_n: number | null
   rang_reg_n: number | null
+  /** Rank returned by the acquired comparison API. Never copied from retired legacy rang_* columns. */
+  comparaisonApi?: { rang: number; taille: number | null; portee: string | null }
 }
 
 /**

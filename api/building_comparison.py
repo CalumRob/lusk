@@ -58,7 +58,7 @@ def resolve_commune_members(reference, selected, *, max_members):
 def _selected_communes(rows, member_ids, max_members, member_type="commune"):
     members = tuple(member_ids)
     if (not isinstance(max_members, int) or isinstance(max_members, bool)
-            or max_members < 2 or not 1 <= len(members) <= max_members
+            or max_members < 1 or not 1 <= len(members) <= max_members
             or any(not isinstance(code, str) or not code for code in members)
             or len(set(members)) != len(members)):
         raise ComparisonInputError("Invalid or unbounded commune selection")

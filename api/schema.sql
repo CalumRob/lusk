@@ -3,13 +3,13 @@
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
         'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','mobility_typed_reading','mobility_density_distribution')),
+        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','mobility_typed_reading','mobility_density_distribution')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','mobility_typed_reading','mobility_density_distribution') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','mobility_typed_reading','mobility_density_distribution') OR reference_content_version IS NOT NULL)
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -171,27 +171,63 @@ CREATE TABLE bpe_profile_evidence_source (
   FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
 );
 CREATE FUNCTION assert_bpe_profile_evidence_complete() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected integer; bad boolean;
+DECLARE expected integer; axis_count integer; territory record; bad boolean; partition_rows integer;
 BEGIN
   SELECT universe_count INTO expected FROM bpe_profile_evidence_descriptor WHERE singleton;
   IF expected IS NULL THEN RAISE EXCEPTION 'BPE profile evidence descriptor is unavailable'; END IF;
-  IF (SELECT count(*) FROM bpe_profile_class_axis) <> 4 THEN
+  SELECT count(*) INTO axis_count FROM bpe_profile_class_axis;
+  IF axis_count <> 4 THEN
     RAISE EXCEPTION 'BPE evidence requires exactly four declared class axes';
   END IF;
-  SELECT EXISTS (SELECT 1 FROM territory_reference t
-    WHERE EXISTS (SELECT 1 FROM bpe_profile_evidence e WHERE e.territory_id=t.territory_id AND e.territory_type=t.territory_type)
-      AND (SELECT count(*) FROM bpe_profile_evidence e WHERE e.territory_id=t.territory_id AND e.territory_type=t.territory_type) <>
-          (SELECT count(*) FROM bpe_profile_class_axis)) INTO bad;
-  IF bad THEN RAISE EXCEPTION 'BPE profile evidence is not dense over declared class axes'; END IF;
-  IF EXISTS (SELECT 1 FROM bpe_profile_evidence GROUP BY territory_type,territory_id
-    HAVING sum(class_count)<>expected OR min(universe_count)<>expected OR max(universe_count)<>expected)
-  THEN RAISE EXCEPTION 'BPE profile evidence universe/count partition is incomplete'; END IF;
-  IF EXISTS (SELECT 1 FROM bpe_profile_evidence e JOIN bpe_profile_class_axis a USING(class_key)
-             WHERE e.class_label<>a.label)
-  THEN RAISE EXCEPTION 'BPE fact class labels differ from the declared class axis'; END IF;
+  IF TG_TABLE_NAME <> 'bpe_profile_evidence' THEN
+    -- Descriptor and class-axis edits are rare; validate the whole snapshot
+    -- when those metadata rows change.
+    SELECT EXISTS (
+      SELECT 1 FROM bpe_profile_evidence e
+      GROUP BY e.territory_type,e.territory_id
+      HAVING count(*) <> axis_count OR sum(e.class_count) <> expected
+          OR min(e.universe_count) <> expected OR max(e.universe_count) <> expected
+    ) INTO bad;
+    IF bad THEN RAISE EXCEPTION 'BPE profile evidence universe/count partition is incomplete'; END IF;
+    IF EXISTS (SELECT 1 FROM bpe_profile_evidence e JOIN bpe_profile_class_axis a USING(class_key)
+               WHERE e.class_label<>a.label)
+    THEN RAISE EXCEPTION 'BPE fact class labels differ from the declared class axis'; END IF;
+  ELSE
+    -- Fact events are checked only against their affected territory group(s).
+    -- The primary key starts with (territory_type, territory_id), making this
+    -- bounded to the four rows that form one declared profile.
+    FOR territory IN
+      SELECT DISTINCT territory_type,territory_id FROM (
+        SELECT CASE WHEN TG_OP='DELETE' THEN OLD.territory_type ELSE NEW.territory_type END AS territory_type,
+               CASE WHEN TG_OP='DELETE' THEN OLD.territory_id ELSE NEW.territory_id END AS territory_id
+        UNION ALL
+        SELECT OLD.territory_type,OLD.territory_id WHERE TG_OP='UPDATE'
+      ) affected
+    LOOP
+      SELECT count(*) INTO partition_rows FROM bpe_profile_evidence
+        WHERE territory_type=territory.territory_type AND territory_id=territory.territory_id;
+      -- An eligible territory can leave the source universe entirely during
+      -- replacement; its complete removal is valid. Any surviving partition
+      -- must still be dense and a complete source-universe partition.
+      IF partition_rows = 0 THEN CONTINUE; END IF;
+      SELECT count(*) <> axis_count OR coalesce(sum(class_count),0) <> expected
+          OR min(universe_count) <> expected OR max(universe_count) <> expected
+        INTO bad FROM bpe_profile_evidence
+        WHERE territory_type=territory.territory_type AND territory_id=territory.territory_id;
+      IF bad THEN RAISE EXCEPTION 'BPE profile evidence is not dense or its universe/count partition is incomplete'; END IF;
+      IF EXISTS (SELECT 1 FROM bpe_profile_evidence e JOIN bpe_profile_class_axis a USING(class_key)
+                 WHERE e.territory_type=territory.territory_type AND e.territory_id=territory.territory_id
+                   AND e.class_label<>a.label)
+      THEN RAISE EXCEPTION 'BPE fact class labels differ from the declared class axis'; END IF;
+    END LOOP;
+  END IF;
   RETURN NULL;
 END $$;
 CREATE CONSTRAINT TRIGGER bpe_profile_evidence_complete AFTER INSERT OR UPDATE OR DELETE ON bpe_profile_evidence
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION assert_bpe_profile_evidence_complete();
+CREATE CONSTRAINT TRIGGER bpe_profile_descriptor_complete AFTER INSERT OR UPDATE OR DELETE ON bpe_profile_evidence_descriptor
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION assert_bpe_profile_evidence_complete();
+CREATE CONSTRAINT TRIGGER bpe_profile_class_axis_complete AFTER INSERT OR UPDATE OR DELETE ON bpe_profile_class_axis
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION assert_bpe_profile_evidence_complete();
 ALTER TABLE profile_observation ADD CONSTRAINT profile_observation_territory_reference
   FOREIGN KEY (territory_id) REFERENCES territory_reference(territory_id);
@@ -971,9 +1007,18 @@ CREATE TABLE milieux_reading_source (
  FOREIGN KEY(territory_id,territory_type,groupe) REFERENCES milieux_typed_reading(territory_id,territory_type,groupe) ON DELETE CASCADE,
  FOREIGN KEY(dataset_id) REFERENCES series_dataset_publication(dataset_id),
  CHECK ((field_key='population' AND dataset_id IS NULL AND dataset_content_version IS NULL AND state_role IS NULL AND provenance_revision_id IS NULL AND population_revision_id IS NOT NULL)
-     OR (field_key IN ('artif_m2_par_habitant','artif_m3_par_habitant') AND dataset_id IS NOT NULL AND dataset_content_version IS NOT NULL AND state_role IN ('M2','M3') AND provenance_revision_id IS NOT NULL AND population_revision_id IS NULL)));
+      OR (field_key IN ('artif_m2_par_habitant','artif_m3_par_habitant') AND dataset_id IS NOT NULL AND dataset_content_version IS NOT NULL AND state_role IN ('M2','M3') AND provenance_revision_id IS NOT NULL AND population_revision_id IS NULL)));
+CREATE TABLE milieux_reading_absence (
+ territory_id text NOT NULL, territory_type text NOT NULL CHECK (territory_type='commune'),
+ reason text NOT NULL CHECK (reason='source_record_absent'), source_id text NOT NULL, vintage_id text NOT NULL,
+ source_snapshot_sha256 text NOT NULL CHECK (source_snapshot_sha256 ~ '^[0-9a-f]{64}$'),
+ PRIMARY KEY (territory_id,territory_type),
+ FOREIGN KEY (territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
+ FOREIGN KEY (source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
 GRANT SELECT ON milieux_typed_reading,milieux_reading_source TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_typed_reading,milieux_reading_source TO lusk_publisher;
+GRANT SELECT ON milieux_reading_absence TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_reading_absence TO lusk_publisher;
 GRANT SELECT ON mobility_typed_reading,mobility_reading_descriptor,mobility_reading_story,mobility_reading_clock TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON mobility_typed_reading,mobility_reading_descriptor,mobility_reading_story,mobility_reading_clock TO lusk_publisher;
 GRANT SELECT ON milieux_population_provenance_revision TO lusk_reader;

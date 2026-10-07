@@ -276,6 +276,30 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
                 assert scalar["territory"] == old["territory"]
                 assert scalar["scope"] == old["scope"]
                 assert scalar["services"] == old["services"]
+
+            # Exercise the selected-member SQL branch of each reader directly
+            # against this same owned snapshot (the HTTP POST consumer lands later).
+            repository = main.ReadRepository(pool)
+            selected = [("commune", "29001"), ("commune", "29002")]
+            selected_results = {}
+            for scalar_read in (False, True):
+                if scalar_read:
+                    monkeypatch.setenv("LUSK_SERVICES_SCALAR_READ", "1")
+                else:
+                    monkeypatch.delenv("LUSK_SERVICES_SCALAR_READ", raising=False)
+                with psycopg.connect(db_env["read_dsn"]) as selected_connection:
+                    with selected_connection.transaction():
+                        selected_connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+                        selected_data = repository.read_selected("commune", "29001", selected,
+                                                                 connection=selected_connection)
+                selected_results[scalar_read] = main.compare(selected_data)
+                assert len(selected_results[scalar_read].services) == 5
+                assert all(len(service.modes) == 3 for service in selected_results[scalar_read].services)
+                assert selected_data["peer_member_ids"] == ["29001", "29002"]
+                assert selected_results[scalar_read].scope["member_count"] == 2
+            scalar_selected = selected_results[True].model_copy(
+                update={"publication_id": selected_results[False].publication_id})
+            assert selected_results[False] == scalar_selected
             # Region is deliberately a singleton: comparison stats are absent.
             regional = client.get("/api/territories/region/BRE/essential-services").json()
             assert regional["scope"] is None
@@ -613,7 +637,8 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert cohort_rows[2]["sources"] == []
         assert focal.status_code == 200 and focal.json()["complete_theme"] is False
         assert focal.json()["default_comparison"]["results"][0]["median"] == 1
-        assert [fact["indicator_id"] for fact in focal.json()["facts"]] == ["fixture_scalar"]
+        assert [fact["indicator_id"] for fact in focal.json()["indicators"]] == ["fixture_scalar"]
+        assert focal.json()["indicators"][0]["dimensions"] == {}
         assert empty_comparison.status_code == 200
         assert empty_comparison.json()["selection"] == []
         assert empty_comparison.json()["results"][0]["eligible_count"] == 0

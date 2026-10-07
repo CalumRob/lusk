@@ -166,6 +166,12 @@ contrat_publication_batiments <- function(comparison) {
       territory_levels = c("commune", "epci", "departement", "region"),
       axes = list(mode = as.character(RAMPE_ACCES_BATIMENTS_MODES$mode),
                   quantile = as.numeric(RAMPE_ACCES_BATIMENTS_QUANTILES)),
+      presentation = list(
+        modes = stats::setNames(as.list(RAMPE_ACCES_BATIMENTS_MODES$mode_label), RAMPE_ACCES_BATIMENTS_MODES$mode),
+        quantile_labels = paste0(round(RAMPE_ACCES_BATIMENTS_QUANTILES * 100), " %"),
+        x_axis_label = RAMPE_ACCES_BATIMENTS_X_LABEL,
+        y_axis_label = RAMPE_ACCES_BATIMENTS_Y_LABEL
+      ),
       denominator = "total_buildings", peer_statistic = "building_count_weighted_mean",
       absent = "explicit_absent_sentinel", direction = comparison$direction
     ),
@@ -177,6 +183,15 @@ contrat_publication_batiments <- function(comparison) {
       axes = list(mode = DISTRIBUTION_ACCES_BATIMENTS_MODE,
                   breadth = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS$key,
                   depth = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS$key),
+      presentation = list(
+        mode_label = DISTRIBUTION_ACCES_BATIMENTS_MODE_LABEL,
+        breadth_axis_label = DISTRIBUTION_ACCES_BATIMENTS_BREADTH_LABEL,
+        depth_axis_label = DISTRIBUTION_ACCES_BATIMENTS_DEPTH_LABEL,
+        breadth = lapply(seq_len(nrow(DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS)),
+          function(i) as.list(DISTRIBUTION_ACCES_BATIMENTS_BREADTH_BINS[i, ])),
+        depth = lapply(seq_len(nrow(DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS)),
+          function(i) as.list(DISTRIBUTION_ACCES_BATIMENTS_DEPTH_BINS[i, ]))
+      ),
       denominator = "total_buildings", peer_statistic = "pooled_building_counts",
       absent = "explicit_absent_sentinel"
     )

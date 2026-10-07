@@ -36,6 +36,28 @@ test_that("typed Milieux reading projection retains producer-selected reading co
   expect_equal(projected$trajectoire_artif_par_habitant, "stable")
 })
 
+test_that("Milieux source absence declarations are derived only from the normalized source snapshot", {
+  path <- tempfile(fileext=".csv")
+  writeLines(c("idcom,idcomtxt,iddep,epci25,epci25txt,naf1125",
+    "29001,Commune présente,29,29000,EPCI,100"),path)
+  on.exit(unlink(path),add=TRUE)
+  territories <- data.frame(territoire=c("29001","29083","29084"),type="commune")
+  vintages <- data.frame(id="consoenaf",version="2025",date_reference="2025-01-01")
+  metadata <- list(files=list(consoenaf="conso-com.csv"),sources=list(conso_enaf_annuel="consoenaf"))
+  file.rename(path, file.path(dirname(path),"conso-com.csv"))
+  source_path <- file.path(dirname(path),"conso-com.csv")
+  on.exit(unlink(source_path),add=TRUE)
+  declared <- milieux_source_absence_declarations(source_path,territories,vintages,metadata)
+  expect_equal(declared$territory_id,c("29083","29084"))
+  expect_true(all(declared$reason=="source_record_absent"))
+  expect_true(all(grepl("^[0-9a-f]{64}$",declared$source_snapshot_sha256)))
+  expect_equal(attr(declared,"source_coverage")$source_present_communes,"29001")
+  bad_path <- tempfile(fileext=".csv")
+  writeLines(readLines(source_path),bad_path)
+  on.exit(unlink(bad_path),add=TRUE)
+  expect_error(milieux_source_absence_declarations(bad_path,territories,vintages,metadata),"differs from producer metadata")
+})
+
 test_that("Mobility reading projection keeps only actual selected story facts", {
   histories <- data.frame(territoire=c("35238", "35238"), type="commune",
     theme=c("mobilite", "autre"), groupe=c("acces-aux-services", "ignored"),

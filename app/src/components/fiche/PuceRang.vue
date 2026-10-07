@@ -47,6 +47,6 @@ defineProps<{
 }
 
 .puce-rang-texte {
-  white-space: nowrap;
+  white-space: normal;
 }
 </style>

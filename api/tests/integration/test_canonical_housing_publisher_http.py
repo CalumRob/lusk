@@ -190,7 +190,7 @@ def test_pooled_price_scalar_is_registered_and_theme_http_matches_canonical():
             for item in expected[:5]:
                 response = client.get(f"/api/territories/{item['territory_type']}/{item['territory_id']}/themes/habitat/facts")
                 assert response.status_code == 200, response.text
-                fact = next(row for row in response.json()["facts"] if row["indicator_id"] == "prix_m2")
+                fact = next(row for row in response.json()["indicators"] if row["indicator_id"] == "prix_m2")
                 assert fact["unit"] == item["unit"]
                 assert fact["status"] == item["status"]
                 assert fact["support_count"] == item["support"]

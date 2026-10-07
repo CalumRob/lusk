@@ -35,18 +35,23 @@ import {
   resoudreContexteComparaison,
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
-import { territoryFactsFor } from '@/fiche/content/territoryFacts'
+import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
 import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
 import { applyInitialBuildingApiFacts } from '@/fiche/content/initialBuildingApiFacts'
-import { chargerCohortesScalaires, indicateursScalairesPourNiveau, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
+import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFacts'
+import { territoryFactsFor } from '@/fiche/content/territoryFacts'
+import { chargerCohortesScalaires, indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
+import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
+import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
+import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
-import type { MobiliteAccessFacts, TerritoryFacts } from '@/fiche/content/territoryFacts'
+import type { ComparisonScopeKind, TerritoryFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
 import { trouverTerritoire } from '@/payload/selectors'
 import { THEMES_CANONIQUES } from '@/payload/types'
-import type { Payload, Theme } from '@/payload/types'
+import type { Histoire, Indicateur, Payload, Theme } from '@/payload/types'
 import { useTerritoryReadModel } from '@/payload/useTerritoryReadModel'
 import { payloadDepuisModeleTerritoire } from '@/payload/territoryReadModel'
 
@@ -70,9 +75,69 @@ const ficheScalairesEnregistres = ref<string[]>([])
 const ficheScalairesRegistrePresent = ref(false)
 const retryFicheScalaires = ref(0)
 let sequenceFicheScalaires = 0
+
+/**
+ * Acquisition par thème derrière `VITE_THEME_ACQUISITION_API` (#627) : le
+ * modèle atomique gardé fournit l'identité, les métadonnées et la grammaire de
+ * présentation ; le POST faits du thème actif fournit TOUS ses numériques
+ * (aucune ligne statique du thème migré ne rend), puis le registre entier se
+ * réchauffe en arrière-plan (décision propriétaire 2026-10-07). Un thème hors
+ * de `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
+ */
+const acquisitionApiActivee = themeAcquisitionEnabled(import.meta.env)
+const selection = computed<Theme | null>(() => {
+  const demande = route.query.theme
+  if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
+    return demande as Theme
+  }
+  return THEME_DEFAUT
+})
+const productionMobilite = computed(() => selection.value === 'mobilite')
+/** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
+const themeMigre = (theme: Theme | null): boolean =>
+  acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme) &&
+  theme !== 'mobilite'
+const cacheAcquisition = new ThemeAcquisitionCache(
+  (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
+  (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
+)
+const faitsThemeRows = ref<Indicateur[] | null>(null)
+const histoiresThemeRows = ref<Histoire[] | null>(null)
+const histoiresNuageDemographie = ref<Histoire[]>([])
+const histoiresNuageMilieux = ref<Histoire[]>([])
+const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
+const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const retryAcquisition = ref(0)
+let sequenceAcquisition = 0
+let sequenceComparaison = 0
+let cleFaitsPrets: string | null = null
+
 const payloadPourRendu = computed<Payload | null>(() => {
   const payload = payloadModele.value
-  if (!payload || !scalarCohortEnabled(import.meta.env)) return payload
+  if (!payload) return null
+  if (themeMigre(selection.value)) {
+    // Chemin migré : les numériques du thème actif viennent de la seule
+    // réponse de faits API — pendant le chargement ou l'échec, AUCUNE ligne
+    // numérique statique du thème ne rend (pas de repli statique).
+    const theme = selection.value as Theme
+    const indicateurs = faitsThemeRows.value === null
+      ? payload.indicateurs.filter((row) => row.theme !== theme)
+      : [...payload.indicateurs.filter((row) => row.theme !== theme), ...faitsThemeRows.value]
+    const histoires = histoiresThemeRows.value === null
+      ? payload.histoires.filter((row) => row.theme !== theme)
+      : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
+        ...(theme === 'demographie' ? histoiresNuageDemographie.value : []),
+        ...(theme === 'milieux' ? histoiresNuageMilieux.value : [])]
+    // Les pairs du nuage Milieux ont besoin de leur identité dans le référentiel
+    // du payload (le sélecteur résout leurs noms) — jamais d'autres territoires.
+    const peerIds = new Set(theme === 'milieux' ? histoiresNuageMilieux.value.map((row) => row.territoire) : [])
+    const peers = modeleTerritoire.model.value?.cohortTerritories
+      ?.filter((territory) => peerIds.has(territory.territoire)) ?? []
+    const territoires = [...payload.territoires, ...peers.filter((peer) =>
+      !payload.territoires.some((existing) => existing.territoire === peer.territoire))]
+    return { ...payload, territoires, indicateurs, histoires }
+  }
+  if (!scalarCohortEnabled(import.meta.env)) return payload
   const theme = selection.value
   if (!theme || ficheScalairesStatus.value !== 'ready' || ficheScalaires.value === null) {
     const registered = ficheScalairesStatus.value === 'error' && ficheScalairesRegistrePresent.value &&
@@ -146,13 +211,6 @@ const ongletsFiche: readonly Theme[] = [
   ...THEMES_CANONIQUES.filter((theme) => theme !== THEME_DEFAUT),
 ]
 
-const selection = computed<Theme | null>(() => {
-  const demande = route.query.theme
-  if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
-    return demande as Theme
-  }
-  return THEME_DEFAUT
-})
 
 watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryFicheScalaires, scalarCohortScopeKey],
   async ([model, theme, code, _retry, scopeKey], _old, onCleanup) => {
@@ -161,7 +219,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     ficheScalairesEnregistres.value = []
     ficheScalairesRegistrePresent.value = false
     ficheScalairesStatus.value = 'loading'
-    if (!scalarCohortEnabled(import.meta.env) || !model || !theme) { ficheScalairesStatus.value = 'ready'; return }
+    // Le thème migré n'emprunte jamais le fan-out par indicateur (#627) : sa
+    // voie unique est la requête de faits du thème.
+    if (!scalarCohortEnabled(import.meta.env) || !model || !theme || themeMigre(theme) ||
+        (theme === 'mobilite' && productionMobilite.value)) { ficheScalairesStatus.value = 'ready'; return }
     const data = model.themes[theme]
     if (!data) { ficheScalairesStatus.value = 'ready'; return }
     let cancelled = false
@@ -171,7 +232,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       if (!focal) throw new Error('Territoire focal absent')
       if (!('scalar_contracts' in data.metadata)) { ficheScalairesStatus.value = 'ready'; return }
       ficheScalairesRegistrePresent.value = true
-      const registered = indicateursScalairesPourNiveau(data.metadata, focal.type)
+      const registered = pagesScalairesEnregistrees(data.metadata,
+        indicateursScalairesPourNiveau(data.metadata, focal.type))
       ficheScalairesEnregistres.value = registered
       if (!registered.length) { ficheScalairesStatus.value = 'ready'; return }
       const scope = String(scopeKey).startsWith('epci:') ? { epci: focal.epci ?? undefined } : {}
@@ -184,6 +246,140 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     }
   }, { immediate: true })
 function retryScalaires(): void { retryFicheScalaires.value++ }
+
+/** Le thème actif est prioritaire ; après son acquisition — réussie ou non —
+ * les autres thèmes migrés se réchauffent en arrière-plan. Le rendu ne lit
+ * que l'actif. */
+watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retryAcquisition],
+  async ([model, theme, code], _old, onCleanup) => {
+    if (!themeMigre(theme) || !model || !typeValide.value) {
+      faitsThemeRows.value = null
+      histoiresThemeRows.value = null
+      histoiresNuageDemographie.value = []
+      histoiresNuageMilieux.value = []
+      statutAcquisition.value = 'loading'
+      statutComparaison.value = 'idle'
+      cleFaitsPrets = null
+      return
+    }
+    // Revisite déjà acquise (même territoire, même thème) : les faits restent,
+    // aucune requête — le cache détient l'entrée, le rendu ne clignote pas.
+    const themeActif = theme as Theme
+    if (statutAcquisition.value === 'ready' && cleFaitsPrets === `${typeRoute.value}/${code}/${themeActif}`) return
+    const request = ++sequenceAcquisition
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    faitsThemeRows.value = null
+    histoiresThemeRows.value = null
+    histoiresNuageDemographie.value = []
+    histoiresNuageMilieux.value = []
+    statutAcquisition.value = 'loading'
+    statutComparaison.value = 'idle'
+    try {
+      const acquired = await cacheAcquisition.get(typeRoute.value, code, themeActif)
+      if (cancelled || request !== sequenceAcquisition) return
+      const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
+      if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
+      const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type }, {
+        epci: target.epci, region: payloadModele.value?.territoires.find((item) => item.type === 'region')?.territoire ?? null,
+      })
+       faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, acquired.focal.comparison,
+         resolutionComparaison.value?.contexte?.scope.label ?? null)
+      histoiresThemeRows.value = rows.histoires
+      histoiresNuageDemographie.value = themeActif === 'demographie' && isRecord(acquired.focal.comparison)
+        ? histoiresDemographieNuage(acquired.focal.comparison) : []
+      histoiresNuageMilieux.value = themeActif === 'milieux' && isRecord(acquired.focal.comparison)
+        ? histoiresMilieuxDuNuage(acquired.focal.comparison) : []
+      statutAcquisition.value = 'ready'
+      cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
+    } catch {
+      if (!cancelled && request === sequenceAcquisition) {
+        faitsThemeRows.value = null
+        histoiresThemeRows.value = null
+        statutAcquisition.value = 'error'
+      }
+    }
+    // Réchauffage d'arrière-plan (décision propriétaire 2026-10-07) : le thème
+    // actif garde la priorité — sa requête est déjà partie — puis tout le
+    // registre se réchauffe pour ce territoire, SANS jamais toucher l'état de
+    // rendu des thèmes inactifs. Il part aussi quand l'acquisition active
+    // échoue : l'onglet défaillant expose SA propre erreur réessayable à sa
+    // visite, jamais les autres. Mobilité reste au prototype E tant que
+    // celui-ci en est propriétaire. Le cache isole les entrées par
+    // (territoire, thème) : une réponse tardive d'un ancien territoire ne peut
+    // se fondre nulle part ailleurs que dans sa propre clé.
+    if (!cancelled && request === sequenceAcquisition) {
+      for (const autreTheme of THEMES_ACQUISITION_API) {
+        if (autreTheme === themeActif || !themeMigre(autreTheme)) continue
+        void cacheAcquisition.get(typeRoute.value, code, autreTheme).catch(() => {})
+      }
+    }
+  }, { immediate: true })
+
+/** Une seule requête comparison-only par changement de sélection : le défaut
+ * déclaré (classe de densité d'une commune, pairs de même niveau ailleurs)
+ * est déjà servi par la comparaison imbriquée de la réponse de faits ; une
+ * sélection explicite (EPCI, Bretagne) acquiert UNE réponse de comparaison et
+ * garde les faits focaux. Les tokens incompatibles échouent fermé (le cache
+ * rejette la fusion) et restent réessayables. */
+watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
+  () => resolutionComparaison.value?.mode, statutAcquisition, retryAcquisition],
+  async ([model, theme, code, mode], _old, onCleanup) => {
+    if (!themeMigre(theme) || statutAcquisition.value !== 'ready' || !model || !typeValide.value) {
+      statutComparaison.value = 'idle'
+      return
+    }
+    const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
+    if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'idle'; return }
+    // Le mode densité (défaut d'une commune) et les niveaux non communaux
+    // gardent la comparaison déclarée déjà acquise avec les faits.
+    if (target.type !== 'commune' || mode === 'densite' || mode === null || mode === undefined) {
+      statutComparaison.value = 'ready'
+      return
+    }
+    const cohort = model.cohortTerritories
+    if (!cohort) { statutComparaison.value = 'error'; return }
+    const themeActif = theme as Theme
+    const selectionMembres: ThemeSelectionMember[] = mode === 'bretagne'
+      ? cohort.filter((item) => item.type === 'commune')
+        .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+      : mode === 'epci' && target.epci
+        ? cohort.filter((item) => item.type === 'commune' && item.epci === target.epci)
+          .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+        : []
+    const request = ++sequenceComparaison
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    statutComparaison.value = 'loading'
+    // Pendant le chargement de la nouvelle sélection, le nuage de l'ancienne
+    // ne rend pas (le flux E Mobilité nettoie de même avant la requête).
+    if (themeActif === 'milieux') histoiresNuageMilieux.value = []
+    if (themeActif === 'demographie') histoiresNuageDemographie.value = []
+    try {
+      const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
+      if (cancelled || request !== sequenceComparaison) return
+      validerReponseComparaisonTheme(themeActif,
+        acquired.comparisons.get(cleSelectionComparaison(selectionMembres)), selectionMembres)
+      if (themeActif === 'demographie') {
+        histoiresNuageDemographie.value = histoiresDemographieNuage(
+          acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
+      }
+       if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(
+         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
+       faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
+         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)),
+         resolutionComparaison.value?.contexte?.scope.label ?? null)
+       statutComparaison.value = 'ready'
+    } catch {
+       if (!cancelled && request === sequenceComparaison) {
+         faitsThemeRows.value = faitsThemeRows.value?.map(({ comparaisonApi: _rank, ...row }) => row) ?? null
+         statutComparaison.value = 'error'
+       }
+    }
+  }, { immediate: true })
+
+function retryAcquisitionTheme(): void { retryAcquisition.value++ }
+
 
 const echelons = computed(() =>
   payloadPourRendu.value ? echelleContexte(payloadPourRendu.value, idRoute.value) : [],
@@ -201,87 +397,171 @@ const classesFond = computed(() =>
   selection.value ? `fiche--theme-${selection.value}` : '',
 )
 
-const productionMobilite = computed(() => selection.value === 'mobilite')
-const scalarCohortActif = scalarCohortEnabled(import.meta.env)
+/**
+ * Mobilité's production cahier owns the editorial body whenever its theme is selected.
+ */
 const mobiliteEditorialeActive = productionMobilite
-const accesApi = ref<MobiliteAccessFacts | null>(null)
+const scalarCohortActif = scalarCohortEnabled(import.meta.env)
 const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
-const relancerAccesApi = ref(0)
-let sequenceAccesApi = 0
+const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const mobilityFocal = ref<TerritoryFacts | null>(null)
+const mobilityComparisonFacts = ref<TerritoryFacts | null>(null)
+const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const retryMobilityFacts = ref(0)
+let focalRequestSequence = 0
+let comparisonRequestSequence = 0
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+let lastFocalKey: string | null = null
+let lastFocalModel: object | null = null
+let lastComparisonKey: string | null = null
+let lastComparisonModel: object | null = null
 
-watch(
-  [mobiliteEditorialeActive, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
-    () => modeleTerritoire.model.value, relancerAccesApi],
+watch([productionMobilite, typeRoute, idRoute,
+  () => modeleTerritoire.model.value, retryMobilityFacts], (_values, _oldValues, onCleanup) => {
+  if (!productionMobilite.value) return
+  const model = modeleTerritoire.model.value
+  const key = `${typeRoute.value}/${idRoute.value}/${retryMobilityFacts.value}`
+  if (model && lastFocalKey === key && lastFocalModel === model) return
+  const request = ++focalRequestSequence
+  statutAccesApi.value = 'loading'
+  mobilityFocal.value = null
+  mobilityComparisonFacts.value = null
+  mobilityComparisonStatus.value = 'loading'
+  buildingStatus.value = 'loading'
+  if (!typeValide.value || !model || !payloadPourRendu.value) {
+    lastFocalKey = null
+    lastFocalModel = null
+    lastComparisonKey = null
+    lastComparisonModel = null
+    return
+  }
+  lastFocalKey = key
+  lastFocalModel = model
+  const controller = new AbortController()
+  let settled = false
+  onCleanup(() => {
+    controller.abort()
+    if (!settled) { lastFocalKey = null; lastFocalModel = null }
+  })
+  const code = idRoute.value
+  void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/themes/mobilite/facts`,
+    { method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ theme_id: 'mobilite' }), signal: controller.signal }).then(async (response) => {
+    if (!response.ok) throw new Error(`HTTP ${response.status}`)
+    return response.json() as Promise<unknown>
+  }).then((data) => {
+    if (request !== focalRequestSequence || !payloadPourRendu.value || !isRecord(data)) return
+    const presentation = toRaw(payloadPourRendu.value)
+    const target = presentation.territoires.find((territory) => territory.territoire === code)
+    const initialContext = target?.type === 'commune'
+      ? modeleTerritoire.model.value?.themes.mobilite?.comparisons.densite
+      : resolutionComparaison.value?.contexte ?? undefined
+    let combined = mobilityFactsFromThemeApi(presentation, code, data)
+    combined = applyThemeComparisonApiFacts(combined, data.comparison, initialContext)
+    const serviceScope = isRecord(data.essential_service_access) && isRecord(data.essential_service_access.scope)
+      ? data.essential_service_access.scope : null
+    combined = applyAccessApiFacts(combined, data.essential_service_access,
+      typeof serviceScope?.kind === 'string' ? serviceScope.kind as ComparisonScopeKind : null,
+      typeof serviceScope?.label === 'string' ? serviceScope.label : null)
+    const buildingScope = isRecord(data.building_access) && isRecord(data.building_access.scope)
+      ? data.building_access.scope : null
+    combined = applyInitialBuildingApiFacts(combined, data.building_access,
+      typeof buildingScope?.comparison_mode === 'string' ? buildingScope.comparison_mode : null,
+      typeof buildingScope?.kind === 'string' ? buildingScope.kind : null,
+      initialContext?.scope.label ?? null)
+    mobilityFocal.value = combined
+    mobilityComparisonFacts.value = combined
+    mobilityComparisonStatus.value = 'ready'
+    statutAccesApi.value = 'ready'
+    buildingStatus.value = 'ready'
+    settled = true
+  }).catch(() => {
+    settled = true
+    if (request === focalRequestSequence) {
+      statutAccesApi.value = 'error'
+      buildingStatus.value = 'error'
+      mobilityComparisonStatus.value = 'error'
+    }
+  })
+}, { immediate: true })
+
+watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
+  mobilityFocal, () => modeleTerritoire.model.value],
   (_values, _oldValues, onCleanup) => {
-    const sequence = ++sequenceAccesApi
-    accesApi.value = null
-    statutAccesApi.value = 'loading'
-    if (!mobiliteEditorialeActive.value || !typeValide.value || !modeleTerritoire.model.value) return
-    const abort = new AbortController()
-    onCleanup(() => abort.abort())
-    const type = typeRoute.value
-    const code = idRoute.value
+    if (!productionMobilite.value || !mobilityFocal.value || !payloadPourRendu.value) return
+    const model = modeleTerritoire.model.value
+    const requestKey = `${typeRoute.value}/${idRoute.value}/${resolutionComparaison.value?.mode ?? ''}`
+    if (lastComparisonKey === requestKey && lastComparisonModel === model) return
+    const request = ++comparisonRequestSequence
+    const controller = new AbortController()
+    let settled = false
+    onCleanup(() => {
+      controller.abort()
+      if (!settled) lastComparisonKey = null
+    })
+    const target = payloadPourRendu.value.territoires.find((territory) => territory.territoire === idRoute.value)
     const mode = resolutionComparaison.value?.mode
-    const query = type === 'commune' && mode ? `?comparison=${encodeURIComponent(mode)}` : ''
-    void fetch(`/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(code)}/essential-services${query}`, {
-      signal: abort.signal,
+    const context = resolutionComparaison.value?.contexte ?? undefined
+    if ((target?.type === 'commune' && mode === 'densite') || target?.type !== 'commune') {
+      lastComparisonKey = requestKey
+      lastComparisonModel = model
+      mobilityComparisonFacts.value = mobilityFocal.value
+      mobilityComparisonStatus.value = 'ready'
+      return
+    }
+    const cohort = modeleTerritoire.model.value?.cohortTerritories
+    if (!cohort) {
+      mobilityComparisonStatus.value = 'error'
+      mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
+      lastComparisonKey = requestKey
+      lastComparisonModel = model
+      return
+    }
+    const selection = mode === 'bretagne'
+      ? cohort.filter((item) => item.type === 'commune')
+        .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+      : mode === 'epci' && target?.epci
+        ? cohort.filter((item) => item.type === 'commune' && item.epci === target.epci)
+          .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+        : []
+    const body = { theme_id: 'mobilite', ...(selection === undefined ? {} : { selection }) }
+    lastComparisonKey = requestKey
+    lastComparisonModel = model
+    mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
+    mobilityComparisonStatus.value = 'loading'
+    void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(idRoute.value)}/themes/mobilite/comparison`, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
+      signal: controller.signal,
     }).then(async (response) => {
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
       return response.json() as Promise<unknown>
     }).then((data) => {
-      if (sequence !== sequenceAccesApi) return
-      // Validate at the semantic boundary, before a stale static figure could render.
-      const facts = territoryFactsFor(toRaw(payloadPourRendu.value!), code, resolutionComparaison.value?.contexte ?? undefined)
-      if (!facts) throw new Error('Territoire inconnu')
-      const normalized = applyAccessApiFacts(facts, data, resolutionComparaison.value?.contexte?.scope.kind ?? null,
-        resolutionComparaison.value?.contexte?.scope.label ?? null)
-      accesApi.value = normalized.mobility.access
-      statutAccesApi.value = 'ready'
+      if (request !== comparisonRequestSequence || !isRecord(data)) return
+      const expectedSelection = new Set(selection.map((item) => `${item.territory_type}/${item.territory_id}`))
+      const returnedSelection = Array.isArray(data.selection) ? data.selection : []
+      if (data.contract !== 'theme-comparison-v1' || data.theme_id !== 'mobilite' ||
+          returnedSelection.length !== expectedSelection.size ||
+          returnedSelection.some((item) => !isRecord(item) ||
+            !expectedSelection.has(`${String(item.territory_type)}/${String(item.territory_id)}`))) {
+        throw new Error('Réponse de comparaison Mobilité incohérente avec la sélection')
+      }
+      let updated = applyThemeComparisonApiFacts(mobilityFocal.value!, data, context)
+      updated = applyComparisonOnlyBuildingFacts(updated, data.building_access, context?.scope.label ?? null)
+      mobilityComparisonFacts.value = updated
+      mobilityComparisonStatus.value = 'ready'
+      settled = true
     }).catch(() => {
-      if (sequence === sequenceAccesApi) statutAccesApi.value = 'error'
+      settled = true
+      if (request === comparisonRequestSequence) {
+        lastComparisonKey = null
+        mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value!)
+        mobilityComparisonStatus.value = 'error'
+      }
     })
-  },
-  { immediate: true },
-)
+  }, { immediate: true })
 
-function rechargerAccesApi(): void {
-  relancerAccesApi.value += 1
-}
-const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
-const buildingFacts = ref<TerritoryFacts | null>(null)
-const retryBuilding = ref(0)
-let buildingRequest = 0
-
-watch([mobiliteEditorialeActive, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
-  () => modeleTerritoire.model.value, retryBuilding], (_values, _oldValues, onCleanup) => {
-  const request = ++buildingRequest
-  buildingFacts.value = null
-  buildingStatus.value = 'loading'
-  if (!mobiliteEditorialeActive.value || !typeValide.value || !modeleTerritoire.model.value || !payloadPourRendu.value) return
-  const mode = resolutionComparaison.value?.mode
-  const scope = resolutionComparaison.value?.contexte?.scope
-  if (typeRoute.value === 'commune' && (!mode || !scope)) {
-    buildingStatus.value = 'error'
-    return
-  }
-  const controller = new AbortController()
-  onCleanup(() => controller.abort())
-  const code = idRoute.value
-  const query = mode ? `?comparison=${encodeURIComponent(mode)}` : ''
-  void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/building-access${query}`,
-    { signal: controller.signal }).then(async (response) => {
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    return response.json() as Promise<unknown>
-  }).then((data) => {
-    if (request !== buildingRequest || !payloadPourRendu.value) return
-    const facts = territoryFactsFor(toRaw(payloadPourRendu.value), code, resolutionComparaison.value?.contexte ?? undefined)
-    if (!facts) throw new Error('Territoire inconnu')
-    buildingFacts.value = applyInitialBuildingApiFacts(facts, data, mode ?? null, scope?.kind ?? null, scope?.label ?? null)
-    buildingStatus.value = 'ready'
-  }).catch(() => { if (request === buildingRequest) buildingStatus.value = 'error' })
-}, { immediate: true })
-
-function rechargerBuilding(): void { retryBuilding.value += 1 }
+function rechargerMobilityFacts(): void { retryMobilityFacts.value += 1 }
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
     !productionMobilite.value ||
@@ -289,22 +569,17 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
     !payloadPourRendu.value ||
     !typeValide.value
   ) return null
-  const facts = territoryFactsFor(
-    toRaw(payloadPourRendu.value),
-    idRoute.value,
-    resolutionComparaison.value?.contexte ?? undefined,
-  )
+  const facts = productionMobilite.value
+    ? mobilityFocal.value
+      ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
+      : mobilityFactsFromThemeApi(
+        toRaw(payloadPourRendu.value), idRoute.value, null, resolutionComparaison.value?.contexte ?? undefined,
+      )
+    : territoryFactsFor(toRaw(payloadPourRendu.value), idRoute.value,
+      resolutionComparaison.value?.contexte ?? undefined)
   if (!facts) return null
-  const withBuilding = mobiliteEditorialeActive.value
-    ? { ...facts, mobility: { ...facts.mobility,
-      accessRamp: buildingStatus.value === 'ready' ? buildingFacts.value?.mobility.accessRamp ?? null : null,
-      buildingDistribution: buildingStatus.value === 'ready' ? buildingFacts.value?.mobility.buildingDistribution ?? null : null,
-    } }
-    : facts
-  const contentFacts = mobiliteEditorialeActive.value && statutAccesApi.value === 'ready' && accesApi.value
-    ? { ...withBuilding, mobility: { ...withBuilding.mobility, access: accesApi.value } }
-    : withBuilding
-  return resolveMobiliteThemeContent(contentFacts, payloadPourRendu.value.themeMetadata?.mobilite)
+  const contentFacts = facts
+  return resolveMobiliteThemeContent(contentFacts)
 })
 const paginationCahier = computed(() =>
   payloadPourRendu.value && contenuMobilite.value
@@ -424,6 +699,24 @@ watch(
         <p>Les indicateurs de ce thème ne sont pas disponibles.</p>
         <button type="button" @click="retryScalaires">Réessayer</button>
       </div>
+      <!-- #627 : le thème migré échoue fermé — jamais de repli sur les
+           numériques statiques ; chaque échec reste réessayable. -->
+      <div
+        v-else-if="themeMigre(selection) && statutAcquisition === 'error'"
+        class="etat-erreur"
+        role="alert"
+      >
+        <p>Les indicateurs de ce thème ne sont pas disponibles.</p>
+        <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
+      </div>
+      <div
+        v-else-if="themeMigre(selection) && statutComparaison === 'error'"
+        class="etat-erreur"
+        role="alert"
+      >
+        <p>Les comparaisons de ce thème ne sont pas disponibles.</p>
+        <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
+      </div>
       <div class="fiche-corps">
         <!-- Le contenu attend l'unique modèle atomique de la fiche : aucun
              panneau ne prétend avoir ses données pendant que la réponse pend. -->
@@ -451,12 +744,11 @@ watch(
             :id="idPanneau(selection)"
             :aria-labelledby="idOnglet(selection)"
           >
-            <!-- The production cahier owns Mobilité's editorial body; the
-                 territory shell still owns identity, tabs, and the tabpanel. -->
+            <!-- The production cahier owns Mobilit?'s editorial body. -->
             <ProductionMobilite v-if="productionMobilite && contenuMobilite && paginationCahier"
               :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
-              :access-status="statutAccesApi" :retry-access="rechargerAccesApi"
-              :building-status="buildingStatus" :retry-building="rechargerBuilding" />
+              :access-status="statutAccesApi" :retry-access="rechargerMobilityFacts"
+              :building-status="buildingStatus" :retry-building="rechargerMobilityFacts" />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation
                  pliée) lit SA paire hermétique ; les autres thèmes passent

@@ -22,6 +22,8 @@ export interface FactProvenance {
   version: string
   referenceDate: string | null
   publicationDate: string | null
+  /** Original producer lineage, retained when the normalized consumer uses only source clocks. */
+  lineage?: Record<string, unknown>
 }
 
 export type ComparisonScopeKind =
@@ -60,12 +62,15 @@ export interface FactComparison {
 export interface NumericFact {
   key: string
   detail: string | null
+  sex?: Indicateur['sex']
   /** Payload-owned label when this fact is a published indicator. */
   label?: string | null
   value: number | null
   unit: string
   availability: FactAvailability
   provenance: FactProvenance | null
+  /** Full producer lineage where a publication names more than one source. */
+  sourceLineage?: readonly FactProvenance[]
   comparison: FactComparison | null
   /** Published aggregation semantics, including when the reference is unavailable. */
   comparisonBasis: 'territory-median' | 'territory-mean' | 'building-weighted-mean' | 'pooled-building-mean'
@@ -355,11 +360,13 @@ function availabilityOf(value: number | null, present: boolean): FactAvailabilit
 function factOf(options: {
   key: string
   detail?: string | null
+  sex?: Indicateur['sex']
   label?: string | null
   value: number | null
   unit: string
   present: boolean
   provenance?: FactProvenance | null
+  sourceLineage?: readonly FactProvenance[]
   comparison?: FactComparison | null
   comparisonBasis?: NumericFact['comparisonBasis']
   reason?: string | null
@@ -367,11 +374,13 @@ function factOf(options: {
   return {
     key: options.key,
     detail: options.detail ?? null,
+    ...(options.sex !== undefined ? { sex: options.sex } : {}),
     label: options.label ?? null,
     value: options.value,
     unit: options.unit,
     availability: availabilityOf(options.value, options.present),
     provenance: options.present ? options.provenance ?? null : null,
+    ...(options.sourceLineage ? { sourceLineage: options.sourceLineage } : {}),
     comparison: options.comparison ?? null,
     comparisonBasis: options.comparisonBasis ?? 'territory-median',
     reason: options.reason ?? null,
@@ -379,13 +388,19 @@ function factOf(options: {
 }
 
 function provenanceFromRow(row: Indicateur, sourceId: string | null): FactProvenance {
+  const source = row.fact_sources?.[0]
   return {
-    sourceId,
+    sourceId: source?.sourceId ?? sourceId,
     source: row.vintage_source,
     version: row.vintage_version,
     referenceDate: row.vintage_date_reference,
     publicationDate: row.vintage_date_publication,
+    ...(source?.lineage ? { lineage: source.lineage } : {}),
   }
+}
+
+function sourceLineageFromRow(row: Indicateur, sourceId: string | null): readonly FactProvenance[] {
+  return row.fact_sources?.length ? row.fact_sources : [provenanceFromRow(row, sourceId)]
 }
 
 function scopeFor(payload: Payload, target: Territoire): ComparisonScope | null {
@@ -645,11 +660,13 @@ function indicatorsOf(
       return factOf({
         key: row.key,
         detail: row.detail,
+        sex: row.sex ?? null,
         label: payload.themeMetadata?.mobilite?.indicator_labels[row.key] ?? null,
         value: row.value,
         unit: row.unit,
         present: true,
         provenance: provenanceFromRow(row, sourceId),
+        sourceLineage: sourceLineageFromRow(row, sourceId),
         comparison: direction
           ? indicatorComparison(payload, scope, row, direction, statisticForIndicator(row.key), precomputed)
           : null,
@@ -995,7 +1012,7 @@ function bpeAccessOf(
         profile,
         label: row?.profil_libelle ?? LIBELLES_PROFILS_ACCES_BPE[profile],
         count: row?.nombre_typequ ?? 0,
-        exemplar: row
+        exemplar: row?.exemplar_typequ
           ? {
               typequ: row.exemplar_typequ,
               label: row.exemplar_libelle,
