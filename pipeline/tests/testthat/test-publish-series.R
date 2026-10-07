@@ -402,9 +402,16 @@ test_that("production owned-series reader and check route project both canonical
     0L)
   expect_equal(producer$excluded$region$row_count,14L)
   unlink(file.path(sortie,c("histoires_milieux.parquet","indicateurs_habitat.parquet")))
-  scoped <- read_owned_series_projections(sortie,metadata_path,habitat_metadata_path,indicator_id="conso_enaf_annuel")
+  unrelated_habitat_metadata <- file.path(sortie,"unrelated-habitat.json")
+  unrelated_mobility_metadata <- file.path(sortie,"unrelated-mobility.json")
+  writeLines("not json",unrelated_habitat_metadata); writeLines("not json",unrelated_mobility_metadata)
+  scoped <- read_owned_series_projections(sortie,metadata_path,unrelated_habitat_metadata,
+    unrelated_mobility_metadata,indicator_id="conso_enaf_annuel")
   expect_identical(names(scoped),"conso_enaf_annuel_owned")
   expect_identical(scoped$conso_enaf_annuel_owned$descriptor$indicator_id,"conso_enaf_annuel")
+  writeLines("{}",unrelated_mobility_metadata)
+  expect_error(read_owned_series_projections(sortie,metadata_path,habitat_metadata_path,
+    unrelated_mobility_metadata),"requires both mobility indicators and mobility metadata")
   connect <- function() stop("check route must not connect")
   checked <- dispatch_owned_series_cli("check",projections,connect)
   expect_identical(unlist(checked$versions),vapply(projections,scalar_content_version,character(1)))
@@ -577,6 +584,19 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
   dispatched <- dispatch_owned_series_cli("check",read_curve,function() stop("check must not connect"),
     indicator_id="raccordement_reference")
   expect_identical(names(dispatched$projections),"raccordement_courbe_owned")
+  milieux_fixture <- compute_payload(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  habitat_fixture <- payload_habitat()
+  mobility_vintages <- vintages
+  mobility_vintages$date_reference <- as.character(mobility_vintages$date_reference)
+  mobility_vintages$date_publication <- as.character(mobility_vintages$date_publication)
+  vintages_all <- unique(dplyr::bind_rows(vintages_milieux(),vintages_habitat(),mobility_vintages))
+  nanoparquet::write_parquet(milieux_fixture$indicateurs,file.path(sortie,"indicateurs_milieux.parquet"))
+  nanoparquet::write_parquet(milieux_fixture$histoires,file.path(sortie,"histoires_milieux.parquet"))
+  nanoparquet::write_parquet(habitat_fixture$indicateurs,file.path(sortie,"indicateurs_habitat.parquet"))
+  nanoparquet::write_parquet(vintages_all,file.path(sortie,"vintages.parquet"))
+  all_owned <- read_owned_series_projections(sortie,milieux_metadata,habitat_metadata,metadata_file)
+  expect_true("raccordement_courbe_owned" %in% names(all_owned))
+  expect_true("prix_m2_owned" %in% names(all_owned))
   expect_equal(unique(projection$points$observation_period),"2026-09-16")
   expect_equal(unique(projection$named_reference$observation_period),"2026-09-16")
   changed_recipe <- project_raccordement_owned_series(

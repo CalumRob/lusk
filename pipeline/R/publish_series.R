@@ -749,8 +749,7 @@ read_conso_enaf_series_projection <- function(sortie = "../public/data",
 
 # Read one fingerprinted snapshot for the registered owned projections across
 # Milieux and Habitat. Canonical Parquet and pinned metadata own each projection.
-owned_series_indicator_owner <- function(indicator_id, metadata, habitat_metadata, mobility_metadata) {
-  pages <- c(metadata$indicator_pages,habitat_metadata$indicator_pages,mobility_metadata$indicator_pages)
+owned_series_indicator_owner <- function(indicator_id, metadata=NULL, habitat_metadata=NULL, mobility_metadata=NULL) {
   routes <- c(metadata$owned_series_routes,habitat_metadata$owned_series_routes,mobility_metadata$owned_series_routes)
   for (owner in names(routes)) {
     route <- routes[[owner]]
@@ -765,10 +764,22 @@ read_owned_series_projections <- function(sortie="../public/data",
     metadata_path="inst/extdata/theme-metadata/theme_milieux.json",
     habitat_metadata_path="inst/extdata/theme-metadata/theme_habitat.json",
     mobility_metadata_path="inst/extdata/theme-metadata/theme_mobilite.json", indicator_id=NULL) {
-  metadata <- jsonlite::read_json(metadata_path,simplifyVector=FALSE)
-  habitat_metadata <- jsonlite::read_json(habitat_metadata_path,simplifyVector=FALSE)
-  mobility_metadata <- if(file.exists(mobility_metadata_path)) jsonlite::read_json(mobility_metadata_path,simplifyVector=FALSE) else NULL
-  owner <- if(is.null(indicator_id)) NULL else owned_series_indicator_owner(indicator_id,metadata,habitat_metadata,mobility_metadata)
+  owner_file <- c(conso_enaf_annuel=metadata_path,artif_par_habitant=metadata_path,
+    prix_m2=habitat_metadata_path,raccordement_courbe=mobility_metadata_path)
+  aliases <- c(raccordement_reference="raccordement_courbe")
+  requested_owner <- if(is.null(indicator_id)) NULL else if(indicator_id %in% names(aliases)) unname(aliases[[indicator_id]]) else indicator_id
+  if (!is.null(indicator_id) && (length(requested_owner)!=1L || is.na(requested_owner) || !requested_owner %in% names(owner_file)))
+    stop("Unknown owned-series indicator_id: ",indicator_id,call.=FALSE)
+  owner <- requested_owner
+  selected_metadata_path <- if(is.null(owner)) NULL else unname(owner_file[[owner]])
+  selected_metadata <- if(is.null(owner)) NULL else jsonlite::read_json(selected_metadata_path,simplifyVector=FALSE)
+  if (!is.null(indicator_id)) {
+    resolved <- owned_series_indicator_owner(indicator_id,
+      if(identical(selected_metadata_path,metadata_path)) selected_metadata else NULL,
+      if(identical(selected_metadata_path,habitat_metadata_path)) selected_metadata else NULL,
+      if(identical(selected_metadata_path,mobility_metadata_path)) selected_metadata else NULL)
+    if (!identical(resolved,owner)) stop("Owned-series selector does not match its metadata owner",call.=FALSE)
+  }
   required <- switch(owner %||% "all",conso_enaf_annuel=c("indicators","vintages","metadata"),
     artif_par_habitant=c("indicators","histories","vintages","metadata"),
     prix_m2=c("habitat_indicators","vintages","habitat_metadata"),
@@ -779,16 +790,24 @@ read_owned_series_projections <- function(sortie="../public/data",
     metadata=metadata_path, habitat_metadata=habitat_metadata_path,
     mobility_indicators=file.path(sortie,"indicateurs_mobilite.parquet"),mobility_metadata=mobility_metadata_path)
   paths <- all_paths[required]
+  mobility_pair <- c(mobility_indicators=all_paths[["mobility_indicators"]],mobility_metadata=mobility_metadata_path)
+  if (is.null(owner) && any(file.exists(mobility_pair))) {
+    if (!all(file.exists(mobility_pair))) stop("Owned-series all-check requires both mobility indicators and mobility metadata",call.=FALSE)
+    paths <- c(paths,mobility_pair)
+  }
   read_stable_series_artifacts(paths,function(input) {
    canonical <- list(indicateurs=if("indicators" %in% names(input)) nanoparquet::read_parquet(input[["indicators"]]) else data.frame(),
      histoires=if("histories" %in% names(input)) nanoparquet::read_parquet(input[["histories"]]) else data.frame(),
      habitat=list(indicateurs=if("habitat_indicators" %in% names(input)) nanoparquet::read_parquet(input[["habitat_indicators"]]) else data.frame()),
      mobilite=list(indicateurs=if("mobility_indicators" %in% names(input)) nanoparquet::read_parquet(input[["mobility_indicators"]]) else data.frame()),
      vintages=nanoparquet::read_parquet(input[["vintages"]]))
-     metadata <- if("metadata" %in% names(input)) jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE) else metadata
-     habitat_metadata <- if("habitat_metadata" %in% names(input)) jsonlite::read_json(input[["habitat_metadata"]],simplifyVector=FALSE) else habitat_metadata
-      registry <- register_owned_series_publishers(list(),metadata,habitat_metadata)
-      mobility_metadata <- if("mobility_metadata" %in% names(input)) jsonlite::read_json(input[["mobility_metadata"]],simplifyVector=FALSE) else mobility_metadata
+      metadata <- if("metadata" %in% names(input)) jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE) else if(is.null(owner)) jsonlite::read_json(metadata_path,simplifyVector=FALSE) else selected_metadata
+      habitat_metadata <- if("habitat_metadata" %in% names(input)) jsonlite::read_json(input[["habitat_metadata"]],simplifyVector=FALSE) else if(is.null(owner)) jsonlite::read_json(habitat_metadata_path,simplifyVector=FALSE) else selected_metadata
+       registry <- if(is.null(owner)) register_owned_series_publishers(list(),metadata,habitat_metadata) else switch(owner,
+         conso_enaf_annuel=register_conso_enaf_owned_publisher(list(),selected_metadata),
+         artif_par_habitant=register_artif_m2m3_owned_publisher(list(),selected_metadata),
+         prix_m2=register_prix_m2_owned_publisher(list(),selected_metadata),list())
+       mobility_metadata <- if("mobility_metadata" %in% names(input)) jsonlite::read_json(input[["mobility_metadata"]],simplifyVector=FALSE) else if(identical(owner,"raccordement_courbe")) selected_metadata else NULL
       if(!is.null(mobility_metadata)) registry <- register_raccordement_owned_publisher(registry,mobility_metadata)
      if (!is.null(indicator_id)) {
        selected <- names(registry)[vapply(registry,function(p) identical(p$owner_id,owner),logical(1))]
