@@ -201,6 +201,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
           vintage_id: 'v2025', source_version: '2025', source_reference_date: '2025-01-01', source_publication_date: '2026-07-24' })) }
     })
     const apiRead = {
+      dataset_id: 'conso_enaf_annuel', availability: 'complete',
       indicator_id: 'conso_enaf_annuel', axis_kind: 'year', unit: 'ha',
       territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: axis.map((year) => ({ axis: year,
         observation_period: year, value: fixtureFacts.find((fact) => fact.territoire === '22001' && fact.detail === year)?.value ?? null,
@@ -237,7 +238,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
     expect(apiCalls).toBeGreaterThan(beforeRetry)
-    expect(fetchMock).toHaveBeenLastCalledWith('/api/territories/commune/22001/series/conso_enaf_annuel?scope_level=commune&department_id=22')
+    expect(fetchMock).toHaveBeenLastCalledWith('/api/series-datasets/conso_enaf_annuel/territories/commune/22001/conso_enaf_annuel?scope_level=commune&department_id=22')
     expect(wrapper.find('.vues').exists()).toBe(true)
     expect(wrapper.find('.controls').exists()).toBe(true)
     expect(wrapper.text()).toContain('Consommation')

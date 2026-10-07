@@ -22,6 +22,7 @@ import {
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { PayloadError } from '@/payload/validate'
 import CahierComparisonNote from '@/fiche/prototype/CahierComparisonNote.vue'
+import { reponseThemeMobiliteApi } from './helpers/mobiliteThemeApiStub'
 
 const rawModel = {
   schema_version: '1',
@@ -55,6 +56,47 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
     )
     const rennes = modelFor('35238')
     const destination = modelFor('22001')
+    for (const model of [rennes, destination]) {
+      model.cohortTerritories = JSON.parse(readFileSync(
+        resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    }
+    // Le flux E acquiert ses faits par le POST de thème : la réponse doit être
+    // le contrat réel (theme-facts-v1) — le modèle publié n'EST pas une
+    // réponse de faits, et le repli pendand du cahier ne rend AUCUNE valeur
+    // statique (y compris le libellé de note de comparaison).
+    const models: Record<string, any> = { '35238': rennes, '22001': destination }
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
+      const url = String(input)
+      const focal = url.match(/^\/api\/territories\/commune\/([^/]+)\/themes\/mobilite\/facts$/)?.[1]
+      if (focal && models[focal]) {
+        const model = models[focal]
+        const densite = model.themes.mobilite!.comparisons.densite!
+        return { ok: true, status: 200, json: async () =>
+          reponseThemeMobiliteApi(model, 'commune', focal, densite.scope.kind, densite.scope.label) }
+      }
+      if (url.endsWith('/themes/mobilite/comparison')) {
+        const selection = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
+        // La réponse comparison-only porte les pairs bâtiments du périmètre
+        // demandé (rampes/distributions comparées SANS les faits focaux) —
+        // c'est elle qui actualise le libellé de portée des notes.
+        const focalComparaison = url.match(/^\/api\/territories\/commune\/([^/]+)\/themes\/mobilite\/comparison$/)?.[1]
+        const model = (focalComparaison && models[focalComparaison]) ?? models['35238']
+        const epci = model.themes.mobilite!.comparisons.epci!
+        const complet = reponseThemeMobiliteApi(model, 'commune', focalComparaison ?? '35238', epci.scope.kind, epci.scope.label)
+        return { ok: true, status: 200, json: async () => ({
+          contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite', selection,
+          scope: { kind: 'explicit_selection', member_count: selection.length },
+          results: [], profile_comparisons: [],
+          building_access: {
+            scope: { kind: 'custom', member_count: selection.length },
+            ramp: { ...complet.building_access.peer_ramp, member_count: selection.length },
+            distribution: { ...complet.building_access.peer_distribution, member_count: selection.length },
+          },
+        }) }
+      }
+      throw new Error(`Requête inattendue : ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchApi)
     const loader = vi.fn(async (_type: string, id: string) => id === '35238' ? rennes : destination)
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/territoire/commune/35238?theme=mobilite&variant=E&comparaison=epci')
@@ -111,11 +153,25 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
       comparison,
     )
     expect(projectedFacts?.mobility.buildingDistribution?.comparisonLabel).toBe(scope)
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => publishedModel,
-    }))
+    // Le flux E acquiert ses faits par le POST de thème : le modèle publié
+    // n'EST pas une réponse de faits (le repli pendant ne rend AUCUNE valeur
+    // statique) — le POST est servi avec le contrat réel, la comparaison fixe
+    // déclarée du modèle publiée portant son libellé de portée.
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      if (String(input).endsWith('/themes/mobilite/facts')) {
+        return {
+          ok: true,
+          status: 200,
+          json: async () => reponseThemeMobiliteApi(validatedModel, type, id,
+            comparison!.scope.kind, comparison!.scope.label),
+        }
+      }
+      return {
+        ok: true,
+        status: 200,
+        json: async () => publishedModel,
+      }
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     try {
