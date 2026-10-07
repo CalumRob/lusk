@@ -783,7 +783,7 @@ read_owned_series_projections <- function(sortie="../public/data",
   required <- switch(owner %||% "all",conso_enaf_annuel=c("indicators","vintages","metadata"),
     artif_par_habitant=c("indicators","histories","vintages","metadata"),
     prix_m2=c("habitat_indicators","vintages","habitat_metadata"),
-    raccordement_courbe=c("mobility_indicators","vintages","mobility_metadata"),
+    raccordement_courbe=c("indicators","mobility_indicators","vintages","mobility_metadata"),
     all=c("indicators","histories","habitat_indicators","vintages","metadata","habitat_metadata"))
   all_paths <- c(indicators=file.path(sortie,"indicateurs_milieux.parquet"), histories=file.path(sortie,"histoires_milieux.parquet"),
     habitat_indicators=file.path(sortie,"indicateurs_habitat.parquet"), vintages=file.path(sortie,"vintages.parquet"),

@@ -574,6 +574,8 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
   on.exit(unlink(sortie,recursive=TRUE),add=TRUE)
   nanoparquet::write_parquet(canonical,file.path(sortie,"indicateurs_mobilite.parquet"))
   nanoparquet::write_parquet(vintages,file.path(sortie,"vintages.parquet"))
+  milieux_fixture <- compute_payload(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  nanoparquet::write_parquet(milieux_fixture$indicateurs,file.path(sortie,"indicateurs_milieux.parquet"))
   metadata_file <- file.path(sortie,"theme_mobilite.json")
   jsonlite::write_json(metadata,metadata_file,auto_unbox=TRUE)
   milieux_metadata <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
@@ -584,7 +586,12 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
   dispatched <- dispatch_owned_series_cli("check",read_curve,function() stop("check must not connect"),
     indicator_id="raccordement_reference")
   expect_identical(names(dispatched$projections),"raccordement_courbe_owned")
-  milieux_fixture <- compute_payload(communes_fixture_milieux_ocsge(),theme=theme_milieux())
+  read_focal <- read_owned_series_projections(sortie,milieux_metadata,habitat_metadata,metadata_file,
+    indicator_id="raccordement_courbe")
+  focal_checked <- dispatch_owned_series_cli("check",read_focal,function() stop("check must not connect"),
+    indicator_id="raccordement_courbe")
+  expect_identical(names(focal_checked$projections),"raccordement_courbe_owned")
+  expect_equal(focal_checked$projections$raccordement_courbe_owned$named_reference$value,seq(.05,.95,length.out=11))
   habitat_fixture <- payload_habitat()
   mobility_vintages <- vintages
   mobility_vintages$date_reference <- as.character(mobility_vintages$date_reference)
