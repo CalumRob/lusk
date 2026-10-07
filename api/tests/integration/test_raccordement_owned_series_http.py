@@ -45,16 +45,17 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             ('35001','commune','Peer one','35','243500139','D1'),
             ('35002','commune','Peer two','35','243500139','D1'),
             ('22001','commune','Other class','22','243500140','D2'),
-            ('243500139','epci','EPCI one','35',NULL,NULL)""")
-        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',1)")
-        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('scalar_observation','fixture-scalar-v1',4,'fixture-ref-v1')")
+            ('243500139','epci','EPCI one','35',NULL,NULL),
+            ('53','region','Bretagne',NULL,NULL,NULL)""")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',6)")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('scalar_observation','fixture-scalar-v1',5,'fixture-ref-v1')")
         pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('fixture_scalar_source','Fixture scalar source')")
         pub.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES('fixture_scalar_source','v1','v1','2026-01-01','2026-01-02')")
         with pub.transaction():
-            pub.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES('fixture_scalar','mobilite','Fixture scalar','%','high','fixture_scalar',ARRAY['commune'],'fixture denominator','dense_complete','1')")
+            pub.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES('fixture_scalar','mobilite','Fixture scalar','%','high','fixture_scalar',ARRAY['commune','region'],'fixture denominator','dense_complete','1')")
             pub.execute("INSERT INTO scalar_descriptor_source VALUES('fixture_scalar','fixture_scalar_source')")
-            pub.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES('fixture_scalar','35238','commune',0.6,'measured'),('fixture_scalar','35001','commune',0.5,'measured'),('fixture_scalar','35002','commune',0.4,'measured'),('fixture_scalar','22001','commune',0.99,'measured')")
-            pub.execute("INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id) VALUES('fixture_scalar','35238','fixture_scalar_source','v1'),('fixture_scalar','35001','fixture_scalar_source','v1'),('fixture_scalar','35002','fixture_scalar_source','v1'),('fixture_scalar','22001','fixture_scalar_source','v1')")
+            pub.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES('fixture_scalar','35238','commune',0.6,'measured'),('fixture_scalar','35001','commune',0.5,'measured'),('fixture_scalar','35002','commune',0.4,'measured'),('fixture_scalar','22001','commune',0.99,'measured'),('fixture_scalar','53','region',0.75,'measured')")
+            pub.execute("INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id) VALUES('fixture_scalar','35238','fixture_scalar_source','v1'),('fixture_scalar','35001','fixture_scalar_source','v1'),('fixture_scalar','35002','fixture_scalar_source','v1'),('fixture_scalar','22001','fixture_scalar_source','v1'),('fixture_scalar','53','fixture_scalar_source','v1')")
         role=os.environ.get("LUSK_TEST_READ_USER",urlsplit(os.environ["LUSK_TEST_READ_DSN"]).username)
         assert role and re.fullmatch(r"[A-Za-z0-9_$-]+",role)
         pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{role}"')
@@ -128,7 +129,6 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         assert counts==(55,)
         assert pub.execute("SELECT count(*) FROM series_dataset_observation WHERE indicator_id='raccordement_courbe'").fetchone()==(44,)
         assert pub.execute("SELECT count(*) FROM series_named_reference WHERE reference_id='commune_bretonne_mediane'").fetchone()==(11,)
-        assert pub.execute("SELECT count(*) FROM territory_reference WHERE territory_id='53'").fetchone()==(0,)
         # A conflicting legacy descriptor is deliberately present. Only the
         # explicit owned route declaration may choose the owned dataset.
         pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('legacy','Legacy')")
@@ -184,6 +184,9 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         pub.execute("UPDATE scalar_descriptor SET theme_id='mobilite' WHERE indicator_id='fixture_scalar'")
         with TestClient(app) as client:
             theme=client.get("/api/territories/commune/35238/themes/mobilite/facts")
+            regional_default_theme=client.get("/api/territories/region/53/themes/mobilite/facts")
+            regional_theme=client.post("/api/territories/region/53/themes/mobilite/facts",
+                json={"theme_id":"mobilite"})
             comparison=client.post("/api/territories/commune/35238/indicators/raccordement_courbe/comparison",
                 json={"selection":[{"territory_type":"epci","territory_id":"243500139"},
                                     {"territory_type":"commune","territory_id":"35001"}]})
@@ -200,6 +203,21 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             theme_comparison=client.post("/api/territories/commune/35238/themes/mobilite/comparison",
                 json={"theme_id":"mobilite","selection":[]})
         assert theme.status_code==200,theme.text
+        assert regional_default_theme.status_code==200,regional_default_theme.text
+        assert regional_theme.status_code==200,regional_theme.text
+        regional_body=regional_theme.json()
+        assert regional_body["territory"]["territory_id"]=="53"
+        assert any(item["indicator_id"]=="fixture_scalar" and item["value"]==0.75
+            for item in regional_body["indicators"])
+        assert regional_body["owned_series"]==[]
+        assert not any(item["indicator_id"]=="raccordement_courbe"
+            for item in regional_body["indicators"])
+        regional_default_body=regional_default_theme.json()
+        assert regional_default_body["owned_series"]==[]
+        assert not any(result["indicator_id"]=="raccordement_courbe"
+            for result in regional_default_body["default_comparison"]["results"])
+        assert not any(result["indicator_id"]=="raccordement_courbe"
+            for result in regional_body["comparison"]["results"])
         theme_body=theme.json()
         curve_facts=[row for row in theme_body["indicators"] if row["indicator_id"]=="raccordement_courbe"]
         curve_metadata=next(row for row in theme_body["indicator_metadata"] if row["indicator_id"]=="raccordement_courbe")

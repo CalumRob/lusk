@@ -1186,8 +1186,9 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
         if has_theme and has_route:
             owned_descriptors=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
-                WHERE theme_id=%s AND active_read_route AND (%s::text IS NULL OR indicator_id=%s)
-                ORDER BY indicator_id""",(theme_id,indicator_id,indicator_id)).fetchall()
+                WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels)
+                  AND (%s::text IS NULL OR indicator_id=%s)
+                ORDER BY indicator_id""",(theme_id,territory_type,indicator_id,indicator_id)).fetchall()
     collections = collection_descriptors(conn,indicator_id=indicator_id,theme_id=theme_id)
     reading_marker = _demographic_reading_marker(conn) if theme_id == "demographie" else None
     milieux_marker = _milieux_reading_marker(conn) if theme_id == "milieux" else None
@@ -2423,7 +2424,8 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
             WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
         if has_theme and has_route:
             routes=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
-                WHERE theme_id=%s AND active_read_route ORDER BY indicator_id""",(theme_id,)).fetchall()
+                WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels)
+                ORDER BY indicator_id""",(theme_id,territory_type)).fetchall()
             owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator)
                           for dataset_id,indicator in routes]
     bpe_profile = (_bpe_profile_snapshot(conn,territory_type,territory_id,default_comparison=False)
