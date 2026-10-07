@@ -95,8 +95,7 @@ const selection = computed<Theme | null>(() => {
 const productionMobilite = computed(() => selection.value === 'mobilite')
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
 const themeMigre = (theme: Theme | null): boolean =>
-  acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme) &&
-  theme !== 'mobilite'
+  acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme)
 const cacheAcquisition = new ThemeAcquisitionCache(
   (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
   (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
@@ -262,6 +261,20 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       cleFaitsPrets = null
       return
     }
+    // Mobilité shares the facts cache, but its production cahier owns its
+    // rendered status and retries. Keep the cache warm without mutating the
+    // generic theme renderer state.
+    if (theme === 'mobilite') {
+      const request = ++sequenceAcquisition
+      let cancelled = false
+      onCleanup(() => { cancelled = true })
+      try { await cacheAcquisition.get(typeRoute.value, code, 'mobilite') } catch { /* dedicated cahier reports failure */ }
+      if (cancelled || request !== sequenceAcquisition) return
+      for (const autreTheme of THEMES_ACQUISITION_API) {
+        if (autreTheme !== 'mobilite') void cacheAcquisition.get(typeRoute.value, code, autreTheme).catch(() => {})
+      }
+      return
+    }
     // Revisite déjà acquise (même territoire, même thème) : les faits restent,
     // aucune requête — le cache détient l'entrée, le rendu ne clignote pas.
     const themeActif = theme as Theme
@@ -325,7 +338,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
 watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
   () => resolutionComparaison.value?.mode, statutAcquisition, retryAcquisition],
   async ([model, theme, code, mode], _old, onCleanup) => {
-    if (!themeMigre(theme) || statutAcquisition.value !== 'ready' || !model || !typeValide.value) {
+    if (!themeMigre(theme) || theme === 'mobilite' || statutAcquisition.value !== 'ready' || !model || !typeValide.value) {
       statutComparaison.value = 'idle'
       return
     }
@@ -445,12 +458,7 @@ watch([productionMobilite, typeRoute, idRoute,
     if (!settled) { lastFocalKey = null; lastFocalModel = null }
   })
   const code = idRoute.value
-  void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(code)}/themes/mobilite/facts`,
-    { method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ theme_id: 'mobilite' }), signal: controller.signal }).then(async (response) => {
-    if (!response.ok) throw new Error(`HTTP ${response.status}`)
-    return response.json() as Promise<unknown>
-  }).then((data) => {
+  void cacheAcquisition.get(typeRoute.value, code, 'mobilite').then(({ focal: data }) => {
     if (request !== focalRequestSequence || !payloadPourRendu.value || !isRecord(data)) return
     const presentation = toRaw(payloadPourRendu.value)
     const target = presentation.territoires.find((territory) => territory.territoire === code)
@@ -561,7 +569,12 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
     })
   }, { immediate: true })
 
-function rechargerMobilityFacts(): void { retryMobilityFacts.value += 1 }
+function rechargerMobilityFacts(): void {
+  retryMobilityFacts.value += 1
+  // Mobilité facts are consumed by both the shared theme acquisition state
+  // and the production cahier; retry both consumers through the same cache.
+  retryAcquisition.value += 1
+}
 const contenuMobilite = computed<ThemeContent | null>(() => {
   if (
     !productionMobilite.value ||
@@ -702,7 +715,7 @@ watch(
       <!-- #627 : le thème migré échoue fermé — jamais de repli sur les
            numériques statiques ; chaque échec reste réessayable. -->
       <div
-        v-else-if="themeMigre(selection) && statutAcquisition === 'error'"
+        v-else-if="themeMigre(selection) && selection !== 'mobilite' && statutAcquisition === 'error'"
         class="etat-erreur"
         role="alert"
       >
