@@ -16,6 +16,7 @@
 !/api/
 !/pipeline/
 !/.github/
+!/.out-of-scope/
 
 # Local cartographic prototype exports — keep available for development, but
 # do not include them in the repository until their publication contract lands.
