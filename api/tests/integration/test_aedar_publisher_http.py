@@ -98,7 +98,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         rscript = r'''pkgload::load_all('.',quiet=TRUE)
 schema <- Sys.getenv('AEDAR_IT_SCHEMA')
 source_axis <- readr::read_csv(file.path("tests","testthat","fixtures","aedar-region-2026v1-typequ.csv"),
-  col_types=readr::cols(.default=readr::col_character()),show_col_types=FALSE)
+  col_types=readr::cols(.default=readr::col_character()),trim_ws=FALSE,show_col_types=FALSE)
 measures <- as.data.frame(matrix(0,nrow=nrow(source_axis),ncol=length(AEDAR_AGGREGATE_MEASURES),
   dimnames=list(NULL,AEDAR_AGGREGATE_MEASURES)))
 measures$count_5_walk_share <- NA_real_
