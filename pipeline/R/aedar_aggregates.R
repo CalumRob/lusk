@@ -90,7 +90,7 @@ project_aedar_aggregates <- function(inputs) {
   list(facts=facts,measures=AEDAR_AGGREGATE_MEASURES,source=list(
     source_id=AEDAR_AGGREGATE_SOURCE_ID,name="Accès aux équipements depuis les adresses résidentielles — Bretagne",
     vintage=AEDAR_AGGREGATE_VINTAGE,url="https://www.data.gouv.fr/datasets/acces-aux-equipements-depuis-les-adresses-residentielles-bretagne",
-    licence="ODbL",attribution="AEDAR — données publiées sous ODbL",
+    licence="ODbL",attribution="© OpenStreetMap contributors; données AEDAR — licence ODbL",
     reference_date=NA_character_,publication_date=AEDAR_AGGREGATE_RESOURCES$published_on[[1L]]))
 }
 

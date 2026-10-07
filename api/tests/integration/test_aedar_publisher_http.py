@@ -91,6 +91,9 @@ inputs <- list(
  departement=make('departement','code_departement','22','nom_departement','Fixture département'),
  region=make('region','code_region','53','nom_region','Fixture région'))
 projection <- project_aedar_aggregates(inputs)
+canonical_dir <- tempfile('aedar-canonical-')
+write_aedar_canonical(projection,canonical_dir)
+projection <- read_aedar_canonical(canonical_dir)
 con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
  dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'),password=Sys.getenv('PGPASSWORD'))
 on.exit(DBI::dbDisconnect(con))
@@ -142,6 +145,9 @@ stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n 
                     assert fact["measures"]["count_5_walk_share"] is None
                     assert fact["measures"]["count_5_walk_min"] == 0
                     assert fact["licence"] == "ODbL" and fact["publication_date"] == "2026-09-30"
+                    assert fact["attribution"] == "© OpenStreetMap contributors; données AEDAR — licence ODbL"
+                    assert resp.json()["content_version"]
+                    assert resp.json()["reference_content_version"] == "fixture-ref-v1"
                 assert client.get("/api/aedar/territories/region/53/aggregates?limit=101").status_code == 422
                 mobility_after=client.get(mobility_url)
                 assert mobility_after.status_code == 200, mobility_after.text

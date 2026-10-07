@@ -120,6 +120,8 @@ class AEDARFactResponse(BaseModel):
 
 class AEDARTerritorialAggregateResponse(BaseModel):
     territory: ThemeTerritorySelection
+    content_version: str
+    reference_content_version: str
     limit: int = Field(ge=1, le=100)
     offset: int = Field(ge=0, le=10000)
     facts: list[AEDARFactResponse]
@@ -3478,5 +3480,6 @@ def aedar_territorial_aggregates(
               (territory_type,territory_id,typequ,typequ,limit,offset))
             names = [d.name for d in cursor.description]
             rows = [dict(zip(names,row)) for row in cursor.fetchall()]
-    return {"territory":{"territory_type":territory_type,"territory_id":territory_id},"limit":limit,"offset":offset,
+    return {"territory":{"territory_type":territory_type,"territory_id":territory_id},
+      "content_version":marker[0],"reference_content_version":marker[2],"limit":limit,"offset":offset,
       "facts":rows}

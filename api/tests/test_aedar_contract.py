@@ -65,7 +65,8 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
             return [("id", "commune", "A104", "GENDARMERIE", {"code_insee": "id"},
                      10, 8, "covered", {key: (0 if key == "count_5_walk_share" else None)
                        for key in main._AEDAR_MEASURE_KEYS}, "aedar_bretagne",
-                     "2026-v1", "https://example.test", "ODbL", "AEDAR", None, "2026-09-30")]
+                      "2026-v1", "https://example.test", "ODbL",
+                      "© OpenStreetMap contributors; données AEDAR — licence ODbL", None, "2026-09-30")]
     class Connection:
         def execute(self, sql, *_args, **_kwargs):
             if "SELECT p.content_version" in sql:
@@ -88,3 +89,6 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
         assert body["facts"][0]["measures"]["count_5_walk_share"] == 0
         assert len(body["facts"][0]["measures"]) == 312
         assert body["facts"][0]["publication_date"] == "2026-09-30"
+        assert body["content_version"] == "aedar-v1"
+        assert body["reference_content_version"] == "ref-v1"
+        assert body["facts"][0]["attribution"] == "© OpenStreetMap contributors; données AEDAR — licence ODbL"

@@ -66,6 +66,7 @@ test_that("canonical Parquet round trip keeps source columns, null/zero and prov
   expect_equal(restored$facts$count_5_walk_min,rep(0,4))
   expect_equal(restored$facts$territory_type,levels)
   expect_equal(restored$source$licence,"ODbL")
+  expect_equal(restored$source$attribution,"© OpenStreetMap contributors; données AEDAR — licence ODbL")
 })
 
 test_that("AEDAR operator publish reads the validated canonical Parquets", {
