@@ -684,14 +684,18 @@ milieux_source_absence_declarations <- function(source_path, territories, vintag
   if (is.null(source_id) || length(source_id)!=1L || is.na(source_id)) stop("CONSOENAF source identity is missing from metadata",call.=FALSE)
   vintage <- vintages[vintages$id==source_id,,drop=FALSE]
   if (nrow(vintage)!=1L) stop("CONSOENAF source vintage is missing or ambiguous",call.=FALSE)
-  if (!requireNamespace("digest",quietly=TRUE)) stop("SHA-256 support is required for CONSOENAF absence provenance",call.=FALSE)
-  sha_before <- digest::digest(file=source_path,algo="sha256",serialize=FALSE)
+  sha256_file <- function(path) {
+    connection <- file(path,"rb")
+    on.exit(close(connection),add=TRUE)
+    unclass(as.character(openssl::sha256(connection)))
+  }
+  sha_before <- sha256_file(source_path)
   raw <- lire_consoenaf(source_path)
   if (!"idcom" %in% names(raw)) stop("CONSOENAF source snapshot lacks commune identity",call.=FALSE)
   normalized <- normaliser_consoenaf(raw)
   universe <- unique(as.character(territories$territoire[territories$type=="commune"]))
   absent <- setdiff(universe,unique(as.character(normalized$code)))
-  sha_after <- digest::digest(file=source_path,algo="sha256",serialize=FALSE)
+  sha_after <- sha256_file(source_path)
   if (!identical(sha_before,sha_after)) stop("CONSOENAF source snapshot changed while deriving source coverage",call.=FALSE)
   declarations <- data.frame(territory_id=absent,territory_type="commune",reason="source_record_absent",
     source_id=as.character(source_id),vintage_id=paste(as.character(vintage$version[[1L]]),
