@@ -45,6 +45,9 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         pub.execute(f'CREATE SCHEMA "{schema}"'); created = True
         pub.execute(f'SET search_path TO "{schema}"')
         pub.execute((root / "api/schema.sql").read_text(encoding="utf-8"))
+        # Rehearse the actual additive migration against the disposable schema
+        # as well as parsing the fresh-install DDL above.
+        pub.execute((root / "api/migrations/028_aedar_territorial_aggregates.sql").read_text(encoding="utf-8"))
         read_role = os.environ["LUSK_TEST_READ_USER"]
         assert re.fullmatch(r"[A-Za-z0-9_$-]+",read_role)
         pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{read_role}"')
@@ -56,7 +59,14 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',5)")
         pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('fixture-mobility','Fixture incumbent mobility')")
         pub.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES('fixture-mobility','v1','v1')")
+        pub.execute("""INSERT INTO mobility_reading_descriptor(singleton,descriptor_version,source_id,vintage_id,
+          source_name,dataset_name,source_version,unit,direction,allowed_levels,missing_status,
+          classification_values,field_keys,story_count,clock_count)
+          VALUES(true,'fixture-desc-v1','fixture-mobility','v1','Fixture incumbent mobility','fixture','v1',
+          'share','none',ARRAY['commune'],'unavailable',ARRAY['stable'],
+          ARRAY['groupe','story_key','salience_reason','classification_saillance','div_loss_t','div_loss_b','status'],1,1)""")
         pub.execute("INSERT INTO mobility_reading_story(story_key,groupe,salience_reason,ordinal) VALUES('fixture-story','fixture-group','fixture',1)")
+        pub.execute("INSERT INTO mobility_reading_clock(ordinal,clock_name,frequency,reference,trigger) VALUES(1,'fixture-clock','annual','fixture reference','fixture trigger')")
         pub.execute("INSERT INTO mobility_typed_reading(territory_id,territory_type,groupe,story_key,salience_reason,div_loss_t,div_loss_b,status,source_id,vintage_id) VALUES('mob-1','commune','fixture-group','fixture-story','fixture',0.4,0.2,'measured','fixture-mobility','v1')")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('mobility_typed_reading','mobility-fixture-v1',1,'fixture-ref-v1')")
 
@@ -122,6 +132,9 @@ stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n 
         pool.cache_clear()
         try:
             with TestClient(app) as client:
+                mobility_url="/api/territories/commune/mob-1/themes/mobilite/facts"
+                mobility_before=client.get(mobility_url)
+                assert mobility_before.status_code == 200, mobility_before.text
                 for level, territory_id in (("commune","22001"),("epci","200000001"),("departement","22"),("region","53")):
                     resp = client.get(f"/api/aedar/territories/{level}/{territory_id}/aggregates?typequ=A104&limit=1")
                     assert resp.status_code == 200, resp.text
@@ -130,6 +143,9 @@ stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n 
                     assert fact["measures"]["count_5_walk_min"] == 0
                     assert fact["licence"] == "ODbL" and fact["publication_date"] == "2026-09-30"
                 assert client.get("/api/aedar/territories/region/53/aggregates?limit=101").status_code == 422
+                mobility_after=client.get(mobility_url)
+                assert mobility_after.status_code == 200, mobility_after.text
+                assert mobility_after.json() == mobility_before.json()
                 assert dbread.execute("SELECT div_loss_t,div_loss_b FROM mobility_typed_reading WHERE territory_id='mob-1'").fetchone() == (0.4,0.2)
         finally:
             dbread.close(); pool.cache_clear()

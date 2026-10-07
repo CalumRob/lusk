@@ -4,11 +4,22 @@ args <- commandArgs(trailingOnly=TRUE)
 if (length(args)!=1L || !args[[1]] %in% c("--check","--publish","--full-vintage"))
   stop("Usage: Rscript scripts/publish-aedar-aggregates.R --check|--publish|--full-vintage (from pipeline/)",call.=FALSE)
 canonical_dir <- Sys.getenv("LUSK_AEDAR_CANONICAL_DIR",file.path("data","processed","aedar"))
+# Operator sequence: --check acquires, validates, and atomically materializes the
+# canonical facts + source Parquets. --publish reads only those artifacts, so a
+# database outage can be retried without re-acquiring or silently changing input.
+# This explicit command is intentionally not called by the cron/static pipeline.
 canonical_facts <- file.exists(file.path(canonical_dir,"aedar_territorial_aggregate.parquet")) &&
   file.exists(file.path(canonical_dir,"aedar_territorial_aggregate_source.parquet"))
-projection <- if (args[[1]]=="--publish" && canonical_facts) read_aedar_canonical(canonical_dir) else
-  read_aedar_aggregate_projection()
-if (!(args[[1]]=="--publish" && canonical_facts)) write_aedar_canonical(projection,canonical_dir)
+if (args[[1]]=="--publish") {
+  if (!canonical_facts)
+    stop("Canonical AEDAR Parquets are missing; run --check first. This keeps a DB retry independent of source acquisition.",call.=FALSE)
+  projection <- read_aedar_canonical(canonical_dir)
+} else {
+  projection <- read_aedar_aggregate_projection()
+  write_aedar_canonical(projection,canonical_dir)
+  # Publish always consumes the materialized/validated Parquet representation.
+  projection <- read_aedar_canonical(canonical_dir)
+}
 if (args[[1]]=="--full-vintage") {
   for (level in AEDAR_AGGREGATE_LEVELS) {
     x <- projection$facts[projection$facts$territory_type==level,,drop=FALSE]
