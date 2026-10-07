@@ -454,7 +454,93 @@
       }
     }
   },
+  "profile_contracts": {
+    "distribution_dpe": {
+      "completeness": "dense_complete",
+      "support_count_field": "n",
+      "suppressed_below": 30,
+      "missing_status": "not_available",
+      "zero_support_status": "not_available"
+    },
+    "mix_logements": {
+      "completeness": "dense_complete",
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "denominator_semantics": "logements",
+      "detail_units": {
+        "principales": "%",
+        "secondaires": "%",
+        "vacants": "%"
+      }
+    },
+    "statut": {
+      "completeness": "dense_complete",
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "denominator_semantics": "residences_principales",
+      "detail_units": {
+        "proprietaire": "%",
+        "hlm": "%",
+        "locataire_prive": "%",
+        "loge_gratuit": "%"
+      }
+    },
+    "type": {
+      "completeness": "dense_complete",
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "denominator_semantics": "residences_principales",
+      "detail_units": {
+        "maison": "%",
+        "appartement": "%"
+      }
+    },
+    "age_du_bati": {
+      "completeness": "dense_complete",
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "denominator_semantics": "residences_principales",
+      "detail_units": {
+        "lt1919": "%",
+        "1919_1945": "%",
+        "1946_1970": "%",
+        "1971_1990": "%",
+        "1991_2005": "%",
+        "2006_plus": "%"
+      }
+    }
+  },
   "scalar_contracts": {
+    "prix_m2": {
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "completeness": "sparse",
+      "comparison_facet": "prix_m2",
+      "missing_status": "suppressed",
+      "counts_available": true,
+      "support_count_field": "support",
+      "suppressed_below": 10
+    },
     "part_passoires": {
       "allowed_levels": [
         "commune",
@@ -469,6 +555,18 @@
       "support_count_field": "support",
       "suppressed_below": 30,
       "zero_support_status": "not_available"
+    }
+  },
+  "owned_series_routes": {
+    "prix_m2": {
+      "active_read_route": true,
+      "theme_id": "habitat",
+      "serving_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ]
     }
   },
   "source_records": {
