@@ -233,7 +233,7 @@ function histoireMilieuxDeSql(target: { territoire: string; type: TerritoireType
   return lecture
 }
 
-function histoireMobiliteDeSql(target: { territoire: string; type: TerritoireType }, reading: Row): Histoire {
+function histoireMobiliteDeSql(target: { territoire: string; type: TerritoireType }, reading: Row, distribution?: unknown): Histoire {
   for (const key of ['groupe', 'story_key', 'salience_reason', 'status']) {
     if (!texteNonVide(reading[key])) throw new Error(`Lecture SQL Mobilité invalide : ${key}`)
   }
@@ -247,13 +247,27 @@ function histoireMobiliteDeSql(target: { territoire: string; type: TerritoireTyp
   const provenance = apiSources([{ source_id: reading.provenance.source_id, name: reading.provenance.source_name,
     version: reading.provenance.source_version, reference_date: reading.provenance.source_reference_date,
     publication_date: reading.provenance.source_publication_date }], 'lecture mobilité')[0]!
+  const bins: Record<string, number | null> = Object.fromEntries([...Array(10)].flatMap((_, i) => [[`dens_${i + 1}`, null], [`dec_${i + 1}`, null]]))
+  let minimum: number | null = null
+  let maximum: number | null = null
+  if (isRecord(distribution) && isRecord(distribution.range) && Array.isArray(distribution.points) &&
+      distribution.range.status === 'measured' && finite(distribution.range.minimum) && finite(distribution.range.maximum)) {
+    minimum = distribution.range.minimum
+    maximum = distribution.range.maximum
+    for (const point of distribution.points) {
+      if (!isRecord(point) || !Number.isInteger(point.ordinal) || (point.ordinal as number) < 0) throw new Error('Distribution Mobilité invalide')
+      const n = (point.ordinal as number) + 1
+      bins[`dens_${n}`] = point.density_status === 'measured' && finite(point.density) ? point.density : null
+      bins[`dec_${n}`] = point.decile_status === 'measured' && finite(point.decile) ? point.decile : null
+    }
+  }
   return { territoire: target.territoire, type: target.type, theme: 'mobilite', groupe: reading.groupe as string,
     story_key: reading.story_key as HistoireMobilite['story_key'],
     salience_reason: reading.salience_reason as HistoireMobilite['salience_reason'],
     div_loss_t: reading.div_loss_t as number, div_loss_b: reading.div_loss_b as number,
     delta: (reading.div_loss_t as number) - (reading.div_loss_b as number),
-    pct_iso_full_t: null, dens_min: null, dens_max: null,
-    ...Object.fromEntries([...Array(10)].flatMap((_, i) => [[`dens_${i + 1}`, null], [`dec_${i + 1}`, null]])),
+     pct_iso_full_t: null, dens_min: minimum, dens_max: maximum,
+     ...bins,
     classification_saillance: reading.classification_saillance as string ?? '',
     vintage_source: provenance.source, vintage_version: provenance.version,
     vintage_date_reference: provenance.referenceDate, vintage_date_publication: provenance.publicationDate,
@@ -501,7 +515,7 @@ export function themeFactsRowsFromApi(
     if (readings.length && readings.some((row) => row.story_key !== 'vingt-minutes-sans-voiture' && row.story_key !== 'ce-que-le-velo-preserve')) {
       throw new Error(`Thème non migré vers l’acquisition paresseuse : ${theme}`)
     }
-    histoires = readings.map((row) => histoireMobiliteDeSql(target, row))
+    histoires = readings.map((row) => histoireMobiliteDeSql(target, row, response.density_distribution))
   } else if (response.readings.length > 0) {
     // Un thème non migré ne doit jamais franchir cette frontière : perdre une
     // lecture en silence serait un fait caché, pas une migration.

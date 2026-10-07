@@ -78,7 +78,7 @@ function reponseAccesApi(type: string, code: string, kind: string | null, label?
   }
 }
 
-function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: string | null, label?: string) {
+function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: string | null, label?: string, withDensity = false) {
   const theme = model.themes.mobilite
   const payload = payloadDepuisModeleTerritoire(model)
   const facts = territoryFactsFor(payload, code)!
@@ -135,6 +135,11 @@ function reponseThemeMobiliteApi(model: any, type: string, code: string, kind: s
       scope: { kind: 'density_class', territory_type: 'commune', member_count: 38 },
       results: defaultResults, profile_comparisons: [] },
     essential_service_access: reponseAccesApi(type, code, kind, label),
+    ...(withDensity ? { density_distribution: { status: 'measured',
+      range: { minimum: 20, maximum: 47, status: 'measured' },
+      points: Array.from({ length: 10 }, (_, ordinal) => ({ ordinal,
+        density: ordinal === 0 ? 0.006 : 0.01, density_status: 'measured',
+        decile: 20 + ordinal, decile_status: 'measured' })) } } : {}),
     building_access: {
       publication_id: 'building-v1', availability: 'complete',
       territory: { id: code, type },
@@ -1870,10 +1875,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('rend Mobilité depuis l’API : la valeur servie remplace la statique, la lecture sans figure fabriquée', async () => {
+  it('rend Mobilité et sa figure depuis les bins servis, mais garde la figure absente sans bins', async () => {
     const model = modeleAvecContextesComparaison()
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) })))
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null, undefined, true) })))
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
     await flushPromises()
     const texte = wrapper.get('[role="tabpanel"]').text()
@@ -1883,10 +1888,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // La lecture rend ses paramètres servis (le texte porte 38)…
     const lecture = wrapper.get('[data-groupe="acces-aux-services"]')
     expect(lecture.text()).toContain('38')
-    // …mais SA figure de distribution exige les bornes/bins du contrat statique :
-    // l'API mobilité ne les porte pas — la figure s'absente, jamais de bins fabriqués.
-    expect(wrapper.findComponent(GraphiqueDistributionMobilite).exists()).toBe(false)
+    expect(wrapper.findComponent(GraphiqueDistributionMobilite).exists()).toBe(true)
     wrapper.unmount()
+    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) })))
+    const absent = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    await flushPromises()
+    expect(absent.wrapper.findComponent(GraphiqueDistributionMobilite).exists()).toBe(false)
+    absent.wrapper.unmount()
   })
 
   it('Mobilité : réchauffée en arrière-plan après Programmes, aucune nouvelle requête à la revisite', async () => {
