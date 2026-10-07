@@ -3,6 +3,7 @@ import {
   MOBILITE_MODE_LABELS,
   MOBILITE_RESEAU_MODE_LABELS,
 } from './territoryFacts'
+import { comparisonScopeLabel as resolveComparisonScopeLabel } from './comparisonScopeLabel'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type { ThemeMetadata, TrajectoryMetadata } from '@/payload/types'
 import type {
@@ -656,21 +657,7 @@ function comparisonScopeLabel(
   territory: TerritoryIdentity,
 ): string | null {
   if (!comparison) return null
-  if (comparison.scope.label) return comparison.scope.label
-  switch (comparison.scope.kind) {
-    case 'communes-densite':
-      return null
-    case 'communes-epci':
-      return territory.epciName
-        ? `communes de ${territory.epciName}`
-        : 'communes de l’EPCI'
-    case 'communes-bretagne':
-      return 'communes bretonnes'
-    case 'epcis-bretagne':
-      return 'EPCI bretons'
-    case 'departements-bretagne':
-      return 'départements bretons'
-  }
+  return resolveComparisonScopeLabel(comparison.scope.kind, comparison.scope.label, territory.epciName)
 }
 
 function comparisonLabel(

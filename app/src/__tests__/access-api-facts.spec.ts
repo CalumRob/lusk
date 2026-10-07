@@ -62,10 +62,13 @@ describe('applyAccessApiFacts', () => {
     expect(() => applyAccessApiFacts(base, invalid, 'communes-epci', 'Pairs API')).toThrow()
   })
 
-  it('accepts the deployed scope wire shape without an optional display label', () => {
-    const body = responseFor({ scope: { kind: 'epcis-bretagne', member_count: 61 } })
-    const result = applyAccessApiFacts(facts(), body, 'epcis-bretagne', null)
+  it.each([
+    ['epcis-bretagne', 61, 'EPCI bretons'],
+    ['departements-bretagne', 4, 'départements bretons'],
+  ] as const)('accepts deployed %s scope without an optional display label', (kind, member_count, label) => {
+    const body = responseFor({ scope: { kind, member_count } })
+    const result = applyAccessApiFacts(facts(), body, kind, null)
     expect(result.mobility.access.byService.administration.car.value).toBe(0.8)
-    expect(result.mobility.access.byService.administration.car.comparison?.scope.label).toBe('EPCI bretons')
+    expect(result.mobility.access.byService.administration.car.comparison?.scope.label).toBe(label)
   })
 })
