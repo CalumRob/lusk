@@ -212,7 +212,12 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         assert regional_body["owned_series"]==[]
         assert not any(item["indicator_id"]=="raccordement_courbe"
             for item in regional_body["indicators"])
-        assert regional_default_theme.json()["owned_series"]==[]
+        regional_default_body=regional_default_theme.json()
+        assert regional_default_body["owned_series"]==[]
+        assert not any(result["indicator_id"]=="raccordement_courbe"
+            for result in regional_default_body["default_comparison"]["results"])
+        assert not any(result["indicator_id"]=="raccordement_courbe"
+            for result in regional_body["comparison"]["results"])
         theme_body=theme.json()
         curve_facts=[row for row in theme_body["indicators"] if row["indicator_id"]=="raccordement_courbe"]
         curve_metadata=next(row for row in theme_body["indicator_metadata"] if row["indicator_id"]=="raccordement_courbe")
