@@ -81,6 +81,22 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(absent.indicateurs).toEqual([])
   })
 
+  it('projette le total parent de même année depuis le contexte servi (capture live programmes-facts.json)', () => {
+    const provenance = [{ revision_id: 'r1', source_id: 'subventions_scdl', source_name: 'Source subventions', name: 'Source subventions',
+      version: '2026-08-05', reference_date: '2026-08-05', publication_date: '2026-08-05' }]
+    const response = { contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
+      indicators: [{ indicator_id: 'subventions_annuelles', value: 71395030.98, status: 'measured', unit: '€', sources: provenance,
+        dimensions: { axis: '2025', observation_period: '2025' } }],
+      indicator_metadata: [{ indicator_id: 'subventions_annuelles', unit: '€', context: { parent: { id: '243500139', type: 'epci', name: 'Rennes Métropole' },
+        points: [{ axis: '2025', observation_period: '2025', value: 91260697.91, status: 'measured', provenance }] } }],
+      named_reference_evidence: [], readings: [], collections: [], owned_series: [] }
+    const rows = themeFactsRowsFromApi('programmes', response, cible, { epci: '243500139' }).indicateurs
+    expect(rows.find((row) => row.territoire === '243500139')).toMatchObject({ type: 'epci', key: 'subventions_annuelles', dimension: '2025', value: 91260697.91, vintage_source: 'Source subventions' })
+    const incoherent = themeFactsRowsFromApi('programmes', { ...response, indicator_metadata: [{ ...response.indicator_metadata[0], context: {
+      parent: { id: 'other', type: 'epci' }, points: response.indicator_metadata[0]!.context.points } }] }, cible, { epci: '243500139' }).indicateurs
+    expect(incoherent.some((row) => row.type === 'epci' && row.key === 'subventions_annuelles')).toBe(false)
+  })
+
   it('échoue fermé sur date de référence absente pour une adhésion', () => {
     expect(() => themeFactsRowsFromApi('programmes', {
       contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
