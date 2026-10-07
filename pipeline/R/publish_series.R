@@ -832,7 +832,7 @@ dispatch_owned_series_cli <- function(mode, projections, connect,
       for (name in names(projections)) {
         p <- projections[[name]]
         if (identical(p$descriptor$indicator_id,indicator_id) ||
-            identical(p$named_reference_descriptors$indicator_id %||% NA_character_,indicator_id)) selected <- p$descriptor$indicator_id
+            identical(p$named_reference_descriptors$reference_indicator_id %||% NA_character_,indicator_id)) selected <- p$descriptor$indicator_id
       }
     }
     owners <- vapply(projections,function(p) p$descriptor$indicator_id,character(1))

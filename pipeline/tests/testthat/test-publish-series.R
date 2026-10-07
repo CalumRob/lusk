@@ -412,6 +412,8 @@ test_that("production owned-series reader and check route project both canonical
   expect_true(grepl("--owned-series-check",script,fixed=TRUE))
   expect_true(grepl("--owned-series-publish",script,fixed=TRUE))
   expect_true(grepl("dispatch_owned_series_cli(mode,projections,connect,indicator_id=indicator_id,all=publish_all)",script,fixed=TRUE))
+  expect_true(grepl("Choose either --indicator-id or --all",script,fixed=TRUE))
+  expect_true(grepl("if ((selector_count || all_count) && !owned_command)",script,fixed=TRUE))
 })
 
 test_that("canonical annual rows outside descriptor axes or levels are rejected", {
@@ -561,6 +563,20 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
   expect_true(all(unavailable$status=="missing"))
   expect_true(all(is.na(unavailable$value)))
   expect_equal(projection$named_reference$value,seq(.05,.95,length.out=11))
+  sortie <- tempfile("owned-raccordement-reader-"); dir.create(sortie)
+  on.exit(unlink(sortie,recursive=TRUE),add=TRUE)
+  nanoparquet::write_parquet(canonical,file.path(sortie,"indicateurs_mobilite.parquet"))
+  nanoparquet::write_parquet(vintages,file.path(sortie,"vintages.parquet"))
+  metadata_file <- file.path(sortie,"theme_mobilite.json")
+  jsonlite::write_json(metadata,metadata_file,auto_unbox=TRUE)
+  milieux_metadata <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
+  habitat_metadata <- testthat::test_path("../../inst/extdata/theme-metadata/theme_habitat.json")
+  read_curve <- read_owned_series_projections(sortie,milieux_metadata,habitat_metadata,metadata_file,
+    indicator_id="raccordement_reference")
+  expect_identical(names(read_curve),"raccordement_courbe_owned")
+  dispatched <- dispatch_owned_series_cli("check",read_curve,function() stop("check must not connect"),
+    indicator_id="raccordement_reference")
+  expect_identical(names(dispatched$projections),"raccordement_courbe_owned")
   expect_equal(unique(projection$points$observation_period),"2026-09-16")
   expect_equal(unique(projection$named_reference$observation_period),"2026-09-16")
   changed_recipe <- project_raccordement_owned_series(

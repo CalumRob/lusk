@@ -10,6 +10,7 @@ args <- commandArgs(trailingOnly = TRUE)
 selector_count <- sum(args=="--indicator-id")
 all_count <- sum(args=="--all")
 if (selector_count>1L || all_count>1L) stop("Duplicate selector flags",call.=FALSE)
+if (selector_count==1L && all_count==1L) stop("Choose either --indicator-id or --all, not both",call.=FALSE)
 indicator_id <- NULL; publish_all <- all_count==1L
 if (selector_count==1L) {
   index <- match("--indicator-id",args)
@@ -30,7 +31,7 @@ if (length(args) != 1L || !args[[1L]] %in% c("--check", "--publish", "--targets"
  }
 command <- args[[1L]]
 owned_command <- command %in% c("--owned-series-check","--owned-series-publish")
-if ((selector_count || all_count) && !owned_command && !command %in% c("--programme-series-check","--programme-series-publish"))
+if ((selector_count || all_count) && !owned_command)
   stop("--indicator-id/--all apply only to owned-series commands",call.=FALSE)
 if (all_count && command!="--owned-series-publish") stop("--all applies only to --owned-series-publish",call.=FALSE)
 if (command=="--owned-series-check" && publish_all) stop("--all is publish-only",call.=FALSE)
