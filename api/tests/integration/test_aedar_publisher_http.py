@@ -102,6 +102,7 @@ source_axis <- readr::read_csv(file.path("tests","testthat","fixtures","aedar-re
 measures <- as.data.frame(matrix(0,nrow=nrow(source_axis),ncol=length(AEDAR_AGGREGATE_MEASURES),
   dimnames=list(NULL,AEDAR_AGGREGATE_MEASURES)))
 measures$count_5_walk_share <- NA_real_
+measures$count_5_walk_max <- 0.12345678901234566
 make <- function(level,idcol,id,namecol,name) {
   x <- measures
   for (nm in AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]]) x[[nm]] <- NA
@@ -172,6 +173,7 @@ stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n 
                     fact = resp.json()["facts"][0]
                     assert fact["measures"]["count_5_walk_share"] is None
                     assert fact["measures"]["count_5_walk_min"] == 0
+                    assert fact["measures"]["count_5_walk_max"] == pytest.approx(0.12345678901234566, rel=1e-15)
                     assert fact["licence"] == "ODbL" and fact["publication_date"] == "2026-09-30"
                     assert fact["attribution"] == "© OpenStreetMap contributors; données AEDAR — licence ODbL"
                     assert resp.json()["content_version"]

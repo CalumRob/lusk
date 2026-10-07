@@ -151,28 +151,25 @@ validate_aedar_territory_reference <- function(facts, reference_pairs) {
   invisible(TRUE)
 }
 
+serialize_aedar_json_rows <- function(x) {
+  if (!nrow(x)) return(character())
+  json_rows <- character()
+  connection <- textConnection("json_rows",open="w",local=TRUE)
+  connection_open <- TRUE
+  on.exit(if (connection_open) close(connection),add=TRUE)
+  jsonlite::stream_out(x,connection,pagesize=min(1000L,nrow(x)),verbose=FALSE,
+    auto_unbox=TRUE,na="null",digits=17)
+  close(connection)
+  connection_open <- FALSE
+  json_rows
+}
+
 read_aedar_aggregate_projection <- function(raw_dir=file.path("data","raw"))
   project_aedar_aggregates(read_aedar_aggregate_inputs(download_aedar_aggregates(raw_dir)))
 
 publish_aedar_aggregates <- function(projection, db) {
   facts <- projection$facts
   version <- paste(as.character(openssl::sha256(serialize(projection,NULL))),collapse="")
-  rows <- lapply(seq_len(nrow(facts)),function(i) {
-    x <- facts[i,,drop=FALSE]
-    identity <- as.list(x[setdiff(AEDAR_AGGREGATE_LEVEL_COLUMNS[[as.character(x$territory_type)]],
-      c("TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status"))])
-    measures <- as.list(x[AEDAR_AGGREGATE_MEASURES])
-    data.frame(territory_type=x$territory_type,territory_id=x$territory_id,typequ=x$TYPEQU,
-      typequ_label=x$LIB_TYPEQU,identity=as.character(jsonlite::toJSON(identity,auto_unbox=TRUE,na="null")),
-      n_addresses=as.numeric(x$n_addresses),n_observed=as.numeric(x$n_observed),coverage_status=x$coverage_status,
-      measures=as.character(jsonlite::toJSON(measures,auto_unbox=TRUE,na="null")),
-      source_id=projection$source$source_id,vintage_id=projection$source$vintage,
-      source_url=projection$source$url,licence=projection$source$licence,
-      attribution=projection$source$attribution,
-      reference_date=as.Date(projection$source$reference_date),publication_date=as.Date(projection$source$publication_date),
-      stringsAsFactors=FALSE)
-  })
-  rows <- do.call(rbind,rows)
   DBI::dbWithTransaction(db, {
     DBI::dbExecute(db,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     reference <- DBI::dbGetQuery(db,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
@@ -184,7 +181,27 @@ publish_aedar_aggregates <- function(projection, db) {
     unchanged <- nrow(existing) && identical(existing$content_version[[1L]],version) && identical(existing$reference_content_version[[1L]],ref_version)
     if (!unchanged) {
       DBI::dbExecute(db,"DELETE FROM aedar_territorial_aggregate")
-      DBI::dbWriteTable(db,"aedar_territorial_aggregate",rows,append=TRUE,row.names=FALSE)
+      chunk_size <- 2000L
+      for (level in AEDAR_AGGREGATE_LEVELS) {
+        level_indices <- which(facts$territory_type==level)
+        identity_columns <- setdiff(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],
+          c("TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status"))
+        for (start in seq.int(1L,length(level_indices),by=chunk_size)) {
+          selected <- level_indices[start:min(start+chunk_size-1L,length(level_indices))]
+          x <- facts[selected,,drop=FALSE]
+          rows <- data.frame(territory_type=x$territory_type,territory_id=x$territory_id,typequ=x$TYPEQU,
+            typequ_label=x$LIB_TYPEQU,
+            identity=serialize_aedar_json_rows(as.data.frame(x[identity_columns],stringsAsFactors=FALSE)),
+            n_addresses=as.numeric(x$n_addresses),n_observed=as.numeric(x$n_observed),coverage_status=x$coverage_status,
+            measures=serialize_aedar_json_rows(as.data.frame(x[AEDAR_AGGREGATE_MEASURES],stringsAsFactors=FALSE)),
+            source_id=projection$source$source_id,vintage_id=projection$source$vintage,
+            source_url=projection$source$url,licence=projection$source$licence,
+            attribution=projection$source$attribution,
+            reference_date=as.Date(projection$source$reference_date),publication_date=as.Date(projection$source$publication_date),
+            stringsAsFactors=FALSE)
+          DBI::dbWriteTable(db,"aedar_territorial_aggregate",rows,append=TRUE,row.names=FALSE)
+        }
+      }
       DBI::dbExecute(db,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",params=list(projection$source$source_id,projection$source$name))
       DBI::dbExecute(db,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING",params=list(projection$source$source_id,projection$source$vintage,projection$source$vintage,as.Date(projection$source$reference_date),as.Date(projection$source$publication_date)))
       stored_source <- DBI::dbGetQuery(db,"SELECT version,reference_date,publication_date FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",params=list(projection$source$source_id,projection$source$vintage))
@@ -192,7 +209,7 @@ publish_aedar_aggregates <- function(projection, db) {
           !identical(as.character(stored_source$reference_date[[1L]]),projection$source$reference_date) ||
           !identical(as.character(stored_source$publication_date[[1L]]),projection$source$publication_date))
         stop("AEDAR source vintage conflicts with stored provenance",call.=FALSE)
-      DBI::dbExecute(db,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('aedar_territorial_aggregate',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",params=list(version,nrow(rows),ref_version))
+      DBI::dbExecute(db,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('aedar_territorial_aggregate',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",params=list(version,nrow(facts),ref_version))
     }
     list(changed=!unchanged,content_version=version,row_count=nrow(facts))
   })
