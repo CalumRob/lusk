@@ -444,13 +444,7 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
 
 series_revision_hash <- function(...) {
   text <- paste(..., collapse="\x1f")
-  if (requireNamespace("digest", quietly=TRUE)) digest::digest(text, algo="sha256", serialize=FALSE)
-  else {
-    path <- tempfile("series-provenance-")
-    on.exit(unlink(path),add=TRUE)
-    writeBin(charToRaw(text),path)
-    unname(tools::md5sum(path))
-  }
+  unclass(as.character(openssl::sha256(charToRaw(text))))
 }
 
 validate_owned_series_projection <- function(projection) {
@@ -582,6 +576,7 @@ register_conso_enaf_owned_publisher <- function(registry, metadata) {
     project=function(canonical) owned_conso_enaf_projection(canonical, metadata),
     publish=function(projection, db, version) db$replace_dataset(projection, version))
   registry$conso_enaf_annuel_owned$owned <- TRUE
+  registry$conso_enaf_annuel_owned$owner_id <- "conso_enaf_annuel"
   registry
 }
 
@@ -591,6 +586,7 @@ register_artif_m2m3_owned_publisher <- function(registry, metadata) {
       canonical$histoires,canonical$vintages,metadata),
     publish=function(projection,db,version) db$replace_dataset(projection,version))
   registry$artif_par_habitant_owned$owned <- TRUE
+  registry$artif_par_habitant_owned$owner_id <- "artif_par_habitant"
   registry
 }
 
@@ -600,6 +596,7 @@ register_prix_m2_owned_publisher <- function(registry, metadata) {
       canonical$vintages,metadata),
     publish=function(projection,db,version) db$replace_dataset(projection,version))
   registry$prix_m2_owned$owned <- TRUE
+  registry$prix_m2_owned$owner_id <- "prix_m2"
   registry
 }
 
@@ -608,6 +605,7 @@ register_raccordement_owned_publisher <- function(registry,metadata,producer_con
     project=function(canonical) project_raccordement_owned_series(canonical$mobilite$indicateurs,canonical$vintages,metadata,producer_contract),
     publish=function(projection,db,version) db$replace_dataset(projection,version))
   registry$raccordement_courbe_owned$owned <- TRUE
+  registry$raccordement_courbe_owned$owner_id <- "raccordement_courbe"
   registry
 }
 
@@ -751,38 +749,81 @@ read_conso_enaf_series_projection <- function(sortie = "../public/data",
 
 # Read one fingerprinted snapshot for the registered owned projections across
 # Milieux and Habitat. Canonical Parquet and pinned metadata own each projection.
+owned_series_indicator_owner <- function(indicator_id, metadata=NULL, habitat_metadata=NULL, mobility_metadata=NULL) {
+  routes <- c(metadata$owned_series_routes,habitat_metadata$owned_series_routes,mobility_metadata$owned_series_routes)
+  for (owner in names(routes)) {
+    route <- routes[[owner]]
+    ids <- c(owner,as.character(route$indicator_id %||% character()),
+      as.character(route$reference$indicator_id %||% route$reference_indicator %||% character()))
+    if (indicator_id %in% ids) return(owner)
+  }
+  stop("Unknown owned-series indicator_id: ",indicator_id,call.=FALSE)
+}
+
 read_owned_series_projections <- function(sortie="../public/data",
     metadata_path="inst/extdata/theme-metadata/theme_milieux.json",
     habitat_metadata_path="inst/extdata/theme-metadata/theme_habitat.json",
-    mobility_metadata_path="inst/extdata/theme-metadata/theme_mobilite.json") {
-  paths <- c(indicators=file.path(sortie,"indicateurs_milieux.parquet"),
-    histories=file.path(sortie,"histoires_milieux.parquet"),
-    habitat_indicators=file.path(sortie,"indicateurs_habitat.parquet"),
-    vintages=file.path(sortie,"vintages.parquet"), metadata=metadata_path, habitat_metadata=habitat_metadata_path)
-  mobility_path <- file.path(sortie,"indicateurs_mobilite.parquet")
-  if (file.exists(mobility_path) && file.exists(mobility_metadata_path))
-    paths <- c(paths,mobility_indicators=mobility_path,mobility_metadata=mobility_metadata_path)
+    mobility_metadata_path="inst/extdata/theme-metadata/theme_mobilite.json", indicator_id=NULL) {
+  owner_file <- c(conso_enaf_annuel=metadata_path,artif_par_habitant=metadata_path,
+    prix_m2=habitat_metadata_path,raccordement_courbe=mobility_metadata_path)
+  aliases <- c(raccordement_reference="raccordement_courbe")
+  requested_owner <- if(is.null(indicator_id)) NULL else if(indicator_id %in% names(aliases)) unname(aliases[[indicator_id]]) else indicator_id
+  if (!is.null(indicator_id) && (length(requested_owner)!=1L || is.na(requested_owner) || !requested_owner %in% names(owner_file)))
+    stop("Unknown owned-series indicator_id: ",indicator_id,call.=FALSE)
+  owner <- requested_owner
+  selected_metadata_path <- if(is.null(owner)) NULL else unname(owner_file[[owner]])
+  selected_metadata <- if(is.null(owner)) NULL else jsonlite::read_json(selected_metadata_path,simplifyVector=FALSE)
+  if (!is.null(indicator_id)) {
+    resolved <- owned_series_indicator_owner(indicator_id,
+      if(identical(selected_metadata_path,metadata_path)) selected_metadata else NULL,
+      if(identical(selected_metadata_path,habitat_metadata_path)) selected_metadata else NULL,
+      if(identical(selected_metadata_path,mobility_metadata_path)) selected_metadata else NULL)
+    if (!identical(resolved,owner)) stop("Owned-series selector does not match its metadata owner",call.=FALSE)
+  }
+  required <- switch(owner %||% "all",conso_enaf_annuel=c("indicators","vintages","metadata"),
+    artif_par_habitant=c("indicators","histories","vintages","metadata"),
+    prix_m2=c("habitat_indicators","vintages","habitat_metadata"),
+    raccordement_courbe=c("indicators","mobility_indicators","vintages","mobility_metadata"),
+    all=c("indicators","histories","habitat_indicators","vintages","metadata","habitat_metadata"))
+  all_paths <- c(indicators=file.path(sortie,"indicateurs_milieux.parquet"), histories=file.path(sortie,"histoires_milieux.parquet"),
+    habitat_indicators=file.path(sortie,"indicateurs_habitat.parquet"), vintages=file.path(sortie,"vintages.parquet"),
+    metadata=metadata_path, habitat_metadata=habitat_metadata_path,
+    mobility_indicators=file.path(sortie,"indicateurs_mobilite.parquet"),mobility_metadata=mobility_metadata_path)
+  paths <- all_paths[required]
+  mobility_pair <- c(mobility_indicators=all_paths[["mobility_indicators"]],mobility_metadata=mobility_metadata_path)
+  if (is.null(owner) && any(file.exists(mobility_pair))) {
+    if (!all(file.exists(mobility_pair))) stop("Owned-series all-check requires both mobility indicators and mobility metadata",call.=FALSE)
+    paths <- c(paths,mobility_pair)
+  }
   read_stable_series_artifacts(paths,function(input) {
-    canonical <- list(indicateurs=nanoparquet::read_parquet(input[["indicators"]]),
-      histoires=nanoparquet::read_parquet(input[["histories"]]),
-      habitat=list(indicateurs=nanoparquet::read_parquet(input[["habitat_indicators"]])),
-      mobilite=list(indicateurs=if("mobility_indicators" %in% names(input)) nanoparquet::read_parquet(input[["mobility_indicators"]]) else data.frame()),
-      vintages=nanoparquet::read_parquet(input[["vintages"]]))
-    metadata <- jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE)
-    habitat_metadata <- jsonlite::read_json(input[["habitat_metadata"]],simplifyVector=FALSE)
-     registry <- register_owned_series_publishers(list(),metadata,habitat_metadata)
-     mobility_metadata <- if("mobility_metadata" %in% names(input)) jsonlite::read_json(input[["mobility_metadata"]],simplifyVector=FALSE) else NULL
-     if(!is.null(mobility_metadata)) registry <- register_raccordement_owned_publisher(registry,mobility_metadata)
-    projections <- lapply(registry,function(publisher) publisher$project(canonical))
+   canonical <- list(indicateurs=if("indicators" %in% names(input)) nanoparquet::read_parquet(input[["indicators"]]) else data.frame(),
+     histoires=if("histories" %in% names(input)) nanoparquet::read_parquet(input[["histories"]]) else data.frame(),
+     habitat=list(indicateurs=if("habitat_indicators" %in% names(input)) nanoparquet::read_parquet(input[["habitat_indicators"]]) else data.frame()),
+     mobilite=list(indicateurs=if("mobility_indicators" %in% names(input)) nanoparquet::read_parquet(input[["mobility_indicators"]]) else data.frame()),
+     vintages=nanoparquet::read_parquet(input[["vintages"]]))
+      metadata <- if("metadata" %in% names(input)) jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE) else if(is.null(owner)) jsonlite::read_json(metadata_path,simplifyVector=FALSE) else selected_metadata
+      habitat_metadata <- if("habitat_metadata" %in% names(input)) jsonlite::read_json(input[["habitat_metadata"]],simplifyVector=FALSE) else if(is.null(owner)) jsonlite::read_json(habitat_metadata_path,simplifyVector=FALSE) else selected_metadata
+       registry <- if(is.null(owner)) register_owned_series_publishers(list(),metadata,habitat_metadata) else switch(owner,
+         conso_enaf_annuel=register_conso_enaf_owned_publisher(list(),selected_metadata),
+         artif_par_habitant=register_artif_m2m3_owned_publisher(list(),selected_metadata),
+         prix_m2=register_prix_m2_owned_publisher(list(),selected_metadata),list())
+       mobility_metadata <- if("mobility_metadata" %in% names(input)) jsonlite::read_json(input[["mobility_metadata"]],simplifyVector=FALSE) else if(identical(owner,"raccordement_courbe")) selected_metadata else NULL
+      if(!is.null(mobility_metadata)) registry <- register_raccordement_owned_publisher(registry,mobility_metadata)
+     if (!is.null(indicator_id)) {
+       selected <- names(registry)[vapply(registry,function(p) identical(p$owner_id,owner),logical(1))]
+       registry <- registry[selected]
+       if (!length(registry)) stop("Unknown owned-series indicator_id: ",indicator_id,call.=FALSE)
+     }
+     projections <- lapply(registry,function(publisher) publisher$project(canonical))
     lapply(projections,validate_owned_series_projection)
     # Reporting-only exclusion metadata belongs to the reader result, not the
     # owned projection whose serialized identity is the publication version.
-    serving_metadata <- metadata
-    serving_metadata$indicator_pages$conso_enaf_annuel$levels <-
-      projections$conso_enaf_annuel_owned$descriptor$allowed_levels
-    enaf <- project_conso_enaf_series_from_artifacts(canonical$indicateurs,
-      canonical$vintages,serving_metadata)
-    attr(projections,"excluded") <- list(conso_enaf_annuel_owned=enaf$excluded)
+     if (is.null(owner) || identical(owner,"conso_enaf_annuel")) {
+       serving_metadata <- metadata
+       serving_metadata$indicator_pages$conso_enaf_annuel$levels <- projections$conso_enaf_annuel_owned$descriptor$allowed_levels
+       enaf <- project_conso_enaf_series_from_artifacts(canonical$indicateurs,canonical$vintages,serving_metadata)
+       attr(projections,"excluded") <- list(conso_enaf_annuel_owned=enaf$excluded)
+     }
     projections
   })
 }
@@ -795,15 +836,30 @@ require_owned_series_publish_opt_in <- function(value=Sys.getenv("LUSK_PUBLISH_O
 # Injectable dispatch keeps operational ordering testable without a database.
 dispatch_owned_series_cli <- function(mode, projections, connect,
     opt_in=Sys.getenv("LUSK_PUBLISH_OWNED_SERIES",unset=""),
-    lusk_mode=Sys.getenv("LUSK_MODE",unset="full")) {
+    lusk_mode=Sys.getenv("LUSK_MODE",unset="full"), indicator_id=NULL, all=FALSE, require_scope=TRUE) {
   if (!mode %in% c("check","publish")) stop("Unknown owned series action",call.=FALSE)
   if (mode=="publish") {
     require_owned_series_publish_opt_in(opt_in)
     if (identical(lusk_mode,"cron")) stop("Owned series publication is not enabled for cron mode",call.=FALSE)
+    if (isTRUE(require_scope) && is.null(indicator_id) && !isTRUE(all))
+      stop("Owned series publication requires --indicator-id or explicit --all",call.=FALSE)
   }
-  if (!length(projections) || any(!vapply(projections,function(p) {
-    tryCatch({validate_owned_series_projection(p); TRUE},error=function(e) FALSE)
-  },logical(1)))) stop("All owned series projections must validate before publication",call.=FALSE)
+  if (!is.null(indicator_id)) {
+    selected <- indicator_id
+    if (!indicator_id %in% names(projections)) {
+      selected <- NA_character_
+      for (name in names(projections)) {
+        p <- projections[[name]]
+        if (identical(p$descriptor$indicator_id,indicator_id) ||
+            identical(p$named_reference_descriptors$reference_indicator_id %||% NA_character_,indicator_id)) selected <- p$descriptor$indicator_id
+      }
+    }
+    owners <- vapply(projections,function(p) p$descriptor$indicator_id,character(1))
+    if (length(selected)!=1L || is.na(selected) || !selected %in% owners) stop("Unknown owned-series indicator_id: ",indicator_id,call.=FALSE)
+    projections <- projections[owners==selected]
+  }
+  if (!length(projections)) stop("No owned series projections selected",call.=FALSE)
+  for (p in projections) validate_owned_series_projection(p)
   versions <- lapply(projections,scalar_content_version)
   if (mode=="check") return(list(projections=projections,versions=versions))
   connection <- connect()
