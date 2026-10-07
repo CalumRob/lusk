@@ -89,6 +89,31 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const facts = mobilityFactsFromThemeApi(payload, '22001', data)
     expect(facts.mobility.bpeAccess.profiles[0]).toMatchObject({ count: 0, exemplar: null })
   })
+  it('normalizes the deployed open-ended building bucket marker to an unbounded axis', () => {
+    const data = response()
+    const breadth = ['0', '1-9', '10-24', '25-39', '40-53'].map((key) =>
+      ({ key, label: key, min_value: 0, max_value: 10 }))
+    const depth = ['0', '1-9', '10-49', '50-199', '200-499', '500+'].map((key, index) =>
+      ({ key, label: key, min_value: index * 10, max_value: index === 5 ? 'NA' : index * 10 + 9 }))
+    data.building_access = {
+      publication_id: 'buildings-v1', availability: 'complete',
+      sources: [{ ...sources[0], name: 'SQL mobility' }],
+      presentation: {
+        building_grid: { mode_label: 'À pied + TC', breadth_axis_label: 'types', depth_axis_label: 'équipements', breadth, depth },
+        building_ramp: { modes: { b: 'Vélo', c: 'Voiture', t: 'À pied + TC' }, x_axis_label: 'Bâtiments',
+          y_axis_label: 'Types', quantile_labels: Array.from({ length: 11 }, (_, index) => `${index * 10} %`) },
+      },
+      distribution: breadth.flatMap((breadthBucket) => depth.map((depthBucket) => ({
+        breadth_bucket: breadthBucket.key, depth_bucket: depthBucket.key, total_buildings: 10,
+        building_count: 1, share: 0.1,
+      }))),
+      ramp: ['b', 'c', 't'].flatMap((mode) => Array.from({ length: 11 }, (_, index) => ({
+        mode, quantile_index: index, quantile: index / 10, accessible_types: index, total_buildings: 10,
+      }))),
+    }
+    const facts = mobilityFactsFromThemeApi(payload, '22001', data)
+    expect(facts.mobility.buildingDistribution?.depthBins.at(-1)).toMatchObject({ key: '500+', max: null })
+  })
   it('matches a profile comparison only to the same detail and sex facet', () => {
     const data = response()
     data.indicators[1]!.dimensions = { detail: 't_km_1000', sex: 'F' }

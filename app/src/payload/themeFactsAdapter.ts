@@ -39,13 +39,18 @@ interface ProvenanceSource {
 function apiSources(value: unknown, contexte: string): ProvenanceSource[] {
   if (!Array.isArray(value) || !value.length) throw new Error(`Provenance SQL du thème invalide : ${contexte}`)
   return value.map((source) => {
-    if (!isRecord(source) || !texteNonVide(source.source_id) || !texteNonVide(source.name) ||
+    // The public fact contract's ordinary observations and collections expose
+    // `name`; owned-series provenance exposes the same source label as
+    // `source_name`. Normalize both at this boundary, retaining the original
+    // fields in lineage.
+    const sourceName = isRecord(source) ? source.name ?? source.source_name : undefined
+    if (!isRecord(source) || !texteNonVide(source.source_id) || !texteNonVide(sourceName) ||
         !texteNonVide(source.version) ||
         !(source.reference_date === null || text(source.reference_date)) ||
         !(source.publication_date === null || text(source.publication_date))) {
       throw new Error(`Provenance SQL du thème invalide : ${contexte}`)
     }
-    return { sourceId: source.source_id, source: source.name, version: source.version,
+    return { sourceId: source.source_id, source: sourceName, version: source.version,
       referenceDate: source.reference_date, publicationDate: source.publication_date,
       lineage: { ...source } }
   })

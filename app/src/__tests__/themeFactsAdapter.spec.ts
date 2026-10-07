@@ -60,7 +60,9 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         ] },
       ],
       owned_series: [{ indicator_id: 'subventions_annuelles', unit: '€', points: [
-        { axis: '2025', value: 5678, status: 'measured', provenance: source },
+        // The live owned-series contract names this field `source_name`;
+        // collection provenance uses `name`.
+        { axis: '2025', value: 5678, status: 'measured', provenance: source.map(({ name, ...item }) => ({ ...item, source_name: name })) },
       ] }],
     }, cible)
     expect(rows.histoires).toEqual([])
