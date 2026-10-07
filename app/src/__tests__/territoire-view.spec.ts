@@ -484,7 +484,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     ['epci', '242200715', 'epcis-bretagne'],
     ['departement', '22', 'departements-bretagne'],
     ['region', '53', null],
-  ] as const)('renders the raccordement curve from API facts for %s %s', async (type, code, kind) => {
+  ] as const)('renders mobility access, building access, and raccordement for %s %s', async (type, code, kind) => {
     await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       `../public/data/modeles-lecture/territoires/${type}/${code}.json`), 'utf8'))
@@ -496,6 +496,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     try {
       const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
       await flushPromises()
+      expect(wrapper.findAll('[data-section="services-essentiels"] .access-figure')).toHaveLength(5)
+      const building = wrapper.get('[data-section="distribution-acces-par-batiment"]')
+      expect(building.find('.access-ramp-evidence').exists()).toBe(true)
+      expect(building.find('.bivariate-evidence').exists()).toBe(true)
       const plot = wrapper.get('#figure-offre-transports-commun .transit-plot svg')
       expect(plot.attributes('role')).toBe('img')
       expect(wrapper.find('#figure-offre-transports-commun .transit-series--territory').exists()).toBe(true)
