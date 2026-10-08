@@ -447,12 +447,27 @@ calculer_raccordement <- function(matrice, population, codes_cog,
                      couverture = unname(couverture_par_groupe))
     }
     courbe_niveau <- function(groupes) {
-      f <- sort(unique(groupes[routed]))
+      # Emit every eligible aggregate, including groups with no routed members.
+      # Omitting such a group would make the API look as though the aggregate
+      # were not part of the declared universe instead of explicitly incomplete.
+      f <- sort(unique(groupes[!is.na(groupes)]))
       f <- f[!is.na(f)]
       do.call(rbind, lapply(f, function(groupe) {
-        mins <- mins_groupe(names(groupes[groupes == groupe]))
-        tibble::tibble(code = groupe, minute = xs,
-                       part = part_cumulee(mins, xs, w, W_route))
+        membres <- intersect(names(groupes[groupes == groupe]), communes)
+        membres_routes <- intersect(membres, routed)
+        complete <- length(membres) > 0L && length(membres_routes) == length(membres)
+        valeurs <- if (complete) {
+          courbes_communes |>
+            dplyr::filter(code %in% membres_routes) |>
+            dplyr::group_by(minute) |>
+            dplyr::summarise(part = mean(part), .groups = "drop")
+        } else {
+          tibble::tibble(minute = xs, part = NA_real_)
+        }
+        tibble::tibble(code = groupe, minute = valeurs$minute,
+                       part = valeurs$part, complete = complete,
+                       communes_attendues = length(membres),
+                       communes_disponibles = length(membres_routes))
       }))
     }
 
@@ -465,14 +480,24 @@ calculer_raccordement <- function(matrice, population, codes_cog,
     resultat$epcis <- agreger_niveau(epci)
     resultat$courbes_epcis <- courbe_niveau(epci)
 
-    mins_region <- mins_groupe(communes)
-    part_region <- part_cumulee(mins_region, xs, w, W_route)
+    membres_routes <- intersect(communes, routed)
+    complete <- length(membres_routes) == length(communes)
+    region_curve <- if (complete) {
+      courbes_communes |>
+        dplyr::group_by(minute) |>
+        dplyr::summarise(part = mean(part), .groups = "drop")
+    } else tibble::tibble(minute = xs, part = NA_real_)
     resultat$region <- tibble::tibble(
       code = "53",
-      part_90 = part_region[[match(seuil, xs)]],
-      couverture = W_route / W)
+      part_90 = if (complete) region_curve$part[match(seuil, region_curve$minute)] else NA_real_,
+      couverture = W_route / W,
+      complete = complete,
+      communes_attendues = length(communes),
+      communes_disponibles = length(membres_routes))
     resultat$courbe_region <- tibble::tibble(
-      code = "53", minute = xs, part = part_region)
+      code = "53", minute = region_curve$minute, part = region_curve$part,
+      complete = complete, communes_attendues = length(communes),
+      communes_disponibles = length(membres_routes))
   }
 
   resultat

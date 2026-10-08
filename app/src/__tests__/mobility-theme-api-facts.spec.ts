@@ -42,6 +42,78 @@ const response = (): any => ({
 })
 
 describe('SQL Mobilité response to Variant E facts', () => {
+  it('renders regional network profiles and canonical parking facts, including a supported ratio', () => {
+    const regionPayload: Payload = { ...payload, territoires: [
+      { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
+    ] }
+    const data = response()
+    data.territory = { territory_id: '53', territory_type: 'region', name: 'Bretagne' }
+    const profile = (indicator_id: string, detail: string, value: number) => ({ indicator_id,
+      label: indicator_id, value, status: 'measured', unit: 'km', dimensions: { detail }, sources })
+    data.indicators = [
+      profile('reseaux', 't_longueur', 11000), profile('reseaux', 'b_longueur', 2500),
+      profile('reseaux', 'c_longueur', 17000),
+      { indicator_id: 'reseaux_par_habitant', label: 'R?seau par habitant', value: 7.5,
+        status: 'measured', unit: 'km / 1 000 hab.', sources, dimensions: { detail: 't_km_1000' } },
+      { indicator_id: 'reseaux_par_habitant', label: 'R?seau par habitant', value: 2.25,
+        status: 'measured', unit: 'km / 1 000 hab.', sources, dimensions: { detail: 'b_km_1000' } },
+      { indicator_id: 'reseaux_par_habitant', label: 'R?seau par habitant', value: 7.5,
+        status: 'measured', unit: 'km / 1 000 hab.', sources, dimensions: { detail: 'c_km_1000' } },
+      profile('offre_cyclable', 'protege_longueur', 1000),
+      profile('offre_cyclable', 'protege_km_1000', 0.3),
+      profile('offre_cyclable', 'partage_longueur', 1500),
+      profile('offre_cyclable', 'partage_km_1000', 0.4),
+      profile('offre_cyclable', 'total_longueur', 2500),
+      { indicator_id: 'places_stationnement_velo_1000', label: 'Vélo', value: 12,
+        status: 'measured', unit: 'places / 1 000 hab', sources, dimensions: {} },
+      { indicator_id: 'places_stationnement_voiture_1000', label: 'Voiture', value: 400,
+        status: 'measured', unit: 'places / 1 000 hab', sources, dimensions: {} },
+      { indicator_id: 'stationnement_velo_par_voiture', label: 'Ratio vélo/voiture', value: 0.91,
+        status: 'measured', unit: 'places vélo / place voiture', sources, dimensions: {} },
+    ]
+    data.indicator_metadata = ['reseaux', 'reseaux_par_habitant', 'offre_cyclable'].map((indicator_id) => ({
+      indicator_id, kind: 'declared_dimensions', allowed_levels: ['commune','epci','departement','region'],
+      completeness: 'dense_complete', denominator_semantics: 'Producer-supported regional aggregate',
+      axes: data.indicators.filter((row: any) => row.indicator_id === indicator_id).map((row: any, order: number) => ({
+        name: 'detail', key: row.dimensions.detail, label: row.dimensions.detail, order,
+        unit: indicator_id === 'reseaux_par_habitant' ? 'km / 1 000 hab.' : 'km',
+      })),
+    }))
+    const facts = mobilityFactsFromThemeApi(regionPayload, '53', data)
+    expect(facts.mobility.indicators.filter((fact) => fact.key === 'reseaux')).toHaveLength(3)
+    expect(facts.mobility.indicators.filter((fact) => fact.key === 'reseaux_par_habitant')).toHaveLength(3)
+    expect(facts.mobility.indicators.filter((fact) => fact.key === 'offre_cyclable')).toHaveLength(5)
+    const content = resolveMobiliteThemeContent(facts)
+    const sharing = content.units.find((unit) => unit.key === 'partage-de-lespace-public')!
+    const networks = sharing.sections.find((section) => section.key === 'reseaux')!
+    expect(networks.evidence?.kind).toBe('sharing-networks')
+    if (networks.evidence?.kind !== 'sharing-networks') throw new Error('Regional per-capita network facts missing')
+    expect(networks.evidence.networks.map(({ length }) => length.fact.value)).toEqual([7.5, 2.25, 7.5])
+    const parking = sharing.sections.find((section) => section.key === 'stationnement')!
+    expect(parking.evidence?.kind).toBe('sharing-parking')
+    if (parking.evidence?.kind !== 'sharing-parking') throw new Error('Regional parking facts missing')
+    expect(parking.evidence.bikeSpaces.fact.value).toBe(12)
+    expect(parking.evidence.carSpaces.fact.value).toBe(400)
+    expect(parking.evidence.bikePerCar.fact.value).toBe(0.91)
+
+    // Invalid/missing canonical bike counts cannot leave a measured ratio in
+    // the API payload; the page surfaces that ratio as unavailable.
+    const incomplete = structuredClone(data)
+    incomplete.indicators = incomplete.indicators
+      .filter((row: any) => row.indicator_id !== 'stationnement_velo_par_voiture')
+    const bike = incomplete.indicators.find((row: any) => row.indicator_id === 'places_stationnement_velo_1000')
+    bike.value = null
+    bike.status = 'not_available'
+    const incompleteFacts = mobilityFactsFromThemeApi(regionPayload, '53', incomplete)
+    const incompleteContent = resolveMobiliteThemeContent(incompleteFacts)
+    const incompleteSharing = incompleteContent.units.find((unit) => unit.key === 'partage-de-lespace-public')!
+    const unavailableParking = incompleteSharing.sections.find((section) => section.key === 'stationnement')!
+    if (unavailableParking.evidence?.kind !== 'sharing-parking') throw new Error('Regional parking section missing')
+    expect(unavailableParking.evidence.bikePerCar.fact.value).toBeNull()
+    expect(unavailableParking.evidence.bikePerCar.fact.availability).toBe('absent')
+    expect(unavailableParking.evidence.ratioNote).toContain('deux mesures de stationnement')
+  })
+
   it('consumes scalar, profile and selected-reading wire fields with SQL provenance', () => {
     const facts = mobilityFactsFromThemeApi(payload, '22001', response())
     expect(facts.mobility.indicators.find((fact) => fact.key === 'places_stationnement_velo_1000'))
@@ -51,7 +123,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(facts.mobility.losses.diversityWalkTransit).toMatchObject({ value: 7, unit: 'types' })
     expect(facts.mobility.losses.diversityBike).toMatchObject({ value: 8, unit: 'types' })
   })
-  it('projects regional motorisation details and the regional curve separately from its named median', () => {
+  it('projects regional motorisation and raccordement but renders only the selected curve', () => {
     const regionPayload: Payload = { ...payload, territoires: [
       { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
     ] }
@@ -115,14 +187,13 @@ describe('SQL Mobilité response to Variant E facts', () => {
         marker:{detail:'t0090',label:'90 minutes'} },
     } })
     expect(rendered.find('[data-series="territory"]').exists()).toBe(true)
-    expect(rendered.find('[data-series="reference"]').exists()).toBe(true)
+    expect(rendered.find('[data-series="reference"]').exists()).toBe(false)
     expect(rendered.findAll('.transit-point--territory')).toHaveLength(11)
-    expect(rendered.findAll('.transit-point--reference')).toHaveLength(11)
-    expect(rendered.find('.transit-legend-reference').text()).toContain('Commune bretonne médiane')
+    expect(rendered.findAll('.transit-point--reference')).toHaveLength(0)
+    expect(rendered.find('.transit-legend-reference').exists()).toBe(false)
     expect(rendered.findAll('.transit-point--territory').map((point)=>point.attributes('data-value')))
       .toEqual(values.map(String))
-    expect(rendered.findAll('.transit-point--reference').map((point)=>point.attributes('data-value')))
-      .toEqual(reference.map(String))
+    expect(section.evidence.reference).toEqual([])
   })
   it('rejects measured facts without source lineage instead of presenting static provenance', () => {
     const data = response()

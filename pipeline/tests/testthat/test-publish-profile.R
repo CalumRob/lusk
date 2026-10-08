@@ -70,6 +70,145 @@ test_that("closed mobility profile projections preserve all canonical details an
   expect_error(project_mobility_profile(canonical, bad_metadata, "offre_cyclable"), "contract is incomplete")
 })
 
+test_that("canonical regional Mobility producers feed complete profiles and supported parking facts", {
+  metadata <- lire_theme_metadata("mobilite")
+  base <- data.frame(CODGEO=c("22001","29001"), EPCI=c("200000001","200000001"),
+    DEP=c("22","29"), stringsAsFactors=FALSE)
+  communes <- data.frame(commune=base$CODGEO, population=c(1000,3000),
+    longueur_t=c(12,18), longueur_b=c(2,7), longueur_c=c(9,21))
+  reseaux <- agreger_reseaux_territoires(communes, base)
+  reseaux_hab <- agreger_reseaux_par_habitant_territoires(
+    communes[c("commune","longueur_t","longueur_b","longueur_c")],
+    data.frame(commune=base$CODGEO,population=c(1000,3000)),base)
+  velo <- data.frame(commune=base$CODGEO, population=c(1000,3000),
+    places=c(1,90), places_1000=c(1,30))
+  cyclable <- data.frame(commune=base$CODGEO, population=velo$population,
+    protege_longueur=c(2,8), protege_km_1000=c(2,8/3),
+    partage_longueur=c(1,4), partage_km_1000=c(1,4/3), total_longueur=c(3,12))
+  offre <- agreger_offre_territoires(
+    data.frame(commune=base$CODGEO,part_proche=c(.2,.8),n_batiments=c(10,30)),
+    data.frame(commune=base$CODGEO,nb_bornes=c(0L,1L)), velo, base, cyclable)
+  parking <- agreger_stationnement_voiture_territoires(
+    data.frame(commune=base$CODGEO,places_voiture=c(10,90)), velo, base)
+
+  region_value <- function(rows, key, detail=NULL) {
+    row <- rows[rows$code == "53" & rows$key == key &
+      (if (is.null(detail)) is.na(rows$detail) else rows$detail == detail), , drop=FALSE]
+    expect_equal(nrow(row), 1L, info=paste(key, detail %||% "scalar"))
+    row$value[[1L]]
+  }
+  expect_equal(region_value(reseaux,"reseaux","t_longueur"),30)
+  expect_equal(region_value(reseaux,"reseaux","b_longueur"),9)
+  expect_equal(region_value(reseaux_hab,"reseaux_par_habitant","t_km_1000"),7.5)
+  expect_equal(region_value(offre,"offre_cyclable","protege_longueur"),10)
+  expect_equal(region_value(offre,"offre_cyclable","partage_longueur"),5)
+  expect_equal(region_value(offre,"offre_cyclable","total_longueur"),15)
+  expect_equal(region_value(offre,"places_stationnement_velo_1000"),22.75)
+  expect_equal(region_value(parking,"places_stationnement_voiture_1000"),25)
+  # Ratio is a producer-derived count ratio (91 bike places / 100 car places),
+  # not an average of commune ratios (0.55).
+  expect_equal(region_value(parking,"stationnement_velo_par_voiture"),.91)
+
+  territory_types <- data.frame(code=c(base$CODGEO,"200000001","22","29","53"),
+    type=c("commune","commune","epci","departement","departement","region"))
+  profile_from <- function(rows, key, source) {
+    rows <- rows[rows$key == key, , drop=FALSE]
+    rows$territoire <- rows$code
+    rows$type <- territory_types$type[match(rows$code,territory_types$code)]
+    rows$key <- key
+    rows$sex <- NA_character_
+    rows$unit <- unname(unlist(metadata$profile_contracts[[key]]$detail_units)[rows$detail])
+    record <- metadata$source_records[[source]]
+    vintage <- record$vintages[[1L]]
+    rows$vintage_source <- record$dataset
+    rows$vintage_version <- vintage$version
+    rows$vintage_date_reference <- vintage$dateReference
+    rows$vintage_date_publication <- vintage$datePublication
+    sources <- unlist(metadata$indicator_pages[[key]]$sources, use.names=FALSE)
+    source_vintages <- do.call(rbind, lapply(sources, function(source_id) {
+      source_record <- metadata$source_records[[source_id]]
+      source_vintage <- source_record$vintages[[1L]]
+      data.frame(id=source_id, source=source_record$dataset,
+        version=source_vintage$version, date_reference=source_vintage$dateReference,
+        date_publication=source_vintage$datePublication, stringsAsFactors=FALSE)
+    }))
+    project_declared_detail_profile(list(indicateurs=rows,
+      territoires=data.frame(territoire=territory_types$code,type=territory_types$type),
+      source_vintages=source_vintages),metadata,key)
+  }
+  network_profile <- profile_from(reseaux,"reseaux","amenagements_cyclables")
+  per_capita_profile <- profile_from(reseaux_hab,"reseaux_par_habitant","osm_reseaux")
+  cycling_profile <- profile_from(offre,"offre_cyclable","osm_reseaux")
+  expect_setequal(network_profile$facts$detail[network_profile$facts$territory_id=="53"],
+    c("t_longueur","b_longueur","c_longueur"))
+  expect_true(all(network_profile$facts$status[network_profile$facts$territory_id=="53"]=="measured"))
+  expect_true("region" %in% per_capita_profile$descriptor$levels)
+  expect_setequal(per_capita_profile$facts$detail[per_capita_profile$facts$territory_id=="53"],
+    c("t_km_1000","b_km_1000","c_km_1000"))
+  expect_equal(per_capita_profile$facts$value[per_capita_profile$facts$territory_id=="53"],
+    c(2.25, 7.5, 7.5))
+  expect_true(all(per_capita_profile$facts$status[per_capita_profile$facts$territory_id=="53"]=="measured"))
+  expect_setequal(cycling_profile$facts$detail[cycling_profile$facts$territory_id=="53"],
+    unlist(metadata$indicator_pages$offre_cyclable$comparison$details,use.names=FALSE))
+  expect_true(all(cycling_profile$facts$status[cycling_profile$facts$territory_id=="53"]=="measured"))
+
+  # Project the actual canonical producer outputs through the scalar serving
+  # contract. The regional ratio is supported only by both canonical counts;
+  # no display-layer arithmetic is involved.
+  parking_rows <- data.frame(
+    territory_id=rep("53", 3), territory_type=rep("region", 3),
+    indicator_id=c("places_stationnement_velo_1000",
+      "places_stationnement_voiture_1000", "stationnement_velo_par_voiture"),
+    value=c(region_value(offre,"places_stationnement_velo_1000"),
+      region_value(parking,"places_stationnement_voiture_1000"),
+      region_value(parking,"stationnement_velo_par_voiture")),
+    unit=c("places / 1 000 hab", "places / 1 000 hab",
+      "places vÃ©lo / place voiture"),
+    source_name=rep("", 3), source_version=rep("", 3),
+    reference_date=rep("", 3), publication_date=rep("", 3),
+    stringsAsFactors=FALSE)
+  scalar_vintages <- do.call(rbind, lapply(c("stationnement-velo","osm_reseaux"), function(source_id) {
+    source_record <- metadata$source_records[[source_id]]
+    source_vintage <- source_record$vintages[[1L]]
+    data.frame(id=source_id, source=source_record$dataset,
+      version=source_vintage$version, date_reference=source_vintage$dateReference,
+      date_publication=source_vintage$datePublication, stringsAsFactors=FALSE)
+  }))
+  for (i in seq_len(nrow(parking_rows))) {
+    parking_rows$unit[[i]] <- metadata$indicator_pages[[parking_rows$indicator_id[[i]]]]$unit
+    source_id <- unlist(metadata$indicator_pages[[parking_rows$indicator_id[[i]]]]$sources, use.names=FALSE)[[1L]]
+    source_record <- metadata$source_records[[source_id]]
+    source_vintage <- source_record$vintages[[1L]]
+    parking_rows$source_name[[i]] <- source_record$dataset
+    parking_rows$source_version[[i]] <- source_vintage$version
+    parking_rows$reference_date[[i]] <- source_vintage$dateReference
+    parking_rows$publication_date[[i]] <- source_vintage$datePublication
+  }
+  scalar <- project_scalar_canonical_rows(parking_rows, metadata,
+    c("places_stationnement_velo_1000", "places_stationnement_voiture_1000",
+      "stationnement_velo_par_voiture"),
+    data.frame(territory_id="53", territory_type="region"),
+    source_vintages=scalar_vintages)
+  regional <- scalar$facts[scalar$facts$territory_id == "53", , drop=FALSE]
+  expect_true(all(vapply(c("places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000", "stationnement_velo_par_voiture"),
+    function(id) "region" %in% scalar$descriptors$allowed_levels[[
+      match(id, scalar$descriptors$indicator_id)]], logical(1L))))
+  expect_equal(regional$value[match(c("places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000","stationnement_velo_par_voiture"),
+    regional$indicator_id)], c(22.75,25,.91))
+  expect_true(all(regional$status == "measured"))
+  # If one canonical bike count is unavailable, the regional ratio stays NA;
+  # it must not be turned into a measured zero or partial ratio.
+  velo_incomplete <- velo
+  velo_incomplete$places[[1L]] <- NA_real_
+  parking_incomplete <- agreger_stationnement_voiture_territoires(
+    data.frame(commune=base$CODGEO,places_voiture=c(10,90)),
+    velo_incomplete, base)
+  expect_true(is.na(region_value(parking_incomplete,
+    "stationnement_velo_par_voiture")))
+})
+
 test_that("Mobility density signature preserves independent range, density and decile coordinates", {
   metadata <- lire_theme_metadata("mobilite")
   fields <- c("territoire", "type", "story_key", "dens_min", "dens_max",

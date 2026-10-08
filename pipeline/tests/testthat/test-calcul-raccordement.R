@@ -66,11 +66,12 @@ fixture_codes_cog_micro <- function() {
 
 # fixture_base_epci_micro ----------------------------------------------------------
 # L'appartenance EPCI/département du micro-monde : EPCI 200000001 = {A, B},
-# EPCI 200000002 = {C} ; départements 22 = {A, B}, 35 = {C}.
+# EPCI 200000002 = {C}, EPCI 200000003 = {D non routée} ; départements
+# 22 = {A, B, D}, 35 = {C}.
 fixture_base_epci_micro <- function() {
   tibble::tibble(
     CODGEO = c("11111", "22222", "33333", "44444"),
-    EPCI = c("200000001", "200000001", "200000002", NA_character_),
+    EPCI = c("200000001", "200000001", "200000002", "200000003"),
     DEP = c("22", "22", "35", "22")
   )
 }
@@ -144,7 +145,7 @@ test_that("calculer_raccordement : la courbe cumulative, l'inclusion propre et l
   expect_false(any(calcul$courbes_communes$code == "44444"))
 })
 
-test_that("calculer_raccordement : les niveaux EPCI et département (l'union des ROUTÉES, jamais une moyenne)", {
+test_that("calculer_raccordement : les courbes agrégées sont les moyennes communales complètes", {
   calcul <- calculer_raccordement(
     fixture_matrice_micro(), fixture_population_micro(),
     fixture_codes_cog_micro(), base_epci = fixture_base_epci_micro()
@@ -170,7 +171,8 @@ test_that("calculer_raccordement : les niveaux EPCI et département (l'union des
   # routée se rejoint soi-même par la diagonale de la matrice, les non
   # routées sont hors dénominateur : la part reste 1, mais PAR CE CALCUL
   # (jamais une identité spéciale)
-  expect_equal(part(calcul$region, "53"), 600 / 600)
+  expect_true(is.na(part(calcul$region, "53")))
+  expect_false(calcul$region$complete[calcul$region$code == "53"])
   # LA COUVERTURE : chaque agrégat publie, à côté de sa part, la part de
   # SA population réellement mesurée par le routage — D (400 habitants)
   # sort de la population mesurée de la région comme de son département
@@ -184,11 +186,29 @@ test_that("calculer_raccordement : les niveaux EPCI et département (l'union des
     calcul$courbes_departements$code == "22", ]) ==
     length(grille_raccordement()))
   expect_true(nrow(calcul$courbe_region) == length(grille_raccordement()))
-  # la courbe EPCI saute à 30 (l'union ouvre plus tôt que chaque commune),
-  # sur le dénominateur routé seul
+  # La courbe EPCI est la moyenne arithmétique égale des deux courbes
+  # communales à chaque durée, pas la courbe d'union.
   e1 <- calcul$courbes_epcis[calcul$courbes_epcis$code == "200000001", ]
-  expect_equal(e1$part[e1$minute == 15], 300 / 600)
-  expect_equal(e1$part[e1$minute == 30], 600 / 600)
+  expect_equal(e1$part[e1$minute == 15], mean(c(0.1, 0.2)))
+  expect_equal(e1$part[e1$minute == 30], mean(c(0.1, 0.5)))
+  expect_true(all(e1$complete))
+  d22 <- calcul$courbes_departements[calcul$courbes_departements$code == "22", ]
+  expect_true(all(is.na(d22$part)))
+  expect_false(any(d22$complete))
+  expect_equal(unique(d22$communes_attendues), 3L)
+  expect_equal(unique(d22$communes_disponibles), 2L)
+  zero_routed <- calcul$courbes_epcis[
+    calcul$courbes_epcis$code == "200000003", ]
+  expect_equal(nrow(zero_routed), length(grille_raccordement()))
+  expect_true(all(is.na(zero_routed$part)))
+  expect_false(any(zero_routed$complete))
+  expect_equal(unique(zero_routed$communes_attendues), 1L)
+  expect_equal(unique(zero_routed$communes_disponibles), 0L)
+  # Commune 22222's curve is its own cumulative curve, not a reference or an
+  # aggregate curve: its diagonal contributes its 200/1000 share at minute 0.
+  own <- calcul$courbes_communes[calcul$courbes_communes$code == "22222", ]
+  expect_equal(own$part[own$minute == 0], 200 / 1000)
+  expect_equal(own$part[own$minute == 30], 500 / 1000)
 })
 
 test_that("calculer_raccordement : la courbe de référence médiane bretonne", {
