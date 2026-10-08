@@ -1158,7 +1158,7 @@ onBeforeUnmount(() => {
 .page-number span, .page-number small { color: var(--muted); font-family: var(--font-ui); font-size: 9px; }
 .page-number span { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .margin-sources { display: grid; gap: 10px; justify-items: center; overflow-wrap: anywhere; }
-.margin-sources a { color: var(--cahier-theme-strong); font: var(--text-caption); letter-spacing: var(--text-caption-tracking); text-decoration-thickness: 1px; text-underline-offset: 3px; word-break: break-word; }
+.margin-sources a { color: var(--cahier-theme-strong); font-size: 10px; line-height: 1.1; text-decoration-thickness: 1px; text-underline-offset: 3px; word-break: break-word; }
 .page-heading { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); }
 .page-copy { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); padding-bottom: 18px; }
 .page-layout--sticky .page-main { min-width: 0; }
@@ -1175,7 +1175,7 @@ onBeforeUnmount(() => {
 .aedar-analysis { display: grid; grid-template-columns: minmax(0, var(--cahier-figure-width-compact, 560px)) minmax(260px, 1fr); align-items: center; justify-content: center; gap: var(--space-8); }
 .aedar-ramp { width: min(100%, var(--cahier-figure-width-compact, 560px)); justify-self: center; margin: 0; display: grid; gap: var(--space-3); }
 .aedar-reading { display: grid; align-content: center; gap: var(--space-4); min-width: 0; }
-.aedar-reading__source { margin: 0; color: var(--cahier-default); font: var(--text-caption); letter-spacing: var(--text-caption-tracking); overflow-wrap: anywhere; }
+.aedar-reading__source { margin: 0; color: var(--cahier-default); font-size: 10px; line-height: 1.1; overflow-wrap: anywhere; }
 @media (max-width: 760px) { .aedar-analysis { grid-template-columns: minmax(0, 1fr); } }
 .concept-group {
   container: subgroup / inline-size;
@@ -1356,6 +1356,8 @@ onBeforeUnmount(() => {
   .page-margin { position: static; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; width: auto; margin: 0 0 var(--space-5); text-align: left; }
   .margin-sources { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 6px 12px; }
   .margin-sources .margin-label { flex-basis: 100%; text-align: right; }
+  .margin-sources a { font-size: 14px; line-height: 1.4; }
+  .aedar-reading__source { font-size: 14px; line-height: 1.4; }
   .page-number { font-size: 24px; }
   .page-heading h2 { font-size: clamp(1.35rem, 7vw, 1.85rem); }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
