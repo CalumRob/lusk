@@ -149,6 +149,7 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(heading.find('.concept-group-label').text()).toBe('Accès aux services')
     expect(heading.find('.concept-group-narrative').exists()).toBe(false)
     expect(wrapper.find('[data-section="aedar-access"] .argument-copy').exists()).toBe(false)
+    expect(wrapper.find('[data-section="aedar-access"] .cahier-section-state').exists()).toBe(false)
 
     // The section label is not duplicated as a figure title: each figure carries
     // its own descriptive title through the shared figure-title primitive.
@@ -167,8 +168,8 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')
     expect(firstRampLegend.map((item) => item.text())).toEqual([
       'Voiture',
-      'Vélo (LTS4)',
       'Vélo (LTS2)',
+      'Vélo (LTS4)',
       'Transports en commun',
       'À pied',
     ])
@@ -186,6 +187,8 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(wrapper.find('.aedar-ramp .access-ramp-horizon').exists()).toBe(false)
     expect(wrapper.find('.aedar-ramp .access-ramp-time-point').exists()).toBe(false)
     expect(wrapper.find('.aedar-reading__gap').text()).toContain('types de moins accessibles à pied qu’en voiture en 15 min')
+    expect(wrapper.find('.aedar-reading__source a').text()).toBe('AEDAR')
+    expect(wrapper.find('.aedar-reading__source a').text()).not.toBe('aedar_bretagne')
 
     // The section has a reading: no "lecture indisponible" placeholder may follow the evidence.
     expect(wrapper.find('[data-section="aedar-access"] .evidence-placeholder').exists()).toBe(false)
@@ -215,8 +218,8 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')
     expect(firstRampLegend.map((item) => item.text())).toEqual([
       'Voiture',
-      'Vélo (LTS4)',
       'Vélo (LTS2)',
+      'Vélo (LTS4)',
       'Transports en commun',
       'À pied',
       'EPCI X',
@@ -351,11 +354,11 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     const cahierProps = wrapper.findComponent(VarianteCahierLibre).props()
     expect(cahierProps.aedarAccessEnabled).toBe(true)
 
-    // The transformed section carries its lecture and map figure wording (content layer owns it)
+    // The transformed section has no Lecture and retains its map figure wording.
     const firstUnit = (cahierProps.content as ThemeContent).units[0]
     const section = firstUnit.sections[0] as unknown as AedarAccessSection
     expect(section.key).toBe('aedar-access')
-    expect(section.lecture?.marelle).toBe('Prototype AEDAR : l’accès depuis les adresses résidentielles')
+    expect(section.lecture).toBeNull()
     expect(section.evidence?.kind).toBe('aedar-access')
     if (section.evidence?.kind === 'aedar-access') {
       expect(section.evidence.mapFigureTitle).toBe('Cartes d’accès aux services, par mode')

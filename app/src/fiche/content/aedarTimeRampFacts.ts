@@ -14,7 +14,7 @@ function invalid(): never { throw new Error('Réponse des agrégats AEDAR invali
  * The five normal access modes rendered as ramp lines, in legend order.
  * `transit_gain` is a net-difference reading, not an ordinary access mode.
  */
-export const AEDAR_RAMP_MODES: readonly AedarRampMode[] = ['car', 'bike_lts4', 'bike_lts2', 'transit', 'walk']
+export const AEDAR_RAMP_MODES: readonly AedarRampMode[] = ['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk']
 
 export const AEDAR_RAMP_MODE_LABELS: Readonly<Record<AedarRampMode, string>> = {
   car: 'Voiture',

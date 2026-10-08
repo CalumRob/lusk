@@ -110,7 +110,9 @@ export function aedarAccessSection(
         })(),
       },
       source: data.provenance.sources[0] ? {
-        sourceId: data.provenance.sources[0].source_id,
+        label: data.provenance.sources[0].attribution.toUpperCase().includes('AEDAR')
+          ? 'AEDAR'
+          : data.provenance.sources[0].attribution || 'Source',
         version: data.provenance.sources[0].vintage_id,
         referenceDate: data.provenance.sources[0].reference_date,
         publicationDate: data.provenance.sources[0].publication_date,

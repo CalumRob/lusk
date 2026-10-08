@@ -26,7 +26,7 @@ const options = { territory: { type: 'commune', id: '22001' } }
 
 describe('aedarTimeRampEvidence', () => {
   it('exposes the five normal ramp modes with their labels, transit_gain excluded', () => {
-    expect(AEDAR_RAMP_MODES).toEqual(['car', 'bike_lts4', 'bike_lts2', 'transit', 'walk'])
+    expect(AEDAR_RAMP_MODES).toEqual(['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk'])
     expect(AEDAR_RAMP_MODE_LABELS.car).toBe('Voiture')
     expect(AEDAR_RAMP_MODE_LABELS.walk).toBe('À pied')
     expect(AEDAR_RAMP_MODE_LABELS).not.toHaveProperty('transit_gain')

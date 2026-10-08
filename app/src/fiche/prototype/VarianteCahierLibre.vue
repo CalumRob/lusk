@@ -394,6 +394,10 @@ function aedarAccessEvidenceFor(section: ContentSection): AedarAccessEvidence | 
   return section.evidence
 }
 
+function isAedarAccessSection(section: ContentSection): boolean {
+  return section.evidence?.kind === 'aedar-access'
+}
+
 /** Convert AedarTimeRampEvidence to the generic TimeRampFigureData expected by AccessRampFigureCahier. */
 function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureData {
   const series: readonly TimeRampSeries[] = AEDAR_RAMP_MODES.map((mode) => ({
@@ -613,7 +617,7 @@ onBeforeUnmount(() => {
                 :data-figure="`section-${section.key}`"
               >
                 <div
-                  v-if="props.presentation !== 'plain' || section.lecture?.prose.length || (!section.lecture && section.availability !== 'complete')"
+                  v-if="props.presentation !== 'plain' || section.lecture?.prose.length || (!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete')"
                   class="argument-side"
                 >
                   <template v-if="section.lecture">
@@ -621,7 +625,7 @@ onBeforeUnmount(() => {
                       v-if="props.presentation !== 'plain'"
                       class="cahier-baseline-anchor cahier-marelle-anchor"
                     >{{ section.lecture.marelle }}</h4>
-                    <CahierProse v-if="section.lecture.prose.length" class="argument-copy" :blocks="section.lecture.prose" />
+                    <CahierProse v-if="section.lecture?.prose.length" class="argument-copy" :blocks="section.lecture?.prose ?? []" />
                   </template>
                   <div
                     v-if="props.presentation !== 'plain' && section.explorationTargets.length > 0 && sectionExploration(section)"
@@ -635,7 +639,7 @@ onBeforeUnmount(() => {
                       class="cahier-baseline-anchor"
                     />
                   </div>
-                  <p v-if="!section.lecture && section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
+                  <p v-if="!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
 
                 </div>
 
@@ -671,7 +675,7 @@ onBeforeUnmount(() => {
                         </p>
                         <p v-else class="aedar-reading__gap aedar-reading__gap--unavailable" role="note">Écart indisponible : les deux valeurs de diversité ne sont pas disponibles pour cet horizon.</p>
                         <p v-if="aedarAccessEvidenceFor(section)!.source" class="aedar-reading__source">
-                          <a :href="aedarAccessEvidenceFor(section)!.source!.url" target="_blank" rel="noreferrer">{{ aedarAccessEvidenceFor(section)!.source!.sourceId }}</a>
+                          <a :href="aedarAccessEvidenceFor(section)!.source!.url" target="_blank" rel="noreferrer">{{ aedarAccessEvidenceFor(section)!.source!.label }}</a>
                           · {{ aedarAccessEvidenceFor(section)!.source!.version }}
                           <span v-if="aedarAccessEvidenceFor(section)!.source!.referenceDate"> · Référence : {{ aedarAccessEvidenceFor(section)!.source!.referenceDate }}</span>
                           <span v-if="aedarAccessEvidenceFor(section)!.source!.publicationDate"> · Publication : {{ aedarAccessEvidenceFor(section)!.source!.publicationDate }}</span>

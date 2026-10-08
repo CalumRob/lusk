@@ -75,7 +75,7 @@ export interface AedarAccessEvidence {
   mapFigureTitle: string
   ramps: readonly AedarTimeRampEvidence[]
   diversityGap: { value: number | null; horizonMinutes: number }
-  source: { sourceId: string; version: string; referenceDate: string | null; publicationDate: string | null; url: string; attribution: string; licence: string } | null
+  source: { label: string; version: string; referenceDate: string | null; publicationDate: string | null; url: string; attribution: string; licence: string } | null
   availability: FactAvailability
   provenance: readonly string[]
 }

@@ -97,7 +97,7 @@ describe('aedarAccessSection', () => {
     expect(section.evidence.provenance).toEqual(['aedar_bretagne'])
     expect(section.provenance).toEqual(['aedar_bretagne'])
     expect(section.evidence.diversityGap).toEqual({ value: 0, horizonMinutes: 15 })
-    expect(section.evidence.source).toMatchObject({ sourceId: 'aedar_bretagne', version: '2026-v1', url: 'https://example.com' })
+    expect(section.evidence.source).toMatchObject({ label: 'AEDAR', version: '2026-v1', url: 'https://example.com' })
   })
 
   it('merges per-mode reference-territory values and labels them explicitly', () => {
