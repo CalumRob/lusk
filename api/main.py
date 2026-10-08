@@ -1071,23 +1071,72 @@ def _comparison_cohort(conn, territory_type, territory_id, selection):
     return "commune", members, {"kind": "explicit_selection"}
 
 
+def _comparison_sources_by_indicator(rows):
+    sources = {}
+    for row in rows:
+        sources.setdefault(row[0], []).append({
+            "source_id": row[1], "name": row[3], "vintage_id": row[2],
+            "version": row[4], "reference_date": row[5], "publication_date": row[6],
+        })
+    return sources
+
+
+def _selected_profile_comparison_sources(conn, *, external, details, cohort_type, members):
+    """Fetch distinct provenance for profile comparison facets, not every cell."""
+    external_sources = []
+    if external and members:
+        external_sources = conn.execute(
+            """SELECT DISTINCT p.indicator_id,os.source_id,os.vintage_id,sd.name,
+                      sv.version,sv.reference_date,sv.publication_date
+               FROM profile_descriptor p
+               JOIN scalar_descriptor s ON s.indicator_id=p.comparison_scalar
+               JOIN scalar_observation o ON o.indicator_id=s.indicator_id
+               JOIN scalar_observation_source os
+                 ON os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id
+               JOIN source_dataset sd USING(source_id)
+               JOIN source_vintage sv USING(source_id,vintage_id)
+               WHERE p.indicator_id=ANY(%s) AND o.territory_type=%s
+                 AND o.territory_id=ANY(%s)
+               ORDER BY p.indicator_id,os.source_id,os.vintage_id""",
+            (list(external), cohort_type, list(members)),
+        ).fetchall()
+    detail_sources = []
+    if details and members:
+        detail_sources = conn.execute(
+            """SELECT DISTINCT p.indicator_id,os.source_id,os.vintage_id,sd.name,
+                      sv.version,sv.reference_date,sv.publication_date
+               FROM profile_descriptor p
+               JOIN profile_observation o
+                 ON o.indicator_id=p.indicator_id AND o.detail_key=p.comparison_detail
+                  AND o.sex_key=COALESCE(p.comparison_sex,'')
+               JOIN profile_observation_source os
+                 ON os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id
+                  AND os.detail_key=o.detail_key AND os.sex_key=o.sex_key
+               JOIN source_dataset sd USING(source_id)
+               JOIN source_vintage sv USING(source_id,vintage_id)
+               WHERE p.indicator_id=ANY(%s) AND o.territory_type=%s
+                 AND o.territory_id=ANY(%s)
+               ORDER BY p.indicator_id,os.source_id,os.vintage_id""",
+            (list(details), cohort_type, list(members)),
+        ).fetchall()
+    return (_comparison_sources_by_indicator(external_sources),
+            _comparison_sources_by_indicator(detail_sources))
+
+
 def _profile_comparison_results(conn, profiles, members, cohort_type, territory_id):
     """Compare only declared profile facets, using one batch query per facet grain."""
     external = [p for p in profiles if p.get("comparison_scalar")]
     details = [p for p in profiles if not p.get("comparison_scalar")]
     read_ids = list(dict.fromkeys([*members, territory_id]))
+    external_sources, detail_sources = _selected_profile_comparison_sources(
+        conn, external=[p["indicator"] for p in external],
+        details=[p["indicator"] for p in details],
+        cohort_type=cohort_type, members=members)
     scalar_rows = []
     if external:
         scalar_rows = conn.execute(
             """SELECT p.indicator_id,s.label,s.unit,s.direction,s.comparison_facet,s.allowed_levels,
-                      s.descriptor_version,o.territory_id,o.value,o.status,
-                      COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,
-                        'vintage_id',os.vintage_id,'name',sd.name,'version',sv.version,
-                        'reference_date',sv.reference_date,'publication_date',sv.publication_date)
-                        ORDER BY os.source_id,os.vintage_id)
-                        FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
-                        JOIN source_vintage sv USING(source_id,vintage_id)
-                        WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
+                      s.descriptor_version,o.territory_id,o.value,o.status
                FROM profile_descriptor p
                JOIN scalar_descriptor s ON s.indicator_id=p.comparison_scalar
                LEFT JOIN scalar_observation o ON o.indicator_id=s.indicator_id
@@ -1108,15 +1157,7 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
             ([p["indicator"] for p in details],),
         ).fetchall()}
         detail_rows = conn.execute(
-            """SELECT d.indicator_id,o.territory_id,o.value,o.status,
-                      COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,
-                        'vintage_id',os.vintage_id,'name',sd.name,'version',sv.version,
-                        'reference_date',sv.reference_date,'publication_date',sv.publication_date)
-                        ORDER BY os.source_id,os.vintage_id)
-                        FROM profile_observation_source os JOIN source_dataset sd USING(source_id)
-                        JOIN source_vintage sv USING(source_id,vintage_id)
-                        WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id
-                          AND os.detail_key=o.detail_key AND os.sex_key=o.sex_key),'[]'::json)
+            """SELECT d.indicator_id,o.territory_id,o.value,o.status
                FROM profile_descriptor d JOIN profile_observation o
                  ON o.indicator_id=d.indicator_id AND o.detail_key=d.comparison_detail
                   AND o.sex_key=COALESCE(d.comparison_sex,'')
@@ -1130,7 +1171,7 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
     for row in detail_rows:
         detail_by_profile.setdefault(row[0], []).append(row)
 
-    def summary(profile, facet, unit, direction, rows):
+    def summary(profile, facet, unit, direction, rows, sources):
         indicator = profile["indicator"]
         values = [(row[0], float(row[1])) for row in rows
                   if row[0] in members and row[2] == "measured" and row[1] is not None]
@@ -1140,15 +1181,6 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         better = sum(v > focal_value if direction == "high" else v < focal_value for _, v in values) if focal_value is not None else None
         ties = sum(v == focal_value for _, v in values) if focal_value is not None else None
         enough = len(values) >= 2
-        sources, seen = [], set()
-        for row in rows:
-            if row[0] not in members:
-                continue
-            for source in row[3] or []:
-                key = (source["source_id"], source["vintage_id"])
-                if key not in seen:
-                    seen.add(key)
-                    sources.append(source)
         return {"indicator": indicator, "facet": facet, "label": profile["label"],
             "unit": unit, "direction": direction, "statistic": "median",
             "profile_descriptor_version": profile.get("descriptor_version"),
@@ -1178,10 +1210,11 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
             output.append({"indicator": profile["indicator"], "facet": profile["comparison_scalar"],
                            "status": "unavailable", "reason": "facet_not_eligible_for_cohort"})
             continue
-        normalized = [(r[7], r[8], r[9], r[10]) for r in rows if r[7] is not None]
+        normalized = [(r[7], r[8], r[9]) for r in rows if r[7] is not None]
         profile_metadata = {**profile, "source_facet_label": descriptor[1],
                             "scalar_descriptor_version": descriptor[6]}
-        output.append(summary(profile_metadata, profile["comparison_scalar"], descriptor[2], descriptor[3], normalized))
+        output.append(summary(profile_metadata, profile["comparison_scalar"], descriptor[2], descriptor[3],
+                              normalized, external_sources.get(profile["indicator"], [])))
     for profile in details:
         point = profile.get("comparison_point")
         if not point or point.get("direction") not in ("high", "low"):
@@ -1201,10 +1234,46 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         cell = next((c for c in profile["cells"] if c["detail"] == detail and c.get("sex") == sex), None)
         if cell is None:
             raise HTTPException(503, "Profile comparison cell is unavailable")
-        normalized = [(r[1], r[2], r[3], r[4]) for r in detail_by_profile.get(profile["indicator"], [])]
+        normalized = [(r[1], r[2], r[3]) for r in detail_by_profile.get(profile["indicator"], [])]
         output.append(summary(profile, {"detail": detail, "sex": sex}, unit,
-                              point["direction"], normalized))
+                              point["direction"], normalized,
+                              detail_sources.get(profile["indicator"], [])))
     return output
+
+
+def _selected_scalar_comparison_inputs(conn, *, theme_id, indicator_id, cohort_type,
+                                       members, territory_id, territory_type):
+    """Read scalar values and the distinct provenance needed by their comparison.
+
+    Comparison results expose the set of sources per indicator, not provenance
+    for every observation. Keep the large value result narrow, then fetch each
+    peer indicator's distinct source/vintage records in one bounded query.
+    """
+    observations = conn.execute(
+        """SELECT o.indicator_id,o.territory_id,o.territory_type,o.value,o.status
+           FROM scalar_observation o JOIN scalar_descriptor d USING(indicator_id)
+           WHERE d.theme_id=%s AND (%s::text IS NULL OR d.indicator_id=%s)
+             AND ((o.territory_type=%s AND o.territory_id=ANY(%s))
+               OR (o.territory_id=%s AND o.territory_type=%s))""",
+        (theme_id, indicator_id, indicator_id, cohort_type, list(members),
+         territory_id, territory_type),
+    ).fetchall()
+    source_rows = []
+    if members:
+        source_rows = conn.execute(
+            """SELECT DISTINCT os.indicator_id,os.source_id,os.vintage_id,sd.name,
+                      sv.version,sv.reference_date,sv.publication_date
+               FROM scalar_observation_source os
+               JOIN scalar_descriptor d USING(indicator_id)
+               JOIN territory_reference t ON t.territory_id=os.territory_id
+               JOIN source_dataset sd USING(source_id)
+               JOIN source_vintage sv USING(source_id,vintage_id)
+               WHERE d.theme_id=%s AND (%s::text IS NULL OR d.indicator_id=%s)
+                 AND os.territory_id=ANY(%s) AND t.territory_type=%s
+               ORDER BY os.indicator_id,os.source_id,os.vintage_id""",
+            (theme_id, indicator_id, indicator_id, list(members), cohort_type),
+        ).fetchall()
+    return observations, _comparison_sources_by_indicator(source_rows)
 
 
 def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
@@ -1253,20 +1322,10 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     cohort_type, members, scope = _comparison_cohort(conn, territory_type, territory_id, selection)
     results = []
     if scalar_descriptors:
-        scalar_rows = conn.execute(
-            """SELECT o.indicator_id,o.territory_id,o.territory_type,o.value,o.status,
-                 COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,'vintage_id',os.vintage_id,
-                   'name',sd.name,'version',sv.version,'reference_date',sv.reference_date,
-                   'publication_date',sv.publication_date) ORDER BY os.source_id,os.vintage_id)
-                   FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
-                   JOIN source_vintage sv USING(source_id,vintage_id)
-                   WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id),'[]'::json)
-               FROM scalar_observation o JOIN scalar_descriptor d USING(indicator_id)
-                WHERE d.theme_id=%s AND (%s::text IS NULL OR d.indicator_id=%s)
-                  AND ((o.territory_type=%s AND o.territory_id=ANY(%s))
-                  OR (o.territory_id=%s AND o.territory_type=%s))""",
-             (theme_id, indicator_id, indicator_id, cohort_type, list(members), territory_id, territory_type),
-        ).fetchall()
+        scalar_rows, scalar_sources_by_indicator = _selected_scalar_comparison_inputs(
+            conn, theme_id=theme_id, indicator_id=indicator_id,
+            cohort_type=cohort_type, members=members,
+            territory_id=territory_id, territory_type=territory_type)
         by_indicator = {}
         for row in scalar_rows:
             by_indicator.setdefault(row[0], []).append(row)
@@ -1283,13 +1342,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             focal_value = float(focal[3]) if focal and focal[4] == "measured" and focal[3] is not None else None
             rank = (1 + sum(v > focal_value if direction == "high" else v < focal_value
                             for _, v in values)) if focal_value is not None and territory_id in members else None
-            sources, seen = [], set()
-            for row in peers:
-                for source in row[5] or []:
-                    key = (source["source_id"], source["vintage_id"])
-                    if key not in seen:
-                        seen.add(key)
-                        sources.append(source)
+            sources = scalar_sources_by_indicator.get(indicator, [])
             results.append({"indicator_id": indicator, "label": label, "unit": unit,
                 "direction": direction, "statistic": "median", "descriptor_version": version,
                 "status": "available" if values else "unavailable",

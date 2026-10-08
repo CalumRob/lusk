@@ -617,6 +617,10 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
             focal = client.get("/api/territories/commune/29001/themes/demographie/facts")
             empty_comparison = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[]})
             selected_comparison = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"29002"}]})
+            multi_source_comparison = client.post("/api/territories/commune/29001/themes/comparison", json={
+                "theme_id":"demographie","selection":[
+                    {"territory_type":"commune","territory_id":"29001"},
+                    {"territory_type":"commune","territory_id":"29002"}]})
             overlap_comparison = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"epci","territory_id":"E1"},{"territory_type":"commune","territory_id":"29002"}]})
             focal_selected = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"29001"}]})
             unknown_selection = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"99999"}]})
@@ -657,6 +661,12 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert "observations" not in selected_result
         assert selected_result["comparison_sources"] == [{"source_id":"fixture","name":"Fixture source",
           "vintage_id":"v2026","version":"2026","reference_date":None,"publication_date":None}]
+        assert multi_source_comparison.status_code == 200, multi_source_comparison.text
+        multi_source_result = multi_source_comparison.json()["results"][0]
+        assert multi_source_result["median"] == 1
+        assert {(source["source_id"], source["vintage_id"])
+                for source in multi_source_result["comparison_sources"]} == {
+                    ("fixture", "v2026"), ("fixture_secondary", "v2025")}
         assert overlap_comparison.status_code == 200, overlap_comparison.text
         assert overlap_comparison.json()["results"][0]["selected_member_count"] == 1
         assert overlap_comparison.json()["results"][0]["eligible_count"] == 1
