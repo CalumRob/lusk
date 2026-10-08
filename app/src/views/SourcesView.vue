@@ -1,11 +1,43 @@
 <script setup lang="ts">
 import { AlertCircle } from 'lucide-vue-next'
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
 import { ancreSource } from '@/methodes/sources'
 import { sourceRecords } from '@/payload/selectors'
 import { usePayload } from '@/payload/usePayload'
+
+/**
+ * ⚠️ PROTOTYPE JETABLE (#500) — la page Sources accueille TEMPORAIREMENT trois
+ * variantes de table bornée (/sources?variant=A|B|C), filles de l'ancienne
+ * table Méthodes · Sources (ADR-0022, verdict #478). Sans paramètre
+ * `variant`, la page de production rend EXACTEMENT comme avant (aucune
+ * régression). La bascule flottante est développement-uniquement ; tout le
+ * dossier `views/sources/` disparaît avec la branche.
+ */
+import BasculePrototype from '@/views/sources/BasculePrototype.vue'
+import { VARIANTES, type Variante } from '@/views/sources/prototype'
+import VarianteDossiers from '@/views/sources/VarianteDossiers.vue'
+import VarianteRegistre from '@/views/sources/VarianteRegistre.vue'
+import VarianteSections from '@/views/sources/VarianteSections.vue'
+
+const COMPOSANTES_VARIANTE: Record<Variante, unknown> = {
+  A: VarianteRegistre,
+  B: VarianteDossiers,
+  C: VarianteSections,
+}
+
+const route = useRoute()
+/** ?variant=A|B|C — toute autre valeur retombe sur la page de production. */
+const variante = computed<Variante | null>(() => {
+  const valeur = route.query.variant
+  return typeof valeur === 'string' && (VARIANTES as readonly string[]).includes(valeur)
+    ? (valeur as Variante)
+    : null
+})
+/** La bascule flottante n'existe qu'en développement (#500). */
+const estDeveloppement = import.meta.env.DEV
 
 const { payload, erreur, chargement, recharger } = usePayload()
 const sources = computed(() => payload.value ? sourceRecords(payload.value).filter((source) => source.consumers.length > 0) : [])
@@ -13,8 +45,17 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
 </script>
 
 <template>
-  <section class="page sources-page" aria-labelledby="sources-title" :aria-busy="chargement ? 'true' : 'false'">
+  <section
+    class="page sources-page"
+    :class="{ 'sources-page--proto': variante !== null }"
+    aria-labelledby="sources-title"
+    :aria-busy="chargement ? 'true' : 'false'"
+  >
     <h1 id="sources-title">Sources</h1>
+    <div v-if="variante" class="proto-bandeau" role="note">
+      <strong>Prototype jetable #500</strong> — variante {{ variante }} sur données réelles. Ne pas
+      fusionner : tout le dossier <code>views/sources/</code> disparaît avec la branche.
+    </div>
     <p class="sources-page__intro">
       Les jeux de données publiés par Lusk, leurs millésimes, leurs horloges de mise à jour et les
       indicateurs qui les consomment. Une fiche de source est l’autorité commune des explications.
@@ -25,7 +66,10 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
       <span>Impossible de charger les sources.</span>
       <button type="button" @click="recharger">Réessayer</button>
     </div>
-    <div v-else class="source-records">
+    <!-- ⚠️ #500 — les trois variantes de table bornée (jetables). -->
+    <component :is="COMPOSANTES_VARIANTE[variante!]" v-else-if="variante && payload" :payload="payload" />
+    <template v-else-if="!variante">
+    <div class="source-records">
       <article v-for="source in sources" :id="ancreSource(source.id)" :key="source.id" class="source-record">
         <header class="source-record__header">
           <div>
@@ -93,6 +137,12 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
         <p v-else>Aucun indicateur publié ne cite ce jeu.</p>
       </article>
     </div>
+    </template>
+    <!-- Bascule flottante : développement uniquement (#500). -->
+    <BasculePrototype
+      v-if="estDeveloppement"
+      :actuelle="variante ?? 'A'"
+    />
   </section>
 </template>
 
@@ -100,6 +150,19 @@ const formaterFacteur = (value: number) => new Intl.NumberFormat('fr-FR', { maxi
 .sources-page h1 { margin: 0 0 var(--space-4); font: var(--text-h1); }
 .sources-page__intro { max-width: 70ch; margin: 0 0 var(--space-8); color: var(--text-secondary); }
 .sources-page__status { display: flex; align-items: center; gap: var(--space-3); padding: var(--space-8) 0; }
+/* #500 : la bascule flottante (fixed) ne doit jamais recouvrir le pied de page. */
+.sources-page--proto { padding-bottom: 96px; }
+.proto-bandeau {
+  margin: 0 0 var(--space-4);
+  padding: var(--space-2) var(--space-4);
+  border: 1px solid color-mix(in oklab, var(--status-warning) 35%, transparent);
+  border-radius: var(--radius-md);
+  background: color-mix(in oklab, var(--status-warning) 8%, var(--surface-primary));
+  color: var(--text-secondary);
+  font: var(--text-body-sm);
+}
+.proto-bandeau strong { color: var(--status-warning); text-transform: uppercase; letter-spacing: 0.04em; }
+.proto-bandeau code { font-family: var(--font-mono); font-size: 0.85em; }
 .source-records { display: grid; gap: var(--space-8); }
 .source-record { scroll-margin-top: calc(var(--header-height) + 12px); padding: var(--space-6); border: 1px solid var(--border-default); border-radius: var(--radius-lg); background: var(--surface-primary); }
 .source-record__header { display: flex; justify-content: space-between; gap: var(--space-6); align-items: start; }
