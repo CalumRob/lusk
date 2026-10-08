@@ -666,11 +666,6 @@ onBeforeUnmount(() => {
                       </figure>
                       <aside class="aedar-reading">
                         <CahierProse :blocks="aedarAccessEvidenceFor(section)!.sectionProse" />
-                        <div v-if="aedarAccessEvidenceFor(section)!.diversityGap.value !== null" class="aedar-reading__gap">
-                          <strong class="aedar-reading__number">{{ formatNumber(Math.abs(aedarAccessEvidenceFor(section)!.diversityGap.value!)) }}</strong>
-                          <CahierProse class="aedar-reading__gap-copy" :blocks="[aedarAccessEvidenceFor(section)!.diversityGap.prose!]" />
-                        </div>
-                        <p v-else class="aedar-reading__gap aedar-reading__gap--unavailable" role="note">Écart indisponible : les deux valeurs de diversité ne sont pas disponibles pour cet horizon.</p>
                         <p v-if="aedarAccessEvidenceFor(section)!.source" class="aedar-reading__source">
                           <a :href="aedarAccessEvidenceFor(section)!.source!.url" target="_blank" rel="noreferrer">{{ aedarAccessEvidenceFor(section)!.source!.label }}</a>
                           {{ aedarAccessEvidenceFor(section)!.source!.version }}
@@ -1163,7 +1158,7 @@ onBeforeUnmount(() => {
 .page-number span, .page-number small { color: var(--muted); font-family: var(--font-ui); font-size: 9px; }
 .page-number span { font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
 .margin-sources { display: grid; gap: 10px; justify-items: center; overflow-wrap: anywhere; }
-.margin-sources a { color: var(--cahier-theme-strong); font-size: 10px; line-height: 1.1; text-decoration-thickness: 1px; text-underline-offset: 3px; word-break: break-word; }
+.margin-sources a { color: var(--cahier-theme-strong); font: var(--text-caption); letter-spacing: var(--text-caption-tracking); text-decoration-thickness: 1px; text-underline-offset: 3px; word-break: break-word; }
 .page-heading { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); }
 .page-copy { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); padding-bottom: 18px; }
 .page-layout--sticky .page-main { min-width: 0; }
@@ -1180,12 +1175,7 @@ onBeforeUnmount(() => {
 .aedar-analysis { display: grid; grid-template-columns: minmax(0, var(--cahier-figure-width-compact, 560px)) minmax(260px, 1fr); align-items: center; justify-content: center; gap: var(--space-8); }
 .aedar-ramp { width: min(100%, var(--cahier-figure-width-compact, 560px)); justify-self: center; margin: 0; display: grid; gap: var(--space-3); }
 .aedar-reading { display: grid; align-content: center; gap: var(--space-4); min-width: 0; }
-.aedar-reading__source { margin: 0; color: var(--cahier-default); }
-.aedar-reading__gap { margin: 0; color: var(--cahier-default); font: var(--text-body); }
-.aedar-reading__number { display: block; margin-bottom: var(--space-2); color: var(--brand-500); font: var(--type-figure-value, 600 1rem/1.1 var(--font-sans)); font-size: clamp(2rem, 4vw, 3rem); font-variant-numeric: tabular-nums; }
-.aedar-reading__gap-copy { color: var(--cahier-default); font: var(--text-body); }
-.aedar-reading__gap--unavailable { font-size: 1rem; }
-.aedar-reading__source { font-size: var(--text-body-sm, 0.875rem); overflow-wrap: anywhere; }
+.aedar-reading__source { margin: 0; color: var(--cahier-default); font: var(--text-caption); letter-spacing: var(--text-caption-tracking); overflow-wrap: anywhere; }
 @media (max-width: 760px) { .aedar-analysis { grid-template-columns: minmax(0, 1fr); } }
 .concept-group {
   container: subgroup / inline-size;
@@ -1366,7 +1356,6 @@ onBeforeUnmount(() => {
   .page-margin { position: static; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; width: auto; margin: 0 0 var(--space-5); text-align: left; }
   .margin-sources { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 6px 12px; }
   .margin-sources .margin-label { flex-basis: 100%; text-align: right; }
-  .margin-sources a { font-size: 14px; line-height: 1.4; }
   .page-number { font-size: 24px; }
   .page-heading h2 { font-size: clamp(1.35rem, 7vw, 1.85rem); }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
