@@ -1168,7 +1168,7 @@ onBeforeUnmount(() => {
 
 .aedar-access-evidence { display: grid; grid-column: 1 / -1; justify-self: center; width: min(100%, 1040px); gap: var(--space-6); }
 .aedar-ramps { display: grid; width: 100%; gap: var(--space-6); grid-template-columns: minmax(0, 1fr); }
-.aedar-ramp { margin: 0; display: grid; gap: var(--space-3); }
+.aedar-ramp { width: min(100%, 420px); justify-self: center; margin: 0; display: grid; gap: var(--space-3); }
 .concept-group {
   container: subgroup / inline-size;
   margin: 0 0 var(--cahier-group-gap, var(--space-8));
