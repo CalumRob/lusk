@@ -71,6 +71,10 @@ export interface AedarAccessEvidence {
   kind: 'aedar-access'
   territory: { code: string; name: string }
   horizonMinutes: number
+  /** Figure title of the blank map slots, owned by the semantic content layer. */
+  mapFigureTitle: string
+  /** Reading rendered under the blank map slots (honest empty state, provisional horizon). */
+  mapLecture: readonly TextBlock[]
   ramps: readonly AedarTimeRampEvidence[]
   availability: FactAvailability
   provenance: readonly string[]
@@ -101,6 +105,8 @@ export interface BpeProfilesEvidence {
 export interface AedarTimeRampEvidence {
   kind: 'aedar-time-ramp'
   rampKey: 'diversity' | 'count-per-type'
+  /** Figure title owned by the semantic content layer, never the renderer. */
+  figureTitle: string
   xAxis: { values: readonly number[]; labels: readonly string[]; unit: string; label: string }
   yAxis: { label: string; unit: string }
   series: { territory: readonly (number | null)[]; reference: readonly (number | null)[] | null }
@@ -656,7 +662,7 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
 }
 
-function text(value: string): TextSegment {
+export function text(value: string): TextSegment {
   return { kind: 'text', value }
 }
 

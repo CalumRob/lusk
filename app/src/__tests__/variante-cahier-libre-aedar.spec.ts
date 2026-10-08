@@ -5,9 +5,10 @@ import { describe, expect, it } from 'vitest'
 import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import VarianteCahierLibreAedar from '@/fiche/prototype/VarianteCahierLibreAedar.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
+import { aedarAccessSection } from '@/fiche/content/aedarAccessSection'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
-import type { AedarTimeRampEvidence, ThemeContent } from '@/fiche/content/themeContent'
+import type { AedarAccessSection, ThemeContent } from '@/fiche/content/themeContent'
 import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
 import {
   histoiresMobiliteFixture,
@@ -39,53 +40,9 @@ function baseContent(): ThemeContent {
   return resolveMobiliteThemeContent(facts, payload.themeMetadata?.mobilite)
 }
 
-function aedarRamp(rampKey: 'diversity' | 'count-per-type'): AedarTimeRampEvidence {
-  return {
-    kind: 'aedar-time-ramp',
-    rampKey,
-    xAxis: {
-      values: [5, 10, 15, 20],
-      labels: ['5 min', '10 min', '15 min', '20 min'],
-      unit: 'minutes',
-      label: 'Temps d’accès',
-    },
-    yAxis: rampKey === 'diversity'
-      ? { label: 'Types d’équipements', unit: '' }
-      : { label: 'Équipements par type', unit: 'équipements / type' },
-    series: {
-      territory: [10, 15, 20, 25],
-      reference: null,
-    },
-    highlightedHorizon: 15,
-    mode: 'car',
-    modeLabel: 'Voiture',
-    availability: 'complete',
-    provenance: null,
-    sourceCoverage: 'complete',
-  }
-}
-
 function contentWithAedarAccess(): ThemeContent {
   const content = baseContent()
-  const evidence = {
-    kind: 'aedar-access' as const,
-    territory: { code: '22001', name: 'Test Commune' },
-    horizonMinutes: 15,
-    ramps: [aedarRamp('diversity'), aedarRamp('count-per-type')],
-    availability: 'complete' as const,
-    provenance: ['aedar_bretagne'],
-    figureLecture: [],
-  }
-  const section = {
-    key: 'aedar-access' as const,
-    label: 'Accès aux services — prototype AEDAR',
-    availability: 'complete' as const,
-    indicators: [],
-    evidence,
-    provenance: ['aedar_bretagne'],
-    lecture: null,
-    explorationTargets: [],
-  }
+  const section = aedarAccessSection(aedarReady, content.territory)
   const first = content.units[0]
   return {
     ...content,
@@ -121,7 +78,7 @@ function aedarFacts(count: number) {
   }))
 }
 
-const aedarReady: AedarFetchResult = {
+const aedarReady: Extract<AedarFetchResult, { status: 'ready' }> = {
   status: 'ready',
   facts: aedarFacts(10),
   contentVersion: 'test-version',
@@ -163,8 +120,27 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     // Both ramps rendered
     expect(wrapper.findAll('.access-ramp-cahier--time')).toHaveLength(2)
 
-    // Section label
-    expect(wrapper.text()).toContain('Accès aux services — prototype AEDAR')
+    // Section title and reading use the shared section primitive (label + marelle + prose),
+    // exactly like the production page 1/page 2 sections.
+    const heading = wrapper.find('[data-section="aedar-access"] .concept-group-heading')
+    expect(heading.find('.concept-group-label').text()).toBe('Accès aux services')
+    expect(heading.find('.concept-group-narrative').text()).toBe('Prototype AEDAR : l’accès depuis les adresses résidentielles')
+    expect(wrapper.find('[data-section="aedar-access"] .argument-copy').text()).toContain('prototype')
+
+    // The section label is not duplicated as a figure title: each figure carries
+    // its own descriptive title through the shared figure-title primitive.
+    expect(wrapper.findAll('.aedar-access-evidence > .cahier-figure-title')).toHaveLength(0)
+    expect(wrapper.find('.blank-map-slots > .cahier-figure-title').text()).toBe('Cartes d’accès aux services, par mode')
+    expect(wrapper.findAll('.aedar-ramp .cahier-figure-title').map((title) => title.text())).toEqual([
+      'Diversité des types d’équipements — Voiture',
+      'Équipements accessibles par type — Voiture',
+    ])
+
+    // Honest empty-state reading under the map slots
+    expect(wrapper.find('.blank-map-slots .cahier-figure-lecture').text()).toContain('aucune carte n’est affichée')
+
+    // The section has a reading: no "lecture indisponible" placeholder may follow the evidence.
+    expect(wrapper.find('[data-section="aedar-access"] .evidence-placeholder').exists()).toBe(false)
   })
 
   it('does NOT render the aedar-access branch when aedarAccessEnabled is false (default)', async () => {
@@ -283,5 +259,16 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     // The transformed content should have the aedar-access section
     const cahierProps = wrapper.findComponent(VarianteCahierLibre).props()
     expect(cahierProps.aedarAccessEnabled).toBe(true)
+
+    // The transformed section carries its lecture and map figure wording (content layer owns it)
+    const firstUnit = (cahierProps.content as ThemeContent).units[0]
+    const section = firstUnit.sections[0] as unknown as AedarAccessSection
+    expect(section.key).toBe('aedar-access')
+    expect(section.lecture?.marelle).toBe('Prototype AEDAR : l’accès depuis les adresses résidentielles')
+    expect(section.evidence?.kind).toBe('aedar-access')
+    if (section.evidence?.kind === 'aedar-access') {
+      expect(section.evidence.mapFigureTitle).toBe('Cartes d’accès aux services, par mode')
+      expect(section.evidence.ramps).toHaveLength(2)
+    }
   })
 })

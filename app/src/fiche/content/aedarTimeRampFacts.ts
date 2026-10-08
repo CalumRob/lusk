@@ -62,6 +62,7 @@ export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampO
     })
     const availability: FactAvailability = territory.every((value) => value !== null) ? 'complete' : 'incomplete'
     return { kind: 'aedar-time-ramp', rampKey,
+      figureTitle: rampKey === 'diversity' ? 'Diversité des types d’équipements' : 'Équipements accessibles par type',
       xAxis: { values: horizons, labels: horizons.map((value) => `${value} min`), unit: 'minutes', label: 'Temps d’accès' },
       yAxis: rampKey === 'diversity' ? { label: 'Types d’équipements', unit: '' } : { label: 'Équipements par type', unit: 'équipements / type' },
       series: { territory, reference: null }, highlightedHorizon: 15, mode: options.mode, modeLabel: options.modeLabel,

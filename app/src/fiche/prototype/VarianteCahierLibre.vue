@@ -644,11 +644,11 @@ onBeforeUnmount(() => {
                     v-if="aedarAccessEvidenceFor(section)"
                     class="evidence-side evidence-figure aedar-access-evidence"
                   >
-                    <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
                     <CahierBlankMapSlots
                       :territory="aedarAccessEvidenceFor(section)!.territory"
                       :horizon-minutes="aedarAccessEvidenceFor(section)!.horizonMinutes"
-                      :section-number="String(sectionIndex + 1).padStart(2, '0')"
+                      :title="aedarAccessEvidenceFor(section)!.mapFigureTitle"
+                      :lecture="aedarAccessEvidenceFor(section)!.mapLecture"
                     />
                     <div class="aedar-ramps">
                       <figure
@@ -657,8 +657,7 @@ onBeforeUnmount(() => {
                         class="aedar-ramp"
                       >
                         <figcaption class="cahier-figure-title cahier-baseline-anchor">
-                          {{ ramp.rampKey === 'diversity' ? 'Diversité des types d’équipements' : 'Équipements accessibles par type' }}
-                          — {{ ramp.modeLabel }}
+                          {{ ramp.figureTitle }} — {{ ramp.modeLabel }}
                         </figcaption>
                         <AccessRampFigureCahier
                           :time-ramp="rampToTimeRampFigureData(ramp, aedarAccessEvidenceFor(section)!.territory.name)"
@@ -1002,7 +1001,7 @@ onBeforeUnmount(() => {
                     <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                   </figure>
 
-                <div v-else class="evidence-side evidence-placeholder" role="note">
+                <div v-else-if="!aedarAccessEvidenceFor(section)" class="evidence-side evidence-placeholder" role="note">
                   <span>{{ sectionState(section) }}</span>
                 </div>
               </section>

@@ -31,6 +31,7 @@ describe('aedarTimeRampEvidence', () => {
     data.facts[1]!.measures['count_5_car_mean'] = 6
     const result = aedarTimeRampEvidence(data, { territory: { type: 'commune', id: '22001' }, mode: 'car', modeLabel: 'Voiture' })
     expect(result.map((ramp) => ramp.rampKey)).toEqual(['diversity', 'count-per-type'])
+    expect(result.map((ramp) => ramp.figureTitle)).toEqual(['Diversité des types d’équipements', 'Équipements accessibles par type'])
     expect(result[0]?.series.territory).toEqual([0.75, 0, 0, 0])
     expect(result[1]?.series.territory).toEqual([4, 0, 0, 0])
     expect(result[0]?.xAxis).toEqual({ values: horizons, labels: ['5 min', '10 min', '15 min', '20 min'], unit: 'minutes', label: 'Temps d’accès' })

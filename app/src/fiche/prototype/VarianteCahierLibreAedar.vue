@@ -1,9 +1,9 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import VarianteCahierLibre from './VarianteCahierLibre.vue'
-import { aedarTimeRampEvidence } from '@/fiche/content/aedarTimeRampFacts'
+import { aedarAccessSection } from '@/fiche/content/aedarAccessSection'
 import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
-import type { ThemeContent, AedarAccessSection } from '@/fiche/content/themeContent'
+import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { CahierPagination } from './cahierPagination'
 import type { OptionContexteComparaison } from '@/fiche/comparisonContext'
 
@@ -18,38 +18,7 @@ const props = defineProps<{
 
 const transformed = computed(() => {
   if (!props.aedarData || props.aedarData.status !== 'ready') return props.content
-  const virtualResponse = {
-    territory: { territory_type: props.content.territory.type, territory_id: props.content.territory.code },
-    content_version: props.aedarData.contentVersion,
-    reference_content_version: props.aedarData.contentVersion,
-    limit: props.aedarData.facts.length + 1,
-    offset: 0,
-    facts: props.aedarData.facts,
-  }
-  const ramps = aedarTimeRampEvidence(virtualResponse, {
-    territory: { type: props.content.territory.type, id: props.content.territory.code },
-    mode: 'car',
-    modeLabel: 'Voiture',
-  })
-  const evidence = {
-    kind: 'aedar-access' as const,
-    territory: { code: props.content.territory.code, name: props.content.territory.name },
-    horizonMinutes: 15,
-    ramps,
-    availability: ramps.every((ramp) => ramp.availability === 'complete') ? 'complete' as const : 'incomplete' as const,
-    provenance: props.aedarData.provenance.sources.map((source) => source.source_id),
-    figureLecture: [],
-  }
-  const section: AedarAccessSection = {
-    key: 'aedar-access',
-    label: 'Accès aux services — prototype AEDAR',
-    availability: evidence.availability,
-    indicators: [],
-    evidence,
-    provenance: [...evidence.provenance],
-    lecture: null,
-    explorationTargets: [],
-  }
+  const section = aedarAccessSection(props.aedarData, props.content.territory)
   const first = props.content.units[0]
   return { ...props.content, units: [{ ...first, sections: [section] }, ...props.content.units.slice(1)] } as unknown as ThemeContent
 })

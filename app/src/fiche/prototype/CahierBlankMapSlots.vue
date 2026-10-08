@@ -3,11 +3,17 @@ import { Bike, BusFront, CarFront } from 'lucide-vue-next'
 import type { Component } from 'vue'
 
 import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
+import type { TextBlock } from '@/fiche/content/themeContent'
+import CahierFigureLecture from './CahierFigureLecture.vue'
+import CahierProse from './CahierProse.vue'
 
 const props = defineProps<{
   territory: { code: string; name: string }
   horizonMinutes: number
-  sectionNumber?: string
+  /** Figure title owned by the semantic content layer (shared figure-title primitive). */
+  title: string
+  /** Reading under the map grid: honest empty state and provisional horizon. */
+  lecture?: readonly TextBlock[]
 }>()
 
 const slots: readonly { key: string; label: string; icon: Component; tone: string }[] = [
@@ -19,11 +25,7 @@ const slots: readonly { key: string; label: string; icon: Component; tone: strin
 
 <template>
   <figure class="blank-map-slots">
-    <figcaption class="blank-map-slots__heading">
-      <span v-if="props.sectionNumber" class="blank-map-slots__number">{{ props.sectionNumber }}</span>
-      Cartes de mobilité — {{ props.territory.name }}
-      <span class="blank-map-slots__horizon">Horizon provisoire : {{ props.horizonMinutes }} minutes</span>
-    </figcaption>
+    <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ props.title }}</figcaption>
     <div class="blank-map-slots__grid cahier-map-grid" :style="CAHIER_MAP_LAYOUT_STYLE">
       <section
         v-for="(slot, index) in slots"
@@ -32,10 +34,10 @@ const slots: readonly { key: string; label: string; icon: Component; tone: strin
         :class="[`map-panel--${slot.tone}`, `blank-map-slot--${slot.key}`]"
         :aria-label="`${slot.label} — ${props.territory.name} — ${props.horizonMinutes} minutes — Carte à venir`"
       >
-        <h3 class="map-panel-label">
+        <div class="map-panel-label" aria-hidden="true">
           <component :is="slot.icon" :size="16" :stroke-width="1.8" aria-hidden="true" />
           <span>{{ slot.label }}</span>
-        </h3>
+        </div>
         <div class="blank-map-slot__viewport map-viewport" :style="{ '--mode-ring': `var(--cahier-mode-${slot.tone === 'foot' ? 'foot' : slot.tone})` }" role="img" :aria-label="`Zone vide, carte à venir : ${slot.label} pour ${props.territory.name}`">
           <span class="blank-map-slot__number" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
           <span class="blank-map-slot__state">Carte à venir</span>
@@ -44,14 +46,16 @@ const slots: readonly { key: string; label: string; icon: Component; tone: strin
         </div>
       </section>
     </div>
+    <CahierFigureLecture v-if="props.lecture && props.lecture.length > 0">
+      <CahierProse :blocks="props.lecture" />
+    </CahierFigureLecture>
   </figure>
 </template>
 
+<style src="./cahierLayout.css"></style>
+
 <style scoped>
 .blank-map-slots { margin: 0; padding: 0 0 var(--space-3); }
-.blank-map-slots__heading { display: grid; gap: var(--space-2); margin-bottom: var(--space-4); color: var(--cahier-theme-strong); font: 700 12px/1.3 var(--font-sans); text-align: center; }
-.blank-map-slots__number { color: var(--red); }
-.blank-map-slots__horizon { color: var(--muted); font-size: 11px; font-weight: 600; }
 .blank-map-slots__grid { display: grid; grid-template-columns: var(--cahier-map-columns); gap: clamp(var(--space-4), 3vw, var(--space-8)); align-items: center; }
 .blank-map-slot { width: min(100%, 360px); justify-self: center; }
 .map-panel-label { display: flex; min-height: 28px; justify-content: center; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--mode-ring); font: 700 10px/1.2 var(--font-sans); letter-spacing: .035em; text-transform: uppercase; }
