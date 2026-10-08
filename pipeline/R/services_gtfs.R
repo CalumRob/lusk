@@ -499,3 +499,37 @@ meilleur_trajet_gtfs <- function(rides, transfers, origine, destination,
   )
   resultats$destination
 }
+
+# rechercher_trajets_gtfs_compiled ---------------------------------------------
+# Scan chronologique des connexions en C++ (multi-source / multi-destination).
+# Les arrivées successives restent labels non dominés par arrêt et dernier trip.
+rechercher_trajets_gtfs_compiled <- function(
+    rides, transfers, origine, destinations, debut_fenetre, fin_fenetre,
+    regles_transfert = NULL, ids_stops = NULL) {
+  if (is.null(regles_transfert)) {
+    regles_transfert <- attr(transfers, "regles_transfert", exact = TRUE)
+  }
+  verifier_regles_connection_gtfs(regles_transfert)
+  if (is.null(regles_transfert)) {
+    regles_transfert <- data.frame(
+      from_stop_id = character(), to_stop_id = character(),
+      transfer_type = character(), stringsAsFactors = FALSE)
+  }
+  if (!is.null(ids_stops) && nrow(regles_transfert) &&
+      any(!regles_transfert$from_stop_id %in% ids_stops |
+          !regles_transfert$to_stop_id %in% ids_stops)) {
+    stop("Référence de règle de transfert hors de stops.txt.", call. = FALSE)
+  }
+  minute <- function(x) {
+    if (length(x) != 1L || is.na(x) ||
+        !grepl("^[0-9]{1,3}:[0-5][0-9]$", x)) {
+      stop("Fenêtre GTFS invalide — attendre H+:MM.", call. = FALSE)
+    }
+    z <- as.numeric(strsplit(x, ":", fixed = TRUE)[[1]])
+    z[1] * 60 + z[2]
+  }
+  debut <- minute(debut_fenetre); fin <- minute(fin_fenetre)
+  if (fin <= debut) stop("Fenêtre GTFS vide ou inversée.", call. = FALSE)
+  csa_multi_target(rides, transfers, as.character(origine), destinations,
+                   debut, fin, regles_transfert)
+}

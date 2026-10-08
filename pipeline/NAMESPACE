@@ -1,4 +1,6 @@
 # Package: lusk — light package, no roxygen. Exports are declared by hand.
+useDynLib(lusk, .registration = TRUE)
+importFrom(Rcpp, evalCpp)
 export(run_pipeline)
 export(publish)
 export(publier_geometrie)
