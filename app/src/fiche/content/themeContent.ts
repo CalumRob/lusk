@@ -799,6 +799,19 @@ export function territoryLead(territory: TerritoryIdentity, capitalized = true):
   return `${parts.lead} ${parts.name}`
 }
 
+/** Full, type-aware territory label for prose that needs to name the administrative unit. */
+export function territoryTypeLabel(territory: TerritoryIdentity): string {
+  const name = territory.name.trim()
+  const designation = {
+    commune: 'la commune',
+    epci: 'l’EPCI',
+    departement: 'le département',
+    region: 'la région',
+  }[territory.type]
+  const connector = /^[aeiouyàâäéèêëîïôöùûü]/iu.test(name) ? 'd’' : 'de '
+  return `${designation} ${connector}${name}`
+}
+
 function profilesFigureLecture(
   profiles: readonly BpeAccessProfileFact[],
   territory: TerritoryIdentity,

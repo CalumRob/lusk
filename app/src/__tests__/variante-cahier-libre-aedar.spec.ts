@@ -187,7 +187,7 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(wrapper.find('.aedar-ramp .access-ramp-horizon').exists()).toBe(false)
     expect(wrapper.find('.aedar-ramp .access-ramp-time-point').exists()).toBe(false)
     expect(wrapper.find('.aedar-reading__number').text()).toBe('61,9')
-    expect(wrapper.find('.aedar-reading__gap-copy').text()).toContain('de types d’équipements de moins accessibles à pied qu’en voiture à Allineuc en 15 min')
+    expect(wrapper.find('.aedar-reading__gap-copy').text()).toContain('de types d’équipements de moins accessibles à pied qu’en voiture dans la commune d’Allineuc en 15 min')
     expect(wrapper.find('.aedar-reading .cahier-prose').text()).not.toContain('transit_gain')
     expect(wrapper.find('.aedar-reading .foot-emphasis').text()).toContain('Transports en commun')
     expect(wrapper.findAll('.aedar-reading .bike-emphasis').map((item) => item.text())).toEqual(['vélo', 'LTS2', 'LTS4'])

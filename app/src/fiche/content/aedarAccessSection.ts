@@ -7,7 +7,7 @@ import type { AedarFetchResult } from './aedarApiClient'
 import { aedarTimeRampEvidence } from './aedarTimeRampFacts'
 import type { AedarTimeRampValues } from './aedarTimeRampFacts'
 import type { TerritoryIdentity } from './territoryFacts'
-import { emphasis, text, territoryLead } from './themeContent'
+import { emphasis, text, territoryLead, territoryTypeLabel } from './themeContent'
 import type { AedarAccessSection, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
 
 /** Blank map slots and the highlighted ramp horizon share the provisional AEDAR15 horizon. */
@@ -99,7 +99,7 @@ export function aedarAccessSection(
     emphasis('à pied', 'foot'),
     text(' qu’en '),
     emphasis('voiture', 'car'),
-    text(` ${territoryLead(territory, false)} en ${AEDAR_PROTOTYPE_HORIZON_MINUTES} min`),
+    text(` dans ${territoryTypeLabel(territory)} en ${AEDAR_PROTOTYPE_HORIZON_MINUTES} min`),
   ]
   const availability = ramps.every((ramp) => ramp.availability === 'complete') ? 'complete' as const : 'incomplete' as const
   const provenance = data.provenance.sources.map((source) => source.source_id)
@@ -126,9 +126,9 @@ export function aedarAccessSection(
         emphasis('vélo', 'bike'),
         text(' '),
         emphasis('LTS2', 'bike'),
-        text(' sont calculés avec une tolérance « averse au risque routier »; '),
+        text(' pour les personnes averses au risque routier; '),
         emphasis('LTS4', 'bike'),
-        text(' avec une tolérance « tolérant au risque routier ».'),
+        text(' pour les personnes tolérantes au risque routier.'),
       ]],
       diversityGap: {
         horizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
