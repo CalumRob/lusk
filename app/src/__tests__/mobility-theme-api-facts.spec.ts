@@ -3,6 +3,9 @@ import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche
 import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
 import { metadonneesThemesFixtures, histoiresMobiliteFixture } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
+import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
+import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
+import { mount } from '@vue/test-utils'
 
 // Wire fields are producer-owned indicator observations, not storage-family rows.
 const sources = [{ source_id: 'mobilite_snapshot', name: 'SQL mobility', version: 'sql-v1',
@@ -85,8 +88,41 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(composition.map((fact)=>fact.value)).toEqual(parts)
     expect(curve).toHaveLength(11)
     expect(curve.map((fact)=>fact.value)).toEqual(values)
-    expect(data.named_reference_evidence[0].points.map((point:any)=>point.value)).toEqual(reference)
+    expect(facts.mobility.namedTrajectoryReferences).toMatchObject([{
+      id:'commune_bretonne_mediane', label:'Commune bretonne médiane',
+      statistic:'median_routed_communes', points:axes.map((detail,index)=>({detail,value:reference[index]})),
+    }])
+    expect(facts.mobility.namedTrajectoryReferences[0]).not.toHaveProperty('territory')
     expect(curve.some((fact)=>fact.key==='raccordement_reference')).toBe(false)
+    const content = resolveMobiliteThemeContent(facts)
+    const motorisation = content.units.find((unit)=>unit.key==='motorisation')?.sections[0]
+    expect(motorisation?.evidence?.kind).toBe('motorisation')
+    if (motorisation?.evidence?.kind === 'motorisation') {
+      expect(motorisation.evidence.composition.map((item)=>item.fact.detail))
+        .toEqual(['sans_voiture','une_voiture','deux_plus'])
+      expect(motorisation.evidence.composition.map((item)=>item.fact.value)).toEqual(parts)
+    }
+    const section = content.units.find((unit)=>unit.key==='offre-transports-commun')?.sections[0]
+    expect(section?.evidence?.kind).toBe('public-transport')
+    if (section?.evidence?.kind !== 'public-transport') throw new Error('Regional transport content missing')
+    const rendered = mount(CahierOffreTransportsFigure, { props: {
+      offer: section.evidence.offer, trajectory: section.evidence.trajectory,
+      reference: section.evidence.reference,
+      metadata: { axis:'numeric',axisLabels:{x:'Temps (minutes)',y:'Population joignable (%)'},
+        ticks:axes.map((detail,index)=>({detail,label:String(index*15)})),
+        endpoints:['t0000','t0360'],
+        reference:{indicator:'raccordement_reference',territoire:'53',label:'Commune bretonne médiane'},
+        marker:{detail:'t0090',label:'90 minutes'} },
+    } })
+    expect(rendered.find('[data-series="territory"]').exists()).toBe(true)
+    expect(rendered.find('[data-series="reference"]').exists()).toBe(true)
+    expect(rendered.findAll('.transit-point--territory')).toHaveLength(11)
+    expect(rendered.findAll('.transit-point--reference')).toHaveLength(11)
+    expect(rendered.find('.transit-legend-reference').text()).toContain('Commune bretonne médiane')
+    expect(rendered.findAll('.transit-point--territory').map((point)=>point.attributes('data-value')))
+      .toEqual(values.map(String))
+    expect(rendered.findAll('.transit-point--reference').map((point)=>point.attributes('data-value')))
+      .toEqual(reference.map(String))
   })
   it('rejects measured facts without source lineage instead of presenting static provenance', () => {
     const data = response()

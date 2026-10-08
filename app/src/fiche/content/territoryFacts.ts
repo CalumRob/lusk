@@ -77,6 +77,17 @@ export interface NumericFact {
   reason: string | null
 }
 
+/** Named analytical series evidence has no territory identity and is never a focal observation. */
+export interface NamedTrajectoryReference {
+  indicatorId: string
+  id: string
+  label: string
+  role: string
+  statistic: string
+  unit: string
+  points: readonly NumericFact[]
+}
+
 export type MobiliteService =
   | 'administration'
   | 'alimentation'
@@ -250,6 +261,7 @@ export interface TerritoryIdentity {
 
 export interface MobilityFacts {
   indicators: readonly NumericFact[]
+  namedTrajectoryReferences: readonly NamedTrajectoryReference[]
   access: MobiliteAccessFacts
   bpeAccess: MobiliteBpeAccessFacts
   losses: MobiliteLossFacts
@@ -1238,6 +1250,7 @@ export function territoryFactsFor(
     theme: 'mobilite',
     mobility: {
       indicators: indicatorsOf(payload, target, scope, precomputed),
+      namedTrajectoryReferences: [],
       access: accessOf(payload, target, scope, precomputed),
       bpeAccess: bpeAccessOf(payload, target, precomputed),
       losses: lossesOf(payload, target, scope, precomputed),

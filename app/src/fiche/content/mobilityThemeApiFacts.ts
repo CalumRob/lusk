@@ -2,7 +2,7 @@ import type { Payload, Indicateur, ProfilAccesBpeRow, DistributionAccesBatiments
   RampeAccesBatimentsRow } from '@/payload/types'
 import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
 import { ACCESS_INDICATOR_KEYS, territoryFactsFor } from './territoryFacts'
-import type { FactProvenance, NumericFact, TerritoryFacts } from './territoryFacts'
+import type { FactProvenance, NamedTrajectoryReference, NumericFact, TerritoryFacts } from './territoryFacts'
 import { clearBuildingApiPeers } from './buildingApiFacts'
 
 type Row = Record<string, unknown>
@@ -256,6 +256,34 @@ export function mobilityFactsFromThemeApi(
   const projected = payloadFromSql(payload, response)
   const facts = territoryFactsFor(projected, territoryId, context)
   if (!facts) throw new Error('Territoire inconnu')
+  const namedTrajectoryReferences: NamedTrajectoryReference[] = rows(response.named_reference_evidence,
+    'named_reference_evidence').filter((row) => row.indicator_id === 'raccordement_courbe').map((reference) => {
+    if (!text(reference.id) || !text(reference.label) || !text(reference.role) ||
+        !text(reference.statistic) || !text(reference.unit)) throw new Error('Référence nommée Mobilité invalide')
+    const points = rows(reference.points, 'named_reference_evidence.points').map((point) => {
+      if (!text(point.axis) || !text(point.observation_period) ||
+          !(point.status === 'measured' ? finite(point.value) : point.value === null)) {
+        throw new Error('Point de référence nommée Mobilité invalide')
+      }
+      const provenance = apiSources(rows(point.provenance, 'named_reference_evidence.provenance').map((source) => {
+        if (!text(source.source_id) || !text(source.source_name) || !text(source.version) ||
+            !(source.reference_date === null || text(source.reference_date)) ||
+            !(source.publication_date === null || text(source.publication_date))) {
+          throw new Error('Provenance de référence nommée Mobilité invalide')
+        }
+        return { source_id: source.source_id, name: source.source_name, version: source.version,
+          reference_date: source.reference_date, publication_date: source.publication_date }
+      }))
+      const source = provenance[0] ?? null
+      return { key: reference.indicator_id as string, detail: point.axis,
+        value: point.status === 'measured' ? point.value as number : null, unit: reference.unit as string,
+        availability: point.status === 'measured' ? 'complete' as const : 'incomplete' as const,
+        provenance: source, sourceLineage: provenance, comparison: null, comparisonBasis: 'territory-median' as const,
+        reason: point.status === 'measured' ? null : String(point.status) }
+    })
+    return { indicatorId: 'raccordement_courbe', id: reference.id as string, label: reference.label as string,
+      role: reference.role as string, statistic: reference.statistic as string, unit: reference.unit as string, points }
+  })
   const subgroup = payload.themeMetadata?.mobilite?.subgroups.find((item) =>
     item.reading?.params.includes('div_loss_t'))
   const reading = (response.readings as Row[]).find((item) => item.groupe === subgroup?.key)
@@ -270,7 +298,7 @@ export function mobilityFactsFromThemeApi(
       version: reading.provenance.source_version, reference_date: reading.provenance.source_reference_date,
       publication_date: reading.provenance.source_publication_date,
     }] : []) } : facts.mobility.losses
-  return { ...facts, mobility: { ...facts.mobility, losses: loss } }
+  return { ...facts, mobility: { ...facts.mobility, losses: loss, namedTrajectoryReferences } }
 }
 
 /** Replace only comparison references; focal SQL facts and provenance remain untouched. */
