@@ -249,6 +249,30 @@ export interface MobiliteAccessRamp {
   comparisonStatistic?: 'mean' | null
 }
 
+/** Generic time-indexed ramp data; null values represent unavailable observations. */
+export interface TimeRampPoint {
+  xValue: number
+  xLabel: string
+  value: number | null
+  referenceValue: number | null
+}
+
+export interface TimeRampSeries {
+  key: string
+  label: string
+  points: readonly TimeRampPoint[]
+}
+
+export interface TimeRampFigureData {
+  availability: FactAvailability
+  xAxis: { label: string; unit: string }
+  yAxis: { label: string; unit: string }
+  series: readonly TimeRampSeries[]
+  highlightedX: number
+  provenance: FactProvenance | null
+  comparisonLabel: string | null
+}
+
 export interface TerritoryIdentity {
   code: string
   type: TerritoireType

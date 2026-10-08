@@ -9,7 +9,7 @@
 import { computed, ref } from 'vue'
 import { Bike, CarFront, Footprints } from 'lucide-vue-next'
 
-import type { MobiliteAccessMode, MobiliteAccessRamp, MobiliteAccessRampPoint } from '@/fiche/content/territoryFacts'
+import type { MobiliteAccessMode, MobiliteAccessRamp, MobiliteAccessRampPoint, TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territoryFacts'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
@@ -18,7 +18,8 @@ import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 
 const props = defineProps<{
-  ramp: MobiliteAccessRamp
+  ramp?: MobiliteAccessRamp
+  timeRamp?: TimeRampFigureData
   territoryName: string
 }>()
 
@@ -34,7 +35,7 @@ function formatNumber(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
 }
 
-const curves = computed(() => MODE_ORDER.map((mode) => props.ramp.curves[mode]))
+const curves = computed(() => props.ramp ? MODE_ORDER.map((mode) => props.ramp!.curves[mode]) : [])
 
 const maximum = computed(() => Math.max(
   1,
@@ -209,12 +210,95 @@ function curveLabel(curve: MobiliteAccessRamp['curves'][MobiliteAccessMode]): st
 }
 
 const accessibleLabel = computed(() =>
-  `${props.territoryName}. ${props.ramp.yAxisLabel} selon ${props.ramp.xAxisLabel}, par mode. ${curves.value.map(curveLabel).join('. ')}`,
+  props.ramp
+    ? `${props.territoryName}. ${props.ramp.yAxisLabel} selon ${props.ramp.xAxisLabel}, par mode. ${curves.value.map(curveLabel).join('. ')}`
+    : '',
 )
+
+const timePoints = computed(() => props.timeRamp?.series[0]?.points ?? [])
+const timeMaximum = computed(() => Math.max(1, ...(props.timeRamp?.series.flatMap((series) => series.points.flatMap((point) => [point.value, point.referenceValue].filter((value): value is number => value !== null))) ?? [])))
+const timeX = (value: number) => MARGIN.left + ((value - (timePoints.value[0]?.xValue ?? 0)) / Math.max(1, (timePoints.value.at(-1)?.xValue ?? 1) - (timePoints.value[0]?.xValue ?? 0))) * PLOT_WIDTH
+const timeY = (value: number) => MARGIN.top + (1 - value / timeMaximum.value) * PLOT_HEIGHT
+const timeTicks = computed(() => timePoints.value.map((point) => ({ key: point.xValue, position: timeX(point.xValue), label: point.xLabel })))
+const timeYTicks = computed(() => [0, timeMaximum.value].map((value) => ({ key: value, position: timeY(value), label: `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}` })))
+
+function timePaths(points: readonly TimeRampPoint[], reference = false): string[] {
+  const paths: string[] = []
+  let current: string[] = []
+  for (const point of points) {
+    const value = reference ? point.referenceValue : point.value
+    if (value === null) {
+      if (current.length) paths.push(current.join(' '))
+      current = []
+    } else {
+      current.push(`${current.length ? 'L' : 'M'} ${timeX(point.xValue).toFixed(2)} ${timeY(value).toFixed(2)}`)
+    }
+  }
+  if (current.length) paths.push(current.join(' '))
+  return paths
+}
+
+const timeLegend = computed<readonly FigureLegendEntry[]>(() => [
+  { key: 'territory', label: props.territoryName, marker: 'line', tone: 'territory' },
+  ...(props.timeRamp?.comparisonLabel ? [{ key: 'reference', label: props.timeRamp.comparisonLabel, marker: 'dash' as const, tone: 'peer' }] : []),
+])
+const selectedTimePoint = ref<TimeRampPoint | null>(null)
+const timeTooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => selectedTimePoint.value ? { x: `${Math.max(0.18, Math.min(0.82, timeX(selectedTimePoint.value.xValue) / WIDTH)) * 100}%`, y: '12%' } : undefined)
+const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
+  const point = selectedTimePoint.value
+  if (!point || !props.timeRamp) return []
+  const unit = props.timeRamp.yAxis.unit
+  return [
+    { label: props.territoryName, value: point.value === null ? 'Indisponible' : `${formatNumber(point.value)}${unit ? ` ${unit}` : ''}`, tone: 't' },
+    ...(props.timeRamp.comparisonLabel ? [{ label: props.timeRamp.comparisonLabel, value: point.referenceValue === null ? 'Indisponible' : `${formatNumber(point.referenceValue)}${unit ? ` ${unit}` : ''}`, tone: 'neutral' as const }] : []),
+  ]
+})
+const timeAccessibleLabel = computed(() => `${props.territoryName}. ${props.timeRamp?.yAxis.label ?? ''}${props.timeRamp?.yAxis.unit ? ` (${props.timeRamp.yAxis.unit})` : ''} selon ${props.timeRamp?.xAxis.label ?? ''}.`)
+function timeHitboxStyle(index: number): Record<string, string> {
+  const point = timePoints.value[index]
+  const previous = timePoints.value[index - 1]
+  const next = timePoints.value[index + 1]
+  const left = previous ? (timeX(previous.xValue) + timeX(point.xValue)) / 2 : timeX(point.xValue)
+  const right = next ? (timeX(point.xValue) + timeX(next.xValue)) / 2 : timeX(point.xValue)
+  return { left: `${left / WIDTH * 100}%`, top: `${MARGIN.top / HEIGHT * 100}%`, width: `${Math.max(2, (right - left) / WIDTH * 100)}%`, height: `${PLOT_HEIGHT / HEIGHT * 100}%` }
+}
 </script>
 
 <template>
   <CahierFigureFrame
+    v-if="timeRamp"
+    class="access-ramp-cahier access-ramp-cahier--time"
+    size="compact"
+    :style="CAHIER_FIGURE_STYLE"
+    :x-title="`${timeRamp.xAxis.label} (${timeRamp.xAxis.unit})`"
+    :y-title="`${timeRamp.yAxis.label}${timeRamp.yAxis.unit ? ` (${timeRamp.yAxis.unit})` : ''}`"
+  >
+    <template #plot>
+      <div class="access-ramp-plot cahier-figure-plot">
+        <svg class="access-ramp-svg" :viewBox="`0 0 ${WIDTH} ${HEIGHT}`" preserveAspectRatio="xMidYMid meet" role="img" :aria-label="timeAccessibleLabel">
+          <g class="access-ramp-grid" aria-hidden="true">
+            <line v-for="tick in timeYTicks" :key="`ty-${tick.key}`" :x1="MARGIN.left" :x2="MARGIN.left + PLOT_WIDTH" :y1="tick.position" :y2="tick.position" />
+            <line v-for="point in timePoints" :key="`tx-${point.xValue}`" :x1="timeX(point.xValue)" :x2="timeX(point.xValue)" :y1="MARGIN.top" :y2="MARGIN.top + PLOT_HEIGHT" />
+            <line class="access-ramp-axis" :x1="MARGIN.left" :x2="MARGIN.left + PLOT_WIDTH" :y1="MARGIN.top + PLOT_HEIGHT" :y2="MARGIN.top + PLOT_HEIGHT" />
+            <line v-if="timeRamp.highlightedX >= (timePoints[0]?.xValue ?? 0) && timeRamp.highlightedX <= (timePoints.at(-1)?.xValue ?? 0)" class="access-ramp-horizon" :x1="timeX(timeRamp.highlightedX)" :x2="timeX(timeRamp.highlightedX)" :y1="MARGIN.top" :y2="MARGIN.top + PLOT_HEIGHT" />
+          </g>
+          <g v-for="series in timeRamp.series" :key="series.key">
+            <path v-for="(path, index) in timePaths(series.points, true)" :key="`ref-${index}`" class="access-ramp-line access-ramp-line--comparison access-ramp-time-line" :d="path" aria-hidden="true" />
+            <path v-for="(path, index) in timePaths(series.points)" :key="`value-${index}`" class="access-ramp-line access-ramp-line--territory access-ramp-time-line" :d="path" aria-hidden="true" />
+          </g>
+          <g class="access-ramp-points" aria-hidden="true"><template v-for="series in timeRamp.series" :key="series.key"><circle v-for="point in series.points.filter((item) => item.value !== null)" :key="`time-${point.xValue}`" class="access-ramp-point access-ramp-time-point" :cx="timeX(point.xValue)" :cy="timeY(point.value!)" r="4" /></template></g>
+        </svg>
+        <CahierFigureAxisLabels :geometry="FIGURE_GEOMETRY" :x-ticks="timeTicks" :y-ticks="timeYTicks" :x-label-offset="8" />
+        <div class="access-ramp-cut-hitboxes" aria-label="Détails par temps d'accès">
+          <button v-for="(point, index) in timePoints" :key="point.xValue" class="access-ramp-cut-hitbox" type="button" :style="timeHitboxStyle(index)" :aria-label="`Temps d'accès : ${point.xLabel}`" @mouseenter="selectedTimePoint = point" @mouseleave="selectedTimePoint = null" @focus="selectedTimePoint = point" @blur="selectedTimePoint = null" @click="selectedTimePoint = point" />
+        </div>
+        <CahierFigureTooltip v-if="selectedTimePoint" class="access-ramp-tooltip cahier-figure-tooltip--chart" :title="selectedTimePoint.xLabel" :rows="timeTooltipRows" :anchor="timeTooltipAnchor" aria-live="polite" />
+      </div>
+    </template>
+    <CahierFigureLegend :entries="timeLegend" label="Séries comparées" />
+  </CahierFigureFrame>
+  <CahierFigureFrame
+    v-else-if="ramp"
     class="access-ramp-cahier"
     size="compact"
     :style="CAHIER_FIGURE_STYLE"
@@ -385,6 +469,10 @@ const accessibleLabel = computed(() =>
   stroke-dasharray: 4 4;
   stroke-width: 1;
 }
+
+.access-ramp-grid .access-ramp-horizon { stroke: var(--cahier-theme-strong); stroke-dasharray: 3 3; stroke-width: 2; }
+.access-ramp-time-line { stroke: var(--cahier-theme-strong); }
+.access-ramp-time-point { stroke: var(--cahier-theme-strong); }
 
 .access-ramp-labels text {
   fill: var(--cahier-default);
