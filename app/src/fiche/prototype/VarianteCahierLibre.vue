@@ -1175,7 +1175,7 @@ onBeforeUnmount(() => {
 .aedar-analysis { display: grid; grid-template-columns: minmax(0, var(--cahier-figure-width-compact, 560px)) minmax(260px, 1fr); align-items: center; justify-content: center; gap: var(--space-8); }
 .aedar-ramp { width: min(100%, var(--cahier-figure-width-compact, 560px)); justify-self: center; margin: 0; display: grid; gap: var(--space-3); }
 .aedar-reading { display: grid; align-content: center; gap: var(--space-4); min-width: 0; }
-.aedar-reading__prose { font: var(--text-body); }
+.aedar-reading__prose { color: var(--cahier-default); font: var(--text-body); }
 .aedar-reading__source { margin: 0; color: var(--cahier-default); font-size: 10px; line-height: 1.1; overflow-wrap: anywhere; }
 @media (max-width: 760px) { .aedar-analysis { grid-template-columns: minmax(0, 1fr); } }
 .concept-group {
