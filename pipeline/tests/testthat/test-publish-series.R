@@ -528,7 +528,7 @@ test_that("series smoke cleanup is limited to owned RESTRICT schema drops", {
   expect_error(series_smoke_schema_cleanup_sql(function(parts) paste0('"', parts, '"'), "public"),
     "owned series smoke schema")
 })
-test_that("owned raccordement publisher projects focal curve and a distinct named median reference", {
+test_that("owned raccordement publisher projects its declared serving-only reference locator", {
   axis_keys <- paste0("t",sprintf("%04d",c(0,15,30,45,60,90,120,180,240,300,360)))
   metadata <- list(theme="mobilite",owned_series_routes=list(raccordement_courbe=list(
      dataset_id="raccordement_curve",indicator_id="raccordement_courbe",theme_id="mobilite",
@@ -647,4 +647,40 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
   expect_error(project_raccordement_owned_series(wrong_period,vintages,metadata,
     producer_contract=list(date_mesure="2026-09-16")),
     "observation period")
+})
+
+test_that("canonical Mobility metadata locator validates the owned raccordement projection", {
+  metadata <- lire_theme_metadata("mobilite")
+  declaration <- metadata$owned_series_routes$raccordement_courbe
+  page <- metadata$indicator_pages$raccordement_courbe
+  expect_identical(page$trajectory$reference$indicator, declaration$reference_indicator)
+  expect_identical(page$trajectory$reference$territoire, "53")
+  expect_identical(page$trajectory$reference$label, declaration$reference$label)
+
+  axes <- as.character(unlist(declaration$axis_values, use.names=FALSE))
+  details <- paste0("t", sprintf("%04d", as.integer(axes)))
+  source_id <- declaration$source_id
+  vintage <- metadata$source_records[[source_id]]$vintages[[1L]]
+  observation_period <- RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure
+  make_rows <- function(key, territory, type, values) data.frame(
+    theme="mobilite", key=key, detail=details, type=type, territoire=territory,
+    value=values, unit=page$unit, rider=NA_character_,
+    vintage_source=metadata$source_records[[source_id]]$dataset,
+    vintage_version=vintage$version,
+    vintage_date_reference=as.Date(vintage$dateReference),
+    vintage_date_publication=as.Date(vintage$datePublication),
+    observation_period=observation_period, stringsAsFactors=FALSE)
+  canonical <- dplyr::bind_rows(
+    make_rows("raccordement_courbe", "35238", "commune", seq(0.1, 1, length.out=length(details))),
+    make_rows("raccordement_courbe", "53", "region", rep(NA_real_, length(details))),
+    make_rows(declaration$reference_indicator, "53", "region", seq(0.01, 0.11, length.out=length(details))))
+  vintages <- data.frame(id=source_id, source=metadata$source_records[[source_id]]$dataset,
+    version=vintage$version, date_reference=as.Date(vintage$dateReference),
+    date_publication=as.Date(vintage$datePublication), stringsAsFactors=FALSE)
+  projection <- project_raccordement_owned_series(canonical, vintages, metadata,
+    producer_contract=RECETTE_MATRICE_TEMPS_MAIRIES)
+  expect_no_error(validate_owned_series_projection(projection))
+  expect_equal(projection$named_reference$value, seq(0.01, 0.11, length.out=length(details)))
+  expect_equal(projection$named_reference_descriptors$reference_indicator_id,
+    declaration$reference_indicator)
 })
