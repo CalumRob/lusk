@@ -7,6 +7,7 @@ import type { AedarFetchResult } from './aedarApiClient'
 import { aedarTimeRampEvidence } from './aedarTimeRampFacts'
 import type { AedarTimeRampValues } from './aedarTimeRampFacts'
 import type { TerritoryIdentity } from './territoryFacts'
+import { emphasis, text, territoryLead } from './themeContent'
 import type { AedarAccessSection, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
 
 /** Blank map slots and the highlighted ramp horizon share the provisional AEDAR15 horizon. */
@@ -54,7 +55,7 @@ function rampEvidence(
   return {
     kind: 'aedar-time-ramp',
     rampKey: values.rampKey,
-    figureTitle: values.rampKey === 'diversity' ? 'Combien de types d’équipements sont accessibles en moyenne ?' : 'Équipements accessibles par type',
+    figureTitle: values.rampKey === 'diversity' ? 'Nombre de types d’équipements accessibles (moyenne du territoire)' : 'Équipements accessibles par type',
     xAxis: values.xAxis,
     yAxis: values.yAxis,
     territory: values.territory,
@@ -86,6 +87,20 @@ export function aedarAccessSection(
     : null
   const referenceLabel = options.reference?.label ?? null
   const ramps = values.map((ramp) => rampEvidence(ramp, referenceValues, referenceLabel))
+  const diversity = ramps.find((ramp) => ramp.rampKey === 'diversity')
+  const horizonIndex = diversity?.xAxis.values.indexOf(AEDAR_PROTOTYPE_HORIZON_MINUTES) ?? -1
+  const carDiversity = horizonIndex >= 0 ? diversity?.territory.car[horizonIndex] : null
+  const walkDiversity = horizonIndex >= 0 ? diversity?.territory.walk[horizonIndex] : null
+  const diversityGapValue = carDiversity !== null && carDiversity !== undefined && walkDiversity !== null && walkDiversity !== undefined
+    ? carDiversity - walkDiversity
+    : null
+  const diversityGapProse = diversityGapValue === null ? null : [
+    text(`de types d’équipements de ${diversityGapValue >= 0 ? 'moins' : 'plus'} accessibles `),
+    emphasis('à pied', 'foot'),
+    text(' qu’en '),
+    emphasis('voiture', 'car'),
+    text(` ${territoryLead(territory, false)} en ${AEDAR_PROTOTYPE_HORIZON_MINUTES} min`),
+  ]
   const availability = ramps.every((ramp) => ramp.availability === 'complete') ? 'complete' as const : 'incomplete' as const
   const provenance = data.provenance.sources.map((source) => source.source_id)
   return {
@@ -97,28 +112,35 @@ export function aedarAccessSection(
       kind: 'aedar-access',
       territory: { code: territory.code, name: territory.name },
       horizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
-      mapFigureTitle: 'Cartes d’accès aux services, par mode',
+      mapFigureTitle: [
+        text("Combien de types d'équipements accessibles en "),
+        emphasis('15 minutes'),
+        text(' depuis les adresses résidentielles ?'),
+      ],
       ramps,
+      sectionProse: [[
+        emphasis('Transports en commun', 'foot'),
+        text(' inclut la '),
+        emphasis('marche', 'foot'),
+        text('. Les itinéraires '),
+        emphasis('vélo', 'bike'),
+        text(' '),
+        emphasis('LTS2', 'bike'),
+        text(' sont calculés avec une tolérance « averse au risque routier »; '),
+        emphasis('LTS4', 'bike'),
+        text(' avec une tolérance « tolérant au risque routier ».'),
+      ]],
       diversityGap: {
         horizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
-        value: (() => {
-          const diversity = ramps.find((ramp) => ramp.rampKey === 'diversity')
-          const index = diversity?.xAxis.values.indexOf(AEDAR_PROTOTYPE_HORIZON_MINUTES) ?? -1
-          const car = index >= 0 ? diversity?.territory.car[index] : null
-          const walk = index >= 0 ? diversity?.territory.walk[index] : null
-          return car !== null && car !== undefined && walk !== null && walk !== undefined ? car - walk : null
-        })(),
+        territoryLead: territoryLead(territory, false),
+        value: diversityGapValue,
+        prose: diversityGapProse,
       },
       source: data.provenance.sources[0] ? {
-        label: data.provenance.sources[0].attribution.toUpperCase().includes('AEDAR')
-          ? 'AEDAR'
-          : data.provenance.sources[0].attribution || 'Source',
+        label: data.provenance.sources[0].attribution.toUpperCase().includes('AEDAR') ? 'AEDAR' : data.provenance.sources[0].attribution || 'Source',
         version: data.provenance.sources[0].vintage_id,
-        referenceDate: data.provenance.sources[0].reference_date,
-        publicationDate: data.provenance.sources[0].publication_date,
         url: data.provenance.sources[0].source_url,
-        attribution: data.provenance.sources[0].attribution,
-        licence: data.provenance.sources[0].licence,
+        credit: data.provenance.sources[0].attribution.match(/©\s*[^;—]+/u)?.[0]?.trim() ?? null,
       } : null,
       availability,
       provenance,

@@ -72,7 +72,8 @@ describe('aedarAccessSection', () => {
     const section = aedarAccessSection(aedarReady('22001'), territory)
     expect(section.evidence?.kind).toBe('aedar-access')
     if (section.evidence?.kind !== 'aedar-access') return
-    expect(section.evidence.mapFigureTitle).toBe('Cartes d’accès aux services, par mode')
+    expect(section.evidence.mapFigureTitle.map((segment) => segment.value).join('')).toBe("Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?")
+    expect(section.evidence.mapFigureTitle.find((segment) => segment.kind === 'emphasis')?.value).toBe('15 minutes')
     expect(section.evidence.horizonMinutes).toBe(AEDAR_PROTOTYPE_HORIZON_MINUTES)
   })
 
@@ -81,7 +82,7 @@ describe('aedarAccessSection', () => {
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.ramps.map((ramp) => ramp.rampKey)).toEqual(['diversity', 'count-per-type'])
     expect(section.evidence.ramps.map((ramp) => ramp.figureTitle)).toEqual([
-      'Combien de types d’équipements sont accessibles en moyenne ?',
+      'Nombre de types d’équipements accessibles (moyenne du territoire)',
       'Équipements accessibles par type',
     ])
     for (const ramp of section.evidence.ramps) {
@@ -96,8 +97,12 @@ describe('aedarAccessSection', () => {
     expect(section.availability).toBe('complete')
     expect(section.evidence.provenance).toEqual(['aedar_bretagne'])
     expect(section.provenance).toEqual(['aedar_bretagne'])
-    expect(section.evidence.diversityGap).toEqual({ value: 0, horizonMinutes: 15 })
+    expect(section.evidence.diversityGap).toMatchObject({ value: 0, horizonMinutes: 15, territoryLead: 'à Test Commune' })
+    expect(section.evidence.diversityGap.prose?.map((segment) => segment.value).join('')).toContain('à pied qu’en voiture à Test Commune en 15 min')
     expect(section.evidence.source).toMatchObject({ label: 'AEDAR', version: '2026-v1', url: 'https://example.com' })
+    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('averse au risque routier')
+    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).not.toContain('transit_gain')
+    expect(section.evidence.sectionProse.flat().filter((segment) => segment.kind === 'emphasis').map((segment) => segment.tone)).toEqual(['foot', 'foot', 'bike', 'bike', 'bike'])
   })
 
   it('merges per-mode reference-territory values and labels them explicitly', () => {
@@ -144,5 +149,23 @@ describe('aedarAccessSection', () => {
     const section = aedarAccessSection(data, territory)
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.diversityGap.value).toBeNull()
+  })
+
+  it('uses a generic source link label when attribution metadata is empty, never the internal key', () => {
+    const data = aedarReady('22001')
+    data.provenance.sources[0]!.attribution = ''
+    const section = aedarAccessSection(data, territory)
+    if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
+    expect(section.evidence.source?.label).toBe('Source')
+    expect(section.evidence.source?.label).not.toBe('aedar_bretagne')
+    expect(section.evidence.source?.credit).toBeNull()
+  })
+
+  it('keeps source attribution compact and metadata-derived', () => {
+    const data = aedarReady('22001')
+    data.provenance.sources[0]!.attribution = '© OpenStreetMap contributors; données AEDAR — licence ODbL'
+    const section = aedarAccessSection(data, territory)
+    if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
+    expect(section.evidence.source).toMatchObject({ label: 'AEDAR', version: '2026-v1', credit: '© OpenStreetMap contributors' })
   })
 })

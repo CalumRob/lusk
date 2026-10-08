@@ -154,9 +154,9 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     // The section label is not duplicated as a figure title: each figure carries
     // its own descriptive title through the shared figure-title primitive.
     expect(wrapper.findAll('.aedar-access-evidence > .cahier-figure-title')).toHaveLength(0)
-    expect(wrapper.find('.blank-map-slots > .cahier-figure-title').text()).toBe('Cartes d’accès aux services, par mode')
+    expect(wrapper.find('.blank-map-slots > .cahier-figure-title').text()).toBe("Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?")
     expect(wrapper.findAll('.aedar-ramp .cahier-figure-title').map((title) => title.text())).toEqual([
-      'Combien de types d’équipements sont accessibles en moyenne ?',
+      'Nombre de types d’équipements accessibles (moyenne du territoire)',
     ])
 
     // Every mode renders a mode-colored territory line and the legend names the modes.
@@ -186,7 +186,13 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(wrapper.find('.aedar-ramp .cahier-figure-lecture').exists()).toBe(false)
     expect(wrapper.find('.aedar-ramp .access-ramp-horizon').exists()).toBe(false)
     expect(wrapper.find('.aedar-ramp .access-ramp-time-point').exists()).toBe(false)
-    expect(wrapper.find('.aedar-reading__gap').text()).toContain('types de moins accessibles à pied qu’en voiture en 15 min')
+    expect(wrapper.find('.aedar-reading__number').text()).toBe('61,9')
+    expect(wrapper.find('.aedar-reading__gap-copy').text()).toContain('de types d’équipements de moins accessibles à pied qu’en voiture à Allineuc en 15 min')
+    expect(wrapper.find('.aedar-reading .cahier-prose').text()).not.toContain('transit_gain')
+    expect(wrapper.find('.aedar-reading .foot-emphasis').text()).toContain('Transports en commun')
+    expect(wrapper.findAll('.aedar-reading .bike-emphasis').map((item) => item.text())).toEqual(['vélo', 'LTS2', 'LTS4'])
+    expect(wrapper.findAll('.aedar-reading .foot-emphasis').map((item) => item.text())).toEqual(['Transports en commun', 'marche', 'à pied'])
+    expect(wrapper.find('.aedar-reading .car-emphasis').text()).toBe('voiture')
     expect(wrapper.find('.aedar-reading__source a').text()).toBe('AEDAR')
     expect(wrapper.find('.aedar-reading__source a').text()).not.toBe('aedar_bretagne')
 
@@ -358,10 +364,14 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     const firstUnit = (cahierProps.content as ThemeContent).units[0]
     const section = firstUnit.sections[0] as unknown as AedarAccessSection
     expect(section.key).toBe('aedar-access')
+    expect(section.label).toBe('Accès aux services')
+    expect(firstUnit.label).toEqual(content.units[0]?.label)
+    expect(firstUnit.introduction).toEqual(content.units[0]?.introduction)
+    expect(firstUnit.rundown).toEqual(content.units[0]?.rundown)
     expect(section.lecture).toBeNull()
     expect(section.evidence?.kind).toBe('aedar-access')
     if (section.evidence?.kind === 'aedar-access') {
-      expect(section.evidence.mapFigureTitle).toBe('Cartes d’accès aux services, par mode')
+      expect(section.evidence.mapFigureTitle.map((segment) => segment.value).join('')).toBe("Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?")
       expect(section.evidence.ramps).toHaveLength(2)
     }
   })

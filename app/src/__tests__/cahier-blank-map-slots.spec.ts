@@ -7,7 +7,7 @@ describe('CahierBlankMapSlots', () => {
   const props = {
     territory: { code: 'AEDAR', name: 'Aedar' },
     horizonMinutes: 15,
-    title: 'Cartes d’accès aux services, par mode',
+    title: [{ kind: 'text' as const, value: "Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?" }],
   }
 
   it('renders the three requested modes in the shared three-column circular layout', () => {
@@ -26,7 +26,8 @@ describe('CahierBlankMapSlots', () => {
 
     const title = wrapper.find('.blank-map-slots > .cahier-figure-title')
     expect(title.exists()).toBe(true)
-    expect(title.text()).toBe('Cartes d’accès aux services, par mode')
+    expect(title.text()).toBe("Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?")
+    expect(title.find('.theme-emphasis').text()).toBe('15 minutes')
     // No bespoke heading, no duplicated section number inside the figure title.
     expect(wrapper.find('.blank-map-slots__heading').exists()).toBe(false)
     expect(wrapper.find('.blank-map-slots__number').exists()).toBe(false)

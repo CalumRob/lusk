@@ -11,7 +11,7 @@ const props = defineProps<{
   territory: { code: string; name: string }
   horizonMinutes: number
   /** Figure title owned by the semantic content layer (shared figure-title primitive). */
-  title: string
+  title: TextBlock
   /** Reading under the map grid: honest empty state and provisional horizon. */
   lecture?: readonly TextBlock[]
 }>()
@@ -25,7 +25,7 @@ const slots: readonly { key: string; label: string; icon: Component; tone: strin
 
 <template>
   <figure class="blank-map-slots">
-    <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ props.title }}</figcaption>
+    <figcaption class="cahier-figure-title cahier-baseline-anchor"><CahierProse :blocks="[props.title]" /></figcaption>
     <div class="blank-map-slots__grid cahier-map-grid" :style="CAHIER_MAP_LAYOUT_STYLE">
       <section
         v-for="(slot, index) in slots"

@@ -72,10 +72,11 @@ export interface AedarAccessEvidence {
   territory: { code: string; name: string }
   horizonMinutes: number
   /** Figure title of the blank map slots, owned by the semantic content layer. */
-  mapFigureTitle: string
+  mapFigureTitle: TextBlock
   ramps: readonly AedarTimeRampEvidence[]
-  diversityGap: { value: number | null; horizonMinutes: number }
-  source: { label: string; version: string; referenceDate: string | null; publicationDate: string | null; url: string; attribution: string; licence: string } | null
+  sectionProse: readonly TextBlock[]
+  diversityGap: { value: number | null; horizonMinutes: number; territoryLead: string; prose: TextBlock | null }
+  source: { label: string; version: string; url: string; credit: string | null } | null
   availability: FactAvailability
   provenance: readonly string[]
 }
@@ -670,8 +671,8 @@ export function text(value: string): TextSegment {
   return { kind: 'text', value }
 }
 
-function emphasis(value: string): TextSegment {
-  return { kind: 'emphasis', tone: 'theme', value }
+export function emphasis(value: string, tone: TextEmphasisTone = 'theme'): TextSegment {
+  return { kind: 'emphasis', tone, value }
 }
 
 function regionalEmphasis(value: string): TextSegment {
@@ -793,7 +794,7 @@ function territoryLeadParts(
   }
 }
 
-function territoryLead(territory: TerritoryIdentity, capitalized = true): string {
+export function territoryLead(territory: TerritoryIdentity, capitalized = true): string {
   const parts = territoryLeadParts(territory, capitalized)
   return `${parts.lead} ${parts.name}`
 }
