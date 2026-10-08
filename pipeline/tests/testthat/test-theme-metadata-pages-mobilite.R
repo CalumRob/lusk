@@ -125,6 +125,21 @@ test_that("map_layers déclare les faits cartographiables sans exposer les séri
   expect_no_error(valider_theme_metadata(vide))
 })
 
+test_that("les profils Mobilité Bretagne sont déclarés complets pour les agrégats producteurs", {
+  meta <- lire_theme_metadata("mobilite")
+  profils <- c("reseaux", "reseaux_par_habitant", "offre_cyclable")
+  for (indicateur in profils) {
+    expect_true("region" %in% unlist(meta$indicator_pages[[indicateur]]$levels,
+                                    use.names = FALSE), info = indicateur)
+  }
+  expect_true("region" %in% unlist(meta$profile_contracts$reseaux$allowed_levels,
+                                  use.names = FALSE))
+  expect_true("region" %in% unlist(meta$profile_contracts$offre_cyclable$allowed_levels,
+                                  use.names = FALSE))
+  expect_true("region" %in% unlist(meta$scalar_contracts$stationnement_velo_par_voiture$allowed_levels,
+                                  use.names = FALSE))
+})
+
 test_that("publier_theme_metadata : les vingt pages passent le seam et survivent au round-trip (#461)", {
   meta <- lire_theme_metadata("mobilite")
   sortie <- file.path(tempdir(), "pages-scalaires-mobilite")

@@ -2100,7 +2100,7 @@ export const metadonneesMobiliteRaccordementFixture: ThemeMetadata = (() => {
           { detail: 't0360', label: '6 h', mobile: true },
         ],
         reference: { indicator: 'raccordement_reference', territoire: '53', label: 'Commune bretonne médiane' },
-        marker: { detail: 't0090', label: 'Seuil de 90 minutes' },
+          marker: { detail: 't0090', label: 'Seuil de 90 minutes' },
       },
       comparison: { details: Object.keys(detailsCourbe), detail: 't0090', unit: '%' },
     },

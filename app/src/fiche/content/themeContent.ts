@@ -1715,12 +1715,9 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     explorationTargets: targetsFor(motorFacts.map(({fact}) => fact), facts.territory),
   }
   const curve = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
-  const reference = [
-    ...facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_reference')
-      .map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key)),
-    ...(facts.mobility.namedTrajectoryReferences ?? []).flatMap((series) => series.points.map((point) =>
-      contentFact(point, series.label))),
-  ]
+  // Raccordement displays the focal territory's own curve only. Named median
+  // reference series remain historical serving evidence, not a second line.
+  const reference: ContentFact[] = []
   const offer = factFor('offre_tc')
   const transitFacts = [...(offer ? [offer] : []), ...curve, ...reference]
   const transitEvidence = transitFacts.length ? {
@@ -1729,7 +1726,7 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
       ? metadata.indicator_pages.raccordement_courbe.trajectory : null,
   } : null
   const transitSection: OffreTransportsSection = {
-    key: 'offre-transports-commun', label: subgroupLabel('offre-transports-commun', 'Offre de transports en commun'), indicators: indicatorsFor(facts, ['offre_tc', 'raccordement_courbe', 'raccordement_reference']),
+    key: 'offre-transports-commun', label: subgroupLabel('offre-transports-commun', 'Offre de transports en commun'), indicators: indicatorsFor(facts, ['offre_tc', 'raccordement_courbe']),
     availability: !transitEvidence ? 'absent' : transitFacts.every(({fact}) => complete(fact)) ? 'complete' : 'incomplete',
     evidence: transitEvidence, provenance: sourceIdsFor(transitFacts), lecture: null,
     explorationTargets: targetsFor(transitFacts.map(({fact}) => fact), facts.territory),

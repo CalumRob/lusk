@@ -136,7 +136,7 @@ describe('payload contract — the committed payload parses and renders', () => 
     expect(cles.size).toBe(payload.indicateurs.length)
   })
 
-  it('mirrors the raccordement scalar/curve/reference contract in the promoted artefact (#487)', () => {
+  it('declares regional network profiles and one raccordement curve in the promoted artefact (#707)', () => {
     const keys = new Set(indicateursRaccordementFixture.map((ligne) => ligne.key))
     expect(keys).toEqual(new Set(['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference']))
     expect(metadonneesMobiliteRaccordementFixture.indicator_keys).toEqual(
@@ -145,6 +145,11 @@ describe('payload contract — the committed payload parses and renders', () => 
     const publishedMobility = JSON.parse(readFileSync(join(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
     expect(publishedMobility.indicator_pages.raccordement_courbe.levels)
       .toEqual(['commune', 'epci', 'departement', 'region'])
+    for (const indicator of ['reseaux', 'reseaux_par_habitant', 'offre_cyclable']) {
+      expect(publishedMobility.indicator_pages[indicator].levels).toContain('region')
+    }
+    expect(publishedMobility.indicator_pages.offre_cyclable.levels).toContain('region')
+    expect(publishedMobility.indicator_pages.raccordement_courbe.trajectory.marker.detail).toBe('t0090')
     expect(metadonneesMobiliteRaccordementFixture.subgroups.find((group) => group.key === 'offre-transports-commun')).toMatchObject({
       indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
       figure: { family: 'scalar', indicator: 'offre_tc' },
