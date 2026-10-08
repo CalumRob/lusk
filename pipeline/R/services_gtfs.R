@@ -122,24 +122,113 @@ aretes_trajet_gtfs <- function(trips, stop_times, services_actifs) {
     data.frame(from_stop_id = as.character(t$stop_id[i]),
                to_stop_id = as.character(t$stop_id[i + 1L]),
                trip_id = as.character(t$trip_id[i]),
+               route_id = if ("route_id" %in% names(trips))
+                 as.character(trips$route_id[match(as.character(t$trip_id[i]),
+                                                    as.character(trips$trip_id))]) else NA_character_,
                departure_min = dep, arrival_min = arr,
                stringsAsFactors = FALSE)
   })
   resultat <- do.call(rbind, aretes[!vapply(aretes, is.null, logical(1))])
   if (is.null(resultat)) {
     return(data.frame(from_stop_id = character(), to_stop_id = character(),
-                      trip_id = character(), departure_min = numeric(),
+                      trip_id = character(), route_id = character(), departure_min = numeric(),
                       arrival_min = numeric(), stringsAsFactors = FALSE))
   }
   rownames(resultat) <- NULL
   resultat
 }
 
+# etendre_regles_transfert_gtfs -------------------------------------------------
+# Les règles peuvent viser une station parente. On les projette sur ses quais
+# avant de filtrer aux arrêts montables, sans confondre les deux identifiants.
+etendre_regles_transfert_gtfs <- function(transfers, stops) {
+  if (is.null(transfers) || !nrow(transfers)) return(transfers)
+  if (!is.data.frame(stops) ||
+      !all(c("stop_id", "location_type") %in% names(stops))) {
+    stop("Contrat GTFS violé — arrêts requis pour résoudre les stations parentes.",
+         call. = FALSE)
+  }
+  if (anyDuplicated(stops$stop_id)) stop("stop_id dupliqué dans stops.txt.", call. = FALSE)
+  enfants <- if ("parent_station" %in% names(stops)) {
+    parent <- as.character(stops$parent_station)
+    split(as.character(stops$stop_id[!is.na(parent) & nzchar(parent)]),
+          parent[!is.na(parent) & nzchar(parent)])
+  } else list()
+  feuilles <- function(id) {
+    i <- match(id, stops$stop_id)
+    if (is.na(i)) stop(sprintf("Référence de transfert inconnue : %s.", id),
+                       call. = FALSE)
+    type <- as.character(stops$location_type[i])
+    if (is.na(type) || type %in% c("", "0")) return(id)
+    if (type == "1" && length(enfants[[id]])) return(enfants[[id]])
+    stop(sprintf("Référence de transfert GTFS non résolue : %s.", id),
+         call. = FALSE)
+  }
+  sorties <- lapply(seq_len(nrow(transfers)), function(i) {
+    f <- feuilles(as.character(transfers$from_stop_id[i]))
+    t <- feuilles(as.character(transfers$to_stop_id[i]))
+    resultat <- transfers[rep(i, length(f) * length(t)), , drop = FALSE]
+    resultat$from_stop_id <- rep(f, each = length(t))
+    resultat$to_stop_id <- rep(t, times = length(f))
+    resultat
+  })
+  resultat <- do.call(rbind, sorties)
+  verifier_regles_connection_gtfs(resultat)
+  resultat
+}
+
+# verifier_regles_connection_gtfs ------------------------------------------------
+verifier_regles_connection_gtfs <- function(transfers) {
+  if (is.null(transfers) || !nrow(transfers)) return(invisible(NULL))
+  if (!is.data.frame(transfers) ||
+      !all(c("from_stop_id", "to_stop_id", "transfer_type") %in% names(transfers))) {
+    stop("Contrat GTFS violé — transfers.txt incomplet.", call. = FALSE)
+  }
+  types <- as.character(transfers$transfer_type)
+  if (any(!types %in% c("0", "1", "2", "3"))) {
+    stop("Type de transfert GTFS non pris en charge.", call. = FALSE)
+  }
+  if (any(types == "1")) {
+    stop("Transfert GTFS de type 1 (timed) non pris en charge.", call. = FALSE)
+  }
+  if (any(types == "2")) {
+    if (!"min_transfer_time" %in% names(transfers)) {
+      stop("Transfert GTFS de type 2 sans min_transfer_time.", call. = FALSE)
+    }
+    minimum <- suppressWarnings(as.numeric(transfers$min_transfer_time[types == "2"]))
+    if (any(!is.finite(minimum) | minimum < 0)) {
+      stop("Transfert GTFS de type 2 avec min_transfer_time invalide.",
+           call. = FALSE)
+    }
+  }
+  contraintes <- intersect(c("from_route_id", "to_route_id",
+                             "from_trip_id", "to_trip_id"), names(transfers))
+  if (length(contraintes) && any(vapply(transfers[contraintes], function(x) {
+    any(!is.na(x) & nzchar(as.character(x)))
+  }, logical(1)))) {
+    stop("Transferts GTFS conditionnés par route/trip non pris en charge.",
+         call. = FALSE)
+  }
+  cle <- paste(transfers$from_stop_id, transfers$to_stop_id, sep = "\r")
+  for (g in split(seq_along(cle), cle)) {
+    if (length(g) < 2L) next
+    types_g <- unique(types[g])
+    mins_g <- if ("min_transfer_time" %in% names(transfers))
+      unique(as.character(transfers$min_transfer_time[g][types[g] == "2"])) else character()
+    if (length(types_g) > 1L || length(mins_g) > 1L) {
+      stop("Règles GTFS contradictoires pour la même paire d'arrêts.",
+           call. = FALSE)
+    }
+  }
+  invisible(NULL)
+}
+
 # aretes_transfert_gtfs ---------------------------------------------------------
 # Proximité à vol d'oiseau, plafonnée au rayon contractuel ; marche au pas
-# constant déclaré. Les règles stop-à-stop explicites prévalent : type 3
-# interdit, type 2 impose une durée minimale. Les contraintes par route/trip ne
-# sont pas modélisées et sont refusées pour éviter de les ignorer en silence.
+# constant déclaré. Les transferts GTFS type 0/2 explicites sont ajoutés même
+# hors rayon (la durée reste mesurée), type 2 impose un minimum, type 3 interdit.
+# Type 1 (timed), types GTFS inconnus et contraintes route/trip échouent
+# explicitement : ils ne sont pas assimilés à une simple marche.
 aretes_transfert_gtfs <- function(stops, transfers = NULL, rayon_m = 300,
                                   vitesse_marche_kmh = 4) {
   if (!is.data.frame(stops) ||
@@ -154,18 +243,8 @@ aretes_transfert_gtfs <- function(stops, transfers = NULL, rayon_m = 300,
          call. = FALSE)
   }
   if (!is.null(transfers)) {
-    requis <- c("from_stop_id", "to_stop_id", "transfer_type")
-    if (!is.data.frame(transfers) || !all(requis %in% names(transfers))) {
-      stop("Contrat GTFS violé — transfers.txt incomplet.", call. = FALSE)
-    }
-    contraintes <- intersect(c("from_route_id", "to_route_id",
-                               "from_trip_id", "to_trip_id"), names(transfers))
-    if (length(contraintes) && any(vapply(transfers[contraintes], function(x) {
-      any(!is.na(x) & nzchar(as.character(x)))
-    }, logical(1)))) {
-      stop("Transferts GTFS conditionnés par route/trip non pris en charge.",
-           call. = FALSE)
-    }
+    verifier_regles_connection_gtfs(transfers)
+    transfers <- etendre_regles_transfert_gtfs(transfers, stops)
   }
   s <- stops
   if ("location_type" %in% names(s)) {
@@ -196,56 +275,54 @@ aretes_transfert_gtfs <- function(stops, transfers = NULL, rayon_m = 300,
   }
   if (!is.null(transfers) && nrow(transfers)) {
     types <- as.character(transfers$transfer_type)
-    if (any(!types %in% c("0", "1", "2", "3"))) {
-      stop("Type de transfert GTFS non pris en charge.", call. = FALSE)
-    }
     interdits <- transfers[types == "3", c("from_stop_id", "to_stop_id"),
-                          drop = FALSE]
+                           drop = FALSE]
     if (nrow(interdits)) {
       cle_interdit <- paste(interdits$from_stop_id, interdits$to_stop_id, sep = "\r")
       paires <- paires[!paste(paires$from_stop_id, paires$to_stop_id,
                               sep = "\r") %in% cle_interdit, , drop = FALSE]
     }
-    regles <- transfers[types %in% c("1", "2"), , drop = FALSE]
+    regles <- transfers[types %in% c("0", "2"), , drop = FALSE]
     if (nrow(regles)) {
-      regle_id <- paste(regles$from_stop_id, regles$to_stop_id, sep = "\r")
       paires_id <- paste(paires$from_stop_id, paires$to_stop_id, sep = "\r")
-      for (i in seq_len(nrow(regles))) {
-        hit <- which(paires_id == regle_id[i])
-        if (!length(hit)) {
-          from <- s[s$stop_id == regles$from_stop_id[i], , drop = FALSE]
-          to <- s[s$stop_id == regles$to_stop_id[i], , drop = FALSE]
-          if (nrow(from) && nrow(to)) {
-            from_pt <- sf::st_transform(sf::st_as_sf(from, coords = c("stop_lon", "stop_lat"), crs = 4326), 2154)
-            to_pt <- sf::st_transform(sf::st_as_sf(to, coords = c("stop_lon", "stop_lat"), crs = 4326), 2154)
-            d <- as.numeric(sf::st_distance(from_pt, to_pt))
-            paires <- rbind(paires, data.frame(
-              from_stop_id = regles$from_stop_id[i],
-              to_stop_id = regles$to_stop_id[i], walk_m = d))
-            hit <- nrow(paires)
-            paires_id <- c(paires_id, regle_id[i])
-          }
-        }
-        if (length(hit) && as.character(regles$transfer_type[i]) == "2") {
-          minimum <- if ("min_transfer_time" %in% names(regles))
-            as.numeric(regles$min_transfer_time[i]) / 60 else 0
-          if (!is.finite(minimum)) minimum <- 0
-          paires$walk_m[hit] <- max(paires$walk_m[hit], minimum *
-                                      vitesse_marche_kmh * 1000 / 60)
+      regle_id <- paste(regles$from_stop_id, regles$to_stop_id, sep = "\r")
+      explicit <- regles$from_stop_id != regles$to_stop_id &
+        !regle_id %in% paires_id
+      if (any(explicit)) {
+        from_i <- match(regles$from_stop_id[explicit], s$stop_id)
+        to_i <- match(regles$to_stop_id[explicit], s$stop_id)
+        valide <- !is.na(from_i) & !is.na(to_i)
+        if (any(valide)) {
+          a <- sf::st_as_sf(s[from_i[valide], , drop = FALSE],
+                            coords = c("stop_lon", "stop_lat"), crs = 4326)
+          b <- sf::st_as_sf(s[to_i[valide], , drop = FALSE],
+                            coords = c("stop_lon", "stop_lat"), crs = 4326)
+          a <- sf::st_transform(a, 2154); b <- sf::st_transform(b, 2154)
+          d <- as.numeric(sf::st_distance(a, b, by_element = TRUE))
+          paires <- rbind(paires, data.frame(
+            from_stop_id = regles$from_stop_id[explicit][valide],
+            to_stop_id = regles$to_stop_id[explicit][valide], walk_m = d))
         }
       }
     }
   }
-  paires$duration_min <- paires$walk_m * 60 / (vitesse_marche_kmh * 1000)
-  paires$transfer_type <- "distance"
+  paires$transfer_type <- rep("distance", nrow(paires))
   if (nrow(paires) && !is.null(transfers)) {
     id_rule <- paste(transfers$from_stop_id, transfers$to_stop_id, sep = "\r")
     id_edge <- paste(paires$from_stop_id, paires$to_stop_id, sep = "\r")
-    for (i in which(id_edge %in% id_rule)) {
-      j <- match(id_edge[i], id_rule)
-      paires$transfer_type[i] <- as.character(transfers$transfer_type[j])
+    j <- match(id_edge, id_rule)
+    hit <- !is.na(j)
+    paires$transfer_type[hit] <- as.character(transfers$transfer_type[j[hit]])
+    type2 <- hit & as.character(transfers$transfer_type[pmax(j, 1)]) == "2"
+    if (any(type2) && "min_transfer_time" %in% names(transfers)) {
+      minimum <- as.numeric(transfers$min_transfer_time[j[type2]]) / 60
+      minimum[!is.finite(minimum)] <- 0
+      paires$walk_m[type2] <- pmax(paires$walk_m[type2],
+                                    minimum * vitesse_marche_kmh * 1000 / 60)
     }
   }
+  paires$duration_min <- paires$walk_m * 60 / (vitesse_marche_kmh * 1000)
+  attr(paires, "regles_transfert") <- transfers
   paires
 }
 
@@ -253,13 +330,29 @@ aretes_transfert_gtfs <- function(stops, transfers = NULL, rayon_m = 300,
 # Minimise la durée écoulée d'un trajet dont le premier embarquement a lieu
 # dans la fenêtre [début, fin). Aucun transfert à pied n'est permis avant le
 # premier ou après le dernier trajet : les arrêts fournis sont les endpoints.
-meilleur_trajet_gtfs <- function(rides, transfers, origine, destination,
-                                 debut_fenetre, fin_fenetre) {
-  requis <- c("from_stop_id", "to_stop_id", "departure_min", "arrival_min")
+meilleurs_trajets_gtfs_multi_destination <- function(
+    rides, transfers, origine, destinations, debut_fenetre, fin_fenetre,
+    regles_transfert = NULL, ids_stops = NULL) {
+  requis <- c("from_stop_id", "to_stop_id", "trip_id", "departure_min", "arrival_min")
   if (!is.data.frame(rides) || !all(requis %in% names(rides)) ||
       !is.data.frame(transfers) ||
       !all(c("from_stop_id", "to_stop_id", "duration_min") %in% names(transfers))) {
     stop("Contrat routeur GTFS violé — arêtes incomplètes.", call. = FALSE)
+  }
+  if (is.null(regles_transfert)) {
+    regles_transfert <- attr(transfers, "regles_transfert", exact = TRUE)
+  }
+  verifier_regles_connection_gtfs(regles_transfert)
+  ids_connus <- unique(c(as.character(ids_stops),
+                         as.character(rides$from_stop_id),
+                         as.character(rides$to_stop_id),
+                         as.character(transfers$from_stop_id),
+                         as.character(transfers$to_stop_id)))
+  if (!is.null(regles_transfert) && nrow(regles_transfert) &&
+      any(!regles_transfert$from_stop_id %in% ids_connus |
+          !regles_transfert$to_stop_id %in% ids_connus)) {
+    stop("Référence de transfert hors du graphe; résoudre les stations parentes avant routage.",
+         call. = FALSE)
   }
   parse_hm <- function(x) {
     if (length(x) != 1L || is.na(x) ||
@@ -271,80 +364,138 @@ meilleur_trajet_gtfs <- function(rides, transfers, origine, destination,
   }
   debut <- parse_hm(debut_fenetre); fin <- parse_hm(fin_fenetre)
   if (fin <= debut) stop("Fenêtre GTFS vide ou inversée.", call. = FALSE)
-  origines <- as.character(origine); destinations <- as.character(destination)
-  if (length(intersect(origines, destinations))) {
-    return(list(travel_time_min = 0, departure_min = NA_real_, arrival_min = NA_real_))
+  if (!is.list(destinations) || is.null(names(destinations)) ||
+      any(!nzchar(names(destinations)))) {
+    stop("Destinations GTFS attendues comme liste nommée d'ensembles d'arrêts.",
+         call. = FALSE)
+  }
+  origines <- as.character(origine)
+  target_stops <- unlist(destinations, use.names = FALSE)
+  target_names <- rep(names(destinations), lengths(destinations))
+  targets_by_stop <- split(target_names, target_stops)
+  meilleurs <- setNames(rep(list(NULL), length(destinations)), names(destinations))
+  for (name in names(destinations)) {
+    if (length(intersect(origines, as.character(destinations[[name]])))) {
+      meilleurs[[name]] <- list(travel_time_min = 0, departure_min = NA_real_,
+                                arrival_min = NA_real_)
+    }
   }
   departures <- rides[rides$from_stop_id %in% origines &
                         rides$departure_min >= debut & rides$departure_min < fin, ,
                       drop = FALSE]
-  meilleurs <- list()
   if (!nrow(departures)) {
-    return(list(travel_time_min = NA_real_, departure_min = NA_real_, arrival_min = NA_real_))
+    return(lapply(meilleurs, function(x) if (is.null(x)) {
+      list(travel_time_min = NA_real_, departure_min = NA_real_, arrival_min = NA_real_)
+    } else x))
   }
   par_arret <- split(rides, as.character(rides$from_stop_id))
   transferts_par_arret <- split(seq_len(nrow(transfers)),
                                 as.character(transfers$from_stop_id))
+  if (is.null(regles_transfert)) regles_transfert <- data.frame(
+    from_stop_id = character(), to_stop_id = character(), transfer_type = character())
+  cle_regles <- paste(regles_transfert$from_stop_id,
+                      regles_transfert$to_stop_id, sep = "\r")
+  duree_regle <- function(from, to) {
+    i <- match(paste(from, to, sep = "\r"), cle_regles)
+    if (is.na(i)) return(0)
+    type <- as.character(regles_transfert$transfer_type[i])
+    if (type == "3") return(Inf)
+    if (type == "2" && "min_transfer_time" %in% names(regles_transfert)) {
+      minimum <- suppressWarnings(as.numeric(regles_transfert$min_transfer_time[i]))
+      if (is.finite(minimum)) return(minimum / 60)
+    }
+    0
+  }
   charger_rides <- function(arret, pret) {
     rr <- par_arret[[arret]]
     if (is.null(rr)) return(rides[FALSE, , drop = FALSE])
     rr[rr$departure_min >= pret, , drop = FALSE]
   }
-  actualiser <- function(depart, meilleurs) {
-    atteints <- numeric(); file <- list()
-    propager <- function(arret, heure) {
-      if (!arret %in% names(atteints) || heure < atteints[[arret]]) {
-        atteints[arret] <<- heure
-        file[[length(file) + 1L]] <<- c(arret = arret, heure = heure)
+  frontieres <- list(); file <- list()
+  enregistrer <- function(target, depart, arrivee) {
+    duree <- arrivee - depart
+    ancien <- meilleurs[[target]]
+    if (is.null(ancien) || duree < ancien$travel_time_min) {
+      meilleurs[[target]] <<- list(travel_time_min = duree,
+                                    departure_min = depart,
+                                    arrival_min = arrivee)
+    }
+  }
+  propager <- function(arret, trip, arrivee, depart) {
+    cle <- paste(arret, trip, sep = "\r")
+    duree <- arrivee - depart
+    existants <- frontieres[[cle]]
+    if (!is.null(existants) && any(existants$arrival_min <= arrivee &
+                                   existants$travel_time_min <= duree)) return(FALSE)
+    if (is.null(existants)) existants <- data.frame(
+      arrival_min = numeric(), travel_time_min = numeric(), departure_min = numeric())
+    garder <- !(existants$arrival_min >= arrivee &
+                existants$travel_time_min >= duree)
+    frontieres[[cle]] <<- rbind(existants[garder, , drop = FALSE], data.frame(
+      arrival_min = arrivee, travel_time_min = duree, departure_min = depart))
+    file[[length(file) + 1L]] <<- list(stop = arret, trip = trip,
+                                       arrival = arrivee, departure = depart)
+    TRUE
+  }
+  for (i in seq_len(nrow(departures))) {
+    dest <- as.character(departures$to_stop_id[i])
+    dep <- departures$departure_min[i]; arr <- departures$arrival_min[i]
+    cibles <- targets_by_stop[[dest]]
+    if (length(cibles)) for (target in cibles) enregistrer(target, dep, arr)
+    propager(dest, as.character(departures$trip_id[i]), arr, dep)
+  }
+  lu <- 1L
+  while (lu <= length(file)) {
+    item <- file[[lu]]; lu <- lu + 1L
+    arret <- item$stop; incoming_trip <- item$trip
+    arrivee <- item$arrival; depart <- item$departure
+    cle <- paste(arret, incoming_trip, sep = "\r")
+    frontiere <- frontieres[[cle]]
+    encore_actif <- any(frontiere$arrival_min == arrivee &
+                          frontiere$travel_time_min == arrivee - depart &
+                          frontiere$departure_min == depart)
+    if (!encore_actif) next
+    candidats <- list(list(stop = arret, walk = 0))
+    ids_t <- transferts_par_arret[[arret]]
+    if (length(ids_t)) {
+      tt <- transfers[ids_t, , drop = FALSE]
+      candidats <- c(candidats, lapply(seq_len(nrow(tt)), function(j) {
+        list(stop = as.character(tt$to_stop_id[j]),
+             walk = as.numeric(tt$duration_min[j]))
+      }))
+    }
+    for (candidate in candidats) {
+      ready_marche <- arrivee + candidate$walk
+      rr <- charger_rides(candidate$stop, ready_marche)
+      if (!nrow(rr)) next
+      for (j in seq_len(nrow(rr))) {
+        outgoing_trip <- as.character(rr$trip_id[j])
+        same_trip <- identical(outgoing_trip, incoming_trip)
+        continuation <- identical(candidate$stop, arret) && same_trip
+        if (same_trip && !continuation) next
+        minimum <- if (continuation) 0 else duree_regle(arret, candidate$stop)
+        if (!is.finite(minimum)) next
+        ready <- arrivee + max(candidate$walk, minimum)
+        if (rr$departure_min[j] < ready) next
+        dest <- as.character(rr$to_stop_id[j]); arr <- rr$arrival_min[j]
+        cibles <- targets_by_stop[[dest]]
+        if (length(cibles)) for (target in cibles) enregistrer(target, depart, arr)
+        propager(dest, outgoing_trip, arr, depart)
       }
     }
-    for (i in which(departures$departure_min == depart)) {
-      dest <- as.character(departures$to_stop_id[i])
-      arr <- departures$arrival_min[i]
-      if (dest %in% destinations) {
-        meilleurs[[length(meilleurs) + 1L]] <- c(depart = depart, arrivee = arr)
-      }
-      propager(dest, arr)
-    }
-    lu <- 1L
-    while (lu <= length(file)) {
-      item <- file[[lu]]; lu <- lu + 1L
-      arret <- unname(item[["arret"]]); arrivee <- as.numeric(item[["heure"]])
-      if (atteints[[arret]] < arrivee) next
-      candidats <- list(list(stop = arret, ready = arrivee))
-      ids_t <- transferts_par_arret[[arret]]
-      if (length(ids_t)) {
-        tt <- transfers[ids_t, , drop = FALSE]
-        candidats <- c(candidats, lapply(seq_len(nrow(tt)), function(j) {
-          list(stop = as.character(tt$to_stop_id[j]),
-               ready = arrivee + as.numeric(tt$duration_min[j]))
-        }))
-      }
-      for (candidate in candidats) {
-        rr <- charger_rides(candidate$stop, candidate$ready)
-        if (!nrow(rr)) next
-        for (j in seq_len(nrow(rr))) {
-          dest <- as.character(rr$to_stop_id[j]); arr <- rr$arrival_min[j]
-          if (dest %in% destinations) {
-            meilleurs[[length(meilleurs) + 1L]] <- c(depart = depart,
-                                                     arrivee = arr)
-          }
-          propager(dest, arr)
-        }
-      }
-    }
-    list(meilleurs = meilleurs)
   }
-  for (depart in sort(unique(departures$departure_min))) {
-    meilleurs <- actualiser(depart, meilleurs)$meilleurs
-  }
-  if (!length(meilleurs)) {
-    return(list(travel_time_min = NA_real_, departure_min = NA_real_, arrival_min = NA_real_))
-  }
-  resultats <- do.call(rbind, meilleurs)
-  durees <- resultats[, "arrivee"] - resultats[, "depart"]
-  k <- which.min(durees)
-  list(travel_time_min = unname(durees[k]),
-       departure_min = unname(resultats[k, "depart"]),
-       arrival_min = unname(resultats[k, "arrivee"]))
+  lapply(meilleurs, function(x) {
+    if (is.null(x)) list(travel_time_min = NA_real_, departure_min = NA_real_,
+                         arrival_min = NA_real_) else x
+  })
+}
+
+meilleur_trajet_gtfs <- function(rides, transfers, origine, destination,
+                                 debut_fenetre, fin_fenetre,
+                                 regles_transfert = NULL, ids_stops = NULL) {
+  resultats <- meilleurs_trajets_gtfs_multi_destination(
+    rides, transfers, origine, list(destination = destination),
+    debut_fenetre, fin_fenetre, regles_transfert, ids_stops
+  )
+  resultats$destination
 }
