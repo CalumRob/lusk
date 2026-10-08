@@ -107,6 +107,18 @@ def test_mobility_profile_publisher_output_is_served_over_http():
                     GROUP BY indicator_id,detail_key""", (territory, list(expected_counts))).fetchall()
                 sql_marker = conn.execute("SELECT content_version FROM table_publication WHERE table_name='declared_profile'").fetchone()[0]
             assert body["profile_content_version"] == sql_marker
+            regional = client.get("/api/territories/region/53/themes/mobilite/facts")
+            assert regional.status_code == 200, regional.text
+            regional_body = regional.json()
+            regional_profile = next(profile for profile in regional_body["indicator_metadata"]
+                                    if profile["indicator_id"] == "voitures_menage")
+            regional_cells = [row for row in regional_body["indicators"]
+                              if row["indicator_id"] == "voitures_menage"]
+            assert regional_profile["allowed_levels"][-1] == "region"
+            assert [row["dimensions"]["detail"] for row in regional_cells] == [
+                "sans_voiture", "une_voiture", "deux_plus"]
+            assert all(row["denominator_semantics"] == regional_profile["denominator_semantics"]
+                       and row["sources"] for row in regional_cells)
             # Real publisher cells must feed numeric facet comparisons, not
             # merely echo descriptor references. Each fixture territory has
             # deterministic index/10 measures, so the density-class median is

@@ -1715,7 +1715,12 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     explorationTargets: targetsFor(motorFacts.map(({fact}) => fact), facts.territory),
   }
   const curve = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
-  const reference = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_reference').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
+  const reference = [
+    ...facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_reference')
+      .map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key)),
+    ...(facts.mobility.namedTrajectoryReferences ?? []).flatMap((series) => series.points.map((point) =>
+      contentFact(point, series.label))),
+  ]
   const offer = factFor('offre_tc')
   const transitFacts = [...(offer ? [offer] : []), ...curve, ...reference]
   const transitEvidence = transitFacts.length ? {

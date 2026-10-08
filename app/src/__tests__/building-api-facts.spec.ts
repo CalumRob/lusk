@@ -3,7 +3,7 @@ import { applyBuildingApiFacts, clearBuildingApiPeers } from '@/fiche/content/bu
 import type { TerritoryFacts } from '@/fiche/content/territoryFacts'
 
 const facts = (): TerritoryFacts => ({ territory: { code: '22001', type: 'commune', name: 'Test', department: null, epci: null }, theme: 'mobilite', mobility: {
-  indicators: [], access: {} as TerritoryFacts['mobility']['access'], bpeAccess: {} as TerritoryFacts['mobility']['bpeAccess'], losses: {} as TerritoryFacts['mobility']['losses'],
+  indicators: [], namedTrajectoryReferences: [], access: {} as TerritoryFacts['mobility']['access'], bpeAccess: {} as TerritoryFacts['mobility']['bpeAccess'], losses: {} as TerritoryFacts['mobility']['losses'],
   accessRamp: { availability: 'complete', xAxisLabel: 'q', yAxisLabel: 'types', totalBuildings: 10, provenance: { sourceId: 'focal', source: 'local', version: '1', referenceDate: null, publicationDate: null }, comparisonLabel: null, comparisonTotalBuildings: null,
     curves: { car: { mode: 'car', modeLabel: 'Car', points: [{ quantile: 0.5, quantileLabel: '50 %', accessibleTypes: 3, comparisonAccessibleTypes: 99 }] }, bike: { mode: 'bike', modeLabel: 'Bike', points: [] }, walkTransit: { mode: 'walkTransit', modeLabel: 'Walk', points: [] } } },
   buildingDistribution: { availability: 'complete', mode: 't', modeLabel: 'Walk', breadthAxisLabel: 'b', depthAxisLabel: 'd', breadthBins: [], depthBins: [], cells: [{ breadthBucket: 'b1', depthBucket: 'd1', buildingCount: 4, share: 0.4, comparisonBuildingCount: 99, comparisonShare: 0.99 }], totalBuildings: 10, provenance: null, comparisonLabel: null, comparisonTotalBuildings: null },

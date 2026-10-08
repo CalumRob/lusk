@@ -3,6 +3,9 @@ import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche
 import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
 import { metadonneesThemesFixtures, histoiresMobiliteFixture } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
+import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
+import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
+import { mount } from '@vue/test-utils'
 
 // Wire fields are producer-owned indicator observations, not storage-family rows.
 const sources = [{ source_id: 'mobilite_snapshot', name: 'SQL mobility', version: 'sql-v1',
@@ -48,10 +51,92 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(facts.mobility.losses.diversityWalkTransit).toMatchObject({ value: 7, unit: 'types' })
     expect(facts.mobility.losses.diversityBike).toMatchObject({ value: 8, unit: 'types' })
   })
+  it('projects regional motorisation details and the regional curve separately from its named median', () => {
+    const regionPayload: Payload = { ...payload, territoires: [
+      { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
+    ] }
+    const axes = ['t0000','t0015','t0030','t0045','t0060','t0090','t0120','t0180','t0240','t0300','t0360']
+    const parts = [0.118268,0.4795024,0.4022296]
+    const values = [0.985199,1,1,1,1,1,1,1,1,1,1]
+    const reference = [0.000399,0.000476,0.001036,0.002318,0.004568,0.014585,
+      0.043124,0.114126,0.214321,0.249159,0.268105]
+    const data = response()
+    data.territory = { territory_id: '53', territory_type: 'region', name: 'Bretagne' }
+    data.indicators = [
+      ...['sans_voiture','une_voiture','deux_plus'].map((detail,index) => ({
+        indicator_id:'voitures_menage', unit:'%', status:'measured', value:parts[index],
+        sources:[{...sources[0], reference_date:'2023-01-01'}], dimensions:{detail},
+      })),
+      ...axes.map((axis,index) => ({ indicator_id:'raccordement_courbe', unit:'%', status:'measured',
+        value:values[index], sources:[{...sources[0], reference_date:'2026-08-25'}],
+        dimensions:{axis,numeric_axis_value:index===0?0:index===1?15:index===2?30:index===3?45:index===4?60:index===5?90:index===6?120:index===7?180:index===8?240:index===9?300:360,
+          observation_period:'2026-09-16'} })),
+    ]
+    data.indicator_metadata = [{indicator_id:'voitures_menage',kind:'declared_dimensions',
+      allowed_levels:['commune','epci','departement','region'],denominator_semantics:'Ménages recensés',
+      axes:['sans_voiture','une_voiture','deux_plus'].map((key,order)=>({name:'detail',key,label:key,order,unit:'%'}))},
+      {indicator_id:'raccordement_courbe',axis_kind:'duration_minute',axis_values:axes,
+        axis_numeric_values:[0,15,30,45,60,90,120,180,240,300,360],completeness:'dense_complete'}]
+    data.named_reference_evidence = [{indicator_id:'raccordement_courbe',id:'commune_bretonne_mediane',
+      label:'Commune bretonne médiane',role:'analytical_reference',statistic:'median_routed_communes',unit:'%',
+      points:axes.map((axis,index)=>({axis,value:reference[index],observation_period:'2026-09-16',
+        status:'measured',provenance:[{...sources[0],source_name:'SQL mobility',revision_hash:'ref-v1'}]}))}]
+    const facts = mobilityFactsFromThemeApi(regionPayload,'53',data)
+    const composition = facts.mobility.indicators.filter((fact)=>fact.key==='voitures_menage')
+    const curve = facts.mobility.indicators.filter((fact)=>fact.key==='raccordement_courbe')
+    expect(composition.map((fact)=>fact.detail)).toEqual(['sans_voiture','une_voiture','deux_plus'])
+    expect(composition.map((fact)=>fact.value)).toEqual(parts)
+    expect(curve).toHaveLength(11)
+    expect(curve.map((fact)=>fact.value)).toEqual(values)
+    expect(facts.mobility.namedTrajectoryReferences).toMatchObject([{
+      id:'commune_bretonne_mediane', label:'Commune bretonne médiane',
+      statistic:'median_routed_communes', points:axes.map((detail,index)=>({detail,value:reference[index]})),
+    }])
+    expect(facts.mobility.namedTrajectoryReferences[0]).not.toHaveProperty('territory')
+    expect(curve.some((fact)=>fact.key==='raccordement_reference')).toBe(false)
+    const content = resolveMobiliteThemeContent(facts)
+    const motorisation = content.units.find((unit)=>unit.key==='motorisation')?.sections[0]
+    expect(motorisation?.evidence?.kind).toBe('motorisation')
+    if (motorisation?.evidence?.kind === 'motorisation') {
+      expect(motorisation.evidence.composition.map((item)=>item.fact.detail))
+        .toEqual(['sans_voiture','une_voiture','deux_plus'])
+      expect(motorisation.evidence.composition.map((item)=>item.fact.value)).toEqual(parts)
+    }
+    const section = content.units.find((unit)=>unit.key==='offre-transports-commun')?.sections[0]
+    expect(section?.evidence?.kind).toBe('public-transport')
+    if (section?.evidence?.kind !== 'public-transport') throw new Error('Regional transport content missing')
+    const rendered = mount(CahierOffreTransportsFigure, { props: {
+      offer: section.evidence.offer, trajectory: section.evidence.trajectory,
+      reference: section.evidence.reference,
+      metadata: { axis:'numeric',axisLabels:{x:'Temps (minutes)',y:'Population joignable (%)'},
+        ticks:axes.map((detail,index)=>({detail,label:String(index*15)})),
+        endpoints:['t0000','t0360'],
+        reference:{indicator:'raccordement_reference',territoire:'53',label:'Commune bretonne médiane'},
+        marker:{detail:'t0090',label:'90 minutes'} },
+    } })
+    expect(rendered.find('[data-series="territory"]').exists()).toBe(true)
+    expect(rendered.find('[data-series="reference"]').exists()).toBe(true)
+    expect(rendered.findAll('.transit-point--territory')).toHaveLength(11)
+    expect(rendered.findAll('.transit-point--reference')).toHaveLength(11)
+    expect(rendered.find('.transit-legend-reference').text()).toContain('Commune bretonne médiane')
+    expect(rendered.findAll('.transit-point--territory').map((point)=>point.attributes('data-value')))
+      .toEqual(values.map(String))
+    expect(rendered.findAll('.transit-point--reference').map((point)=>point.attributes('data-value')))
+      .toEqual(reference.map(String))
+  })
   it('rejects measured facts without source lineage instead of presenting static provenance', () => {
     const data = response()
     data.indicators[0]!.sources = []
     expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow()
+  })
+  it('rejects unknown named-reference point statuses', () => {
+    const data = response()
+    data.named_reference_evidence = [{ indicator_id: 'raccordement_courbe', id: 'median',
+      label: 'Median', role: 'analytical_reference', statistic: 'median_routed_communes', unit: '%',
+      points: [{ axis: 't0000', observation_period: '2026-09-16', value: null,
+        status: 'unexpected_status', provenance: [{ source_id: 'mobilite_snapshot', source_name: 'SQL mobility',
+          version: 'sql-v1', reference_date: null, publication_date: null }] }] }]
+    expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow(/Point de référence nommée Mobilité/)
   })
   it('rejects malformed provided coordinates instead of silently treating them as scalars', () => {
     const data = response()

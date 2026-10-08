@@ -447,6 +447,7 @@ const completeFacts: TerritoryFacts = {
   },
   theme: 'mobilite',
   mobility: {
+    namedTrajectoryReferences: [],
     indicators: [
       fact('tot_loss_t', 4, 'accès perdus', comparison(6)),
       fact('tot_loss_b', 2, 'accès perdus', comparison(3)),

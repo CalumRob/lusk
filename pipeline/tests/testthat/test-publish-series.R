@@ -543,8 +543,8 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
      source_id="matrice_temps_mairies")),
     indicator_pages=list(raccordement_courbe=list(indicator="raccordement_courbe",unit="%",direction="high",
       comparison=list(detail="t0090",details=axis_keys),label="Courbe raccordement",sources="matrice_temps_mairies",
-      trajectory=list(reference=list(indicator="raccordement_reference",territoire="53",
-        label="Commune bretonne médiane")),levels=c("commune","epci","departement"))),
+       trajectory=list(reference=list(indicator="raccordement_reference",territoire="53",
+         label="Commune bretonne médiane")),levels=c("commune","epci","departement"))),
     source_records=list(matrice_temps_mairies=list(dataset="Matrice de temps",vintages=list(list(
        id="matrice_temps_mairies",version="2026-09-18",dateReference="2026-08-25",
       datePublication="2026-08-26")))))
@@ -554,9 +554,14 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
     observation_period=rep("2026-09-16",length(keys)),
     vintage_version="2026-09-18",vintage_date_reference=as.Date("2026-08-25"),
     vintage_date_publication=as.Date("2026-08-26"),stringsAsFactors=FALSE)
+  metadata$indicator_pages$raccordement_courbe$levels <- c("commune","epci","departement","region")
+  regional_values <- c(.985199,rep(1,10))
+  reference_values <- c(.000399,.000476,.001036,.002318,.004568,.014585,
+    .043124,.114126,.214321,.249159,.268105)
   canonical <- rbind(rows("raccordement_courbe",seq(.1,1,length.out=11),"35238","commune"),
     rows("raccordement_courbe",rep(NA_real_,11),"29001","commune"),
-    rows("raccordement_reference",seq(.05,.95,length.out=11),"53","region"))
+    rows("raccordement_courbe",regional_values,"53","region"),
+    rows("raccordement_reference",reference_values,"53","region"))
   vintages <- data.frame(id="matrice_temps_mairies",source="Fixture matrix",version="2026-09-18",
     date_reference=as.Date("2026-08-25"),date_publication=as.Date("2026-08-26"))
   projection <- project_raccordement_owned_series(canonical,vintages,metadata,
@@ -564,12 +569,17 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
   expect_no_error(validate_owned_series_projection(projection))
   expect_equal(projection$descriptor$axis_kind,"duration_minute")
   expect_true(projection$descriptor$active_read_route)
+  regional <- projection$points[projection$points$territory_id=="53",]
+  expect_equal(regional$value,regional_values)
+  expect_equal(nrow(regional),11L)
   rennes <- projection$points[projection$points$territory_id=="35238",]
   unavailable <- projection$points[projection$points$territory_id=="29001",]
   expect_equal(rennes$value,seq(.1,1,length.out=11))
   expect_true(all(unavailable$status=="missing"))
   expect_true(all(is.na(unavailable$value)))
-  expect_equal(projection$named_reference$value,seq(.05,.95,length.out=11))
+  expect_equal(projection$named_reference$value,reference_values)
+  expect_equal(nrow(projection$named_reference),11L)
+  expect_false("territory_id" %in% names(projection$named_reference))
   sortie <- tempfile("owned-raccordement-reader-"); dir.create(sortie)
   on.exit(unlink(sortie,recursive=TRUE),add=TRUE)
   nanoparquet::write_parquet(canonical,file.path(sortie,"indicateurs_mobilite.parquet"))
@@ -591,7 +601,7 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
   focal_checked <- dispatch_owned_series_cli("check",read_focal,function() stop("check must not connect"),
     indicator_id="raccordement_courbe")
   expect_identical(names(focal_checked$projections),"raccordement_courbe_owned")
-  expect_equal(focal_checked$projections$raccordement_courbe_owned$named_reference$value,seq(.05,.95,length.out=11))
+  expect_equal(focal_checked$projections$raccordement_courbe_owned$named_reference$value,reference_values)
   habitat_fixture <- payload_habitat()
   mobility_vintages <- vintages
   mobility_vintages$date_reference <- as.character(mobility_vintages$date_reference)
@@ -606,6 +616,8 @@ test_that("owned raccordement publisher projects focal curve and a distinct name
   expect_true("prix_m2_owned" %in% names(all_owned))
   expect_equal(unique(projection$points$observation_period),"2026-09-16")
   expect_equal(unique(projection$named_reference$observation_period),"2026-09-16")
+  expect_equal(sum(projection$points$territory_type=="region"),11L)
+  expect_false("territory_id" %in% names(projection$named_reference))
   changed_recipe <- project_raccordement_owned_series(
     transform(canonical, observation_period="2026-09-17"),vintages,metadata,
     producer_contract=list(date_mesure="2026-09-17"))

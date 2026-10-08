@@ -12,7 +12,7 @@ function facts(): TerritoryFacts {
     })),
   }])) as unknown as NonNullable<TerritoryFacts['mobility']['accessRamp']>['curves']
   return { territory: { code: '22001', type: 'commune', name: 'Test', department: null, epci: null },
-    theme: 'mobilite', mobility: { indicators: [], access: {} as TerritoryFacts['mobility']['access'],
+     theme: 'mobilite', mobility: { indicators: [], namedTrajectoryReferences: [], access: {} as TerritoryFacts['mobility']['access'],
       bpeAccess: {} as TerritoryFacts['mobility']['bpeAccess'], losses: {} as TerritoryFacts['mobility']['losses'],
       accessRamp: { availability: 'complete', xAxisLabel: 'x', yAxisLabel: 'y', curves,
         totalBuildings: 999, comparisonTotalBuildings: 999, comparisonLabel: 'stale', provenance: null },
