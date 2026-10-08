@@ -32,7 +32,7 @@ function lectureProse(horizonMinutes: number): readonly TextBlock[] {
   return [
     [text('Cette section est un prototype : elle remplace les lectures habituelles du sous-groupe « Accès aux services » par une lecture des agrégats AEDAR, calculés depuis les adresses résidentielles du territoire.')],
     [text(`Trois emplacements accueilleront les cartes d’accès à ${horizonMinutes} minutes — horizon provisoire — en voiture, à vélo (LTS2) et en transports en commun. Les cartes ne sont pas encore produites : aucun territoire n’est représenté pour l’instant.`)],
-    [text('Les deux courbes lisent les mêmes agrégats, pour chaque mode de déplacement et de 5 à 20 minutes : la diversité des types d’équipements accessibles, puis le nombre moyen d’équipements accessibles par type.')],
+    [text('La figure suit, pour chaque mode de déplacement et de 5 à 20 minutes, la diversité des types d’équipements accessibles.')],
   ]
 }
 
@@ -46,15 +46,15 @@ function rampFigureLecture(
   referenceLabel: string | null,
   comparisonUnavailable: 'cohort' | 'error' | null | undefined,
 ): readonly TextBlock[] {
-  const howToRead: TextBlock = [text('Chaque courbe suit un mode de déplacement, de 5 à 20 minutes. La rampe de diversité somme les parts d’adresses desservies par type d’équipement ; la rampe de nombre moyen d’équipements par type fait la moyenne des moyennes par type, sur l’ensemble des adresses résidentielles.')]
+  const howToRead: TextBlock = [text('Chaque courbe suit un mode de déplacement, de 5 à 20 minutes. La rampe de diversité somme les parts d’adresses desservies par type d’équipement.')]
   if (referenceLabel) {
-    return [howToRead, [text(`La courbe pointillée de chaque mode lit les mêmes agrégats pour ${referenceLabel} : il s’agit des agrégats du territoire de référence, publiés par AEDAR — les agrégats ne déclarent aucune cohorte de communes.`)]]
+    return [howToRead, [text(`Les points de référence de chaque mode lisent les mêmes agrégats pour ${referenceLabel} : il s’agit des agrégats du territoire de référence, publiés par AEDAR — les agrégats ne déclarent aucune cohorte de communes.`)]]
   }
   if (comparisonUnavailable === 'cohort') {
-    return [howToRead, [text('Le contexte de comparaison sélectionné est une cohorte de communes : les agrégats AEDAR ne la déclarent pas, aucune courbe de comparaison n’est affichée.')]]
+    return [howToRead, [text('Le contexte de comparaison sélectionné est une cohorte de communes : les agrégats AEDAR ne la déclarent pas, aucun point de comparaison n’est affiché.')]]
   }
   if (comparisonUnavailable === 'error') {
-    return [howToRead, [text('Les agrégats du territoire de référence ne sont pas disponibles dans la même version : aucune courbe de comparaison n’est affichée pour l’instant.')]]
+    return [howToRead, [text('Les agrégats du territoire de référence ne sont pas disponibles dans la même version : aucun point de comparaison n’est affiché pour l’instant.')]]
   }
   return [howToRead]
 }

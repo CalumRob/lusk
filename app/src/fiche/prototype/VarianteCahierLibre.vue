@@ -652,7 +652,7 @@ onBeforeUnmount(() => {
                     />
                     <div class="aedar-ramps">
                       <figure
-                        v-for="ramp in aedarAccessEvidenceFor(section)!.ramps"
+                        v-for="ramp in aedarAccessEvidenceFor(section)!.ramps.filter((item) => item.rampKey === 'diversity')"
                         :key="ramp.rampKey"
                         class="aedar-ramp"
                       >
@@ -1166,8 +1166,8 @@ onBeforeUnmount(() => {
   min-width: 0;
 }
 
-.aedar-access-evidence { display: grid; gap: var(--space-6); }
-.aedar-ramps { display: grid; gap: var(--space-6); grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+.aedar-access-evidence { display: grid; grid-column: 1 / -1; justify-self: center; width: min(100%, 1040px); gap: var(--space-6); }
+.aedar-ramps { display: grid; width: 100%; gap: var(--space-6); grid-template-columns: minmax(0, 1fr); }
 .aedar-ramp { margin: 0; display: grid; gap: var(--space-3); }
 .concept-group {
   container: subgroup / inline-size;

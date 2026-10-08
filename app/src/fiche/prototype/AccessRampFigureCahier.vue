@@ -300,7 +300,7 @@ const timeLegend = computed<readonly FigureLegendEntry[]>(() => [
   ...(props.timeRamp?.comparisonLabel ? [{
     key: 'reference',
     label: props.timeRamp.comparisonLabel,
-    marker: 'dash' as const,
+    marker: 'dot' as const,
     tone: 'peer' as const,
   }] : []),
 ])
@@ -353,7 +353,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
   <CahierFigureFrame
     v-if="timeRamp"
     class="access-ramp-cahier access-ramp-cahier--time"
-    size="compact"
+    size="wide"
     :style="CAHIER_FIGURE_STYLE"
     :x-title="`${timeRamp.xAxis.label} (${timeRamp.xAxis.unit})`"
     :y-title="`${timeRamp.yAxis.label}${timeRamp.yAxis.unit ? ` (${timeRamp.yAxis.unit})` : ''}`"
@@ -369,11 +369,10 @@ function timeHitboxStyle(index: number): Record<string, string> {
           </g>
           <g v-for="series in visibleTimeSeries" :key="series.key">
             <template v-if="timeRamp.comparisonLabel">
-              <path v-for="(path, index) in timePaths(series.points, true)" :key="`ref-${index}`" class="access-ramp-line access-ramp-line--comparison access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :d="path" aria-hidden="true" />
+              <circle v-for="point in series.points.filter((item) => item.referenceValue !== null)" :key="`reference-${series.key}-${point.xValue}`" class="access-ramp-reference-dot" :class="timeSeriesPointClass(series.key)" :cx="timeX(point.xValue)" :cy="timeY(point.referenceValue!)" r="4.5" aria-hidden="true" />
             </template>
             <path v-for="(path, index) in timePaths(series.points)" :key="`value-${index}`" class="access-ramp-line access-ramp-line--territory access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :d="path" aria-hidden="true" />
           </g>
-          <g class="access-ramp-points" aria-hidden="true"><template v-for="series in visibleTimeSeries" :key="series.key"><circle v-for="point in series.points.filter((item) => item.value !== null)" :key="`time-${series.key}-${point.xValue}`" class="access-ramp-point access-ramp-time-point" :class="timeSeriesPointClass(series.key)" :cx="timeX(point.xValue)" :cy="timeY(point.value!)" r="4" /></template></g>
         </svg>
         <CahierFigureAxisLabels :geometry="FIGURE_GEOMETRY" :x-ticks="timeTicks" :y-ticks="timeYTicks" :x-label-offset="8" />
         <div class="access-ramp-cut-hitboxes" aria-label="Détails par temps d'accès">
@@ -560,6 +559,12 @@ function timeHitboxStyle(index: number): Record<string, string> {
 .access-ramp-grid .access-ramp-horizon { stroke: var(--cahier-theme-strong); stroke-dasharray: 3 3; stroke-width: 2; }
 .access-ramp-time-line { stroke: var(--cahier-theme-strong); }
 .access-ramp-time-point { stroke: var(--cahier-theme-strong); }
+.access-ramp-reference-dot { stroke: none; }
+.access-ramp-reference-dot.access-ramp-point--car { fill: var(--cahier-mode-car); }
+.access-ramp-reference-dot.access-ramp-point--bike { fill: var(--cahier-mode-bike); }
+.access-ramp-reference-dot.access-ramp-point--walkTransit { fill: var(--cahier-mode-foot); }
+.access-ramp-reference-dot.access-ramp-point--bike-light { fill: color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper)); }
+.access-ramp-reference-dot.access-ramp-point--walkTransit-light { fill: color-mix(in srgb, var(--cahier-mode-foot) 55%, var(--paper)); }
 
 .access-ramp-labels text {
   fill: var(--cahier-default);
