@@ -794,7 +794,7 @@ onBeforeUnmount(() => {
                    </figure>
                    <figure v-else-if="section.evidence?.kind === 'public-transport'" class="evidence-side evidence-figure">
                      <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
-                     <CahierOffreTransportsFigure :offer="section.evidence.offer" :trajectory="section.evidence.trajectory" :reference="section.evidence.reference" :metadata="section.evidence.trajectoryMetadata" />
+                     <CahierOffreTransportsFigure :offer="section.evidence.offer" :trajectory="section.evidence.trajectory" :metadata="section.evidence.trajectoryMetadata" />
                    </figure>
 
                   <figure v-else-if="section.evidence?.kind === 'summary'" class="evidence-side evidence-figure summary-evidence">

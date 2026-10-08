@@ -292,38 +292,34 @@ describe('figures des unités Mobilité ajoutées', () => {
     },
   })
 
-  it('trace les deux séries raccordement sur les mêmes détails et identifie les marques de référence', () => {
+  it('trace une seule série raccordement pour le territoire sélectionné', () => {
     const trajectory = [contentFact('raccordement_courbe', 't0000', 0.1, '0'), contentFact('raccordement_courbe', 't0090', 0.7, '1 h 30')]
-    const reference = [contentFact('raccordement_reference', 't0000', 0.2, '0'), contentFact('raccordement_reference', 't0090', 0.6, '1 h 30')]
     const published = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
     const metadata = published.indicator_pages.raccordement_courbe
     if (metadata.family !== 'trajectory') throw new Error('Fixture must declare a trajectory')
     const wrapper = mount(CahierOffreTransportsFigure, {
-      props: { offer: contentFact('offre_tc', null, 0.4, 'Part des bâtiments près d’un arrêt'), trajectory, reference, metadata: metadata.trajectory },
+      props: { offer: contentFact('offre_tc', null, 0.4, 'Part des bâtiments près d’un arrêt'), trajectory, metadata: metadata.trajectory },
     })
     expect(wrapper.find('path[data-series="territory"]').attributes('d')).toContain('M')
-    expect(wrapper.find('path[data-series="reference"]').attributes('d')).toContain('L')
-    expect(wrapper.find('[data-series="reference"][data-detail="t0090"]').attributes('data-value')).toBe('0.6')
-    expect(wrapper.text()).toContain(metadata.trajectory.reference?.label)
+    expect(wrapper.find('path[data-series="reference"]').exists()).toBe(false)
+    expect(wrapper.findAll('path.transit-series')).toHaveLength(1)
+    expect(wrapper.findAll('.transit-point')).toHaveLength(2)
+    expect(wrapper.text()).not.toContain(metadata.trajectory.reference?.label)
     expect(wrapper.find('.transit-marker').attributes('data-detail')).toBe(metadata.trajectory.marker?.detail)
     expect(wrapper.find('.transit-marker-label').text()).toBe(metadata.trajectory.marker?.label)
     expect(wrapper.findAll('.cahier-figure-axis').length).toBe(2)
 
-    const withoutReference = mount(CahierOffreTransportsFigure, {
-      props: { offer: contentFact('offre_tc', null, 0.4, 'Part des bâtiments près d’un arrêt'), trajectory, reference: [], metadata: metadata.trajectory },
-    })
-    expect(withoutReference.find('.transit-legend-reference').exists()).toBe(false)
-    expect(withoutReference.find('.transit-legend-territory').exists()).toBe(true)
-    expect(wrapper.find('.transit-legend-reference').exists()).toBe(true)
-    expect(wrapper.find('.transit-legend-reference').attributes('aria-label')).toBe(`Série de référence : ${metadata.trajectory.reference?.label}`)
+    expect(wrapper.find('.transit-legend-reference').exists()).toBe(false)
+    expect(wrapper.find('.transit-legend-territory').exists()).toBe(true)
     expect(wrapper.find('.transit-legend-territory').attributes('aria-label')).toBe('Série du territoire')
     expect(wrapper.find('svg[role="img"]').attributes('aria-label')).toContain('Territoire')
+    expect(wrapper.find('svg[role="img"]').attributes('aria-label')).not.toContain(metadata.trajectory.reference?.label)
 
     const riderFigure = mount(CahierOffreTransportsFigure, {
       props: {
         offer: { ...contentFact('offre_tc', null, 0, 'Part des bâtiments près d’un arrêt'), fact: { ...contentFact('offre_tc', null, 0, 'Part des bâtiments près d’un arrêt').fact, value: null, reason: 'Aucune station desservie' } },
         trajectory: [{ ...contentFact('raccordement_courbe', 't0090', 0, '1 h 30'), fact: { ...contentFact('raccordement_courbe', 't0090', 0, '1 h 30').fact, value: null, reason: 'Courbe non calculable' } }],
-        reference: [], metadata: metadata.trajectory,
+        metadata: metadata.trajectory,
       },
     })
     expect(riderFigure.text()).toContain('Indisponible')
