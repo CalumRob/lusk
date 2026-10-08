@@ -12,6 +12,7 @@ import type { RouteLocationRaw } from 'vue-router'
 import { mapAssetUrl } from '@/fiche/mapAssetUrl'
 
 import type { CahierTooltipRow, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
 import type { CyclingOfferEvidence, SharingNetworksEvidence } from '@/fiche/content/themeContent'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -404,7 +405,7 @@ onBeforeUnmount(() => {
 <template>
   <figure class="map-breakout map-breakout--c">
     <CahierFigureFrame size="wide">
-      <div class="plate" :aria-label="`Atlas circulaire — trois réseaux à ${props.territory.name}`">
+      <div class="plate cahier-map-grid" :style="CAHIER_MAP_LAYOUT_STYLE" :aria-label="`Atlas circulaire — trois réseaux à ${props.territory.name}`">
         <div class="plate-header">
           <div class="plate-apparatus-heading">
             <span v-if="props.sectionNumber" class="map-section-number">{{ props.sectionNumber }}</span>
@@ -631,7 +632,7 @@ onBeforeUnmount(() => {
 }
 
 .map-breakout--a .plate {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: var(--cahier-map-columns);
   align-items: start;
 }
 
@@ -642,7 +643,7 @@ onBeforeUnmount(() => {
 .map-panel--bike { --mode-ring: var(--cahier-mode-bike); }
 
 .map-breakout--c .plate {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: var(--cahier-map-columns);
   grid-template-areas:
     'header header header'
     'title title title'
@@ -672,7 +673,7 @@ onBeforeUnmount(() => {
   aspect-ratio: 1;
   place-items: center;
   overflow: hidden;
-  border: 4px solid var(--mode-ring);
+  border: var(--cahier-map-circle-border) solid var(--mode-ring);
   border-radius: 50%;
   background: color-mix(in srgb, var(--cahier-theme) 8%, var(--paper));
 }

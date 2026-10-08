@@ -62,6 +62,12 @@ export const CAHIER_FIGURE_STYLE = {
   ),
 } as const
 
+/** Shared map-panel geometry used by the map breakout and blank map slots. */
+export const CAHIER_MAP_LAYOUT_STYLE = {
+  '--cahier-map-columns': 'repeat(3, minmax(0, 1fr))',
+  '--cahier-map-circle-border': '4px',
+} as const
+
 /** Mesures communes des axes SVG et ECharts. */
 export const CAHIER_FIGURE_AXIS = {
   width: 1,
