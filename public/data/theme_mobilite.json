@@ -369,7 +369,7 @@
   "profile_contracts": {
     "voitures_menage": {"completeness":"dense_complete","denominator_semantics":"Ménages recensés du territoire","detail_units":{"sans_voiture":"%","une_voiture":"%","deux_plus":"%"}},
     "reseaux": {"allowed_levels":["commune","epci","departement","region"],"completeness":"dense_complete","denominator_semantics":"Longueur géométrique des réseaux du territoire, chaque géométrie comptée une fois","detail_units":{"t_longueur":"km","b_longueur":"km","c_longueur":"km"}},
-    "reseaux_par_habitant": {"completeness":"dense_complete","denominator_semantics":"Longueur du réseau divisée par la population du territoire, pour 1 000 habitants","detail_units":{"t_km_1000":"km / 1 000 hab.","b_km_1000":"km / 1 000 hab.","c_km_1000":"km / 1 000 hab."}},
+    "reseaux_par_habitant": {"allowed_levels":["commune","epci","departement","region"],"completeness":"dense_complete","denominator_semantics":"Longueur du réseau divisée par la population du territoire, pour 1 000 habitants","detail_units":{"t_km_1000":"km / 1 000 hab.","b_km_1000":"km / 1 000 hab.","c_km_1000":"km / 1 000 hab."}},
     "offre_cyclable": {"allowed_levels":["commune","epci","departement","region"],"completeness":"dense_complete","denominator_semantics":"Longueurs Geovelo protégée, partagée et totale; les composantes par habitant sont divisées par la population, pour 1 000 habitants","detail_units":{"protege_longueur":"km","protege_km_1000":"km / 1 000 hab","partage_longueur":"km","partage_km_1000":"km / 1 000 hab","total_longueur":"km"}}
   },
   "distribution_contracts": {

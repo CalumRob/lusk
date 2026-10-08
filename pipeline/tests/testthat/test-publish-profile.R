@@ -124,20 +124,80 @@ test_that("canonical regional Mobility producers feed complete profiles and supp
     rows$vintage_version <- vintage$version
     rows$vintage_date_reference <- vintage$dateReference
     rows$vintage_date_publication <- vintage$datePublication
-    source_vintages <- data.frame(id=source,source=record$dataset,version=vintage$version,
-      date_reference=vintage$dateReference,date_publication=vintage$datePublication)
+    sources <- unlist(metadata$indicator_pages[[key]]$sources, use.names=FALSE)
+    source_vintages <- do.call(rbind, lapply(sources, function(source_id) {
+      source_record <- metadata$source_records[[source_id]]
+      source_vintage <- source_record$vintages[[1L]]
+      data.frame(id=source_id, source=source_record$dataset,
+        version=source_vintage$version, date_reference=source_vintage$dateReference,
+        date_publication=source_vintage$datePublication, stringsAsFactors=FALSE)
+    }))
     project_declared_detail_profile(list(indicateurs=rows,
       territoires=data.frame(territoire=territory_types$code,type=territory_types$type),
       source_vintages=source_vintages),metadata,key)
   }
   network_profile <- profile_from(reseaux,"reseaux","amenagements_cyclables")
+  per_capita_profile <- profile_from(reseaux_hab,"reseaux_par_habitant","osm_reseaux")
   cycling_profile <- profile_from(offre,"offre_cyclable","osm_reseaux")
   expect_setequal(network_profile$facts$detail[network_profile$facts$territory_id=="53"],
     c("t_longueur","b_longueur","c_longueur"))
   expect_true(all(network_profile$facts$status[network_profile$facts$territory_id=="53"]=="measured"))
+  expect_true("region" %in% per_capita_profile$descriptor$levels)
+  expect_setequal(per_capita_profile$facts$detail[per_capita_profile$facts$territory_id=="53"],
+    c("t_km_1000","b_km_1000","c_km_1000"))
+  expect_equal(per_capita_profile$facts$value[per_capita_profile$facts$territory_id=="53"],
+    c(2.25, 7.5, 7.5))
+  expect_true(all(per_capita_profile$facts$status[per_capita_profile$facts$territory_id=="53"]=="measured"))
   expect_setequal(cycling_profile$facts$detail[cycling_profile$facts$territory_id=="53"],
     unlist(metadata$indicator_pages$offre_cyclable$comparison$details,use.names=FALSE))
   expect_true(all(cycling_profile$facts$status[cycling_profile$facts$territory_id=="53"]=="measured"))
+
+  # Project the actual canonical producer outputs through the scalar serving
+  # contract. The regional ratio is supported only by both canonical counts;
+  # no display-layer arithmetic is involved.
+  parking_rows <- data.frame(
+    territory_id=rep("53", 3), territory_type=rep("region", 3),
+    indicator_id=c("places_stationnement_velo_1000",
+      "places_stationnement_voiture_1000", "stationnement_velo_par_voiture"),
+    value=c(region_value(offre,"places_stationnement_velo_1000"),
+      region_value(parking,"places_stationnement_voiture_1000"),
+      region_value(parking,"stationnement_velo_par_voiture")),
+    unit=c("places / 1 000 hab", "places / 1 000 hab",
+      "places vÃ©lo / place voiture"),
+    source_name=rep("", 3), source_version=rep("", 3),
+    reference_date=rep("", 3), publication_date=rep("", 3),
+    stringsAsFactors=FALSE)
+  scalar_vintages <- do.call(rbind, lapply(c("stationnement-velo","osm_reseaux"), function(source_id) {
+    source_record <- metadata$source_records[[source_id]]
+    source_vintage <- source_record$vintages[[1L]]
+    data.frame(id=source_id, source=source_record$dataset,
+      version=source_vintage$version, date_reference=source_vintage$dateReference,
+      date_publication=source_vintage$datePublication, stringsAsFactors=FALSE)
+  }))
+  for (i in seq_len(nrow(parking_rows))) {
+    parking_rows$unit[[i]] <- metadata$indicator_pages[[parking_rows$indicator_id[[i]]]]$unit
+    source_id <- unlist(metadata$indicator_pages[[parking_rows$indicator_id[[i]]]]$sources, use.names=FALSE)[[1L]]
+    source_record <- metadata$source_records[[source_id]]
+    source_vintage <- source_record$vintages[[1L]]
+    parking_rows$source_name[[i]] <- source_record$dataset
+    parking_rows$source_version[[i]] <- source_vintage$version
+    parking_rows$reference_date[[i]] <- source_vintage$dateReference
+    parking_rows$publication_date[[i]] <- source_vintage$datePublication
+  }
+  scalar <- project_scalar_canonical_rows(parking_rows, metadata,
+    c("places_stationnement_velo_1000", "places_stationnement_voiture_1000",
+      "stationnement_velo_par_voiture"),
+    data.frame(territory_id="53", territory_type="region"),
+    source_vintages=scalar_vintages)
+  regional <- scalar$facts[scalar$facts$territory_id == "53", , drop=FALSE]
+  expect_true(all(vapply(c("places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000", "stationnement_velo_par_voiture"),
+    function(id) "region" %in% scalar$descriptors$allowed_levels[[
+      match(id, scalar$descriptors$indicator_id)]], logical(1L))))
+  expect_equal(regional$value[match(c("places_stationnement_velo_1000",
+    "places_stationnement_voiture_1000","stationnement_velo_par_voiture"),
+    regional$indicator_id)], c(22.75,25,.91))
+  expect_true(all(regional$status == "measured"))
 })
 
 test_that("Mobility density signature preserves independent range, density and decile coordinates", {

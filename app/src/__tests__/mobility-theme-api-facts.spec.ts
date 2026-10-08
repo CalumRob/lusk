@@ -62,6 +62,8 @@ describe('SQL Mobilité response to Variant E facts', () => {
         status: 'measured', unit: 'places / 1 000 hab', sources, dimensions: {} },
       { indicator_id: 'places_stationnement_voiture_1000', label: 'Voiture', value: 400,
         status: 'measured', unit: 'places / 1 000 hab', sources, dimensions: {} },
+      { indicator_id: 'stationnement_velo_par_voiture', label: 'Ratio vélo/voiture', value: 0.91,
+        status: 'measured', unit: 'places vélo / place voiture', sources, dimensions: {} },
     ]
     data.indicator_metadata = ['reseaux', 'offre_cyclable'].map((indicator_id) => ({
       indicator_id, kind: 'declared_dimensions', allowed_levels: ['commune','epci','departement','region'],
@@ -80,8 +82,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
     if (parking.evidence?.kind !== 'sharing-parking') throw new Error('Regional parking facts missing')
     expect(parking.evidence.bikeSpaces.fact.value).toBe(12)
     expect(parking.evidence.carSpaces.fact.value).toBe(400)
-    expect(parking.evidence.bikePerCar.fact.value).toBeNull()
-    expect(parking.evidence.ratioNote).toContain('deux mesures de stationnement')
+    expect(parking.evidence.bikePerCar.fact.value).toBe(0.91)
   })
 
   it('consumes scalar, profile and selected-reading wire fields with SQL provenance', () => {
