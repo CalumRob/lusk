@@ -50,10 +50,23 @@ function contentWithAedarAccess(): ThemeContent {
   } as unknown as ThemeContent
 }
 
-function aedarFacts(count: number) {
+function contentWithAedarAccessReference(): ThemeContent {
+  const content = baseContent()
+  const section = aedarAccessSection(aedarReady, content.territory, {
+    reference: { data: aedarReferenceReady, territory: { type: 'epci', id: '200000001' }, label: 'EPCI X' },
+  })
+  const first = content.units[0]
+  return {
+    ...content,
+    units: [{ ...first, sections: [section] }, ...content.units.slice(1)],
+  } as unknown as ThemeContent
+}
+
+function aedarFacts(count: number, options: { territoryId?: string; territoryType?: 'commune' | 'epci'; value?: number } = {}) {
+  const { territoryId = '22001', territoryType = 'commune', value = 0.5 } = options
   return Array.from({ length: count }, (_, index) => ({
-    territory_id: '22001',
-    territory_type: 'commune' as const,
+    territory_id: territoryId,
+    territory_type: territoryType,
     typequ: `TYPEQU${index}`,
     typequ_label: `Type ${index}`,
     identity: {},
@@ -64,7 +77,7 @@ function aedarFacts(count: number) {
       [5, 10, 15, 20].flatMap((duration) =>
         ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) =>
           ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, i) => `decile${i + 1}`), 'mean']
-            .map((stat) => [`count_${duration}_${mode}_${stat}`, 0.5]),
+            .map((stat) => [`count_${duration}_${mode}_${stat}`, value]),
         ),
       ),
     ),
@@ -78,12 +91,9 @@ function aedarFacts(count: number) {
   }))
 }
 
-const aedarReady: Extract<AedarFetchResult, { status: 'ready' }> = {
-  status: 'ready',
-  facts: aedarFacts(10),
-  contentVersion: 'test-version',
-  provenance: {
-    contentVersion: 'test-version',
+function aedarProvenance(contentVersion: string) {
+  return {
+    contentVersion,
     sources: [{
       source_id: 'aedar_bretagne',
       vintage_id: '2026-v1',
@@ -93,7 +103,21 @@ const aedarReady: Extract<AedarFetchResult, { status: 'ready' }> = {
       reference_date: '2026-01-01',
       publication_date: '2026-09-30',
     }],
-  },
+  }
+}
+
+const aedarReady: Extract<AedarFetchResult, { status: 'ready' }> = {
+  status: 'ready',
+  facts: aedarFacts(10),
+  contentVersion: 'test-version',
+  provenance: aedarProvenance('test-version'),
+}
+
+const aedarReferenceReady: Extract<AedarFetchResult, { status: 'ready' }> = {
+  status: 'ready',
+  facts: aedarFacts(10, { territoryId: '200000001', territoryType: 'epci', value: 0.25 }),
+  contentVersion: 'test-version',
+  provenance: aedarProvenance('test-version'),
 }
 
 describe('VarianteCahierLibre — aedar-access opt-in', () => {
@@ -132,15 +156,81 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(wrapper.findAll('.aedar-access-evidence > .cahier-figure-title')).toHaveLength(0)
     expect(wrapper.find('.blank-map-slots > .cahier-figure-title').text()).toBe('Cartes d’accès aux services, par mode')
     expect(wrapper.findAll('.aedar-ramp .cahier-figure-title').map((title) => title.text())).toEqual([
-      'Diversité des types d’équipements — Voiture',
-      'Équipements accessibles par type — Voiture',
+      'Diversité des types d’équipements',
+      'Équipements accessibles par type',
     ])
 
-    // Honest empty-state reading under the map slots
+    // Every mode renders a mode-colored line in both ramps, and the legend names the modes.
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--car').length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike').length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike-light').length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit').length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit-light').length).toBeGreaterThanOrEqual(2)
+    const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')
+    expect(firstRampLegend.map((item) => item.text())).toEqual([
+      'Voiture',
+      'Vélo (LTS4)',
+      'Vélo (LTS2)',
+      'Transports en commun',
+      'À pied',
+    ])
+
+    // The tooltip reads one row per mode.
+    await wrapper.find('.aedar-ramp [aria-label="Temps d\'accès : 15 min"]').trigger('focus')
+    const tooltip = wrapper.find('.aedar-ramp [role="tooltip"]').text()
+    expect(tooltip).toContain('Voiture')
+    expect(tooltip).toContain('Vélo (LTS2)')
+    expect(tooltip).toContain('À pied')
+
+    // Honest empty-state reading under the map slots, ramp reading at the evidence level.
     expect(wrapper.find('.blank-map-slots .cahier-figure-lecture').text()).toContain('aucune carte n’est affichée')
+    expect(wrapper.find('.aedar-access-evidence > .cahier-figure-lecture').text()).toContain('Chaque courbe suit un mode de déplacement')
 
     // The section has a reading: no "lecture indisponible" placeholder may follow the evidence.
     expect(wrapper.find('[data-section="aedar-access"] .evidence-placeholder').exists()).toBe(false)
+  })
+
+  it('renders per-mode comparison lines and an explicit reference label when reference evidence exists', async () => {
+    const content = contentWithAedarAccessReference()
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(VarianteCahierLibre, {
+      props: {
+        content,
+        pagination: cahierPaginationFor(payload, content),
+        showAllUnits: true,
+        presentation: 'plain',
+        aedarAccessEnabled: true,
+      },
+      global: { plugins: [router] },
+    })
+    await router.isReady()
+    await flushPromises()
+
+    // Dashed, mode-colored comparison lines in both ramps.
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison').length).toBeGreaterThanOrEqual(2)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison.access-ramp-line--car').length).toBeGreaterThanOrEqual(2)
+
+    // The legend names the five modes plus the explicitly labeled reference territory.
+    const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')
+    expect(firstRampLegend.map((item) => item.text())).toEqual([
+      'Voiture',
+      'Vélo (LTS4)',
+      'Vélo (LTS2)',
+      'Transports en commun',
+      'À pied',
+      'EPCI X',
+    ])
+    const referenceMark = firstRampLegend[5]!.find('.cahier-figure-legend-mark')
+    expect(referenceMark.classes()).toContain('cahier-figure-legend-mark--dash')
+
+    // The ramp reading explains the reference honestly — never a fabricated cohort.
+    const lecture = wrapper.find('.aedar-access-evidence > .cahier-figure-lecture').text()
+    expect(lecture).toContain('EPCI X')
+    expect(lecture).toContain('territoire de référence')
+
+    // The reference values land in the tooltip note per mode.
+    await wrapper.find('.aedar-ramp [aria-label="Temps d\'accès : 15 min"]').trigger('focus')
+    expect(wrapper.find('.aedar-ramp [role="tooltip"]').text()).toContain('EPCI X : 2,5')
   })
 
   it('does NOT render the aedar-access branch when aedarAccessEnabled is false (default)', async () => {
@@ -270,5 +360,63 @@ describe('VarianteCahierLibreAedar wrapper', () => {
       expect(section.evidence.mapFigureTitle).toBe('Cartes d’accès aux services, par mode')
       expect(section.evidence.ramps).toHaveLength(2)
     }
+  })
+
+  it('merges the reference territory into per-mode comparison values when versions match', async () => {
+    const content = baseContent()
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(VarianteCahierLibreAedar, {
+      props: {
+        content,
+        pagination: cahierPaginationFor(payload, content),
+        comparisonOptions: [],
+        aedarData: aedarReady,
+        aedarStatus: 'ready',
+        retryAedar: () => {},
+        aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' },
+        aedarReferenceData: aedarReferenceReady,
+        aedarReferenceStatus: 'ready',
+      },
+      global: { plugins: [router] },
+    })
+    await router.isReady()
+    await flushPromises()
+
+    const cahierProps = wrapper.findComponent(VarianteCahierLibre).props()
+    const section = (cahierProps.content as ThemeContent).units[0].sections[0] as unknown as AedarAccessSection
+    if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
+    for (const ramp of section.evidence.ramps) {
+      expect(ramp.referenceLabel).toBe('EPCI X')
+    }
+    // 10 reference types at 0.25 share: diversity sums to 2.5, count-per-type averages to 0.25.
+    expect(section.evidence.ramps[0]?.reference?.car).toEqual([2.5, 2.5, 2.5, 2.5])
+    expect(section.evidence.ramps[1]?.reference?.walk).toEqual([0.25, 0.25, 0.25, 0.25])
+  })
+
+  it('drops the reference when its published version differs from the focal aggregates', async () => {
+    const content = baseContent()
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(VarianteCahierLibreAedar, {
+      props: {
+        content,
+        pagination: cahierPaginationFor(payload, content),
+        comparisonOptions: [],
+        aedarData: aedarReady,
+        aedarStatus: 'ready',
+        retryAedar: () => {},
+        aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' },
+        aedarReferenceData: { ...aedarReferenceReady, contentVersion: 'other-version', provenance: aedarProvenance('other-version') },
+        aedarReferenceStatus: 'ready',
+      },
+      global: { plugins: [router] },
+    })
+    await router.isReady()
+    await flushPromises()
+
+    const cahierProps = wrapper.findComponent(VarianteCahierLibre).props()
+    const section = (cahierProps.content as ThemeContent).units[0].sections[0] as unknown as AedarAccessSection
+    if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
+    expect(section.evidence.ramps.every((ramp) => ramp.reference === null)).toBe(true)
+    expect(section.evidence.ramps.every((ramp) => ramp.referenceLabel === null)).toBe(true)
   })
 })

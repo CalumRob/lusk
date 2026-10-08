@@ -1,5 +1,5 @@
 import type { FactAvailability, FactProvenance } from './territoryFacts'
-import type { AedarTimeRampEvidence } from './themeContent'
+import type { AedarRampMode, AedarTimeRampEvidence } from './themeContent'
 
 type Row = Record<string, unknown>
 const horizons = [5, 10, 15, 20] as const
@@ -10,10 +10,32 @@ const isText = (value: unknown): value is string => typeof value === 'string' &&
 const isFinite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 function invalid(): never { throw new Error('Réponse des agrégats AEDAR invalide') }
 
+/**
+ * The five normal access modes rendered as ramp lines, in legend order.
+ * `transit_gain` is a net-difference reading, not an ordinary access mode.
+ */
+export const AEDAR_RAMP_MODES: readonly AedarRampMode[] = ['car', 'bike_lts4', 'bike_lts2', 'transit', 'walk']
+
+export const AEDAR_RAMP_MODE_LABELS: Readonly<Record<AedarRampMode, string>> = {
+  car: 'Voiture',
+  bike_lts4: 'Vélo (LTS4)',
+  bike_lts2: 'Vélo (LTS2)',
+  transit: 'Transports en commun',
+  walk: 'À pied',
+}
+
 export interface AedarTimeRampOptions {
   territory: { type: string; id: string }
-  mode: typeof modes[number]
-  modeLabel: string
+}
+
+/** Per-rampKey, per-mode territory values derived from one validated AEDAR response. */
+export interface AedarTimeRampValues {
+  rampKey: 'diversity' | 'count-per-type'
+  xAxis: AedarTimeRampEvidence['xAxis']
+  yAxis: AedarTimeRampEvidence['yAxis']
+  territory: Record<AedarRampMode, readonly (number | null)[]>
+  availability: FactAvailability
+  provenance: FactProvenance
 }
 
 function rowProvenance(row: Row): FactProvenance {
@@ -21,13 +43,13 @@ function rowProvenance(row: Row): FactProvenance {
     referenceDate: row.reference_date as string | null, publicationDate: row.publication_date as string | null }
 }
 
-/** Validate the complete AEDAR type universe before deriving the two semantic time ramps. */
-export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampOptions): AedarTimeRampEvidence[] {
+/** Validate the complete AEDAR type universe before deriving the two semantic time ramps, per mode. */
+export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampOptions): AedarTimeRampValues[] {
   if (!isRecord(response) || !isRecord(response.territory) || !Array.isArray(response.facts) ||
       response.territory.territory_type !== options.territory.type || response.territory.territory_id !== options.territory.id ||
       !isText(response.content_version) || !isText(response.reference_content_version) ||
       !Number.isInteger(response.limit) || !Number.isInteger(response.offset) || response.offset !== 0 ||
-      response.facts.length >= (response.limit as number) || !response.facts.length || !modes.includes(options.mode) || !isText(options.modeLabel)) invalid()
+      response.facts.length >= (response.limit as number) || !response.facts.length) invalid()
   const rows = response.facts as unknown[]
   const parsed: (Row & { measures: Record<string, unknown> })[] = []
   const typeIds = new Set<string>()
@@ -49,24 +71,35 @@ export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampO
   if (parsed.some((row) => row.source_id !== first.source_id || row.vintage_id !== first.vintage_id ||
       row.reference_date !== first.reference_date || row.publication_date !== first.publication_date)) invalid()
   const provenance = rowProvenance(first)
-  const build = (rampKey: 'diversity' | 'count-per-type'): AedarTimeRampEvidence => {
+  const build = (rampKey: 'diversity' | 'count-per-type'): AedarTimeRampValues => {
     const statistic = rampKey === 'diversity' ? 'share' : 'mean'
-    const territory = horizons.map((horizon) => {
-      const values = parsed.map((row) => row.measures![`count_${horizon}_${options.mode}_${statistic}`])
+    const seriesFor = (mode: AedarRampMode): readonly (number | null)[] => horizons.map((horizon) => {
+      const cells = parsed.map((row) => row.measures![`count_${horizon}_${mode}_${statistic}`])
       // Never publish a partial universe aggregate or silently coerce missing measures to zero.
-      if (values.some((value) => value === null)) return null
-      const numeric = values as number[]
+      if (cells.some((value) => value === null)) return null
+      const numeric = cells as number[]
       return rampKey === 'diversity'
         ? numeric.reduce((sum, value) => sum + value, 0)
         : numeric.reduce((sum, value) => sum + value, 0) / numeric.length
     })
-    const availability: FactAvailability = territory.every((value) => value !== null) ? 'complete' : 'incomplete'
-    return { kind: 'aedar-time-ramp', rampKey,
-      figureTitle: rampKey === 'diversity' ? 'Diversité des types d’équipements' : 'Équipements accessibles par type',
+    const territory: Record<AedarRampMode, readonly (number | null)[]> = {
+      car: seriesFor('car'),
+      bike_lts4: seriesFor('bike_lts4'),
+      bike_lts2: seriesFor('bike_lts2'),
+      transit: seriesFor('transit'),
+      walk: seriesFor('walk'),
+    }
+    const availability: FactAvailability = AEDAR_RAMP_MODES.every((mode) => territory[mode].every((value) => value !== null))
+      ? 'complete'
+      : 'incomplete'
+    return {
+      rampKey,
       xAxis: { values: horizons, labels: horizons.map((value) => `${value} min`), unit: 'minutes', label: 'Temps d’accès' },
       yAxis: rampKey === 'diversity' ? { label: 'Types d’équipements', unit: '' } : { label: 'Équipements par type', unit: 'équipements / type' },
-      series: { territory, reference: null }, highlightedHorizon: 15, mode: options.mode, modeLabel: options.modeLabel,
-      availability, provenance, sourceCoverage: 'complete' }
+      territory,
+      availability,
+      provenance,
+    }
   }
   return [build('diversity'), build('count-per-type')]
 }

@@ -30,12 +30,13 @@ import ThemeTabs from '@/components/ThemeTabs.vue'
 import ProductionMobilite from '@/fiche/mobilite/ProductionMobilite.vue'
 import VarianteCahierLibreAedar from '@/fiche/prototype/VarianteCahierLibreAedar.vue'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
-import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
+import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import {
   PARAM_COMPARAISON,
   optionsContexteComparaison,
   resoudreContexteComparaison,
+  territoireReferencePourComparaison,
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
@@ -99,6 +100,8 @@ const productionMobilite = computed(() => selection.value === 'mobilite')
 const aedarPrototypeActive = computed(() => route.query['aedar-proto'] === '1')
 const aedarData = ref<AedarFetchResult | null>(null)
 const aedarStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const aedarReferenceData = ref<AedarFetchResult | null>(null)
+const aedarReferenceStatus = ref<'unavailable' | 'loading' | 'ready' | 'error'>('unavailable')
 const retryAedarCount = ref(0)
 function retryAedar(): void { retryAedarCount.value++ }
 function toggleAedarPrototype(active: boolean): void { const query = { ...route.query }; if (active) query['aedar-proto'] = '1'; else delete query['aedar-proto']; void router.replace({ query }) }
@@ -193,6 +196,30 @@ const optionsComparaison = computed(() => optionsContexteComparaison({
   territoire: territoire.value,
   contextes: modeleTerritoire.model.value?.themes.mobilite?.comparisons ?? {},
 }))
+
+/**
+ * The prototype's comparison lines read the same AEDAR aggregates on a single
+ * published reference territory (EPCI or région Bretagne) — never a cohort.
+ * A density-class comparison has no single-territory reference and the
+ * comparison stays honestly unavailable.
+ */
+const aedarReferenceTerritoire = computed(() => territoireReferencePourComparaison({
+  territoire: territoire.value,
+  mode: resolutionComparaison.value?.mode ?? null,
+  territoires: modeleTerritoire.model.value?.territories ?? [],
+}))
+const aedarReferenceKey = computed(() => {
+  const reference = aedarReferenceTerritoire.value
+  return reference ? `${reference.type}/${reference.id}` : ''
+})
+watch([aedarPrototypeActive, aedarReferenceKey, retryAedarCount], async ([active, key], _old, onCleanup) => {
+  if (!active || !key) { aedarReferenceData.value = null; aedarReferenceStatus.value = 'unavailable'; return }
+  let cancelled = false; onCleanup(() => { cancelled = true })
+  aedarReferenceStatus.value = 'loading'; aedarReferenceData.value = null
+  const [type, id] = key.split('/')
+  const result = await fetchAedarAggregates(type as AedarTerritoryType, id)
+  if (!cancelled) { aedarReferenceData.value = result; aedarReferenceStatus.value = result.status === 'ready' ? 'ready' : 'error' }
+}, { immediate: true })
 
 const scalarCohortScopeKey = computed(() => {
   const scope = resolutionComparaison.value?.contexte?.scope
@@ -779,7 +806,8 @@ watch(
             </nav>
             <VarianteCahierLibreAedar v-if="aedarPrototypeActive && productionMobilite && contenuMobilite && paginationCahier"
               :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
-              :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar" />
+              :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
+              :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData" :aedar-reference-status="aedarReferenceStatus" />
             <ProductionMobilite v-else-if="productionMobilite && contenuMobilite && paginationCahier"
               :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
               :access-status="statutAccesApi" :retry-access="rechargerMobilityFacts"

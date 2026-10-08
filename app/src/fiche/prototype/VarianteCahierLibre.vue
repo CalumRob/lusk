@@ -45,7 +45,8 @@ import {
 import {
   MOBILITE_MODE_LABELS,
 } from '@/fiche/content/territoryFacts'
-import type { MobiliteAccessMode, MobiliteService, NumericFact, TimeRampFigureData, TimeRampPoint, TimeRampSeries } from '@/fiche/content/territoryFacts'
+import type { MobiliteAccessMode, MobiliteService, NumericFact, TimeRampFigureData, TimeRampSeries } from '@/fiche/content/territoryFacts'
+import { AEDAR_RAMP_MODE_LABELS, AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarTimeRampEvidence } from '@/fiche/content/themeContent'
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
 import type { CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
@@ -394,18 +395,17 @@ function aedarAccessEvidenceFor(section: ContentSection): AedarAccessEvidence | 
 }
 
 /** Convert AedarTimeRampEvidence to the generic TimeRampFigureData expected by AccessRampFigureCahier. */
-function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence, territoryName: string): TimeRampFigureData {
-  const points: readonly TimeRampPoint[] = ramp.xAxis.values.map((xValue, index) => ({
-    xValue,
-    xLabel: ramp.xAxis.labels[index] ?? `${xValue}`,
-    value: ramp.series.territory[index] ?? null,
-    referenceValue: ramp.series.reference?.[index] ?? null,
+function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureData {
+  const series: readonly TimeRampSeries[] = AEDAR_RAMP_MODES.map((mode) => ({
+    key: mode,
+    label: AEDAR_RAMP_MODE_LABELS[mode],
+    points: ramp.xAxis.values.map((xValue, index) => ({
+      xValue,
+      xLabel: ramp.xAxis.labels[index] ?? `${xValue}`,
+      value: ramp.territory[mode][index] ?? null,
+      referenceValue: ramp.reference?.[mode][index] ?? null,
+    })),
   }))
-  const series: readonly TimeRampSeries[] = [{
-    key: 'territory',
-    label: territoryName,
-    points,
-  }]
   return {
     availability: ramp.availability,
     xAxis: { label: ramp.xAxis.label, unit: ramp.xAxis.unit },
@@ -413,7 +413,7 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence, territoryName: st
     series,
     highlightedX: ramp.highlightedHorizon,
     provenance: ramp.provenance,
-    comparisonLabel: ramp.series.reference === null ? null : 'Groupe comparé',
+    comparisonLabel: ramp.referenceLabel,
   }
 }
 
@@ -657,10 +657,10 @@ onBeforeUnmount(() => {
                         class="aedar-ramp"
                       >
                         <figcaption class="cahier-figure-title cahier-baseline-anchor">
-                          {{ ramp.figureTitle }} — {{ ramp.modeLabel }}
+                          {{ ramp.figureTitle }}
                         </figcaption>
                         <AccessRampFigureCahier
-                          :time-ramp="rampToTimeRampFigureData(ramp, aedarAccessEvidenceFor(section)!.territory.name)"
+                          :time-ramp="rampToTimeRampFigureData(ramp)"
                           :territory-name="aedarAccessEvidenceFor(section)!.territory.name"
                         />
                       </figure>

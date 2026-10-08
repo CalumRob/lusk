@@ -1,5 +1,5 @@
 import type { TerritoryComparisonContext, TerritoryComparisonMode } from '@/payload/territoryReadModel'
-import type { Territoire } from '@/payload/types'
+import type { Territoire, TerritoireType } from '@/payload/types'
 import type { LocationQuery } from 'vue-router'
 import type { InjectionKey } from 'vue'
 import type { Ref } from 'vue'
@@ -71,6 +71,44 @@ export function queryTerritoireAvecComparaison(query: LocationQuery, theme: stri
   return typeof query[PARAM_COMPARAISON] === 'string'
     ? { theme, [PARAM_COMPARAISON]: query[PARAM_COMPARAISON] }
     : { theme }
+}
+
+export interface TerritoireReferenceComparaison {
+  type: TerritoireType
+  id: string
+  nom: string
+}
+
+/**
+ * Resolve the single published reference territory behind a comparison mode.
+ * AEDAR aggregates declare territories, never cohorts: 'epci' selects the
+ * commune's EPCI and 'bretagne' the region, while a density-class cohort has
+ * no single-territory reference and stays honestly unavailable. EPCI and
+ * département levels keep the fixed Bretagne universe; the région has none.
+ */
+export function territoireReferencePourComparaison(options: {
+  territoire: Territoire | null
+  mode: TerritoryComparisonMode | null
+  territoires: readonly Territoire[]
+}): TerritoireReferenceComparaison | null {
+  const { territoire, mode, territoires } = options
+  if (!territoire) return null
+  if (territoire.type === 'region') return null
+  const referenceRegion = (): TerritoireReferenceComparaison | null => {
+    const region = territoires.find((candidate) => candidate.type === 'region')
+    return region ? { type: 'region', id: region.territoire, nom: region.nom } : null
+  }
+  if (territoire.type === 'commune') {
+    if (mode === 'epci') {
+      const epci = territoire.epci
+        ? territoires.find((candidate) => candidate.type === 'epci' && candidate.territoire === territoire.epci)
+        : undefined
+      return epci ? { type: 'epci', id: epci.territoire, nom: epci.nom } : null
+    }
+    if (mode === 'bretagne') return referenceRegion()
+    return null
+  }
+  return referenceRegion()
 }
 
 /**

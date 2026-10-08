@@ -102,6 +102,9 @@ export interface BpeProfilesEvidence {
   figureLecture: readonly TextBlock[]
 }
 
+/** The five normal AEDAR access modes rendered as ramp lines (transit_gain is excluded). */
+export type AedarRampMode = 'walk' | 'transit' | 'bike_lts2' | 'bike_lts4' | 'car'
+
 export interface AedarTimeRampEvidence {
   kind: 'aedar-time-ramp'
   rampKey: 'diversity' | 'count-per-type'
@@ -109,10 +112,13 @@ export interface AedarTimeRampEvidence {
   figureTitle: string
   xAxis: { values: readonly number[]; labels: readonly string[]; unit: string; label: string }
   yAxis: { label: string; unit: string }
-  series: { territory: readonly (number | null)[]; reference: readonly (number | null)[] | null }
+  /** Per-mode territory values aligned with xAxis.values; null stays unavailable, never zero. */
+  territory: Readonly<Record<AedarRampMode, readonly (number | null)[]>>
+  /** Per-mode reference-territory values, or null when no honest reference evidence exists. */
+  reference: Readonly<Record<AedarRampMode, readonly (number | null)[]>> | null
+  /** Explicit reference-territory label (e.g. an EPCI or region name), never a fabricated cohort. */
+  referenceLabel: string | null
   highlightedHorizon: number
-  mode: string
-  modeLabel: string
   availability: FactAvailability
   provenance: FactProvenance | null
   sourceCoverage: string

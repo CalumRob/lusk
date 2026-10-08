@@ -5,6 +5,7 @@ import {
   optionsContexteComparaison,
   queryTerritoireAvecComparaison,
   resoudreContexteComparaison,
+  territoireReferencePourComparaison,
 } from '@/fiche/comparisonContext'
 import type {
   TerritoryComparisonContext,
@@ -158,5 +159,73 @@ describe('contexte de comparaison communal piloté par l’URL', () => {
     expect(libelleOptionComparaison(option, 'bâtiments')).toBe('bâtiments des communes de EPCI X')
     expect(libelleOptionComparaison({ ...option, label: 'communes bretonnes' }, 'bâtiments'))
       .toBe('bâtiments des communes bretonnes')
+  })
+})
+
+describe('territoire de référence AEDAR', () => {
+  const commune = territoiresFixture.find((territoire) => territoire.territoire === '22001')!
+  const epci = territoiresFixture.find((territoire) => territoire.type === 'epci')!
+  const departement = territoiresFixture.find((territoire) => territoire.type === 'departement')!
+  const region = territoiresFixture.find((territoire) => territoire.type === 'region')!
+  const bretagne = { type: 'region' as const, id: '53', nom: 'Bretagne' }
+
+  it('résout l’EPCI de la commune pour le mode epci', () => {
+    expect(territoireReferencePourComparaison({
+      territoire: commune,
+      mode: 'epci',
+      territoires: territoiresFixture,
+    })).toEqual({ type: 'epci', id: '200000001', nom: 'EPCI X' })
+  })
+
+  it('résout la région Bretagne pour le mode bretagne', () => {
+    expect(territoireReferencePourComparaison({
+      territoire: commune,
+      mode: 'bretagne',
+      territoires: territoiresFixture,
+    })).toEqual(bretagne)
+  })
+
+  it('ne résout aucun territoire de référence pour une cohorte de densité', () => {
+    expect(territoireReferencePourComparaison({
+      territoire: commune,
+      mode: 'densite',
+      territoires: territoiresFixture,
+    })).toBeNull()
+  })
+
+  it('résout la région Bretagne pour les niveaux EPCI et département', () => {
+    for (const territoire of [epci, departement]) {
+      expect(territoireReferencePourComparaison({
+        territoire,
+        mode: null,
+        territoires: territoiresFixture,
+      })).toEqual(bretagne)
+    }
+  })
+
+  it('ne résout aucune référence pour la région ou sans territoire', () => {
+    expect(territoireReferencePourComparaison({
+      territoire: region,
+      mode: null,
+      territoires: territoiresFixture,
+    })).toBeNull()
+    expect(territoireReferencePourComparaison({
+      territoire: null,
+      mode: 'epci',
+      territoires: territoiresFixture,
+    })).toBeNull()
+  })
+
+  it('ne résout pas une EPCI absente du référentiel', () => {
+    expect(territoireReferencePourComparaison({
+      territoire: { ...commune, epci: null },
+      mode: 'epci',
+      territoires: territoiresFixture,
+    })).toBeNull()
+    expect(territoireReferencePourComparaison({
+      territoire: commune,
+      mode: 'epci',
+      territoires: territoiresFixture.filter((item) => item.type !== 'epci'),
+    })).toBeNull()
   })
 })

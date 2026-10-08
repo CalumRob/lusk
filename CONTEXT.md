@@ -408,6 +408,18 @@ _Avoid_: libellés locaux, table des exemples (the registry covers the whole uni
 The complete 235-code INSEE TYPEQU/label nomenclature for the BPE 2025 vintage. It defines the closed TYPEQU axis of the 2026-v1 AEDAR territorial aggregates at every territory level, including types with no address-routing observations; it is not interchangeable with the legacy 53-type mobility registry or a set inferred from observed rows.
 _Avoid_: Bretagne-observed types, kept list, address-observation axis
 
+**Modes AEDAR**:
+The five normal access modes published in the 2026-v1 AEDAR territorial aggregates and rendered as ramp lines in the prototype Mobilité: `walk` (À pied), `transit` (Transports en commun — walking included, aggregate scenario p1), `bike_lts2` (Vélo LTS2), `bike_lts4` (Vélo LTS4), and `car` (Voiture). `transit_gain` is a net-difference reading, not an ordinary access mode, and is never displayed under ordinary-access labels. Ramp lines keep the fiche's mode-color families — car, bike, foot/transit — with the narrower modes (LTS2, walking alone) on a lightened family tone.
+_Avoid_: six ramp modes (transit_gain is not one), a renderer-owned mode selection or labels
+
+**Rampe temporelle AEDAR**:
+One of the prototype's two time-indexed readings of the AEDAR aggregates, drawn per mode over 5/10/15/20 minutes with the provisional 15-minute horizon marked: **diversity** sums the per-type shares of residential addresses reaching at least one item of each type; **count-per-type** averages the per-type mean equipment counts over the same complete address universe. Unknown stays null — never zero — and an incomplete universe yields gaps, never a partial sum.
+_Avoid_: mean of shares (diversity is a sum), building weighting (the universe is addresses)
+
+**Territoire de référence AEDAR**:
+The single published territory whose own AEDAR aggregates back the prototype's comparison lines: the commune's EPCI for the `epci` comparison mode, the région Bretagne for `bretagne` (and for EPCI/département levels, whose comparison universe is fixed). A density-class cohort has no single-territory reference — the aggregates declare territories, not cohorts — so the comparison honestly stays unavailable instead of fabricating a peer curve. The reference is labeled with the territory's own name, never « groupe comparé ».
+_Avoid_: courbe de cohorte, médiane de pairs AEDAR, groupe comparé AEDAR
+
 **Tension d’accès**:
 A meaningful contrast in the access of one type d’équipement across voiture, vélo + TC, and à pied + TC; a selected type earns space by making that contrast legible, never merely by being numerically unusual. The three mode values are read together so the role names a relationship rather than declaring a single winning mode.
 _Avoid_: score d’accessibilité, classement des modes, saillance (retired Story-selection vocabulary)
