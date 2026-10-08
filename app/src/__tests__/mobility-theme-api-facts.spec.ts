@@ -48,6 +48,46 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(facts.mobility.losses.diversityWalkTransit).toMatchObject({ value: 7, unit: 'types' })
     expect(facts.mobility.losses.diversityBike).toMatchObject({ value: 8, unit: 'types' })
   })
+  it('projects regional motorisation details and the regional curve separately from its named median', () => {
+    const regionPayload: Payload = { ...payload, territoires: [
+      { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
+    ] }
+    const axes = ['t0000','t0015','t0030','t0045','t0060','t0090','t0120','t0180','t0240','t0300','t0360']
+    const parts = [0.118268,0.4795024,0.4022296]
+    const values = [0.985199,1,1,1,1,1,1,1,1,1,1]
+    const reference = [0.000399,0.000476,0.001036,0.002318,0.004568,0.014585,
+      0.043124,0.114126,0.214321,0.249159,0.268105]
+    const data = response()
+    data.territory = { territory_id: '53', territory_type: 'region', name: 'Bretagne' }
+    data.indicators = [
+      ...['sans_voiture','une_voiture','deux_plus'].map((detail,index) => ({
+        indicator_id:'voitures_menage', unit:'%', status:'measured', value:parts[index],
+        sources:[{...sources[0], reference_date:'2023-01-01'}], dimensions:{detail},
+      })),
+      ...axes.map((axis,index) => ({ indicator_id:'raccordement_courbe', unit:'%', status:'measured',
+        value:values[index], sources:[{...sources[0], reference_date:'2026-08-25'}],
+        dimensions:{axis,numeric_axis_value:index===0?0:index===1?15:index===2?30:index===3?45:index===4?60:index===5?90:index===6?120:index===7?180:index===8?240:index===9?300:360,
+          observation_period:'2026-09-16'} })),
+    ]
+    data.indicator_metadata = [{indicator_id:'voitures_menage',kind:'declared_dimensions',
+      allowed_levels:['commune','epci','departement','region'],denominator_semantics:'Ménages recensés',
+      axes:['sans_voiture','une_voiture','deux_plus'].map((key,order)=>({name:'detail',key,label:key,order,unit:'%'}))},
+      {indicator_id:'raccordement_courbe',axis_kind:'duration_minute',axis_values:axes,
+        axis_numeric_values:[0,15,30,45,60,90,120,180,240,300,360],completeness:'dense_complete'}]
+    data.named_reference_evidence = [{indicator_id:'raccordement_courbe',id:'commune_bretonne_mediane',
+      label:'Commune bretonne médiane',role:'analytical_reference',statistic:'median_routed_communes',unit:'%',
+      points:axes.map((axis,index)=>({axis,value:reference[index],observation_period:'2026-09-16',
+        status:'measured',provenance:[{...sources[0],source_name:'SQL mobility',revision_hash:'ref-v1'}]}))}]
+    const facts = mobilityFactsFromThemeApi(regionPayload,'53',data)
+    const composition = facts.mobility.indicators.filter((fact)=>fact.key==='voitures_menage')
+    const curve = facts.mobility.indicators.filter((fact)=>fact.key==='raccordement_courbe')
+    expect(composition.map((fact)=>fact.detail)).toEqual(['sans_voiture','une_voiture','deux_plus'])
+    expect(composition.map((fact)=>fact.value)).toEqual(parts)
+    expect(curve).toHaveLength(11)
+    expect(curve.map((fact)=>fact.value)).toEqual(values)
+    expect(data.named_reference_evidence[0].points.map((point:any)=>point.value)).toEqual(reference)
+    expect(curve.some((fact)=>fact.key==='raccordement_reference')).toBe(false)
+  })
   it('rejects measured facts without source lineage instead of presenting static provenance', () => {
     const data = response()
     data.indicators[0]!.sources = []
