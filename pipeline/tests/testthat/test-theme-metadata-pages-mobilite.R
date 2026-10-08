@@ -64,6 +64,10 @@ test_that("l'énumération des pages Mobilité est connue — les pages multi-me
 test_that("valider_theme_metadata : le canon Mobilité épinglé porte ses vingt pages scalaires complètes (#461)", {
   meta <- lire_theme_metadata("mobilite")
   expect_no_error(valider_theme_metadata(meta))
+  expect_true("region" %in% unlist(meta$indicator_pages$voitures_menage$levels))
+  expect_true("region" %in% unlist(meta$indicator_pages$raccordement_courbe$levels))
+  expect_identical(unlist(meta$profile_contracts$voitures_menage$detail_units),
+    c(sans_voiture = "%", une_voiture = "%", deux_plus = "%"))
 })
 
 test_that("le ratio bornes par station-service opte pour son modèle de lecture avec ses deux sources", {

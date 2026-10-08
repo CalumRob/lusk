@@ -79,8 +79,9 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         curve_rows=[("35238",[.11,.19,.27,.35,.43,.55,.67,.79,.87,.93,.98]),
                     ("35001",[.10,.18,.26,.34,.42,.50,.62,.74,.84,.92,.97]),
                     ("35002",[.09,.17,.25,.33,.41,.45,.57,.69,.79,.89,.95]),
-                    ("22001",[.12,.20,.28,.36,.44,.99,.68,.80,.88,.94,.99])]
-        for key,territory,kind,values in ([ ("raccordement_courbe",territory,"commune",values) for territory,values in curve_rows ]+
+                    ("22001",[.12,.20,.28,.36,.44,.99,.68,.80,.88,.94,.99]),
+                    ("53",[.01,.07,.15,.23,.32,1.0,.58,.71,.81,.9,.96])]
+        for key,territory,kind,values in ([ ("raccordement_courbe",territory,"region" if territory=="53" else "commune",values) for territory,values in curve_rows ]+
                                            [("raccordement_reference","53","region",[.02,.08,.16,.24,.33,.45,.59,.72,.82,.9,.96])]):
             for axis,value in zip(axes,values):
                 fixture.append({"key":key,"theme":"mobilite","detail":axis,"type":kind,"territoire":territory,
@@ -103,7 +104,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             "indicator_pages":{"raccordement_courbe":{"indicator":"raccordement_courbe","unit":"%","direction":"high",
                 "comparison":{"detail":"t0090","details":axes},"label":"Courbe raccordement",
                 "sources":["matrice_temps_mairies"],"trajectory":{"reference":{"indicator":"raccordement_reference",
-                    "territoire":"53","label":"Commune bretonne médiane"}},"levels":["commune"]}},
+                    "territoire":"53","label":"Commune bretonne médiane"}},"levels":["commune","epci","departement","region"]}},
             "source_records":{"matrice_temps_mairies":{"dataset":"Matrice temps fixture"}}}
         import tempfile
         with tempfile.TemporaryDirectory() as directory:
@@ -126,8 +127,8 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             completed=subprocess.run(["Rscript",str(script),str(root),str(payload_path),str(metadata_path),schema],cwd=root/"pipeline",env=env,capture_output=True,text=True)
             assert completed.returncode==0,completed.stdout+completed.stderr
         counts=pub.execute("SELECT row_count FROM series_dataset_publication WHERE dataset_id='raccordement_curve'").fetchone()
-        assert counts==(55,)
-        assert pub.execute("SELECT count(*) FROM series_dataset_observation WHERE indicator_id='raccordement_courbe'").fetchone()==(44,)
+        assert counts==(66,)
+        assert pub.execute("SELECT count(*) FROM series_dataset_observation WHERE indicator_id='raccordement_courbe'").fetchone()==(55,)
         assert pub.execute("SELECT count(*) FROM series_named_reference WHERE reference_id='commune_bretonne_mediane'").fetchone()==(11,)
         # A conflicting legacy descriptor is deliberately present. Only the
         # explicit owned route declaration may choose the owned dataset.
@@ -149,6 +150,13 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         assert all(p["observation_period"]=="2026-09-16" for p in body["named_references"][0]["points"])
         assert all(p["provenance"][0]["version"]=="2026-09-18" for p in body["points"])
         assert all(p["provenance"][0]["source_id"]=="matrice_temps_mairies" for p in body["points"])
+        with TestClient(app) as client:
+            region_curve=client.get("/api/territories/region/53/indicators/raccordement_courbe")
+        assert region_curve.status_code==200,region_curve.text
+        region_body=region_curve.json()
+        assert [p["value"] for p in region_body["points"]]==[.01,.07,.15,.23,.32,1.0,.58,.71,.81,.9,.96]
+        assert region_body["named_references"][0]["id"]=="commune_bretonne_mediane"
+        assert region_body["named_references"][0]["points"]!=region_body["points"]
         with TestClient(app) as client:
             named_reference=client.get("/api/territories/commune/35238/indicators/raccordement_reference")
             wrong_reference_context=client.get("/api/territories/epci/35238/indicators/raccordement_reference")

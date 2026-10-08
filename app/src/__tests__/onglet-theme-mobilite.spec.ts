@@ -145,6 +145,15 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     expect(reseaux.find('.barre-segmentee').exists()).toBe(true)
   })
 
+  it('renders the regional three-part motorisation composition', async () => {
+    const wrapper = await monter('53')
+    const voitures = wrapper.find('.figure-indicateur[data-clef="voitures_menage"]')
+    expect(voitures.exists()).toBe(true)
+    expect(voitures.text()).toContain('Ménages sans voiture')
+    expect(voitures.text()).toContain('Ménages avec 1 voiture')
+    expect(voitures.text()).toContain('Ménages avec 2 voitures ou plus')
+  })
+
   it('stamps the block with the snapshot estampille — distinct from the weekly chips', async () => {
     const wrapper = await monter('22001')
 
