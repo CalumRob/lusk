@@ -154,9 +154,9 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     // The section label is not duplicated as a figure title: each figure carries
     // its own descriptive title through the shared figure-title primitive.
     expect(wrapper.findAll('.aedar-access-evidence > .cahier-figure-title')).toHaveLength(0)
-    expect(wrapper.find('.blank-map-slots > .cahier-figure-title').text()).toBe("Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?")
+    expect(wrapper.find('.blank-map-slots > .cahier-figure-title').text()).toBe('Quelle diversité de l’offre est accessible en 15 minutes depuis les adresses résidentielles ?')
     expect(wrapper.findAll('.aedar-ramp .cahier-figure-title').map((title) => title.text())).toEqual([
-      'Nombre de types d’équipements accessibles (moyenne du territoire)',
+      'Diversité de l’offre accessible (moyenne du territoire)',
     ])
 
     // Every mode renders a mode-colored territory line and the legend names the modes.
@@ -375,7 +375,7 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     expect(section.lecture).toBeNull()
     expect(section.evidence?.kind).toBe('aedar-access')
     if (section.evidence?.kind === 'aedar-access') {
-      expect(section.evidence.mapFigureTitle.map((segment) => segment.value).join('')).toBe("Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?")
+      expect(section.evidence.mapFigureTitle.map((segment) => segment.value).join('')).toBe('Quelle diversité de l’offre est accessible en 15 minutes depuis les adresses résidentielles ?')
       expect(section.evidence.ramps).toHaveLength(2)
     }
   })

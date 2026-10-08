@@ -113,7 +113,7 @@ export function aedarAccessSection(
       territory: { code: territory.code, name: territory.name },
       horizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
       mapFigureTitle: [
-        text("Combien de types d'équipements accessibles en "),
+        text('Quelle diversité de l’offre est accessible en '),
         emphasis('15 minutes'),
         text(' depuis les adresses résidentielles ?'),
       ],

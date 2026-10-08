@@ -72,7 +72,7 @@ describe('aedarAccessSection', () => {
     const section = aedarAccessSection(aedarReady('22001'), territory)
     expect(section.evidence?.kind).toBe('aedar-access')
     if (section.evidence?.kind !== 'aedar-access') return
-    expect(section.evidence.mapFigureTitle.map((segment) => segment.value).join('')).toBe("Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?")
+    expect(section.evidence.mapFigureTitle.map((segment) => segment.value).join('')).toBe('Quelle diversité de l’offre est accessible en 15 minutes depuis les adresses résidentielles ?')
     expect(section.evidence.mapFigureTitle.find((segment) => segment.kind === 'emphasis')?.value).toBe('15 minutes')
     expect(section.evidence.horizonMinutes).toBe(AEDAR_PROTOTYPE_HORIZON_MINUTES)
   })
