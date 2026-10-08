@@ -217,11 +217,11 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         assert regional_body["territory"]["territory_id"]=="53"
         assert any(item["indicator_id"]=="fixture_scalar" and item["value"]==0.75
             for item in regional_body["indicators"])
-        assert regional_body["owned_series"]==[]
-        assert not any(item["indicator_id"]=="raccordement_courbe"
-            for item in regional_body["indicators"])
+        assert len(regional_body["owned_series"])==1
+        assert regional_body["owned_series"][0]["indicator_id"]=="raccordement_courbe"
+        assert len(regional_body["owned_series"][0]["points"])==11
         regional_default_body=regional_default_theme.json()
-        assert regional_default_body["owned_series"]==[]
+        assert len(regional_default_body["owned_series"])==1
         assert not any(result["indicator_id"]=="raccordement_courbe"
             for result in regional_default_body["default_comparison"]["results"])
         assert not any(result["indicator_id"]=="raccordement_courbe"
@@ -322,7 +322,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         raw_reference["observation_period"]=expected_observation_period
         expected_curve["axis_value"]=expected_curve.detail.astype(str)
         raw_reference["axis_value"]=raw_reference.detail.astype(str)
-        assert len(excluded_curve)==11 and set(excluded_curve.type)=={"region"}
+        assert excluded_curve.empty
         assert set(raw_curve.unit)=={page["unit"]} and set(raw_reference.unit)=={page["unit"]}
         assert set(expected_curve.axis_value)==set(axes) and set(raw_reference.axis_value)==set(axes)
         expected_territories=set(canonical_territories.loc[
@@ -402,7 +402,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
                 str(vintage.source),source_record["dataset"],str(vintage.version),str(vintage.date_reference),
                 str(vintage.date_publication))
             assert revision_hash in linked_revisions
-        assert pub.execute("SELECT count(*) FROM series_dataset_observation WHERE territory_type='region'").fetchone()==(0,)
+        assert pub.execute("SELECT count(*) FROM series_dataset_observation WHERE territory_type='region'").fetchone()==(11,)
         descriptor=pub.execute("""SELECT axis_kind,axis_values,axis_numeric_values,completeness,comparison_point,
             unit,direction,allowed_levels,active_read_route,theme_id,comparison_statistic,comparison_scope,
             observation_period_kind
@@ -425,6 +425,14 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             None if pd.isna(row.rider) else str(row.rider) for row in ren_expected.itertuples()]
         assert [point["observation_period"] for point in canonical_http.json()["points"]]==[
             expected_observation_period]*len(axes)
+        with TestClient(app) as client:
+            region_http=client.get("/api/territories/region/53/indicators/raccordement_courbe")
+        assert region_http.status_code==200,region_http.text
+        region_expected=expected_curve[expected_curve.territoire.astype(str)=="53"].set_index("axis_value").loc[axes]
+        assert [point["value"] for point in region_http.json()["points"]]==[
+            None if pd.isna(value) else float(value) for value in region_expected.value]
+        assert region_http.json()["named_references"][0]["id"]=="commune_bretonne_mediane"
+        assert region_http.json()["named_references"][0]["points"] != region_http.json()["points"]
         with TestClient(app) as client:
             canonical_reference=client.get("/api/territories/commune/35238/indicators/raccordement_reference")
         assert canonical_reference.status_code==200
