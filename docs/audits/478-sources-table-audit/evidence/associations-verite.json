@@ -1,0 +1,353 @@
+{
+  "note": "Table de vérité #478 : associations rendues (/sources, build branche) vs autorité publiée (theme_*.json). Les deux coïncident TOUJOURS — les défauts d’attribution vivent dans l’autorité elle-même (déclarations manquantes) ou dans le contrat (jeux sans consommateur filtrés, thèmes non rendus, lien sans page).",
+  "jeuxRendus": [
+    {
+      "jeu": "serie-historique",
+      "nom": "INSEE — Série historique du recensement",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "demographie/Densité de population",
+        "demographie/Évolution de la population depuis 1968"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 552,
+      "horloges": 1
+    },
+    {
+      "jeu": "menages",
+      "nom": "INSEE — Ménages (dossier complet)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "demographie/Taille moyenne des ménages"
+      ],
+      "consommateursAutorite": [
+        "demographie/taille_menages"
+      ],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 375,
+      "horloges": 0
+    },
+    {
+      "jeu": "age-detail",
+      "nom": "INSEE — Population par sexe et âge (PRINC)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "demographie/Structure par âge"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 349,
+      "horloges": 0
+    },
+    {
+      "jeu": "logements",
+      "nom": "INSEE — Logements (dossier complet)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "habitat/Mix de logements",
+        "habitat/Statut d’occupation",
+        "habitat/Âge du bâti",
+        "habitat/Type de logement"
+      ],
+      "consommateursAutorite": [
+        "habitat/mix_logements",
+        "habitat/statut",
+        "habitat/age_du_bati",
+        "habitat/type"
+      ],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 450,
+      "horloges": 0
+    },
+    {
+      "jeu": "dvf",
+      "nom": "Étalab — DVF géolocalisées",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "habitat/Médiane prix au m²"
+      ],
+      "consommateursAutorite": [
+        "habitat/prix_m2"
+      ],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 349,
+      "horloges": 0
+    },
+    {
+      "jeu": "dpe",
+      "nom": "ADEME — Observatoire DPE, logements existants",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "habitat/Part de passoires thermiques",
+        "habitat/Distribution des étiquettes DPE (A à G)"
+      ],
+      "consommateursAutorite": [
+        "habitat/part_passoires",
+        "habitat/distribution_dpe"
+      ],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 434,
+      "horloges": 0
+    },
+    {
+      "jeu": "sirene-snapshot",
+      "nom": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "economie/Part des éco-activités"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 375,
+      "horloges": 0
+    },
+    {
+      "jeu": "flores-a88",
+      "nom": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "economie/Effectifs salariés (lieu de travail)"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 406,
+      "horloges": 0
+    },
+    {
+      "jeu": "rp-chomage",
+      "nom": "INSEE — Population active et chômage (dossier complet)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "economie/Chômage (population active)"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 375,
+      "horloges": 0
+    },
+    {
+      "jeu": "mobilite-snapshot",
+      "nom": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "mobilite/Perte totale d’accès — à pied ou en transports en commun",
+        "mobilite/Perte totale d’accès — à vélo",
+        "mobilite/Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+        "mobilite/Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+        "mobilite/Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+        "mobilite/Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+        "mobilite/Part des bâtiments sans accès à la banque (à pied ou en transports en commun)"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 1078,
+      "horloges": 2
+    },
+    {
+      "jeu": "rp-logement-princ",
+      "nom": "INSEE — Recensement de la population, logements (LOG T12)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "mobilite/Voitures par ménage"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 1030,
+      "horloges": 5
+    },
+    {
+      "jeu": "osm-reseaux",
+      "nom": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "mobilite/Places de stationnement voiture pour 1 000 hab.",
+        "mobilite/Places de stationnement vélo pour 1 place voiture",
+        "mobilite/L’offre cyclable"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 611,
+      "horloges": 1
+    },
+    {
+      "jeu": "amenagements-cyclables",
+      "nom": "Geovelo — Aménagements cyclables France Métropolitaine",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "mobilite/Réseaux à pied / vélo / voiture"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 518,
+      "horloges": 1
+    },
+    {
+      "jeu": "korrigo",
+      "nom": "Bretagne Mobilité — Korrigo",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "mobilite/Part des bâtiments près d’un arrêt (à 500 m)"
+      ],
+      "consommateursAutorite": [
+        "mobilite/offre_tc"
+      ],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 1030,
+      "horloges": 5
+    },
+    {
+      "jeu": "bornes-recharges",
+      "nom": "Etalab — Bornes de recharge pour véhicules électriques",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "mobilite/Bornes de recharge pour véhicules électriques",
+        "mobilite/Bornes de recharge par station-service"
+      ],
+      "consommateursAutorite": [
+        "mobilite/bornes_recharge",
+        "mobilite/bornes_ev_par_station_service"
+      ],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 1115,
+      "horloges": 5
+    },
+    {
+      "jeu": "stationnement-velo",
+      "nom": "Ecolab — Stationnement vélo",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "mobilite/Places de stationnement vélo pour 1 000 hab.",
+        "mobilite/Places de stationnement vélo pour 1 place voiture"
+      ],
+      "consommateursAutorite": [
+        "mobilite/places_stationnement_velo_1000",
+        "mobilite/stationnement_velo_par_voiture"
+      ],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 1115,
+      "horloges": 5
+    },
+    {
+      "jeu": "bpe-b316",
+      "nom": "INSEE — Base permanente des équipements (B316)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "mobilite/Bornes de recharge par station-service"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 1056,
+      "horloges": 5
+    },
+    {
+      "jeu": "consoenaf",
+      "nom": "Cerema — Consommation d’espaces naturels, agricoles et forestiers (CONSOENAF) 2011-2025",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "milieux/Consommation d’ENAF — série annuelle"
+      ],
+      "consommateursAutorite": [
+        "milieux/conso_enaf_annuel"
+      ],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 550,
+      "horloges": 1
+    },
+    {
+      "jeu": "ocsge-artificialisation",
+      "nom": "IGN — OCS GE « surfaces artificialisées » v2.0 (Nouvelle Génération)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "milieux/Intensité état"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 951,
+      "horloges": 1
+    },
+    {
+      "jeu": "acv",
+      "nom": "ANCT — Programme Action cœur de ville : liste des communes sélectionnées (COG 2025)",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "programmes/Couverture programmatique"
+      ],
+      "consommateursAutorite": [
+        "programmes/couverture_programmes"
+      ],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [
+        "programmes/Couverture programmatique → /indicateurs/programmes/couverture_programmes (aucune indicator_pages : la route rend « Indicateur introuvable »)"
+      ],
+      "hauteurCartePx": 524,
+      "horloges": 1
+    },
+    {
+      "jeu": "subventions-scdl",
+      "nom": "Région Bretagne — subventions attribuées (SCDL), data.bretagne.bzh",
+      "themesAffichesSurLaPage": null,
+      "consommateursRendus": [
+        "programmes/Subventions régionales attribuées (année de référence)",
+        "programmes/Subventions régionales par domaine"
+      ],
+      "consommateursAutorite": [],
+      "ecart": "ÉCART rendu ≠ autorité",
+      "liensMorts": [],
+      "hauteurCartePx": 629,
+      "horloges": 1
+    }
+  ],
+  "jeuxFiltresHorsPage": [
+    {
+      "jeu": "crte",
+      "nom": "ANCT — Contrat de relance et de transition écologique : suivi du périmètre (COG 2025)",
+      "themesAutorite": [
+        "programmes"
+      ]
+    },
+    {
+      "jeu": "epci",
+      "nom": "INSEE — Base des EPCI à fiscalité propre au 01/01/2025",
+      "themesAutorite": [
+        "demographie"
+      ]
+    },
+    {
+      "jeu": "pvd",
+      "nom": "ANCT — Programme Petites villes de demain : liste des communes sélectionnées (COG 2025)",
+      "themesAutorite": [
+        "programmes"
+      ]
+    },
+    {
+      "jeu": "territoires_industrie",
+      "nom": "ANCT/Banque des Territoires — liste des Territoires d'industrie et des communes concernées",
+      "themesAutorite": [
+        "programmes"
+      ]
+    }
+  ],
+  "liensSansPagePubliée": [
+    "programmes/Couverture programmatique → /indicateurs/programmes/couverture_programmes (aucune indicator_pages : la route rend « Indicateur introuvable »)"
+  ]
+}

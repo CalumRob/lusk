@@ -1,0 +1,301 @@
+{
+  "page": "/methodologie?onglet=sources&section=mobilite",
+  "largeur": 375,
+  "viewport": {
+    "innerWidth": 375,
+    "innerHeight": 812
+  },
+  "scrollLargeurDoc": 375,
+  "clientLargeurDoc": 375,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 375,
+  "maxDroiteContenu": 1001,
+  "pireContenu": "button.onglet",
+  "debordementCoquille": 626,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "div.tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.tiroir-tete",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.en-tete-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "span.lusk-marque",
+      "left": 399,
+      "right": 473
+    },
+    {
+      "sel": "svg.lusk-marque__ermine",
+      "left": 399,
+      "right": 425
+    },
+    {
+      "sel": "path",
+      "left": 403,
+      "right": 409
+    },
+    {
+      "sel": "span.lusk-marque__mot",
+      "left": 433,
+      "right": 473
+    },
+    {
+      "sel": "button.tiroir-fermer",
+      "left": 682,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.lucide-x-icon.lucide-x",
+      "left": 692,
+      "right": 716
+    },
+    {
+      "sel": "div.tiroir-recherche",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "div.global-search",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "div.global-search__bar",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "svg.lucide.global-search__icone.lucide-search-icon",
+      "left": 412,
+      "right": 430
+    },
+    {
+      "sel": "circle",
+      "left": 414,
+      "right": 426
+    },
+    {
+      "sel": "input.global-search__champ",
+      "left": 430,
+      "right": 725
+    },
+    {
+      "sel": "nav.nav-tiroir",
+      "left": 375,
+      "right": 750
+    },
+    {
+      "sel": "a.tiroir-lien",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "span.tiroir-lien.tiroir-groupe-titre",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "a.tiroir-lien.tiroir-lien--sous",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "a.router-link-active.router-link-exact-active.tiroir-lien",
+      "left": 399,
+      "right": 726
+    },
+    {
+      "sel": "button.onglet",
+      "left": 155,
+      "right": 394
+    },
+    {
+      "sel": "span",
+      "left": 197,
+      "right": 378
+    },
+    {
+      "sel": "button.onglet.onglet--selectionne",
+      "left": 398,
+      "right": 510
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-route-icon",
+      "left": 414,
+      "right": 432
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-users-icon",
+      "left": 530,
+      "right": 548
+    }
+  ],
+  "hauteurPagePx": 7033,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 11,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",
+      "nomLen": 117,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Perte totale d’accès — à pied ou en transports en commun",
+        "Perte totale d’accès — à vélo",
+        "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+        "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+        "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+        "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+        "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)"
+      ],
+      "hauteurLignePx": 856,
+      "hauteurCelluleIndicateurs": 423
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Recensement de la population, exploitations principales (Logements) — tableau LOG T12 « Équipement automobile des ménages » (le jeu DS_RP_LOGEMENT_PRINC, la dimension CARS)",
+      "nomLen": 180,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Voitures par ménage"
+      ],
+      "hauteurLignePx": 496,
+      "hauteurCelluleIndicateurs": 21
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "OpenStreetMap — réseaux routier/cyclable/piéton (extrait Geofabrik Bretagne) — © OpenStreetMap contributors, licence ODbL 1.0 (ADR-0001)",
+      "nomLen": 136,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Places de stationnement voiture pour 1 000 hab.",
+        "Places de stationnement vélo pour 1 place voiture",
+        "L’offre cyclable"
+      ],
+      "hauteurLignePx": 567,
+      "hauteurCelluleIndicateurs": 113
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Geovelo — Aménagements cyclables France Métropolitaine (schéma national v0.3.5, ODbL — © OpenStreetMap contributors, ADR-0001)",
+      "nomLen": 126,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Réseaux à pied / vélo / voiture"
+      ],
+      "hauteurLignePx": 475,
+      "hauteurCelluleIndicateurs": 21
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Table de passage annuelle des communes (COG 2025)",
+      "nomLen": 57,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 391,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "IGN — Admin Express COG, limites communales (WFS data.geopf.fr, Licence Ouverte 2.0)",
+      "nomLen": 84,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 412,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Bretagne Mobilité — Korrigo : base multimodale GTFS des transports publics en Bretagne (les 24+ réseaux : BreizhGo TER/car/maritime + les réseaux urbains STAR, Bibus, QUB, TUB, MAT, Izilo, TBK, Kicéo…)",
+      "nomLen": 201,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Part des bâtiments près d’un arrêt (à 500 m)"
+      ],
+      "hauteurLignePx": 517,
+      "hauteurCelluleIndicateurs": 42
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "BDNB (Base Nationale des Bâtiments) — couche des bâtiments résidentiels de Bretagne, portée pour l’offre TC (geom_adresse POINT EPSG:2154, code_commune_insee)",
+      "nomLen": 158,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 443,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Etalab / data.bretagne.bzh — Fichier consolidé des Bornes de Recharge pour Véhicules Électriques (IRVE), schéma 2.2.0",
+      "nomLen": 117,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Bornes de recharge pour véhicules électriques",
+        "Bornes de recharge par station-service"
+      ],
+      "hauteurLignePx": 500,
+      "hauteurCelluleIndicateurs": 88
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Ecolab — Nombre de places de stationnement vélo pour 1 000 hab. (hub d’indicateurs territoriaux de transition écologique ; source OSM : Base Nationale du Stationnement Cyclable)",
+      "nomLen": 177,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Places de stationnement vélo pour 1 000 hab.",
+        "Places de stationnement vélo pour 1 place voiture"
+      ],
+      "hauteurLignePx": 563,
+      "hauteurCelluleIndicateurs": 88
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Base permanente des équipements (BPE25), fichier détail géolocalisé, filtre analytique B316 stations-service",
+      "nomLen": 116,
+      "themes": [
+        "Mobilité"
+      ],
+      "indicateurs": [
+        "Bornes de recharge par station-service"
+      ],
+      "hauteurLignePx": 454,
+      "hauteurCelluleIndicateurs": 42
+    }
+  ],
+  "tableLargeurPx": 343,
+  "conteneurLargeurPx": 343,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=mobilite"
+}

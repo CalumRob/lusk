@@ -1,0 +1,71 @@
+{
+  "page": "/methodologie?onglet=sources&section=habitat",
+  "largeur": 1440,
+  "viewport": {
+    "innerWidth": 1440,
+    "innerHeight": 900
+  },
+  "scrollLargeurDoc": 1440,
+  "clientLargeurDoc": 1440,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 1320,
+  "maxDroiteContenu": 1427,
+  "pireContenu": "table.sources-tableau",
+  "debordementCoquille": 107,
+  "sectionsMilimesVides": 0,
+  "debordants": [],
+  "hauteurPagePx": 1350,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 3,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Logements (dossier complet)",
+      "nomLen": 35,
+      "themes": [
+        "Habitat"
+      ],
+      "indicateurs": [
+        "Mix de logements",
+        "Statut d’occupation",
+        "Âge du bâti",
+        "Type de logement"
+      ],
+      "hauteurLignePx": 184,
+      "hauteurCelluleIndicateurs": 159
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "Étalab — DVF géolocalisées",
+      "nomLen": 26,
+      "themes": [
+        "Habitat"
+      ],
+      "indicateurs": [
+        "Médiane prix au m²"
+      ],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": 42
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "ADEME — Observatoire DPE, logements existants",
+      "nomLen": 45,
+      "themes": [
+        "Habitat"
+      ],
+      "indicateurs": [
+        "Part de passoires thermiques",
+        "Distribution des étiquettes DPE (A à G)"
+      ],
+      "hauteurLignePx": 176,
+      "hauteurCelluleIndicateurs": 151
+    }
+  ],
+  "tableLargeurPx": 1291,
+  "conteneurLargeurPx": 1168,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=habitat"
+}
