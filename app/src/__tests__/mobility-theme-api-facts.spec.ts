@@ -179,7 +179,6 @@ describe('SQL Mobilité response to Variant E facts', () => {
     if (section?.evidence?.kind !== 'public-transport') throw new Error('Regional transport content missing')
     const rendered = mount(CahierOffreTransportsFigure, { props: {
       offer: section.evidence.offer, trajectory: section.evidence.trajectory,
-      reference: section.evidence.reference,
       metadata: { axis:'numeric',axisLabels:{x:'Temps (minutes)',y:'Population joignable (%)'},
         ticks:axes.map((detail,index)=>({detail,label:String(index*15)})),
         endpoints:['t0000','t0360'],
@@ -193,7 +192,6 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(rendered.find('.transit-legend-reference').exists()).toBe(false)
     expect(rendered.findAll('.transit-point--territory').map((point)=>point.attributes('data-value')))
       .toEqual(values.map(String))
-    expect(section.evidence.reference).toEqual([])
   })
   it('rejects measured facts without source lineage instead of presenting static provenance', () => {
     const data = response()

@@ -207,7 +207,7 @@ export type ContentEvidence =
   | CyclingOfferEvidence
   | SharingParkingEvidence
   | { kind: 'motorisation'; composition: readonly ContentFact[]; charging: readonly ContentFact[] }
-  | { kind: 'public-transport'; offer: ContentFact | null; trajectory: readonly ContentFact[]; reference: readonly ContentFact[]; trajectoryMetadata: TrajectoryMetadata | null }
+  | { kind: 'public-transport'; offer: ContentFact | null; trajectory: readonly ContentFact[]; trajectoryMetadata: TrajectoryMetadata | null }
 
 interface ContentSectionBase<Key extends string, Evidence> {
   key: Key
@@ -607,7 +607,6 @@ function registerFor(sections: readonly MobiliteContentSection[]): ContentSource
     if (section.evidence?.kind === 'public-transport') {
       add(section.evidence.offer)
       for (const fact of section.evidence.trajectory) add(fact)
-      for (const fact of section.evidence.reference) add(fact)
     }
   }
   return [...sources.values()]
@@ -1731,11 +1730,10 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
   const curve = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
   // Raccordement displays the focal territory's own curve only. Named median
   // reference series remain historical serving evidence, not a second line.
-  const reference: ContentFact[] = []
   const offer = factFor('offre_tc')
-  const transitFacts = [...(offer ? [offer] : []), ...curve, ...reference]
+  const transitFacts = [...(offer ? [offer] : []), ...curve]
   const transitEvidence = transitFacts.length ? {
-    kind: 'public-transport' as const, offer, trajectory: curve, reference,
+    kind: 'public-transport' as const, offer, trajectory: curve,
     trajectoryMetadata: metadata?.indicator_pages?.raccordement_courbe?.family === 'trajectory'
       ? metadata.indicator_pages.raccordement_courbe.trajectory : null,
   } : null
