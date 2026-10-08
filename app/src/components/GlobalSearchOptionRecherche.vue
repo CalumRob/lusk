@@ -11,6 +11,7 @@
  * d'attributs depuis l'appelant, qui garde l'item dans sa portée.
  */
 import { computed } from 'vue'
+import { useRoute } from 'vue-router'
 
 import type { Territoire } from '../payload/types'
 import { libelleType } from '../search/recherche'
@@ -28,6 +29,7 @@ const props = defineProps<{
   /** Mode sans navigation (#283) : les territoires deviennent des boutons. */
   sansNavigation?: boolean
 }>()
+const route = useRoute()
 
 /** La racine : un bouton pour le zoom carte, un lien sinon. */
 const racine = computed(() =>
@@ -42,6 +44,11 @@ const cible = computed(() => {
     : props.resultat && {
         name: 'territoire',
         params: { type: props.resultat.type, id: props.resultat.territoire },
+        query: {
+          ...(route.query.theme === 'mobilite' ? { theme: 'mobilite' } : {}),
+          ...(route.query['aedar-proto'] === '1' ? { 'aedar-proto': '1' } : {}),
+          ...(route.query.comparaison !== undefined ? { comparaison: route.query.comparaison } : {}),
+        },
       }
 })
 </script>

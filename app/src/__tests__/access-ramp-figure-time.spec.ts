@@ -40,6 +40,44 @@ function timeRamp(overrides: Partial<TimeRampFigureData> = {}): TimeRampFigureDa
 }
 
 describe('AccessRampFigureCahier time ramp', () => {
+  it('toggles each mode and its reference together with accessible selected state', async () => {
+    const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
+    const car = wrapper.find('button[aria-pressed="true"]')
+    expect(car.text()).toContain('Voiture')
+    expect(car.classes()).toContain('cahier-figure-legend-toggle')
+    expect(car.element.tagName).toBe('BUTTON')
+    expect(wrapper.find('.cahier-figure-legend-item button:focus-visible').exists()).toBe(false)
+    const walking = wrapper.findAll('.cahier-figure-legend-item button').find((button) => button.text().includes('pied'))!
+    expect(walking.attributes('aria-pressed')).toBe('false')
+    await walking.trigger('click')
+    expect(walking.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.findAll('.access-ramp-line--walkTransit-light')).toHaveLength(2)
+    await walking.trigger('click')
+    expect(walking.attributes('aria-pressed')).toBe('false')
+    expect(wrapper.findAll('.access-ramp-line--walkTransit-light')).toHaveLength(0)
+  })
+
+  it('recomputes scale and accessible data from visible modes only, safely when all are hidden', async () => {
+    const data = timeRamp({ series: [
+      { key: 'car', label: 'Voiture', points: [5, 10, 15, 20].map((xValue) => ({ xValue, xLabel: `${xValue} min`, value: 10, referenceValue: 9 })) },
+      { key: 'transit', label: 'Transports en commun', points: [5, 10, 15, 20].map((xValue) => ({ xValue, xLabel: `${xValue} min`, value: 100, referenceValue: 90 })) },
+    ] })
+    const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: data, territoryName: 'Territoire test' } })
+    const transit = wrapper.findAll('.cahier-figure-legend-item button').find((button) => button.text().includes('Transports'))!
+    expect(transit.attributes('aria-pressed')).toBe('true')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Transports en commun')
+    await transit.trigger('click')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).not.toContain('Transports en commun')
+    expect(wrapper.findAll('.access-ramp-line--comparison')).toHaveLength(1)
+    const carPath = wrapper.find('.access-ramp-line--territory').attributes('d') ?? ''
+    expect(Number(carPath.match(/M [\d.]+ ([\d.]+)/)?.[1])).toBeLessThan(200)
+    const carButton = wrapper.find('.cahier-figure-legend-item button[aria-pressed="true"]')
+    await carButton.trigger('click')
+    expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).not.toContain('Voiture')
+    expect(wrapper.findAll('.access-ramp-line--territory')).toHaveLength(0)
+    expect(wrapper.findAll('.access-ramp-grid line').length).toBeGreaterThan(0)
+  })
+
   it('renders time ticks, horizon, unit, reference, gaps, and accessible value tooltips', async () => {
     const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
     expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Territoire test')
