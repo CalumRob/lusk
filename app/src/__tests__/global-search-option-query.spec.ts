@@ -9,7 +9,7 @@ describe('navigation depuis la recherche globale avec le prototype AEDAR', () =>
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/territoire/:type/:id', name: 'territoire', component: { template: '<div />' } }, { path: '/', component: { template: '<div />' } }] })
     await router.push('/?theme=mobilite&aedar-proto=1&comparaison=epci')
     const wrapper = mount(GlobalSearchOptionRecherche, {
-      props: { genre: 'territoire', actif: false, resultat: { type: 'commune', territoire: '35238', nom: 'Rennes' } },
+      props: { genre: 'territoire', actif: false, resultat: { type: 'commune', territoire: '35238', nom: 'Rennes', departement: '35', epci: null } },
       global: { plugins: [router] },
     })
     const target = wrapper.findComponent({ name: 'RouterLink' }).props('to')
