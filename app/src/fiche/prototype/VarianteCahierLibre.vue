@@ -411,7 +411,6 @@ function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence): TimeRampFigureDa
     xAxis: { label: ramp.xAxis.label, unit: ramp.xAxis.unit },
     yAxis: { label: ramp.yAxis.label, unit: ramp.yAxis.unit },
     series,
-    highlightedX: ramp.highlightedHorizon,
     provenance: ramp.provenance,
     comparisonLabel: ramp.referenceLabel,
   }
@@ -648,9 +647,8 @@ onBeforeUnmount(() => {
                       :territory="aedarAccessEvidenceFor(section)!.territory"
                       :horizon-minutes="aedarAccessEvidenceFor(section)!.horizonMinutes"
                       :title="aedarAccessEvidenceFor(section)!.mapFigureTitle"
-                      :lecture="aedarAccessEvidenceFor(section)!.mapLecture"
                     />
-                    <div class="aedar-ramps">
+                    <div class="aedar-analysis">
                       <figure
                         v-for="ramp in aedarAccessEvidenceFor(section)!.ramps.filter((item) => item.rampKey === 'diversity')"
                         :key="ramp.rampKey"
@@ -664,10 +662,24 @@ onBeforeUnmount(() => {
                           :territory-name="aedarAccessEvidenceFor(section)!.territory.name"
                         />
                       </figure>
+                      <aside class="aedar-reading">
+                        <p class="aedar-reading__explanation">La figure compare la diversité des types accessibles selon le mode et le temps de trajet.</p>
+                        <p v-if="aedarAccessEvidenceFor(section)!.diversityGap.value !== null" class="aedar-reading__gap">
+                          <template v-if="aedarAccessEvidenceFor(section)!.diversityGap.value! >= 0">{{ formatNumber(aedarAccessEvidenceFor(section)!.diversityGap.value!) }} types de moins accessibles à pied qu’en voiture</template>
+                          <template v-else>{{ formatNumber(Math.abs(aedarAccessEvidenceFor(section)!.diversityGap.value!)) }} types de plus accessibles à pied qu’en voiture</template>
+                          en {{ aedarAccessEvidenceFor(section)!.diversityGap.horizonMinutes }} min
+                        </p>
+                        <p v-else class="aedar-reading__gap aedar-reading__gap--unavailable" role="note">Écart indisponible : les deux valeurs de diversité ne sont pas disponibles pour cet horizon.</p>
+                        <p v-if="aedarAccessEvidenceFor(section)!.source" class="aedar-reading__source">
+                          <a :href="aedarAccessEvidenceFor(section)!.source!.url" target="_blank" rel="noreferrer">{{ aedarAccessEvidenceFor(section)!.source!.sourceId }}</a>
+                          · {{ aedarAccessEvidenceFor(section)!.source!.version }}
+                          <span v-if="aedarAccessEvidenceFor(section)!.source!.referenceDate"> · Référence : {{ aedarAccessEvidenceFor(section)!.source!.referenceDate }}</span>
+                          <span v-if="aedarAccessEvidenceFor(section)!.source!.publicationDate"> · Publication : {{ aedarAccessEvidenceFor(section)!.source!.publicationDate }}</span>
+                          <span v-if="aedarAccessEvidenceFor(section)!.source!.attribution"> · {{ aedarAccessEvidenceFor(section)!.source!.attribution }}</span>
+                          <span v-if="aedarAccessEvidenceFor(section)!.source!.licence"> · {{ aedarAccessEvidenceFor(section)!.source!.licence }}</span>
+                        </p>
+                      </aside>
                     </div>
-                    <CahierFigureLecture v-if="aedarAccessEvidenceFor(section)!.figureLecture.length > 0">
-                      <CahierProse :blocks="aedarAccessEvidenceFor(section)!.figureLecture" />
-                    </CahierFigureLecture>
                   </figure>
 
                   <figure
@@ -1167,8 +1179,14 @@ onBeforeUnmount(() => {
 }
 
 .aedar-access-evidence { display: grid; grid-column: 1 / -1; justify-self: center; width: min(100%, 1040px); gap: var(--space-6); }
-.aedar-ramps { display: grid; width: 100%; gap: var(--space-6); grid-template-columns: minmax(0, 1fr); }
+.aedar-analysis { display: grid; grid-template-columns: minmax(0, var(--cahier-figure-width-compact, 560px)) minmax(260px, 1fr); align-items: center; justify-content: center; gap: var(--space-8); }
 .aedar-ramp { width: min(100%, var(--cahier-figure-width-compact, 560px)); justify-self: center; margin: 0; display: grid; gap: var(--space-3); }
+.aedar-reading { display: grid; align-content: center; gap: var(--space-4); min-width: 0; }
+.aedar-reading__explanation, .aedar-reading__source { margin: 0; color: var(--cahier-default); }
+.aedar-reading__gap { margin: 0; color: var(--cahier-theme-strong); font-family: var(--font-narrative-lead); font-size: clamp(1.25rem, 2.2vw, 1.8rem); line-height: 1.2; }
+.aedar-reading__gap--unavailable { font-size: 1rem; }
+.aedar-reading__source { font-size: var(--text-body-sm, 0.875rem); overflow-wrap: anywhere; }
+@media (max-width: 760px) { .aedar-analysis { grid-template-columns: minmax(0, 1fr); } }
 .concept-group {
   container: subgroup / inline-size;
   margin: 0 0 var(--cahier-group-gap, var(--space-8));

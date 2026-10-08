@@ -29,11 +29,7 @@ const transformed = computed(() => {
   const reference = referenceTerritoire && referenceData && referenceData.status === 'ready' && referenceData.contentVersion === focal.contentVersion
     ? { data: referenceData, territory: { type: referenceTerritoire.type, id: referenceTerritoire.id }, label: referenceTerritoire.nom }
     : null
-  const comparisonUnavailable = reference ? null
-    : props.aedarReferenceStatus === 'error' ? 'error' as const
-    : props.aedarReferenceStatus === 'unavailable' ? 'cohort' as const
-    : null
-  const section = aedarAccessSection(focal, props.content.territory, { reference, comparisonUnavailable })
+  const section = aedarAccessSection(focal, props.content.territory, { reference })
   const first = props.content.units[0]
   return { ...props.content, units: [{ ...first, sections: [section] }, ...props.content.units.slice(1)] } as unknown as ThemeContent
 })

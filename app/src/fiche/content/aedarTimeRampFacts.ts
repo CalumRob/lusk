@@ -18,8 +18,8 @@ export const AEDAR_RAMP_MODES: readonly AedarRampMode[] = ['car', 'bike_lts4', '
 
 export const AEDAR_RAMP_MODE_LABELS: Readonly<Record<AedarRampMode, string>> = {
   car: 'Voiture',
-  bike_lts4: 'Vélo (LTS4)',
   bike_lts2: 'Vélo (LTS2)',
+  bike_lts4: 'Vélo (LTS4)',
   transit: 'Transports en commun',
   walk: 'À pied',
 }

@@ -268,7 +268,6 @@ export interface TimeRampFigureData {
   xAxis: { label: string; unit: string }
   yAxis: { label: string; unit: string }
   series: readonly TimeRampSeries[]
-  highlightedX: number
   provenance: FactProvenance | null
   comparisonLabel: string | null
 }

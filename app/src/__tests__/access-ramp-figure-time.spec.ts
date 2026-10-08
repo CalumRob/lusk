@@ -32,7 +32,6 @@ function timeRamp(overrides: Partial<TimeRampFigureData> = {}): TimeRampFigureDa
         })),
       },
     ],
-    highlightedX: 15,
     provenance: null,
     comparisonLabel: 'Territoires comparables',
     ...overrides,
@@ -82,7 +81,7 @@ describe('AccessRampFigureCahier time ramp', () => {
     const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
     expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Territoire test')
     expect(wrapper.find('.access-ramp-cahier').text()).toContain('types')
-    expect(wrapper.find('.access-ramp-horizon').exists()).toBe(true)
+    expect(wrapper.find('.access-ramp-horizon').exists()).toBe(false)
     const labels = wrapper.find('.cahier-figure-axis-labels').text()
     for (const minute of [5, 10, 15, 20]) expect(labels).toContain(`${minute} min`)
     // Null territory and reference values split each corresponding line into segments.

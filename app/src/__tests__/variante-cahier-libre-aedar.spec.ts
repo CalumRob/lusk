@@ -141,31 +141,29 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(wrapper.find('.blank-map-slots').exists()).toBe(true)
     expect(wrapper.findAll('.blank-map-slot')).toHaveLength(3)
 
-    // Both ramps rendered
-    expect(wrapper.findAll('.access-ramp-cahier--time')).toHaveLength(2)
+    // Only diversity is rendered in this prototype presentation.
+    expect(wrapper.findAll('.access-ramp-cahier--time')).toHaveLength(1)
 
-    // Section title and reading use the shared section primitive (label + marelle + prose),
-    // exactly like the production page 1/page 2 sections.
+    // The AEDAR section has no generic Lecture block.
     const heading = wrapper.find('[data-section="aedar-access"] .concept-group-heading')
     expect(heading.find('.concept-group-label').text()).toBe('Accès aux services')
-    expect(heading.find('.concept-group-narrative').text()).toBe('Prototype AEDAR : l’accès depuis les adresses résidentielles')
-    expect(wrapper.find('[data-section="aedar-access"] .argument-copy').text()).toContain('prototype')
+    expect(heading.find('.concept-group-narrative').exists()).toBe(false)
+    expect(wrapper.find('[data-section="aedar-access"] .argument-copy').exists()).toBe(false)
 
     // The section label is not duplicated as a figure title: each figure carries
     // its own descriptive title through the shared figure-title primitive.
     expect(wrapper.findAll('.aedar-access-evidence > .cahier-figure-title')).toHaveLength(0)
     expect(wrapper.find('.blank-map-slots > .cahier-figure-title').text()).toBe('Cartes d’accès aux services, par mode')
     expect(wrapper.findAll('.aedar-ramp .cahier-figure-title').map((title) => title.text())).toEqual([
-      'Diversité des types d’équipements',
-      'Équipements accessibles par type',
+      'Combien de types d’équipements sont accessibles en moyenne ?',
     ])
 
-    // Every mode renders a mode-colored line in both ramps, and the legend names the modes.
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--car').length).toBeGreaterThanOrEqual(2)
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike').length).toBeGreaterThanOrEqual(2)
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike-light').length).toBeGreaterThanOrEqual(2)
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit').length).toBeGreaterThanOrEqual(2)
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit-light').length).toBeGreaterThanOrEqual(2)
+    // Every mode renders a mode-colored territory line and the legend names the modes.
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--car').length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike').length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike-light').length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit').length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit-light').length).toBeGreaterThanOrEqual(1)
     const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')
     expect(firstRampLegend.map((item) => item.text())).toEqual([
       'Voiture',
@@ -182,9 +180,12 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(tooltip).toContain('Vélo (LTS2)')
     expect(tooltip).toContain('À pied')
 
-    // Honest empty-state reading under the map slots, ramp reading at the evidence level.
-    expect(wrapper.find('.blank-map-slots .cahier-figure-lecture').text()).toContain('aucune carte n’est affichée')
-    expect(wrapper.find('.aedar-access-evidence > .cahier-figure-lecture').text()).toContain('Chaque courbe suit un mode de déplacement')
+    // AEDAR maps have no lecture disclosure; the main figure has no horizon marker or territory dots.
+    expect(wrapper.find('.blank-map-slots .cahier-figure-lecture').exists()).toBe(false)
+    expect(wrapper.find('.aedar-ramp .cahier-figure-lecture').exists()).toBe(false)
+    expect(wrapper.find('.aedar-ramp .access-ramp-horizon').exists()).toBe(false)
+    expect(wrapper.find('.aedar-ramp .access-ramp-time-point').exists()).toBe(false)
+    expect(wrapper.find('.aedar-reading__gap').text()).toContain('types de moins accessibles à pied qu’en voiture en 15 min')
 
     // The section has a reading: no "lecture indisponible" placeholder may follow the evidence.
     expect(wrapper.find('[data-section="aedar-access"] .evidence-placeholder').exists()).toBe(false)
@@ -206,9 +207,9 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     await router.isReady()
     await flushPromises()
 
-    // Dashed, mode-colored comparison lines in both ramps.
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison').length).toBeGreaterThanOrEqual(2)
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison.access-ramp-line--car').length).toBeGreaterThanOrEqual(2)
+    // Dashed, mode-colored comparison lines on the sole rendered ramp.
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison').length).toBeGreaterThanOrEqual(5)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison.access-ramp-line--car').length).toBeGreaterThanOrEqual(1)
 
     // The legend names the five modes plus the explicitly labeled reference territory.
     const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')

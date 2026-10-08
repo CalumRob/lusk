@@ -409,11 +409,15 @@ The complete 235-code INSEE TYPEQU/label nomenclature for the BPE 2025 vintage. 
 _Avoid_: Bretagne-observed types, kept list, address-observation axis
 
 **Modes AEDAR**:
-The five normal access modes published in the 2026-v1 AEDAR territorial aggregates and rendered as ramp lines in the prototype Mobilité: `walk` (À pied), `transit` (Transports en commun — walking included, aggregate scenario p1), `bike_lts2` (Vélo LTS2), `bike_lts4` (Vélo LTS4), and `car` (Voiture). `transit_gain` is a net-difference reading, not an ordinary access mode, and is never displayed under ordinary-access labels. Ramp lines keep the fiche's mode-color families — car, bike, foot/transit — with the narrower modes (LTS2, walking alone) on a lightened family tone.
+The five normal access modes published in the 2026-v1 AEDAR territorial aggregates and rendered as ramp lines in the prototype Mobilité: `walk` (À pied), `transit` (Transports en commun — walking included, aggregate scenario p1), `bike_lts2` (Vélo LTS2), `bike_lts4` (Vélo LTS4), and `car` (Voiture). `transit_gain` is a net-difference reading, not an ordinary access mode, and is never displayed under ordinary-access labels. Ramp lines keep the fiche's mode-color families — car, bike, foot/transit; LTS2 uses the full-strength bike tone and LTS4 the lightened bike tone. The 15-minute horizon remains provisional for blank-map slots and is not drawn as a vertical marker on the ramp plot.
 _Avoid_: six ramp modes (transit_gain is not one), a renderer-owned mode selection or labels
 
 **Rampe temporelle AEDAR**:
-One of the prototype's two time-indexed readings of the AEDAR aggregates, drawn per mode over 5/10/15/20 minutes with the provisional 15-minute horizon marked: **diversity** sums the per-type shares of residential addresses reaching at least one item of each type; **count-per-type** averages the per-type mean equipment counts over the same complete address universe. Unknown stays null — never zero — and an incomplete universe yields gaps, never a partial sum.
+The prototype's time-indexed readings of AEDAR aggregates, drawn per mode over 5/10/15/20 minutes: **diversity** sums the per-type shares of residential addresses reaching at least one item of each type; **count-per-type** averages the per-type mean equipment counts over the same complete address universe. Unknown stays null — never zero — and an incomplete universe yields gaps, never a partial sum. The current visual prototype displays diversity only; its 15-minute horizon is not drawn as a plot marker.
+
+**Écart de diversité voiture–marche AEDAR**:
+The prototype reading at 15 minutes, calculated within the same territory as car diversity minus walk diversity. Diversity is the sum of per-type shares of residential addresses reaching at least one item of each type. The gap is expressed in accessible equipment types; it is unavailable if either source value is null, never treating null as zero. The map horizon is provisional; this comparison is not a peer or population-weighted estimate.
+_Avoid_: types gagnés (implies a causal gain), écart moyen entre communes (cross-territory comparison), équipements par habitant (wrong denominator)
 _Avoid_: mean of shares (diversity is a sum), building weighting (the universe is addresses)
 
 **Territoire de référence AEDAR**:

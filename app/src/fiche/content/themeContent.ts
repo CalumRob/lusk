@@ -73,12 +73,11 @@ export interface AedarAccessEvidence {
   horizonMinutes: number
   /** Figure title of the blank map slots, owned by the semantic content layer. */
   mapFigureTitle: string
-  /** Reading rendered under the blank map slots (honest empty state, provisional horizon). */
-  mapLecture: readonly TextBlock[]
   ramps: readonly AedarTimeRampEvidence[]
+  diversityGap: { value: number | null; horizonMinutes: number }
+  source: { sourceId: string; version: string; referenceDate: string | null; publicationDate: string | null; url: string; attribution: string; licence: string } | null
   availability: FactAvailability
   provenance: readonly string[]
-  figureLecture: readonly TextBlock[]
 }
 
 export interface DistributionEvidence {
@@ -118,7 +117,6 @@ export interface AedarTimeRampEvidence {
   reference: Readonly<Record<AedarRampMode, readonly (number | null)[]>> | null
   /** Explicit reference-territory label (e.g. an EPCI or region name), never a fabricated cohort. */
   referenceLabel: string | null
-  highlightedHorizon: number
   availability: FactAvailability
   provenance: FactProvenance | null
   sourceCoverage: string

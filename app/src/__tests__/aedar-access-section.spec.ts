@@ -60,27 +60,19 @@ function aedarReady(territoryId: string, territoryType: 'commune' | 'epci' = 'co
   }
 }
 
-function blocksText(blocks: readonly (readonly { value: string }[])[]): string {
-  return blocks.map((block) => block.map((segment) => segment.value).join('')).join(' ')
-}
-
 describe('aedarAccessSection', () => {
-  it('carries the section label and a lecture so the shared heading primitive applies', () => {
+  it('carries the section label without a Lecture block', () => {
     const section = aedarAccessSection(aedarReady('22001'), territory)
     expect(section.key).toBe('aedar-access')
     expect(section.label).toBe('Accès aux services')
-    expect(section.lecture).not.toBeNull()
-    expect(section.lecture?.marelle).toBe('Prototype AEDAR : l’accès depuis les adresses résidentielles')
-    expect(section.lecture?.prose.length).toBeGreaterThan(0)
+    expect(section.lecture).toBeNull()
   })
 
-  it('owns the map figure title and the honest empty-state lecture', () => {
+  it('owns the blank-map title and keeps the provisional horizon', () => {
     const section = aedarAccessSection(aedarReady('22001'), territory)
     expect(section.evidence?.kind).toBe('aedar-access')
     if (section.evidence?.kind !== 'aedar-access') return
     expect(section.evidence.mapFigureTitle).toBe('Cartes d’accès aux services, par mode')
-    expect(section.evidence.mapLecture.length).toBeGreaterThan(0)
-    expect(blocksText(section.evidence.mapLecture)).toContain(`${AEDAR_PROTOTYPE_HORIZON_MINUTES} minutes`)
     expect(section.evidence.horizonMinutes).toBe(AEDAR_PROTOTYPE_HORIZON_MINUTES)
   })
 
@@ -89,7 +81,7 @@ describe('aedarAccessSection', () => {
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.ramps.map((ramp) => ramp.rampKey)).toEqual(['diversity', 'count-per-type'])
     expect(section.evidence.ramps.map((ramp) => ramp.figureTitle)).toEqual([
-      'Diversité des types d’équipements',
+      'Combien de types d’équipements sont accessibles en moyenne ?',
       'Équipements accessibles par type',
     ])
     for (const ramp of section.evidence.ramps) {
@@ -104,6 +96,8 @@ describe('aedarAccessSection', () => {
     expect(section.availability).toBe('complete')
     expect(section.evidence.provenance).toEqual(['aedar_bretagne'])
     expect(section.provenance).toEqual(['aedar_bretagne'])
+    expect(section.evidence.diversityGap).toEqual({ value: 0, horizonMinutes: 15 })
+    expect(section.evidence.source).toMatchObject({ sourceId: 'aedar_bretagne', version: '2026-v1', url: 'https://example.com' })
   })
 
   it('merges per-mode reference-territory values and labels them explicitly', () => {
@@ -119,10 +113,6 @@ describe('aedarAccessSection', () => {
     expect(section.evidence.ramps[0]?.reference?.car).toEqual([2.5, 2.5, 2.5, 2.5])
     expect(section.evidence.ramps[1]?.reference?.walk).toEqual([0.25, 0.25, 0.25, 0.25])
     expect(section.evidence.availability).toBe('complete')
-    const lecture = blocksText(section.evidence.figureLecture)
-    expect(lecture).toContain('EPCI X')
-    expect(lecture).toContain('territoire de référence')
-    expect(lecture).not.toContain('cohorte de communes :')
   })
 
   it('marks the section incomplete when a ramp cannot cover the whole universe', () => {
@@ -133,21 +123,26 @@ describe('aedarAccessSection', () => {
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.availability).toBe('incomplete')
     expect(section.evidence.ramps[0]?.territory.car[0]).toBeNull()
+    expect(section.evidence.diversityGap.value).toBe(0)
   })
 
-  it('states honestly when the comparison is a cohort or the reference is unusable', () => {
-    const cohort = aedarAccessSection(aedarReady('22001'), territory, { comparisonUnavailable: 'cohort' })
-    if (cohort.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
-    expect(blocksText(cohort.evidence.figureLecture)).toContain('cohorte de communes')
+  it('derives the 15-minute car-minus-walk diversity gap from the territory values', () => {
+    const data = aedarReady('22001')
+    for (const fact of data.facts) {
+      fact.measures['count_15_car_share'] = 0.6
+      fact.measures['count_15_walk_share'] = 0.2
+    }
+    const section = aedarAccessSection(data, territory)
+    if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
+    expect(section.evidence.diversityGap.value).toBeCloseTo(4)
+    expect(section.evidence.diversityGap.horizonMinutes).toBe(15)
+  })
 
-    const error = aedarAccessSection(aedarReady('22001'), territory, { comparisonUnavailable: 'error' })
-    if (error.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
-    expect(blocksText(error.evidence.figureLecture)).toContain('territoire de référence')
-    expect(blocksText(error.evidence.figureLecture)).not.toContain('cohorte de communes')
-
-    const loading = aedarAccessSection(aedarReady('22001'), territory)
-    if (loading.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
-    expect(loading.evidence.ramps.every((ramp) => ramp.reference === null)).toBe(true)
-    expect(blocksText(loading.evidence.figureLecture)).not.toContain('cohorte')
+  it('keeps the derived diversity gap unavailable if either 15-minute mode value is null', () => {
+    const data = aedarReady('22001')
+    data.facts[0]!.measures['count_15_walk_share'] = null
+    const section = aedarAccessSection(data, territory)
+    if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
+    expect(section.evidence.diversityGap.value).toBeNull()
   })
 })

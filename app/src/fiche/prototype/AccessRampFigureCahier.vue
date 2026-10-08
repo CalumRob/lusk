@@ -233,32 +233,21 @@ const TIME_MODE_TONES: Readonly<Record<string, CahierTooltipTone>> = {
 }
 const TIME_MODE_COLORS: Readonly<Record<string, string>> = {
   car: 'var(--cahier-mode-car)',
-  bike_lts4: 'var(--cahier-mode-bike)',
-  bike_lts2: 'color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper))',
+  bike_lts2: 'var(--cahier-mode-bike)',
+  bike_lts4: 'color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper))',
   transit: 'var(--cahier-mode-foot)',
   walk: 'color-mix(in srgb, var(--cahier-mode-foot) 55%, var(--paper))',
 }
 const TIME_MODE_LINE_CLASS: Readonly<Record<string, string>> = {
   car: 'access-ramp-line--car',
-  bike_lts4: 'access-ramp-line--bike',
-  bike_lts2: 'access-ramp-line--bike-light',
+  bike_lts2: 'access-ramp-line--bike',
+  bike_lts4: 'access-ramp-line--bike-light',
   transit: 'access-ramp-line--walkTransit',
   walk: 'access-ramp-line--walkTransit-light',
-}
-const TIME_MODE_POINT_CLASS: Readonly<Record<string, string>> = {
-  car: 'access-ramp-point--car',
-  bike_lts4: 'access-ramp-point--bike',
-  bike_lts2: 'access-ramp-point--bike-light',
-  transit: 'access-ramp-point--walkTransit',
-  walk: 'access-ramp-point--walkTransit-light',
 }
 function timeSeriesLineClass(key: string): string {
   return TIME_MODE_LINE_CLASS[key] ?? ''
 }
-function timeSeriesPointClass(key: string): string {
-  return TIME_MODE_POINT_CLASS[key] ?? ''
-}
-
 const timePoints = computed(() => props.timeRamp?.series[0]?.points ?? [])
 const selectedTimeModes = ref(new Set(['car', 'transit', 'bike_lts2']))
 const visibleTimeSeries = computed(() => (props.timeRamp?.series ?? []).filter((series) => selectedTimeModes.value.has(series.key)))
@@ -355,7 +344,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
     class="access-ramp-cahier access-ramp-cahier--time"
     size="compact"
     :style="CAHIER_FIGURE_STYLE"
-    :x-title="`${timeRamp.xAxis.label} (${timeRamp.xAxis.unit})`"
+    x-title="Temps de trajet"
     :y-title="`${timeRamp.yAxis.label}${timeRamp.yAxis.unit ? ` (${timeRamp.yAxis.unit})` : ''}`"
   >
     <template #plot>
@@ -365,7 +354,6 @@ function timeHitboxStyle(index: number): Record<string, string> {
             <line v-for="tick in timeYTicks" :key="`ty-${tick.key}`" :x1="MARGIN.left" :x2="MARGIN.left + PLOT_WIDTH" :y1="tick.position" :y2="tick.position" />
             <line v-for="point in timePoints" :key="`tx-${point.xValue}`" :x1="timeX(point.xValue)" :x2="timeX(point.xValue)" :y1="MARGIN.top" :y2="MARGIN.top + PLOT_HEIGHT" />
             <line class="access-ramp-axis" :x1="MARGIN.left" :x2="MARGIN.left + PLOT_WIDTH" :y1="MARGIN.top + PLOT_HEIGHT" :y2="MARGIN.top + PLOT_HEIGHT" />
-            <line v-if="timeRamp.highlightedX >= (timePoints[0]?.xValue ?? 0) && timeRamp.highlightedX <= (timePoints.at(-1)?.xValue ?? 0)" class="access-ramp-horizon" :x1="timeX(timeRamp.highlightedX)" :x2="timeX(timeRamp.highlightedX)" :y1="MARGIN.top" :y2="MARGIN.top + PLOT_HEIGHT" />
           </g>
           <g v-for="series in visibleTimeSeries" :key="series.key">
             <template v-if="timeRamp.comparisonLabel">
@@ -556,7 +544,6 @@ function timeHitboxStyle(index: number): Record<string, string> {
   stroke-width: 1;
 }
 
-.access-ramp-grid .access-ramp-horizon { stroke: var(--cahier-theme-strong); stroke-dasharray: 3 3; stroke-width: 2; }
 .access-ramp-time-line { stroke: var(--cahier-theme-strong); }
 .access-ramp-time-point { stroke: var(--cahier-theme-strong); }
 
