@@ -88,6 +88,20 @@ export interface BpeProfilesEvidence {
   figureLecture: readonly TextBlock[]
 }
 
+export interface AedarTimeRampEvidence {
+  kind: 'aedar-time-ramp'
+  rampKey: 'diversity' | 'count-per-type'
+  xAxis: { values: readonly number[]; labels: readonly string[]; unit: string; label: string }
+  yAxis: { label: string; unit: string }
+  series: { territory: readonly (number | null)[]; reference: readonly (number | null)[] | null }
+  highlightedHorizon: number
+  mode: string
+  modeLabel: string
+  availability: FactAvailability
+  provenance: FactProvenance | null
+  sourceCoverage: string
+}
+
 export type ContentModeFacts = Record<MobiliteAccessMode, ContentFact>
 
 export interface ContentLossFacts {
