@@ -66,11 +66,12 @@ fixture_codes_cog_micro <- function() {
 
 # fixture_base_epci_micro ----------------------------------------------------------
 # L'appartenance EPCI/département du micro-monde : EPCI 200000001 = {A, B},
-# EPCI 200000002 = {C} ; départements 22 = {A, B}, 35 = {C}.
+# EPCI 200000002 = {C}, EPCI 200000003 = {D non routée} ; départements
+# 22 = {A, B, D}, 35 = {C}.
 fixture_base_epci_micro <- function() {
   tibble::tibble(
     CODGEO = c("11111", "22222", "33333", "44444"),
-    EPCI = c("200000001", "200000001", "200000002", NA_character_),
+    EPCI = c("200000001", "200000001", "200000002", "200000003"),
     DEP = c("22", "22", "35", "22")
   )
 }
@@ -196,6 +197,18 @@ test_that("calculer_raccordement : les courbes agrégées sont les moyennes comm
   expect_false(any(d22$complete))
   expect_equal(unique(d22$communes_attendues), 3L)
   expect_equal(unique(d22$communes_disponibles), 2L)
+  zero_routed <- calcul$courbes_epcis[
+    calcul$courbes_epcis$code == "200000003", ]
+  expect_equal(nrow(zero_routed), length(grille_raccordement()))
+  expect_true(all(is.na(zero_routed$part)))
+  expect_false(any(zero_routed$complete))
+  expect_equal(unique(zero_routed$communes_attendues), 1L)
+  expect_equal(unique(zero_routed$communes_disponibles), 0L)
+  # Commune 22222's curve is its own cumulative curve, not a reference or an
+  # aggregate curve: its diagonal contributes its 200/1000 share at minute 0.
+  own <- calcul$courbes_communes[calcul$courbes_communes$code == "22222", ]
+  expect_equal(own$part[own$minute == 0], 200 / 1000)
+  expect_equal(own$part[own$minute == 30], 500 / 1000)
 })
 
 test_that("calculer_raccordement : la courbe de référence médiane bretonne", {

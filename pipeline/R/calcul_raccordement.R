@@ -447,7 +447,10 @@ calculer_raccordement <- function(matrice, population, codes_cog,
                      couverture = unname(couverture_par_groupe))
     }
     courbe_niveau <- function(groupes) {
-      f <- sort(unique(groupes[routed]))
+      # Emit every eligible aggregate, including groups with no routed members.
+      # Omitting such a group would make the API look as though the aggregate
+      # were not part of the declared universe instead of explicitly incomplete.
+      f <- sort(unique(groupes[!is.na(groupes)]))
       f <- f[!is.na(f)]
       do.call(rbind, lapply(f, function(groupe) {
         membres <- intersect(names(groupes[groupes == groupe]), communes)
