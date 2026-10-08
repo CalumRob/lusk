@@ -146,7 +146,7 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
 
     // The AEDAR section has no generic Lecture block.
     const heading = wrapper.find('[data-section="aedar-access"] .concept-group-heading')
-    expect(heading.find('.concept-group-label').text()).toBe('Accès aux services')
+    expect(heading.find('.concept-group-label').text()).toBe('Diversité de l’offre')
     expect(heading.find('.concept-group-narrative').exists()).toBe(false)
     expect(wrapper.find('[data-section="aedar-access"] .argument-copy').exists()).toBe(false)
     expect(wrapper.find('[data-section="aedar-access"] .cahier-section-state').exists()).toBe(false)
@@ -364,14 +364,14 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     const cahierProps = wrapper.findComponent(VarianteCahierLibre).props()
     expect(cahierProps.aedarAccessEnabled).toBe(true)
 
-    // The transformed section has no Lecture and retains its map figure wording.
+    // The AEDAR prototype uses its own heading and has no unit or section reading yet.
     const firstUnit = (cahierProps.content as ThemeContent).units[0]
     const section = firstUnit.sections[0] as unknown as AedarAccessSection
     expect(section.key).toBe('aedar-access')
-    expect(section.label).toBe('Accès aux services')
+    expect(section.label).toBe('Diversité de l’offre')
     expect(firstUnit.label).toEqual(content.units[0]?.label)
-    expect(firstUnit.introduction).toEqual(content.units[0]?.introduction)
-    expect(firstUnit.rundown).toEqual(content.units[0]?.rundown)
+    expect(firstUnit.introduction).toEqual([])
+    expect(firstUnit.rundown).toEqual([])
     expect(section.lecture).toBeNull()
     expect(section.evidence?.kind).toBe('aedar-access')
     if (section.evidence?.kind === 'aedar-access') {

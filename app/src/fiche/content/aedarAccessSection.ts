@@ -105,7 +105,7 @@ export function aedarAccessSection(
   const provenance = data.provenance.sources.map((source) => source.source_id)
   return {
     key: 'aedar-access',
-    label: 'Accès aux services',
+    label: 'Diversité de l’offre',
     availability,
     indicators: [],
     evidence: {

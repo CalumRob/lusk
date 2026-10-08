@@ -31,7 +31,7 @@ const transformed = computed(() => {
     : null
   const section = aedarAccessSection(focal, props.content.territory, { reference })
   const first = props.content.units[0]
-  return { ...props.content, units: [{ ...first, sections: [section] }, ...props.content.units.slice(1)] } as unknown as ThemeContent
+  return { ...props.content, units: [{ ...first, introduction: [], rundown: [], sections: [section] }, ...props.content.units.slice(1)] } as unknown as ThemeContent
 })
 </script>
 

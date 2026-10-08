@@ -64,7 +64,7 @@ describe('aedarAccessSection', () => {
   it('carries the section label without a Lecture block', () => {
     const section = aedarAccessSection(aedarReady('22001'), territory)
     expect(section.key).toBe('aedar-access')
-    expect(section.label).toBe('Accès aux services')
+    expect(section.label).toBe('Diversité de l’offre')
     expect(section.lecture).toBeNull()
   })
 
