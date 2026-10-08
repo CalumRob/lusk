@@ -262,6 +262,7 @@ export function mobilityFactsFromThemeApi(
         !text(reference.statistic) || !text(reference.unit)) throw new Error('Référence nommée Mobilité invalide')
     const points = rows(reference.points, 'named_reference_evidence.points').map((point) => {
       if (!text(point.axis) || !text(point.observation_period) ||
+          !['measured', 'missing'].includes(String(point.status)) ||
           !(point.status === 'measured' ? finite(point.value) : point.value === null)) {
         throw new Error('Point de référence nommée Mobilité invalide')
       }

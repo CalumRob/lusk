@@ -129,6 +129,15 @@ describe('SQL Mobilité response to Variant E facts', () => {
     data.indicators[0]!.sources = []
     expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow()
   })
+  it('rejects unknown named-reference point statuses', () => {
+    const data = response()
+    data.named_reference_evidence = [{ indicator_id: 'raccordement_courbe', id: 'median',
+      label: 'Median', role: 'analytical_reference', statistic: 'median_routed_communes', unit: '%',
+      points: [{ axis: 't0000', observation_period: '2026-09-16', value: null,
+        status: 'unexpected_status', provenance: [{ source_id: 'mobilite_snapshot', source_name: 'SQL mobility',
+          version: 'sql-v1', reference_date: null, publication_date: null }] }] }]
+    expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow(/Point de référence nommée Mobilité/)
+  })
   it('rejects malformed provided coordinates instead of silently treating them as scalars', () => {
     const data = response()
     data.indicators[1]!.dimensions.detail = 42
