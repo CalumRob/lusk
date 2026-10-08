@@ -18,6 +18,11 @@ import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 
+const AEDAR_TIME_FIGURE_STYLE = {
+  ...CAHIER_FIGURE_STYLE,
+  '--cahier-figure-axis-title-x-left': '50%',
+}
+
 const props = defineProps<{
   ramp?: MobiliteAccessRamp
   timeRamp?: TimeRampFigureData
@@ -343,7 +348,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
     v-if="timeRamp"
     class="access-ramp-cahier access-ramp-cahier--time"
     size="compact"
-    :style="CAHIER_FIGURE_STYLE"
+    :style="AEDAR_TIME_FIGURE_STYLE"
     x-title="Temps de trajet"
     :y-title="`${timeRamp.yAxis.label}${timeRamp.yAxis.unit ? ` (${timeRamp.yAxis.unit})` : ''}`"
   >

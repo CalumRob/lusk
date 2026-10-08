@@ -82,9 +82,10 @@ describe('aedarAccessSection', () => {
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.ramps.map((ramp) => ramp.rampKey)).toEqual(['diversity', 'count-per-type'])
     expect(section.evidence.ramps.map((ramp) => ramp.figureTitle)).toEqual([
-      'Nombre de types d’équipements accessibles (moyenne du territoire)',
+      'Diversité de l’offre accessible (moyenne du territoire)',
       'Équipements accessibles par type',
     ])
+    expect(section.evidence.ramps[0]?.yAxis).toEqual({ label: 'Diversité de l’offre', unit: '' })
     for (const ramp of section.evidence.ramps) {
       expect(Object.keys(ramp.territory).sort()).toEqual([...AEDAR_RAMP_MODES].sort())
       expect(ramp.reference).toBeNull()
@@ -102,6 +103,7 @@ describe('aedarAccessSection', () => {
     expect(section.evidence.source).toMatchObject({ label: 'AEDAR', version: '2026-v1', url: 'https://example.com' })
     expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('personnes averses au risque routier')
     expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('personnes tolérantes au risque routier')
+    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('La "diversité" est le nombre de catégories d’équipements accessibles depuis les adresses résidentielles. Cette analyse reprend les catégories de la BPE 2025, qui recense 235 types d\'équipements.')
     expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).not.toContain('transit_gain')
     expect(section.evidence.sectionProse.flat().filter((segment) => segment.kind === 'emphasis').map((segment) => segment.tone)).toEqual(['foot', 'foot', 'bike', 'bike', 'bike'])
   })

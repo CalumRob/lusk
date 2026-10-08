@@ -165,6 +165,9 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike-light').length).toBeGreaterThanOrEqual(1)
     expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit').length).toBeGreaterThanOrEqual(1)
     expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit-light').length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.find('.aedar-ramp figcaption').text()).toBe('Diversité de l’offre accessible (moyenne du territoire)')
+    expect(wrapper.find('.aedar-ramp .cahier-figure-axis-title--y').text()).toBe('Diversité de l’offre')
+    expect(wrapper.find('.aedar-ramp .cahier-figure-axis-title--x').text()).toBe('Temps de trajet')
     const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')
     expect(firstRampLegend.map((item) => item.text())).toEqual([
       'Voiture',

@@ -95,7 +95,7 @@ export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampO
     return {
       rampKey,
       xAxis: { values: horizons, labels: horizons.map((value) => `${value} min`), unit: 'minutes', label: 'Temps d’accès' },
-      yAxis: rampKey === 'diversity' ? { label: 'Types d’équipements', unit: '' } : { label: 'Équipements par type', unit: 'équipements / type' },
+      yAxis: rampKey === 'diversity' ? { label: 'Diversité de l’offre', unit: '' } : { label: 'Équipements par type', unit: 'équipements / type' },
       territory,
       availability,
       provenance,

@@ -55,7 +55,7 @@ function rampEvidence(
   return {
     kind: 'aedar-time-ramp',
     rampKey: values.rampKey,
-    figureTitle: values.rampKey === 'diversity' ? 'Nombre de types d’équipements accessibles (moyenne du territoire)' : 'Équipements accessibles par type',
+    figureTitle: values.rampKey === 'diversity' ? 'Diversité de l’offre accessible (moyenne du territoire)' : 'Équipements accessibles par type',
     xAxis: values.xAxis,
     yAxis: values.yAxis,
     territory: values.territory,
@@ -130,6 +130,8 @@ export function aedarAccessSection(
         text(' s’adressent aux personnes averses au risque routier, tandis que ceux de '),
         emphasis('LTS4', 'bike'),
         text(' s’adressent aux personnes tolérantes au risque routier.'),
+      ], [
+        text('La "diversité" est le nombre de catégories d’équipements accessibles depuis les adresses résidentielles. Cette analyse reprend les catégories de la BPE 2025, qui recense 235 types d\'équipements.'),
       ]],
       diversityGap: {
         horizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
