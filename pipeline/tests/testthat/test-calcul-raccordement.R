@@ -144,7 +144,7 @@ test_that("calculer_raccordement : la courbe cumulative, l'inclusion propre et l
   expect_false(any(calcul$courbes_communes$code == "44444"))
 })
 
-test_that("calculer_raccordement : les niveaux EPCI et département (l'union des ROUTÉES, jamais une moyenne)", {
+test_that("calculer_raccordement : les courbes agrégées sont les moyennes communales complètes", {
   calcul <- calculer_raccordement(
     fixture_matrice_micro(), fixture_population_micro(),
     fixture_codes_cog_micro(), base_epci = fixture_base_epci_micro()
@@ -170,7 +170,8 @@ test_that("calculer_raccordement : les niveaux EPCI et département (l'union des
   # routée se rejoint soi-même par la diagonale de la matrice, les non
   # routées sont hors dénominateur : la part reste 1, mais PAR CE CALCUL
   # (jamais une identité spéciale)
-  expect_equal(part(calcul$region, "53"), 600 / 600)
+  expect_true(is.na(part(calcul$region, "53")))
+  expect_false(calcul$region$complete[calcul$region$code == "53"])
   # LA COUVERTURE : chaque agrégat publie, à côté de sa part, la part de
   # SA population réellement mesurée par le routage — D (400 habitants)
   # sort de la population mesurée de la région comme de son département
@@ -184,11 +185,17 @@ test_that("calculer_raccordement : les niveaux EPCI et département (l'union des
     calcul$courbes_departements$code == "22", ]) ==
     length(grille_raccordement()))
   expect_true(nrow(calcul$courbe_region) == length(grille_raccordement()))
-  # la courbe EPCI saute à 30 (l'union ouvre plus tôt que chaque commune),
-  # sur le dénominateur routé seul
+  # La courbe EPCI est la moyenne arithmétique égale des deux courbes
+  # communales à chaque durée, pas la courbe d'union.
   e1 <- calcul$courbes_epcis[calcul$courbes_epcis$code == "200000001", ]
-  expect_equal(e1$part[e1$minute == 15], 300 / 600)
-  expect_equal(e1$part[e1$minute == 30], 600 / 600)
+  expect_equal(e1$part[e1$minute == 15], mean(c(0.1, 0.2)))
+  expect_equal(e1$part[e1$minute == 30], mean(c(0.1, 0.5)))
+  expect_true(all(e1$complete))
+  d22 <- calcul$courbes_departements[calcul$courbes_departements$code == "22", ]
+  expect_true(all(is.na(d22$part)))
+  expect_false(any(d22$complete))
+  expect_equal(unique(d22$communes_attendues), 3L)
+  expect_equal(unique(d22$communes_disponibles), 2L)
 })
 
 test_that("calculer_raccordement : la courbe de référence médiane bretonne", {
