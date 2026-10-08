@@ -71,7 +71,7 @@ function invalid(): never { throw new Error('Réponse AEDAR invalide') }
 export function validateAedarResponse(response: unknown, expectedTerritory: AedarTerritoryIdentity): AedarApiResponse {
   if (!isRecord(response) || !isRecord(response.territory) || !Array.isArray(response.facts) ||
       !isText(response.content_version) || !response.content_version.trim() ||
-      response.reference_content_version !== response.content_version ||
+      !isText(response.reference_content_version) || !response.reference_content_version.trim() ||
       response.territory.territory_type !== expectedTerritory.territory_type ||
       response.territory.territory_id !== expectedTerritory.territory_id ||
       !Number.isInteger(response.limit) || (response.limit as number) < 1 || (response.limit as number) > 100 ||

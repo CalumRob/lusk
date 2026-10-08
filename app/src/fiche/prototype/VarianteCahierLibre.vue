@@ -28,6 +28,7 @@ import {
 import type { OptionContexteComparaison } from '@/fiche/comparisonContext'
 import type {
   AccessEvidence,
+  AedarAccessEvidence,
   ContentFact,
   ContentSection,
   CyclingOfferEvidence,
@@ -44,7 +45,8 @@ import {
 import {
   MOBILITE_MODE_LABELS,
 } from '@/fiche/content/territoryFacts'
-import type { MobiliteAccessMode, MobiliteService, NumericFact } from '@/fiche/content/territoryFacts'
+import type { MobiliteAccessMode, MobiliteService, NumericFact, TimeRampFigureData, TimeRampPoint, TimeRampSeries } from '@/fiche/content/territoryFacts'
+import type { AedarTimeRampEvidence } from '@/fiche/content/themeContent'
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
 import type { CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
 import type { CahierPagination } from './cahierPagination'
@@ -65,6 +67,7 @@ import CahierSharingFigure from './CahierSharingFigure.vue'
 import CahierMotorisationFigure from './CahierMotorisationFigure.vue'
 import CahierOffreTransportsFigure from './CahierOffreTransportsFigure.vue'
 import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
+import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
 const props = defineProps<{
@@ -74,6 +77,7 @@ const props = defineProps<{
   showAllUnits?: boolean
   networkFigureVariant?: 'traces'
   showMapPrototype?: boolean
+  aedarAccessEnabled?: boolean
   comparisonOptions?: readonly OptionContexteComparaison[]
   accessStatus?: 'loading' | 'ready' | 'error'
   retryAccess?: () => void
@@ -382,6 +386,37 @@ function sectionState(section: ContentSection): string {
     : 'Lecture indisponible avec les données disponibles.'
 }
 
+/** Return AedarAccessEvidence when the section carries it and the prototype opt-in is enabled. */
+function aedarAccessEvidenceFor(section: ContentSection): AedarAccessEvidence | null {
+  if (!props.aedarAccessEnabled) return null
+  if (section.evidence?.kind !== 'aedar-access') return null
+  return section.evidence
+}
+
+/** Convert AedarTimeRampEvidence to the generic TimeRampFigureData expected by AccessRampFigureCahier. */
+function rampToTimeRampFigureData(ramp: AedarTimeRampEvidence, territoryName: string): TimeRampFigureData {
+  const points: readonly TimeRampPoint[] = ramp.xAxis.values.map((xValue, index) => ({
+    xValue,
+    xLabel: ramp.xAxis.labels[index] ?? `${xValue}`,
+    value: ramp.series.territory[index] ?? null,
+    referenceValue: ramp.series.reference?.[index] ?? null,
+  }))
+  const series: readonly TimeRampSeries[] = [{
+    key: 'territory',
+    label: territoryName,
+    points,
+  }]
+  return {
+    availability: ramp.availability,
+    xAxis: { label: ramp.xAxis.label, unit: ramp.xAxis.unit },
+    yAxis: { label: ramp.yAxis.label, unit: ramp.yAxis.unit },
+    series,
+    highlightedX: ramp.highlightedHorizon,
+    provenance: ramp.provenance,
+    comparisonLabel: ramp.series.reference === null ? null : 'Groupe comparé',
+  }
+}
+
 function percentage(value: NumericFact): number | null {
   return value.value === null ? null : Math.max(0, Math.min(1, value.value))
 }
@@ -604,6 +639,37 @@ onBeforeUnmount(() => {
                   <p v-if="!section.lecture && section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
 
                 </div>
+
+                  <figure
+                    v-if="aedarAccessEvidenceFor(section)"
+                    class="evidence-side evidence-figure aedar-access-evidence"
+                  >
+                    <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ section.label }}</figcaption>
+                    <CahierBlankMapSlots
+                      :territory="aedarAccessEvidenceFor(section)!.territory"
+                      :horizon-minutes="aedarAccessEvidenceFor(section)!.horizonMinutes"
+                      :section-number="String(sectionIndex + 1).padStart(2, '0')"
+                    />
+                    <div class="aedar-ramps">
+                      <figure
+                        v-for="ramp in aedarAccessEvidenceFor(section)!.ramps"
+                        :key="ramp.rampKey"
+                        class="aedar-ramp"
+                      >
+                        <figcaption class="cahier-figure-title cahier-baseline-anchor">
+                          {{ ramp.rampKey === 'diversity' ? 'Diversité des types d’équipements' : 'Équipements accessibles par type' }}
+                          — {{ ramp.modeLabel }}
+                        </figcaption>
+                        <AccessRampFigureCahier
+                          :time-ramp="rampToTimeRampFigureData(ramp, aedarAccessEvidenceFor(section)!.territory.name)"
+                          :territory-name="aedarAccessEvidenceFor(section)!.territory.name"
+                        />
+                      </figure>
+                    </div>
+                    <CahierFigureLecture v-if="aedarAccessEvidenceFor(section)!.figureLecture.length > 0">
+                      <CahierProse :blocks="aedarAccessEvidenceFor(section)!.figureLecture" />
+                    </CahierFigureLecture>
+                  </figure>
 
                   <figure
                     v-if="section.key === 'distribution-acces-par-batiment' && props.buildingStatus && props.buildingStatus !== 'ready'"
@@ -1100,6 +1166,10 @@ onBeforeUnmount(() => {
   position: static;
   min-width: 0;
 }
+
+.aedar-access-evidence { display: grid; gap: var(--space-6); }
+.aedar-ramps { display: grid; gap: var(--space-6); grid-template-columns: repeat(auto-fit, minmax(min(100%, 420px), 1fr)); }
+.aedar-ramp { margin: 0; display: grid; gap: var(--space-3); }
 .concept-group {
   container: subgroup / inline-size;
   margin: 0 0 var(--cahier-group-gap, var(--space-8));

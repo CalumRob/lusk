@@ -67,6 +67,16 @@ export interface Lecture {
   prose: readonly TextBlock[]
 }
 
+export interface AedarAccessEvidence {
+  kind: 'aedar-access'
+  territory: { code: string; name: string }
+  horizonMinutes: number
+  ramps: readonly AedarTimeRampEvidence[]
+  availability: FactAvailability
+  provenance: readonly string[]
+  figureLecture: readonly TextBlock[]
+}
+
 export interface DistributionEvidence {
   kind: 'distribution'
   buildingDistribution: MobiliteBuildingDistribution | null
@@ -200,6 +210,7 @@ export interface SharingParkingEvidence {
 
 export type ContentEvidence =
   | DistributionEvidence
+  | AedarAccessEvidence
   | BpeProfilesEvidence
   | SummaryEvidence
   | AccessEvidence
@@ -219,6 +230,8 @@ interface ContentSectionBase<Key extends string, Evidence> {
   lecture: Lecture | null
   explorationTargets: readonly ExplorationTarget[]
 }
+
+export interface AedarAccessSection extends ContentSectionBase<'aedar-access', AedarAccessEvidence> { label: string }
 
 export interface ResumeSection extends ContentSectionBase<'resume', SummaryEvidence> {
   label: 'Résumé'
@@ -258,6 +271,7 @@ export interface MotorisationSection extends ContentSectionBase<'motorisation', 
 export interface OffreTransportsSection extends ContentSectionBase<'offre-transports-commun', Extract<ContentEvidence, {kind:'public-transport'}>> { label: string }
 
 export type MobiliteContentSection =
+  | AedarAccessSection
   | ResumeSection
   | ProfilsAccesParModeSection
   | ServicesEssentielsSection
