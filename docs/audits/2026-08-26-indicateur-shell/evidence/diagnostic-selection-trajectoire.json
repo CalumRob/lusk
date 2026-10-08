@@ -1,0 +1,68 @@
+[
+  {
+    "casse": "trajectoire-milieux-dep35",
+    "urlFinale": "http://localhost:5482/indicateurs/milieux/artif_par_habitant?territoire=35&niveau=departement&detail=2025",
+    "note": "Votre territoire : Ille-et-Vilaine — comparaison sur les départements de Bretagne.",
+    "tables": 1,
+    "lignes": 1,
+    "selection": 0,
+    "selectionTexte": null,
+    "premieresLignes": [
+      "Côtes-d'Armor"
+    ],
+    "alertes": [],
+    "consoleErreurs": []
+  },
+  {
+    "casse": "controle-scalaire-eco-dep35",
+    "urlFinale": "http://localhost:5482/indicateurs/economie/chomage?territoire=35&niveau=departement",
+    "note": "Votre territoire : Ille-et-Vilaine — comparaison sur les départements de Bretagne.",
+    "tables": 1,
+    "lignes": 4,
+    "selection": 1,
+    "selectionTexte": "Ille-et-Vilaine",
+    "premieresLignes": [
+      "Côtes-d'Armor",
+      "Finistère",
+      "Ille-et-Vilaine",
+      "Morbihan"
+    ],
+    "alertes": [],
+    "consoleErreurs": []
+  },
+  {
+    "casse": "controle-generique-demo-dep35",
+    "urlFinale": "http://localhost:5482/indicateurs/demographie/evolution_1968?territoire=35&niveau=departement",
+    "note": "Votre territoire : Ille-et-Vilaine — comparaison sur les départements de Bretagne.",
+    "tables": 1,
+    "lignes": 4,
+    "selection": 1,
+    "selectionTexte": "Ille-et-Vilaine",
+    "premieresLignes": [
+      "Côtes-d'Armor",
+      "Finistère",
+      "Ille-et-Vilaine",
+      "Morbihan"
+    ],
+    "alertes": [],
+    "consoleErreurs": []
+  },
+  {
+    "casse": "controle-trajectoire-commune-rennes-prixm2",
+    "urlFinale": "http://localhost:5482/indicateurs/habitat/prix_m2?territoire=35238&niveau=commune&detail=2025",
+    "note": "Votre territoire : Rennes — comparaison sur les communes de Bretagne.",
+    "tables": 1,
+    "lignes": 891,
+    "selection": 1,
+    "selectionTexte": "Rennes",
+    "premieresLignes": [
+      "Acigné",
+      "Allaire",
+      "Amanlis",
+      "Ambon",
+      "Andel"
+    ],
+    "alertes": [],
+    "consoleErreurs": []
+  }
+]

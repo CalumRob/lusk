@@ -1,0 +1,146 @@
+{
+  "genre": "tactile-mobile",
+  "viewport": 390,
+  "ancres": [
+    {
+      "libelle": "Perte totale d’accès — à pied ou en transports en commun",
+      "largeur": 308,
+      "hauteur": 34,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Perte totale d’accès — à vélo",
+      "largeur": 185,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
+      "largeur": 308,
+      "hauteur": 34,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Part des bâtiments sans accès à la santé (à pied ou en transports en commun)",
+      "largeur": 308,
+      "hauteur": 34,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)",
+      "largeur": 308,
+      "hauteur": 50,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)",
+      "largeur": 308,
+      "hauteur": 34,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)",
+      "largeur": 308,
+      "hauteur": 34,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    },
+    {
+      "libelle": "Explorer",
+      "largeur": 66,
+      "hauteur": 17,
+      "fontSize": "12px"
+    }
+  ],
+  "minHauteur": 17,
+  "minLargeur": 66
+}

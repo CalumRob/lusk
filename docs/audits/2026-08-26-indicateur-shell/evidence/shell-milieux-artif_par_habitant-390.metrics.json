@@ -1,0 +1,92 @@
+{
+  "genre": "shell",
+  "url": "http://localhost:5481/indicateurs/milieux/artif_par_habitant",
+  "viewport": {
+    "nom": "mobile",
+    "width": 390,
+    "height": 844
+  },
+  "famille": "trajectory",
+  "mesures": {
+    "titre": "Lusk — Observatoire des territoires bretons",
+    "h1Count": 1,
+    "h1Texte": "Intensité état",
+    "h1FontSize": "28px",
+    "h1FontFamily": "\"Manrope Variable\"",
+    "headerOrdre": [
+      "en-tete-interieur"
+    ],
+    "surTitreTexte": "Milieux",
+    "surTitreCouleur": "oklab(0.503977 -0.0130459 0.0496109)",
+    "definitionPresente": true,
+    "noteContexte": "Aucun territoire mis en avant — comparaison sur les communes de Bretagne.",
+    "vuesAriaLabel": "Vues de l’indicateur",
+    "vuesBoutons": [
+      {
+        "libelle": "Repères",
+        "actif": true,
+        "hauteur": 20,
+        "largeur": 65,
+        "borderBottomWidth": "3px",
+        "borderBottomColor": "rgb(169, 154, 94)",
+        "fontWeight": "700",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "Carte",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 45,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      },
+      {
+        "libelle": "L’indicateur",
+        "actif": false,
+        "hauteur": 20,
+        "largeur": 79,
+        "borderBottomWidth": "0px",
+        "borderBottomColor": "rgb(87, 114, 111)",
+        "fontWeight": "400",
+        "color": "rgb(87, 114, 111)"
+      }
+    ],
+    "heroPresent": true,
+    "medianFontFamily": "\"Newsreader Variable\"",
+    "medianFontSizePx": "48px",
+    "densitySvgPresente": true,
+    "extremesLiens": [
+      "/territoire/commune/22139?theme=milieux",
+      "/territoire/commune/22278?theme=milieux"
+    ],
+    "tableLignes": 344,
+    "tableLigneSelection": null,
+    "tableScrollW": 358,
+    "tableClientW": 358,
+    "tableParentOverflowX": "visible",
+    "controlsFlexWrap": "wrap",
+    "paddingGaucheSection": "16px",
+    "paddingDroiteSection": "16px",
+    "contentMaxWidth": 390,
+    "innerW": 390,
+    "docScrollW": 390,
+    "accentVar": "#A99A5E",
+    "manropeChargee": true,
+    "newsreaderChargee": true,
+    "selectNiveauOptions": [
+      "commune",
+      "epci",
+      "departement"
+    ],
+    "heroColonnes": "228px",
+    "heroColonneUnique": true
+  },
+  "focus": {
+    "element": "Carte",
+    "outlineStyle": "solid",
+    "outlineWidth": "2px",
+    "boxShadow": null
+  }
+}

@@ -1,0 +1,111 @@
+{
+  "genre": "handoff",
+  "ficheUrl": "http://localhost:5481/territoire/region/53?theme=economie",
+  "theme": "economie",
+  "spec": {
+    "type": "region",
+    "id": "53",
+    "nom": "Bretagne",
+    "sansNiveau": true
+  },
+  "inventaire": {
+    "total": 3,
+    "ancres": [
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/economie/effectifs_salaries?territoire=53",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.54439 0.00618791 0.0783567)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/economie/chomage?territoire=53",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.54439 0.00618791 0.0783567)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/economie/eco_activites?territoire=53",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.54439 0.00618791 0.0783567)",
+        "textDecoration": "underline"
+      }
+    ],
+    "navLectures": [],
+    "grilleGroupes": [
+      {
+        "groupe": "sante-et-taille",
+        "passarelles": [
+          {
+            "href": "/indicateurs/economie/effectifs_salaries?territoire=53",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/economie/chomage?territoire=53",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      },
+      {
+        "groupe": "structure-verte",
+        "passarelles": [
+          {
+            "href": "/indicateurs/economie/eco_activites?territoire=53",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      }
+    ]
+  },
+  "survol": {
+    "avant": "oklab(0.54439 0.00618791 0.0783567)",
+    "apres": "rgb(217, 164, 65)",
+    "change": true,
+    "focus": {
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": null
+    }
+  },
+  "arrivee": {
+    "url": "http://localhost:5481/indicateurs/economie/effectifs_salaries?territoire=53&niveau=departement",
+    "queryTerritoire": "53",
+    "queryNiveau": "departement",
+    "note": "Votre territoire : Bretagne (hors périmètre comparé) — comparaison sur les départements de Bretagne.",
+    "noteContientNom": true,
+    "horsPerimetre": true,
+    "tablePresente": true,
+    "ligneSurlignee": false,
+    "memeOrigine": true
+  },
+  "inversesEchantillon": [
+    "/territoire/departement/35?theme=economie",
+    "/territoire/departement/22?theme=economie"
+  ]
+}

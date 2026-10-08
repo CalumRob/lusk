@@ -1,0 +1,72 @@
+{
+  "genre": "handoff",
+  "ficheUrl": "http://localhost:5481/territoire/epci/243500139?theme=programmes",
+  "theme": "programmes",
+  "spec": {
+    "type": "epci",
+    "id": "243500139",
+    "nom": "Rennes Métropole",
+    "sansNiveau": false
+  },
+  "inventaire": {
+    "total": 1,
+    "ancres": [
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/programmes/subventions_annuelles?territoire=243500139&niveau=epci",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.474226 0.0671655 -0.00718091)",
+        "textDecoration": "underline"
+      }
+    ],
+    "navLectures": [],
+    "grilleGroupes": [
+      {
+        "groupe": "couverture",
+        "passarelles": []
+      },
+      {
+        "groupe": "subventions",
+        "passarelles": [
+          {
+            "href": "/indicateurs/programmes/subventions_annuelles?territoire=243500139&niveau=epci",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      }
+    ]
+  },
+  "survol": {
+    "avant": "oklab(0.474226 0.0671655 -0.00718091)",
+    "apres": "oklab(0.474226 0.0671655 -0.00718091)",
+    "change": false,
+    "focus": {
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": null
+    }
+  },
+  "arrivee": {
+    "url": "http://localhost:5481/indicateurs/programmes/subventions_annuelles?territoire=243500139&niveau=epci&dimension=2025",
+    "queryTerritoire": "243500139",
+    "queryNiveau": "epci",
+    "note": "Votre territoire : Rennes Métropole — comparaison sur les EPCI de Bretagne.",
+    "noteContientNom": true,
+    "horsPerimetre": false,
+    "tablePresente": true,
+    "ligneSurlignee": true,
+    "memeOrigine": true
+  },
+  "inversesEchantillon": [
+    "/territoire/epci/243500139?theme=programmes",
+    "/territoire/epci/245600440?theme=programmes"
+  ]
+}
