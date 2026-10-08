@@ -198,6 +198,15 @@ test_that("canonical regional Mobility producers feed complete profiles and supp
     "places_stationnement_voiture_1000","stationnement_velo_par_voiture"),
     regional$indicator_id)], c(22.75,25,.91))
   expect_true(all(regional$status == "measured"))
+  # If one canonical bike count is unavailable, the regional ratio stays NA;
+  # it must not be turned into a measured zero or partial ratio.
+  velo_incomplete <- velo
+  velo_incomplete$places[[1L]] <- NA_real_
+  parking_incomplete <- agreger_stationnement_voiture_territoires(
+    data.frame(commune=base$CODGEO,places_voiture=c(10,90)),
+    velo_incomplete, base)
+  expect_true(is.na(region_value(parking_incomplete,
+    "stationnement_velo_par_voiture")))
 })
 
 test_that("Mobility density signature preserves independent range, density and decile coordinates", {
