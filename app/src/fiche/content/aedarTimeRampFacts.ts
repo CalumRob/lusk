@@ -35,7 +35,7 @@ export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampO
     if (!isRecord(value) || value.territory_id !== options.territory.id || value.territory_type !== options.territory.type ||
         !isText(value.typequ) || typeIds.has(value.typequ) || !isText(value.source_id) || !isText(value.vintage_id) ||
         !isText(value.typequ_label) || !Number.isInteger(value.n_addresses) || !Number.isInteger(value.n_observed) ||
-        value.coverage_status !== 'complete' || value.n_addresses !== value.n_observed || !isRecord(value.measures) ||
+        value.coverage_status !== 'covered' || !isRecord(value.measures) ||
         !(value.reference_date === null || typeof value.reference_date === 'string') ||
         !(value.publication_date === null || typeof value.publication_date === 'string')) invalid()
     const keys = horizons.flatMap((horizon) => modes.flatMap((mode) => statistics.map((stat) => `count_${horizon}_${mode}_${stat}`)))

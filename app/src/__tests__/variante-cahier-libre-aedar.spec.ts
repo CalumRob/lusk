@@ -102,7 +102,7 @@ function aedarFacts(count: number) {
     identity: {},
     n_addresses: 100,
     n_observed: 100,
-    coverage_status: 'complete',
+    coverage_status: 'covered',
     measures: Object.fromEntries(
       [5, 10, 15, 20].flatMap((duration) =>
         ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) =>

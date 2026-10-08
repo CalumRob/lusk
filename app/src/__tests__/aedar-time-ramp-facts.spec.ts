@@ -15,7 +15,7 @@ function response() {
     content_version: 'aed-1', reference_content_version: 'ref-1', limit: 50, offset: 0,
     facts: ['A', 'B'].map((typequ) => ({
       territory_id: '22001', territory_type: 'commune', typequ, typequ_label: typequ, identity: {},
-      n_addresses: 100, n_observed: 100, coverage_status: 'complete', measures: { ...measures },
+      n_addresses: 100, n_observed: 97, coverage_status: 'covered', measures: { ...measures },
       source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test',
       licence: 'test', attribution: 'test', reference_date: '2026-01-01', publication_date: '2026-09-30',
     })),
@@ -53,5 +53,14 @@ describe('aedarTimeRampEvidence', () => {
     if (kind === 'missing measure') delete data.facts[0]!.measures['count_5_car_share']
     if (kind === 'pagination') data.facts.length = 50
     expect(() => aedarTimeRampEvidence(data, { territory: { type: 'commune', id: '22001' }, mode: 'car', modeLabel: 'Voiture' })).toThrow()
+  })
+
+  it('accepts n_addresses different from n_observed', () => {
+    const data = response()
+    data.facts[0]!.n_addresses = 100
+    data.facts[0]!.n_observed = 85
+    data.facts[0]!.measures['count_5_car_share'] = 0.3
+    data.facts[1]!.measures['count_5_car_share'] = 0.4
+    expect(() => aedarTimeRampEvidence(data, { territory: { type: 'commune', id: '22001' }, mode: 'car', modeLabel: 'Voiture' })).not.toThrow()
   })
 })

@@ -12,7 +12,7 @@ const measureKeys = () => {
 }
 const fact = (typequ: string) => ({
   territory_id: '22001', territory_type: 'commune', typequ, typequ_label: `Label ${typequ}`,
-  identity: {}, n_addresses: 10, n_observed: 9, coverage_status: 'complete',
+  identity: {}, n_addresses: 10, n_observed: 9, coverage_status: 'covered',
   measures: Object.fromEntries(measureKeys().map((key) => [key, null])), source_id: 'source', vintage_id: 'v1',
   source_url: 'https://example.test', licence: 'ODbL', attribution: 'Source attribution',
   reference_date: '2026-01-01', publication_date: '2026-09-30',
@@ -53,8 +53,15 @@ describe('AEDAR API client', () => {
       { territory_type: 'commune', territory_id: '22001' })).toThrow()
   })
 
-  it('rejects mismatched content versions', () => {
+  it('accepts distinct content and reference content versions', () => {
+    // The API returns content_version (AEDAR table's own version) and
+    // reference_content_version (territory_reference table's version) — they differ by design.
     expect(() => validateAedarResponse(response([], { reference_content_version: 'v2' }),
+      { territory_type: 'commune', territory_id: '22001' })).not.toThrow()
+  })
+
+  it.each(['content_version', 'reference_content_version'] as const)('rejects empty %s', (field) => {
+    expect(() => validateAedarResponse(response([], { [field]: '' }),
       { territory_type: 'commune', territory_id: '22001' })).toThrow()
   })
 
