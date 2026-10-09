@@ -454,6 +454,19 @@ test_that("arrival-frontier search matches R oracle across transfer edge cases",
                          duration_min = numeric()),
       rules = NULL,
       destinations = list(d = "D")
+    ),
+    control_character_stop_ids = list(
+      rides = data.frame(
+        from_stop_id = c("O", "O", "X", "O", "A\u001eB", "A"),
+        to_stop_id = c("X", "A", "A\u001eB", "A\u001eB", "D", "E"),
+        trip_id = c("T", "B\u001eC", "C", "T", "C", "B\u001eC"),
+        departure_min = c(420, 420, 425, 420, 430, 429),
+        arrival_min = c(425, 429, 430, 430, 440, 439)
+      ),
+      walks = data.frame(from_stop_id = character(), to_stop_id = character(),
+                         duration_min = numeric()),
+      rules = NULL,
+      destinations = list(d = "D", e = "E")
     )
   )
 
@@ -479,6 +492,13 @@ test_that("arrival-frontier search matches R oracle across transfer edge cases",
   )$journeys$d
   expect_equal(tied_result$travel_time_min, 20)
   expect_equal(tied_result$transfers, 1L)
+  separator_ids <- fixtures$control_character_stop_ids
+  separator_result <- rechercher_trajets_gtfs_compiled(
+    separator_ids$rides, separator_ids$walks, "O",
+    separator_ids$destinations, "07:00", "08:00"
+  )$journeys
+  expect_equal(separator_result$d$transfers, 1L)
+  expect_equal(separator_result$e$transfers, 0L)
 })
 
 test_that("candidate feeds reproduce holiday services and the Combourg sample", {

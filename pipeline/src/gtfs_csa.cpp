@@ -1,6 +1,7 @@
 #include <Rcpp.h>
 #include <algorithm>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 #include <string>
 #include <unordered_map>
@@ -11,15 +12,15 @@ using namespace Rcpp;
 
 namespace {
 struct Connection {
-  std::string from;
-  std::string to;
-  std::string trip;
+  int from;
+  int to;
+  int trip;
   double departure;
   double arrival;
 };
 
 struct WalkEdge {
-  std::string from;
+  int from;
   double minutes;
 };
 
@@ -34,7 +35,7 @@ struct Label {
   double duration;
   int transfers;
   int walking_transfers;
-  std::string trip;
+  int trip;
 };
 
 struct Best {
@@ -103,7 +104,7 @@ class ArrivalFrontiers {
     std::vector<FrontierNode> tree;
     std::vector<std::vector<std::size_t>> leaves;
   };
-  std::unordered_map<std::string, std::size_t> stop_ids_;
+  std::unordered_map<int, std::size_t> stop_ids_;
   std::vector<Stop> stops_;
 
   void update(std::size_t stop_id, std::size_t leaf,
@@ -125,7 +126,7 @@ class ArrivalFrontiers {
 
 public:
   explicit ArrivalFrontiers(const std::vector<Connection>& connections) {
-    std::unordered_map<std::string, std::vector<double>> coordinates;
+    std::unordered_map<int, std::vector<double>> coordinates;
     for (const auto& connection : connections)
       coordinates[connection.to].push_back(connection.arrival);
     stops_.reserve(coordinates.size());
@@ -143,7 +144,7 @@ public:
     }
   }
 
-  void add(std::size_t id, const std::string& stop_name, double arrival,
+  void add(std::size_t id, int stop_name, double arrival,
            std::vector<FrontierLocation>& locations,
            const std::vector<Label>& labels) {
     const std::size_t stop_id = stop_ids_.at(stop_name);
@@ -172,7 +173,7 @@ public:
   }
 
   std::pair<std::size_t, std::size_t> query(
-      const std::string& stop_name, double ready, const std::string& excluded_trip,
+      int stop_name, double ready, int excluded_trip, bool exclude_trip,
       const std::vector<Label>& labels, std::size_t& nodes_visited) const {
     auto found = stop_ids_.find(stop_name);
       if (found == stop_ids_.end()) return {std::numeric_limits<std::size_t>::max(),
@@ -196,30 +197,32 @@ public:
       left /= 2;
       right /= 2;
     }
-    if (result.first != std::numeric_limits<std::size_t>::max() &&
+    if (exclude_trip && result.first != std::numeric_limits<std::size_t>::max() &&
         labels[result.first].trip == excluded_trip)
       return {result.second, result.first};
     return {result.first, result.second};
   }
 };
 
-static std::string pair_key(const std::string& from, const std::string& to) {
-  return from + '\x1f' + to;
+static std::uint64_t pair_key(int from, int to) {
+  return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(from)) << 32) |
+    static_cast<std::uint32_t>(to);
 }
 
-static std::string state_key(const std::string& stop, const std::string& trip) {
-  return stop + '\x1e' + trip;
+static std::uint64_t state_key(int stop, int trip) {
+  return (static_cast<std::uint64_t>(static_cast<std::uint32_t>(stop)) << 32) |
+    static_cast<std::uint32_t>(trip);
 }
 
-static bool insert_label(std::unordered_map<std::string, std::vector<std::size_t>>& labels,
+static bool insert_label(std::unordered_map<std::uint64_t, std::vector<std::size_t>>& labels,
                          std::vector<Label>& all_labels,
                          std::vector<unsigned char>& active,
                          ArrivalFrontiers& frontiers,
                          std::vector<FrontierLocation>& locations,
-                         const std::string& stop, const std::string& trip,
+                         int stop, int trip,
                          const Label& value, std::size_t& inserted,
                          std::size_t& compacted) {
-  const std::string key = state_key(stop, trip);
+  const std::uint64_t key = state_key(stop, trip);
   auto& state = labels[key];
   state.erase(std::remove_if(state.begin(), state.end(), [&](std::size_t id) {
     return !active[id];
@@ -277,12 +280,24 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
   CharacterVector trip = rides["trip_id"];
   NumericVector dep = rides["departure_min"];
   NumericVector arr = rides["arrival_min"];
+  std::unordered_map<std::string, int> stop_id_map;
+  std::unordered_map<std::string, int> trip_id_map;
+  auto intern = [](const std::string& value,
+                   std::unordered_map<std::string, int>& ids) {
+    auto found = ids.find(value);
+    if (found != ids.end()) return found->second;
+    const int id = static_cast<int>(ids.size());
+    ids.emplace(value, id);
+    return id;
+  };
   const int n = rides.nrows();
   std::vector<Connection> connections;
   connections.reserve(n);
   for (int i = 0; i < n; ++i) {
-    connections.push_back({as<std::string>(from[i]), as<std::string>(to[i]),
-                           as<std::string>(trip[i]), dep[i], arr[i]});
+    connections.push_back({intern(as<std::string>(from[i]), stop_id_map),
+                           intern(as<std::string>(to[i]), stop_id_map),
+                           intern(as<std::string>(trip[i]), trip_id_map),
+                           dep[i], arr[i]});
   }
   std::vector<int> order(n);
   for (int i = 0; i < n; ++i) order[i] = i;
@@ -295,10 +310,11 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
   CharacterVector walk_from = walks["from_stop_id"];
   CharacterVector walk_to = walks["to_stop_id"];
   NumericVector walk_min = walks["duration_min"];
-  std::unordered_map<std::string, std::vector<WalkEdge>> incoming_walks;
+  std::unordered_map<int, std::vector<WalkEdge>> incoming_walks;
   for (int i = 0; i < walks.nrows(); ++i) {
-    incoming_walks[as<std::string>(walk_to[i])].push_back(
-      {as<std::string>(walk_from[i]), walk_min[i]});
+    const int walk_to_id = intern(as<std::string>(walk_to[i]), stop_id_map);
+    const int walk_from_id = intern(as<std::string>(walk_from[i]), stop_id_map);
+    incoming_walks[walk_to_id].push_back({walk_from_id, walk_min[i]});
   }
 
   CharacterVector rule_from = rules["from_stop_id"];
@@ -312,27 +328,27 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
         rule_seconds[i] = std::stod(as<std::string>(seconds[i]));
     }
   }
-  std::unordered_map<std::string, Rule> rule_map;
+  std::unordered_map<std::uint64_t, Rule> rule_map;
   for (int i = 0; i < rules.nrows(); ++i) {
-    rule_map[pair_key(as<std::string>(rule_from[i]), as<std::string>(rule_to[i]))] =
+    const int rule_from_id = intern(as<std::string>(rule_from[i]), stop_id_map);
+    const int rule_to_id = intern(as<std::string>(rule_to[i]), stop_id_map);
+    rule_map[pair_key(rule_from_id, rule_to_id)] =
       {std::stoi(as<std::string>(rule_type[i])), rule_seconds[i] / 60.0};
   }
 
-  std::unordered_set<std::string> origin_set;
-  for (auto x : origins) if (x != NA_STRING) origin_set.insert(as<std::string>(x));
+  std::unordered_set<int> origin_set;
+  for (auto x : origins) if (x != NA_STRING)
+    origin_set.insert(intern(as<std::string>(x), stop_id_map));
 
   CharacterVector target_names = destination_sets.names();
-  std::unordered_map<std::string, std::vector<int>> targets_by_stop;
-  std::vector<std::string> target_names_cpp;
+  std::unordered_map<int, std::vector<int>> targets_by_stop;
   for (int k = 0; k < destination_sets.size(); ++k) {
-    std::string name = as<std::string>(target_names[k]);
-    target_names_cpp.push_back(name);
     CharacterVector stops = destination_sets[k];
     for (auto x : stops) if (x != NA_STRING)
-      targets_by_stop[as<std::string>(x)].push_back(k);
+      targets_by_stop[intern(as<std::string>(x), stop_id_map)].push_back(k);
   }
 
-  std::unordered_map<std::string, std::vector<std::size_t>> state_labels;
+  std::unordered_map<std::uint64_t, std::vector<std::size_t>> state_labels;
   std::vector<Label> all_labels;
   std::vector<unsigned char> active_labels;
   std::vector<FrontierLocation> frontier_locations;
@@ -345,16 +361,16 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
   std::size_t compacted_labels = 0;
   std::size_t arrival_frontier_queries = 0;
   std::size_t arrival_frontier_nodes = 0;
-  std::unordered_set<std::string> origin_names = origin_set;
   for (int k = 0; k < destination_sets.size(); ++k) {
     CharacterVector d = destination_sets[k];
-    for (auto x : d) if (x != NA_STRING && origin_names.count(as<std::string>(x))) {
+    for (auto x : d) if (x != NA_STRING &&
+        origin_set.count(intern(as<std::string>(x), stop_id_map))) {
       best[k] = {true, 0.0, NA_REAL, NA_REAL, 0};
       break;
     }
   }
 
-  auto record = [&](const std::string& stop, const Label& label) {
+  auto record = [&](int stop, const Label& label) {
     auto it = targets_by_stop.find(stop);
     if (it == targets_by_stop.end()) return;
     for (int target : it->second) {
@@ -384,7 +400,7 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
         const Connection& c = connections[order[p]];
         if (c.arrival < c.departure) continue;
         auto wit = incoming_walks.find(c.from);
-        std::vector<std::pair<std::string, double>> candidates;
+        std::vector<std::pair<int, double>> candidates;
         candidates.emplace_back(c.from, 0.0);
         if (wit != incoming_walks.end()) {
           for (const auto& walk : wit->second)
@@ -393,8 +409,8 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
 
         if (origin_set.count(c.from) && c.departure >= window_start &&
             c.departure < window_end) {
-          Label first{c.arrival, c.departure, c.arrival - c.departure,
-                      0, 0, c.trip};
+            Label first{c.arrival, c.departure, c.arrival - c.departure,
+                        0, 0, c.trip};
           record(c.to, first);
           if (insert_label(state_labels, all_labels, active_labels,
                            arrival_frontiers, frontier_locations, c.to, c.trip,
@@ -442,10 +458,10 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
           if (rule.type == 3) continue;
           const double minimum = rule.type == 2 ? rule.minimum : 0.0;
           const double ready = c.departure - std::max(candidate.second, minimum);
-          const std::string excluded_trip = same_stop ? c.trip : std::string();
+          const int excluded_trip = c.trip;
           ++arrival_frontier_queries;
           const auto pair = arrival_frontiers.query(
-            candidate.first, ready, excluded_trip, all_labels,
+            candidate.first, ready, excluded_trip, same_stop, all_labels,
             arrival_frontier_nodes);
           selected = pair.first;
           if (selected == std::numeric_limits<std::size_t>::max()) continue;
