@@ -345,12 +345,40 @@ test_that("compiled event scan safely reaches same-time zero-dwell fixed points"
   )
   transfers <- data.frame(from_stop_id = character(), to_stop_id = character(),
                           duration_min = numeric())
-  got <- rechercher_trajets_gtfs_compiled(
+  result <- rechercher_trajets_gtfs_compiled(
     rides, transfers, "O", list(D = "D"), "07:00", "08:00"
-  )$journeys$D
+  )
+  got <- result$journeys$D
   expect_equal(got$travel_time_min, 15)
   expect_equal(got$departure_min, 420)
   expect_equal(got$arrival_min, 435)
+  expect_equal(result$metrics$stale_labels_examined, 0)
+})
+
+test_that("compiled stop index compacts dominated labels without losing routes", {
+  rides <- data.frame(
+    from_stop_id = c("O", "O", "X", "X"),
+    to_stop_id = c("X", "X", "D1", "D2"),
+    trip_id = c("feeder", "feeder", "out1", "out2"),
+    departure_min = c(420, 421, 440, 445),
+    arrival_min = c(430, 431, 450, 455),
+    stringsAsFactors = FALSE
+  )
+  transfers <- data.frame(from_stop_id = character(), to_stop_id = character(),
+                          duration_min = numeric())
+  destinations <- list(first = "D1", second = "D2")
+  expected <- meilleurs_trajets_gtfs_multi_destination(
+    rides, transfers, "O", destinations, "07:00", "08:00"
+  )
+  actual <- rechercher_trajets_gtfs_compiled(
+    rides, transfers, "O", destinations, "07:00", "08:00"
+  )
+  actual_journeys <- lapply(actual$journeys, function(x) {
+    x[!names(x) %in% c("transfers", "walking_transfers")]
+  })
+  expect_equal(actual_journeys, expected)
+  expect_equal(actual$metrics$stale_labels_examined, 0)
+  expect_equal(actual$metrics$labels_retained, 3)
 })
 
 test_that("candidate feeds reproduce holiday services and the Combourg sample", {

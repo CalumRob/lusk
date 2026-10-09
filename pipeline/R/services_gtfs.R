@@ -598,6 +598,8 @@ executer_experience_raccordement_gtfs <- function(
       labels_retained = route$metrics$labels_retained,
       label_checks = route$metrics$label_checks,
       labels_examined = route$metrics$labels_examined,
+      stale_labels_examined = route$metrics$stale_labels_examined,
+      labels_compacted = route$metrics$labels_compacted,
       stringsAsFactors = FALSE
     )
   }

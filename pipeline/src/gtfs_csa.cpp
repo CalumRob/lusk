@@ -58,6 +58,8 @@ static bool insert_label(std::unordered_map<std::string, std::vector<std::size_t
                          std::unordered_map<std::string, std::vector<std::size_t>>& by_stop,
                          std::vector<Label>& all_labels,
                          std::vector<unsigned char>& active,
+                         std::vector<std::size_t>& stop_positions,
+                         std::size_t& compacted,
                          const std::string& stop, const std::string& trip,
                          const Label& value, std::size_t& inserted) {
   const std::string key = state_key(stop, trip);
@@ -78,7 +80,10 @@ static bool insert_label(std::unordered_map<std::string, std::vector<std::size_t
   all_labels.push_back(value);
   active.push_back(1);
   state.push_back(id);
-  by_stop[stop].push_back(id);
+  auto& stop_index = by_stop[stop];
+  stop_positions.push_back(stop_index.size());
+  stop_index.push_back(id);
+  std::vector<std::size_t> dominated;
   for (std::size_t old_id : state) {
     if (old_id == id || !active[old_id]) continue;
     const Label& old = all_labels[old_id];
@@ -86,7 +91,20 @@ static bool insert_label(std::unordered_map<std::string, std::vector<std::size_t
         (value.arrival < old.arrival || value.duration < old.duration ||
          value.transfers < old.transfers ||
          (value.transfers == old.transfers &&
-          value.walking_transfers < old.walking_transfers))) active[old_id] = 0;
+          value.walking_transfers < old.walking_transfers))) {
+      active[old_id] = 0;
+      dominated.push_back(old_id);
+    }
+  }
+  if (!dominated.empty()) {
+    for (std::size_t old_id : dominated) {
+      const std::size_t position = stop_positions[old_id];
+      const std::size_t replacement = stop_index.back();
+      stop_index[position] = replacement;
+      stop_positions[replacement] = position;
+      stop_index.pop_back();
+      ++compacted;
+    }
   }
   ++inserted;
   return true;
@@ -170,10 +188,13 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
   std::unordered_map<std::string, std::vector<std::size_t>> labels_by_stop;
   std::vector<Label> all_labels;
   std::vector<unsigned char> active_labels;
+  std::vector<std::size_t> stop_positions;
   std::vector<Best> best(destination_sets.size());
   std::size_t inserted = 0;
   std::size_t transfer_checks = 0;
   std::size_t labels_examined = 0;
+  std::size_t stale_labels_examined = 0;
+  std::size_t compacted_labels = 0;
   std::unordered_set<std::string> origin_names = origin_set;
   for (int k = 0; k < destination_sets.size(); ++k) {
     CharacterVector d = destination_sets[k];
@@ -225,6 +246,8 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
                       0, 0, c.trip};
           record(c.to, first);
           if (insert_label(state_labels, labels_by_stop, all_labels, active_labels,
+                           stop_positions,
+                           compacted_labels,
                            c.to, c.trip, first, inserted))
             changed = true;
         }
@@ -238,7 +261,10 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
           const std::vector<std::size_t> label_ids = lit->second;
           for (std::size_t label_id : label_ids) {
             ++labels_examined;
-            if (!active_labels[label_id]) continue;
+            if (!active_labels[label_id]) {
+              ++stale_labels_examined;
+              continue;
+            }
             const Label& previous = all_labels[label_id];
             const bool same_trip = candidate.first == c.from && previous.trip == c.trip;
             Rule rule{0, 0.0};
@@ -257,6 +283,8 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
                        c.trip};
             record(c.to, next);
             if (insert_label(state_labels, labels_by_stop, all_labels, active_labels,
+                             stop_positions,
+                             compacted_labels,
                              c.to, c.trip, next, inserted))
               changed = true;
           }
@@ -290,6 +318,8 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
       }()),
       _["transfer_edges"] = static_cast<double>(walks.nrows()),
       _["label_checks"] = static_cast<double>(transfer_checks),
-      _["labels_examined"] = static_cast<double>(labels_examined))
+      _["labels_examined"] = static_cast<double>(labels_examined),
+      _["stale_labels_examined"] = static_cast<double>(stale_labels_examined),
+      _["labels_compacted"] = static_cast<double>(compacted_labels))
   );
 }
