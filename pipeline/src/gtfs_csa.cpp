@@ -46,6 +46,163 @@ struct Best {
   int walking_transfers = 0;
 };
 
+struct FrontierNode {
+  std::size_t first = std::numeric_limits<std::size_t>::max();
+  std::size_t second = std::numeric_limits<std::size_t>::max();
+};
+
+struct FrontierLocation {
+  std::size_t stop = 0;
+  std::size_t leaf = 0;
+  std::size_t position = 0;
+};
+
+static bool better_label(std::size_t a, std::size_t b,
+                         const std::vector<Label>& labels) {
+  if (a == std::numeric_limits<std::size_t>::max()) return false;
+  if (b == std::numeric_limits<std::size_t>::max()) return true;
+  const Label& x = labels[a];
+  const Label& y = labels[b];
+  if (x.departure != y.departure) return x.departure > y.departure;
+  if (x.transfers != y.transfers) return x.transfers < y.transfers;
+  if (x.walking_transfers != y.walking_transfers)
+    return x.walking_transfers < y.walking_transfers;
+  return x.arrival < y.arrival;
+}
+
+static FrontierNode merge_frontiers(const FrontierNode& a, const FrontierNode& b,
+                                    const std::vector<Label>& labels) {
+  const std::size_t candidates[] = {a.first, a.second, b.first, b.second};
+  FrontierNode result;
+  for (std::size_t candidate : candidates) {
+    if (candidate == std::numeric_limits<std::size_t>::max()) continue;
+    if (result.first != std::numeric_limits<std::size_t>::max() &&
+        labels[result.first].trip == labels[candidate].trip) {
+      if (better_label(candidate, result.first, labels)) result.first = candidate;
+      continue;
+    }
+    if (result.second != std::numeric_limits<std::size_t>::max() &&
+        labels[result.second].trip == labels[candidate].trip) {
+      if (better_label(candidate, result.second, labels)) result.second = candidate;
+      continue;
+    }
+    if (better_label(candidate, result.first, labels)) {
+      result.second = result.first;
+      result.first = candidate;
+    } else if (better_label(candidate, result.second, labels)) {
+      result.second = candidate;
+    }
+  }
+  return result;
+}
+
+class ArrivalFrontiers {
+  struct Stop {
+    std::vector<double> arrivals;
+    std::size_t base = 1;
+    std::vector<FrontierNode> tree;
+    std::vector<std::vector<std::size_t>> leaves;
+  };
+  std::unordered_map<std::string, std::size_t> stop_ids_;
+  std::vector<Stop> stops_;
+
+  void update(std::size_t stop_id, std::size_t leaf,
+              const std::vector<Label>& labels) {
+    Stop& stop = stops_[stop_id];
+    std::size_t node = stop.base + leaf;
+    FrontierNode value;
+    for (std::size_t id : stop.leaves[leaf]) {
+      FrontierNode singleton{id, std::numeric_limits<std::size_t>::max()};
+      value = merge_frontiers(value, singleton, labels);
+    }
+    stop.tree[node] = value;
+    while (node > 1) {
+      node /= 2;
+      stop.tree[node] = merge_frontiers(stop.tree[node * 2],
+                                        stop.tree[node * 2 + 1], labels);
+    }
+  }
+
+public:
+  explicit ArrivalFrontiers(const std::vector<Connection>& connections) {
+    std::unordered_map<std::string, std::vector<double>> coordinates;
+    for (const auto& connection : connections)
+      coordinates[connection.to].push_back(connection.arrival);
+    stops_.reserve(coordinates.size());
+    for (auto& item : coordinates) {
+      Stop stop;
+      stop.arrivals = std::move(item.second);
+      std::sort(stop.arrivals.begin(), stop.arrivals.end());
+      stop.arrivals.erase(std::unique(stop.arrivals.begin(), stop.arrivals.end()),
+                          stop.arrivals.end());
+      while (stop.base < stop.arrivals.size()) stop.base *= 2;
+      stop.tree.resize(stop.base * 2);
+      stop.leaves.resize(stop.arrivals.size());
+      stop_ids_.emplace(item.first, stops_.size());
+      stops_.push_back(std::move(stop));
+    }
+  }
+
+  void add(std::size_t id, const std::string& stop_name, double arrival,
+           std::vector<FrontierLocation>& locations,
+           const std::vector<Label>& labels) {
+    const std::size_t stop_id = stop_ids_.at(stop_name);
+    Stop& stop = stops_[stop_id];
+    const std::size_t leaf = static_cast<std::size_t>(
+      std::lower_bound(stop.arrivals.begin(), stop.arrivals.end(), arrival) -
+      stop.arrivals.begin());
+    auto& bucket = stop.leaves[leaf];
+    locations[id] = {stop_id, leaf, bucket.size()};
+    bucket.push_back(id);
+    update(stop_id, leaf, labels);
+  }
+
+  void remove(std::size_t id, std::vector<FrontierLocation>& locations,
+              const std::vector<Label>& labels) {
+    const FrontierLocation location = locations[id];
+    Stop& stop = stops_[location.stop];
+    auto& bucket = stop.leaves[location.leaf];
+    const std::size_t replacement = bucket.back();
+    bucket[location.position] = replacement;
+    bucket.pop_back();
+    if (replacement != id) {
+      locations[replacement].position = location.position;
+    }
+    update(location.stop, location.leaf, labels);
+  }
+
+  std::pair<std::size_t, std::size_t> query(
+      const std::string& stop_name, double ready, const std::string& excluded_trip,
+      const std::vector<Label>& labels, std::size_t& nodes_visited) const {
+    auto found = stop_ids_.find(stop_name);
+      if (found == stop_ids_.end()) return {std::numeric_limits<std::size_t>::max(),
+                                            std::numeric_limits<std::size_t>::max()};
+    const Stop& stop = stops_[found->second];
+    const auto end_it = std::upper_bound(stop.arrivals.begin(), stop.arrivals.end(), ready);
+    if (end_it == stop.arrivals.begin()) return {std::numeric_limits<std::size_t>::max(),
+                                                 std::numeric_limits<std::size_t>::max()};
+    std::size_t left = stop.base;
+    std::size_t right = stop.base + static_cast<std::size_t>(end_it - stop.arrivals.begin());
+    FrontierNode result;
+    while (left < right) {
+      if (left & 1U) {
+        result = merge_frontiers(result, stop.tree[left++], labels);
+        ++nodes_visited;
+      }
+      if (right & 1U) {
+        result = merge_frontiers(result, stop.tree[--right], labels);
+        ++nodes_visited;
+      }
+      left /= 2;
+      right /= 2;
+    }
+    if (result.first != std::numeric_limits<std::size_t>::max() &&
+        labels[result.first].trip == excluded_trip)
+      return {result.second, result.first};
+    return {result.first, result.second};
+  }
+};
+
 static std::string pair_key(const std::string& from, const std::string& to) {
   return from + '\x1f' + to;
 }
@@ -55,13 +212,13 @@ static std::string state_key(const std::string& stop, const std::string& trip) {
 }
 
 static bool insert_label(std::unordered_map<std::string, std::vector<std::size_t>>& labels,
-                         std::unordered_map<std::string, std::vector<std::size_t>>& by_stop,
                          std::vector<Label>& all_labels,
                          std::vector<unsigned char>& active,
-                         std::vector<std::size_t>& stop_positions,
-                         std::size_t& compacted,
+                         ArrivalFrontiers& frontiers,
+                         std::vector<FrontierLocation>& locations,
                          const std::string& stop, const std::string& trip,
-                         const Label& value, std::size_t& inserted) {
+                         const Label& value, std::size_t& inserted,
+                         std::size_t& compacted) {
   const std::string key = state_key(stop, trip);
   auto& state = labels[key];
   state.erase(std::remove_if(state.begin(), state.end(), [&](std::size_t id) {
@@ -79,10 +236,9 @@ static bool insert_label(std::unordered_map<std::string, std::vector<std::size_t
   const std::size_t id = all_labels.size();
   all_labels.push_back(value);
   active.push_back(1);
+  locations.resize(id + 1);
+  frontiers.add(id, stop, value.arrival, locations, all_labels);
   state.push_back(id);
-  auto& stop_index = by_stop[stop];
-  stop_positions.push_back(stop_index.size());
-  stop_index.push_back(id);
   std::vector<std::size_t> dominated;
   for (std::size_t old_id : state) {
     if (old_id == id || !active[old_id]) continue;
@@ -93,19 +249,11 @@ static bool insert_label(std::unordered_map<std::string, std::vector<std::size_t
          (value.transfers == old.transfers &&
           value.walking_transfers < old.walking_transfers))) {
       active[old_id] = 0;
+      frontiers.remove(old_id, locations, all_labels);
       dominated.push_back(old_id);
     }
   }
-  if (!dominated.empty()) {
-    for (std::size_t old_id : dominated) {
-      const std::size_t position = stop_positions[old_id];
-      const std::size_t replacement = stop_index.back();
-      stop_index[position] = replacement;
-      stop_positions[replacement] = position;
-      stop_index.pop_back();
-      ++compacted;
-    }
-  }
+  compacted += dominated.size();
   ++inserted;
   return true;
 }
@@ -185,16 +333,18 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
   }
 
   std::unordered_map<std::string, std::vector<std::size_t>> state_labels;
-  std::unordered_map<std::string, std::vector<std::size_t>> labels_by_stop;
   std::vector<Label> all_labels;
   std::vector<unsigned char> active_labels;
-  std::vector<std::size_t> stop_positions;
+  std::vector<FrontierLocation> frontier_locations;
+  ArrivalFrontiers arrival_frontiers(connections);
   std::vector<Best> best(destination_sets.size());
   std::size_t inserted = 0;
   std::size_t transfer_checks = 0;
   std::size_t labels_examined = 0;
   std::size_t stale_labels_examined = 0;
   std::size_t compacted_labels = 0;
+  std::size_t arrival_frontier_queries = 0;
+  std::size_t arrival_frontier_nodes = 0;
   std::unordered_set<std::string> origin_names = origin_set;
   for (int k = 0; k < destination_sets.size(); ++k) {
     CharacterVector d = destination_sets[k];
@@ -233,11 +383,12 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
       for (std::size_t p = cursor; p < end; ++p) {
         const Connection& c = connections[order[p]];
         if (c.arrival < c.departure) continue;
+        auto wit = incoming_walks.find(c.from);
         std::vector<std::pair<std::string, double>> candidates;
         candidates.emplace_back(c.from, 0.0);
-        auto wit = incoming_walks.find(c.from);
         if (wit != incoming_walks.end()) {
-          for (const auto& w : wit->second) candidates.emplace_back(w.from, w.minutes);
+          for (const auto& walk : wit->second)
+            candidates.emplace_back(walk.from, walk.minutes);
         }
 
         if (origin_set.count(c.from) && c.departure >= window_start &&
@@ -245,49 +396,76 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
           Label first{c.arrival, c.departure, c.arrival - c.departure,
                       0, 0, c.trip};
           record(c.to, first);
-          if (insert_label(state_labels, labels_by_stop, all_labels, active_labels,
-                           stop_positions,
-                           compacted_labels,
-                           c.to, c.trip, first, inserted))
+          if (insert_label(state_labels, all_labels, active_labels,
+                           arrival_frontiers, frontier_locations, c.to, c.trip,
+                           first, inserted, compacted_labels))
             changed = true;
         }
 
         for (const auto& candidate : candidates) {
-          auto lit = labels_by_stop.find(candidate.first);
-          if (lit == labels_by_stop.end()) continue;
-          // In a same-time zero-dwell chain, inserting a label may append to
-          // this very stop's index vector. Snapshot indices to avoid iterator
-          // invalidation; the next fixed-point pass observes newly inserted IDs.
-          const std::vector<std::size_t> label_ids = lit->second;
-          for (std::size_t label_id : label_ids) {
-            ++labels_examined;
-            if (!active_labels[label_id]) {
-              ++stale_labels_examined;
-              continue;
+          Rule rule{0, 0.0};
+          auto rit = rule_map.find(pair_key(candidate.first, c.from));
+          if (rit != rule_map.end()) rule = rit->second;
+          const bool same_stop = candidate.first == c.from;
+          std::size_t selected = std::numeric_limits<std::size_t>::max();
+
+          // Same-trip continuation at the same stop bypasses transfer rules and
+          // walking. Its state is narrow (one stop/trip), so inspect only that
+          // trip's Pareto labels, never every label at the stop.
+          if (same_stop) {
+            auto state = state_labels.find(state_key(c.from, c.trip));
+            if (state != state_labels.end()) {
+              const std::vector<std::size_t> state_snapshot = state->second;
+              for (std::size_t id : state_snapshot) {
+                ++labels_examined;
+                const Label& label = all_labels[id];
+                if (label.arrival <= c.departure &&
+                    better_label(id, selected, all_labels)) selected = id;
+              }
             }
-            const Label& previous = all_labels[label_id];
-            const bool same_trip = candidate.first == c.from && previous.trip == c.trip;
-            Rule rule{0, 0.0};
-            auto rit = rule_map.find(pair_key(candidate.first, c.from));
-            if (rit != rule_map.end()) rule = rit->second;
-            if (!same_trip && rule.type == 3) continue;
-            const double minimum = (!same_trip && rule.type == 2) ? rule.minimum : 0.0;
-            const double ready = previous.arrival + std::max(candidate.second, minimum);
-            if (ready > c.departure) continue;
-            ++transfer_checks;
-            Label next{c.arrival, previous.departure,
-                       c.arrival - previous.departure,
-                       previous.transfers + (same_trip ? 0 : 1),
-                       previous.walking_transfers +
-                         ((!same_trip && candidate.second > 0) ? 1 : 0),
-                       c.trip};
-            record(c.to, next);
-            if (insert_label(state_labels, labels_by_stop, all_labels, active_labels,
-                             stop_positions,
-                             compacted_labels,
-                             c.to, c.trip, next, inserted))
-              changed = true;
+            if (selected != std::numeric_limits<std::size_t>::max()) {
+              const Label& previous = all_labels[selected];
+              ++transfer_checks;
+              Label next{c.arrival, previous.departure,
+                         c.arrival - previous.departure, previous.transfers,
+                         previous.walking_transfers, c.trip};
+              record(c.to, next);
+              if (insert_label(state_labels, all_labels, active_labels,
+                               arrival_frontiers, frontier_locations, c.to,
+                               c.trip, next, inserted, compacted_labels))
+                changed = true;
+            }
           }
+
+          // All other eligible labels incur a transfer. A type-3 rule forbids
+          // this branch; the same-trip branch above remains legal.
+          if (rule.type == 3) continue;
+          const double minimum = rule.type == 2 ? rule.minimum : 0.0;
+          const double ready = c.departure - std::max(candidate.second, minimum);
+          const std::string excluded_trip = same_stop ? c.trip : std::string();
+          ++arrival_frontier_queries;
+          const auto pair = arrival_frontiers.query(
+            candidate.first, ready, excluded_trip, all_labels,
+            arrival_frontier_nodes);
+          selected = pair.first;
+          if (selected == std::numeric_limits<std::size_t>::max()) continue;
+          // Every candidate on this outgoing ride reaches the same arrival and
+          // last-trip state. Therefore the eligible label with the latest
+          // initial departure minimizes elapsed journey time; merge_frontiers
+          // breaks equal-departure ties by transfer count (then walk count).
+          const Label& previous = all_labels[selected];
+          ++transfer_checks;
+          Label next{c.arrival, previous.departure,
+                     c.arrival - previous.departure,
+                     previous.transfers + 1,
+                      previous.walking_transfers +
+                        (candidate.second > 0 ? 1 : 0),
+                     c.trip};
+          record(c.to, next);
+          if (insert_label(state_labels, all_labels, active_labels,
+                           arrival_frontiers, frontier_locations, c.to, c.trip,
+                           next, inserted, compacted_labels))
+            changed = true;
         }
       }
     }
@@ -320,6 +498,8 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
       _["label_checks"] = static_cast<double>(transfer_checks),
       _["labels_examined"] = static_cast<double>(labels_examined),
       _["stale_labels_examined"] = static_cast<double>(stale_labels_examined),
-      _["labels_compacted"] = static_cast<double>(compacted_labels))
+      _["labels_compacted"] = static_cast<double>(compacted_labels),
+      _["arrival_frontier_queries"] = static_cast<double>(arrival_frontier_queries),
+      _["arrival_frontier_nodes"] = static_cast<double>(arrival_frontier_nodes))
   );
 }

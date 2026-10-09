@@ -600,6 +600,8 @@ executer_experience_raccordement_gtfs <- function(
       labels_examined = route$metrics$labels_examined,
       stale_labels_examined = route$metrics$stale_labels_examined,
       labels_compacted = route$metrics$labels_compacted,
+      arrival_frontier_queries = route$metrics$arrival_frontier_queries,
+      arrival_frontier_nodes = route$metrics$arrival_frontier_nodes,
       stringsAsFactors = FALSE
     )
   }

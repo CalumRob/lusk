@@ -381,6 +381,106 @@ test_that("compiled stop index compacts dominated labels without losing routes",
   expect_equal(actual$metrics$labels_retained, 3)
 })
 
+test_that("arrival-frontier search matches R oracle across transfer edge cases", {
+  fixtures <- list(
+    multiple_labels_and_noninteger_walk = list(
+      rides = data.frame(
+        from_stop_id = c("O", "O", "X", "X"),
+        to_stop_id = c("X", "X", "D1", "D2"),
+        trip_id = c("early", "later", "out1", "out2"),
+        departure_min = c(420, 425, 432, 433),
+        arrival_min = c(430, 431, 440, 441)
+      ),
+      walks = data.frame(from_stop_id = "X", to_stop_id = "Y", duration_min = 2.5),
+      rules = NULL,
+      destinations = list(d1 = "D1", d2 = "D2")
+    ),
+    noninteger_walk_cutoff = list(
+      rides = data.frame(
+        from_stop_id = c("O", "B", "B"), to_stop_id = c("A", "D1", "D2"),
+        trip_id = c("in", "too_early", "exact_ready"),
+        departure_min = c(420, 432.4, 432.5), arrival_min = c(430, 442.4, 442.5)
+      ),
+      walks = data.frame(from_stop_id = "A", to_stop_id = "B", duration_min = 2.5),
+      rules = NULL,
+      destinations = list(d = c("D1", "D2"))
+    ),
+    type2_threshold = list(
+      rides = data.frame(
+        from_stop_id = c("O", "X", "X"), to_stop_id = c("X", "D1", "D2"),
+        trip_id = c("in", "too_early", "ready"),
+        departure_min = c(420, 432.4, 432.5), arrival_min = c(430, 442, 442.5)
+      ),
+      walks = data.frame(from_stop_id = character(), to_stop_id = character(),
+                         duration_min = numeric()),
+      rules = data.frame(from_stop_id = "X", to_stop_id = "X",
+                         transfer_type = "2", min_transfer_time = 150),
+      destinations = list(d = c("D1", "D2"))
+    ),
+    type3_but_same_trip_continues = list(
+      rides = data.frame(
+        from_stop_id = c("O", "X", "X"), to_stop_id = c("X", "D1", "D2"),
+        trip_id = c("through", "through", "other"),
+        departure_min = c(420, 430, 430), arrival_min = c(430, 440, 441)
+      ),
+      walks = data.frame(from_stop_id = character(), to_stop_id = character(),
+                         duration_min = numeric()),
+      rules = data.frame(from_stop_id = "X", to_stop_id = "X",
+                         transfer_type = "3"),
+      destinations = list(d = c("D1", "D2"))
+    ),
+    later_start_later_arrival = list(
+      rides = data.frame(
+        from_stop_id = c("O", "O", "X", "X"),
+        to_stop_id = c("X", "X", "D1", "D2"),
+        trip_id = c("fast_arrival", "late_start", "depart1", "depart2"),
+        departure_min = c(420, 425, 440, 445),
+        arrival_min = c(430, 435, 450, 455)
+      ),
+      walks = data.frame(from_stop_id = character(), to_stop_id = character(),
+                         duration_min = numeric()),
+      rules = NULL,
+      destinations = list(d = c("D1", "D2"))
+    ),
+    equal_elapsed_prefers_fewer_transfers = list(
+      rides = data.frame(
+        from_stop_id = c("O", "A", "O", "X"),
+        to_stop_id = c("A", "X", "X", "D"),
+        trip_id = c("first", "second", "direct", "last"),
+        departure_min = c(420, 425, 420, 430),
+        arrival_min = c(425, 430, 430, 440)
+      ),
+      walks = data.frame(from_stop_id = character(), to_stop_id = character(),
+                         duration_min = numeric()),
+      rules = NULL,
+      destinations = list(d = "D")
+    )
+  )
+
+  for (fixture in fixtures) {
+    expected <- meilleurs_trajets_gtfs_multi_destination(
+      fixture$rides, fixture$walks, "O", fixture$destinations,
+      "07:00", "08:00", fixture$rules
+    )
+    result <- rechercher_trajets_gtfs_compiled(
+      fixture$rides, fixture$walks, "O", fixture$destinations,
+      "07:00", "08:00", fixture$rules
+    )
+    expect_gt(result$metrics$arrival_frontier_queries, 0)
+    actual <- result$journeys
+    actual <- lapply(actual, function(x) {
+      x[!names(x) %in% c("transfers", "walking_transfers")]
+    })
+    expect_equal(actual, expected)
+  }
+  tied <- fixtures$equal_elapsed_prefers_fewer_transfers
+  tied_result <- rechercher_trajets_gtfs_compiled(
+    tied$rides, tied$walks, "O", tied$destinations, "07:00", "08:00"
+  )$journeys$d
+  expect_equal(tied_result$travel_time_min, 20)
+  expect_equal(tied_result$transfers, 1L)
+})
+
 test_that("candidate feeds reproduce holiday services and the Combourg sample", {
   korrigo_zip <- test_path("..", "..", "data", "raw",
                            "korrigo-gtfs-80622-candidate.zip")
