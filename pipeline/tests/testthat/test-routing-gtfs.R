@@ -244,6 +244,53 @@ test_that("compiled event scan includes walking duration and cross-stop rules", 
   expect_equal(min_connection$journeys$D$travel_time_min, 30)
 })
 
+test_that("GTFS experiment runner evaluates an origin against every destination", {
+  rides <- data.frame(
+    from_stop_id = c("O", "T", "T", "O"),
+    to_stop_id = c("A", "D", "D", "E"),
+    trip_id = c("in", "early-out", "late-out", "direct"),
+    departure_min = c(600, 622, 626, 600),
+    arrival_min = c(610, 632, 636, 620),
+    stringsAsFactors = FALSE
+  )
+  stops <- data.frame(
+    stop_id = c("O", "A", "T", "D", "E"),
+    stop_lat = c(48, 48, 48, 48, 48),
+    stop_lon = c(-1, -0.99, -0.98, -0.97, -0.96),
+    location_type = rep(0, 5),
+    stringsAsFactors = FALSE
+  )
+
+  run <- function(radius) executer_experience_raccordement_gtfs(
+    rides = rides,
+    stops = stops,
+    origines = list(origin = "O"),
+    destinations = list(connected = "D", direct = "E", unreachable = "T"),
+    rayon_m = radius,
+    vitesse_marche_kmh = 3,
+    debut_fenetre = "10:00",
+    fin_fenetre = "11:00"
+  )
+
+  too_short <- run(500)
+  usable <- run(1000)
+  wider <- run(2000)
+  expect_setequal(usable$journeys$destination_id,
+                  c("connected", "direct", "unreachable"))
+  connected <- usable$journeys[usable$journeys$destination_id == "connected", ]
+  expect_equal(connected$travel_time_min, 36)
+  expect_equal(connected$walking_transfers, 1L)
+  expect_true(is.na(too_short$journeys$travel_time_min[
+    too_short$journeys$destination_id == "connected"
+  ]))
+  expect_equal(wider$journeys$travel_time_min[
+    wider$journeys$destination_id == "connected"
+  ], 36)
+  expect_equal(usable$diagnostics$origin_id, "origin")
+  expect_true(is.finite(usable$diagnostics$search_seconds))
+  expect_gt(usable$diagnostics$transfer_edges, 0)
+})
+
 test_that("compiled scan retains a later faster label for a shared stop set", {
   rides <- data.frame(
     from_stop_id = c("O", "O", "X", "X"),

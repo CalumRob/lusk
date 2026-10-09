@@ -533,3 +533,75 @@ rechercher_trajets_gtfs_compiled <- function(
   csa_multi_target(rides, transfers, as.character(origine), destinations,
                    debut, fin, regles_transfert)
 }
+
+# executer_experience_raccordement_gtfs ----------------------------------------
+# Une exécution expérimentale, pour un rayon de correspondance et un ensemble
+# d'origines : chaque origine est routée une seule fois vers tous les territoires.
+# La sortie conserve les réponses par couple et les diagnostics permettant de
+# comparer les rayons avant d'élargir l'expérience.
+executer_experience_raccordement_gtfs <- function(
+    rides, stops, origines, destinations, rayon_m,
+    vitesse_marche_kmh = 3, regles_transfert = NULL,
+    debut_fenetre = "07:00", fin_fenetre = "20:00") {
+  verifier_stop_sets <- function(x, label) {
+    if (!is.list(x) || is.null(names(x)) || !length(x) ||
+        anyNA(names(x)) || any(!nzchar(names(x))) || anyDuplicated(names(x))) {
+      stop(label, " doit être une liste nommée non vide de stop sets.",
+           call. = FALSE)
+    }
+    invisible(NULL)
+  }
+  verifier_stop_sets(origines, "origines")
+  verifier_stop_sets(destinations, "destinations")
+
+  temps_transferts <- system.time({
+    transferts <- aretes_transfert_gtfs(
+      stops, regles_transfert, rayon_m = rayon_m,
+      vitesse_marche_kmh = vitesse_marche_kmh
+    )
+  })[["elapsed"]]
+
+  temps_routes <- vector("list", length(origines))
+  lignes_journeys <- vector("list", length(origines))
+  for (i in seq_along(origines)) {
+    temps <- system.time({
+      route <- rechercher_trajets_gtfs_compiled(
+        rides, transferts, origines[[i]], destinations,
+        debut_fenetre, fin_fenetre, regles_transfert,
+        ids_stops = stops$stop_id
+      )
+    })[["elapsed"]]
+    journeys <- route$journeys
+    lignes_journeys[[i]] <- do.call(rbind, lapply(names(destinations), function(id) {
+      j <- journeys[[id]]
+      data.frame(
+        origin_id = names(origines)[i], destination_id = id,
+        transfer_radius_m = rayon_m,
+        walking_speed_kmh = vitesse_marche_kmh,
+        travel_time_min = j$travel_time_min,
+        departure_min = j$departure_min,
+        arrival_min = j$arrival_min,
+        transfers = j$transfers,
+        walking_transfers = j$walking_transfers,
+        stringsAsFactors = FALSE
+      )
+    }))
+    temps_routes[[i]] <- data.frame(
+      origin_id = names(origines)[i],
+      search_seconds = temps,
+      transfer_build_seconds = temps_transferts,
+      transfer_edges = route$metrics$transfer_edges,
+      connections_scanned = route$metrics$connections_scanned,
+      labels_inserted = route$metrics$labels_inserted,
+      labels_retained = route$metrics$labels_retained,
+      label_checks = route$metrics$label_checks,
+      stringsAsFactors = FALSE
+    )
+  }
+
+  list(
+    journeys = do.call(rbind, lignes_journeys),
+    diagnostics = do.call(rbind, temps_routes),
+    transfer_edges = transferts
+  )
+}
