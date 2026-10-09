@@ -588,6 +588,8 @@ executer_experience_raccordement_gtfs <- function(
     }))
     temps_routes[[i]] <- data.frame(
       origin_id = names(origines)[i],
+      transfer_radius_m = rayon_m,
+      walking_speed_kmh = vitesse_marche_kmh,
       search_seconds = temps,
       transfer_build_seconds = temps_transferts,
       transfer_edges = route$metrics$transfer_edges,

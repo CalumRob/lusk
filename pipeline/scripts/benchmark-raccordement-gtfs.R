@@ -1,5 +1,7 @@
 # Benchmark reproductible du routage candidat #728.
-# Exécuter depuis pipeline/ : Rscript scripts/benchmark-raccordement-gtfs.R
+# Exécuter depuis pipeline/ avec une liste d'origines :
+#   Rscript scripts/benchmark-raccordement-gtfs.R 35238 35288
+#   Rscript scripts/benchmark-raccordement-gtfs.R ALL
 # Les archives sont des candidats non publiés; ce script ne touche aucun pin.
 pkgload::load_all(".", quiet = TRUE)
 library(sf)
@@ -26,9 +28,12 @@ date <- "2026-10-21"
 construire_rides <- function(path) {
   trips <- read_gtfs(path, "trips.txt")
   stop_times <- read_gtfs(path, "stop_times.txt")
-  active <- services_gtfs_a_la_date(
-    read_gtfs(path, "calendar.txt"), read_gtfs(path, "calendar_dates.txt"), date
-  )
+  members <- utils::unzip(path, list = TRUE)$Name
+  calendar <- if ("calendar.txt" %in% members) read_gtfs(path, "calendar.txt") else NULL
+  calendar_dates <- if ("calendar_dates.txt" %in% members) {
+    read_gtfs(path, "calendar_dates.txt")
+  } else NULL
+  active <- services_gtfs_a_la_date(calendar, calendar_dates, date)
   aretes_trajet_gtfs(trips, stop_times, active)
 }
 
@@ -56,37 +61,45 @@ stop_sets <- setNames(lapply(codes, function(code) {
   jointure$stop_id[!is.na(jointure$territoire) & jointure$territoire == code]
 }), codes)
 
-# Rennes -> 22004 is a candidate route which actually uses a walk-link at 300 m;
-# Rennes/Saint-Malo -> Combourg are also reported for continuity.
-targets <- list("22004" = stop_sets[["22004"]],
-                "35085" = stop_sets[["35085"]],
-                "35238" = stop_sets[["35238"]],
-                "35288" = stop_sets[["35288"]])
-origins <- c("35238", "35288")
-for (radius in c(200, 300, 500)) {
-  temps_walk <- system.time(walks <- aretes_transfert_gtfs(
-    stops, rules, rayon_m = radius, vitesse_marche_kmh = 4
-  ))
-  cat("radius_m=", radius, " transfer_edges=", nrow(walks),
-      " transfer_build_seconds=", temps_walk[["elapsed"]], "\n", sep = "")
-  for (origin_code in origins) {
-    temps_route <- system.time(result <- rechercher_trajets_gtfs_compiled(
-      rides, walks, stop_sets[[origin_code]], targets, "07:00", "20:00",
-      rules_resolved, stops$stop_id
-    ))
-    cat("origin=", origin_code, " seconds=", temps_route[["elapsed"]],
-        " connections=", result$metrics$connections_scanned,
-        " labels_inserted=", result$metrics$labels_inserted,
-        " labels_retained=", result$metrics$labels_retained,
-        " label_checks=", result$metrics$label_checks, "\n", sep = "")
-    for (destination_code in names(targets)) {
-      journey <- result$journeys[[destination_code]]
-      cat("  destination=", destination_code,
-          " elapsed_min=", journey$travel_time_min,
-          " depart_min=", journey$departure_min,
-          " arrive_min=", journey$arrival_min,
-          " vehicle_changes=", journey$transfers,
-          " walk_links=", journey$walking_transfers, "\n", sep = "")
-    }
-  }
+args <- commandArgs(trailingOnly = TRUE)
+if (!length(args)) {
+  stop("Provide origin commune codes, or ALL to run every origin.", call. = FALSE)
 }
+origin_codes <- if (identical(args, "ALL")) codes else args
+unknown <- setdiff(origin_codes, names(stop_sets))
+if (length(unknown)) {
+  stop("Unknown origin commune code(s): ", paste(unknown, collapse = ", "),
+       call. = FALSE)
+}
+origins <- setNames(lapply(origin_codes, function(code) stop_sets[[code]]), origin_codes)
+
+# Each run returns every destination, not a hand-picked OD subset. Only the
+# origins are narrowed for a pilot; pass ALL after the sensitivity policy is
+# selected and the router meets its runtime budget.
+radii <- c(500, 1000, 2000)
+destinations <- stop_sets
+experiment <- lapply(radii, function(radius) {
+  cat("Running transfer radius ", radius, " m for ", length(origins),
+      " origin(s) against ", length(destinations), " destinations\n", sep = "")
+  executer_experience_raccordement_gtfs(
+    rides = rides, stops = stops, origines = origins,
+    destinations = destinations, rayon_m = radius,
+    vitesse_marche_kmh = 3, regles_transfert = rules_resolved,
+    debut_fenetre = "07:00", fin_fenetre = "20:00"
+  )
+})
+journeys <- do.call(rbind, lapply(experiment, `[[`, "journeys"))
+diagnostics <- do.call(rbind, lapply(experiment, `[[`, "diagnostics"))
+groups <- split(journeys, interaction(journeys$origin_id,
+                                      journeys$destination_id, drop = TRUE))
+changed_pairs <- sum(vapply(groups, function(x) {
+  length(unique(x$travel_time_min)) > 1L
+}, logical(1)))
+
+run_id <- paste0(date, "-", format(Sys.time(), "%Y%m%dT%H%M%S"))
+output_dir <- file.path("data", "processed", "raccordement-experiments", run_id)
+dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
+utils::write.csv(journeys, file.path(output_dir, "journeys.csv"), row.names = FALSE)
+utils::write.csv(diagnostics, file.path(output_dir, "diagnostics.csv"), row.names = FALSE)
+cat("journeys=", nrow(journeys), " changed_origin_destination_pairs=",
+    changed_pairs, " output=", output_dir, "\n", sep = "")
