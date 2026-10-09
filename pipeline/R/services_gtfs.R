@@ -597,6 +597,7 @@ executer_experience_raccordement_gtfs <- function(
       labels_inserted = route$metrics$labels_inserted,
       labels_retained = route$metrics$labels_retained,
       label_checks = route$metrics$label_checks,
+      labels_examined = route$metrics$labels_examined,
       stringsAsFactors = FALSE
     )
   }

@@ -309,6 +309,50 @@ test_that("compiled scan retains a later faster label for a shared stop set", {
   expect_equal(got$travel_time_min, 20)
 })
 
+test_that("compiled event scan matches R search with transfer and same-trip alternatives", {
+  rides <- data.frame(
+    from_stop_id = c("O", "A", "A", "B", "C", "C", "B"),
+    to_stop_id = c("A", "B", "C", "D1", "D2", "D3", "D4"),
+    trip_id = c("t0", "t1", "t2", "t1", "t3", "t4", "t5"),
+    departure_min = c(420, 430, 430, 440, 441, 450, 450),
+    arrival_min = c(430, 440, 435, 450, 451, 460, 455),
+    stringsAsFactors = FALSE
+  )
+  walks <- data.frame(from_stop_id = "B", to_stop_id = "C", duration_min = 3)
+  rules <- data.frame(
+    from_stop_id = c("B", "B"), to_stop_id = c("D1", "D4"),
+    transfer_type = c("3", "2"), min_transfer_time = c(NA, 600),
+    stringsAsFactors = FALSE
+  )
+  destinations <- list(first = c("D1", "D2"), second = c("D3", "D4"))
+  expected <- meilleurs_trajets_gtfs_multi_destination(
+    rides, walks, "O", destinations, "07:00", "08:00", rules
+  )
+  actual <- rechercher_trajets_gtfs_compiled(
+    rides, walks, "O", destinations, "07:00", "08:00", rules
+  )
+  actual_journeys <- lapply(actual$journeys, function(x) {
+    x[!names(x) %in% c("transfers", "walking_transfers")]
+  })
+  expect_equal(actual_journeys, expected)
+})
+
+test_that("compiled event scan safely reaches same-time zero-dwell fixed points", {
+  rides <- data.frame(
+    from_stop_id = c("O", "A", "B"), to_stop_id = c("A", "B", "D"),
+    trip_id = c("first", "second", "third"),
+    departure_min = c(420, 430, 430), arrival_min = c(430, 430, 435)
+  )
+  transfers <- data.frame(from_stop_id = character(), to_stop_id = character(),
+                          duration_min = numeric())
+  got <- rechercher_trajets_gtfs_compiled(
+    rides, transfers, "O", list(D = "D"), "07:00", "08:00"
+  )$journeys$D
+  expect_equal(got$travel_time_min, 15)
+  expect_equal(got$departure_min, 420)
+  expect_equal(got$arrival_min, 435)
+})
+
 test_that("candidate feeds reproduce holiday services and the Combourg sample", {
   korrigo_zip <- test_path("..", "..", "data", "raw",
                            "korrigo-gtfs-80622-candidate.zip")

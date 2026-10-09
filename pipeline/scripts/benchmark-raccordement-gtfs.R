@@ -76,7 +76,12 @@ origins <- setNames(lapply(origin_codes, function(code) stop_sets[[code]]), orig
 # Each run returns every destination, not a hand-picked OD subset. Only the
 # origins are narrowed for a pilot; pass ALL after the sensitivity policy is
 # selected and the router meets its runtime budget.
-radii <- c(500, 1000, 2000)
+radii_arg <- Sys.getenv("LUSK_TRANSFER_RADIUS_M", "500,1000,2000")
+radii <- as.numeric(strsplit(radii_arg, ",", fixed = TRUE)[[1]])
+if (!length(radii) || any(!is.finite(radii) | radii < 0)) {
+  stop("LUSK_TRANSFER_RADIUS_M must be comma-separated nonnegative meters.",
+       call. = FALSE)
+}
 destinations <- stop_sets
 experiment <- lapply(radii, function(radius) {
   cat("Running transfer radius ", radius, " m for ", length(origins),
