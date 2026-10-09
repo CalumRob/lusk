@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import VarianteCahierLibre from './VarianteCahierLibre.vue'
-import { aedarAccessSection } from '@/fiche/content/aedarAccessSection'
+import { aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { CahierPagination } from './cahierPagination'
@@ -29,9 +29,9 @@ const transformed = computed(() => {
   const reference = referenceTerritoire && referenceData && referenceData.status === 'ready' && referenceData.contentVersion === focal.contentVersion
     ? { data: referenceData, territory: { type: referenceTerritoire.type, id: referenceTerritoire.id }, label: referenceTerritoire.nom }
     : null
-  const section = aedarAccessSection(focal, props.content.territory, { reference })
+  const sections = aedarPrototypeSections(focal, props.content.territory, { reference })
   const first = props.content.units[0]
-  return { ...props.content, units: [{ ...first, introduction: [], rundown: [], sections: [section] }, ...props.content.units.slice(1)] } as unknown as ThemeContent
+  return { ...props.content, units: [{ ...first, introduction: first.introduction, rundown: [], sections }, ...props.content.units.slice(1)] } as unknown as ThemeContent
 })
 </script>
 

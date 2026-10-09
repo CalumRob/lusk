@@ -19,6 +19,7 @@ import {
   WalletCards,
 } from 'lucide-vue-next'
 import { computed, onBeforeUnmount, onMounted, provide, ref } from 'vue'
+import { useRoute } from 'vue-router'
 import type { Component } from 'vue'
 
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
@@ -69,6 +70,8 @@ import CahierMotorisationFigure from './CahierMotorisationFigure.vue'
 import CahierOffreTransportsFigure from './CahierOffreTransportsFigure.vue'
 import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
+import AedarEquipmentWaffleCahier from './AedarEquipmentWaffleCahier.vue'
+import CahierEvidenceSource from './CahierEvidenceSource.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
 
 const props = defineProps<{
@@ -85,6 +88,7 @@ const props = defineProps<{
   buildingStatus?: 'loading' | 'ready' | 'error'
   retryBuilding?: () => void
 }>()
+const route = useRoute()
 
 provide(OPTIONS_COMPARAISON_KEY, computed(() => props.comparisonOptions ?? []))
 
@@ -371,10 +375,19 @@ function explorationLinks(section: ContentSection): readonly {
 }
 
 function sectionExploration(section: ContentSection) {
-  return explorationLinks(section)[0]?.to ?? routePourSectionExploration(section, {
+  const destination = explorationLinks(section)[0]?.to ?? routePourSectionExploration(section, {
     territoire: props.content.territory.code,
     type: props.content.territory.type,
   })
+  if (destination) return destination
+  if (aedarEquipmentProfileEvidenceFor(section)) {
+    return {
+      path: route.path,
+      query: route.query,
+      hash: `#${sourceEntry.value?.anchor ?? 'figure-sources'}`,
+    }
+  }
+  return null
 }
 
 function anchorForEntry(key: string): string {
@@ -391,6 +404,11 @@ function sectionState(section: ContentSection): string {
 function aedarAccessEvidenceFor(section: ContentSection): AedarAccessEvidence | null {
   if (!props.aedarAccessEnabled) return null
   if (section.evidence?.kind !== 'aedar-access') return null
+  return section.evidence
+}
+
+function aedarEquipmentProfileEvidenceFor(section: ContentSection) {
+  if (!props.aedarAccessEnabled || section.evidence?.kind !== 'aedar-equipment-profile') return null
   return section.evidence
 }
 
@@ -612,12 +630,13 @@ onBeforeUnmount(() => {
                     'figure-spread--paired': section.evidence?.kind === 'distribution'
                       && section.evidence.buildingDistribution?.availability === 'complete'
                       && section.evidence.accessRamp?.availability === 'complete',
+                    'figure-spread--aedar-equipment-profile': aedarEquipmentProfileEvidenceFor(section) !== null,
                   }"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
               >
                 <div
-                  v-if="props.presentation !== 'plain' || section.lecture?.prose.length || (!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete')"
+                  v-if="!aedarEquipmentProfileEvidenceFor(section) && (props.presentation !== 'plain' || section.lecture?.prose.length || (!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'))"
                   class="argument-side"
                 >
                   <template v-if="section.lecture">
@@ -665,15 +684,29 @@ onBeforeUnmount(() => {
                         />
                       </figure>
                       <aside class="aedar-reading">
-                        <CahierProse class="aedar-reading__prose" :blocks="aedarAccessEvidenceFor(section)!.sectionProse" />
-                        <p v-if="aedarAccessEvidenceFor(section)!.source" class="aedar-reading__source">
-                          <a :href="aedarAccessEvidenceFor(section)!.source!.url" target="_blank" rel="noreferrer">{{ aedarAccessEvidenceFor(section)!.source!.label }}</a>
-                          {{ aedarAccessEvidenceFor(section)!.source!.version }}
-                          <span v-if="aedarAccessEvidenceFor(section)!.source!.credit"> · {{ aedarAccessEvidenceFor(section)!.source!.credit }}</span>
-                        </p>
+                        <CahierProse class="argument-copy" :blocks="aedarAccessEvidenceFor(section)!.sectionProse" />
+                        <CahierEvidenceSource v-if="aedarAccessEvidenceFor(section)!.source" :source="aedarAccessEvidenceFor(section)!.source!" />
                       </aside>
                     </div>
                   </figure>
+
+                  <div
+                    v-if="aedarEquipmentProfileEvidenceFor(section)"
+                    class="evidence-side evidence-figure aedar-equipment-profile-evidence"
+                  >
+                    <AedarEquipmentWaffleCahier :evidence="aedarEquipmentProfileEvidenceFor(section)!" :title="section.label" />
+                  </div>
+
+                  <CahierProse
+                    v-if="aedarEquipmentProfileEvidenceFor(section)"
+                    class="argument-copy"
+                    data-aedar-profile-explanation
+                    :blocks="aedarEquipmentProfileEvidenceFor(section)!.prose"
+                  />
+                  <CahierEvidenceSource
+                    v-if="aedarEquipmentProfileEvidenceFor(section)?.source"
+                    :source="aedarEquipmentProfileEvidenceFor(section)!.source!"
+                  />
 
                   <figure
                     v-if="section.key === 'distribution-acces-par-batiment' && props.buildingStatus && props.buildingStatus !== 'ready'"
@@ -1006,7 +1039,7 @@ onBeforeUnmount(() => {
                     <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                   </figure>
 
-                <div v-else-if="!aedarAccessEvidenceFor(section)" class="evidence-side evidence-placeholder" role="note">
+                  <div v-else-if="!aedarAccessEvidenceFor(section) && !aedarEquipmentProfileEvidenceFor(section)" class="evidence-side evidence-placeholder" role="note">
                   <span>{{ sectionState(section) }}</span>
                 </div>
               </section>
@@ -1017,12 +1050,13 @@ onBeforeUnmount(() => {
                 <div
                   v-if="props.presentation === 'plain' && sectionExploration(section) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
                   class="cahier-section-exploration cahier-section-exploration--unit-footer"
-                  aria-label="Explorer les indicateurs de cette section"
+                  :aria-label="aedarEquipmentProfileEvidenceFor(section) ? 'Consulter les sources de cette section' : 'Explorer les indicateurs de cette section'"
                 >
                   <PassarelleExploration
                     :to="sectionExploration(section)!"
                     libelle="En savoir plus"
                     sans-soulignement
+                    :nouvel-onglet="!aedarEquipmentProfileEvidenceFor(section)"
                     class="cahier-baseline-anchor"
                   />
                 </div>
@@ -1175,8 +1209,6 @@ onBeforeUnmount(() => {
 .aedar-analysis { display: grid; grid-template-columns: minmax(0, var(--cahier-figure-width-compact, 560px)) minmax(260px, 1fr); align-items: center; justify-content: center; gap: var(--space-8); }
 .aedar-ramp { width: min(100%, var(--cahier-figure-width-compact, 560px)); justify-self: center; margin: 0; display: grid; gap: var(--space-3); }
 .aedar-reading { display: grid; align-content: center; gap: var(--space-4); min-width: 0; }
-.aedar-reading__prose { color: var(--cahier-default); font: var(--text-body); }
-.aedar-reading__source { margin: 0; color: var(--cahier-default); font-size: 10px; line-height: 1.1; overflow-wrap: anywhere; }
 @media (max-width: 760px) { .aedar-analysis { grid-template-columns: minmax(0, 1fr); } }
 .concept-group {
   container: subgroup / inline-size;
@@ -1202,6 +1234,7 @@ onBeforeUnmount(() => {
 .concept-group-heading h3 { margin: 0; color: var(--ink); font-family: var(--font-narrative-lead); font-size: calc(1.2rem + 2px); font-weight: 500; line-height: 1; }
 .cahier--sans-grille .concept-group-narrative { font-size: clamp(1.05rem, 1.4vw, 1.35rem); font-style: italic; font-weight: 400; line-height: 1.15; text-wrap: balance; }
 .figure-spread { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.2fr); column-gap: clamp(40px, 5vw, 76px); row-gap: var(--cahier-spread-gap, 34px); align-items: start; padding: var(--cahier-spread-padding, 22px) 0; }
+.figure-spread--aedar-equipment-profile { grid-template-columns: minmax(0, 1fr); }
 .cahier--sans-grille .figure-spread { grid-template-columns: 1fr; column-gap: 0; }
 .cahier--sans-grille .figure-spread--paired {
   grid-template-columns: repeat(2, minmax(0, 1fr));
@@ -1358,7 +1391,6 @@ onBeforeUnmount(() => {
   .margin-sources { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 6px 12px; }
   .margin-sources .margin-label { flex-basis: 100%; text-align: right; }
   .margin-sources a { font-size: 14px; line-height: 1.4; }
-  .aedar-reading__source { font-size: 14px; line-height: 1.4; }
   .page-number { font-size: 24px; }
   .page-heading h2 { font-size: clamp(1.35rem, 7vw, 1.85rem); }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }

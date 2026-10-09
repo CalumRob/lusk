@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { aedarAccessSection, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
+import { aedarAccessSection, aedarPrototypeSections, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
 import { AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
 import type { TerritoryIdentity } from '@/fiche/content/territoryFacts'
@@ -61,6 +61,20 @@ function aedarReady(territoryId: string, territoryType: 'commune' | 'epci' = 'co
 }
 
 describe('aedarAccessSection', () => {
+  it('assembles the waffle as a separate section from the access maps and ramps', () => {
+    const sections = aedarPrototypeSections(aedarReady('22001'), territory)
+
+    expect(sections.map((section) => section.key)).toEqual(['aedar-access', 'aedar-equipment-profile'])
+    expect(sections[0]?.evidence?.kind).toBe('aedar-access')
+    expect(sections[1]?.evidence?.kind).toBe('aedar-equipment-profile')
+    if (sections[1]?.evidence?.kind !== 'aedar-equipment-profile') return
+    expect(sections[1].label).toBe('Types d’équipements par premier mode d’accès')
+    expect(sections[1].evidence.facts).toHaveLength(10)
+    expect(sections[1].evidence.threshold).toBe(0.25)
+    const threshold = sections[1].evidence.prose[0]?.find((segment) => segment.kind === 'emphasis')
+    expect(threshold).toMatchObject({ kind: 'emphasis', value: '25%', tone: 'neutral' })
+  })
+
   it('carries the section label without a Lecture block', () => {
     const section = aedarAccessSection(aedarReady('22001'), territory)
     expect(section.key).toBe('aedar-access')

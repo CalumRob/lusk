@@ -146,9 +146,8 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
 
     // The AEDAR section has no generic Lecture block.
     const heading = wrapper.find('[data-section="aedar-access"] .concept-group-heading')
-    expect(heading.find('.concept-group-label').text()).toBe('Diversité de l’offre')
-    expect(heading.find('.concept-group-narrative').exists()).toBe(false)
-    expect(wrapper.find('[data-section="aedar-access"] .argument-copy').exists()).toBe(false)
+    expect(heading.find('h3').text()).toBe('Diversité de l’offre')
+    expect(wrapper.find('[data-section="aedar-access"] .argument-copy').text()).toContain('Les Transports en commun incluent aussi la marche')
     expect(wrapper.find('[data-section="aedar-access"] .cahier-section-state').exists()).toBe(false)
 
     // The section label is not duplicated as a figure title: each figure carries
@@ -159,12 +158,12 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
       'Diversité de l’offre accessible (moyenne du territoire)',
     ])
 
-    // Every mode renders a mode-colored territory line and the legend names the modes.
+    // The selectable ramp defaults to car, transit and LTS2.
     expect(wrapper.findAll('.aedar-ramp .access-ramp-line--car').length).toBeGreaterThanOrEqual(1)
     expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike').length).toBeGreaterThanOrEqual(1)
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike-light').length).toBeGreaterThanOrEqual(1)
     expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit').length).toBeGreaterThanOrEqual(1)
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit-light').length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--bike-light')).toHaveLength(0)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--walkTransit-light')).toHaveLength(0)
     expect(wrapper.find('.aedar-ramp figcaption').text()).toBe('Diversité de l’offre accessible (moyenne du territoire)')
     expect(wrapper.find('.aedar-ramp .cahier-figure-axis-title--y').text()).toBe('Diversité de l’offre')
     expect(wrapper.find('.aedar-ramp .cahier-figure-axis-title--x').text()).toBe('Temps de trajet')
@@ -182,7 +181,7 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     const tooltip = wrapper.find('.aedar-ramp [role="tooltip"]').text()
     expect(tooltip).toContain('Voiture')
     expect(tooltip).toContain('Vélo (LTS2)')
-    expect(tooltip).toContain('À pied')
+    expect(tooltip).toContain('Transports en commun')
 
     // AEDAR maps have no lecture disclosure; the main figure has no horizon marker or territory dots.
     expect(wrapper.find('.blank-map-slots .cahier-figure-lecture').exists()).toBe(false)
@@ -196,9 +195,9 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(wrapper.find('.aedar-reading .foot-emphasis').text()).toContain('Transports en commun')
     expect(wrapper.findAll('.aedar-reading .bike-emphasis').map((item) => item.text())).toEqual(['vélo', 'LTS2', 'LTS4'])
     expect(wrapper.findAll('.aedar-reading .foot-emphasis').map((item) => item.text())).toEqual(['Transports en commun', 'marche'])
-    expect(wrapper.find('.aedar-reading__source a').text()).toBe('AEDAR')
-    expect(wrapper.find('.aedar-reading__source a').text()).not.toBe('aedar_bretagne')
-    expect(wrapper.find('.aedar-reading__source').text().replace(/\s+/gu, ' ').trim()).toBe('AEDAR 2026-v1 · © OpenStreetMap contributors')
+    expect(wrapper.find('.aedar-reading .cahier-evidence-source a').text()).toBe('AEDAR')
+    expect(wrapper.find('.aedar-reading .cahier-evidence-source a').text()).not.toBe('aedar_bretagne')
+    expect(wrapper.find('.aedar-reading .cahier-evidence-source').text().replace(/\s+/gu, ' ').trim()).toBe('AEDAR 2026-v1')
 
     // The section has a reading: no "lecture indisponible" placeholder may follow the evidence.
     expect(wrapper.find('[data-section="aedar-access"] .evidence-placeholder').exists()).toBe(false)
@@ -220,9 +219,11 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     await router.isReady()
     await flushPromises()
 
-    // Dashed, mode-colored comparison lines on the sole rendered ramp.
-    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison').length).toBeGreaterThanOrEqual(5)
+    // Comparison series are selectable; the default shows car, transit and LTS2.
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison')).toHaveLength(3)
     expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison.access-ramp-line--car').length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison.access-ramp-line--walkTransit').length).toBeGreaterThanOrEqual(1)
+    expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison.access-ramp-line--bike').length).toBeGreaterThanOrEqual(1)
 
     // The legend names the five modes plus the explicitly labeled reference territory.
     const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')
@@ -236,11 +237,6 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     ])
     const referenceMark = firstRampLegend[5]!.find('.cahier-figure-legend-mark')
     expect(referenceMark.classes()).toContain('cahier-figure-legend-mark--dash')
-
-    // The ramp reading explains the reference honestly — never a fabricated cohort.
-    const lecture = wrapper.find('.aedar-access-evidence > .cahier-figure-lecture').text()
-    expect(lecture).toContain('EPCI X')
-    expect(lecture).toContain('territoire de référence')
 
     // The reference values land in the tooltip note per mode.
     await wrapper.find('.aedar-ramp [aria-label="Temps d\'accès : 15 min"]').trigger('focus')
@@ -360,20 +356,40 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     // The wrapper should render VarianteCahierLibre with the transformed content
     expect(wrapper.findComponent(VarianteCahierLibre).exists()).toBe(true)
 
-    // The transformed content should have the aedar-access section
+    // The access maps/ramps and equipment profile are independent sibling sections.
     const cahierProps = wrapper.findComponent(VarianteCahierLibre).props()
     expect(cahierProps.aedarAccessEnabled).toBe(true)
 
-    // The AEDAR prototype uses its own heading and has no unit or section reading yet.
+    // The AEDAR prototype keeps its own unit and gives the waffle its own section heading/anchor.
     const firstUnit = (cahierProps.content as ThemeContent).units[0]
     const section = firstUnit.sections[0] as unknown as AedarAccessSection
+    const profileSection = firstUnit.sections[1]
     expect(section.key).toBe('aedar-access')
     expect(section.label).toBe('Diversité de l’offre')
+    expect(profileSection?.key).toBe('aedar-equipment-profile')
+    expect(profileSection?.label).toBe('Types d’équipements par premier mode d’accès')
     expect(firstUnit.label).toEqual(content.units[0]?.label)
-    expect(firstUnit.introduction).toEqual([])
+    expect(firstUnit.introduction).toEqual(content.units[0]?.introduction)
     expect(firstUnit.rundown).toEqual([])
     expect(section.lecture).toBeNull()
     expect(section.evidence?.kind).toBe('aedar-access')
+    expect(wrapper.find('[data-section="aedar-equipment-profile"]').exists()).toBe(true)
+    expect(wrapper.find('[data-section="aedar-access"] .aedar-waffle-grid').exists()).toBe(false)
+    expect(wrapper.find('[data-section="aedar-equipment-profile"] .aedar-waffle-grid').exists()).toBe(true)
+    expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').exists()).toBe(true)
+    expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').element.compareDocumentPosition(
+      wrapper.find('[data-section="aedar-equipment-profile"] .aedar-waffle').element,
+    ) & 2).toBeTruthy()
+    expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').classes()).toContain('argument-copy')
+    expect(wrapper.find('.page-subtitle').text()).not.toBe('')
+    expect(profileSection?.lecture).toBeNull()
+    expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').text()).toContain('25%')
+    expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').text()).toContain('Les transports en commun incluent la marche')
+    expect(wrapper.find('[data-section="aedar-equipment-profile"] .evidence-placeholder').exists()).toBe(false)
+    expect(wrapper.find('[data-section="aedar-equipment-profile"] .cahier-evidence-source').exists()).toBe(true)
+    const moreInfo = wrapper.find('[data-section="aedar-equipment-profile"] .cahier-section-exploration--unit-footer a')
+    expect(moreInfo.text()).toContain('En savoir plus')
+    expect(moreInfo.attributes('href')).toContain('#')
     if (section.evidence?.kind === 'aedar-access') {
       expect(section.evidence.mapFigureTitle.map((segment) => segment.value).join('')).toBe('Quelle diversité de l’offre est accessible en 15 minutes depuis les adresses résidentielles ?')
       expect(section.evidence.ramps).toHaveLength(2)

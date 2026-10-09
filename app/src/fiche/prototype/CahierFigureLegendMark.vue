@@ -50,4 +50,6 @@ function markStyle(): Record<string, string> | undefined {
   />
 </template>
 
-<style src="./cahierFigure.css"></style>
+<style>
+@import "./cahierFigure.css";
+</style>

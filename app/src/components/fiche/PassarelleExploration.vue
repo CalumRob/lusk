@@ -24,31 +24,23 @@ import AppIcon from '@/components/AppIcon.vue'
 import { LIBELLE_HANDOFF } from '@/fiche/explorationHandoff'
 import type { RouteLocationRaw } from 'vue-router'
 
-defineProps<{
-  /** La route résolue par handoffExploration — l'état d'URL du contrat #409. */
+const props = withDefaults(defineProps<{
   to: RouteLocationRaw
-  /**
-   * Le libellé du site (#473) : sous une grande lecture, plusieurs passarelles
-   * cohabitent — chaque ancre porte le nom PUBLIÉ de son indicateur pour
-   * rester discernable (des intitulés de liens uniques, accessibilité).
-   * Défaut : le libellé compact unique « Explorer » des sites à ancre seule
-   * (#468) — tous les sites existants restent inchangés.
-   */
   libelle?: string
-  /** Let a host surface use the reference's quiet, undecorated handoff. */
   sansSoulignement?: boolean
-}>()
+  nouvelOnglet?: boolean
+}>(), { nouvelOnglet: true })
 </script>
 
 <template>
   <RouterLink
     class="passarelle-exploration"
-    :class="{ 'passarelle-exploration--plain': sansSoulignement }"
-    :to="to"
-    target="_blank"
-    rel="noopener noreferrer"
+    :class="{ 'passarelle-exploration--plain': props.sansSoulignement }"
+    :to="props.to"
+    :target="props.nouvelOnglet ? '_blank' : undefined"
+    :rel="props.nouvelOnglet ? 'noopener noreferrer' : undefined"
   >
-    {{ libelle ?? LIBELLE_HANDOFF }}
+    {{ props.libelle ?? LIBELLE_HANDOFF }}
     <AppIcon :icone="ArrowRight" :taille="12" aria-hidden="true" />
   </RouterLink>
 </template>

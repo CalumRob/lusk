@@ -1,4 +1,4 @@
-import { cpSync, existsSync } from 'node:fs'
+import { cpSync, existsSync, realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -22,7 +22,10 @@ import { territoryModelBuffer } from './scripts/territory-model-dev'
 // are projected in memory on a dev-cache miss from those published JSONs: the
 // first fiche pays one source parse, later fiches reuse it. Nothing is written
 // and neither `npm run dev` nor `npm run build` regenerates the pipeline.
-const racinePayload = path.resolve(fileURLToPath(new URL('.', import.meta.url)), '../public/data')
+const racineApp = path.resolve(fileURLToPath(new URL('.', import.meta.url)))
+const racineDepot = path.resolve(racineApp, '..')
+const racineDependancesReelle = realpathSync(path.resolve(racineApp, 'node_modules'))
+const racinePayload = path.resolve(racineApp, '../public/data')
 async function materialiserModeleTerritoire(relatif: string): Promise<Buffer | null> {
   const match = relatif.match(
     /^modeles-lecture\/territoires\/(commune|epci|departement|region)\/([a-z0-9_-]+)\.json$/,
@@ -112,7 +115,11 @@ export default defineConfig({
   // bounded to this repository and remove it with the map-layout prototype.
   server: {
     fs: {
-      allow: [path.resolve(fileURLToPath(new URL('.', import.meta.url)), '..')],
+      // Worktrees can share node_modules through a junction to the main
+      // checkout. Vite resolves /@fs font assets through that junction, so
+      // allow the actual dependency root instead of returning 403 and falling
+      // back to system fonts in dev.
+      allow: [racineDepot, racineDependancesReelle],
     },
     // Variant E keeps /api same-origin in the browser. The public read-only API
     // is the development default; override for a local API with LUSK_API_ORIGIN.

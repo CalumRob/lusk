@@ -278,7 +278,9 @@ const selectedGroupData = computed(() => groups.value.find((group) => group.key 
   </div>
 </template>
 
-<style src="./cahierFigure.css"></style>
+<style>
+@import "./cahierFigure.css";
+</style>
 
 <style>
 .summary-plot {

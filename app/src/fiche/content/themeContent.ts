@@ -6,6 +6,7 @@ import {
 import { comparisonScopeLabel as resolveComparisonScopeLabel } from './comparisonScopeLabel'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type { ThemeMetadata, TrajectoryMetadata } from '@/payload/types'
+import type { AedarFact } from './aedarApiClient'
 import type {
   BpeAccessProfileFact,
   ComparisonScope,
@@ -76,9 +77,26 @@ export interface AedarAccessEvidence {
   ramps: readonly AedarTimeRampEvidence[]
   sectionProse: readonly TextBlock[]
   diversityGap: { value: number | null; horizonMinutes: number; territoryLead: string; prose: TextBlock | null }
-  source: { label: string; version: string; url: string; credit: string | null } | null
+  source: AedarEvidenceSource | null
   availability: FactAvailability
   provenance: readonly string[]
+}
+
+export interface AedarEquipmentProfileEvidence {
+  kind: 'aedar-equipment-profile'
+  facts: readonly AedarFact[]
+  threshold: number
+  initialHorizonMinutes: 5 | 10 | 15 | 20
+  figureTitle: string
+  prose: readonly TextBlock[]
+  source: AedarEvidenceSource | null
+}
+
+export interface AedarEvidenceSource {
+  label: string
+  version: string
+  url: string
+  credit: string | null
 }
 
 export interface DistributionEvidence {
@@ -222,6 +240,7 @@ export interface SharingParkingEvidence {
 export type ContentEvidence =
   | DistributionEvidence
   | AedarAccessEvidence
+  | AedarEquipmentProfileEvidence
   | BpeProfilesEvidence
   | SummaryEvidence
   | AccessEvidence
@@ -243,6 +262,7 @@ interface ContentSectionBase<Key extends string, Evidence> {
 }
 
 export interface AedarAccessSection extends ContentSectionBase<'aedar-access', AedarAccessEvidence> { label: string }
+export interface AedarEquipmentProfileSection extends ContentSectionBase<'aedar-equipment-profile', AedarEquipmentProfileEvidence> { label: string }
 
 export interface ResumeSection extends ContentSectionBase<'resume', SummaryEvidence> {
   label: 'Résumé'
@@ -283,6 +303,7 @@ export interface OffreTransportsSection extends ContentSectionBase<'offre-transp
 
 export type MobiliteContentSection =
   | AedarAccessSection
+  | AedarEquipmentProfileSection
   | ResumeSection
   | ProfilsAccesParModeSection
   | ServicesEssentielsSection

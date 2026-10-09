@@ -27,7 +27,7 @@ describe('CahierBlankMapSlots', () => {
     const title = wrapper.find('.blank-map-slots > .cahier-figure-title')
     expect(title.exists()).toBe(true)
     expect(title.text()).toBe("Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?")
-    expect(title.find('.theme-emphasis').text()).toBe('15 minutes')
+    expect(title.find('.theme-emphasis').exists()).toBe(false)
     // No bespoke heading, no duplicated section number inside the figure title.
     expect(wrapper.find('.blank-map-slots__heading').exists()).toBe(false)
     expect(wrapper.find('.blank-map-slots__number').exists()).toBe(false)

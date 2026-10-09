@@ -154,13 +154,14 @@ export function routePourCibleExploration(
  * these fallbacks land on an already published indicator page until their
  * dedicated indicator pages exist.
  */
-const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string>> = {
+const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string | null>> = {
   resume: 'avg_tot_t',
   'profils-acces-par-mode': 'avg_tot_t',
   'services-essentiels': 'iso_administration',
   'distribution-acces-par-batiment': 'tot_loss_t',
   reseaux: 'reseaux',
   'aedar-access': 'iso_administration',
+  'aedar-equipment-profile': null,
   'offre-cyclable': 'offre_cyclable',
   stationnement: 'places_stationnement_velo_1000',
   motorisation: 'voitures_menage',

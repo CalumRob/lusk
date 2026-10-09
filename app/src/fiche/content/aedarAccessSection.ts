@@ -5,10 +5,11 @@
  */
 import type { AedarFetchResult } from './aedarApiClient'
 import { aedarTimeRampEvidence } from './aedarTimeRampFacts'
+import { AEDAR_EQUIPMENT_BUCKET_THRESHOLD, classifyAedarEquipmentTypes } from './aedarEquipmentBuckets'
 import type { AedarTimeRampValues } from './aedarTimeRampFacts'
 import type { TerritoryIdentity } from './territoryFacts'
 import { emphasis, text, territoryLead, territoryTypeLabel } from './themeContent'
-import type { AedarAccessSection, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
+import type { AedarAccessSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
 
 /** Blank map slots and the highlighted ramp horizon share the provisional AEDAR15 horizon. */
 export const AEDAR_PROTOTYPE_HORIZON_MINUTES = 15
@@ -139,12 +140,7 @@ export function aedarAccessSection(
         value: diversityGapValue,
         prose: diversityGapProse,
       },
-      source: data.provenance.sources[0] ? {
-        label: data.provenance.sources[0].attribution.toUpperCase().includes('AEDAR') ? 'AEDAR' : data.provenance.sources[0].attribution || 'Source',
-        version: data.provenance.sources[0].vintage_id,
-        url: data.provenance.sources[0].source_url,
-        credit: data.provenance.sources[0].attribution.match(/©\s*[^;—]+/u)?.[0]?.trim() ?? null,
-      } : null,
+      source: aedarEvidenceSource(data),
       availability,
       provenance,
     },
@@ -152,4 +148,54 @@ export function aedarAccessSection(
     lecture: null,
     explorationTargets: [],
   }
+}
+
+function aedarEvidenceSource(data: AedarReady): AedarEvidenceSource | null {
+  const source = data.provenance.sources[0]
+  if (!source) return null
+  return {
+    label: source.attribution.toUpperCase().includes('AEDAR') ? 'AEDAR' : source.attribution || 'Source',
+    version: source.vintage_id,
+    url: source.source_url,
+    credit: source.attribution.match(/©\s*[^;—]+/u)?.[0]?.trim() ?? null,
+  }
+}
+
+/** The ordered access profile is a distinct section, not another figure in the access/ramp section. */
+export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentProfileSection {
+  const availability = classifyAedarEquipmentTypes(data.facts, {
+    horizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
+  }).status
+  return {
+    key: 'aedar-equipment-profile',
+    label: 'Types d’équipements par premier mode d’accès',
+    availability,
+    indicators: [],
+    evidence: {
+      kind: 'aedar-equipment-profile',
+      facts: data.facts,
+      threshold: AEDAR_EQUIPMENT_BUCKET_THRESHOLD,
+      initialHorizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
+      figureTitle: 'Types d’équipements accessibles par premier mode',
+      source: aedarEvidenceSource(data),
+      prose: [[
+        text('Chaque case représente un type BPE, classé une seule fois selon le premier mode dont la part atteint '),
+        emphasis('25%', 'neutral'),
+        text(' : à pied, transports en commun, vélo LTS2, vélo LTS4, puis voiture. Les parts sont mesurées parmi les adresses résidentielles atteignant au moins un équipement de ce type.'),
+      ], [
+        text('Les transports en commun incluent la marche : leur catégorie ne contient que les types qui restent sous le seuil à pied seul. « Inaccessible » signifie qu’aucun des cinq modes n’atteint le seuil.'),
+      ]],
+    },
+    provenance: data.provenance.sources.map((source) => source.source_id),
+    lecture: null,
+    explorationTargets: [],
+  }
+}
+
+export function aedarPrototypeSections(
+  data: AedarReady,
+  territory: TerritoryIdentity,
+  options: AedarAccessSectionOptions = {},
+): [AedarAccessSection, AedarEquipmentProfileSection] {
+  return [aedarAccessSection(data, territory, options), aedarEquipmentProfileSection(data)]
 }

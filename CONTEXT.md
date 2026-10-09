@@ -433,6 +433,10 @@ _Avoid_: score d’accessibilité, classement des modes, saillance (retired Stor
 The counts are unweighted counts of types: each BPE category contributes one, regardless of how many buildings it serves; building coverage belongs to the exemplar’s mode values.
 _Avoid_: rôle de saillance, score, catégorie d’équipement (a BPE category is the subject, not its access reading)
 
+**Profil ordonné AEDAR**:
+The standalone AEDAR prototype’s mutually exclusive assignment of every type in the complete 235-code BPE 2025 TYPEQU universe to its first qualifying published access mode, tested in this fixed order: à pied, transports en commun, vélo LTS2, vélo LTS4, voiture. The selected threshold is 25 % of residential addresses reaching at least one item of that type. Transports en commun includes walking; its bucket therefore contains only types below threshold for walking alone. « Inaccessible » means no mode reaches the threshold. Missing or incomplete mode evidence leaves the profile incomplete, never inaccessible. This is distinct from the legacy BPE24-backed, 53-type **Profil d’accès** above; that incumbent profile is not the AEDAR universe or contract.
+_Avoid_: profil 53 types (the legacy universe), access requirement (overstates what first-match means about a particular journey), unreachable (the profile only reports the published threshold)
+
 **Calibration de l’univers**:
  The fixed access calibration chosen for the pooled territory × Type d’équipement BPE distribution: one flat threshold `U = 25 %` applied identically to `c`, `b`, and `t`, with no entropy-balancing objective. The calibration uses the 53-type universe carried by the BPE24-backed mobility snapshot. It applies unchanged to every territory and type and is not recalculated at display time or separately for an amenity. A territory’s own profile counts may be uneven.
 _Avoid_: seuil local, seuil par équipement, seuil dynamique

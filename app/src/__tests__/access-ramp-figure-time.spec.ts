@@ -79,6 +79,7 @@ describe('AccessRampFigureCahier time ramp', () => {
 
   it('renders time ticks, horizon, unit, reference, gaps, and accessible value tooltips', async () => {
     const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
+    await wrapper.findAll('.cahier-figure-legend-item button').find((button) => button.text().includes('pied'))!.trigger('click')
     expect(wrapper.find('.access-ramp-svg').attributes('aria-label')).toContain('Territoire test')
     expect(wrapper.find('.access-ramp-cahier').text()).toContain('types')
     expect(wrapper.find('.access-ramp-horizon').exists()).toBe(false)
@@ -97,15 +98,20 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(wrapper.find('[role="tooltip"]').text()).toContain('Territoires comparables : 1')
   })
 
-  it('colors each mode line in its mode family and lists the modes in the legend', () => {
+  it('colors each mode line in its mode family and lists the modes in the legend', async () => {
     const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
+
+    // Walking is opt-in for this fixture because the default only enables car,
+    // transit and LTS2, none of which include its walk series.
+    const walking = wrapper.findAll('.cahier-figure-legend-item button').find((button) => button.text().includes('pied'))!
+    await walking.trigger('click')
 
     // Territory and reference paths both carry the mode color class.
     expect(wrapper.findAll('.access-ramp-line--car').length).toBeGreaterThanOrEqual(2)
     expect(wrapper.findAll('.access-ramp-line--walkTransit-light').length).toBeGreaterThanOrEqual(2)
-    // Points follow the same grammar: three non-null car values, four walk values.
-    expect(wrapper.findAll('.access-ramp-point--car')).toHaveLength(3)
-    expect(wrapper.findAll('.access-ramp-point--walkTransit-light')).toHaveLength(4)
+    // The time ramp is line-only; null values split territory/reference paths.
+    expect(wrapper.findAll('.access-ramp-time-line.access-ramp-line--car')).toHaveLength(4)
+    expect(wrapper.findAll('.access-ramp-time-line.access-ramp-line--walkTransit-light')).toHaveLength(2)
 
     // One legend entry per mode (line marker in the mode color) plus the reference dash.
     const items = wrapper.findAll('.access-ramp-cahier--time .cahier-figure-legend-item')
@@ -121,8 +127,9 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(marks[2]?.classes()).toContain('cahier-figure-legend-mark--dash')
   })
 
-  it('describes every mode and the reference in the accessible label', () => {
+  it('describes the visible modes and the reference in the accessible label', async () => {
     const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
+    await wrapper.findAll('.cahier-figure-legend-item button').find((button) => button.text().includes('pied'))!.trigger('click')
     const label = wrapper.find('.access-ramp-svg').attributes('aria-label') ?? ''
     expect(label).toContain('par mode de déplacement')
     expect(label).toContain('Voiture : 5 min 2, 10 min indisponible, 15 min 4, 20 min 5')

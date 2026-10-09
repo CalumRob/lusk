@@ -34,4 +34,6 @@ defineExpose({ rootElement })
   </div>
 </template>
 
-<style src="./cahierFigure.css"></style>
+<style>
+@import "./cahierFigure.css";
+</style>
