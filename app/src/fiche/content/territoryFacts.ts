@@ -51,6 +51,15 @@ export interface ComparisonReference {
   value: number
 }
 
+/** A named territory's own mean, distinct from a statistic over peer territories. */
+export interface TerritorialScalarReference {
+  kind: 'territory-mean'
+  territory: { type: string; id: string; name: string }
+  label: string
+  value: number
+  unit: string
+}
+
 export interface FactComparison {
   direction: DirectionRang
   scope: ComparisonScope

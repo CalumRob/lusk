@@ -279,9 +279,12 @@
 .cahier-figure-scalar-label {
   max-width: 22ch;
   color: var(--cahier-default, #62706c);
+  overflow-wrap: anywhere;
+}
+
+.cahier-figure-scalar-label:not(.type-figure-label) {
   font: var(--type-figure-mode, 500 0.75rem/1.25 var(--font-sans, sans-serif));
   letter-spacing: normal;
-  overflow-wrap: anywhere;
 }
 
 .cahier-figure-scalar-reference {

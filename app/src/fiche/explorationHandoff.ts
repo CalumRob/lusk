@@ -161,6 +161,7 @@ const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string | nu
   'distribution-acces-par-batiment': 'tot_loss_t',
   reseaux: 'reseaux',
   'aedar-access': 'iso_administration',
+  'aedar-car-overview': null,
   'aedar-equipment-profile': null,
   'offre-cyclable': 'offre_cyclable',
   stationnement: 'places_stationnement_velo_1000',

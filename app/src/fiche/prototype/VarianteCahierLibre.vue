@@ -412,6 +412,11 @@ function aedarEquipmentProfileEvidenceFor(section: ContentSection) {
   return section.evidence
 }
 
+function aedarCarAccessOverviewEvidenceFor(section: ContentSection) {
+  if (!props.aedarAccessEnabled || section.evidence?.kind !== 'aedar-car-overview') return null
+  return section.evidence
+}
+
 function isAedarAccessSection(section: ContentSection): boolean {
   return section.evidence?.kind === 'aedar-access'
 }
@@ -605,8 +610,50 @@ onBeforeUnmount(() => {
                 <h3 v-else>{{ section.label }}</h3>
               </div>
 
+              <section
+                v-if="aedarCarAccessOverviewEvidenceFor(section)"
+                class="figure-spread figure-spread--paired"
+                :id="`section-${section.key}`"
+                :data-figure="`section-${section.key}`"
+              >
+                <CahierBlankMapSlots
+                  class="evidence-side evidence-figure"
+                  :territory="aedarCarAccessOverviewEvidenceFor(section)!.territory"
+                  :horizon-minutes="aedarCarAccessOverviewEvidenceFor(section)!.horizonMinutes"
+                  :title="aedarCarAccessOverviewEvidenceFor(section)!.mapFigureTitle"
+                  :mode-keys="aedarCarAccessOverviewEvidenceFor(section)!.mapModes"
+                />
+                <aside class="argument-side aedar-car-overview-reading">
+                  <div class="aedar-car-overview-copy">
+                    <CahierProse class="argument-copy" :blocks="aedarCarAccessOverviewEvidenceFor(section)!.prose" />
+                    <CahierEvidenceSource v-if="aedarCarAccessOverviewEvidenceFor(section)!.source" :source="aedarCarAccessOverviewEvidenceFor(section)!.source!" />
+                  </div>
+                  <figure class="aedar-car-overview-scalars">
+                    <figcaption class="cahier-figure-title">{{ aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle }}</figcaption>
+                    <div class="summary-metrics summary-metrics--paired">
+                      <CahierFigureScalar
+                        v-for="scalar in aedarCarAccessOverviewEvidenceFor(section)!.scalars"
+                        :key="scalar.key"
+                        :value="scalar.value === null ? '—' : formatNumber(scalar.value)"
+                        :label="scalar.label"
+                        label-role="metric"
+                        :icon="CarFront"
+                        tone="c"
+                        color-value
+                        :aria-label="`${scalar.label} : ${scalar.value === null ? 'indisponible' : `${formatNumber(scalar.value)} ${scalar.unit}`}. ${aedarCarAccessOverviewEvidenceFor(section)!.scalarFigureTitle}.${scalar.reference ? ` ${scalar.reference.label} : ${formatNumber(scalar.reference.value)} ${scalar.reference.unit}.` : ''}`"
+                      >
+                        <template v-if="scalar.reference" #reference>
+                          <CahierComparisonValue :named-reference="scalar.reference" />
+                        </template>
+                      </CahierFigureScalar>
+                    </div>
+                    <CahierComparisonNote :label="aedarCarAccessOverviewEvidenceFor(section)!.comparisonLabel" />
+                  </figure>
+                </aside>
+              </section>
+
               <div
-                v-if="isMapPrototypeSection(currentUnit.key, section.key)"
+                v-else-if="isMapPrototypeSection(currentUnit.key, section.key)"
                 class="map-figure-spread"
                 :id="`section-${section.key}`"
                 :data-figure="`section-${section.key}`"
@@ -1044,16 +1091,17 @@ onBeforeUnmount(() => {
                 </div>
               </section>
               <div
-                v-if="props.presentation === 'plain' && sectionExploration(section) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
+                v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section)) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
                 class="cahier-section-footer"
               >
                 <div
-                  v-if="props.presentation === 'plain' && sectionExploration(section) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
+                  v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section)) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
                   class="cahier-section-exploration cahier-section-exploration--unit-footer"
                   :aria-label="aedarEquipmentProfileEvidenceFor(section) ? 'Consulter les sources de cette section' : 'Explorer les indicateurs de cette section'"
                 >
                   <PassarelleExploration
-                    :to="sectionExploration(section)!"
+                    :to="sectionExploration(section)"
+                    :title="aedarCarAccessOverviewEvidenceFor(section) && !sectionExploration(section) ? 'Exploration AEDAR à venir' : undefined"
                     libelle="En savoir plus"
                     sans-soulignement
                     :nouvel-onglet="!aedarEquipmentProfileEvidenceFor(section)"
@@ -1209,6 +1257,10 @@ onBeforeUnmount(() => {
 .aedar-analysis { display: grid; grid-template-columns: minmax(0, var(--cahier-figure-width-compact, 560px)) minmax(260px, 1fr); align-items: center; justify-content: center; gap: var(--space-8); }
 .aedar-ramp { width: min(100%, var(--cahier-figure-width-compact, 560px)); justify-self: center; margin: 0; display: grid; gap: var(--space-3); }
 .aedar-reading { display: grid; align-content: center; gap: var(--space-4); min-width: 0; }
+.aedar-car-overview-reading { display: grid; align-self: center; gap: var(--space-8); }
+.aedar-car-overview-copy { display: grid; gap: var(--space-3); }
+.aedar-car-overview-copy .argument-copy { margin: 0; }
+.aedar-car-overview-scalars { --cahier-figure-title-gap: var(--space-6); width: 100%; margin: 0; }
 @media (max-width: 760px) { .aedar-analysis { grid-template-columns: minmax(0, 1fr); } }
 .concept-group {
   container: subgroup / inline-size;
@@ -1226,7 +1278,7 @@ onBeforeUnmount(() => {
 }
 .map-figure-spread .map-breakout { margin-top: 0; }
 .concept-group-heading { display: flex; align-items: baseline; justify-content: center; gap: 14px; padding: var(--cahier-unit-heading-padding, 8px 0 14px); }
-.cahier--sans-grille .concept-group-heading { --cahier-unit-heading-padding: 0 0 var(--space-2); }
+.cahier--sans-grille .concept-group-heading { --cahier-unit-heading-padding: 0 0 var(--space-4); }
 .concept-group-heading-copy { display: grid; gap: 4px; min-width: 0; text-align: center; }
 .concept-group-label { color: var(--cahier-theme-strong); font-size: 10px; font-weight: 700; letter-spacing: .08em; line-height: 1.2; text-transform: uppercase; }
 .concept-group-heading > span { color: var(--red); font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: .08em; }

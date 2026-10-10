@@ -82,6 +82,33 @@ export interface AedarAccessEvidence {
   provenance: readonly string[]
 }
 
+export interface AedarCarAccessOverviewScalar {
+  key: 'meanDiversity' | 'meanVolume'
+  label: string
+  value: number | null
+  unit: string
+  reference: import('./territoryFacts').TerritorialScalarReference | null
+}
+
+export interface AedarCarAccessOverviewEvidence {
+  kind: 'aedar-car-overview'
+  territory: { code: string; name: string }
+  horizonMinutes: number
+  mapModes: readonly ['car']
+  mapFigureTitle: TextBlock
+  meanDiversity: number | null
+  meanVolume: number | null
+  nAddresses: number | null
+  scalarFigureTitle: string
+  scalars: readonly AedarCarAccessOverviewScalar[]
+  comparisonLabel: string | null
+  /** Replaces the incumbent building/20-minute introduction in the opt-in unit. */
+  unitIntroduction: readonly TextBlock[]
+  prose: readonly TextBlock[]
+  source: AedarEvidenceSource | null
+  availability: FactAvailability
+}
+
 export interface AedarEquipmentProfileEvidence {
   kind: 'aedar-equipment-profile'
   facts: readonly AedarFact[]
@@ -239,6 +266,7 @@ export interface SharingParkingEvidence {
 
 export type ContentEvidence =
   | DistributionEvidence
+  | AedarCarAccessOverviewEvidence
   | AedarAccessEvidence
   | AedarEquipmentProfileEvidence
   | BpeProfilesEvidence
@@ -262,6 +290,7 @@ interface ContentSectionBase<Key extends string, Evidence> {
 }
 
 export interface AedarAccessSection extends ContentSectionBase<'aedar-access', AedarAccessEvidence> { label: string }
+export interface AedarCarAccessOverviewSection extends ContentSectionBase<'aedar-car-overview', AedarCarAccessOverviewEvidence> { label: string }
 export interface AedarEquipmentProfileSection extends ContentSectionBase<'aedar-equipment-profile', AedarEquipmentProfileEvidence> { label: string }
 
 export interface ResumeSection extends ContentSectionBase<'resume', SummaryEvidence> {
@@ -302,6 +331,7 @@ export interface MotorisationSection extends ContentSectionBase<'motorisation', 
 export interface OffreTransportsSection extends ContentSectionBase<'offre-transports-commun', Extract<ContentEvidence, {kind:'public-transport'}>> { label: string }
 
 export type MobiliteContentSection =
+  | AedarCarAccessOverviewSection
   | AedarAccessSection
   | AedarEquipmentProfileSection
   | ResumeSection

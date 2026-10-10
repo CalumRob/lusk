@@ -1,6 +1,7 @@
 <script setup lang="ts">
 import { Bike, BusFront, CarFront } from 'lucide-vue-next'
 import type { Component } from 'vue'
+import { computed } from 'vue'
 
 import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
 import type { TextBlock } from '@/fiche/content/themeContent'
@@ -12,21 +13,23 @@ const props = defineProps<{
   horizonMinutes: number
   /** Figure title owned by the semantic content layer (shared figure-title primitive). */
   title: TextBlock
+  modeKeys?: readonly ('car' | 'bike-lts2' | 'transit')[]
   /** Reading under the map grid: honest empty state and provisional horizon. */
   lecture?: readonly TextBlock[]
 }>()
 
-const slots: readonly { key: string; label: string; icon: Component; tone: string }[] = [
+const availableSlots: readonly { key: 'car' | 'bike-lts2' | 'transit'; label: string; icon: Component; tone: string }[] = [
   { key: 'car', label: 'Voiture', icon: CarFront, tone: 'car' },
   { key: 'bike-lts2', label: 'Vélo (LTS2)', icon: Bike, tone: 'bike' },
   { key: 'transit', label: 'Transports en commun', icon: BusFront, tone: 'foot' },
 ]
+const slots = computed(() => availableSlots.filter((slot) => !props.modeKeys || props.modeKeys.includes(slot.key)))
 </script>
 
 <template>
   <figure class="blank-map-slots">
     <figcaption class="cahier-figure-title cahier-baseline-anchor"><CahierProse :blocks="[props.title]" /></figcaption>
-    <div class="blank-map-slots__grid cahier-map-grid" :style="CAHIER_MAP_LAYOUT_STYLE">
+    <div class="blank-map-slots__grid cahier-map-grid" :style="[CAHIER_MAP_LAYOUT_STYLE, slots.length === 1 ? { '--cahier-map-columns': 'minmax(0, 1fr)' } : {}]">
       <section
         v-for="(slot, index) in slots"
         :key="slot.key"

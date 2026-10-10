@@ -175,6 +175,7 @@ describe('AedarEquipmentWaffleCahier', () => {
     const dialog = wrapper.get('dialog[open]')
     expect(dialog.text()).toContain('À pied')
     const selectedMode = tile.attributes('data-bucket')
+    if (!selectedMode) throw new Error('The clicked equipment tile must declare its access bucket')
     expect(dialog.find(`.aedar-waffle-mode-filter button[data-mode="${selectedMode}"]`).attributes('aria-pressed')).toBe('true')
     const selectedRow = dialog.get('.aedar-waffle-dialog-row[data-typequ="A129"]')
     expect(selectedRow.classes()).toContain('is-highlighted')

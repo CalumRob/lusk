@@ -6,10 +6,11 @@
 import type { AedarFetchResult } from './aedarApiClient'
 import { aedarTimeRampEvidence } from './aedarTimeRampFacts'
 import { AEDAR_EQUIPMENT_BUCKET_THRESHOLD, classifyAedarEquipmentTypes } from './aedarEquipmentBuckets'
+import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 import type { AedarTimeRampValues } from './aedarTimeRampFacts'
 import type { TerritoryIdentity } from './territoryFacts'
 import { emphasis, text, territoryLead, territoryTypeLabel } from './themeContent'
-import type { AedarAccessSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
+import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
 
 /** Blank map slots and the highlighted ramp horizon share the provisional AEDAR15 horizon. */
 export const AEDAR_PROTOTYPE_HORIZON_MINUTES = 15
@@ -161,6 +162,100 @@ function aedarEvidenceSource(data: AedarReady): AedarEvidenceSource | null {
   }
 }
 
+/** The same address-mean contract applies independently to focal and reference territories. */
+function carAccessMeans(data: AedarReady, territory: { type: string; id: string }) {
+  const horizonMinutes = AEDAR_PROTOTYPE_HORIZON_MINUTES
+  const types = new Set(data.facts.map((fact) => fact.typequ))
+  const completeUniverse = data.facts.length === AEDAR_TYPEQU_REGISTRY.length
+    && types.size === AEDAR_TYPEQU_REGISTRY.length
+    && AEDAR_TYPEQU_REGISTRY.every(({ code }) => types.has(code))
+  const first = data.facts[0]
+  const source = data.provenance.sources[0]
+  const commonSource = first !== undefined && source !== undefined && data.provenance.sources.length === 1
+    && (['source_id', 'vintage_id', 'source_url', 'licence', 'attribution', 'reference_date', 'publication_date'] as const)
+      .every((key) => source[key] === first[key] && data.facts.every((fact) => fact[key] === first[key]))
+  const compatiblePopulation = completeUniverse && commonSource && first !== undefined
+    && Number.isInteger(first.n_addresses) && first.n_addresses > 0
+    && data.contentVersion === data.provenance.contentVersion
+    && data.facts.every((fact) => fact.territory_id === territory.id && fact.territory_type === territory.type
+      && fact.n_addresses === first.n_addresses && fact.coverage_status === 'covered'
+      && Number.isInteger(fact.n_observed) && fact.n_observed >= 0 && fact.n_observed <= fact.n_addresses)
+  const totalFor = (statistic: 'share' | 'mean'): number | null => {
+    if (!compatiblePopulation) return null
+    const values = data.facts.map((fact) => fact.measures[`count_${horizonMinutes}_car_${statistic}`])
+    if (values.some((value) => typeof value !== 'number' || !Number.isFinite(value) || value < 0
+      || (statistic === 'share' && value > 1))) return null
+    const sum = (values as number[]).reduce((total, value) => total + value, 0)
+    return Number.isFinite(sum) ? sum : null
+  }
+  const meanDiversity = totalFor('share')
+  const meanVolume = totalFor('mean')
+  return {
+    meanDiversity, meanVolume,
+    nAddresses: compatiblePopulation ? first.n_addresses : null,
+    source: commonSource ? aedarEvidenceSource(data) : null,
+  }
+}
+
+/** Address means are additive across TYPEQU; no address-file reread is needed. */
+export function aedarCarAccessOverviewSection(
+  data: AedarReady,
+  territory: TerritoryIdentity,
+  options: AedarAccessSectionOptions = {},
+): AedarCarAccessOverviewSection {
+  const horizonMinutes = AEDAR_PROTOTYPE_HORIZON_MINUTES
+  const means = carAccessMeans(data, { type: territory.type, id: territory.code })
+  const { meanDiversity, meanVolume, nAddresses } = means
+  const reference = options.reference
+  const source = data.provenance.sources[0]
+  const referenceSource = reference?.data.provenance.sources[0]
+  const sameSourceClock = source && referenceSource
+    && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const)
+      .every((key) => source[key] === referenceSource[key])
+  const referenceMeans = reference && sameSourceClock && reference.data.contentVersion === data.contentVersion
+    ? carAccessMeans(reference.data, reference.territory)
+    : null
+  const scalars = ([
+    { key: 'meanDiversity', label: 'Types d’équipements', unit: 'types / adresse' },
+    { key: 'meanVolume', label: 'Établissements', unit: 'établissements / adresse' },
+  ] as const).map((reading) => {
+    const value = means[reading.key]
+    const referenceValue = referenceMeans?.[reading.key] ?? null
+    return {
+      ...reading, value,
+      reference: reference && value !== null && referenceValue !== null ? {
+        kind: 'territory-mean' as const,
+        territory: { ...reference.territory, name: reference.label },
+        label: `Moyenne — ${reference.label}`, value: referenceValue, unit: reading.unit,
+      } : null,
+    }
+  })
+  const availability = meanDiversity !== null && meanVolume !== null ? 'complete' as const : 'incomplete' as const
+  return {
+    key: 'aedar-car-overview', label: 'L’offre accessible en voiture', availability,
+    indicators: [], lecture: null, explorationTargets: [],
+    provenance: data.provenance.sources.map((source) => source.source_id),
+    evidence: {
+      kind: 'aedar-car-overview', territory: { code: territory.code, name: territory.name },
+      horizonMinutes, mapModes: ['car'],
+      mapFigureTitle: [text(`Diversité de l’offre accessible en voiture en ${horizonMinutes} minutes`)],
+      meanDiversity, meanVolume, nAddresses, scalars,
+      scalarFigureTitle: `En voiture en ${horizonMinutes} minutes (moyenne par adresse)`,
+      comparisonLabel: reference && scalars.some((scalar) => scalar.reference !== null)
+        ? `moyenne des adresses résidentielles de ${reference.label}` : null,
+      unitIntroduction: [[
+        text(`Cette page compare l’accès aux services selon le mode de déplacement, depuis les adresses résidentielles. Les cartes décrivent l’offre accessible en ${horizonMinutes} minutes.`),
+      ], ...(nAddresses !== null ? [[
+        text(`${new Intl.NumberFormat('fr-FR').format(nAddresses)} adresses résidentielles ${territoryLead(territory, false)} sont prises en compte.`),
+      ]] : [])],
+      availability, source: means.source,
+      prose: meanDiversity !== null && meanVolume !== null ? [[
+        text('La diversité décrit les différents types de services accessibles. Le nombre d’établissements décrit le volume de l’offre, y compris plusieurs établissements d’un même type. Ces moyennes incluent les adresses sans accès.'),
+      ]] : [[text(`Les moyennes d’accès en voiture à ${horizonMinutes} minutes ne sont pas disponibles pour ce territoire.`)]],
+    },
+  }
+}
+
 /** The ordered access profile is a distinct section, not another figure in the access/ramp section. */
 export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentProfileSection {
   const availability = classifyAedarEquipmentTypes(data.facts, {
@@ -196,6 +291,6 @@ export function aedarPrototypeSections(
   data: AedarReady,
   territory: TerritoryIdentity,
   options: AedarAccessSectionOptions = {},
-): [AedarAccessSection, AedarEquipmentProfileSection] {
-  return [aedarAccessSection(data, territory, options), aedarEquipmentProfileSection(data)]
+): [AedarCarAccessOverviewSection, AedarAccessSection, AedarEquipmentProfileSection] {
+  return [aedarCarAccessOverviewSection(data, territory, options), aedarAccessSection(data, territory, options), aedarEquipmentProfileSection(data)]
 }

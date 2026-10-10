@@ -31,7 +31,7 @@ const transformed = computed(() => {
     : null
   const sections = aedarPrototypeSections(focal, props.content.territory, { reference })
   const first = props.content.units[0]
-  return { ...props.content, units: [{ ...first, introduction: first.introduction, rundown: [], sections }, ...props.content.units.slice(1)] } as unknown as ThemeContent
+  return { ...props.content, units: [{ ...first, introduction: sections[0].evidence?.unitIntroduction ?? [], rundown: [], sections }, ...props.content.units.slice(1)] } as unknown as ThemeContent
 })
 </script>
 

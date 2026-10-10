@@ -5,6 +5,8 @@ withDefaults(
   defineProps<{
     value: string
     label: string
+    /** Mode names and metric labels use different shared typography roles. */
+    labelRole?: 'mode' | 'metric'
     icon?: Component
     tone?: string
     /** Color the value when the scalar represents a declared mode or series. */
@@ -17,6 +19,7 @@ withDefaults(
   }>(),
   {
     tone: 'neutral',
+    labelRole: 'mode',
     colorValue: false,
     showLabel: true,
     layout: 'stacked',
@@ -48,7 +51,7 @@ withDefaults(
       />
       <strong>{{ value }}</strong>
     </span>
-    <span v-if="showLabel" class="cahier-figure-scalar-label">
+    <span v-if="showLabel" class="cahier-figure-scalar-label" :class="{ 'type-figure-label': labelRole === 'metric' }">
       <component
         :is="icon"
         v-if="icon && layout === 'inline'"

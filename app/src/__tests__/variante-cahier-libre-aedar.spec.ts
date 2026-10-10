@@ -6,9 +6,10 @@ import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import VarianteCahierLibreAedar from '@/fiche/prototype/VarianteCahierLibreAedar.vue'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import { aedarAccessSection } from '@/fiche/content/aedarAccessSection'
+import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
-import type { AedarAccessSection, ThemeContent } from '@/fiche/content/themeContent'
+import type { AedarAccessSection, ContentSection, ThemeContent } from '@/fiche/content/themeContent'
 import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
 import {
   histoiresMobiliteFixture,
@@ -62,22 +63,23 @@ function contentWithAedarAccessReference(): ThemeContent {
   } as unknown as ThemeContent
 }
 
-function aedarFacts(count: number, options: { territoryId?: string; territoryType?: 'commune' | 'epci'; value?: number } = {}) {
+function aedarFacts(count: number, options: { territoryId?: string; territoryType?: 'commune' | 'epci'; value?: number; canonicalUniverse?: boolean } = {}) {
   const { territoryId = '22001', territoryType = 'commune', value = 0.5 } = options
-  return Array.from({ length: count }, (_, index) => ({
+  const types = options.canonicalUniverse ? AEDAR_TYPEQU_REGISTRY : Array.from({ length: count }, (_, index) => ({ code: `TYPEQU${index}`, label: `Type ${index}` }))
+  return types.map(({ code, label }, index) => ({
     territory_id: territoryId,
     territory_type: territoryType,
-    typequ: `TYPEQU${index}`,
-    typequ_label: `Type ${index}`,
+    typequ: code,
+    typequ_label: label,
     identity: {},
     n_addresses: 100,
-    n_observed: 100,
+    n_observed: index < count ? 100 : 0,
     coverage_status: 'covered',
     measures: Object.fromEntries(
       [5, 10, 15, 20].flatMap((duration) =>
         ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) =>
           ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, i) => `decile${i + 1}`), 'mean']
-            .map((stat) => [`count_${duration}_${mode}_${stat}`, value]),
+            .map((stat) => [`count_${duration}_${mode}_${stat}`, index < count ? value : 0]),
         ),
       ),
     ),
@@ -290,6 +292,46 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
 })
 
 describe('VarianteCahierLibreAedar wrapper', () => {
+  it('renders both mean scalars with named EPCI comparisons through the shared figure primitives', async () => {
+    const content = baseContent()
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(VarianteCahierLibreAedar, {
+      props: {
+        content, pagination: cahierPaginationFor(payload, content), comparisonOptions: [],
+        aedarData: { ...aedarReady, facts: aedarFacts(10, { canonicalUniverse: true }) },
+        aedarStatus: 'ready', retryAedar: () => {},
+        aedarReferenceTerritoire: { type: 'epci', id: '200000001', nom: 'EPCI X' },
+        aedarReferenceData: { ...aedarReferenceReady, facts: aedarFacts(10, { canonicalUniverse: true, territoryId: '200000001', territoryType: 'epci', value: 0.25 }) },
+        aedarReferenceStatus: 'ready',
+      },
+      global: { plugins: [router] },
+    })
+    await router.isReady()
+    await flushPromises()
+    const overview = wrapper.get('[data-section="aedar-car-overview"]')
+    const scalars = overview.findAll('.cahier-figure-scalar')
+    expect(scalars).toHaveLength(2)
+    expect(scalars.map((scalar) => scalar.get('.cahier-figure-scalar-value').text())).toEqual(['5', '5'])
+    expect(scalars.map((scalar) => scalar.get('.cahier-figure-scalar-label').text())).toEqual(['Types d’équipements', 'Établissements'])
+    expect(scalars.every((scalar) => scalar.get('.cahier-figure-scalar-label').classes().includes('type-figure-label'))).toBe(true)
+    const prose = overview.get('.argument-copy').element
+    const source = overview.get('.cahier-evidence-source').element
+    expect(prose.compareDocumentPosition(source) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(source.compareDocumentPosition(scalars[0]!.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+    expect(scalars.map((scalar) => scalar.get('.cahier-comparison-value').text())).toEqual(['Groupe comparé : 2,5', 'Groupe comparé : 2,5'])
+    expect(scalars[0]!.attributes('aria-label')).toContain('Moyenne — EPCI X : 2,5 types / adresse')
+    expect(overview.text()).toContain('15 minutes (moyenne par adresse)')
+    const comparisonNotes = overview.findAll('.cahier-comparison-note')
+    expect(comparisonNotes).toHaveLength(1)
+    expect(comparisonNotes[0]!.text()).toBe('Groupe comparé : moyenne des adresses résidentielles de EPCI X')
+    expect(overview.find('.cahier-rank').exists()).toBe(false)
+    expect(overview.get('.argument-copy').text()).not.toContain('5 types')
+    const exploration = overview.get('.cahier-section-footer button.passarelle-exploration')
+    expect(exploration.text()).toBe('En savoir plus')
+    expect(exploration.attributes('disabled')).toBeDefined()
+    expect(exploration.attributes('href')).toBeUndefined()
+  })
+
   it('shows loading state when AEDAR data is loading', async () => {
     const content = baseContent()
     const router = createRouter({ history: createMemoryHistory(), routes })
@@ -362,14 +404,19 @@ describe('VarianteCahierLibreAedar wrapper', () => {
 
     // The AEDAR prototype keeps its own unit and gives the waffle its own section heading/anchor.
     const firstUnit = (cahierProps.content as ThemeContent).units[0]
-    const section = firstUnit.sections[0] as unknown as AedarAccessSection
-    const profileSection = firstUnit.sections[1]
+    expect(firstUnit.sections.map((section) => section.key)).toEqual(['aedar-car-overview', 'aedar-access', 'aedar-equipment-profile'])
+    const section = (firstUnit.sections as readonly ContentSection[]).find((candidate) => candidate.key === 'aedar-access') as AedarAccessSection
+    const profileSection = (firstUnit.sections as readonly ContentSection[]).find((candidate) => candidate.key === 'aedar-equipment-profile')
     expect(section.key).toBe('aedar-access')
     expect(section.label).toBe('Diversité de l’offre')
     expect(profileSection?.key).toBe('aedar-equipment-profile')
     expect(profileSection?.label).toBe('Types d’équipements par premier mode d’accès')
     expect(firstUnit.label).toEqual(content.units[0]?.label)
-    expect(firstUnit.introduction).toEqual(content.units[0]?.introduction)
+    const introduction = firstUnit.introduction.flat().map((segment) => segment.value).join('')
+    expect(introduction).toContain('adresses résidentielles')
+    expect(introduction).toContain('15 minutes')
+    expect(introduction).not.toContain('bâtiment')
+    expect(introduction).not.toContain('20 minutes')
     expect(firstUnit.rundown).toEqual([])
     expect(section.lecture).toBeNull()
     expect(section.evidence?.kind).toBe('aedar-access')
@@ -382,6 +429,11 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     ) & 2).toBeTruthy()
     expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').classes()).toContain('argument-copy')
     expect(wrapper.find('.page-subtitle').text()).not.toBe('')
+    const carOverview = wrapper.get('[data-section="aedar-car-overview"]')
+    expect(carOverview.findAll('.blank-map-slot')).toHaveLength(1)
+    expect(carOverview.get('.blank-map-slot').classes()).toContain('blank-map-slot--car')
+    expect(carOverview.get('.argument-copy').text()).toContain('pas disponibles')
+    expect(carOverview.find('.cahier-evidence-source').exists()).toBe(true)
     expect(profileSection?.lecture).toBeNull()
     expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').text()).toContain('25%')
     expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').text()).toContain('Les transports en commun incluent la marche')
@@ -417,7 +469,7 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     await flushPromises()
 
     const cahierProps = wrapper.findComponent(VarianteCahierLibre).props()
-    const section = (cahierProps.content as ThemeContent).units[0].sections[0] as unknown as AedarAccessSection
+    const section = ((cahierProps.content as ThemeContent).units[0].sections as readonly ContentSection[]).find((candidate) => candidate.key === 'aedar-access') as AedarAccessSection
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     for (const ramp of section.evidence.ramps) {
       expect(ramp.referenceLabel).toBe('EPCI X')
@@ -448,7 +500,7 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     await flushPromises()
 
     const cahierProps = wrapper.findComponent(VarianteCahierLibre).props()
-    const section = (cahierProps.content as ThemeContent).units[0].sections[0] as unknown as AedarAccessSection
+    const section = ((cahierProps.content as ThemeContent).units[0].sections as readonly ContentSection[]).find((candidate) => candidate.key === 'aedar-access') as AedarAccessSection
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
     expect(section.evidence.ramps.every((ramp) => ramp.reference === null)).toBe(true)
     expect(section.evidence.ramps.every((ramp) => ramp.referenceLabel === null)).toBe(true)

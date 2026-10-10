@@ -25,7 +25,7 @@ import { LIBELLE_HANDOFF } from '@/fiche/explorationHandoff'
 import type { RouteLocationRaw } from 'vue-router'
 
 const props = withDefaults(defineProps<{
-  to: RouteLocationRaw
+  to: RouteLocationRaw | null
   libelle?: string
   sansSoulignement?: boolean
   nouvelOnglet?: boolean
@@ -34,6 +34,7 @@ const props = withDefaults(defineProps<{
 
 <template>
   <RouterLink
+    v-if="props.to"
     class="passarelle-exploration"
     :class="{ 'passarelle-exploration--plain': props.sansSoulignement }"
     :to="props.to"
@@ -43,6 +44,16 @@ const props = withDefaults(defineProps<{
     {{ props.libelle ?? LIBELLE_HANDOFF }}
     <AppIcon :icone="ArrowRight" :taille="12" aria-hidden="true" />
   </RouterLink>
+  <button
+    v-else
+    type="button"
+    disabled
+    class="passarelle-exploration"
+    :class="{ 'passarelle-exploration--plain': props.sansSoulignement }"
+  >
+    {{ props.libelle ?? LIBELLE_HANDOFF }}
+    <AppIcon :icone="ArrowRight" :taille="12" aria-hidden="true" />
+  </button>
 </template>
 
 <style scoped>
@@ -55,6 +66,9 @@ const props = withDefaults(defineProps<{
   gap: var(--space-1);
   width: fit-content;
   margin-top: var(--space-1);
+  padding: 0;
+  border: 0;
+  background: transparent;
   font: var(--text-caption);
   letter-spacing: var(--text-caption-tracking);
   font-weight: 600;
@@ -65,7 +79,9 @@ const props = withDefaults(defineProps<{
 
 .passarelle-exploration--plain { text-decoration: none; }
 
-.passarelle-exploration:hover {
+.passarelle-exploration:disabled { opacity: 0.65; cursor: not-allowed; }
+
+.passarelle-exploration:not(:disabled):hover {
   color: var(--passarelle-survol, var(--passarelle-couleur, currentColor));
 }
 </style>

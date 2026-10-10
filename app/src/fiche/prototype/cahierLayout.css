@@ -36,10 +36,10 @@
 .cahier-figure-title {
   min-height: var(--cahier-figure-title-min-height, 36px);
   margin: 0 0 var(--cahier-figure-title-gap, 28px);
-  color: var(--cahier-default);
+  color: var(--brand-300);
   font-family: var(--font-figure-title);
   font-size: 14px;
-  font-weight: 700;
+  font-weight: 400;
   line-height: 1.25;
   letter-spacing: normal;
   text-align: center;
