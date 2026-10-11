@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { aedarTimeRampEvidence, AEDAR_RAMP_MODES, AEDAR_RAMP_MODE_LABELS } from '@/fiche/content/aedarTimeRampFacts'
+import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 
 const horizons = [5, 10, 15, 20]
 const modes = ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car']
@@ -12,9 +13,9 @@ function response() {
   }
   return {
     territory: { territory_type: 'commune', territory_id: '22001' },
-    content_version: 'aed-1', reference_content_version: 'ref-1', limit: 50, offset: 0,
-    facts: ['A', 'B'].map((typequ) => ({
-      territory_id: '22001', territory_type: 'commune', typequ, typequ_label: typequ, identity: {},
+    content_version: 'aed-1', reference_content_version: 'ref-1', limit: 236, offset: 0,
+    facts: AEDAR_TYPEQU_REGISTRY.map(({ code, label }) => ({
+      territory_id: '22001', territory_type: 'commune', typequ: code, typequ_label: label, identity: {},
       n_addresses: 100, n_observed: 97, coverage_status: 'covered', measures: { ...measures },
       source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test',
       licence: 'test', attribution: 'test', reference_date: '2026-01-01', publication_date: '2026-09-30',
@@ -32,7 +33,7 @@ describe('aedarTimeRampEvidence', () => {
     expect(AEDAR_RAMP_MODE_LABELS).not.toHaveProperty('transit_gain')
   })
 
-  it('sums per-type shares and averages per-type means for every horizon and every mode', () => {
+  it('sums per-type shares and means into diversity and total volume for every horizon and mode', () => {
     const data = response()
     data.facts[0]!.measures['count_5_car_share'] = 0.25
     data.facts[1]!.measures['count_5_car_share'] = 0.5
@@ -40,9 +41,9 @@ describe('aedarTimeRampEvidence', () => {
     data.facts[1]!.measures['count_5_car_mean'] = 6
     data.facts[0]!.measures['count_5_walk_share'] = 0.1
     const result = aedarTimeRampEvidence(data, options)
-    expect(result.map((ramp) => ramp.rampKey)).toEqual(['diversity', 'count-per-type'])
+    expect(result.map((ramp) => ramp.rampKey)).toEqual(['diversity', 'volume'])
     expect(result[0]?.territory.car).toEqual([0.75, 0, 0, 0])
-    expect(result[1]?.territory.car).toEqual([4, 0, 0, 0])
+    expect(result[1]?.territory.car).toEqual([8, 0, 0, 0])
     expect(result[0]?.territory.walk).toEqual([0.1, 0, 0, 0])
     expect(result[0]?.xAxis).toEqual({ values: horizons, labels: ['5 min', '10 min', '15 min', '20 min'], unit: 'minutes', label: 'Temps d’accès' })
     // Every ramp mode carries a full horizon series.
@@ -72,7 +73,7 @@ describe('aedarTimeRampEvidence', () => {
     if (kind === 'source') data.facts[1]!.vintage_id = 'other'
     if (kind === 'coverage') data.facts[0]!.coverage_status = 'partial'
     if (kind === 'missing measure') delete data.facts[0]!.measures['count_5_car_share']
-    if (kind === 'pagination') data.facts.length = 50
+    if (kind === 'pagination') data.facts.length = 236
     expect(() => aedarTimeRampEvidence(data, options)).toThrow()
   })
 
@@ -83,5 +84,33 @@ describe('aedarTimeRampEvidence', () => {
     data.facts[0]!.measures['count_5_car_share'] = 0.3
     data.facts[1]!.measures['count_5_car_share'] = 0.4
     expect(() => aedarTimeRampEvidence(data, options)).not.toThrow()
+  })
+
+  it.each(['partial universe', 'unknown type', 'different address population', 'no addresses', 'impossible observed count'])('keeps both address means unavailable for %s', (kind) => {
+    const data = response()
+    data.facts[0]!.measures.count_15_car_share = 0.5
+    data.facts[0]!.measures.count_15_car_mean = 8
+    if (kind === 'partial universe') data.facts.pop()
+    if (kind === 'unknown type') data.facts[0]!.typequ = 'UNKNOWN'
+    if (kind === 'different address population') data.facts[1]!.n_addresses = 101
+    if (kind === 'no addresses') for (const fact of data.facts) { fact.n_addresses = 0; fact.n_observed = 0 }
+    if (kind === 'impossible observed count') data.facts[0]!.n_observed = 101
+    const result = aedarTimeRampEvidence(data, options)
+    for (const ramp of result) {
+      expect(ramp.availability).toBe('incomplete')
+      for (const mode of AEDAR_RAMP_MODES) expect(ramp.territory[mode]).toEqual([null, null, null, null])
+    }
+  })
+
+  it.each(['negative mean', 'share above one', 'overflow'])('does not publish an invalid address mean: %s', (kind) => {
+    const data = response()
+    if (kind === 'negative mean') data.facts[0]!.measures.count_15_car_mean = -1
+    if (kind === 'share above one') data.facts[0]!.measures.count_15_car_share = 1.1
+    if (kind === 'overflow') {
+      data.facts[0]!.measures.count_15_car_mean = Number.MAX_VALUE
+      data.facts[1]!.measures.count_15_car_mean = Number.MAX_VALUE
+    }
+    const result = aedarTimeRampEvidence(data, options)
+    expect(result[kind === 'share above one' ? 0 : 1]?.territory.car[2]).toBeNull()
   })
 })

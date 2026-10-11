@@ -1,5 +1,6 @@
 import type { FactAvailability, FactProvenance } from './territoryFacts'
 import type { AedarRampMode, AedarTimeRampEvidence } from './themeContent'
+import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 
 type Row = Record<string, unknown>
 const horizons = [5, 10, 15, 20] as const
@@ -30,7 +31,7 @@ export interface AedarTimeRampOptions {
 
 /** Per-rampKey, per-mode territory values derived from one validated AEDAR response. */
 export interface AedarTimeRampValues {
-  rampKey: 'diversity' | 'count-per-type'
+  rampKey: AedarTimeRampEvidence['rampKey']
   xAxis: AedarTimeRampEvidence['xAxis']
   yAxis: AedarTimeRampEvidence['yAxis']
   territory: Record<AedarRampMode, readonly (number | null)[]>
@@ -71,16 +72,21 @@ export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampO
   if (parsed.some((row) => row.source_id !== first.source_id || row.vintage_id !== first.vintage_id ||
       row.reference_date !== first.reference_date || row.publication_date !== first.publication_date)) invalid()
   const provenance = rowProvenance(first)
-  const build = (rampKey: 'diversity' | 'count-per-type'): AedarTimeRampValues => {
+  const compatiblePopulation = parsed.length === AEDAR_TYPEQU_REGISTRY.length
+    && AEDAR_TYPEQU_REGISTRY.every(({ code }) => typeIds.has(code))
+    && (first.n_addresses as number) > 0
+    && parsed.every((row) => row.n_addresses === first.n_addresses
+      && (row.n_observed as number) >= 0 && (row.n_observed as number) <= (row.n_addresses as number))
+  const build = (rampKey: AedarTimeRampEvidence['rampKey']): AedarTimeRampValues => {
     const statistic = rampKey === 'diversity' ? 'share' : 'mean'
     const seriesFor = (mode: AedarRampMode): readonly (number | null)[] => horizons.map((horizon) => {
+      if (!compatiblePopulation) return null
       const cells = parsed.map((row) => row.measures![`count_${horizon}_${mode}_${statistic}`])
       // Never publish a partial universe aggregate or silently coerce missing measures to zero.
-      if (cells.some((value) => value === null)) return null
+      if (cells.some((value) => !isFinite(value) || value < 0 || (statistic === 'share' && value > 1))) return null
       const numeric = cells as number[]
-      return rampKey === 'diversity'
-        ? numeric.reduce((sum, value) => sum + value, 0)
-        : numeric.reduce((sum, value) => sum + value, 0) / numeric.length
+      const sum = numeric.reduce((sum, value) => sum + value, 0)
+      return Number.isFinite(sum) ? sum : null
     })
     const territory: Record<AedarRampMode, readonly (number | null)[]> = {
       car: seriesFor('car'),
@@ -95,11 +101,11 @@ export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampO
     return {
       rampKey,
       xAxis: { values: horizons, labels: horizons.map((value) => `${value} min`), unit: 'minutes', label: 'Temps d’accès' },
-      yAxis: rampKey === 'diversity' ? { label: 'Diversité de l’offre', unit: '' } : { label: 'Équipements par type', unit: 'équipements / type' },
+      yAxis: rampKey === 'diversity' ? { label: 'Diversité de l’offre', unit: '' } : { label: 'Volume de l’offre', unit: '' },
       territory,
       availability,
       provenance,
     }
   }
-  return [build('diversity'), build('count-per-type')]
+  return [build('diversity'), build('volume')]
 }

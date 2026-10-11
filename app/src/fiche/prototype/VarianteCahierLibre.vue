@@ -709,18 +709,17 @@ onBeforeUnmount(() => {
 
                 </div>
 
-                  <figure
+                  <div
                     v-if="aedarAccessEvidenceFor(section)"
                     class="evidence-side evidence-figure aedar-access-evidence"
                   >
-                    <CahierBlankMapSlots
-                      :territory="aedarAccessEvidenceFor(section)!.territory"
-                      :horizon-minutes="aedarAccessEvidenceFor(section)!.horizonMinutes"
-                      :title="aedarAccessEvidenceFor(section)!.mapFigureTitle"
-                    />
+                    <aside class="aedar-reading">
+                      <CahierProse class="argument-copy" :blocks="aedarAccessEvidenceFor(section)!.sectionProse" />
+                      <CahierEvidenceSource v-if="aedarAccessEvidenceFor(section)!.source" :source="aedarAccessEvidenceFor(section)!.source!" />
+                    </aside>
                     <div class="aedar-analysis">
                       <figure
-                        v-for="ramp in aedarAccessEvidenceFor(section)!.ramps.filter((item) => item.rampKey === 'diversity')"
+                        v-for="ramp in aedarAccessEvidenceFor(section)!.ramps"
                         :key="ramp.rampKey"
                         class="aedar-ramp"
                       >
@@ -730,12 +729,9 @@ onBeforeUnmount(() => {
                           :territory-name="aedarAccessEvidenceFor(section)!.territory.name"
                         />
                       </figure>
-                      <aside class="aedar-reading">
-                        <CahierProse class="argument-copy" :blocks="aedarAccessEvidenceFor(section)!.sectionProse" />
-                        <CahierEvidenceSource v-if="aedarAccessEvidenceFor(section)!.source" :source="aedarAccessEvidenceFor(section)!.source!" />
-                      </aside>
                     </div>
-                  </figure>
+                    <CahierComparisonNote :label="aedarAccessEvidenceFor(section)!.comparisonLabel" />
+                  </div>
 
                   <div
                     v-if="aedarEquipmentProfileEvidenceFor(section)"
@@ -1091,17 +1087,17 @@ onBeforeUnmount(() => {
                 </div>
               </section>
               <div
-                v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section)) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
+                v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section) || aedarAccessEvidenceFor(section)) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
                 class="cahier-section-footer"
               >
                 <div
-                  v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section)) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
+                  v-if="props.presentation === 'plain' && (sectionExploration(section) || aedarCarAccessOverviewEvidenceFor(section) || aedarAccessEvidenceFor(section)) && !(props.showMapPrototype && currentUnit.key === 'partage-de-lespace-public' && section.key === 'reseaux')"
                   class="cahier-section-exploration cahier-section-exploration--unit-footer"
                   :aria-label="aedarEquipmentProfileEvidenceFor(section) ? 'Consulter les sources de cette section' : 'Explorer les indicateurs de cette section'"
                 >
                   <PassarelleExploration
                     :to="sectionExploration(section)"
-                    :title="aedarCarAccessOverviewEvidenceFor(section) && !sectionExploration(section) ? 'Exploration AEDAR à venir' : undefined"
+                    :title="(aedarCarAccessOverviewEvidenceFor(section) || aedarAccessEvidenceFor(section)) && !sectionExploration(section) ? 'Exploration AEDAR à venir' : undefined"
                     libelle="En savoir plus"
                     sans-soulignement
                     :nouvel-onglet="!aedarEquipmentProfileEvidenceFor(section)"
@@ -1254,9 +1250,10 @@ onBeforeUnmount(() => {
 }
 
 .aedar-access-evidence { display: grid; grid-column: 1 / -1; justify-self: center; width: min(100%, 1040px); gap: var(--space-6); }
-.aedar-analysis { display: grid; grid-template-columns: minmax(0, var(--cahier-figure-width-compact, 560px)) minmax(260px, 1fr); align-items: center; justify-content: center; gap: var(--space-8); }
+.aedar-analysis { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; justify-content: center; gap: var(--space-8); }
 .aedar-ramp { width: min(100%, var(--cahier-figure-width-compact, 560px)); justify-self: center; margin: 0; display: grid; gap: var(--space-3); }
 .aedar-reading { display: grid; align-content: center; gap: var(--space-4); min-width: 0; }
+.aedar-reading .argument-copy { margin: 0; }
 .aedar-car-overview-reading { display: grid; align-self: center; gap: var(--space-8); }
 .aedar-car-overview-copy { display: grid; gap: var(--space-3); }
 .aedar-car-overview-copy .argument-copy { margin: 0; }

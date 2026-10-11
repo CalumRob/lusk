@@ -75,6 +75,7 @@ export interface AedarAccessEvidence {
   /** Figure title of the blank map slots, owned by the semantic content layer. */
   mapFigureTitle: TextBlock
   ramps: readonly AedarTimeRampEvidence[]
+  comparisonLabel: string | null
   sectionProse: readonly TextBlock[]
   diversityGap: { value: number | null; horizonMinutes: number; territoryLead: string; prose: TextBlock | null }
   source: AedarEvidenceSource | null
@@ -152,7 +153,7 @@ export type AedarRampMode = 'walk' | 'transit' | 'bike_lts2' | 'bike_lts4' | 'ca
 
 export interface AedarTimeRampEvidence {
   kind: 'aedar-time-ramp'
-  rampKey: 'diversity' | 'count-per-type'
+  rampKey: 'diversity' | 'volume'
   /** Figure title owned by the semantic content layer, never the renderer. */
   figureTitle: string
   xAxis: { values: readonly number[]; labels: readonly string[]; unit: string; label: string }

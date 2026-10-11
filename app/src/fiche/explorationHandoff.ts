@@ -160,7 +160,7 @@ const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string | nu
   'services-essentiels': 'iso_administration',
   'distribution-acces-par-batiment': 'tot_loss_t',
   reseaux: 'reseaux',
-  'aedar-access': 'iso_administration',
+  'aedar-access': null,
   'aedar-car-overview': null,
   'aedar-equipment-profile': null,
   'offre-cyclable': 'offre_cyclable',

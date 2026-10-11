@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 
 import { aedarAccessSection, aedarPrototypeSections, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
 import { AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
+import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
 import type { TerritoryIdentity } from '@/fiche/content/territoryFacts'
 
@@ -26,16 +27,16 @@ function aedarReady(territoryId: string, territoryType: 'commune' | 'epci' = 'co
   )
   return {
     status: 'ready',
-    facts: Array.from({ length: 10 }, (_, index) => ({
+    facts: AEDAR_TYPEQU_REGISTRY.map(({ code, label }, index) => ({
       territory_id: territoryId,
       territory_type: territoryType,
-      typequ: `TYPEQU${index}`,
-      typequ_label: `Type ${index}`,
+      typequ: code,
+      typequ_label: label,
       identity: {},
       n_addresses: 100,
       n_observed: 100,
       coverage_status: 'covered',
-      measures,
+      measures: Object.fromEntries(Object.entries(measures).map(([key, value]) => [key, index < 10 ? value : 0])),
       source_id: 'aedar_bretagne',
       vintage_id: '2026-v1',
       source_url: 'https://example.com',
@@ -61,7 +62,7 @@ function aedarReady(territoryId: string, territoryType: 'commune' | 'epci' = 'co
 }
 
 describe('aedarAccessSection', () => {
-  it('assembles the waffle as a separate section from the access maps and ramps', () => {
+  it('assembles overview, time ramps and the unchanged waffle as separate sections', () => {
     const sections = aedarPrototypeSections(aedarReady('22001'), territory)
 
     expect(sections.map((section) => section.key)).toEqual(['aedar-car-overview', 'aedar-access', 'aedar-equipment-profile'])
@@ -70,7 +71,7 @@ describe('aedarAccessSection', () => {
     const profile = sections[2]
     expect(profile.evidence?.kind).toBe('aedar-equipment-profile')
     expect(profile.label).toBe('Types d’équipements par premier mode d’accès')
-    expect(profile.evidence?.facts).toHaveLength(10)
+    expect(profile.evidence?.facts).toHaveLength(235)
     expect(profile.evidence?.threshold).toBe(0.25)
     const threshold = profile.evidence?.prose[0]?.find((segment) => segment.kind === 'emphasis')
     expect(threshold).toMatchObject({ kind: 'emphasis', value: '25%', tone: 'neutral' })
@@ -79,7 +80,7 @@ describe('aedarAccessSection', () => {
   it('carries the section label without a Lecture block', () => {
     const section = aedarAccessSection(aedarReady('22001'), territory)
     expect(section.key).toBe('aedar-access')
-    expect(section.label).toBe('Diversité de l’offre')
+    expect(section.label).toBe('L’offre accessible selon le temps de trajet')
     expect(section.lecture).toBeNull()
   })
 
@@ -95,10 +96,10 @@ describe('aedarAccessSection', () => {
   it('derives both ramps for every mode with content-owned figure titles', () => {
     const section = aedarAccessSection(aedarReady('22001'), territory)
     if (section.evidence?.kind !== 'aedar-access') throw new Error('aedar-access evidence expected')
-    expect(section.evidence.ramps.map((ramp) => ramp.rampKey)).toEqual(['diversity', 'count-per-type'])
+    expect(section.evidence.ramps.map((ramp) => ramp.rampKey)).toEqual(['diversity', 'volume'])
     expect(section.evidence.ramps.map((ramp) => ramp.figureTitle)).toEqual([
-      'Diversité de l’offre accessible (moyenne du territoire)',
-      'Équipements accessibles par type',
+      'Diversité de l’offre accessible (moyenne par adresse)',
+      'Établissements accessibles (moyenne par adresse)',
     ])
     expect(section.evidence.ramps[0]?.yAxis).toEqual({ label: 'Diversité de l’offre', unit: '' })
     for (const ramp of section.evidence.ramps) {
@@ -106,9 +107,9 @@ describe('aedarAccessSection', () => {
       expect(ramp.reference).toBeNull()
       expect(ramp.referenceLabel).toBeNull()
     }
-    // 10 types at 0.5 share: diversity sums to 5, count-per-type averages to 0.5.
+    // Ten types contribute 0.5 each, all remaining types have zero access.
     expect(section.evidence.ramps[0]?.territory.car).toEqual([5, 5, 5, 5])
-    expect(section.evidence.ramps[1]?.territory.car).toEqual([0.5, 0.5, 0.5, 0.5])
+    expect(section.evidence.ramps[1]?.territory.car).toEqual([5, 5, 5, 5])
     expect(section.evidence.availability).toBe('complete')
     expect(section.availability).toBe('complete')
     expect(section.evidence.provenance).toEqual(['aedar_bretagne'])
@@ -118,7 +119,7 @@ describe('aedarAccessSection', () => {
     expect(section.evidence.source).toMatchObject({ label: 'AEDAR', version: '2026-v1', url: 'https://example.com' })
     expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('personnes averses au risque routier')
     expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('personnes tolérantes au risque routier')
-    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('La "diversité" est le nombre de catégories d’équipements accessibles depuis les adresses résidentielles. Cette analyse reprend les catégories de la BPE 2025, qui recense 235 types d\'équipements.')
+    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('moyennes par adresse résidentielle, y compris les adresses sans accès')
     expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).not.toContain('transit_gain')
     expect(section.evidence.sectionProse.flat().filter((segment) => segment.kind === 'emphasis').map((segment) => segment.tone)).toEqual(['foot', 'foot', 'bike', 'bike', 'bike'])
   })
@@ -132,10 +133,39 @@ describe('aedarAccessSection', () => {
       expect(ramp.referenceLabel).toBe('EPCI X')
       expect(Object.keys(ramp.reference ?? {}).sort()).toEqual([...AEDAR_RAMP_MODES].sort())
     }
-    // 10 reference types at 0.25 share: diversity sums to 2.5, count-per-type averages to 0.25.
+    // Ten reference types contribute 0.25 each, all remaining types have zero access.
     expect(section.evidence.ramps[0]?.reference?.car).toEqual([2.5, 2.5, 2.5, 2.5])
-    expect(section.evidence.ramps[1]?.reference?.walk).toEqual([0.25, 0.25, 0.25, 0.25])
+    expect(section.evidence.ramps[1]?.reference?.walk).toEqual([2.5, 2.5, 2.5, 2.5])
+    expect(section.evidence.comparisonLabel).toBe('moyennes des adresses résidentielles de EPCI X')
     expect(section.evidence.availability).toBe('complete')
+  })
+
+  it.each(['publication', 'source vintage', 'reference date', 'publication date'])('keeps the focal ramps without an incompatible reference: %s', (kind) => {
+    const reference = aedarReady('200000001', 'epci', 0.25)
+    if (kind === 'publication') reference.contentVersion = 'other-version'
+    for (const fact of reference.facts) {
+      if (kind === 'source vintage') fact.vintage_id = 'other-vintage'
+      if (kind === 'reference date') fact.reference_date = '2025-01-01'
+      if (kind === 'publication date') fact.publication_date = '2025-09-30'
+    }
+    const section = aedarAccessSection(aedarReady('22001'), territory, {
+      reference: { data: reference, territory: referenceTerritory, label: 'EPCI X' },
+    })
+    const evidence = section.evidence!
+    expect(evidence.ramps[1]?.territory.car[2]).toBe(5)
+    expect(evidence.ramps.every((ramp) => ramp.reference === null && ramp.referenceLabel === null)).toBe(true)
+    expect(evidence.comparisonLabel).toBeNull()
+  })
+
+  it('keeps local ramps without calling a partial reference universe a territory mean', () => {
+    const reference = aedarReady('200000001', 'epci', 0.25)
+    reference.facts.pop()
+    const evidence = aedarAccessSection(aedarReady('22001'), territory, {
+      reference: { data: reference, territory: referenceTerritory, label: 'EPCI X' },
+    }).evidence!
+    expect(evidence.ramps[1]?.territory.car[2]).toBe(5)
+    expect(evidence.ramps.every((ramp) => ramp.reference === null && ramp.referenceLabel === null)).toBe(true)
+    expect(evidence.comparisonLabel).toBeNull()
   })
 
   it('marks the section incomplete when a ramp cannot cover the whole universe', () => {
@@ -151,7 +181,7 @@ describe('aedarAccessSection', () => {
 
   it('derives the 15-minute car-minus-walk diversity gap from the territory values', () => {
     const data = aedarReady('22001')
-    for (const fact of data.facts) {
+    for (const fact of data.facts.slice(0, 10)) {
       fact.measures['count_15_car_share'] = 0.6
       fact.measures['count_15_walk_share'] = 0.2
     }

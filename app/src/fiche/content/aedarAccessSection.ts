@@ -44,7 +44,8 @@ function rampEvidence(
   referenceValues: readonly AedarTimeRampValues[] | null,
   referenceLabel: string | null,
 ): AedarTimeRampEvidence {
-  const referenceRamp = referenceValues?.find((candidate) => candidate.rampKey === values.rampKey) ?? null
+  const referenceRamp = referenceValues?.find((candidate) => candidate.rampKey === values.rampKey
+    && Object.values(candidate.territory).some((series) => series.some((value) => value !== null))) ?? null
   const reference: Readonly<Record<AedarRampMode, readonly (number | null)[]>> | null = referenceRamp
     ? {
         car: referenceRamp.territory.car,
@@ -57,12 +58,12 @@ function rampEvidence(
   return {
     kind: 'aedar-time-ramp',
     rampKey: values.rampKey,
-    figureTitle: values.rampKey === 'diversity' ? 'Diversité de l’offre accessible (moyenne du territoire)' : 'Équipements accessibles par type',
+    figureTitle: values.rampKey === 'diversity' ? 'Diversité de l’offre accessible (moyenne par adresse)' : 'Établissements accessibles (moyenne par adresse)',
     xAxis: values.xAxis,
     yAxis: values.yAxis,
     territory: values.territory,
     reference,
-    referenceLabel,
+    referenceLabel: reference ? referenceLabel : null,
     availability: values.availability,
     provenance: values.provenance,
     sourceCoverage: 'complete',
@@ -82,12 +83,19 @@ export function aedarAccessSection(
   const values = aedarTimeRampEvidence(virtualResponse(data, { type: territory.type, id: territory.code }), {
     territory: { type: territory.type, id: territory.code },
   })
-  const referenceValues = options.reference
-    ? aedarTimeRampEvidence(virtualResponse(options.reference.data, options.reference.territory), {
-        territory: options.reference.territory,
+  const candidate = options.reference
+  const source = data.facts[0]
+  const referenceSource = candidate?.data.facts[0]
+  const reference = candidate && source && referenceSource && candidate.data.contentVersion === data.contentVersion
+    && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const)
+      .every((key) => source[key] === referenceSource[key])
+    ? candidate : null
+  const referenceValues = reference
+    ? aedarTimeRampEvidence(virtualResponse(reference.data, reference.territory), {
+        territory: reference.territory,
       })
     : null
-  const referenceLabel = options.reference?.label ?? null
+  const referenceLabel = reference?.label ?? null
   const ramps = values.map((ramp) => rampEvidence(ramp, referenceValues, referenceLabel))
   const diversity = ramps.find((ramp) => ramp.rampKey === 'diversity')
   const horizonIndex = diversity?.xAxis.values.indexOf(AEDAR_PROTOTYPE_HORIZON_MINUTES) ?? -1
@@ -107,7 +115,7 @@ export function aedarAccessSection(
   const provenance = data.provenance.sources.map((source) => source.source_id)
   return {
     key: 'aedar-access',
-    label: 'Diversité de l’offre',
+    label: 'L’offre accessible selon le temps de trajet',
     availability,
     indicators: [],
     evidence: {
@@ -120,6 +128,8 @@ export function aedarAccessSection(
         text(' depuis les adresses résidentielles ?'),
       ],
       ramps,
+      comparisonLabel: referenceLabel && ramps.some((ramp) => ramp.reference !== null)
+        ? `moyennes des adresses résidentielles de ${referenceLabel}` : null,
       sectionProse: [[
         text('Les '),
         emphasis('Transports en commun', 'foot'),
@@ -133,7 +143,7 @@ export function aedarAccessSection(
         emphasis('LTS4', 'bike'),
         text(' s’adressent aux personnes tolérantes au risque routier.'),
       ], [
-        text('La "diversité" est le nombre de catégories d’équipements accessibles depuis les adresses résidentielles. Cette analyse reprend les catégories de la BPE 2025, qui recense 235 types d\'équipements.'),
+        text('La diversité compte les types d’équipements ; le volume compte tous les établissements accessibles, y compris plusieurs d’un même type. Les deux courbes sont des moyennes par adresse résidentielle, y compris les adresses sans accès.'),
       ]],
       diversityGap: {
         horizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,

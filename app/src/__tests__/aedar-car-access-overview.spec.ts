@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
-import { aedarCarAccessOverviewSection } from '@/fiche/content/aedarAccessSection'
+import { aedarCarAccessOverviewSection, aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import type { AedarReferenceEvidence } from '@/fiche/content/aedarAccessSection'
 import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
 import type { TerritoryIdentity } from '@/fiche/content/territoryFacts'
@@ -71,6 +71,16 @@ function epciReference(): AedarReferenceEvidence {
 }
 
 describe('AEDAR car access overview', () => {
+  it('keeps the 15-minute time-ramp readings on the overview address means, with independent EPCI denominators', () => {
+    const [overview, access] = aedarPrototypeSections(ready(), territory, { reference: epciReference() })
+    const [diversity, volume] = access.evidence!.ramps
+    expect(diversity!.territory.car[2]).toBeCloseTo(4 / 3)
+    expect(volume!.territory.car[2]).toBeCloseTo(7 / 3)
+    expect(diversity!.reference!.car[2]).toBeCloseTo(0.5)
+    expect(volume!.reference!.car[2]).toBeCloseTo(1)
+    expect(overview.evidence!.meanDiversity).toBeCloseTo(4 / 3)
+    expect(overview.evidence!.meanVolume).toBeCloseTo(7 / 3)
+  })
   it('supplies scalar readings with the named EPCI address mean, not a median or a peer rank', () => {
     const section = aedarCarAccessOverviewSection(ready(), territory, { reference: epciReference() })
     const [diversity, volume] = section.evidence!.scalars
