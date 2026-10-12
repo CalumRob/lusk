@@ -58,10 +58,11 @@ test_that("structure : le trait câble les épingles, la cible de calcul et la c
   noms <- vapply(grappe, function(t) t$name, character(1))
 
   # les épingles du package + la cible de calcul (format = "file")
-  expect_true("pin_matrice_temps_mobilite" %in% noms)
+  expect_true("pin_raccordement_national_enveloppe_mobilite" %in% noms)
+  expect_true("pin_raccordement_national_matrice_mobilite" %in% noms)
   expect_true("pin_population_mobilite" %in% noms)
-  expect_true("pin_cog_passage_mobilite" %in% noms &&
-              any(grepl("pin_cog_passage_mobilite",
+  expect_false(any(grepl("pin_cog_passage_mobilite", noms, fixed = TRUE)))
+  expect_true(any(grepl("lire_artefact_raccordement_national",
                         deparse(grappe[[which(noms == "raccordement_mobilite")]]$command$expr),
                         fixed = TRUE)))
   expect_true("raccordement_mobilite" %in% noms)

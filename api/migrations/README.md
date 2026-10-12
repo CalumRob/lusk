@@ -307,3 +307,25 @@ selected/empty/singleton/mixed overlapping comparisons, no-record states,
 no-op retries and rollback. It rehearses migration 018 over populated annual
 series/reference owners and republishes collections through the registered R path.
 Apply 017 then 018 only after the separately reviewed serving rehearsal/backup.
+
+# Migration 029 — national raccordement mean curve
+
+`029_raccordement_mean_curve.sql` extends the owned-series comparison contract
+from the historical default-group median to the explicitly declared national
+`raccordement_courbe` selected-group mean. Its complete duration grid is
+0, 5, …, 360 minutes; neither other indicators' median contracts nor their
+published facts are changed. The exact numeric grid is validated on descriptor
+writes as well as the existing axis and publication-transaction guards.
+
+The earlier working filename `017_raccordement_mean_curve.sql` was unpublished
+and conflicted with the existing `017_series_source_absence.sql`; it is now 029.
+Do not replace, skip, or rename the historical source-absence migration.
+
+`api/tests/integration/test_raccordement_owned_series_http.py` rehearses 015 and
+029 over a populated pre-015 schema, preserves ENAF and M2/M3 observations, accepts
+a complete national declaration and verifies that an invalid-grid publication
+rolls back. The separate `test_raccordement_national_candidate_http.py` exercises
+the pinned national artifact, R curve and ordinary scalar publishers, and HTTP
+reads in an isolated `lusk_it_contract` schema. These are guarded local proofs,
+not approval to migrate, publish or activate production. Follow the gated operator
+procedure above before any live operation.

@@ -163,6 +163,7 @@ describe('TerritoryFacts — the target-scoped Mobilité seam', () => {
       name: 'Commune A',
       department: '22',
       epci: '200000001',
+      densityClassCode: null,
     })
     expect(facts?.theme).toBe('mobilite')
 

@@ -19,6 +19,123 @@ test_that("GTFS ride edges use active trips and ordered stop times", {
   expect_equal(edges$arrival_min, 625)
 })
 
+test_that("the holiday date excludes term-only school service before journeys are searched", {
+  date <- "2026-10-21" # mercredi des vacances de la Toussaint (zone B)
+  last_school_wednesday <- "2026-10-14"
+  trips <- data.frame(
+    trip_id = c("school-only", "holiday-added", "weekday-removed"),
+    service_id = c("school-term", "holiday-extra", "ordinary-wednesday"),
+    stringsAsFactors = FALSE
+  )
+  calendar <- data.frame(
+    service_id = c("school-term", "ordinary-wednesday"),
+    monday = c(0, 0), tuesday = c(0, 0), wednesday = c(1, 1),
+    thursday = c(0, 0), friday = c(0, 0), saturday = c(0, 0), sunday = c(0, 0),
+    start_date = c("20260901", "20260901"),
+    end_date = c("20261231", "20261231"),
+    stringsAsFactors = FALSE
+  )
+  calendar_dates <- data.frame(
+    service_id = c("holiday-extra", "school-term", "ordinary-wednesday"),
+    date = c(date, date, date),
+    exception_type = c(1L, 2L, 2L),
+    stringsAsFactors = FALSE
+  )
+  stop_times <- data.frame(
+    trip_id = rep(trips$trip_id, each = 2),
+    stop_id = rep(c("O", "D"), times = 3),
+    stop_sequence = rep(1:2, times = 3),
+    arrival_time = c("08:00:00", "08:10:00", "09:00:00", "09:20:00", "10:00:00", "10:10:00"),
+    departure_time = c("08:00:00", "08:10:00", "09:00:00", "09:20:00", "10:00:00", "10:10:00"),
+    stringsAsFactors = FALSE
+  )
+
+  school_day_services <- services_gtfs_a_la_date(
+    calendar, calendar_dates, last_school_wednesday
+  )
+  school_day_rides <- aretes_trajet_gtfs(trips, stop_times, school_day_services)
+  expect_true("school-term" %in% school_day_services)
+  expect_true("school-only" %in% unique(school_day_rides$trip_id))
+
+  active <- services_gtfs_a_la_date(calendar, calendar_dates, date)
+  rides <- aretes_trajet_gtfs(trips, stop_times, active)
+  expect_identical(active, "holiday-extra")
+  expect_identical(unique(rides$trip_id), "holiday-added")
+
+  no_walks <- data.frame(from_stop_id = character(), to_stop_id = character(),
+                         duration_min = numeric())
+  result <- rechercher_trajets_gtfs_compiled(
+    rides, no_walks, "O", list(destination = "D"), "07:00", "20:00"
+  )
+  expect_equal(result$journeys$destination$travel_time_min, 20)
+  expect_equal(result$journeys$destination$departure_min, 540)
+  expect_equal(result$journeys$destination$arrival_min, 560)
+})
+
+test_that("the pinned final Korrigo calendar excludes term-only service from holiday feed edges", {
+  zip <- test_path("..", "..", "data", "raw",
+                   "korrigo-gtfs-pan-81559-20261010T121811.zip")
+  skip_if_not(file.exists(zip), "pinned final Korrigo feed absent")
+  feed_hash <- function(path) {
+    connection <- file(path, "rb")
+    on.exit(close(connection))
+    paste0(openssl::sha256(connection))
+  }
+  expect_identical(feed_hash(zip),
+    "4d9ac5a1a7c3f662b6b684c7838f76eae2aa32a2272dd69438e1c2cb4a6aa669")
+
+  calendar_dates <- utils::read.csv(
+    unz(zip, "calendar_dates.txt"), colClasses = "character",
+    stringsAsFactors = FALSE, check.names = FALSE
+  )
+  term_day <- services_gtfs_a_la_date(NULL, calendar_dates, "2026-10-16")
+  holiday <- services_gtfs_a_la_date(NULL, calendar_dates, "2026-10-21")
+  term_only_service <- setdiff(term_day, holiday)
+  ordinary_service <- intersect(term_day, holiday)
+  expect_gt(length(term_only_service), 0L)
+  expect_gt(length(ordinary_service), 0L)
+
+  read_gtfs <- function(member) utils::read.csv(
+    unz(zip, member), colClasses = "character", stringsAsFactors = FALSE,
+    check.names = FALSE
+  )
+  feed_trips <- read_gtfs("trips.txt")
+  feed_stop_times <- read_gtfs("stop_times.txt")
+  find_dated_trip <- function(service_ids, active_services) {
+    for (service_id in service_ids) {
+      trip_rows <- feed_trips[feed_trips$service_id == service_id, , drop = FALSE]
+      if (!nrow(trip_rows)) next
+      times <- feed_stop_times[feed_stop_times$trip_id %in% trip_rows$trip_id,
+                               , drop = FALSE]
+      rides <- aretes_trajet_gtfs(trip_rows, times, active_services)
+      eligible <- which(rides$departure_min >= 420 & rides$departure_min < 1200 &
+                          rides$arrival_min > rides$departure_min)
+      if (length(eligible)) {
+        return(list(trips = trip_rows, stop_times = times, rides = rides,
+                    edge = rides[eligible[[1]], , drop = FALSE]))
+      }
+    }
+    stop("No pinned-feed trip with a permitted first boarding was found.",
+         call. = FALSE)
+  }
+
+  # Service membership is taken only from the pinned date table, not a route
+  # name or ID heuristic. Use actual feed trips to prove the term-only service
+  # disappears on the holiday while an ordinary shared-date service still routes.
+  term_trip <- find_dated_trip(term_only_service, term_day)
+  term_trip_holiday <- aretes_trajet_gtfs(
+    term_trip$trips, term_trip$stop_times, holiday
+  )
+  expect_gt(nrow(term_trip$rides), 0L)
+  expect_equal(nrow(term_trip_holiday), 0L)
+
+  ordinary_trip <- find_dated_trip(ordinary_service, holiday)
+  expect_gt(nrow(ordinary_trip$rides), 0L)
+  expect_true(all(term_trip$rides$trip_id %in% term_trip$trips$trip_id))
+  expect_false(any(term_trip_holiday$trip_id %in% term_trip$trips$trip_id))
+  expect_true(all(ordinary_trip$rides$trip_id %in% ordinary_trip$trips$trip_id))
+})
+
 test_that("GTFS transfer graph uses distance, minimum times, and prohibitions", {
   stops <- data.frame(
     stop_id = c("A", "B", "C"),
@@ -499,6 +616,228 @@ test_that("arrival-frontier search matches R oracle across transfer edge cases",
   )$journeys
   expect_equal(separator_result$d$transfers, 1L)
   expect_equal(separator_result$e$transfers, 0L)
+})
+
+test_that("passenger access restrictions block boarding/alighting, not through travel", {
+  trips <- data.frame(trip_id = "t", service_id = "s")
+  times <- data.frame(
+    trip_id = rep("t", 4), stop_id = c("O", "X", "Y", "D"),
+    stop_sequence = 1:4,
+    arrival_time = c("09:00:00", "09:10:00", "09:20:00", "09:30:00"),
+    departure_time = c("09:00:00", "09:10:00", "09:20:00", "09:30:00"),
+    pickup_type = c(0, 1, 2, 0), drop_off_type = c(0, 1, 2, 0)
+  )
+  rides <- aretes_trajet_gtfs(trips, times, "s")
+  transfers <- data.frame(from_stop_id = character(), to_stop_id = character(),
+                          duration_min = numeric())
+  run <- function(origin, dest) {
+    expected <- meilleur_trajet_gtfs(rides, transfers, origin, dest,
+                                     "09:00", "10:00")
+    actual <- rechercher_trajets_gtfs_compiled(
+      rides, transfers, origin, setNames(list(dest), "d"), "09:00", "10:00")
+    expect_equal(actual$journeys$d$travel_time_min, expected$travel_time_min)
+    expected$travel_time_min
+  }
+  expect_equal(run("O", "D"), 30) # both blocked intermediate stops remain traversable
+  expect_true(is.na(run("X", "D"))) # prohibited origin boarding
+  expect_true(is.na(run("Y", "D"))) # phone-arranged origin boarding
+  expect_true(is.na(run("O", "X"))) # prohibited destination alighting
+  expect_true(is.na(run("O", "Y"))) # phone-arranged destination alighting
+
+  transfer_rides <- data.frame(
+    from_stop_id = c("A", "Y", "Y"), to_stop_id = c("X", "B", "B"),
+    trip_id = c("in", "out1", "out2"), departure_min = c(540, 560, 560),
+    arrival_min = c(550, 570, 570), pickup_allowed = c(TRUE, TRUE, TRUE),
+    drop_off_allowed = c(FALSE, TRUE, TRUE)
+  )
+  links <- data.frame(from_stop_id = "X", to_stop_id = "Y", duration_min = 0)
+  expect_true(is.na(meilleur_trajet_gtfs(transfer_rides, links, "A", "B",
+                                        "09:00", "10:00")$travel_time_min))
+  blocked_walk_compiled <- rechercher_trajets_gtfs_compiled(
+    transfer_rides, links, "A", list(B = "B"), "09:00", "10:00")
+  expect_true(is.na(blocked_walk_compiled$journeys$B$travel_time_min))
+  transfer_rides$drop_off_allowed[1] <- TRUE
+  transfer_rides$pickup_allowed[2] <- FALSE
+  transfer_rides$pickup_allowed[3] <- FALSE
+  expect_true(is.na(meilleur_trajet_gtfs(transfer_rides, links, "A", "B",
+                                        "09:00", "10:00")$travel_time_min))
+  blocked_board_compiled <- rechercher_trajets_gtfs_compiled(
+    transfer_rides, links, "A", list(B = "B"), "09:00", "10:00")
+  expect_true(is.na(blocked_board_compiled$journeys$B$travel_time_min))
+  transfer_rides$pickup_allowed[3] <- TRUE
+  expect_equal(meilleur_trajet_gtfs(transfer_rides, links, "A", "B",
+                                    "09:00", "10:00")$travel_time_min, 30)
+  compiled_transfer <- rechercher_trajets_gtfs_compiled(
+    transfer_rides, links, "A", list(B = "B"), "09:00", "10:00")
+  expect_equal(compiled_transfer$journeys$B$travel_time_min, 30)
+
+  mixed <- data.frame(
+    from_stop_id = c("O", "O", "X"), to_stop_id = c("X", "X", "D"),
+    trip_id = c("fast-no-exit", "slower-usable", "out"),
+    departure_min = c(540, 545, 560), arrival_min = c(550, 555, 570),
+    pickup_allowed = TRUE, drop_off_allowed = c(FALSE, TRUE, TRUE)
+  )
+  mixed_walk <- data.frame(from_stop_id = character(), to_stop_id = character(), duration_min = numeric())
+  expect_equal(meilleur_trajet_gtfs(mixed, mixed_walk, "O", "D", "09:00", "10:00")$travel_time_min, 25)
+  mixed_compiled <- rechercher_trajets_gtfs_compiled(mixed, mixed_walk, "O", list(D = "D"), "09:00", "10:00")
+  expect_equal(mixed_compiled$journeys$D$travel_time_min, 25)
+
+  default_times <- times[c("trip_id", "stop_id", "stop_sequence", "arrival_time", "departure_time")]
+  defaults <- aretes_trajet_gtfs(trips, default_times, "s")
+  expect_equal(meilleur_trajet_gtfs(defaults, transfers, "O", "D", "09:00", "10:00")$travel_time_min, 30)
+  expect_equal(nrow(defaults), 3L)
+  unknown_access <- times
+  unknown_access$pickup_type[2] <- 3
+  expect_error(aretes_trajet_gtfs(trips, unknown_access, "s"), "non pris en charge")
+  unknown_access <- times
+  unknown_access$drop_off_type[2] <- 3
+  expect_error(aretes_trajet_gtfs(trips, unknown_access, "s"), "non pris en charge")
+})
+
+test_that("zero-duration restricted stop-time continues onboard through same-time closure", {
+  rides <- data.frame(
+    # Downstream row comes first: the event scan must revisit it after seeding.
+    from_stop_id = c("X", "O"), to_stop_id = c("D", "X"),
+    trip_id = c("through", "through"), departure_min = c(540, 540),
+    arrival_min = c(540, 540), pickup_allowed = c(FALSE, TRUE),
+    drop_off_allowed = c(TRUE, FALSE)
+  )
+  walks <- data.frame(from_stop_id = character(), to_stop_id = character(), duration_min = numeric())
+  reference <- meilleurs_trajets_gtfs_multi_destination(
+    rides, walks, "O", list(restricted = "X", beyond = "D"), "09:00", "10:00")
+  compiled <- rechercher_trajets_gtfs_compiled(
+    rides, walks, "O", list(restricted = "X", beyond = "D"), "09:00", "10:00")
+  expect_true(is.na(reference$restricted$travel_time_min))
+  expect_true(is.na(compiled$journeys$restricted$travel_time_min))
+  expect_equal(reference$beyond$travel_time_min, 0)
+  expect_equal(compiled$journeys$beyond$travel_time_min, 0)
+  expect_equal(compiled$journeys$beyond$departure_min, 540)
+  expect_equal(compiled$journeys$beyond$arrival_min, 540)
+  expect_equal(compiled$journeys$beyond$transfers, 0L)
+})
+
+test_that("same-trip stop revisits retain the alightable label for a transfer", {
+  rides <- data.frame(
+    from_stop_id = c("O", "O", "Y", "X"),
+    to_stop_id = c("X", "Y", "X", "D"),
+    trip_id = c("loop", "loop", "loop", "out"),
+    departure_min = c(540, 545, 550, 560),
+    arrival_min = c(550, 550, 555, 570),
+    pickup_allowed = c(TRUE, TRUE, TRUE, TRUE),
+    drop_off_allowed = c(FALSE, TRUE, TRUE, TRUE)
+  )
+  walks <- data.frame(from_stop_id = character(), to_stop_id = character(), duration_min = numeric())
+  expected <- meilleur_trajet_gtfs(rides, walks, "O", "D", "09:00", "10:00")
+  actual <- rechercher_trajets_gtfs_compiled(rides, walks, "O", list(D = "D"), "09:00", "10:00")
+  expect_equal(expected$travel_time_min, 25)
+  expect_equal(actual$journeys$D$travel_time_min, 25)
+  expect_equal(actual$journeys$D$departure_min, 545)
+  expect_equal(actual$journeys$D$arrival_min, 570)
+  expect_equal(actual$journeys$D$transfers, 1L)
+})
+
+test_that("same-stop transfers require both alighting and outgoing boarding", {
+  rides <- data.frame(
+    from_stop_id = c("O", "X"), to_stop_id = c("X", "D"),
+    trip_id = c("in", "out"), departure_min = c(540, 555),
+    arrival_min = c(550, 565), pickup_allowed = c(TRUE, TRUE),
+    drop_off_allowed = c(FALSE, TRUE)
+  )
+  walks <- data.frame(from_stop_id = character(), to_stop_id = character(), duration_min = numeric())
+  get_pair <- function() list(
+    r = meilleur_trajet_gtfs(rides, walks, "O", "D", "09:00", "10:00"),
+    c = rechercher_trajets_gtfs_compiled(rides, walks, "O", list(D = "D"), "09:00", "10:00")$journeys$D
+  )
+  blocked_alighting <- get_pair()
+  expect_true(is.na(blocked_alighting$r$travel_time_min))
+  expect_true(is.na(blocked_alighting$c$travel_time_min))
+  rides$drop_off_allowed[1] <- TRUE
+  rides$pickup_allowed[2] <- FALSE
+  blocked_boarding <- get_pair()
+  expect_true(is.na(blocked_boarding$r$travel_time_min))
+  expect_true(is.na(blocked_boarding$c$travel_time_min))
+  rides$pickup_allowed[2] <- TRUE
+  accessible <- get_pair()
+  expect_equal(accessible$r$travel_time_min, 25)
+  expect_equal(accessible$c$travel_time_min, 25)
+})
+
+test_that("raw empty and NA passenger access fields default regular in both routers", {
+  trips <- data.frame(trip_id = "t", service_id = "s")
+  times <- data.frame(
+    trip_id = rep("t", 3), stop_id = c("O", "X", "D"), stop_sequence = 1:3,
+    arrival_time = c("09:00:00", "09:15:00", "09:30:00"),
+    departure_time = c("09:00:00", "09:15:00", "09:30:00"),
+    pickup_type = c(NA_character_, "", ""),
+    drop_off_type = c("", "", NA_character_)
+  )
+  rides <- aretes_trajet_gtfs(trips, times, "s")
+  transfers <- data.frame(from_stop_id = character(), to_stop_id = character(), duration_min = numeric())
+  expect_true(all(rides$pickup_allowed))
+  expect_true(all(rides$drop_off_allowed))
+  expected <- meilleur_trajet_gtfs(rides, transfers, "O", "D", "09:00", "10:00")
+  actual <- rechercher_trajets_gtfs_compiled(rides, transfers, "O", list(D = "D"), "09:00", "10:00")
+  expect_equal(expected$travel_time_min, 30)
+  expect_equal(actual$journeys$D$travel_time_min, 30)
+})
+
+test_that("public router seams reject unknown derived passenger eligibility", {
+  rides <- data.frame(from_stop_id = "O", to_stop_id = "D", trip_id = "t",
+                      departure_min = 540, arrival_min = 550,
+                      pickup_allowed = NA, drop_off_allowed = TRUE)
+  walks <- data.frame(from_stop_id = character(), to_stop_id = character(), duration_min = numeric())
+  expect_error(meilleur_trajet_gtfs(rides, walks, "O", "D", "09:00", "10:00"),
+               "pickup_allowed.*absente")
+  expect_error(rechercher_trajets_gtfs_compiled(rides, walks, "O", list(D = "D"),
+                                               "09:00", "10:00"),
+               "pickup_allowed.*absente")
+  rides$pickup_allowed <- TRUE
+  rides$drop_off_allowed <- NA
+  expect_error(meilleur_trajet_gtfs(rides, walks, "O", "D", "09:00", "10:00"),
+               "drop_off_allowed.*absente")
+  expect_error(rechercher_trajets_gtfs_compiled(rides, walks, "O", list(D = "D"),
+                                               "09:00", "10:00"),
+               "drop_off_allowed.*absente")
+})
+
+test_that("empty GTFS ride builders preserve the populated edge schema", {
+  trips <- data.frame(trip_id = "t", service_id = "s", route_id = "r")
+  times <- data.frame(trip_id = "t", stop_id = "A", stop_sequence = 1,
+                      arrival_time = "09:00:00", departure_time = "09:00:00")
+  empty <- aretes_trajet_gtfs(trips, times, "inactive")
+  expect_named(empty, c("from_stop_id", "to_stop_id", "trip_id", "route_id",
+                        "departure_min", "arrival_min", "pickup_allowed",
+                        "drop_off_allowed"))
+  expect_type(empty$pickup_allowed, "logical")
+  expect_type(empty$drop_off_allowed, "logical")
+  one_stop <- aretes_trajet_gtfs(trips, times, "s")
+  expect_named(one_stop, names(empty))
+  expect_type(one_stop$pickup_allowed, "logical")
+  expect_type(one_stop$drop_off_allowed, "logical")
+})
+
+test_that("compiled search skips prefix scans for stops with no active labels", {
+  rides <- data.frame(
+    from_stop_id = c("U", "X"),
+    to_stop_id = c("X", "D"),
+    trip_id = c("unreachable", "outgoing"),
+    departure_min = c(420, 430),
+    arrival_min = c(425, 435),
+    stringsAsFactors = FALSE
+  )
+  transfers <- data.frame(from_stop_id = character(), to_stop_id = character(),
+                          duration_min = numeric())
+  destinations <- list(d = "D")
+  expected <- meilleurs_trajets_gtfs_multi_destination(
+    rides, transfers, "O", destinations, "07:00", "08:00"
+  )
+  result <- rechercher_trajets_gtfs_compiled(
+    rides, transfers, "O", destinations, "07:00", "08:00"
+  )
+
+  expect_equal(result$journeys$d$travel_time_min, expected$d$travel_time_min)
+  expect_true(is.na(result$journeys$d$travel_time_min))
+  expect_gt(result$metrics$arrival_frontier_empty_skips, 0)
 })
 
 test_that("candidate feeds reproduce holiday services and the Combourg sample", {

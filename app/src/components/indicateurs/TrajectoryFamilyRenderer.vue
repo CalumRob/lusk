@@ -49,6 +49,7 @@ function cheminDe(points: readonly { x: number; valeur: number }[]): string {
 
 const cheminReference = computed(() => props.modele?.serieReference ? cheminDe(props.modele.serieReference.map((point) => ({ x: point.x, valeur: point.value ?? NaN }))) : '')
 const cheminTerritoire = computed(() => props.modele?.serieTerritoire ? cheminDe(props.modele.serieTerritoire.map((point) => ({ x: point.x, valeur: point.value ?? NaN }))) : '')
+const cheminComparaison = computed(() => props.modele?.serieComparaison ? cheminDe(props.modele.serieComparaison.map((point) => ({ x: point.x, valeur: point.value ?? NaN }))) : '')
 const ticks = computed<TrajectoryTickMetadata[]>(() => {
   const declared = props.dispatch.representation.extension.ticks
   if (declared?.length) return declared
@@ -65,8 +66,13 @@ const axisLabels = computed(() => ({
   y: props.dispatch.representation.extension.axisLabels?.y ?? (estPourcentage.value ? 'Part de population (%)' : props.dispatch.facet.unit || 'Valeur'),
 }))
 function xDuDetail(detail: string): number | null {
-  return props.modele?.etapes.find((etape) => etape.detail === detail)?.x ?? null
+  const x = props.modele?.etapes.find((etape) => etape.detail === detail)?.x
+  return x === undefined ? null : xDe(x)
 }
+const ticksPositionnes = computed(() => ticks.value.flatMap((tick) => {
+  const x = xDuDetail(tick.detail)
+  return x === null ? [] : [{ ...tick, x }]
+}))
 const marqueur = computed(() => {
   const marker = props.dispatch.representation.extension.marker
   const etape = marker && props.modele?.etapes.find((candidate) => candidate.detail === marker.detail)
@@ -98,19 +104,25 @@ const ariaDescription = computed(() => {
         <text v-for="tick in ticksY" :key="`y-label-${tick.label}`" class="trajectoire-axe-y-tick" :x="X_GAUCHE - 8" :y="yDe(tick.value) + 4" text-anchor="end">{{ tick.label }}</text>
         <line class="trajectoire-axe-vertical" :x1="X_GAUCHE" :x2="X_GAUCHE" :y1="Y_HAUT" :y2="Y_BAS" />
         <line class="trajectoire-axe-base" :x1="X_GAUCHE" :x2="X_DROITE" :y1="Y_BAS" :y2="Y_BAS" />
-        <g v-for="tick in ticks" :key="tick.detail" class="trajectoire-tick" :class="{ 'trajectoire-tick--wide': tick.mobile === false }" :data-detail="tick.detail">
-          <line class="trajectoire-tick-marque" :x1="xDuDetail(tick.detail) ?? 0" :x2="xDuDetail(tick.detail) ?? 0" :y1="Y_BAS" :y2="Y_BAS + 5" />
-          <text class="trajectoire-axe-x-tick" :x="xDuDetail(tick.detail) ?? 0" y="130" text-anchor="middle">{{ tick.label }}</text>
+        <g v-for="tick in ticksPositionnes" :key="tick.detail" class="trajectoire-tick" :class="{ 'trajectoire-tick--wide': tick.mobile === false }" :data-detail="tick.detail">
+          <line class="trajectoire-tick-marque" :x1="tick.x" :x2="tick.x" :y1="Y_BAS" :y2="Y_BAS + 5" />
+          <text class="trajectoire-axe-x-tick" :x="tick.x" y="130" text-anchor="middle">{{ tick.label }}</text>
         </g>
         <text class="trajectoire-axe-x-label" :x="(X_GAUCHE + X_DROITE) / 2" y="151" text-anchor="middle">{{ axisLabels.x }}</text>
       </g>
-      <g v-for="etape in modele.etapes" :key="etape.detail" :data-etape="etape.detail" :data-etat="etape.mediane === null ? 'sans-valeur' : 'valeurs'">
+      <g v-for="etape in modele.etapes" v-if="!modele.hideCohortDistribution" :key="etape.detail" :data-etape="etape.detail" :data-etat="etape.mediane === null ? 'sans-valeur' : 'valeurs'">
         <line v-if="etape.min !== null && etape.max !== null" class="trajectoire-etalement" :x1="xDe(etape.x)" :x2="xDe(etape.x)" :y1="yDe(etape.max)" :y2="yDe(etape.min)" /><circle v-if="etape.mediane !== null" class="trajectoire-mediane-point" :cx="xDe(etape.x)" :cy="yDe(etape.mediane)" r="4"><title>{{ `${etape.label} · médiane ${formaterValeur({ value: etape.mediane, unit: dispatch.facet.unit })} ${dispatch.facet.unit}` }}</title></circle>
       </g>
       <line v-if="marqueur" class="trajectoire-marqueur" :x1="xDe(marqueur.x)" :x2="xDe(marqueur.x)" :y1="Y_HAUT" :y2="Y_BAS" :data-detail="marqueur.detail" :aria-label="marqueur.label"><title>{{ marqueur.label }}</title></line>
       <text v-if="marqueur" class="trajectoire-marqueur-libelle" :x="xDe(marqueur.x) + 4" :y="Y_HAUT + 12">{{ marqueur.label }}</text>
       <path v-if="cheminReference" class="trajectoire-reference" :d="cheminReference" />
+      <path v-if="cheminComparaison" class="trajectoire-comparaison" :d="cheminComparaison" />
       <path v-if="cheminTerritoire" class="trajectoire-territoire" :d="cheminTerritoire" />
+      <circle v-for="point in modele.serieTerritoire ?? []" :key="`focal-${point.detail}`" class="trajectoire-territoire-point"
+        :cx="xDe(point.x)" :cy="yDe(point.value ?? 0)" r="3" :data-detail="point.detail" :data-value="point.value" />
+      <rect v-for="point in modele.serieComparaison ?? []" :key="`mean-${point.detail}`" class="trajectoire-comparaison-point"
+        :x="xDe(point.x) - 2.5" :y="yDe(point.value ?? 0) - 2.5" width="5" height="5" :data-detail="point.detail"
+        :data-value="point.value" :aria-label="`${point.label} · moyenne ${formaterValeur({ value: point.value, unit: dispatch.facet.unit })}`" />
     </svg>
     <div v-if="modele && modele.etapes.length" class="trajectoire-legende" aria-label="Légende de la trajectoire">
       <span class="trajectoire-legende-item">
@@ -121,6 +133,10 @@ const ariaDescription = computed(() => {
       <span v-if="modele.referenceLabel" class="trajectoire-legende-item">
         <span class="trajectoire-legende-trait trajectoire-legende-trait--reference" aria-hidden="true" />
         Trait tireté : {{ modele.referenceLabel }}
+      </span>
+      <span v-if="modele.comparaisonScopeLabel" class="trajectoire-legende-item" data-testid="selected-mean-legend">
+        <span class="trajectoire-legende-trait trajectoire-legende-trait--comparison" aria-hidden="true" />
+        Moyenne ({{ modele.comparaisonMemberCount }}) : {{ modele.comparaisonScopeLabel }}
       </span>
     </div>
     <p v-if="marqueur" class="visually-hidden">Repère : {{ marqueur.label }} à {{ marqueur.detailLabel }}.</p>
@@ -186,6 +202,19 @@ const ariaDescription = computed(() => {
   stroke-dasharray: 6 4;
 }
 
+.trajectoire-comparaison {
+  fill: none;
+  stroke: var(--indicateur-line);
+  stroke-width: 2.5;
+  stroke-dasharray: 2 4;
+}
+
+.trajectoire-comparaison-point {
+  fill: var(--indicateur-line);
+  stroke: var(--surface-primary);
+  stroke-width: 1;
+}
+
 .trajectoire-territoire {
   stroke: var(--status-error);
   stroke-width: 2.5;
@@ -238,6 +267,11 @@ const ariaDescription = computed(() => {
   border-top-color: var(--text-secondary);
 }
 
+.trajectoire-legende-trait--comparison {
+  border-top-style: dotted;
+  border-top-color: var(--indicateur-line);
+}
+
 .trajectoire-legende-trait--median {
   width: .5rem;
   height: .5rem;
@@ -264,6 +298,10 @@ const ariaDescription = computed(() => {
 }
 
 @media (max-width: 480px) {
+  .trajectory-renderer text {
+    font-size: 20px;
+  }
+
   .trajectoire-tick--wide {
     display: none;
   }

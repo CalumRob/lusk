@@ -188,9 +188,9 @@
      "avg_div_b": "mobilite_snapshot",
      "avg_div_t": "mobilite_snapshot",
      "nb_buildings": "mobilite_snapshot",
-     "raccordement_tc": "matrice_temps_mairies",
-    "raccordement_courbe": "matrice_temps_mairies",
-    "raccordement_reference": "matrice_temps_mairies"
+     "raccordement_tc": "raccordement_gtfs_national",
+    "raccordement_courbe": "raccordement_gtfs_national",
+    "raccordement_reference": "raccordement_gtfs_national"
   },
   "indicator_labels": {
     "iso_alimentation": "Part des bâtiments sans accès à l’alimentation (à pied ou en transports en commun)",
@@ -233,9 +233,9 @@
     "tot_loss_t": "Perte totale d’accès — à pied ou en transports en commun",
     "tot_loss_b": "Perte totale d’accès — à vélo",
     "offre_cyclable": "L’offre cyclable",
-    "raccordement_tc": "Population bretonne joignable en 90 minutes en TC",
-    "raccordement_courbe": "Courbe cumulative — population bretonne joignable en TC",
-    "raccordement_reference": "Référence médiane — commune bretonne"
+    "raccordement_tc": "Population bretonne jointe en 90 minutes en transports en commun",
+    "raccordement_courbe": "Courbe de population bretonne jointe selon le temps de trajet",
+    "raccordement_reference": "Moyenne de Bretagne \u2014 communes \u00e9valu\u00e9es"
   },
   "detail_labels": {
     "reseaux": {
@@ -272,6 +272,130 @@
       "t0240": "4 h",
       "t0300": "5 h",
       "t0360": "6 h"
+    ,
+      "t0005": "5"
+    ,
+      "t0010": "10"
+    ,
+      "t0020": "20"
+    ,
+      "t0025": "25"
+    ,
+      "t0035": "35"
+    ,
+      "t0040": "40"
+    ,
+      "t0050": "50"
+    ,
+      "t0055": "55"
+    ,
+      "t0065": "65"
+    ,
+      "t0070": "70"
+    ,
+      "t0075": "75"
+    ,
+      "t0080": "80"
+    ,
+      "t0085": "85"
+    ,
+      "t0095": "95"
+    ,
+      "t0100": "100"
+    ,
+      "t0105": "105"
+    ,
+      "t0110": "110"
+    ,
+      "t0115": "115"
+    ,
+      "t0125": "125"
+    ,
+      "t0130": "130"
+    ,
+      "t0135": "135"
+    ,
+      "t0140": "140"
+    ,
+      "t0145": "145"
+    ,
+      "t0150": "150"
+    ,
+      "t0155": "155"
+    ,
+      "t0160": "160"
+    ,
+      "t0165": "165"
+    ,
+      "t0170": "170"
+    ,
+      "t0175": "175"
+    ,
+      "t0185": "185"
+    ,
+      "t0190": "190"
+    ,
+      "t0195": "195"
+    ,
+      "t0200": "200"
+    ,
+      "t0205": "205"
+    ,
+      "t0210": "210"
+    ,
+      "t0215": "215"
+    ,
+      "t0220": "220"
+    ,
+      "t0225": "225"
+    ,
+      "t0230": "230"
+    ,
+      "t0235": "235"
+    ,
+      "t0245": "245"
+    ,
+      "t0250": "250"
+    ,
+      "t0255": "255"
+    ,
+      "t0260": "260"
+    ,
+      "t0265": "265"
+    ,
+      "t0270": "270"
+    ,
+      "t0275": "275"
+    ,
+      "t0280": "280"
+    ,
+      "t0285": "285"
+    ,
+      "t0290": "290"
+    ,
+      "t0295": "295"
+    ,
+      "t0305": "305"
+    ,
+      "t0310": "310"
+    ,
+      "t0315": "315"
+    ,
+      "t0320": "320"
+    ,
+      "t0325": "325"
+    ,
+      "t0330": "330"
+    ,
+      "t0335": "335"
+    ,
+      "t0340": "340"
+    ,
+      "t0345": "345"
+    ,
+      "t0350": "350"
+    ,
+      "t0355": "355"
     },
     "raccordement_reference": {
       "t0000": "0",
@@ -285,6 +409,130 @@
       "t0240": "4 h",
       "t0300": "5 h",
       "t0360": "6 h"
+    ,
+      "t0005": "5"
+    ,
+      "t0010": "10"
+    ,
+      "t0020": "20"
+    ,
+      "t0025": "25"
+    ,
+      "t0035": "35"
+    ,
+      "t0040": "40"
+    ,
+      "t0050": "50"
+    ,
+      "t0055": "55"
+    ,
+      "t0065": "65"
+    ,
+      "t0070": "70"
+    ,
+      "t0075": "75"
+    ,
+      "t0080": "80"
+    ,
+      "t0085": "85"
+    ,
+      "t0095": "95"
+    ,
+      "t0100": "100"
+    ,
+      "t0105": "105"
+    ,
+      "t0110": "110"
+    ,
+      "t0115": "115"
+    ,
+      "t0125": "125"
+    ,
+      "t0130": "130"
+    ,
+      "t0135": "135"
+    ,
+      "t0140": "140"
+    ,
+      "t0145": "145"
+    ,
+      "t0150": "150"
+    ,
+      "t0155": "155"
+    ,
+      "t0160": "160"
+    ,
+      "t0165": "165"
+    ,
+      "t0170": "170"
+    ,
+      "t0175": "175"
+    ,
+      "t0185": "185"
+    ,
+      "t0190": "190"
+    ,
+      "t0195": "195"
+    ,
+      "t0200": "200"
+    ,
+      "t0205": "205"
+    ,
+      "t0210": "210"
+    ,
+      "t0215": "215"
+    ,
+      "t0220": "220"
+    ,
+      "t0225": "225"
+    ,
+      "t0230": "230"
+    ,
+      "t0235": "235"
+    ,
+      "t0245": "245"
+    ,
+      "t0250": "250"
+    ,
+      "t0255": "255"
+    ,
+      "t0260": "260"
+    ,
+      "t0265": "265"
+    ,
+      "t0270": "270"
+    ,
+      "t0275": "275"
+    ,
+      "t0280": "280"
+    ,
+      "t0285": "285"
+    ,
+      "t0290": "290"
+    ,
+      "t0295": "295"
+    ,
+      "t0305": "305"
+    ,
+      "t0310": "310"
+    ,
+      "t0315": "315"
+    ,
+      "t0320": "320"
+    ,
+      "t0325": "325"
+    ,
+      "t0330": "330"
+    ,
+      "t0335": "335"
+    ,
+      "t0340": "340"
+    ,
+      "t0345": "345"
+    ,
+      "t0350": "350"
+    ,
+      "t0355": "355"
     }
   },
   "param_labels": {
@@ -296,9 +544,9 @@
     "classification_saillance": "Classification de saillance"
   },
   "indicator_caveats": {
-    "raccordement_tc": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.",
-    "raccordement_courbe": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.",
-    "raccordement_reference": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées."
+    "raccordement_tc": "Trajets GTFS planifi\u00e9s entre arr\u00eats, mesur\u00e9s le 21 octobre 2026. Les agr\u00e9gats sont des moyennes \u00e9gales incluant les z\u00e9ros du mod\u00e9le ; ces z\u00e9ros ne disent pas qu\u2019il n\u2019existe aucun transport r\u00e9el.",
+    "raccordement_courbe": "Trajets GTFS planifi\u00e9s entre arr\u00eats, mesur\u00e9s le 21 octobre 2026. Les agr\u00e9gats sont des moyennes \u00e9gales incluant les z\u00e9ros du mod\u00e9le ; ces z\u00e9ros ne disent pas qu\u2019il n\u2019existe aucun transport r\u00e9el.",
+    "raccordement_reference": "Trajets GTFS planifi\u00e9s entre arr\u00eats, mesur\u00e9s le 21 octobre 2026. Les agr\u00e9gats sont des moyennes \u00e9gales incluant les z\u00e9ros du mod\u00e9le ; ces z\u00e9ros ne disent pas qu\u2019il n\u2019existe aucun transport r\u00e9el."
   },
   "map_layers": {
     "offre_tc": true,
@@ -313,28 +561,28 @@
       "theme_id": "mobilite",
       "active_read_route": true,
       "axis_kind": "duration_minute",
-      "axis_values": ["0", "15", "30", "45", "60", "90", "120", "180", "240", "300", "360"],
+      "axis_values": ["0","5","10","15","20","25","30","35","40","45","50","55","60","65","70","75","80","85","90","95","100","105","110","115","120","125","130","135","140","145","150","155","160","165","170","175","180","185","190","195","200","205","210","215","220","225","230","235","240","245","250","255","260","265","270","275","280","285","290","295","300","305","310","315","320","325","330","335","340","345","350","355","360"],
       "reference_indicator": "raccordement_reference",
       "reference_read_route": true,
       "comparison_contract": {
-        "statistic": "median",
-        "scope": "default_group"
+        "statistic": "mean",
+        "scope": "selected_group"
       },
       "observation_period_contract": {
         "kind": "snapshot_date",
         "source": "raccordement_recipe_date_mesure"
       },
       "reference": {
-        "id": "commune_bretonne_mediane",
-        "label": "Commune bretonne médiane",
+        "id": "bretagne_all_assessed_communes_mean",
+        "label": "Bretagne \u2014 moyenne des 1 202 courbes communales \u00e9valu\u00e9es",
         "role": "analytical_reference",
-        "statistic": "median_routed_communes"
+        "statistic": "mean_all_assessed_communes"
       },
-      "reference_id": "commune_bretonne_mediane",
-      "reference_label": "Commune bretonne médiane",
+      "reference_id": "bretagne_all_assessed_communes_mean",
+      "reference_label": "Bretagne \u2014 moyenne des 1 202 courbes communales \u00e9valu\u00e9es",
       "reference_role": "analytical_reference",
-      "reference_statistic": "median_routed_communes",
-      "source_id": "matrice_temps_mairies"
+      "reference_statistic": "mean_all_assessed_communes",
+      "source_id": "raccordement_gtfs_national"
     }
   },
   "indicator_pages": {
@@ -363,8 +611,8 @@
     "iso_administration": { "indicator": "iso_administration", "label": "Part des bâtiments sans accès aux services administratifs (à pied ou en transports en commun)", "definition": "Part des bâtiments du territoire sans aucun accès aux services administratifs à pied ou en transports en commun en vingt minutes.", "unit": "%", "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.", "direction": "low", "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
     "iso_ecole": { "indicator": "iso_ecole", "label": "Part des bâtiments sans accès à l’école (à pied ou en transports en commun)", "definition": "Part des bâtiments du territoire sans aucun accès à l’école à pied ou en transports en commun en vingt minutes.", "unit": "%", "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.", "direction": "low", "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
      "iso_banque": { "indicator": "iso_banque", "label": "Part des bâtiments sans accès à la banque (à pied ou en transports en commun)", "definition": "Part des bâtiments du territoire sans aucun accès à la banque à pied ou en transports en commun en vingt minutes.", "unit": "%", "calculation": "Complément de la part des bâtiments ayant accès au service : 1 moins la part d’accès du territoire, publiée par le pipeline.", "direction": "low", "caveats": "Le cadrage est la privation : la part lit ce que les bâtiments n’atteignent pas en vingt minutes à pied ou en transports en commun, jamais l’offre présente. Les cinq services de la grille (alimentation, santé, administration, école, banque) se lisent avec la même règle.", "levels": ["commune", "epci", "departement"], "sources": ["mobilite_snapshot"], "family": "scalar" },
-     "raccordement_tc": { "indicator": "raccordement_tc", "label": "Population bretonne joignable en 90 minutes en TC", "definition": "Part de la population bretonne pouvant rejoindre le territoire en transports en commun en moins de 90 minutes, de mairie à mairie.", "unit": "%", "calculation": "Meilleur départ d’un mercredi réel de période scolaire, avec marche plafonnée à 40 minutes et sans trajet en voiture.", "direction": "high", "caveats": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.", "levels": ["commune", "epci", "departement", "region"], "sources": ["matrice_temps_mairies"], "family": "scalar" },
-      "raccordement_courbe": { "indicator": "raccordement_courbe", "label": "Courbe cumulative — population bretonne joignable en TC", "definition": "Part de la population bretonne pouvant rejoindre le territoire selon le temps de trajet en transports en commun.", "unit": "%", "calculation": "Courbe cumulative de la matrice de temps mairie à mairie publiée par le pipeline.", "direction": "high", "caveats": "Au niveau agrégé (EPCI, département, région), la part ne compte que la population réellement mesurable par le réseau : les communes non routées sont exclues du dénominateur et signalées.", "levels": ["commune", "epci", "departement", "region"], "sources": ["matrice_temps_mairies"], "family": "trajectory", "trajectory": { "endpoints": ["t0000", "t0360"], "axis": "numeric", "axisLabels": { "x": "Temps de trajet (minutes)", "y": "Population joignable (%)" }, "ticks": [{ "detail": "t0000", "label": "0", "mobile": true }, { "detail": "t0015", "label": "15", "mobile": false }, { "detail": "t0030", "label": "30", "mobile": false }, { "detail": "t0045", "label": "45", "mobile": true }, { "detail": "t0060", "label": "1 h", "mobile": false }, { "detail": "t0090", "label": "1 h 30", "mobile": true }, { "detail": "t0120", "label": "2 h", "mobile": false }, { "detail": "t0180", "label": "3 h", "mobile": true }, { "detail": "t0240", "label": "4 h", "mobile": false }, { "detail": "t0300", "label": "5 h", "mobile": false }, { "detail": "t0360", "label": "6 h", "mobile": true }],   "reference": {"indicator": "raccordement_reference", "territoire": "53", "label": "Commune bretonne médiane"}, "marker": { "detail": "t0090", "label": "1 h 30 (90 min)" } }, "comparison": { "details": ["t0000", "t0015", "t0030", "t0045", "t0060", "t0090", "t0120", "t0180", "t0240", "t0300", "t0360"], "detail": "t0090", "unit": "%" } }
+     "raccordement_tc": { "indicator": "raccordement_tc", "label": "Population bretonne jointe en 90 minutes en transports en commun", "definition": "Part de la population bretonne vivant dans les communes atteintes depuis les arr\u00eats de transports en commun de ce territoire en 90 minutes.", "unit": "%", "calculation": "Somme des populations RP 2023 des communes de destination atteintes en trajet planifi\u00e9 aller simple, divis\u00e9e par la population RP 2023 de toute la Bretagne. Les agr\u00e9gats sont les moyennes \u00e9gales des courbes communales de leurs membres.", "direction": "high", "caveats": "Trajets GTFS planifi\u00e9s entre arr\u00eats, mesur\u00e9s le mercredi 21 octobre 2026 ; aucune dur\u00e9e de retour garantie ni liaison b\u00e0timent-arr\u00eat n\u2019est mod\u00e9lis\u00e9e. Un z\u00e9ro de mod\u00e9le n\u2019affirme pas l\u2019absence de transport r\u00e9el.", "levels": ["commune", "epci", "departement", "region"], "sources": ["raccordement_gtfs_national"], "family": "scalar" },
+      "raccordement_courbe": { "indicator": "raccordement_courbe", "label": "Courbe de population bretonne jointe selon le temps de trajet", "definition": "Part de la population bretonne vivant dans les communes atteintes depuis les arr\u00eats de transports en commun de ce territoire, selon la dur\u00e9e du trajet planifi\u00e9 aller simple.", "unit": "%", "calculation": "Somme des populations RP 2023 des communes de destination atteintes depuis les arr\u00eats du territoire, divis\u00e9e par la population RP 2023 de toute la Bretagne. Les courbes de comparaison sont les moyennes arithm\u00e9tiques des courbes communales de tous les membres du groupe s\u00e9lectionn\u00e9, z\u00e9ros du mod\u00e9le inclus.", "direction": "high", "caveats": "Trajets GTFS planifi\u00e9s entre arr\u00eats, mesur\u00e9s le mercredi 21 octobre 2026 ; aucune dur\u00e9e de retour garantie ni liaison b\u00e0timent-arr\u00eat n\u2019est mod\u00e9lis\u00e9e. Un z\u00e9ro de mod\u00e9le n\u2019affirme pas l\u2019absence de transport r\u00e9el.", "levels": ["commune", "epci", "departement", "region"], "sources": ["raccordement_gtfs_national"], "family": "trajectory", "trajectory": { "endpoints": ["t0000", "t0360"], "axis": "numeric", "axisLabels": { "x": "Temps de trajet (minutes)", "y": "Population joignable (%)" }, "ticks": [{ "detail": "t0000", "label": "0", "mobile": true }, { "detail": "t0015", "label": "15", "mobile": false }, { "detail": "t0030", "label": "30", "mobile": false }, { "detail": "t0045", "label": "45", "mobile": true }, { "detail": "t0060", "label": "1 h", "mobile": false }, { "detail": "t0090", "label": "1 h 30", "mobile": true }, { "detail": "t0120", "label": "2 h", "mobile": false }, { "detail": "t0180", "label": "3 h", "mobile": true }, { "detail": "t0240", "label": "4 h", "mobile": false }, { "detail": "t0300", "label": "5 h", "mobile": false }, { "detail": "t0360", "label": "6 h", "mobile": true }],   "reference": {"indicator": "raccordement_reference", "territoire": "53", "label": "Bretagne \u2014 moyenne des 1 202 courbes communales \u00e9valu\u00e9es"}, "marker": { "detail": "t0090", "label": "1 h 30 (90 min)" } }, "comparison": { "details": ["t0000","t0005","t0010","t0015","t0020","t0025","t0030","t0035","t0040","t0045","t0050","t0055","t0060","t0065","t0070","t0075","t0080","t0085","t0090","t0095","t0100","t0105","t0110","t0115","t0120","t0125","t0130","t0135","t0140","t0145","t0150","t0155","t0160","t0165","t0170","t0175","t0180","t0185","t0190","t0195","t0200","t0205","t0210","t0215","t0220","t0225","t0230","t0235","t0240","t0245","t0250","t0255","t0260","t0265","t0270","t0275","t0280","t0285","t0290","t0295","t0300","t0305","t0310","t0315","t0320","t0325","t0330","t0335","t0340","t0345","t0350","t0355","t0360"], "detail": "t0090", "unit": "%" } }
   },
   "profile_contracts": {
     "voitures_menage": {"completeness":"dense_complete","denominator_semantics":"Ménages recensés du territoire","detail_units":{"sans_voiture":"%","une_voiture":"%","deux_plus":"%"}},
@@ -417,5 +665,147 @@
     "bpe_b316": { "dataset": "INSEE — Base permanente des équipements (B316)", "publisher": "INSEE", "url": "https://www.insee.fr/fr/metadonnees/source/serie/s1168", "licence": "Licence Ouverte 2.0", "vintage": "2024", "freshness": "30 juin 2026", "vintages": [{ "id": "bpe_b316", "label": "Millésime 2024", "version": "2024", "licence": "Licence Ouverte 2.0", "dateReference": "2024-01-01", "datePublication": "2026-06-30" }] },
     "matrice_temps_mairies": { "dataset": "Lusk — matrice temps mairie à mairie du raccordement (routage r5r figé)", "publisher": "Lusk", "url": "https://github.com/CalumRob/lusk", "licence": "ODbL — © OpenStreetMap contributors (SNCF, Korrigo) et Licence Ouverte 2.0 (DILA)", "vintage": "2026-08", "freshness": "26 août 2026", "vintages": [{ "id": "matrice_temps_mairies", "label": "Matrice figée du mercredi 16 septembre 2026", "version": "2026-09-16", "licence": "ODbL + Licence Ouverte 2.0", "dateReference": "2026-08-25", "datePublication": "2026-08-26" }], "clocks": [{ "name": "Le meilleur départ de la journée", "frequency": "figé — un nouveau millésime est un nouvel artefact versionné, acquis à la main (mode manuel)", "reference": "mercredi réel de période scolaire 2026-09-16, fenêtre 07:00–20:00, p01", "trigger": "Recalcul manuel sur décision après une nouvelle acquisition des feeds." }] },
     "population_raccordement": { "dataset": "INSEE — Recensement de la population 2023 (population totale des communes bretonnes)", "publisher": "INSEE", "url": "https://www.insee.fr/fr/metadonnees/source/serie/s099", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "26 août 2026", "vintages": [{ "id": "population_raccordement", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-08-26" }] }
+  ,
+    "raccordement_gtfs_national":       {
+        "dataset": "Lusk \u2013 matrice nationale de trajets GTFS planifi\u00e9s entre arr\u00eats communaux (issue #728)",
+        "publisher": "Lusk",
+        "url": "https://github.com/CalumRob/lusk",
+        "licence": "ODbL \u2013 \u00a9 OpenStreetMap contributors (GTFS SNCF/Korrigo) et licences des sources ouvertes",
+        "vintage": "Mesure du 2026-10-21 ; flux acquis le 2026-10-10",
+        "freshness": "10 octobre 2026",
+        "vintages": [
+          {
+            "id": "raccordement_gtfs_national",
+            "label": "Routage national GTFS \u2013 mercredi 21 octobre 2026",
+            "version": "national-gtfs-outbound-v1",
+            "licence": "ODbL et licences des flux sources",
+            "dateReference": "2026-10-10",
+            "datePublication": "2026-10-10"
+          }
+        ],
+        "clocks": [
+          {
+            "name": "Horaires GTFS du raccordement",
+            "frequency": "instantan\u00e9 versionn\u00e9 ; tout nouveau mill\u00e9sime exige une nouvelle matrice et un nouveau pin",
+            "reference": "trajets planifi\u00e9s le mercredi 21 octobre 2026, d\u00e9parts 07:00\u201320:00 ; Korrigo v80630 et SNCF national acquis le 10 octobre 2026",
+            "trigger": "Recalcul contr\u00f4l\u00e9 apr\u00e9s acquisition valid\u00e9e de nouveaux flux GTFS."
+          }
+        ],
+        "methodology": {
+          "endpoint": "arr\u00eats GTFS par commune ; trajet planifi\u00e9 stop-to-stop, aller simple",
+          "objective": "dur\u00e9e \u00e9coul\u00e9e minimale ; correspondances incluses ; 1 km / 3 km/h de transfert approximatif",
+          "population": "population totale RP 2023 des communes de destination / population RP 2023 de toute la Bretagne",
+          "publication_grid_minutes": [
+            0,
+            5,
+            10,
+            15,
+            20,
+            25,
+            30,
+            35,
+            40,
+            45,
+            50,
+            55,
+            60,
+            65,
+            70,
+            75,
+            80,
+            85,
+            90,
+            95,
+            100,
+            105,
+            110,
+            115,
+            120,
+            125,
+            130,
+            135,
+            140,
+            145,
+            150,
+            155,
+            160,
+            165,
+            170,
+            175,
+            180,
+            185,
+            190,
+            195,
+            200,
+            205,
+            210,
+            215,
+            220,
+            225,
+            230,
+            235,
+            240,
+            245,
+            250,
+            255,
+            260,
+            265,
+            270,
+            275,
+            280,
+            285,
+            290,
+            295,
+            300,
+            305,
+            310,
+            315,
+            320,
+            325,
+            330,
+            335,
+            340,
+            345,
+            350,
+            355,
+            360
+          ],
+          "scalar_minute": 90,
+          "structural_zeros": "423 communes sans arr\u00eat mod\u00e9lis\u00e9 ; 115 sans premi\u00e9re mont\u00e9e autoris\u00e9e dans la fen\u00e9tre ; z\u00e9ros du mod\u00e9le, pas absence r\u00e9elle de transport.",
+          "raw_matrix_sha256": "ae3c7e37bc788010968855d949e875f45481c7e05f80a98718f980a8841a4df5",
+          "raw_csv_sha256": "2a658bfd47cfb22545829b90d391ecb69c1bfed86db030a51b837b73268176d1",
+          "korrigo_feed_sha256": "4d9ac5a1a7c3f662b6b684c7838f76eae2aa32a2272dd69438e1c2cb4a6aa669",
+          "sncf_feed_sha256": "d3dd8e5d0f39306e589119e95cf3f0d8615aa2cbda826d6de7f2a881db6aecb0",
+          "artifact_sha256": "260d7e096c5fcad534edc863fe7d3ec9cb6b2b51d868f4363aed1e98981079b6",
+          "population_sha256": "8262a61c02af9b7def1564e0eb8c85c2f631f616c6ecaefa4d6144d1fe6a7cea",
+          "title": "Calcul du raccordement national en transports collectifs",
+          "summary": "Parts cumul\u00e9es de population RP 2023 des communes atteintes par des trajets planifi\u00e9s GTFS aller simples depuis les arr\u00eats des communes \u00e9valu\u00e9es. Les groupes sont des moyennes \u00e9gales de toutes les courbes membres ; les z\u00e9ros structurels du mod\u00e8le sont inclus.",
+          "factors": [
+            {
+              "key": "transfer_walk_km",
+              "label": "Distance approximative de marche lors d\u2019une correspondance",
+              "value": 1,
+              "unit": "km"
+            },
+            {
+              "key": "transfer_walk_speed_kmh",
+              "label": "Vitesse de marche lors d\u2019une correspondance",
+              "value": 3,
+              "unit": "km/h"
+            },
+            {
+              "key": "scalar_minute",
+              "label": "Seuil de lecture du scalaire",
+              "value": 90,
+              "unit": "minutes"
+            }
+          ],
+          "notes": [
+            "Trajets calcul\u00e9s pour un mercredi f\u00e9ri\u00e9, le 21 octobre 2026, avec des d\u00e9parts entre 07:00 inclus et 20:00 exclus.",
+            "La matrice OD sauvegard\u00e9e n\u2019est ni reconstruite ni rerout\u00e9e lors de la publication ; les dur\u00e9es atteignant 693 minutes sont conserv\u00e9es.",
+            "Un z\u00e9ro structurel signifie qu\u2019aucun d\u00e9part mod\u00e9lisable n\u2019a \u00e9t\u00e9 \u00e9tabli avec les arr\u00eats, permissions et horaires retenus ; il ne signifie pas qu\u2019il n\u2019existe aucun transport r\u00e9el."
+          ]
+        }
+      }
   }
 }

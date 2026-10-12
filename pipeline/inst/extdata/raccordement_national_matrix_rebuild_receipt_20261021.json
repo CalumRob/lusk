@@ -1,0 +1,81 @@
+{
+  "schema": "lusk-raccordement-national-matrix-rebuild-receipt-v1",
+  "status": "complete-candidate-only-not-production",
+  "service_date": "2026-10-21",
+  "method": {
+    "objective": "fastest elapsed scheduled journey",
+    "first_boarding_window": "[07:00,20:00)",
+    "calendar_policy": "Resolve the selected date from GTFS calendar.txt/calendar_dates.txt; service labels and route names do not determine eligibility.",
+    "transfer_radius_m": 1000,
+    "walking_speed_kmh": 3,
+    "destinations": "all 1,202 commune stop sets",
+    "eligible_origins": 664,
+    "self_diagonal": "retain only the public router result; fabricate no values"
+  },
+  "provenance": {
+    "final_input_sha256": {
+      "korrigo": "4d9ac5a1a7c3f662b6b684c7838f76eae2aa32a2272dd69438e1c2cb4a6aa669",
+      "sncf": "d3dd8e5d0f39306e589119e95cf3f0d8615aa2cbda826d6de7f2a881db6aecb0",
+      "geometry": "ab92ea56410a6fde88de1004f79aafa6e2c0d1ab2185de588d8e1f60b267a609"
+    },
+    "feed_versions": {
+      "korrigo": "80630",
+      "sncf": "2026-10-09"
+    },
+    "preparation_path": "data/processed/raccordement-experiments/paired-sncf-bretagne-20261021-20261010T141259Z/attempt-20261010T150000Z/national/cache-803ed24c76dd0bc20da5f2a314b32488b8b5c968fc49d3a5b830fcdb0bb19d6a/preparation.rds",
+    "preparation_sha256": "d454f5c15734096f170ff2fd5dec1df4e01eadafd8f3d954adba0f5ea046f1b0",
+    "cache_key": "803ed24c76dd0bc20da5f2a314b32488b8b5c968fc49d3a5b830fcdb0bb19d6a",
+    "method_schema_sha256": "7da0dfd926f0f49b38808723194d89d7c28d2781e71b422fdfd2331e1d6f3f75",
+    "provenance_helper_sha256": "720e381371e8ea367559f230f7b07bdccd78c4a88fb126221cb3a37e2a81e4fc",
+    "preparation_router_cpp_sha256": "9cc302a12103b9c8b5e1336ee6990268eabd9a3a9765cf0386d65eb4294ec310",
+    "router_r_sha256": "6e798870776f8718edba5686cb67825a4150917f9e31583e3637bc47090841f2",
+    "router_cpp_sha256": "f36f09ebedb4d92898ecd2b6ca7b6c4dcdf207b497591e644e6434787732c876",
+    "matrix_builder_source_sha256": "7454aede9e2fdda93a011fc475fe25b9020cc152a9a78e57476fa1a9a5e22bab",
+    "runner_sha256": "ed48996162fdb00b54d2244a7f433a035c017ef61c98381189e6a2f177b26ca6",
+    "passenger_access": {
+      "pickup_restricted_ride_edges": 7543,
+      "dropoff_restricted_ride_edges": 7660,
+      "any_restricted_ride_edges": 9780
+    },
+    "reference_matrix_sha256": "ae3c7e37bc788010968855d949e875f45481c7e05f80a98718f980a8841a4df5"
+  },
+  "coverage": {
+    "origins": 664,
+    "destinations_per_origin": 1202,
+    "OD_rows": 798128,
+    "unique_OD_rows": 798128,
+    "reachable_rows": 431327,
+    "unreachable_rows": 366801,
+    "maximum_travel_time_min": 693,
+    "self_zero_rows": 664
+  },
+  "parity": {
+    "checked_in_candidate_matrix_sha256": "ae3c7e37bc788010968855d949e875f45481c7e05f80a98718f980a8841a4df5",
+    "all_public_journey_fields_equal_after_key_sort": true,
+    "changed_OD_rows": 0,
+    "fields": ["origin_id", "destination_id", "reachable", "travel_time_min", "departure_min", "arrival_min", "transfers", "walking_transfers"]
+  },
+  "execution": {
+    "started_utc": "2026-10-12 14:34:20 UTC",
+    "completed_utc": "2026-10-12 15:38:21 UTC",
+    "release_build": true,
+    "forced_recompile": true,
+    "build_seconds": 16.86,
+    "origin_search_seconds": {
+      "total": 3824.81,
+      "mean": 5.7603,
+      "median": 5.19,
+      "p95": 8.6685
+    },
+    "R_version": "R version 4.4.1 (2024-06-14 ucrt)",
+    "platform": "x86_64-w64-mingw32"
+  },
+  "outputs": {
+    "matrix_rds": "national-full-journeys.rds",
+    "matrix_rds_sha256": "ae3c7e37bc788010968855d949e875f45481c7e05f80a98718f980a8841a4df5",
+    "matrix_csv": "national-full-journeys.csv",
+    "matrix_csv_sha256": "2a658bfd47cfb22545829b90d391ecb69c1bfed86db030a51b837b73268176d1",
+    "origin_checkpoint_count": 664
+  },
+  "limitation": "Candidate research evidence only; no publication, migration, deployment, or activation."
+}

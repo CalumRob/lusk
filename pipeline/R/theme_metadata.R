@@ -1072,7 +1072,7 @@ valider_theme_metadata <- function(metadata, vintages = NULL,
         # le chemin de 61 points au pas de 10) est donc refusée ici, avant la
         # publication.
         if (identical(indicator_key, "raccordement_courbe")) {
-          grille_attendue <- grille_raccordement()
+          grille_attendue <- grille_raccordement_national()
           if (!identical(declarees, grille_attendue)) {
             manquer(paste0("indicator_pages.", indicator_key,
                            ".comparison.details"),

@@ -17,6 +17,8 @@ struct Connection {
   int trip;
   double departure;
   double arrival;
+  bool can_board;
+  bool can_alight;
 };
 
 struct WalkEdge {
@@ -36,6 +38,7 @@ struct Label {
   int transfers;
   int walking_transfers;
   int trip;
+  bool can_alight;
 };
 
 struct Best {
@@ -77,6 +80,7 @@ static FrontierNode merge_frontiers(const FrontierNode& a, const FrontierNode& b
   FrontierNode result;
   for (std::size_t candidate : candidates) {
     if (candidate == std::numeric_limits<std::size_t>::max()) continue;
+    if (!labels[candidate].can_alight) continue;
     if (result.first != std::numeric_limits<std::size_t>::max() &&
         labels[result.first].trip == labels[candidate].trip) {
       if (better_label(candidate, result.first, labels)) result.first = candidate;
@@ -174,11 +178,20 @@ public:
 
   std::pair<std::size_t, std::size_t> query(
       int stop_name, double ready, int excluded_trip, bool exclude_trip,
-      const std::vector<Label>& labels, std::size_t& nodes_visited) const {
+      const std::vector<Label>& labels, std::size_t& nodes_visited,
+      std::size_t& empty_frontier_skips) const {
     auto found = stop_ids_.find(stop_name);
-      if (found == stop_ids_.end()) return {std::numeric_limits<std::size_t>::max(),
-                                            std::numeric_limits<std::size_t>::max()};
+    if (found == stop_ids_.end()) {
+      ++empty_frontier_skips;
+      return {std::numeric_limits<std::size_t>::max(),
+              std::numeric_limits<std::size_t>::max()};
+    }
     const Stop& stop = stops_[found->second];
+    if (stop.tree[1].first == std::numeric_limits<std::size_t>::max()) {
+      ++empty_frontier_skips;
+      return {std::numeric_limits<std::size_t>::max(),
+              std::numeric_limits<std::size_t>::max()};
+    }
     const auto end_it = std::upper_bound(stop.arrivals.begin(), stop.arrivals.end(), ready);
     if (end_it == stop.arrivals.begin()) return {std::numeric_limits<std::size_t>::max(),
                                                  std::numeric_limits<std::size_t>::max()};
@@ -230,7 +243,7 @@ static bool insert_label(std::unordered_map<std::uint64_t, std::vector<std::size
   for (std::size_t id : state) {
     if (!active[id]) continue;
     const Label& old = all_labels[id];
-    if (old.arrival <= value.arrival && old.duration <= value.duration &&
+    if (old.can_alight == value.can_alight && old.arrival <= value.arrival && old.duration <= value.duration &&
         (old.arrival < value.arrival || old.duration < value.duration ||
          old.transfers < value.transfers ||
          (old.transfers == value.transfers &&
@@ -246,7 +259,7 @@ static bool insert_label(std::unordered_map<std::uint64_t, std::vector<std::size
   for (std::size_t old_id : state) {
     if (old_id == id || !active[old_id]) continue;
     const Label& old = all_labels[old_id];
-    if (value.arrival <= old.arrival && value.duration <= old.duration &&
+    if (old.can_alight == value.can_alight && value.arrival <= old.arrival && value.duration <= old.duration &&
         (value.arrival < old.arrival || value.duration < old.duration ||
          value.transfers < old.transfers ||
          (value.transfers == old.transfers &&
@@ -280,6 +293,8 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
   CharacterVector trip = rides["trip_id"];
   NumericVector dep = rides["departure_min"];
   NumericVector arr = rides["arrival_min"];
+  LogicalVector can_board = rides.containsElementNamed("pickup_allowed") ? as<LogicalVector>(rides["pickup_allowed"]) : LogicalVector(rides.nrows(), TRUE);
+  LogicalVector can_alight = rides.containsElementNamed("drop_off_allowed") ? as<LogicalVector>(rides["drop_off_allowed"]) : LogicalVector(rides.nrows(), TRUE);
   std::unordered_map<std::string, int> stop_id_map;
   std::unordered_map<std::string, int> trip_id_map;
   auto intern = [](const std::string& value,
@@ -297,7 +312,8 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
     connections.push_back({intern(as<std::string>(from[i]), stop_id_map),
                            intern(as<std::string>(to[i]), stop_id_map),
                            intern(as<std::string>(trip[i]), trip_id_map),
-                           dep[i], arr[i]});
+                            dep[i], arr[i], can_board[i] != FALSE && can_board[i] != NA_LOGICAL,
+                            can_alight[i] != FALSE && can_alight[i] != NA_LOGICAL});
   }
   std::vector<int> order(n);
   for (int i = 0; i < n; ++i) order[i] = i;
@@ -361,6 +377,7 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
   std::size_t compacted_labels = 0;
   std::size_t arrival_frontier_queries = 0;
   std::size_t arrival_frontier_nodes = 0;
+  std::size_t arrival_frontier_empty_skips = 0;
   for (int k = 0; k < destination_sets.size(); ++k) {
     CharacterVector d = destination_sets[k];
     for (auto x : d) if (x != NA_STRING &&
@@ -407,11 +424,11 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
             candidates.emplace_back(walk.from, walk.minutes);
         }
 
-        if (origin_set.count(c.from) && c.departure >= window_start &&
+        if (c.can_board && origin_set.count(c.from) && c.departure >= window_start &&
             c.departure < window_end) {
             Label first{c.arrival, c.departure, c.arrival - c.departure,
-                        0, 0, c.trip};
-          record(c.to, first);
+                        0, 0, c.trip, c.can_alight};
+          if (c.can_alight) record(c.to, first);
           if (insert_label(state_labels, all_labels, active_labels,
                            arrival_frontiers, frontier_locations, c.to, c.trip,
                            first, inserted, compacted_labels))
@@ -442,10 +459,10 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
             if (selected != std::numeric_limits<std::size_t>::max()) {
               const Label& previous = all_labels[selected];
               ++transfer_checks;
-              Label next{c.arrival, previous.departure,
-                         c.arrival - previous.departure, previous.transfers,
-                         previous.walking_transfers, c.trip};
-              record(c.to, next);
+               Label next{c.arrival, previous.departure,
+                          c.arrival - previous.departure, previous.transfers,
+                          previous.walking_transfers, c.trip, c.can_alight};
+               if (c.can_alight) record(c.to, next);
               if (insert_label(state_labels, all_labels, active_labels,
                                arrival_frontiers, frontier_locations, c.to,
                                c.trip, next, inserted, compacted_labels))
@@ -455,14 +472,14 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
 
           // All other eligible labels incur a transfer. A type-3 rule forbids
           // this branch; the same-trip branch above remains legal.
-          if (rule.type == 3) continue;
+          if (rule.type == 3 || !c.can_board) continue;
           const double minimum = rule.type == 2 ? rule.minimum : 0.0;
           const double ready = c.departure - std::max(candidate.second, minimum);
           const int excluded_trip = c.trip;
           ++arrival_frontier_queries;
           const auto pair = arrival_frontiers.query(
             candidate.first, ready, excluded_trip, same_stop, all_labels,
-            arrival_frontier_nodes);
+            arrival_frontier_nodes, arrival_frontier_empty_skips);
           selected = pair.first;
           if (selected == std::numeric_limits<std::size_t>::max()) continue;
           // Every candidate on this outgoing ride reaches the same arrival and
@@ -476,8 +493,8 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
                      previous.transfers + 1,
                       previous.walking_transfers +
                         (candidate.second > 0 ? 1 : 0),
-                     c.trip};
-          record(c.to, next);
+                      c.trip, c.can_alight};
+          if (c.can_alight) record(c.to, next);
           if (insert_label(state_labels, all_labels, active_labels,
                            arrival_frontiers, frontier_locations, c.to, c.trip,
                            next, inserted, compacted_labels))
@@ -516,6 +533,8 @@ Rcpp::List csa_multi_target(Rcpp::DataFrame rides,
       _["stale_labels_examined"] = static_cast<double>(stale_labels_examined),
       _["labels_compacted"] = static_cast<double>(compacted_labels),
       _["arrival_frontier_queries"] = static_cast<double>(arrival_frontier_queries),
-      _["arrival_frontier_nodes"] = static_cast<double>(arrival_frontier_nodes))
+      _["arrival_frontier_nodes"] = static_cast<double>(arrival_frontier_nodes),
+      _["arrival_frontier_empty_skips"] =
+        static_cast<double>(arrival_frontier_empty_skips))
   );
 }

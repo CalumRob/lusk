@@ -86,8 +86,7 @@ test_that("la trajectoire raccordement déclare exactement la grille publiée et
   page <- meta$indicator_pages$raccordement_courbe
   expect_identical(
     unlist(page$comparison$details, use.names = FALSE),
-    c("t0000", "t0015", "t0030", "t0045", "t0060", "t0090", "t0120",
-      "t0180", "t0240", "t0300", "t0360")
+    paste0("t", sprintf("%04d", seq.int(0L, 360L, by = 5L)))
   )
   expect_identical(unlist(page$trajectory$endpoints, use.names = FALSE),
                    c("t0000", "t0360"))

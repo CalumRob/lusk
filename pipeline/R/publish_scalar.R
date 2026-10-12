@@ -350,6 +350,59 @@ project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
   projection
 }
 
+# A coordinate-free public scalar is still producer-owned: for raccordement it
+# must be the exact 90-minute projection of the owned curve and its provenance
+# must resolve against the matching metadata/vintage bundle. In particular, a
+# current descriptor cannot relabel an older static Parquet snapshot.
+validate_raccordement_scalar_bundle <- function(rows, metadata, source_vintages) {
+  required <- c("territoire", "type", "key", "detail", "value", "unit", "vintage_source",
+    "vintage_version", "vintage_date_reference", "vintage_date_publication")
+  abort <- function(...) stop(..., call.=FALSE)
+  if (!is.data.frame(rows) || !all(required %in% names(rows)) ||
+      !is.list(metadata$sources) || !is.list(metadata$indicator_pages) ||
+      !is.data.frame(source_vintages) ||
+      !all(c("id", "source", "version", "date_reference", "date_publication") %in% names(source_vintages)))
+    abort("Raccordement scalar canonical producer bundle is incomplete")
+  source_id <- metadata$sources[["raccordement_tc"]]
+  page <- metadata$indicator_pages[["raccordement_tc"]]
+  curve_page <- metadata$indicator_pages[["raccordement_courbe"]]
+  if (!is.character(source_id) || length(source_id)!=1L || is.na(source_id) || !nzchar(source_id) ||
+      is.null(page) || is.null(curve_page) ||
+      !source_id %in% as.character(unlist(page$sources, use.names=FALSE)) ||
+      !source_id %in% as.character(unlist(curve_page$sources, use.names=FALSE)))
+    abort("Raccordement scalar source is not declared by its producer metadata")
+  vintage <- source_vintages[as.character(source_vintages$id)==source_id, , drop=FALSE]
+  if (nrow(vintage)!=1L)
+    abort("Raccordement scalar source vintage is unavailable in its metadata bundle")
+  levels <- as.character(unlist(metadata$scalar_contracts$raccordement_tc$allowed_levels, use.names=FALSE))
+  if (!length(levels)) levels <- as.character(unlist(page$levels, use.names=FALSE))
+  scalar <- rows[rows$key=="raccordement_tc" & is.na(rows$detail) & rows$type %in% levels, , drop=FALSE]
+  curve <- rows[rows$key=="raccordement_courbe" & rows$detail=="t0090" & rows$type %in% levels, , drop=FALSE]
+  key <- function(x) paste(as.character(x$territoire), as.character(x$type), sep="\r")
+  if (!nrow(scalar) || !nrow(curve) || anyDuplicated(key(scalar)) || anyDuplicated(key(curve)) ||
+      !setequal(key(scalar), key(curve)))
+    abort("Raccordement scalar and t0090 trajectory territories are incomplete or duplicated")
+  expected_source <- as.character(vintage$source[[1L]])
+  expected_version <- as.character(vintage$version[[1L]])
+  expected_reference <- as.character(vintage$date_reference[[1L]])
+  expected_publication <- as.character(vintage$date_publication[[1L]])
+  source_matches <- function(facts) {
+    all(as.character(facts$vintage_source)==expected_source) &&
+      all(as.character(facts$vintage_version)==expected_version) &&
+      all(as.character(as.Date(facts$vintage_date_reference))==expected_reference) &&
+      all(as.character(as.Date(facts$vintage_date_publication))==expected_publication)
+  }
+  if (!source_matches(scalar) || !source_matches(curve))
+    abort("Raccordement scalar provenance disagrees with its producer vintage")
+  scalar <- scalar[match(key(curve), key(scalar)), , drop=FALSE]
+  same_value <- (is.na(scalar$value) & is.na(curve$value)) |
+    (!is.na(scalar$value) & !is.na(curve$value) & as.numeric(scalar$value)==as.numeric(curve$value))
+  if (any(as.character(scalar$unit)!=as.character(curve$unit)) ||
+      any(!same_value))
+    abort("Raccordement scalar does not match its t0090 trajectory fact")
+  invisible(TRUE)
+}
+
 # Build one canonical table-owned scalar snapshot from the projections of
 # registered publishers. It remains neutral: no cohort owns another publisher.
 assemble_scalar_snapshot <- function(base_projection, additional_projections=list()) {

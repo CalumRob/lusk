@@ -3,7 +3,9 @@
 #   Rscript scripts/benchmark-raccordement-gtfs.R 35238 35288
 #   Rscript scripts/benchmark-raccordement-gtfs.R ALL
 # Les archives sont des candidats non publiés; ce script ne touche aucun pin.
-pkgload::load_all(".", quiet = TRUE)
+# pkgload defaults to a debug (-O0) build. Routing timings must use the release
+# build; force recompilation so existing debug objects cannot silently survive.
+pkgload::load_all(".", quiet = TRUE, debug = FALSE, recompile = TRUE)
 library(sf)
 
 korrigo_path <- "data/raw/korrigo-gtfs-80622-candidate.zip"

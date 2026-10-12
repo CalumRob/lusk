@@ -582,15 +582,20 @@ CREATE TABLE series_dataset_descriptor (
  axis_numeric_values integer[],
  completeness text NOT NULL CHECK(completeness IN ('dense_complete','may_be_missing')),
   comparison_point text, label text NOT NULL, unit text NOT NULL,
-  comparison_statistic text CHECK(comparison_statistic IS NULL OR comparison_statistic='median'),
-  comparison_scope text CHECK(comparison_scope IS NULL OR comparison_scope='default_group'),
+  comparison_statistic text,
+  comparison_scope text,
   observation_period_kind text CHECK(observation_period_kind IS NULL OR observation_period_kind IN ('snapshot_date','unknown')),
  direction text NOT NULL CHECK(direction IN ('high','low','none')),
  allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
  descriptor_version text NOT NULL, active_read_route boolean NOT NULL DEFAULT false,
  theme_id text,
  PRIMARY KEY(dataset_id,indicator_id),
- CHECK(comparison_point IS NULL OR (comparison_point=ANY(axis_values) AND direction IN ('high','low'))),
+  CHECK ((comparison_statistic IS NULL AND comparison_scope IS NULL) OR
+    (comparison_statistic='median' AND comparison_scope='default_group') OR
+    (indicator_id='raccordement_courbe' AND axis_kind='duration_minute' AND completeness='dense_complete' AND
+      comparison_statistic='mean' AND comparison_scope='selected_group' AND
+      cardinality(axis_values)=73 AND axis_numeric_values[1]=0 AND axis_numeric_values[73]=360)),
+  CHECK(comparison_point IS NULL OR (comparison_point=ANY(axis_values) AND direction IN ('high','low'))),
  CHECK(comparison_point IS NOT NULL OR direction='none'));
  ALTER TABLE series_dataset_descriptor ADD CONSTRAINT series_absence_contract
    CHECK (absence_semantics <> 'no_record' OR completeness='may_be_missing');
@@ -701,10 +706,14 @@ BEGIN
     OR cardinality(NEW.axis_numeric_values)<>cardinality(ARRAY(SELECT DISTINCT unnest(NEW.axis_numeric_values)))) THEN
     RAISE EXCEPTION 'duration axis numeric minutes do not match declared detail keys';
   END IF;
-  IF NEW.active_read_route AND NEW.axis_kind='duration_minute' AND
-     (NEW.observation_period_kind IS NULL OR NEW.comparison_statistic IS NULL OR NEW.comparison_scope IS NULL) THEN
-    RAISE EXCEPTION 'active duration route requires declared comparison and observation-period semantics';
-  END IF;
+   IF NEW.active_read_route AND NEW.axis_kind='duration_minute' AND
+      (NEW.observation_period_kind IS NULL OR NEW.comparison_statistic IS NULL OR NEW.comparison_scope IS NULL) THEN
+     RAISE EXCEPTION 'active duration route requires declared comparison and observation-period semantics';
+   END IF;
+   IF NEW.comparison_statistic='mean' AND NEW.indicator_id='raccordement_courbe' AND
+      (NEW.axis_kind<>'duration_minute' OR NEW.axis_numeric_values IS DISTINCT FROM ARRAY(SELECT generate_series(0,360,5))) THEN
+     RAISE EXCEPTION 'national raccordement mean contract requires the complete 0..360 minute grid by five';
+   END IF;
   IF EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=NEW.dataset_id
     AND o.indicator_id=NEW.indicator_id AND NOT o.axis_value=ANY(NEW.axis_values)) THEN
     RAISE EXCEPTION 'series dataset descriptor excludes published observations';

@@ -88,10 +88,31 @@ heures_gtfs_minutes <- function(heures) {
            as.numeric(x[[2]]) + as.numeric(x[[3]]) / 60, numeric(1))
 }
 
+verifier_eligibilite_passager_gtfs <- function(rides) {
+  # Directly supplied derived flags are a strict contract: unknown is never
+  # interpreted as either permission or prohibition. Legacy missing columns
+  # retain the no-restriction behavior at the search call sites.
+  for (column in c("pickup_allowed", "drop_off_allowed")) {
+    if (!column %in% names(rides)) next
+    value <- rides[[column]]
+    if (!is.logical(value) || anyNA(value)) {
+      stop(sprintf("Contrat routeur GTFS violé — %s contient une éligibilité absente ou invalide.",
+                   column), call. = FALSE)
+    }
+  }
+  invisible(NULL)
+}
+
 # aretes_trajet_gtfs ------------------------------------------------------------
 # Les segments adjacents d'un même trip constituent des arêtes ordonnées du
 # graphe temporel. Le service doit avoir été résolu pour la date mesurée.
 aretes_trajet_gtfs <- function(trips, stop_times, services_actifs) {
+  aretes_vides <- function() data.frame(
+    from_stop_id = character(), to_stop_id = character(), trip_id = character(),
+    route_id = character(), departure_min = numeric(), arrival_min = numeric(),
+    pickup_allowed = logical(), drop_off_allowed = logical(),
+    stringsAsFactors = FALSE
+  )
   requis_trips <- c("trip_id", "service_id")
   requis_temps <- c("trip_id", "stop_id", "stop_sequence", "arrival_time",
                     "departure_time")
@@ -103,11 +124,18 @@ aretes_trajet_gtfs <- function(trips, stop_times, services_actifs) {
   temps <- stop_times[as.character(stop_times$trip_id) %in% actifs$trip_id,
                       , drop = FALSE]
   if (!nrow(temps)) {
-    return(data.frame(from_stop_id = character(), to_stop_id = character(),
-                      trip_id = character(), departure_min = numeric(),
-                      arrival_min = numeric(), stringsAsFactors = FALSE))
+    return(aretes_vides())
   }
   temps$stop_sequence <- as.numeric(temps$stop_sequence)
+  access_flag <- function(column) {
+    if (!column %in% names(temps)) return(rep(TRUE, nrow(temps)))
+    value <- as.character(temps[[column]])
+    invalid <- !is.na(value) & nzchar(value) & !value %in% c("0", "1", "2")
+    if (any(invalid)) stop(sprintf("GTFS %s non pris en charge.", column), call. = FALSE)
+    is.na(value) | !nzchar(value) | value == "0"
+  }
+  temps$pickup_allowed <- access_flag("pickup_type")
+  temps$drop_off_allowed <- access_flag("drop_off_type")
   temps <- temps[order(temps$trip_id, temps$stop_sequence), , drop = FALSE]
   groupe <- split(temps, as.character(temps$trip_id))
   aretes <- lapply(groupe, function(t) {
@@ -126,13 +154,13 @@ aretes_trajet_gtfs <- function(trips, stop_times, services_actifs) {
                  as.character(trips$route_id[match(as.character(t$trip_id[i]),
                                                     as.character(trips$trip_id))]) else NA_character_,
                departure_min = dep, arrival_min = arr,
+               pickup_allowed = as.logical(t$pickup_allowed[i]),
+               drop_off_allowed = as.logical(t$drop_off_allowed[i + 1L]),
                stringsAsFactors = FALSE)
   })
   resultat <- do.call(rbind, aretes[!vapply(aretes, is.null, logical(1))])
   if (is.null(resultat)) {
-    return(data.frame(from_stop_id = character(), to_stop_id = character(),
-                      trip_id = character(), route_id = character(), departure_min = numeric(),
-                      arrival_min = numeric(), stringsAsFactors = FALSE))
+    return(aretes_vides())
   }
   rownames(resultat) <- NULL
   resultat
@@ -339,6 +367,7 @@ meilleurs_trajets_gtfs_multi_destination <- function(
       !all(c("from_stop_id", "to_stop_id", "duration_min") %in% names(transfers))) {
     stop("Contrat routeur GTFS violé — arêtes incomplètes.", call. = FALSE)
   }
+  verifier_eligibilite_passager_gtfs(rides)
   if (is.null(regles_transfert)) {
     regles_transfert <- attr(transfers, "regles_transfert", exact = TRUE)
   }
@@ -380,7 +409,10 @@ meilleurs_trajets_gtfs_multi_destination <- function(
                                 arrival_min = NA_real_)
     }
   }
-  departures <- rides[rides$from_stop_id %in% origines &
+  boardable <- if ("pickup_allowed" %in% names(rides)) as.logical(rides$pickup_allowed) else rep(TRUE, nrow(rides))
+  alightable <- if ("drop_off_allowed" %in% names(rides)) as.logical(rides$drop_off_allowed) else rep(TRUE, nrow(rides))
+  rides$.ride_row <- seq_len(nrow(rides))
+  departures <- rides[rides$from_stop_id %in% origines & boardable &
                         rides$departure_min >= debut & rides$departure_min < fin, ,
                       drop = FALSE]
   if (!nrow(departures)) {
@@ -421,18 +453,18 @@ meilleurs_trajets_gtfs_multi_destination <- function(
                                     arrival_min = arrivee)
     }
   }
-  propager <- function(arret, trip, arrivee, depart) {
-    cle <- paste(arret, trip, sep = "\r")
+  propager <- function(arret, trip, arrivee, depart, peut_descendre = TRUE) {
+    cle <- paste(arret, trip, peut_descendre, sep = "\r")
     duree <- arrivee - depart
     existants <- frontieres[[cle]]
     if (!is.null(existants) && any(existants$arrival_min <= arrivee &
                                    existants$travel_time_min <= duree)) return(FALSE)
     if (is.null(existants)) existants <- data.frame(
-      arrival_min = numeric(), travel_time_min = numeric(), departure_min = numeric())
+       arrival_min = numeric(), travel_time_min = numeric(), departure_min = numeric(), alightable = logical())
     garder <- !(existants$arrival_min >= arrivee &
                 existants$travel_time_min >= duree)
     frontieres[[cle]] <<- rbind(existants[garder, , drop = FALSE], data.frame(
-      arrival_min = arrivee, travel_time_min = duree, departure_min = depart))
+      arrival_min = arrivee, travel_time_min = duree, departure_min = depart, alightable = peut_descendre))
     file[[length(file) + 1L]] <<- list(stop = arret, trip = trip,
                                        arrival = arrivee, departure = depart)
     TRUE
@@ -441,8 +473,10 @@ meilleurs_trajets_gtfs_multi_destination <- function(
     dest <- as.character(departures$to_stop_id[i])
     dep <- departures$departure_min[i]; arr <- departures$arrival_min[i]
     cibles <- targets_by_stop[[dest]]
-    if (length(cibles)) for (target in cibles) enregistrer(target, dep, arr)
-    propager(dest, as.character(departures$trip_id[i]), arr, dep)
+    row <- departures$.ride_row[i]
+    can_alight <- alightable[row]
+    if (can_alight && length(cibles)) for (target in cibles) enregistrer(target, dep, arr)
+    propager(dest, as.character(departures$trip_id[i]), arr, dep, can_alight)
   }
   lu <- 1L
   while (lu <= length(file)) {
@@ -450,13 +484,17 @@ meilleurs_trajets_gtfs_multi_destination <- function(
     arret <- item$stop; incoming_trip <- item$trip
     arrivee <- item$arrival; depart <- item$departure
     cle <- paste(arret, incoming_trip, sep = "\r")
-    frontiere <- frontieres[[cle]]
+    cle_accessible <- paste(arret, incoming_trip, "TRUE", sep = "\r")
+    cle_inaccessible <- paste(arret, incoming_trip, "FALSE", sep = "\r")
+    frontiere <- rbind(frontieres[[cle_accessible]], frontieres[[cle_inaccessible]])
+    if (!nrow(frontiere)) next
     encore_actif <- any(frontiere$arrival_min == arrivee &
                           frontiere$travel_time_min == arrivee - depart &
                           frontiere$departure_min == depart)
     if (!encore_actif) next
     candidats <- list(list(stop = arret, walk = 0))
-    ids_t <- transferts_par_arret[[arret]]
+    peut_descendre <- any(frontiere$alightable & frontiere$arrival_min == arrivee & frontiere$travel_time_min == arrivee - depart & frontiere$departure_min == depart)
+    ids_t <- if (peut_descendre) transferts_par_arret[[arret]] else NULL
     if (length(ids_t)) {
       tt <- transfers[ids_t, , drop = FALSE]
       candidats <- c(candidats, lapply(seq_len(nrow(tt)), function(j) {
@@ -473,14 +511,18 @@ meilleurs_trajets_gtfs_multi_destination <- function(
         same_trip <- identical(outgoing_trip, incoming_trip)
         continuation <- identical(candidate$stop, arret) && same_trip
         if (same_trip && !continuation) next
+        if (!continuation && !peut_descendre) next
+        row_ride <- rr$.ride_row[j]
+        if (!continuation && !boardable[row_ride]) next
         minimum <- if (continuation) 0 else duree_regle(arret, candidate$stop)
         if (!is.finite(minimum)) next
         ready <- arrivee + max(candidate$walk, minimum)
         if (rr$departure_min[j] < ready) next
         dest <- as.character(rr$to_stop_id[j]); arr <- rr$arrival_min[j]
         cibles <- targets_by_stop[[dest]]
-        if (length(cibles)) for (target in cibles) enregistrer(target, depart, arr)
-        propager(dest, outgoing_trip, arr, depart)
+        can_alight <- alightable[row_ride]
+        if (can_alight && length(cibles)) for (target in cibles) enregistrer(target, depart, arr)
+        propager(dest, outgoing_trip, arr, depart, can_alight)
       }
     }
   }
@@ -506,6 +548,7 @@ meilleur_trajet_gtfs <- function(rides, transfers, origine, destination,
 rechercher_trajets_gtfs_compiled <- function(
     rides, transfers, origine, destinations, debut_fenetre, fin_fenetre,
     regles_transfert = NULL, ids_stops = NULL) {
+  verifier_eligibilite_passager_gtfs(rides)
   if (is.null(regles_transfert)) {
     regles_transfert <- attr(transfers, "regles_transfert", exact = TRUE)
   }

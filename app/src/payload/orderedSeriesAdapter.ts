@@ -54,6 +54,7 @@ export interface OrderedSeriesAdapter {
 // Adapter registration is a data seam, not page markup: the renderer continues
 // to use the existing indicator-page grammar and never knows about API shapes.
 const adapters: readonly OrderedSeriesAdapter[] = [
+  { theme: 'mobilite', indicator: 'raccordement_courbe', pathIndicator: 'raccordement_courbe' },
   { theme: 'milieux', indicator: 'conso_enaf_annuel', pathIndicator: 'conso_enaf_annuel' },
   { theme: 'milieux', indicator: 'artif_par_habitant', pathIndicator: 'artif_par_habitant' },
   { theme: 'habitat', indicator: 'prix_m2', pathIndicator: 'prix_m2' },
@@ -65,6 +66,7 @@ export function orderedSeriesAdapterFor(theme: string, indicator: string): Order
 
 export function orderedSeriesReaderEnabled(indicator: string, env: Record<string, string | undefined>): boolean {
   return env.VITE_OWNED_SERIES_API === '1' ||
+    (indicator === 'raccordement_courbe' && env.VITE_THEME_ACQUISITION_API !== '0') ||
     (indicator === 'conso_enaf_annuel' && env.VITE_CONSO_ENAF_SERIES_API === '1') ||
     (indicator === 'artif_par_habitant' && env.VITE_OCSGE_STATE_SERIES_API === '1')
 }
