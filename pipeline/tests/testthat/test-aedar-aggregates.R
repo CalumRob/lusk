@@ -37,6 +37,15 @@ test_that("the pinned TYPEQU registry matches the producer region aggregate", {
   expect_equal(read_aedar_typequ_registry(),read_aedar_region_typequ_fixture())
 })
 
+test_that("hash-pinned TYPEQU artifacts retain LF bytes", {
+  paths <- c(testthat::test_path("..","..","inst","extdata",AEDAR_TYPEQU_REGISTRY_FILE),
+    testthat::test_path("fixtures","aedar-region-2026v1-typequ.csv"))
+  for (path in paths) {
+    bytes <- readBin(path,"raw",n=file.info(path)$size)
+    expect_false(any(bytes == as.raw(13L)))
+  }
+})
+
 test_that("AEDAR projection rejects a registered TYPEQU omitted at every level", {
   inputs <- make_aedar_test_inputs()
   inputs <- lapply(inputs,function(x) x[x$TYPEQU!="F105",,drop=FALSE])
