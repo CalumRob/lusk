@@ -765,7 +765,7 @@ export const indicateursMobiliteFixture: Indicateur[] = [
   ...indicateursOffreCyclableFixture,
 ]
 
-/** The exact published raccordement curve grid (11 points, in canonical order). */
+/** The exact incumbent static raccordement grid (11 points, in canonical order). */
 const DETAILS_COURBE_RACCORDEMENT_FIXTURE = [
   't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
   't0120', 't0180', 't0240', 't0300', 't0360',

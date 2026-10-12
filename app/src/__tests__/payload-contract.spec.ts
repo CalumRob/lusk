@@ -143,6 +143,10 @@ describe('payload contract — the committed payload parses and renders', () => 
       expect.arrayContaining(['raccordement_tc', 'raccordement_courbe', 'raccordement_reference']),
     )
     const publishedMobility = JSON.parse(readFileSync(join(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const canonicalMobility = JSON.parse(readFileSync(join(process.cwd(), '../pipeline/inst/extdata/theme-metadata/theme_mobilite.json'), 'utf8'))
+    const canonicalDetails = Object.keys(canonicalMobility.detail_labels.raccordement_courbe)
+      .sort((left, right) => Number(left.slice(1)) - Number(right.slice(1)))
+    expect(canonicalDetails).toHaveLength(73)
     expect(publishedMobility.indicator_pages.raccordement_courbe.levels)
       .toEqual(['commune', 'epci', 'departement', 'region'])
     for (const indicator of ['reseaux', 'reseaux_par_habitant', 'offre_cyclable']) {
@@ -154,21 +158,21 @@ describe('payload contract — the committed payload parses and renders', () => 
       indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
       figure: { family: 'scalar', indicator: 'offre_tc' },
     })
-    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe' && ligne.detail !== null)).toHaveLength(33)
-    expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(11)
-    expect([...new Set(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe').map((ligne) => ligne.detail))]).toEqual([
-      't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
-      't0120', 't0180', 't0240', 't0300', 't0360',
-    ])
+    const fixtureDetails = Object.keys(metadonneesMobiliteRaccordementFixture.detail_labels.raccordement_courbe)
+    const fixtureCurve = indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe')
+    const fixtureReference = indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_reference')
+    // This fixture intentionally represents the incumbent static snapshot;
+    // its rows follow its own metadata, not the newer candidate API axis.
+    expect([...new Set(fixtureCurve.map((ligne) => ligne.detail))]).toEqual(fixtureDetails)
+    expect(fixtureCurve).toHaveLength(3 * fixtureDetails.length)
+    expect(fixtureReference).toHaveLength(fixtureDetails.length)
     expect(indicateursRaccordementFixture.filter((ligne) => ligne.key === 'raccordement_courbe').every((ligne) => ligne.rang_epci === null && ligne.rang_dep === null && ligne.rang_reg === null)).toBe(true)
   })
 
   it('publishes the slim raccordement grid in the committed payload, without the old minute grid', () => {
     const payload = obtenirPayload()
-    const details = [
-      't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
-      't0120', 't0180', 't0240', 't0300', 't0360',
-    ]
+    const metadata = JSON.parse(readFileSync(join(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
+    const details = metadata.indicator_pages.raccordement_courbe.comparison.details
     const courbe = payload.indicateurs.filter((ligne) => ligne.key === 'raccordement_courbe')
     const reference = payload.indicateurs.filter((ligne) => ligne.key === 'raccordement_reference')
 

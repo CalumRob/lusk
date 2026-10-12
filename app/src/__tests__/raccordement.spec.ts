@@ -143,8 +143,11 @@ describe('raccordement — fiche et accessibilité', () => {
       'departement',
       'region',
     ])
-    expect(lignes.filter((ligne) => ligne.key === 'raccordement_courbe')).toHaveLength(33)
-    expect(lignes.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(11)
+    const details = Object.keys(metadonneesMobiliteRaccordementFixture.detail_labels.raccordement_courbe)
+    const courbe = lignes.filter((ligne) => ligne.key === 'raccordement_courbe')
+    expect(courbe).toHaveLength(3 * details.length)
+    expect(lignes.filter((ligne) => ligne.key === 'raccordement_reference')).toHaveLength(details.length)
+    expect([...new Set(courbe.map((ligne) => ligne.detail))]).toEqual(details)
     expect(lignes.filter((ligne) => ligne.key === 'raccordement_courbe' && ligne.detail === 't0090'))
       .toHaveLength(3)
     expect(lignes.find((ligne) => ligne.key === 'raccordement_reference' && ligne.detail === 't0090' && ligne.territoire === '53')?.value)
@@ -159,10 +162,9 @@ describe('raccordement — fiche et accessibilité', () => {
 
     expect(validee.indicator_keys).toContain('raccordement_tc')
     expect(validee.sources.raccordement_courbe).toBe('matrice_temps_mairies')
-    expect(Object.keys(validee.detail_labels.raccordement_courbe ?? {})).toEqual([
-      't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
-      't0120', 't0180', 't0240', 't0300', 't0360',
-    ])
+    expect(Object.keys(validee.detail_labels.raccordement_courbe ?? {})).toEqual(
+      Object.keys(metadonneesMobiliteRaccordementFixture.detail_labels.raccordement_courbe),
+    )
     expect(validee.detail_labels.raccordement_courbe?.t0360).toBe('6 h')
   })
 
