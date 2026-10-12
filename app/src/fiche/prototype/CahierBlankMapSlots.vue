@@ -1,11 +1,16 @@
 <script setup lang="ts">
 import { Bike, BusFront, CarFront } from 'lucide-vue-next'
 import type { Component } from 'vue'
-import { computed } from 'vue'
+import { computed, ref } from 'vue'
 
 import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
 import type { TextBlock } from '@/fiche/content/themeContent'
+import { AEDAR_CAR_MAP_HORIZON_MINUTES, aedarCarMapAssetUrl } from '@/fiche/mapAssetUrl'
+import { AEDAR_CAR_MAP_LEGEND } from '@/fiche/content/aedarCarMapLegend'
 import CahierFigureLecture from './CahierFigureLecture.vue'
+import CahierContinuousMapLegend from './CahierContinuousMapLegend.vue'
+import CahierMapGallery from './CahierMapGallery.vue'
+import CahierMapPanel from './CahierMapPanel.vue'
 import CahierProse from './CahierProse.vue'
 
 const props = defineProps<{
@@ -24,6 +29,44 @@ const availableSlots: readonly { key: 'car' | 'bike-lts2' | 'transit'; label: st
   { key: 'transit', label: 'Transports en commun', icon: BusFront, tone: 'foot' },
 ]
 const slots = computed(() => availableSlots.filter((slot) => !props.modeKeys || props.modeKeys.includes(slot.key)))
+const loadedCarMapCodes = ref(new Set<string>())
+const unavailableCarMapCodes = ref(new Set<string>())
+const mapGallery = ref<InstanceType<typeof CahierMapGallery> | null>(null)
+const inspectionUnavailable = ref(false)
+const carMapAlternativeText = computed(() => `${props.title.map((segment) => segment.value).join('')} — ${props.territory.name}`)
+const carMapGalleryImages = computed(() => props.horizonMinutes === AEDAR_CAR_MAP_HORIZON_MINUTES
+  ? [{ key: 'car', src: aedarCarMapAssetUrl(props.territory.code, 'inspection'), alt: carMapAlternativeText.value }]
+  : [])
+const showCarMapLegend = computed(() => slots.value.some((slot) => usesCarMap(slot.key))
+  && !unavailableCarMapCodes.value.has(props.territory.code))
+
+function usesCarMap(slotKey: 'car' | 'bike-lts2' | 'transit'): boolean {
+  return slotKey === 'car'
+    && props.horizonMinutes === AEDAR_CAR_MAP_HORIZON_MINUTES
+}
+
+function slotStateLabel(slotKey: 'car' | 'bike-lts2' | 'transit'): string {
+  if (slotKey !== 'car') return 'Carte à venir'
+  if (props.horizonMinutes !== AEDAR_CAR_MAP_HORIZON_MINUTES) return 'Carte indisponible pour cet horizon'
+  if (unavailableCarMapCodes.value.has(props.territory.code)) return 'Carte indisponible'
+  return 'Carte disponible'
+}
+
+function markCarMapLoaded(code: string): void {
+  loadedCarMapCodes.value = new Set(loadedCarMapCodes.value).add(code)
+}
+
+function markCarMapUnavailable(code: string): void {
+  unavailableCarMapCodes.value = new Set(unavailableCarMapCodes.value).add(code)
+}
+
+async function inspectCarMap(): Promise<void> {
+  inspectionUnavailable.value = !await mapGallery.value?.open('car')
+}
+
+function markInspectionUnavailable(): void {
+  inspectionUnavailable.value = true
+}
 </script>
 
 <template>
@@ -35,23 +78,66 @@ const slots = computed(() => availableSlots.filter((slot) => !props.modeKeys || 
         :key="slot.key"
         class="blank-map-slot map-panel"
         :class="[`map-panel--${slot.tone}`, `blank-map-slot--${slot.key}`]"
-        :aria-label="`${slot.label} — ${props.territory.name} — ${props.horizonMinutes} minutes — Carte à venir`"
+        :aria-label="`${slot.label} — ${props.territory.name} — ${props.horizonMinutes} minutes — ${slotStateLabel(slot.key)}`"
       >
         <div class="map-panel-label" aria-hidden="true">
           <component :is="slot.icon" :size="16" :stroke-width="1.8" aria-hidden="true" />
           <span>{{ slot.label }}</span>
         </div>
-        <div class="blank-map-slot__viewport map-viewport" :style="{ '--mode-ring': `var(--cahier-mode-${slot.tone === 'foot' ? 'foot' : slot.tone})` }" role="img" :aria-label="`Zone vide, carte à venir : ${slot.label} pour ${props.territory.name}`">
+        <CahierMapPanel
+          v-if="usesCarMap(slot.key)"
+          class="blank-map-slot__viewport"
+          :style="{ '--mode-ring': `var(--cahier-mode-${slot.tone})` }"
+          :image-url="aedarCarMapAssetUrl(props.territory.code, 'inline')"
+          :image-alt="carMapAlternativeText"
+          :accessible-name="`Agrandir : ${slot.label} à ${props.territory.name}`"
+          :number="String(index + 1).padStart(2, '0')"
+          :loaded="loadedCarMapCodes.has(props.territory.code)"
+          :unavailable="unavailableCarMapCodes.has(props.territory.code)"
+          @loaded="markCarMapLoaded(props.territory.code)"
+          @unavailable="markCarMapUnavailable(props.territory.code)"
+          @inspect="inspectCarMap"
+        />
+        <div
+          v-else
+          class="blank-map-slot__viewport"
+          :style="{ '--mode-ring': `var(--cahier-mode-${slot.tone})` }"
+          role="img"
+          :aria-label="`${slotStateLabel(slot.key)} : ${slot.label} pour ${props.territory.name}`"
+        >
           <span class="blank-map-slot__number" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
-          <span class="blank-map-slot__state">Carte à venir</span>
+          <span class="blank-map-slot__state">{{ slotStateLabel(slot.key) }}</span>
           <span class="blank-map-slot__territory">{{ props.territory.name }}</span>
           <span class="blank-map-slot__horizon">{{ props.horizonMinutes }} minutes</span>
         </div>
       </section>
     </div>
+    <div
+      v-if="showCarMapLegend"
+      class="blank-map-slots__legend-grid"
+      :style="[CAHIER_MAP_LAYOUT_STYLE, slots.length === 1 ? { '--cahier-map-columns': 'minmax(0, 1fr)' } : {}]"
+    >
+      <CahierContinuousMapLegend
+        class="aedar-car-map-legend"
+        :title="AEDAR_CAR_MAP_LEGEND.title"
+        :minimum="AEDAR_CAR_MAP_LEGEND.minimum"
+        :maximum="AEDAR_CAR_MAP_LEGEND.maximum"
+        :colors="AEDAR_CAR_MAP_LEGEND.colors"
+        :ticks="AEDAR_CAR_MAP_LEGEND.ticks"
+        :note="AEDAR_CAR_MAP_LEGEND.note"
+      />
+    </div>
     <CahierFigureLecture v-if="props.lecture && props.lecture.length > 0">
       <CahierProse :blocks="props.lecture" />
     </CahierFigureLecture>
+    <CahierMapGallery
+      ref="mapGallery"
+      :images="carMapGalleryImages"
+      @unavailable="markInspectionUnavailable"
+    />
+    <p v-if="inspectionUnavailable" role="status" class="inspection-unavailable">
+      Carte détaillée indisponible pour Voiture — {{ props.territory.name }}.
+    </p>
   </figure>
 </template>
 
@@ -60,6 +146,8 @@ const slots = computed(() => availableSlots.filter((slot) => !props.modeKeys || 
 <style scoped>
 .blank-map-slots { margin: 0; padding: 0 0 var(--space-3); }
 .blank-map-slots__grid { display: grid; grid-template-columns: var(--cahier-map-columns); gap: clamp(var(--space-4), 3vw, var(--space-8)); align-items: center; }
+.blank-map-slots__legend-grid { display: grid; grid-template-columns: var(--cahier-map-columns); gap: clamp(var(--space-4), 3vw, var(--space-8)); margin-top: 8px; }
+.blank-map-slots__legend-grid > :first-child { grid-column: 1; width: min(100%, 360px); justify-self: center; }
 .blank-map-slot { width: min(100%, 360px); justify-self: center; }
 .map-panel-label { display: flex; min-height: 28px; justify-content: center; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--mode-ring); font: 700 10px/1.2 var(--font-sans); letter-spacing: .035em; text-transform: uppercase; }
 .map-panel--car { --mode-ring: var(--cahier-mode-car); }
@@ -69,5 +157,5 @@ const slots = computed(() => availableSlots.filter((slot) => !props.modeKeys || 
 .blank-map-slot__number { position: absolute; top: 9px; left: 11px; color: var(--mode-ring); font-size: 9px; font-variant-numeric: tabular-nums; }
 .blank-map-slot__state { font: 700 clamp(11px, 1.5vw, 15px)/1.3 var(--font-sans); }
 .blank-map-slot__territory, .blank-map-slot__horizon { color: var(--muted); font: 500 11px/1.3 var(--font-sans); }
-@media (max-width: 760px) { .blank-map-slots__grid { grid-template-columns: 1fr; } .blank-map-slot { width: min(100%, 520px); } }
+@media (max-width: 760px) { .blank-map-slots__grid, .blank-map-slots__legend-grid { grid-template-columns: 1fr; } .blank-map-slot { width: min(100%, 520px); } }
 </style>

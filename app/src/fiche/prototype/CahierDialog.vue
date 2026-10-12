@@ -1,5 +1,6 @@
 <script setup lang="ts">
 import { onBeforeUnmount, ref, watch } from 'vue'
+import { lockPageScroll } from './pageScrollLock'
 
 const props = defineProps<{
   open: boolean
@@ -11,18 +12,17 @@ const props = defineProps<{
 const emit = defineEmits<{ close: [] }>()
 const dialog = ref<HTMLDialogElement | null>(null)
 let suppressCloseEvent = false
-let previousRootOverflow = ''
+let releasePageScrollLock: (() => void) | null = null
 
 watch(() => props.open, (open) => {
   const element = dialog.value
   if (!element) return
   if (open && !element.open) {
-    previousRootOverflow = document.documentElement.style.overflow
     // `hidden` makes <html> the scroll container and breaks the viewport-sticky
     // site header and Cahier margins. `clip` locks without creating one; the
     // native modal dialog makes the rest of the document inert, so don't lock
     // <body> and create another scroll container either.
-    document.documentElement.style.overflow = 'clip'
+    releasePageScrollLock = lockPageScroll()
     if (typeof element.showModal === 'function') element.showModal()
     else element.setAttribute('open', '')
   } else if (!open) {
@@ -33,7 +33,8 @@ watch(() => props.open, (open) => {
 }, { flush: 'post' })
 
 function restorePageScroll() {
-  document.documentElement.style.overflow = previousRootOverflow
+  releasePageScrollLock?.()
+  releasePageScrollLock = null
 }
 
 onBeforeUnmount(restorePageScroll)

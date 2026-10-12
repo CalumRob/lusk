@@ -12,8 +12,4 @@ defineProps<{ source: AedarEvidenceSource }>()
   </p>
 </template>
 
-<style scoped>
-.cahier-evidence-source { margin: 0; color: var(--cahier-default); font-size: 10px; line-height: 1.1; overflow-wrap: anywhere; }
-.cahier-evidence-source a { color: inherit; text-decoration-thickness: 1px; text-underline-offset: 2px; }
-@media (max-width: 760px) { .cahier-evidence-source { font-size: 14px; line-height: 1.4; } }
-</style>
+<style src="./cahierEvidenceSource.css"></style>

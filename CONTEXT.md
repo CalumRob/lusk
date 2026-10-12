@@ -408,6 +408,10 @@ _Avoid_: libellés locaux, table des exemples (the registry covers the whole uni
 The complete 235-code INSEE TYPEQU/label nomenclature for the BPE 2025 vintage. It defines the closed TYPEQU axis of the 2026-v1 AEDAR territorial aggregates at every territory level, including types with no address-routing observations; it is not interchangeable with the legacy 53-type mobility registry or a set inferred from observed rows.
 _Avoid_: Bretagne-observed types, kept list, address-observation axis
 
+**Carte de diversité voiture AEDAR**:
+The absolute number of BPE equipment categories reachable by car in 15 minutes. The shared inline/inspection map scale has five equal-width colour classes over 0–218, and the legend identifies the full 235-category BPE universe. The app legend consumes explicit scale/palette metadata and the pinned TYPEQU registry; it is not extracted from the rendered map. Territory IQR overlays are deferred until combined address-level distributions are available; per-type deciles cannot reconstruct them.
+_Avoid_: perte voiture, nombre d’établissements, IQR inferred from per-type deciles or map pixels
+
 **Modes AEDAR**:
 The five normal access modes published in the 2026-v1 AEDAR territorial aggregates and rendered as ramp lines in the prototype Mobilité: `walk` (À pied), `transit` (Transports en commun — walking included, aggregate scenario p1), `bike_lts2` (Vélo LTS2), `bike_lts4` (Vélo LTS4), and `car` (Voiture). `transit_gain` is the access beyond walking alone, not an ordinary access mode, and is never displayed under ordinary-access labels. In source routing terms, LTS2 is « averse au risque routier » and LTS4 « tolérant au risque routier » (AEDAR 2026-v1, §§ 2.1, 3.2.2.1.3.1). Ramp lines keep the fiche's mode-color families — car, bike, foot/transit; LTS2 uses the full-strength bike tone and LTS4 the lightened bike tone. The 15-minute horizon remains provisional for blank-map slots and is not drawn as a vertical marker on the ramp plot.
 _Avoid_: six ramp modes (transit_gain is not one), a renderer-owned mode selection or labels
