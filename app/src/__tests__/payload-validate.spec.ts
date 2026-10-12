@@ -19,7 +19,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, verifierClassesDensite } from '../payload/validate'
+import { PayloadError, parsePayload, validerTerritoires, validerTerritoiresMetadata, validerThemeMetadata, verifierClassesDensite } from '../payload/validate'
 import type { HistoireDemographie, HistoireMilieux, HistoireMobilite, Payload } from '../payload/types'
 
 type DocumentsBruts = Parameters<typeof parsePayload>[0]
@@ -73,6 +73,20 @@ describe('contrat des classes de densité communale', () => {
     }]))
     expect(() => validerTerritoiresMetadata({ ...metadata, density_classes: classesDecalees }, 'territoires-metadata.json'))
       .toThrow('codes 1 à 7')
+  })
+})
+
+describe('metadata de trajectoire raccordement', () => {
+  it('accepts either the historical producer grid or the declared complete national grid without owning its points', async () => {
+    const fs = await import('node:fs')
+    const metadata = JSON.parse(fs.readFileSync('../pipeline/inst/extdata/theme-metadata/theme_mobilite.json', 'utf8'))
+    const parsed = validerThemeMetadata(metadata, 'theme_mobilite.json')
+    expect(parsed.indicator_pages?.raccordement_courbe?.family).toBe('trajectory')
+    const historic = JSON.parse(fs.readFileSync('../public/data/theme_mobilite.json', 'utf8'))
+    expect(validerThemeMetadata(historic, 'theme_mobilite.json').indicator_pages?.raccordement_courbe?.family).toBe('trajectory')
+    const malformed = structuredClone(metadata)
+    malformed.indicator_pages.raccordement_courbe.comparison.details[2] = malformed.indicator_pages.raccordement_courbe.comparison.details[1]
+    expect(() => validerThemeMetadata(malformed, 'theme_mobilite.json')).toThrow('comparison.details')
   })
 })
 

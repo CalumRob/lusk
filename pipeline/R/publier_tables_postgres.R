@@ -193,11 +193,19 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data", con
 project_theme_scalar_cohort <- function(sortie, eligible_territories, theme) {
   path <- file.path(sortie, paste0("indicateurs_", theme, ".parquet"))
   if (!file.exists(path)) stop("Scalar snapshot incomplet : Parquet canonique ", theme, " absent : ", path, call.=FALSE)
-  metadata_path <- file.path("inst", "extdata", "theme-metadata", paste0("theme_", theme, ".json"))
-  if (!file.exists(metadata_path)) metadata_path <- file.path(pkgload::pkg_path(), metadata_path)
+  # A public canonical directory is a producer bundle: use its paired metadata
+  # when present. Falling back to the package registry is safe only for newly
+  # generated directories without a published bundle; raccordement provenance
+  # validation below refuses incompatible old facts either way.
+  metadata_path <- file.path(sortie, paste0("theme_", theme, ".json"))
+  if (!file.exists(metadata_path)) {
+    metadata_path <- file.path("inst", "extdata", "theme-metadata", paste0("theme_", theme, ".json"))
+    if (!file.exists(metadata_path)) metadata_path <- file.path(pkgload::pkg_path(), metadata_path)
+  }
   if (!file.exists(metadata_path)) stop("Theme indicator metadata is unavailable: ", metadata_path, call.=FALSE)
   metadata <- jsonlite::fromJSON(metadata_path, simplifyVector=FALSE)
-  rows <- nanoparquet::read_parquet(path)
+  canonical_rows <- nanoparquet::read_parquet(path)
+  rows <- canonical_rows
   ids <- names(metadata$scalar_contracts)
   if (!length(ids)) stop("Theme producer has no declared scalar serving contracts: ", theme, call.=FALSE)
   # Scalar observations have no detail coordinate. Select that producer grain
@@ -212,6 +220,9 @@ project_theme_scalar_cohort <- function(sortie, eligible_territories, theme) {
     support=if ("n" %in% names(rows)) as.integer(rows$n) else NA_integer_, stringsAsFactors=FALSE)
   vintages_path <- file.path(sortie, "vintages.parquet")
   source_vintages <- if (file.exists(vintages_path)) nanoparquet::read_parquet(vintages_path) else NULL
+  if (identical(theme, "mobilite") && "raccordement_tc" %in% ids) {
+    validate_raccordement_scalar_bundle(canonical_rows, metadata, source_vintages)
+  }
   project_scalar_canonical_rows(rows, metadata, ids, eligible_territories,
     source_vintages=source_vintages)
 }

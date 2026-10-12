@@ -4,7 +4,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
-import { indicateursHabitatFixture, indicateursMilieuxFixture, territoiresFixture } from '../payload/fixtures'
+import { indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, territoiresFixture } from '../payload/fixtures'
 import { INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY } from '../payload/indicatorReadModel'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { routes } from '../router'
@@ -17,8 +17,62 @@ const rawMetadataMilieux = JSON.parse(readFileSync(join(process.cwd(), '..', 'pi
 const metadataMilieux = validerThemeMetadata(rawMetadataMilieux, 'theme_milieux.json')
 const rawMetadataHabitat = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_habitat.json'), 'utf8'))
 const metadataHabitat = validerThemeMetadata(rawMetadataHabitat, 'theme_habitat.json')
+const rawMetadataMobilite = JSON.parse(readFileSync(join(process.cwd(), '..', 'pipeline', 'inst', 'extdata', 'theme-metadata', 'theme_mobilite.json'), 'utf8'))
+const metadataMobilite = validerThemeMetadata(rawMetadataMobilite, 'theme_mobilite.json')
 
 describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () => {
+  it('mounts the current 73-point national trajectory and visible selected mean on the ordinary indicator route', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    const read = JSON.parse(readFileSync(join(process.cwd(), 'src', '__tests__', 'fixtures', 'raccordement-indicator-rennes-guarded.json'), 'utf8'))
+    const comparison = JSON.parse(readFileSync(join(process.cwd(), 'src', '__tests__', 'fixtures', 'raccordement-indicator-rennes-comparison-guarded.json'), 'utf8'))
+    const target = { ...territoiresFixture.find((row) => row.territoire === '22001')!, territoire: read.territory.id,
+      nom: read.territory.name, departement: '35', epci: '243500139',
+      classe_densite_code: comparison.result.mean_curve.scope.density_class_code,
+      classe_densite_libelle_public: 'Classe publiée' }
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return [...territoiresFixture, target]
+      if (file === 'indicateurs_mobilite') return indicateursMobiliteFixture
+      if (file === 'theme_mobilite') return metadataMobilite
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    const calls: string[] = []
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+      const url = String(input); calls.push(url)
+      return new Response(JSON.stringify(url.endsWith('/comparison') ? comparison : read), { status: 200,
+        headers: { 'Content-Type': 'application/json' } })
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push(`/indicateurs/mobilite/raccordement_courbe?territoire=${target.territoire}&niveau=commune`)
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { mobilite: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      expect(calls.filter((url) => url === `/api/territories/commune/${target.territoire}/indicators/raccordement_courbe`).length).toBeGreaterThan(0)
+      expect(calls.filter((url) => url === `/api/territories/commune/${target.territoire}/indicators/raccordement_courbe/comparison`).length).toBeGreaterThan(0)
+      expect(wrapper.findAll('.trajectoire-territoire-point')).toHaveLength(73)
+      const meanPoints = wrapper.findAll('.trajectoire-comparaison-point')
+      expect(meanPoints).toHaveLength(73)
+      expect(meanPoints.map((point) => [point.attributes('data-detail'), Number(point.attributes('data-value'))]))
+        .toEqual(comparison.result.mean_curve.points.map((point: { axis: string; value: number }) => [point.axis, point.value]))
+      expect(wrapper.find('[data-testid="raccordement-selected-mean"]').exists()).toBe(true)
+      expect(wrapper.find('[data-testid="selected-mean-legend"]').exists()).toBe(true)
+      const referencePath = wrapper.find('.trajectoire-reference')
+      expect.soft(referencePath.exists()).toBe(true)
+      expect.soft((referencePath.attributes('d')?.match(/\bL\b/g) ?? [])).toHaveLength(72)
+      expect(wrapper.findAll('.trajectoire-reference, .trajectoire-comparaison, .trajectoire-territoire')).toHaveLength(3)
+      const ticks = wrapper.findAll('.trajectoire-tick .trajectoire-axe-x-tick')
+      expect.soft(Number(ticks[0]?.attributes('x'))).toBe(60)
+      expect.soft(Number(ticks.at(-1)?.attributes('x'))).toBe(588)
+      expect(wrapper.text()).toContain('Classe publiée')
+      expect(wrapper.text()).toContain(read.points[0].provenance[0].source_name)
+      expect(wrapper.text()).not.toContain('Médiane')
+    } finally { wrapper.unmount() }
+  })
   it('mounts prix_m2 through the shared default-off owned-series reader gate', async () => {
     vi.stubEnv('VITE_OWNED_SERIES_API', '1')
     const loader: ChargerFichier = async (file) => {

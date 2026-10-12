@@ -321,6 +321,10 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
   route_key <- "raccordement_courbe"
   indicator_id <- as.character(page$indicator %||% NA_character_)
   reference_contract <- declaration$reference
+  national_outbound <- identical(declaration$comparison_contract$statistic,"mean") &&
+    identical(declaration$comparison_contract$scope,"selected_group")
+  legacy_routed_median <- identical(declaration$comparison_contract$statistic,"median") &&
+    identical(declaration$comparison_contract$scope,"default_group")
   if (is.null(declaration) || is.null(page) || is.null(reference_contract) ||
       length(indicator_id)!=1L || is.na(indicator_id) || !nzchar(indicator_id) ||
       !identical(indicator_id,route_key) || !identical(as.character(declaration$indicator_id),indicator_id) ||
@@ -335,14 +339,17 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
       !identical(declaration$observation_period_contract$source,"raccordement_recipe_date_mesure") ||
        !is.list(producer_contract) ||
        !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",producer_contract$date_mesure %||% "") ||
-      !identical(declaration$comparison_contract$statistic,"median") ||
-      !identical(declaration$comparison_contract$scope,"default_group"))
+        !(national_outbound || legacy_routed_median))
     stop("Raccordement duration/reference metadata contract is incomplete",call.=FALSE)
   minutes <- as.integer(unlist(declaration$axis_values,use.names=FALSE))
   axes <- paste0("t",sprintf("%04d",minutes))
   if (!length(axes) || anyNA(minutes) || any(minutes<0 | minutes>9999) ||
       anyDuplicated(minutes) || any(diff(minutes)<=0))
-    stop("Raccordement duration axis must be explicitly ordered",call.=FALSE)
+     stop("Raccordement duration axis must be explicitly ordered",call.=FALSE)
+   if (national_outbound && (!identical(minutes,seq.int(0L,360L,by=5L)) ||
+       !identical(reference_contract$id,"bretagne_all_assessed_communes_mean") ||
+       !identical(reference_contract$statistic,"mean_all_assessed_communes")))
+     stop("National outbound raccordement requires its full grid and all-assessed-commune mean reference",call.=FALSE)
   page_axes <- as.character(unlist(page$comparison$details,use.names=FALSE))
   if (!length(page_axes) || !identical(page_axes,axes) ||
       !identical(as.character(declaration$theme_id),as.character(metadata$theme)) ||
@@ -372,9 +379,20 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
       !identical(as.character(reference_contract$statistic),as.character(declaration$reference_statistic)))
     stop("Canonical reference artifact does not match its producer reference locator",call.=FALSE)
   excluded <- focal_all[!focal_all$type %in% allowed_levels,,drop=FALSE]
-  focal <- focal_all[focal_all$type %in% allowed_levels,,drop=FALSE]
-  for (id in unique(focal$territoire)) if (!setequal(as.character(focal$detail[focal$territoire==id]),axes))
-    stop("Canonical focal raccordement curve is missing a declared point",call.=FALSE)
+   focal <- focal_all[focal_all$type %in% allowed_levels,,drop=FALSE]
+   if (national_outbound) {
+     if (anyNA(focal$value) || any(!is.finite(focal$value)) || any(focal$value<0 | focal$value>1) ||
+         anyNA(reference$value) || any(!is.finite(reference$value)) ||
+         any(reference$value<0 | reference$value>1))
+       stop("National outbound raccordement curves must contain complete finite measured shares",call.=FALSE)
+     for (id in unique(focal$territoire)) {
+       values <- focal$value[focal$territoire==id][match(axes,focal$detail[focal$territoire==id])]
+        if (length(values)!=length(axes) || anyNA(values) || any(diff(values) < -1e-12))
+         stop("National outbound raccordement member curve is partial or non-cumulative",call.=FALSE)
+     }
+   }
+   for (id in unique(focal$territoire)) if (!setequal(as.character(focal$detail[focal$territoire==id]),axes))
+     stop("Canonical focal raccordement curve is missing a declared point",call.=FALSE)
   if (!setequal(as.character(reference$detail),axes) || length(unique(reference$territoire))!=1L)
     stop("Canonical named raccordement reference is incomplete",call.=FALSE)
   source_id <- as.character(declaration$source_id)
@@ -600,7 +618,7 @@ register_prix_m2_owned_publisher <- function(registry, metadata) {
   registry
 }
 
-register_raccordement_owned_publisher <- function(registry,metadata,producer_contract=RECETTE_MATRICE_TEMPS_MAIRIES) {
+register_raccordement_owned_publisher <- function(registry,metadata,producer_contract=RECETTE_RACCORDEMENT_NATIONAL) {
   registry <- register_series_publisher(registry,"raccordement_courbe_owned",
     project=function(canonical) project_raccordement_owned_series(canonical$mobilite$indicateurs,canonical$vintages,metadata,producer_contract),
     publish=function(projection,db,version) db$replace_dataset(projection,version))

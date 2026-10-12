@@ -18,6 +18,7 @@ import type {
   MobiliteService,
   MobiliteSummaryFacts,
   NumericFact,
+  SelectedTrajectoryComparison,
   TerritoryFacts,
   TerritoryIdentity,
 } from './territoryFacts'
@@ -46,6 +47,15 @@ export interface ContentFact {
 }
 
 export interface ContentIndicator extends ContentFact {}
+
+export interface ComparisonTrajectoryContent {
+  statistic: SelectedTrajectoryComparison['statistic']
+  scope: SelectedTrajectoryComparison['scope']
+  selectedMemberCount: number
+  eligibleCount: number
+  modelZeroReasonCounts: SelectedTrajectoryComparison['modelZeroReasonCounts']
+  points: readonly ContentFact[]
+}
 
 export type TextEmphasisTone =
   | 'default'
@@ -230,7 +240,8 @@ export type ContentEvidence =
   | CyclingOfferEvidence
   | SharingParkingEvidence
   | { kind: 'motorisation'; composition: readonly ContentFact[]; charging: readonly ContentFact[] }
-  | { kind: 'public-transport'; offer: ContentFact | null; trajectory: readonly ContentFact[]; trajectoryMetadata: TrajectoryMetadata | null }
+  | { kind: 'public-transport'; offer: ContentFact | null; trajectory: readonly ContentFact[];
+      comparisonTrajectory: ComparisonTrajectoryContent | null; trajectoryMetadata: TrajectoryMetadata | null }
 
 interface ContentSectionBase<Key extends string, Evidence> {
   key: Key
@@ -1754,12 +1765,18 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     explorationTargets: targetsFor(motorFacts.map(({fact}) => fact), facts.territory),
   }
   const curve = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe').map((fact) => contentFact(fact, fact.label ?? fact.detail ?? fact.key))
-  // Raccordement displays the focal territory's own curve only. Named median
-  // reference series remain historical serving evidence, not a second line.
+  const selectedComparison = facts.mobility.selectedTrajectoryComparison
+  const comparisonTrajectory: ComparisonTrajectoryContent | null = selectedComparison ? {
+    statistic: selectedComparison.statistic, scope: selectedComparison.scope,
+    selectedMemberCount: selectedComparison.selectedMemberCount, eligibleCount: selectedComparison.eligibleCount,
+    modelZeroReasonCounts: selectedComparison.modelZeroReasonCounts,
+    points: selectedComparison.points.map((fact) => contentFact(fact, fact.detail ?? fact.key)),
+  } : null
+  // A selected peer mean is independent from the global national reference.
   const offer = factFor('offre_tc')
   const transitFacts = [...(offer ? [offer] : []), ...curve]
   const transitEvidence = transitFacts.length ? {
-    kind: 'public-transport' as const, offer, trajectory: curve,
+    kind: 'public-transport' as const, offer, trajectory: curve, comparisonTrajectory,
     trajectoryMetadata: metadata?.indicator_pages?.raccordement_courbe?.family === 'trajectory'
       ? metadata.indicator_pages.raccordement_courbe.trajectory : null,
   } : null

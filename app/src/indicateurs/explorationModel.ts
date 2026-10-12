@@ -259,6 +259,12 @@ export interface ModeleTrajectoire {
   referenceLabel: string | null
   /** The selected territory's public label, when the handoff is in scope. */
   territoireLabel: string | null
+  /** Optional producer-owned selected-group mean; distinct from named global references. */
+  serieComparaison?: readonly PointTrajectoire[] | null
+  comparaisonScopeLabel?: string | null
+  comparaisonStatistic?: 'mean' | null
+  comparaisonMemberCount?: number | null
+  hideCohortDistribution?: boolean
 }
 
 const ANNEE_DETAIL = /^\d{4}$/

@@ -865,7 +865,12 @@ test_that("verifier_parite_trajectoires : le payload COMMITTÉ et les descripteu
 
   pages_trajectoires <- 0L
   for (theme in THEMES_METADATA) {
-    meta <- lire_theme_metadata(theme)
+    # Pair each incumbent published payload with its own metadata snapshot;
+    # current package metadata may declare a candidate axis not present in the
+    # static compatibility bundle.
+    metadata_path <- file.path(racine_public, paste0("theme_", theme, ".json"))
+    meta <- if (file.exists(metadata_path))
+      jsonlite::fromJSON(metadata_path, simplifyVector = FALSE) else lire_theme_metadata(theme)
     cles <- names(meta$indicator_pages)
     if (!any(vapply(meta$indicator_pages, function(p) identical(p$family, "trajectory"), logical(1L)))) next
 

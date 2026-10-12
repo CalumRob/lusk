@@ -1,0 +1,108 @@
+{
+  "schema": "lusk-raccordement-final-feed-transfer-sensitivity-v1",
+  "status": "complete-candidate-only-not-production",
+  "service_date": "2026-10-21",
+  "design": {
+    "fresh_final_feed_preparation": "data/processed/raccordement-experiments/paired-sncf-bretagne-20261021-20261010T141259Z/attempt-20261010T150000Z/national/cache-803ed24c76dd0bc20da5f2a314b32488b8b5c968fc49d3a5b830fcdb0bb19d6a/preparation.rds",
+    "origins": ["56061", "29185", "56036", "35066", "35015", "22067", "22070"],
+    "origin_count": 7,
+    "destinations_per_origin": 1202,
+    "total_OD_rows_per_radius": 8414,
+    "radii_m": [
+      500,
+      1000,
+      2000
+    ],
+    "walking_speed_kmh": 3,
+    "explicit_gtfs_transfer_rules": "retained at each radius, including explicit edges beyond radius",
+    "comparison_reference": "full current-router candidate matrix, same seven origins, all public journey fields"
+  },
+  "provenance": {
+    "final_input_sha256": {
+      "korrigo": "4d9ac5a1a7c3f662b6b684c7838f76eae2aa32a2272dd69438e1c2cb4a6aa669",
+      "sncf": "d3dd8e5d0f39306e589119e95cf3f0d8615aa2cbda826d6de7f2a881db6aecb0",
+      "geometry": "ab92ea56410a6fde88de1004f79aafa6e2c0d1ab2185de588d8e1f60b267a609"
+    },
+    "feed_versions": {
+      "korrigo": "80630",
+      "sncf": "2026-10-09"
+    },
+    "preparation_sha256": "d454f5c15734096f170ff2fd5dec1df4e01eadafd8f3d954adba0f5ea046f1b0",
+    "cache_key": "803ed24c76dd0bc20da5f2a314b32488b8b5c968fc49d3a5b830fcdb0bb19d6a",
+    "method_schema_sha256": "7da0dfd926f0f49b38808723194d89d7c28d2781e71b422fdfd2331e1d6f3f75",
+    "provenance_helper_sha256": "720e381371e8ea367559f230f7b07bdccd78c4a88fb126221cb3a37e2a81e4fc",
+    "preparation_router_cpp_sha256": "9cc302a12103b9c8b5e1336ee6990268eabd9a3a9765cf0386d65eb4294ec310",
+    "router_r_sha256": "6e798870776f8718edba5686cb67825a4150917f9e31583e3637bc47090841f2",
+    "router_cpp_sha256": "f36f09ebedb4d92898ecd2b6ca7b6c4dcdf207b497591e644e6434787732c876",
+    "matrix_builder_source_sha256": "7454aede9e2fdda93a011fc475fe25b9020cc152a9a78e57476fa1a9a5e22bab",
+    "runner_sha256": "8458da342dddd0b29d21d28257b73424b8eee28a8b410d295d1a5d1dd898952f",
+    "passenger_access": {
+      "pickup_restricted_ride_edges": 7543,
+      "dropoff_restricted_ride_edges": 7660,
+      "any_restricted_ride_edges": 9780
+    },
+    "reference_matrix_sha256": "ae3c7e37bc788010968855d949e875f45481c7e05f80a98718f980a8841a4df5"
+  },
+  "radius_results": [
+    {
+      "transfer_radius_m": 500,
+      "transfer_edges": 120830,
+      "OD_rows": 8414,
+      "reachable_rows": 4611,
+      "unreachable_rows": 3803,
+      "changed_reachability_vs_1000m": 28,
+      "changed_elapsed_time_vs_1000m": 29,
+      "mean_reachable_elapsed_min": 177.2715,
+      "median_reachable_elapsed_min": 172,
+      "search_and_graph_seconds": 166.03
+    },
+    {
+      "transfer_radius_m": 1000,
+      "transfer_edges": 366468,
+      "OD_rows": 8414,
+      "reachable_rows": 4639,
+      "unreachable_rows": 3775,
+      "changed_reachability_vs_1000m": 0,
+      "changed_elapsed_time_vs_1000m": 0,
+      "mean_reachable_elapsed_min": 178.0019,
+      "median_reachable_elapsed_min": 172,
+      "search_and_graph_seconds": 65.67
+    },
+    {
+      "transfer_radius_m": 2000,
+      "transfer_edges": 1114422,
+      "OD_rows": 8414,
+      "reachable_rows": 4639,
+      "unreachable_rows": 3775,
+      "changed_reachability_vs_1000m": 0,
+      "changed_elapsed_time_vs_1000m": 30,
+      "mean_reachable_elapsed_min": 177.9088,
+      "median_reachable_elapsed_min": 172,
+      "search_and_graph_seconds": 276.17
+    }
+  ],
+  "baseline_parity": {
+    "radius_m": 1000,
+    "OD_rows": 8414,
+    "all_public_journey_fields_equal": true,
+    "fields": ["origin_id", "destination_id", "reachable", "travel_time_min", "departure_min", "arrival_min", "transfers", "walking_transfers"]
+  },
+  "execution": {
+    "started_utc": "2026-10-12 15:39:18 UTC",
+    "completed_utc": "2026-10-12 15:48:02 UTC",
+    "release_build": true,
+    "forced_recompile": true,
+    "build_seconds": 13.78,
+    "R_version": "R version 4.4.1 (2024-06-14 ucrt)",
+    "platform": "x86_64-w64-mingw32"
+  },
+  "outputs": {
+    "journeys_rds": "journeys.rds",
+    "journeys_rds_sha256": "3849dbcd16b3a611389bc57d48ba98c431843bfb4e8f994d6538f091afa59821",
+    "journeys_csv": "journeys.csv",
+    "journeys_csv_sha256": "193a3b68145268f0aeb22f503577ccea7eb2b42ea19677981b49b76061ae7bfe",
+    "summary_csv": "summary.csv",
+    "summary_csv_sha256": "b93f17ef5d7e20e536a07b26f41d2df37a3caa3acfca2c85cae4f9fa65b50e1b"
+  },
+  "limitation": "Sensitivity is a seven-origin national pilot across all destinations, not a full 664-origin comparison; 1,000 m is the reviewed candidate setting, not independent production-policy approval."
+}

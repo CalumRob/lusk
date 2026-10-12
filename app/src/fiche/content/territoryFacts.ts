@@ -62,6 +62,8 @@ export interface FactComparison {
 export interface NumericFact {
   key: string
   detail: string | null
+  /** Producer-declared numeric position for an ordered series axis. */
+  axisValue?: number
   sex?: Indicateur['sex']
   /** Payload-owned label when this fact is a published indicator. */
   label?: string | null
@@ -86,6 +88,26 @@ export interface NamedTrajectoryReference {
   statistic: string
   unit: string
   points: readonly NumericFact[]
+}
+
+/** API-owned aggregate curve for the resolved comparison scope (never member curves). */
+export interface SelectedTrajectoryComparison {
+  statistic: 'mean'
+  scope: ComparisonScope
+  selectedMemberCount: number
+  eligibleCount: number
+  modelZeroReasonCounts: Readonly<Record<string, number>>
+  sourceLineage: readonly FactProvenance[]
+  points: readonly NumericFact[]
+}
+
+export interface MobilityTrajectoryContract {
+  axisKind: 'duration_minute'
+  axisValues: readonly string[]
+  axisNumericValues: readonly number[]
+  comparisonPoint: string
+  comparisonStatistic: 'mean'
+  comparisonScope: 'selected_group'
 }
 
 export type MobiliteService =
@@ -281,11 +303,14 @@ export interface TerritoryIdentity {
   epci: string | null
   /** The published EPCI name for a commune's comparison context, when available. */
   epciName?: string | null
+  densityClassCode?: string | null
 }
 
 export interface MobilityFacts {
   indicators: readonly NumericFact[]
   namedTrajectoryReferences: readonly NamedTrajectoryReference[]
+  selectedTrajectoryComparison?: SelectedTrajectoryComparison | null
+  trajectoryContract?: MobilityTrajectoryContract | null
   access: MobiliteAccessFacts
   bpeAccess: MobiliteBpeAccessFacts
   losses: MobiliteLossFacts
@@ -384,6 +409,7 @@ function identityOf(territoire: Territoire, epciName: string | null = null): Ter
     name: territoire.nom,
     department: territoire.departement,
     epci: territoire.epci,
+    densityClassCode: territoire.classe_densite_code ?? null,
     ...(epciName ? { epciName } : {}),
   }
 }
@@ -1275,6 +1301,8 @@ export function territoryFactsFor(
     mobility: {
       indicators: indicatorsOf(payload, target, scope, precomputed),
       namedTrajectoryReferences: [],
+      selectedTrajectoryComparison: null,
+      trajectoryContract: null,
       access: accessOf(payload, target, scope, precomputed),
       bpeAccess: bpeAccessOf(payload, target, precomputed),
       losses: lossesOf(payload, target, scope, precomputed),

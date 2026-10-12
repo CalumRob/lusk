@@ -4,7 +4,7 @@ import re
 import pytest
 from fastapi import HTTPException
 
-from api.main import ReadRepository, _theme_owned_series_indicator, app
+from api.main import ReadRepository, _complete_owned_mean_curve, _theme_owned_series_indicator, app
 
 
 def test_theme_owned_series_indicator_preserves_nullable_axis_metadata_and_point_coordinates():
@@ -26,6 +26,40 @@ def test_theme_owned_series_indicator_preserves_nullable_axis_metadata_and_point
         {"axis": "2025", "value": 525, "status": "measured", "provenance": []},
     )
     assert numeric["dimensions"] == {"axis": "2025", "numeric_axis_value": 2025}
+
+
+def test_raccordement_selected_mean_is_equal_weighted_and_requires_complete_zero_inclusive_curves():
+    def row(member, axis, value, reason=None):
+        parts=[None]*29
+        parts[15]=member; parts[16]=value; parts[17]="measured"; parts[18]="rev"
+        parts[27]=axis; parts[28]=reason
+        return tuple(parts)
+    members=["a","b","c"]
+    rows=[row("a","t0000",.6),row("b","t0000",0,"no_modeled_endpoint_stops"),row("c","t0000",.3),
+          row("a","t0005",.9),row("b","t0005",0,"no_modeled_endpoint_stops"),row("c","t0005",.6)]
+    points, facts=_complete_owned_mean_curve(["t0000","t0005"],members,rows,
+        territory_index=15,value_index=16,status_index=17,source_index=18,axis_index=27,reason_index=28)
+    assert [point["value"] for point in points] == pytest.approx([.3,.5])
+    assert len(facts)==6
+    with pytest.raises(HTTPException, match="incomplete"):
+        _complete_owned_mean_curve(["t0000","t0005"],members,rows[:-1],
+            territory_index=15,value_index=16,status_index=17,source_index=18,axis_index=27,reason_index=28)
+    no_lineage=row("b","t0000",0); no_lineage=list(no_lineage); no_lineage[18]=None
+    with pytest.raises(HTTPException, match="provenance"):
+        _complete_owned_mean_curve(["t0000"],members,[row("a","t0000",.6),tuple(no_lineage),row("c","t0000",.3)],
+            territory_index=15,value_index=16,status_index=17,source_index=18,axis_index=27,reason_index=28)
+
+
+def test_raccordement_mean_rejects_member_reason_that_changes_across_curve_axes():
+    def row(axis, reason):
+        parts=[None]*29
+        parts[15]="a"; parts[16]=0; parts[17]="measured"; parts[18]="rev"
+        parts[27]=axis; parts[28]=reason
+        return tuple(parts)
+    with pytest.raises(HTTPException, match="reason conflicts"):
+        _complete_owned_mean_curve(["t0000","t0005"],["a"],
+            [row("t0000","no_modeled_endpoint_stops"),row("t0005","endpoint_stops_but_no_permitted_first_boarding")],
+            territory_index=15,value_index=16,status_index=17,source_index=18,axis_index=27,reason_index=28)
 
 def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
     class Cursor:

@@ -379,16 +379,11 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
     }
   }
 
-  # LE RACCORDEMENT (issue #486) : le trait `raccordement` du descripteur
-  # câble SA chaîne de calcul. Les DEUX épingles du package (la matrice temps
-  # figée, la population RP 2023) sont des cibles format = "file" (fraîcheur
-  # PAR CONTENU) ; raccordement_<thème> vérifie les contrats, résout la
-  # projection COG depuis le zip INSEE du cache (cog_passage — ordonné après
-  # le téléchargement du thème et l'extraction du référentiel partagé), calcule
-  # et persiste l'enveloppe sous le répertoire analytique du thème. La cible
-  # rend LE CHEMIN de l'enveloppe (format = "file" à son tour) : le skip suit
-  # exactement ses entrées — une matrice changée invalide le calcul SEUL puis
-  # l'aval ; rien d'autre du thème ne bouge.
+  # LE RACCORDEMENT NATIONAL (#728) : les pins versionnés du package (enveloppe,
+  # matrice OD dirigée et population) sont suivis par contenu. Le target valide
+  # le corpus versionné et renvoie son chemin; aucun feed, préparation ou
+  # routage n'est reconstruit à l'exécution. La cible aval calcule les courbes
+  # depuis les seuls octets épinglés.
   #
   # LE CRON SAUTE LA CHAÎNE (le même mode que les sources « manuel »,
   # ADR-0004) : en mode cron la cible porte cue mode = "never" — jamais
@@ -397,15 +392,20 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
   # lire_raccordement REFUSERAIT une enveloppe périmée plutôt que de laisser
   # republier en silence des parts calculées depuis une autre matrice.
   if (!is.null(theme$raccordement)) {
-    pin_matrice <- as.name(paste0("pin_matrice_temps_", nom))
+    pin_enveloppe <- as.name(paste0("pin_raccordement_national_enveloppe_", nom))
+    pin_matrice <- as.name(paste0("pin_raccordement_national_matrice_", nom))
     pin_population <- as.name(paste0("pin_population_", nom))
-    pin_cog_passage <- as.name(paste0("pin_cog_passage_", nom))
     cible_raccordement <- as.name(paste0("raccordement_", nom))
-    sortie_raccordement <- file.path(dirname(cache), "processed", nom)
     grappe <- c(grappe, list(
       tar_target_raw(
+        as.character(pin_enveloppe),
+        bquote(system.file("extdata", RACCORDEMENT_NATIONAL_ENVELOPPE_FICHIER,
+                           package = "lusk")),
+        format = "file"
+      ),
+      tar_target_raw(
         as.character(pin_matrice),
-        bquote(system.file("extdata", MATRICE_TEMPS_MAIRIES_FICHIER,
+        bquote(system.file("extdata", RACCORDEMENT_NATIONAL_MATRICE_FICHIER,
                            package = "lusk")),
         format = "file"
       ),
@@ -416,28 +416,17 @@ grappe_theme <- function(theme = THEMES_RUN[[1L]], mode = MODE_RUN,
         format = "file"
       ),
       tar_target_raw(
-        as.character(pin_cog_passage),
-        bquote({
-          .(sources)
-          fichier <- .(manifeste)$fichier[.(manifeste)$id == "cog_passage"]
-          stopifnot(length(fichier) == 1L)
-          file.path(.(cache), fichier)
-        }),
-        format = "file"
-      ),
-      tar_target_raw(
         as.character(cible_raccordement),
         bquote({
-          .(sources)
+          .(pin_enveloppe)
           .(pin_matrice)
           .(pin_population)
-          .(pin_cog_passage)
-          fichier_epci_extrait
-          preparer_raccordement(
-            .(pin_cog_passage),
-            file.path(.(cache), "extracted", "EPCI_au_01-01-2025.xlsx"),
-            sortie = .(sortie_raccordement))
-          file.path(.(sortie_raccordement), RACCORDEMENT_ARTEFACT)
+          artefact <- lire_artefact_raccordement_national(
+            chemin_enveloppe = .(pin_enveloppe), chemin_matrice = .(pin_matrice))
+          stopifnot(nrow(artefact$calculation$commune_curves) ==
+                      length(RECETTE_RACCORDEMENT_NATIONAL$grille_publication_min) *
+                      nrow(artefact$membership))
+          .(pin_enveloppe)
         }),
         format = "file",
         cue = if (identical(mode, "cron")) {

@@ -22,10 +22,13 @@ Imports:
     RPostgres,
     readr,
     readxl,
+    Rcpp,
     sf,
     targets,
     tibble,
     tidyr
+LinkingTo:
+    Rcpp
 Suggests:
     testthat (>= 3.0.0)
 Config/testthat/edition: 3

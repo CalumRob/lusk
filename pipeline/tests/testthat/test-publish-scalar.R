@@ -356,7 +356,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     avg_tot_t="mobilite_snapshot", avg_div_car="mobilite_snapshot", avg_div_b="mobilite_snapshot",
     avg_div_t="mobilite_snapshot", iso_alimentation="mobilite_snapshot", iso_sante="mobilite_snapshot",
     iso_administration="mobilite_snapshot", iso_ecole="mobilite_snapshot", iso_banque="mobilite_snapshot",
-    raccordement_tc="matrice_temps_mairies")
+    raccordement_tc=as.character(jsonlite::fromJSON(file.path(pkgload::pkg_path(), "..", "public", "data", "theme_mobilite.json"), simplifyVector=FALSE)$sources$raccordement_tc))
   for (id in ids) {
     if (!id %in% names(source_by_id)) next
     expected <- canonical[canonical$key == id, , drop=FALSE]
@@ -367,7 +367,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     expect_identical(projection$descriptors$unit[match(id, projection$descriptors$indicator_id)],
       unique(expected$unit))
   }
-  metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_mobilite.json"), simplifyVector=FALSE)
+  metadata <- jsonlite::fromJSON(file.path(pkgload::pkg_path(), "..", "public", "data", "theme_mobilite.json"), simplifyVector=FALSE)
   source_vintages <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "vintages.parquet"))
   multi_source_ids <- c("bornes_ev_par_station_service", "stationnement_velo_par_voiture")
   mobility_rows <- data.frame(territory_id=as.character(canonical$territoire),
@@ -444,6 +444,28 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     "evolution_1968", "part_passoires", "prix_m2") %in% snapshot$descriptors$indicator_id))
   expect_equal(nrow(snapshot$descriptors), 45L)
   expect_equal(sum(snapshot$facts$indicator_id %in% ids), nrow(projection$facts))
+})
+
+test_that("raccordement scalar projection binds its producer metadata, source vintage, and trajectory t0090", {
+  canonical_dir <- file.path(pkgload::pkg_path(), "..", "public", "data")
+  canonical <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_mobilite.parquet"))
+  vintages <- nanoparquet::read_parquet(file.path(canonical_dir, "vintages.parquet"))
+  historical <- jsonlite::fromJSON(file.path(canonical_dir, "theme_mobilite.json"), simplifyVector=FALSE)
+  current <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_mobilite.json"), simplifyVector=FALSE)
+  expect_silent(validate_raccordement_scalar_bundle(canonical, historical, vintages))
+  expect_error(validate_raccordement_scalar_bundle(canonical, current, vintages),
+    "Raccordement scalar source vintage is unavailable in its metadata bundle")
+  mutated <- canonical
+  index <- which(mutated$key == "raccordement_tc")[[1L]]
+  mutated$value[[index]] <- mutated$value[[index]] + 0.01
+  expect_error(validate_raccordement_scalar_bundle(mutated, historical, vintages),
+    "Raccordement scalar does not match its t0090 trajectory fact")
+
+  artifact <- lire_artefact_raccordement_national()
+  candidate_vintages <- vintages_mobilite()
+  owned_rows <- lignes_indicateurs_raccordement_national(artifact$calculation, candidate_vintages)
+  expect_equal(sum(owned_rows$key == "raccordement_tc"), 1268L)
+  expect_silent(validate_raccordement_scalar_bundle(owned_rows, current, candidate_vintages))
 })
 
 test_that("registered publisher versions independently, retries DB-behind-local, and rolls back failures", {

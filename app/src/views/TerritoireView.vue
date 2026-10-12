@@ -49,7 +49,7 @@ import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, the
 import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
-import type { ComparisonScopeKind, TerritoryFacts } from '@/fiche/content/territoryFacts'
+import type { ComparisonScopeKind, SelectedTrajectoryComparison, TerritoryFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -88,7 +88,6 @@ let sequenceFicheScalaires = 0
  * réchauffe en arrière-plan (décision propriétaire 2026-10-07). Un thème hors
  * de `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
  */
-const acquisitionApiActivee = themeAcquisitionEnabled(import.meta.env)
 const selection = computed<Theme | null>(() => {
   const demande = route.query.theme
   if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
@@ -113,7 +112,7 @@ watch([aedarPrototypeActive, typeRoute, idRoute, retryAedarCount], async ([activ
 }, { immediate: true })
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
 const themeMigre = (theme: Theme | null): boolean =>
-  acquisitionApiActivee && theme !== null && THEMES_ACQUISITION_API.includes(theme)
+  themeAcquisitionEnabled(import.meta.env) && theme !== null && THEMES_ACQUISITION_API.includes(theme)
 const cacheAcquisition = new ThemeAcquisitionCache(
   (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
   (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
@@ -461,6 +460,7 @@ const statutAccesApi = ref<'loading' | 'ready' | 'error'>('loading')
 const buildingStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const mobilityFocal = ref<TerritoryFacts | null>(null)
 const mobilityComparisonFacts = ref<TerritoryFacts | null>(null)
+const mobilityCurveComparison = ref<SelectedTrajectoryComparison | null>(null)
 const mobilityComparisonStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const retryMobilityFacts = ref(0)
 let focalRequestSequence = 0
@@ -482,6 +482,7 @@ watch([productionMobilite, typeRoute, idRoute,
   statutAccesApi.value = 'loading'
   mobilityFocal.value = null
   mobilityComparisonFacts.value = null
+  mobilityCurveComparison.value = null
   mobilityComparisonStatus.value = 'loading'
   buildingStatus.value = 'loading'
   if (!typeValide.value || !model || !payloadPourRendu.value) {
@@ -508,7 +509,7 @@ watch([productionMobilite, typeRoute, idRoute,
       ? modeleTerritoire.model.value?.themes.mobilite?.comparisons.densite
       : resolutionComparaison.value?.contexte ?? undefined
     let combined = mobilityFactsFromThemeApi(presentation, code, data)
-    combined = applyThemeComparisonApiFacts(combined, data.comparison, initialContext)
+    combined = applyThemeComparisonApiFacts(combined, data.comparison ?? data.default_comparison, initialContext)
     const serviceScope = isRecord(data.essential_service_access) && isRecord(data.essential_service_access.scope)
       ? data.essential_service_access.scope : null
     combined = applyAccessApiFacts(combined, data.essential_service_access,
@@ -522,6 +523,7 @@ watch([productionMobilite, typeRoute, idRoute,
       initialContext?.scope.label ?? null)
     mobilityFocal.value = combined
     mobilityComparisonFacts.value = combined
+    mobilityCurveComparison.value = combined.mobility.selectedTrajectoryComparison ?? null
     mobilityComparisonStatus.value = 'ready'
     statutAccesApi.value = 'ready'
     buildingStatus.value = 'ready'
@@ -553,10 +555,11 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
     const target = payloadPourRendu.value.territoires.find((territory) => territory.territoire === idRoute.value)
     const mode = resolutionComparaison.value?.mode
     const context = resolutionComparaison.value?.contexte ?? undefined
-    if ((target?.type === 'commune' && mode === 'densite') || target?.type !== 'commune') {
+    if (target?.type !== 'commune') {
       lastComparisonKey = requestKey
       lastComparisonModel = model
       mobilityComparisonFacts.value = mobilityFocal.value
+      mobilityCurveComparison.value = null
       mobilityComparisonStatus.value = 'ready'
       return
     }
@@ -564,23 +567,53 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
     if (!cohort) {
       mobilityComparisonStatus.value = 'error'
       mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
+      mobilityCurveComparison.value = null
       lastComparisonKey = requestKey
       lastComparisonModel = model
       return
     }
-    const selection = mode === 'bretagne'
+    const selection = mode === 'densite' ? undefined : mode === 'bretagne'
       ? cohort.filter((item) => item.type === 'commune')
         .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
       : mode === 'epci' && target?.epci
         ? cohort.filter((item) => item.type === 'commune' && item.epci === target.epci)
           .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
         : []
-    const body = { theme_id: 'mobilite', ...(selection === undefined ? {} : { selection }) }
+    const explicitSelection = selection
+    const body = { theme_id: 'mobilite', ...(explicitSelection === undefined ? {} : { selection: explicitSelection }) }
     lastComparisonKey = requestKey
     lastComparisonModel = model
-    mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
+    mobilityComparisonFacts.value = mode === 'densite'
+      ? mobilityFocal.value
+      : clearThemeComparisonApiFacts(mobilityFocal.value)
+    mobilityCurveComparison.value = null
     mobilityComparisonStatus.value = 'loading'
-    void fetch(`/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(idRoute.value)}/themes/mobilite/comparison`, {
+    const targetPath = `/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(idRoute.value)}`
+    const curveUrl = `${targetPath}/indicators/raccordement_courbe/comparison`
+    void fetch(curveUrl, {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(explicitSelection === undefined ? {} : { selection: explicitSelection }),
+      signal: controller.signal,
+    }).then(async (response) => {
+      if (!response.ok) throw new Error(`HTTP ${response.status}`)
+      return response.json() as Promise<unknown>
+    }).then((data) => {
+      if (request !== comparisonRequestSequence || !isRecord(data) || !mobilityFocal.value) return
+      const parsedCurve = applyThemeComparisonApiFacts(mobilityFocal.value, data, context, explicitSelection)
+        .mobility.selectedTrajectoryComparison
+      if (!parsedCurve) throw new Error('Courbe moyenne raccordement indisponible pour cette portée')
+      mobilityCurveComparison.value = parsedCurve
+      mobilityComparisonStatus.value = 'ready'
+      settled = true
+    }).catch(() => {
+      if (request === comparisonRequestSequence) {
+        mobilityCurveComparison.value = null
+        mobilityComparisonStatus.value = 'error'
+      }
+    })
+
+    if (mode === 'densite') return
+    void fetch(`${targetPath}/themes/mobilite/comparison`, {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
       signal: controller.signal,
     }).then(async (response) => {
@@ -588,7 +621,7 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
       return response.json() as Promise<unknown>
     }).then((data) => {
       if (request !== comparisonRequestSequence || !isRecord(data)) return
-      const expectedSelection = new Set(selection.map((item) => `${item.territory_type}/${item.territory_id}`))
+      const expectedSelection = new Set((explicitSelection ?? []).map((item) => `${item.territory_type}/${item.territory_id}`))
       const returnedSelection = Array.isArray(data.selection) ? data.selection : []
       if (data.contract !== 'theme-comparison-v1' || data.theme_id !== 'mobilite' ||
           returnedSelection.length !== expectedSelection.size ||
@@ -596,7 +629,7 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
             !expectedSelection.has(`${String(item.territory_type)}/${String(item.territory_id)}`))) {
         throw new Error('Réponse de comparaison Mobilité incohérente avec la sélection')
       }
-      let updated = applyThemeComparisonApiFacts(mobilityFocal.value!, data, context)
+       let updated = applyThemeComparisonApiFacts(mobilityFocal.value!, data, context, selection)
       updated = applyComparisonOnlyBuildingFacts(updated, data.building_access, context?.scope.label ?? null)
       mobilityComparisonFacts.value = updated
       mobilityComparisonStatus.value = 'ready'
@@ -624,7 +657,7 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
     !payloadPourRendu.value ||
     !typeValide.value
   ) return null
-  const facts = productionMobilite.value
+  const baseFacts = productionMobilite.value
     ? mobilityFocal.value
       ? mobilityComparisonFacts.value ?? clearThemeComparisonApiFacts(mobilityFocal.value)
       : mobilityFactsFromThemeApi(
@@ -632,6 +665,9 @@ const contenuMobilite = computed<ThemeContent | null>(() => {
       )
     : territoryFactsFor(toRaw(payloadPourRendu.value), idRoute.value,
       resolutionComparaison.value?.contexte ?? undefined)
+  const facts = baseFacts && productionMobilite.value
+    ? { ...baseFacts, mobility: { ...baseFacts.mobility, selectedTrajectoryComparison: mobilityCurveComparison.value } }
+    : baseFacts
   if (!facts) return null
   const contentFacts = facts
   return resolveMobiliteThemeContent(contentFacts, payloadPourRendu.value.themeMetadata?.mobilite)

@@ -40,17 +40,39 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         pub.execute(f'CREATE SCHEMA "{schema}"'); created=True
         pub.execute(f'SET search_path TO "{schema}"')
         pub.execute((root/"api/schema.sql").read_text(encoding="utf-8"))
-        pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code) VALUES
-            ('35238','commune','Rennes','35','243500139','D1'),
-            ('35001','commune','Peer one','35','243500139','D1'),
-            ('35002','commune','Peer two','35','243500139','D1'),
-            ('22001','commune','Other class','22','243500140','D2'),
-            ('243500139','epci','EPCI one','35',NULL,NULL),
-            ('53','region','Bretagne',NULL,NULL,NULL)""")
+        pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label) VALUES
+            ('35238','commune','Rennes','35','243500139','D1','Fixture density D1'),
+            ('35001','commune','Peer one','35','243500139','D1','Fixture density D1'),
+            ('35002','commune','Peer two','35','243500139','D1','Fixture density D1'),
+            ('22001','commune','Other class','22','243500140','D2','Fixture density D2'),
+            ('243500139','epci','EPCI one','35',NULL,NULL,NULL),
+            ('53','region','Bretagne',NULL,NULL,NULL,NULL)""")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',6)")
+        pub.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES(true,'region','Bretagne')")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('essential_service_access','fixture-access-v1',4)")
+        pub.execute("INSERT INTO service_registry(service) VALUES('fixture_service')")
+        pub.execute("""INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date)
+          VALUES('35238','fixture_service','walk_transit',.5,'Fixture access','high','fixture_access','Fixture access','v1','2026-01-01','2026-01-02'),
+            ('35001','fixture_service','walk_transit',.4,'Fixture access','high','fixture_access','Fixture access','v1','2026-01-01','2026-01-02'),
+                ('35002','fixture_service','walk_transit',.6,'Fixture access','high','fixture_access','Fixture access','v1','2026-01-01','2026-01-02'),
+                ('53','fixture_service','walk_transit',.5,'Fixture access','high','fixture_access','Fixture access','v1','2026-01-01','2026-01-02')""")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('scalar_observation','fixture-scalar-v1',5,'fixture-ref-v1')")
         pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('fixture_scalar_source','Fixture scalar source')")
         pub.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES('fixture_scalar_source','v1','v1','2026-01-01','2026-01-02')")
+        pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('mobility_snapshot','Mobility reading fixture')")
+        pub.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES('mobility_snapshot','v1','v1','2026-01-01','2026-01-02')")
+        pub.execute("INSERT INTO mobility_reading_story(story_key,groupe,salience_reason,ordinal) VALUES('fixture_story','fixture_group','fixture_reason',1)")
+        pub.execute("""INSERT INTO mobility_reading_descriptor(singleton,descriptor_version,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,unit,direction,allowed_levels,missing_status,classification_values,field_keys,story_count,clock_count)
+          VALUES(true,'1','mobility_snapshot','v1','Mobility reading fixture','Fixture','v1','2026-01-01','2026-01-02','count','high',ARRAY['commune','epci','departement','region'],'unavailable',ARRAY['saillant'],ARRAY['groupe','story_key','salience_reason','classification_saillance','div_loss_t','div_loss_b','status'],1,1)""")
+        pub.execute("INSERT INTO mobility_reading_clock(ordinal,clock_name,frequency,reference,trigger) VALUES(1,'Fixture clock','annual','Fixture reference','Fixture trigger')")
+        pub.execute("""INSERT INTO mobility_typed_reading(territory_id,territory_type,groupe,story_key,salience_reason,classification_saillance,div_loss_t,div_loss_b,status,source_id,vintage_id)
+          VALUES('35238','commune','fixture_group','fixture_story','fixture_reason','saillant',1,.5,'measured','mobility_snapshot','v1'),
+            ('35001','commune','fixture_group','fixture_story','fixture_reason','saillant',1,.5,'measured','mobility_snapshot','v1'),
+            ('35002','commune','fixture_group','fixture_story','fixture_reason','saillant',1,.5,'measured','mobility_snapshot','v1'),
+            ('22001','commune','fixture_group','fixture_story','fixture_reason','saillant',1,.5,'measured','mobility_snapshot','v1'),
+            ('243500139','epci','fixture_group','fixture_story','fixture_reason','saillant',1,.5,'measured','mobility_snapshot','v1'),
+            ('53','region','fixture_group','fixture_story','fixture_reason','saillant',1,.5,'measured','mobility_snapshot','v1')""")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('mobility_typed_reading','fixture-reading-v1',6,'fixture-ref-v1')")
         with pub.transaction():
             pub.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES('fixture_scalar','mobilite','Fixture scalar','%','high','fixture_scalar',ARRAY['commune','region'],'fixture denominator','dense_complete','1')")
             pub.execute("INSERT INTO scalar_descriptor_source VALUES('fixture_scalar','fixture_scalar_source')")
@@ -104,7 +126,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             "indicator_pages":{"raccordement_courbe":{"indicator":"raccordement_courbe","unit":"%","direction":"high",
                 "comparison":{"detail":"t0090","details":axes},"label":"Courbe raccordement",
                 "sources":["matrice_temps_mairies"],"trajectory":{"reference":{"indicator":"raccordement_reference",
-                    "territoire":"53","label":"Commune bretonne médiane"}},"levels":["commune","epci","departement","region"]}},
+                    "territoire":"53","label":"Commune bretonne médiane"}},"levels":["commune","region"]}},
             "source_records":{"matrice_temps_mairies":{"dataset":"Matrice temps fixture"}}}
         import tempfile
         with tempfile.TemporaryDirectory() as directory:
@@ -115,7 +137,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             payload_path.write_text(json.dumps({"indicators":fixture,"vintages":canonical["vintages"].to_dict("records")}),encoding="utf-8")
             metadata_path.write_text(json.dumps(metadata,ensure_ascii=False),encoding="utf-8")
             script=Path(directory)/"publish.R"
-            script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; payload<-jsonlite::read_json(args[[2]],simplifyVector=TRUE); metadata<-jsonlite::read_json(args[[3]],simplifyVector=FALSE); schema<-args[[4]];\nsource(file.path(root,"pipeline/R/artefact_raccordement.R")); source(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\ncanonical<-list(mobilite=list(indicateurs=as.data.frame(payload$indicators)),vintages=as.data.frame(payload$vintages));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata); adapter<-owned_series_postgres_adapter(con);
+            script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; payload<-jsonlite::read_json(args[[2]],simplifyVector=TRUE); metadata<-jsonlite::read_json(args[[3]],simplifyVector=FALSE); schema<-args[[4]];\nsource(file.path(root,"pipeline/R/artefact_raccordement.R")); source(file.path(root,"pipeline/R/artefact_raccordement_national.R")); source(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\ncanonical<-list(mobilite=list(indicateurs=as.data.frame(payload$indicators)),vintages=as.data.frame(payload$vintages));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata,RECETTE_MATRICE_TEMPS_MAIRIES); adapter<-owned_series_postgres_adapter(con);
  bad_identity<-metadata; bad_identity$indicator_pages$raccordement_courbe$indicator<-NULL;
  stopifnot(inherits(try(project_raccordement_owned_series(canonical$mobilite$indicateurs,canonical$vintages,bad_identity,RECETTE_MATRICE_TEMPS_MAIRIES),silent=TRUE),"try-error"));
  bad_period<-canonical; bad_period$mobilite$indicateurs$observation_period[[1]]<-"2026-08-25";
@@ -222,10 +244,16 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         assert len(regional_body["owned_series"][0]["points"])==11
         regional_default_body=regional_default_theme.json()
         assert len(regional_default_body["owned_series"])==1
-        assert not any(result["indicator_id"]=="raccordement_courbe"
-            for result in regional_default_body["default_comparison"]["results"])
-        assert not any(result["indicator_id"]=="raccordement_courbe"
-            for result in regional_body["comparison"]["results"])
+        regional_default_curve=next(result for result in regional_default_body["default_comparison"]["results"]
+            if result["indicator_id"]=="raccordement_courbe")
+        assert regional_default_curve["status"]=="unavailable"
+        assert regional_default_curve["selected_member_count"]==0
+        assert regional_default_curve["median"] is None
+        regional_curve_comparison=next(result for result in regional_body["comparison"]["results"]
+            if result["indicator_id"]=="raccordement_courbe")
+        assert regional_curve_comparison["status"]=="unavailable"
+        assert regional_curve_comparison["selected_member_count"]==0
+        assert regional_curve_comparison["median"] is None
         theme_body=theme.json()
         curve_facts=[row for row in theme_body["indicators"] if row["indicator_id"]=="raccordement_courbe"]
         curve_metadata=next(row for row in theme_body["indicator_metadata"] if row["indicator_id"]=="raccordement_courbe")
@@ -300,7 +328,9 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         # Independent canonical-data audit plus a second publication using the
         # real Parquet, vintage and producer metadata artifacts.
         canonical_dir=Path(os.environ.get("LUSK_TEST_CANONICAL_DATA_DIR",r"E:\Lusk\public\data"))
-        metadata_file=root/"pipeline/inst/extdata/theme-metadata/theme_mobilite.json"
+        # The incumbent Parquets must be audited/published only with their own
+        # pinned historical metadata bundle, never the current 73-axis owner.
+        metadata_file=canonical_dir/"theme_mobilite.json"
         canonical_files={name:canonical_dir/f"{name}.parquet" for name in
             ("indicateurs_mobilite","territoires","vintages")}
         assert all(path.is_file() for path in canonical_files.values()),f"Missing canonical artifacts under {canonical_dir}"
@@ -308,7 +338,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         metadata=json.loads(metadata_file.read_text(encoding="utf-8"))
         route=metadata["owned_series_routes"]["raccordement_courbe"]
         canonical_dataset_id=route["dataset_id"]
-        expected_observation_period=subprocess.check_output(["Rscript","-e", 'source("R/artefact_raccordement.R"); cat(RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure)' ], cwd=root/"pipeline", text=True).strip()
+        assert metadata_file.is_file(), f"Missing historical metadata bundle under {canonical_dir}"
         page=metadata["indicator_pages"]["raccordement_courbe"]
         axes=[f"t{int(value):04d}" for value in route["axis_values"]]
         canonical_indicators=pd.read_parquet(canonical_files["indicateurs_mobilite"])
@@ -316,6 +346,10 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         canonical_vintages=pd.read_parquet(canonical_files["vintages"])
         raw_curve=canonical_indicators[canonical_indicators.key==page["indicator"]].copy()
         raw_reference=canonical_indicators[canonical_indicators.key==route["reference_indicator"]].copy()
+        historical_periods=set(raw_curve.observation_period.dropna().astype(str))
+        assert len(historical_periods)==1 and set(raw_reference.observation_period.dropna().astype(str))==historical_periods
+        expected_observation_period=next(iter(historical_periods))
+        assert expected_observation_period=="2026-09-16"
         expected_curve=raw_curve[raw_curve.type.isin(page["levels"])].copy()
         excluded_curve=raw_curve[~raw_curve.type.isin(page["levels"])].copy()
         expected_curve["observation_period"]=expected_observation_period
@@ -350,7 +384,7 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
                     (len(territory_records),))
         with tempfile.TemporaryDirectory() as directory:
             canonical_script=Path(directory)/"publish_canonical.R"
-            canonical_script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; data_dir<-args[[2]]; metadata_path<-args[[3]]; schema<-args[[4]];\nsource(file.path(root,"pipeline/R/artefact_raccordement.R")); source(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\nmetadata<-jsonlite::read_json(metadata_path,simplifyVector=FALSE); source(file.path(root,"pipeline/R/artefact_raccordement.R")); indicators<-nanoparquet::read_parquet(file.path(data_dir,"indicateurs_mobilite.parquet")); if(!"observation_period" %in% names(indicators)) indicators$observation_period[!is.na(indicators$key) & indicators$key %in% c("raccordement_courbe","raccordement_reference")]<-RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure; canonical<-list(mobilite=list(indicateurs=indicators),vintages=nanoparquet::read_parquet(file.path(data_dir,"vintages.parquet")));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata); result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,owned_series_postgres_adapter(con)); stopifnot(result$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
+            canonical_script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; data_dir<-args[[2]]; metadata_path<-args[[3]]; schema<-args[[4]];\nsource(file.path(root,"pipeline/R/artefact_raccordement.R")); source(file.path(root,"pipeline/R/artefact_raccordement_national.R")); source(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\nmetadata<-jsonlite::read_json(metadata_path,simplifyVector=FALSE); indicators<-nanoparquet::read_parquet(file.path(data_dir,"indicateurs_mobilite.parquet")); if(!"observation_period" %in% names(indicators)) indicators$observation_period[!is.na(indicators$key) & indicators$key %in% c("raccordement_courbe","raccordement_reference")]<-RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure; canonical<-list(mobilite=list(indicateurs=indicators),vintages=nanoparquet::read_parquet(file.path(data_dir,"vintages.parquet")));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata,RECETTE_MATRICE_TEMPS_MAIRIES); result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,owned_series_postgres_adapter(con)); stopifnot(result$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
             env=os.environ.copy(); env["PGPASSFILE"]=str(Path(os.environ["APPDATA"])/"PostgreSQL/pgpass.conf")
             env["R_LIBS_USER"]=str(Path(os.environ["LOCALAPPDATA"])/"R/cache/R/renv/library/pipeline-d149995d/windows/R-4.4/x86_64-w64-mingw32")
             completed=subprocess.run(["Rscript",str(canonical_script),str(root),str(canonical_dir),str(metadata_file),schema],
@@ -476,9 +510,40 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
             upgrade.execute("INSERT INTO series_observation_provenance VALUES('artif_par_habitant','artif_par_habitant','35238','M2','rev'),('artif_par_habitant','artif_par_habitant','35238','M3','rev')")
         migration=(root/"api/migrations/015_owned_series_duration_reference.sql").read_text(encoding="utf-8")
         upgrade.execute(migration)
+        mean_migration=(root/"api/migrations/029_raccordement_mean_curve.sql").read_text(encoding="utf-8")
+        upgrade.execute(mean_migration)
         assert upgrade.execute("SELECT value FROM series_dataset_observation WHERE dataset_id='conso_enaf_annuel'").fetchone()==(12.5,)
         assert upgrade.execute("SELECT active_read_route FROM series_dataset_descriptor WHERE dataset_id='conso_enaf_annuel'").fetchone()==(False,)
         assert upgrade.execute("SELECT array_agg(state_role ORDER BY state_role) FROM series_dataset_observation WHERE dataset_id='artif_par_habitant'").fetchone()==(["M2","M3"],)
+        national_axes=[f"t{minute:04d}" for minute in range(0,361,5)]
+        national_minutes=list(range(0,361,5))
+        with upgrade.transaction():
+            # Owned facts may only change inside their marker's publication
+            # transaction, exactly as the real R publisher writes them.
+            upgrade.execute("INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count) VALUES('raccordement_mean_v1','national-test','upgrade-ref',73)")
+            upgrade.execute("""INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,axis_numeric_values,
+                completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,theme_id,
+                comparison_statistic,comparison_scope,observation_period_kind)
+                VALUES('raccordement_mean_v1','raccordement_courbe','duration_minute',%s,%s,'dense_complete','t0090',
+                'Raccordement national','%%','high',ARRAY['commune','epci','departement','region'],'candidate-v1',true,'mobilite','mean','selected_group','snapshot_date')""",
+                (national_axes,national_minutes))
+            upgrade.cursor().executemany("INSERT INTO series_dataset_observation(dataset_id,indicator_id,territory_id,territory_type,axis_value,observation_period,value,status) VALUES('raccordement_mean_v1','raccordement_courbe','35238','commune',%s,'2026-10-21',0,'measured')",
+                [(axis,) for axis in national_axes])
+            upgrade.cursor().executemany("INSERT INTO series_observation_provenance(dataset_id,indicator_id,territory_id,axis_value,provenance_revision_id) VALUES('raccordement_mean_v1','raccordement_courbe','35238',%s,'rev')",
+                [(axis,) for axis in national_axes])
+        assert upgrade.execute("SELECT comparison_statistic,comparison_scope,cardinality(axis_values) FROM series_dataset_descriptor WHERE dataset_id='raccordement_mean_v1'").fetchone()==("mean","selected_group",73)
+        with pytest.raises(psycopg.errors.RaiseException, match="complete 0..360 minute grid"):
+            with upgrade.transaction():
+                upgrade.execute("INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count) VALUES('raccordement_bad_grid','bad','upgrade-ref',73)")
+                bad_minutes=national_minutes.copy(); bad_minutes[2]=11
+                bad_axes=national_axes.copy(); bad_axes[2]="t0011"
+                upgrade.execute("""INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,axis_numeric_values,
+                    completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,theme_id,
+                 comparison_statistic,comparison_scope,observation_period_kind)
+                    VALUES('raccordement_bad_grid','raccordement_courbe','duration_minute',%s,%s,'dense_complete','t0090',
+                    'Bad grid','%%','high',ARRAY['commune'],'bad-v1',false,'mobilite','mean','selected_group','snapshot_date')""",
+                    (bad_axes,bad_minutes))
+        assert upgrade.execute("SELECT count(*) FROM series_dataset_publication WHERE dataset_id='raccordement_bad_grid'").fetchone()==(0,)
         upgrade.close()
     finally:
         app.dependency_overrides.pop(get_repository,None); pool.cache_clear(); pub.close()
