@@ -60,7 +60,7 @@ describe('figureGrammaire — le socle géométrique du Cahier', () => {
   })
 
   it('garde les axes et les graduations sur la même mesure', () => {
-    expect(CAHIER_FIGURE_AXIS).toEqual({ width: 1, tickLength: 7, xLabelOffset: 22, yLabelOffset: 12, yLabelBaseline: 4 })
+    expect(CAHIER_FIGURE_AXIS).toEqual({ width: 1, tickLength: 7, xLabelOffset: 22, yLabelOffset: 0, yLabelBaseline: 4 })
   })
 })
 

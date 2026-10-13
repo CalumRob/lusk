@@ -164,6 +164,7 @@ const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string | nu
   'aedar-car-overview': null,
   'aedar-diversity-loss': null,
   'aedar-equipment-profile': null,
+  'aedar-equipment-explorer': null,
   'offre-cyclable': 'offre_cyclable',
   stationnement: 'places_stationnement_velo_1000',
   motorisation: 'voitures_menage',

@@ -4,7 +4,7 @@
  * only lays this section out through the shared Cahier primitives.
  */
 import type { AedarFetchResult } from './aedarApiClient'
-import { aedarTimeRampEvidence } from './aedarTimeRampFacts'
+import { aedarTimeRampEvidence, AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from './aedarTimeRampFacts'
 import { AEDAR_EQUIPMENT_BUCKET_THRESHOLD, classifyAedarEquipmentTypes } from './aedarEquipmentBuckets'
 import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 import { aedarDiversityLossSection } from './aedarDiversityLossMaps'
@@ -12,10 +12,11 @@ import type { AedarDiversityLossMapMetadata } from './aedarDiversityLossMaps'
 import type { AedarTimeRampValues } from './aedarTimeRampFacts'
 import type { TerritoryIdentity } from './territoryFacts'
 import { emphasis, text, territoryLead, territoryTypeLabel } from './themeContent'
-import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
+import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarEquipmentExplorerSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
 
 /** Blank map slots and the highlighted ramp horizon share the provisional AEDAR15 horizon. */
 export const AEDAR_PROTOTYPE_HORIZON_MINUTES = 15
+export const AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU = 'B207'
 
 type AedarReady = Extract<AedarFetchResult, { status: 'ready' }>
 
@@ -301,8 +302,40 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
   }
 }
 
-type AedarPrototypeSectionsWithoutLoss = [AedarCarAccessOverviewSection, AedarAccessSection, AedarEquipmentProfileSection]
-type AedarPrototypeSectionsWithLoss = [AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarAccessSection, AedarEquipmentProfileSection]
+export function aedarEquipmentExplorerSection(data: AedarReady): AedarEquipmentExplorerSection {
+  return {
+    key: 'aedar-equipment-explorer',
+    label: 'Explorer un type d’équipement',
+    availability: 'complete',
+    indicators: [],
+    evidence: {
+      kind: 'aedar-equipment-explorer',
+      facts: data.facts,
+      initialTypequ: AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU,
+      initialHorizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
+      introduction: [[
+        text('Pour ce type BPE, le volume indique le nombre d’établissements accessibles par adresse résidentielle.'),
+      ], [
+        text('Chaque barre indique un seuil du nombre d’établissements : minimum, déciles publiés et maximum. Les déciles sont des valeurs de coupure, pas des effectifs d’adresses.'),
+      ]],
+      volumeFigureTitle: 'Établissements accessibles (moyenne par adresse)',
+      volumeYAxisTitle: 'Volume de l’offre',
+      distributionFigureTitle: 'Distribution des établissements accessibles par décile',
+      distributionStatistics: AEDAR_EQUIPMENT_QUANTILE_STATISTICS,
+      distributionAxisTitle: 'Décile',
+      distributionYAxisTitle: 'Nombre d’établissements',
+      distributionDescription: 'Les barres montrent les seuils publiés (minimum, déciles et maximum), pas le nombre d’adresses.',
+      distributionUnavailableDescription: 'Distribution indisponible pour ce type d’équipement et cet horizon.',
+      source: aedarEvidenceSource(data),
+    },
+    provenance: data.provenance.sources.map((source) => source.source_id),
+    lecture: null,
+    explorationTargets: [],
+  }
+}
+
+type AedarPrototypeSectionsWithoutLoss = [AedarCarAccessOverviewSection, AedarAccessSection, AedarEquipmentProfileSection, AedarEquipmentExplorerSection]
+type AedarPrototypeSectionsWithLoss = [AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarAccessSection, AedarEquipmentProfileSection, AedarEquipmentExplorerSection]
 
 export function aedarPrototypeSections(
   data: AedarReady,
@@ -322,8 +355,9 @@ export function aedarPrototypeSections(
   const carOverview = aedarCarAccessOverviewSection(data, territory, options)
   const access = aedarAccessSection(data, territory, options)
   const equipmentProfile = aedarEquipmentProfileSection(data)
+  const equipmentExplorer = aedarEquipmentExplorerSection(data)
   if (options.lossMapMetadata) {
-    return [carOverview, aedarDiversityLossSection(options.lossMapMetadata, territory), access, equipmentProfile]
+    return [carOverview, aedarDiversityLossSection(options.lossMapMetadata, territory), access, equipmentProfile, equipmentExplorer]
   }
-  return [carOverview, access, equipmentProfile]
+  return [carOverview, access, equipmentProfile, equipmentExplorer]
 }

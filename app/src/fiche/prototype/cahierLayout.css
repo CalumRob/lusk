@@ -19,6 +19,14 @@
   line-height: var(--cahier-prose-line-height, var(--cahier-grid-jump));
 }
 
+.argument-copy {
+  width: 100%;
+  margin: var(--cahier-grid-jump) 0 0;
+  color: var(--cahier-default);
+  font-size: 15px;
+  text-align: justify;
+}
+
 .cahier-prose p {
   margin-bottom: var(--cahier-prose-paragraph-gap, var(--cahier-grid-jump));
 }

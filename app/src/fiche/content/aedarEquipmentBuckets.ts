@@ -2,6 +2,7 @@ import type { AedarFact } from './aedarApiClient'
 
 export const AEDAR_EQUIPMENT_BUCKET_THRESHOLD = 0.25
 export const AEDAR_EQUIPMENT_BUCKET_HORIZONS = [5, 10, 15, 20] as const
+export type AedarEquipmentHorizon = typeof AEDAR_EQUIPMENT_BUCKET_HORIZONS[number]
 export const AEDAR_EQUIPMENT_BUCKET_ORDER = ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car', 'inaccessible'] as const
 
 /** Canonical AEDAR mode semantics shared by classification and its figure. */
@@ -28,7 +29,7 @@ export interface AedarEquipmentBucket {
 }
 export interface AedarEquipmentBuckets {
   status: 'complete' | 'incomplete'
-  horizonMinutes: typeof AEDAR_EQUIPMENT_BUCKET_HORIZONS[number]
+  horizonMinutes: AedarEquipmentHorizon
   threshold: number
   buckets: readonly AedarEquipmentBucket[]
 }
@@ -41,7 +42,7 @@ const labels: Readonly<Record<AedarEquipmentBucketKey, string>> = {
 /** Assign each source TYPEQU once, using first-match order and source-owned identity/labels. */
 export function classifyAedarEquipmentTypes(
   facts: readonly AedarFact[],
-  options: { horizonMinutes: typeof AEDAR_EQUIPMENT_BUCKET_HORIZONS[number]; threshold?: number },
+  options: { horizonMinutes: AedarEquipmentHorizon; threshold?: number },
 ): AedarEquipmentBuckets {
   const threshold = options.threshold ?? AEDAR_EQUIPMENT_BUCKET_THRESHOLD
   if (!AEDAR_EQUIPMENT_BUCKET_HORIZONS.includes(options.horizonMinutes) || !Number.isFinite(threshold) || threshold < 0 || threshold > 1) {

@@ -1,14 +1,16 @@
 <script setup lang="ts">
 import { computed, nextTick, onBeforeUnmount, onMounted, ref, watch } from 'vue'
-import { Bike, BusFront, CarFront, ChevronDown, Clock3, Footprints } from 'lucide-vue-next'
+import { Bike, BusFront, CarFront, ChevronDown, Footprints } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS, AEDAR_EQUIPMENT_MODES, aedarEquipmentShareMeasureKey, classifyAedarEquipmentTypes } from '@/fiche/content/aedarEquipmentBuckets'
+import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierDialog from './CahierDialog.vue'
+import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
 
 const props = defineProps<{
   evidence: AedarEquipmentProfileEvidence
@@ -16,11 +18,16 @@ const props = defineProps<{
    * Dialog accessible name. Pass the host section's label so the modal title
    * and the section heading share one source and cannot drift apart.
    * @defaults to evidence.figureTitle
-   */
+  */
   title?: string
+  selectedHorizon?: AedarEquipmentHorizon | null
+}>()
+const emit = defineEmits<{
+  'update:selectedHorizon': [horizon: AedarEquipmentHorizon]
 }>()
 
-const horizonMinutes = ref(props.evidence.initialHorizonMinutes)
+const localHorizonMinutes = ref<AedarEquipmentHorizon>(props.evidence.initialHorizonMinutes)
+const horizonMinutes = computed(() => props.selectedHorizon ?? localHorizonMinutes.value)
 const selectedMode = ref<AedarEquipmentBucketKey | 'all'>('all')
 const focusedTypequ = ref<string | null>(null)
 const followFocusedMode = ref(false)
@@ -105,6 +112,11 @@ function shareFor(typequ: string, mode: AedarEquipmentModeKey): string {
   return typeof value === 'number' && Number.isFinite(value) ? percent.format(value) : '—'
 }
 
+function setHorizonMinutes(horizon: AedarEquipmentHorizon): void {
+  localHorizonMinutes.value = horizon
+  emit('update:selectedHorizon', horizon)
+}
+
 function openBucket(key: string) {
   if (!AEDAR_EQUIPMENT_BUCKET_HORIZONS.includes(horizonMinutes.value)) return
   selectedMode.value = key as AedarEquipmentBucketKey
@@ -152,23 +164,12 @@ watch(horizonMinutes, (horizon) => {
     <figcaption class="cahier-figure-title cahier-baseline-anchor">{{ evidence.figureTitle }}</figcaption>
 
     <div class="aedar-waffle-controls">
-      <div class="aedar-waffle-horizon" role="group" aria-label="Temps de trajet">
-        <span class="aedar-waffle-horizon-label type-figure-label">
-          <Clock3 class="aedar-waffle-clock" :size="16" stroke-width="2" aria-hidden="true" />
-          Temps de trajet
-        </span>
-        <div class="aedar-waffle-horizon-options">
-          <button
-            v-for="horizon in AEDAR_EQUIPMENT_BUCKET_HORIZONS"
-            :key="horizon"
-            class="aedar-waffle-horizon-link"
-            type="button"
-            :value="horizon"
-            :aria-pressed="horizonMinutes === horizon"
-            @click="horizonMinutes = horizon"
-          >{{ horizon }} min</button>
-        </div>
-      </div>
+      <AedarTravelTimeSelector
+        class="aedar-waffle-horizon"
+        :model-value="horizonMinutes"
+        label="Temps de trajet"
+        @update:model-value="setHorizonMinutes"
+      />
     </div>
 
     <p v-if="profile?.status !== 'complete'" class="aedar-waffle-state" role="status">{{ summary }}</p>
@@ -208,12 +209,12 @@ watch(horizonMinutes, (horizon) => {
       @close="closeDialog"
     >
         <template #toolbar>
-          <div class="aedar-waffle-dialog-horizon aedar-waffle-field" role="group" aria-label="Temps de trajet dans l’exploration">
-            <span class="aedar-waffle-field-label type-figure-label">Temps de trajet</span>
-            <div class="aedar-waffle-field-control">
-              <button v-for="horizon in AEDAR_EQUIPMENT_BUCKET_HORIZONS" :key="horizon" type="button" :aria-pressed="horizonMinutes === horizon" @click="horizonMinutes = horizon">{{ horizon }} min</button>
-            </div>
-          </div>
+          <AedarTravelTimeSelector
+            class="aedar-waffle-dialog-horizon"
+            :model-value="horizonMinutes"
+            label="Temps de trajet dans l’exploration"
+            @update:model-value="setHorizonMinutes"
+          />
           <label class="aedar-waffle-search aedar-waffle-field">
             <span class="aedar-waffle-field-label type-figure-label">Rechercher un équipement</span>
             <input v-model="search" type="search" aria-label="Nom ou code BPE" placeholder="Nom ou code BPE" autofocus />
@@ -279,17 +280,9 @@ watch(horizonMinutes, (horizon) => {
 }
 .aedar-waffle > .cahier-figure-title { width: 100%; margin: 0; text-align: center; }
 .aedar-waffle-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3) var(--space-5); width: 100%; }
-.aedar-waffle-horizon { display: grid; justify-items: center; gap: var(--space-2); }
-.aedar-waffle-horizon-label { display: inline-flex; align-items: center; gap: var(--space-2); color: var(--cahier-default); font: var(--type-figure-label); letter-spacing: var(--type-figure-label-tracking); }
-.aedar-waffle-clock { flex: 0 0 auto; }
-.aedar-waffle-horizon-options { display: inline-flex; flex-wrap: wrap; justify-content: center; gap: var(--space-3) var(--space-5); padding: 0; border: 0; background: transparent; }
-.aedar-waffle-horizon-options button { min-height: 36px; padding: var(--space-2) var(--space-3); border: 0; border-radius: var(--radius-sm); background: transparent; color: var(--text-secondary); font: var(--type-figure-label); cursor: pointer; }
 .aedar-waffle-explore { min-height: 36px; padding: var(--space-2) 0; border: 0; border-radius: 0; background: transparent; color: var(--red, var(--cahier-theme-strong)); font: var(--type-figure-label); font-weight: 700; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.22em; cursor: pointer; }
 .aedar-waffle-explore:hover { text-decoration-thickness: 2px; }
-.aedar-waffle-horizon-options .aedar-waffle-horizon-link { padding-inline: 0; border-radius: 0; background: transparent; color: var(--text-secondary); text-decoration: underline; text-underline-offset: 0.2em; box-shadow: none; }
-.aedar-waffle-horizon-options .aedar-waffle-horizon-link[aria-pressed='true'] { color: var(--text-primary); font-weight: 700; text-decoration-color: currentColor; background: transparent; box-shadow: none; }
-.aedar-waffle-horizon-options .aedar-waffle-horizon-link:hover { text-decoration-color: currentColor; }
-.aedar-waffle-horizon-options button:focus-visible, .aedar-waffle-dialog button:focus-visible, .aedar-waffle-dialog input:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+.aedar-waffle-dialog button:focus-visible, .aedar-waffle-dialog input:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 .aedar-waffle-grid { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; width: min(100%, 1000px); margin-inline: auto; }
 .aedar-waffle-tile { display: block; aspect-ratio: 1; min-width: 0; padding: 0; border: 0; border-radius: 2px; background: var(--aedar-bucket-color); cursor: pointer; }
 .aedar-waffle-tile:hover { filter: brightness(0.88); }
@@ -307,7 +300,6 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle-field-control button { cursor: pointer; }
 .aedar-waffle-field input { min-width: 0; flex: 1 1 auto; font: var(--text-body-sm); letter-spacing: normal; }
 .aedar-waffle-search { flex: 1 1 260px; min-width: 0; }
-.aedar-waffle-dialog-horizon { flex: 0 0 auto; }
 .aedar-waffle-field-control button[aria-pressed='true'] { border-color: var(--brand-500); color: var(--brand-600); background: color-mix(in oklab, var(--brand-200) 24%, transparent); }
 .aedar-waffle-field-control button:focus-visible, .aedar-waffle-field input:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 .aedar-waffle-mode-filter { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-2); }

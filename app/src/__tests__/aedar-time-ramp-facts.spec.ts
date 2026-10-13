@@ -1,12 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { aedarTimeRampEvidence, AEDAR_RAMP_MODES, AEDAR_RAMP_MODE_LABELS } from '@/fiche/content/aedarTimeRampFacts'
+import type { AedarApiResponse } from '@/fiche/content/aedarApiClient'
+import { aedarTimeRampEvidence, AEDAR_EQUIPMENT_QUANTILE_STATISTICS, AEDAR_RAMP_MODES, AEDAR_RAMP_MODE_LABELS, readAedarCountMeasure, toggleAedarRampModeSelection } from '@/fiche/content/aedarTimeRampFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 
 const horizons = [5, 10, 15, 20]
 const modes = ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car']
 const stats = ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, index) => `decile${index + 1}`), 'mean']
 
-function response() {
+function response(): AedarApiResponse {
   const measures: Record<string, number | null> = {}
   for (const horizon of horizons) for (const mode of modes) for (const stat of stats) {
     measures[`count_${horizon}_${mode}_${stat}`] = 0
@@ -26,6 +27,22 @@ function response() {
 const options = { territory: { type: 'commune', id: '22001' } }
 
 describe('aedarTimeRampEvidence', () => {
+  it('toggles mode membership while keeping canonical legend order', () => {
+    expect(toggleAedarRampModeSelection(['car', 'bike_lts2'], 'bike_lts2')).toEqual(['car'])
+    expect(toggleAedarRampModeSelection(['walk', 'car'], 'bike_lts4')).toEqual(['car', 'bike_lts4', 'walk'])
+  })
+
+  it('reads only finite non-negative AEDAR count measures', () => {
+    const fact = response().facts[0]!
+    expect(readAedarCountMeasure(fact, 15, 'car', 'mean')).toBe(0)
+    fact.measures.count_15_car_mean = null
+    expect(readAedarCountMeasure(fact, 15, 'car', 'mean')).toBeNull()
+    fact.measures.count_15_car_mean = -1
+    expect(readAedarCountMeasure(fact, 15, 'car', 'mean')).toBeNull()
+    fact.measures.count_15_car_mean = Number.POSITIVE_INFINITY
+    expect(readAedarCountMeasure(fact, 15, 'car', 'mean')).toBeNull()
+  })
+
   it('exposes the five normal ramp modes with their labels, transit_gain excluded', () => {
     expect(AEDAR_RAMP_MODES).toEqual(['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk'])
     expect(AEDAR_RAMP_MODE_LABELS.car).toBe('Voiture')
@@ -67,12 +84,14 @@ describe('aedarTimeRampEvidence', () => {
     expect(result[1]?.availability).toBe('incomplete')
   })
 
-  it.each(['identity', 'source', 'coverage', 'missing measure', 'pagination'])('rejects invalid %s', (kind) => {
+  it.each(['identity', 'source', 'coverage', 'missing measure', 'missing quantile', 'unexpected measure', 'pagination'])('rejects invalid %s', (kind) => {
     const data = response()
     if (kind === 'identity') data.facts[0]!.territory_id = '99999'
     if (kind === 'source') data.facts[1]!.vintage_id = 'other'
     if (kind === 'coverage') data.facts[0]!.coverage_status = 'partial'
     if (kind === 'missing measure') delete data.facts[0]!.measures['count_5_car_share']
+    if (kind === 'missing quantile') delete data.facts[0]!.measures['count_15_car_decile9']
+    if (kind === 'unexpected measure') data.facts[0]!.measures['count_15_car_decile10'] = 10
     if (kind === 'pagination') data.facts.length = 236
     expect(() => aedarTimeRampEvidence(data, options)).toThrow()
   })
@@ -84,6 +103,12 @@ describe('aedarTimeRampEvidence', () => {
     data.facts[0]!.measures['count_5_car_share'] = 0.3
     data.facts[1]!.measures['count_5_car_share'] = 0.4
     expect(() => aedarTimeRampEvidence(data, options)).not.toThrow()
+  })
+
+  it('declares the published quantile contract in minimum-to-maximum order', () => {
+    expect(AEDAR_EQUIPMENT_QUANTILE_STATISTICS.map(({ key }) => key)).toEqual([
+      'min', 'decile1', 'decile2', 'decile3', 'decile4', 'decile5', 'decile6', 'decile7', 'decile8', 'decile9', 'max',
+    ])
   })
 
   it.each(['partial universe', 'unknown type', 'different address population', 'no addresses', 'impossible observed count'])('keeps both address means unavailable for %s', (kind) => {

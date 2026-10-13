@@ -122,9 +122,10 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.findAll('.aedar-waffle-tile').every((tile) => tile.element.tagName === 'BUTTON')).toBe(true)
     expect(wrapper.find('.cahier-figure-legend').exists()).toBe(true)
     expect(wrapper.find('.cahier-figure-legend').classes()).toContain('aedar-waffle-legend--centered')
-    expect(wrapper.find('.aedar-waffle-horizon-label').text()).toBe('Temps de trajet')
+    expect(wrapper.find('.cahier-travel-time-label').text()).toBe('Temps de trajet')
+    expect(wrapper.find('.cahier-travel-time-label svg').exists()).toBe(true)
     expect(wrapper.find('.aedar-waffle-threshold').exists()).toBe(false)
-    expect(wrapper.find('.aedar-waffle-horizon-link').exists()).toBe(true)
+    expect(wrapper.find('.aedar-travel-time-selector button').exists()).toBe(true)
   })
 
   it('opens full exploration from the nearby control, then filters all-mode results by search', async () => {
@@ -173,7 +174,7 @@ describe('AedarEquipmentWaffleCahier', () => {
 
     const horizons = wrapper.findAll('.aedar-waffle-horizon button')
     expect(horizons.map((button) => button.attributes('value'))).toEqual(['5', '10', '15', '20'])
-    expect(wrapper.find('.aedar-waffle-clock[aria-hidden="true"]').exists()).toBe(true)
+    expect(wrapper.find('.cahier-travel-time-label svg[aria-hidden="true"]').exists()).toBe(true)
     const carCount = Number(wrapper.findAll('.cahier-figure-legend-action')
       .find((button) => button.text().includes('Voiture'))!
       .find('.cahier-figure-legend-count').text())

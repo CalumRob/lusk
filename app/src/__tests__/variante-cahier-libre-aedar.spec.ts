@@ -93,6 +93,26 @@ function aedarFacts(count: number, options: { territoryId?: string; territoryTyp
   }))
 }
 
+function aedarExplorerReady() {
+  const facts = aedarFacts(10, { canonicalUniverse: true })
+  for (const fact of facts) {
+    const count = fact.typequ === 'B207' ? 3 : fact.typequ === 'A129' ? 7 : null
+    if (count === null) continue
+    for (const horizon of [5, 10, 15, 20]) {
+      for (const [modeIndex, mode] of ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'].entries()) {
+        const minimum = (fact.typequ === 'B207' ? 4 : 8) + modeIndex + (horizon - 15) / 5
+        fact.measures[`count_${horizon}_${mode}_mean`] = count
+        fact.measures[`count_${horizon}_${mode}_min`] = minimum
+        fact.measures[`count_${horizon}_${mode}_max`] = minimum + 10
+        for (let decile = 1; decile <= 9; decile += 1) {
+          fact.measures[`count_${horizon}_${mode}_decile${decile}`] = minimum + decile
+        }
+      }
+    }
+  }
+  return { ...aedarReady, facts }
+}
+
 function aedarProvenance(contentVersion: string) {
   return {
     contentVersion,
@@ -212,8 +232,8 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     const moreInfo = wrapper.get('[data-section="aedar-access"] .cahier-section-footer .passarelle-exploration')
     expect(moreInfo.text()).toBe('En savoir plus')
     expect(moreInfo.attributes('disabled')).toBeDefined()
-    const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')
-    expect(firstRampLegend.map((item) => item.text())).toEqual([
+    const sharedRampLegend = wrapper.get('[data-section="aedar-access"] .aedar-access-mode-selector').findAll('.cahier-figure-legend-item')
+    expect(sharedRampLegend.map((item) => item.text())).toEqual([
       'Voiture',
       'Vélo (LTS2)',
       'Vélo (LTS4)',
@@ -276,8 +296,8 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(wrapper.findAll('.aedar-ramp .access-ramp-line--comparison.access-ramp-line--bike')).toHaveLength(0)
 
     // The legend names the five modes plus the explicitly labeled reference territory.
-    const firstRampLegend = wrapper.findAll('.aedar-ramp')[0]!.findAll('.cahier-figure-legend-item')
-    expect(firstRampLegend.map((item) => item.text())).toEqual([
+    const sharedRampLegend = wrapper.get('[data-section="aedar-access"] .aedar-access-mode-selector').findAll('.cahier-figure-legend-item')
+    expect(sharedRampLegend.map((item) => item.text())).toEqual([
       'Voiture',
       'Vélo (LTS2)',
       'Vélo (LTS4)',
@@ -285,7 +305,7 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
       'À pied',
       'EPCI X',
     ])
-    const referenceMark = firstRampLegend[5]!.find('.cahier-figure-legend-mark')
+    const referenceMark = sharedRampLegend[5]!.find('.cahier-figure-legend-mark')
     expect(referenceMark.classes()).toContain('cahier-figure-legend-mark--dash')
 
     // The reference values land in the tooltip note per mode.
@@ -296,11 +316,6 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(note.text()).toBe('Groupe comparé : moyennes des adresses résidentielles de EPCI X')
     expect(wrapper.findAll('[data-section="aedar-access"] .cahier-comparison-note')).toHaveLength(1)
 
-    // Selecting another mode on diversity leaves volume's existing selection intact.
-    const ramps = wrapper.findAll('.aedar-ramp')
-    await ramps[0]!.get('button[aria-pressed="false"]').trigger('click')
-    expect(ramps[0]!.findAll('.access-ramp-line--comparison')).toHaveLength(4)
-    expect(ramps[1]!.findAll('.access-ramp-line--comparison')).toHaveLength(3)
   })
 
   it('does NOT render the aedar-access branch when aedarAccessEnabled is false (default)', async () => {
@@ -378,9 +393,9 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(lossMapModes.map((mode) =>
       `https://images.calumrobertson.fr/maps/aedar/v1/22001-${mode}-inline.json`))
     expect(wrapper.findAll('.figure-stack > [data-section]')
-      .slice(0, 4)
+      .slice(0, 5)
       .map((section) => section.attributes('data-section')))
-      .toEqual(['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile'])
+      .toEqual(['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer'])
 
     const lossSection = wrapper.get('[data-section="aedar-diversity-loss"]')
     expect(lossSection.findAll('.aedar-diversity-loss-map')).toHaveLength(4)
@@ -542,7 +557,7 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     // The AEDAR prototype keeps its own unit and gives the waffle its own section heading/anchor.
     const firstUnit = (cahierProps.content as ThemeContent).units[0]
     expect(firstUnit.sections.map((section) => section.key)).toEqual([
-      'aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile',
+      'aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer',
     ])
     const section = (firstUnit.sections as readonly ContentSection[]).find((candidate) => candidate.key === 'aedar-access') as AedarAccessSection
     const profileSection = (firstUnit.sections as readonly ContentSection[]).find((candidate) => candidate.key === 'aedar-equipment-profile')
@@ -562,21 +577,29 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     expect(wrapper.find('[data-section="aedar-equipment-profile"]').exists()).toBe(true)
     expect(wrapper.find('[data-section="aedar-access"] .aedar-waffle-grid').exists()).toBe(false)
     expect(wrapper.find('[data-section="aedar-equipment-profile"] .aedar-waffle-grid').exists()).toBe(true)
-    const accessSections = wrapper.findAll('[data-section]').slice(0, 4)
+    const accessSections = wrapper.findAll('[data-section]').slice(0, 5)
     expect(accessSections.map((section) => section.attributes('data-section'))).toEqual([
-      'aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile',
+      'aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer',
     ])
-    expect(accessSections.map((section) => section.get('.concept-group-heading > span').text())).toEqual(['01', '02', '03', '04'])
+    expect(accessSections.map((section) => section.get('.concept-group-heading > span').text())).toEqual(['01', '02', '03', '04', '05'])
     expect(accessSections[2]!.findAll('.access-ramp-cahier--time')).toHaveLength(2)
-    const timeRamp = accessSections[2]!.get('.access-ramp-cahier--time')
+    const timeRamps = accessSections[2]!.findAll('.access-ramp-cahier--time')
+    const timeRamp = timeRamps[0]!
     const territoryLines = () => timeRamp.findAll('path.access-ramp-time-line.access-ramp-line--territory')
+    const volumeTerritoryLines = () => timeRamps[1]!.findAll('path.access-ramp-time-line.access-ramp-line--territory')
     expect(territoryLines().map((line) => line.attributes('style'))).toContain(
       'stroke: color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper));',
     )
-    const lts4Toggle = timeRamp.findAll('.cahier-figure-legend-toggle').find((toggle) => toggle.text().includes('LTS4'))
+    const lts4Toggle = accessSections[2]!.get('.aedar-access-mode-selector').findAll('.cahier-figure-legend-toggle').find((toggle) => toggle.text().includes('LTS4'))
+    const explorerLts4Toggle = accessSections[4]!.findAll('.cahier-figure-legend-toggle').find((toggle) => toggle.text().includes('LTS4'))
     expect(lts4Toggle).toBeDefined()
+    expect(explorerLts4Toggle?.attributes('aria-pressed')).toBe('false')
     await lts4Toggle!.trigger('click')
     expect(territoryLines().map((line) => line.attributes('style'))).toContain('stroke: var(--cahier-mode-bike);')
+    expect(volumeTerritoryLines().map((line) => line.attributes('style'))).toContain('stroke: var(--cahier-mode-bike);')
+    expect(explorerLts4Toggle?.attributes('aria-pressed')).toBe('true')
+    await explorerLts4Toggle!.trigger('click')
+    expect(lts4Toggle!.attributes('aria-pressed')).toBe('false')
     expect(accessSections[2]!.find('.blank-map-slot').exists()).toBe(false)
     expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').exists()).toBe(true)
     expect(wrapper.find('[data-section="aedar-equipment-profile"] [data-aedar-profile-explanation]').element.compareDocumentPosition(
@@ -601,6 +624,92 @@ describe('VarianteCahierLibreAedar wrapper', () => {
       expect(section.evidence.mapFigureTitle.map((segment) => segment.value).join('')).toBe('Quelle diversité de l’offre est accessible en 15 minutes depuis les adresses résidentielles ?')
       expect(section.evidence.ramps).toHaveLength(2)
     }
+  })
+
+  it('keeps TYPEQU selection independent while sharing modes and horizons across AEDAR sections', async () => {
+    const content = baseContent()
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    const wrapper = mount(VarianteCahierLibreAedar, {
+      props: {
+        content,
+        pagination: cahierPaginationFor(payload, content),
+        comparisonOptions: [],
+        aedarData: aedarExplorerReady(),
+        aedarStatus: 'ready',
+        retryAedar: () => {},
+      },
+      global: { plugins: [router] },
+    })
+    await router.isReady()
+    await flushPromises()
+
+    const explorer = wrapper.get('[data-section="aedar-equipment-explorer"]')
+    const chartLabels = () => explorer.findAll('svg[role="img"]').map((chart) => chart.attributes('aria-label') ?? '')
+    const selection = explorer.get('.aedar-equipment-explorer-selection')
+    const typeSelection = selection.get('.aedar-equipment-explorer-type-selection')
+    expect(typeSelection.findAll(':scope > *').map((element) => element.text().trim())).toEqual([
+      'Équipement sélectionné',
+      'BOULANGERIE-PÂTISSERIE (B207)',
+      'Choisir un autre équipement',
+    ])
+    expect(selection.element.lastElementChild).toBe(explorer.get('.aedar-equipment-explorer-horizon').element)
+    expect(explorer.get('.aedar-equipment-explorer-selected').attributes('aria-live')).toBe('polite')
+    expect(explorer.get('.aedar-equipment-explorer-selected').text()).toContain('BOULANGERIE-PÂTISSERIE (B207)')
+    expect(explorer.findAll('figcaption').map((caption) => caption.findAll('span').map((span) => span.text()))).toEqual([
+      ['Établissements accessibles (moyenne par adresse)', 'BOULANGERIE-PÂTISSERIE'],
+      ['Distribution des établissements accessibles par décile', 'BOULANGERIE-PÂTISSERIE'],
+    ])
+    expect(chartLabels()).toHaveLength(2)
+    expect(chartLabels().every((label) => label.includes('B207') && label.includes('3'))).toBe(true)
+    expect(explorer.findAll('.cahier-figure-axis-title--x').map((title) => title.text())).toEqual(['Temps de trajet', 'Décile'])
+    expect(explorer.findAll('.cahier-figure-axis-title--y').map((title) => title.text())).toEqual([
+      'Volume de l’offre',
+      'Nombre d’établissements',
+    ])
+    expect(explorer.get('.aedar-equipment-explorer-introduction').classes()).toContain('argument-copy')
+    const introduction = explorer.get('.aedar-equipment-explorer-introduction')
+    const source = explorer.get('.cahier-evidence-source')
+    expect(introduction.element.nextElementSibling).toBe(source.element)
+    const moreInfo = explorer.get('.cahier-section-footer a.passarelle-exploration')
+    expect(moreInfo.text()).toContain('En savoir plus')
+    expect(moreInfo.attributes('href')).toContain('#figure-sources')
+    const distributionHorizon = explorer.get('[role="group"][aria-label="Temps de trajet de la distribution"]')
+    expect(distributionHorizon.find('.cahier-travel-time-label').text()).toBe('Temps de trajet')
+    expect(distributionHorizon.find('.cahier-travel-time-label svg').exists()).toBe(true)
+
+    await explorer.get('button[aria-label="Choisir un autre équipement"]').trigger('click')
+    const dialog = wrapper.get('dialog[open]')
+    await dialog.get('input[type="search"][aria-label="Nom ou code BPE"]').setValue('A129')
+    await dialog.get('button[aria-label*="A129"]').trigger('click')
+
+    expect(explorer.get('[role="status"]').text()).toContain('MAIRIE')
+    expect(chartLabels().every((label) => label.includes('A129') && label.includes('7'))).toBe(true)
+    const lts2 = explorer.findAll('.cahier-figure-legend-toggle').find((toggle) => toggle.text().includes('LTS2'))
+    expect(lts2?.attributes('aria-pressed')).toBe('true')
+    await lts2!.trigger('click')
+    expect(chartLabels().every((label) => !label.includes('LTS2'))).toBe(true)
+
+    await distributionHorizon.get('button[aria-label="10 minutes"]').trigger('click')
+    expect(distributionHorizon.get('button[aria-label="10 minutes"]').attributes('aria-pressed')).toBe('true')
+    const profile = wrapper.get('[data-section="aedar-equipment-profile"]')
+    const profileHorizon = profile.get('.aedar-waffle-horizon')
+    expect(profileHorizon.get('button[aria-pressed="true"]').attributes('value')).toBe('10')
+    expect(chartLabels()[0]).toContain('20 min')
+    expect(chartLabels()[1]).toContain('10 minutes')
+    expect(profile.get('.aedar-waffle-grid').attributes('aria-label')).toContain('10 minutes')
+
+    await profileHorizon.get('button[value="5"]').trigger('click')
+    expect(distributionHorizon.get('button[aria-label="5 minutes"]').attributes('aria-pressed')).toBe('true')
+    expect(chartLabels()[1]).toContain('5 minutes')
+
+    await profile.get('.aedar-waffle-explore').trigger('click')
+    const profileDialog = profile.get('dialog[open]')
+    const dialogHorizon = profileDialog.get('.aedar-waffle-dialog-horizon')
+    expect(dialogHorizon.get('button[aria-pressed="true"]').text()).toBe('5 min')
+    await profileDialog.findAll('.aedar-waffle-dialog-horizon button').find((button) => button.text() === '20 min')!.trigger('click')
+    expect(profileHorizon.get('button[aria-pressed="true"]').attributes('value')).toBe('20')
+    expect(distributionHorizon.get('button[aria-label="20 minutes"]').attributes('aria-pressed')).toBe('true')
+    expect(chartLabels()[1]).toContain('20 minutes')
   })
 
   it('merges the reference territory into per-mode comparison values when versions match', async () => {

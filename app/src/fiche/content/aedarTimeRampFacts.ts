@@ -1,11 +1,22 @@
 import type { FactAvailability, FactProvenance } from './territoryFacts'
-import type { AedarRampMode, AedarTimeRampEvidence } from './themeContent'
+import type { AedarFact } from './aedarApiClient'
+import type { AedarEquipmentHorizon } from './aedarEquipmentBuckets'
+import type { AedarEquipmentQuantileStatistic, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
 import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 
 type Row = Record<string, unknown>
 const horizons = [5, 10, 15, 20] as const
 const modes = ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'] as const
-const statistics = ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, i) => `decile${i + 1}`), 'mean']
+export const AEDAR_EQUIPMENT_QUANTILE_STATISTICS: readonly AedarEquipmentQuantileStatistic[] = [
+  { key: 'min', label: 'Minimum', axisLabel: 'Min' },
+  ...Array.from({ length: 9 }, (_, index) => ({
+    key: `decile${index + 1}`,
+    label: `Décile ${index + 1}`,
+    axisLabel: `D${index + 1}`,
+  })),
+  { key: 'max', label: 'Maximum', axisLabel: 'Max' },
+]
+const statistics = ['share', ...AEDAR_EQUIPMENT_QUANTILE_STATISTICS.map(({ key }) => key), 'mean']
 const isRecord = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isText = (value: unknown): value is string => typeof value === 'string' && value.length > 0
 const isFinite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
@@ -16,6 +27,29 @@ function invalid(): never { throw new Error('Réponse des agrégats AEDAR invali
  * `transit_gain` is a net-difference reading, not an ordinary access mode.
  */
 export const AEDAR_RAMP_MODES: readonly AedarRampMode[] = ['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk']
+
+/** Existing, legible first-view selection shared by AEDAR time figures. */
+export const AEDAR_DEFAULT_VISIBLE_RAMP_MODES: readonly AedarRampMode[] = ['car', 'transit', 'bike_lts2']
+
+export function toggleAedarRampModeSelection(
+  selectedModes: readonly AedarRampMode[],
+  mode: AedarRampMode,
+): AedarRampMode[] {
+  const selected = new Set(selectedModes)
+  if (selected.has(mode)) selected.delete(mode)
+  else selected.add(mode)
+  return AEDAR_RAMP_MODES.filter((candidate) => selected.has(candidate))
+}
+
+export function readAedarCountMeasure(
+  fact: AedarFact | null,
+  horizon: AedarEquipmentHorizon,
+  mode: AedarRampMode,
+  statistic: string,
+): number | null {
+  const value = fact?.measures[`count_${horizon}_${mode}_${statistic}`]
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
 
 export const AEDAR_RAMP_MODE_LABELS: Readonly<Record<AedarRampMode, string>> = {
   car: 'Voiture',

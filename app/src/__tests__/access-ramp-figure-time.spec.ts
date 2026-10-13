@@ -98,6 +98,28 @@ describe('AccessRampFigureCahier time ramp', () => {
     expect(wrapper.find('[role="tooltip"]').text()).toContain('Territoires comparables : 1')
   })
 
+  it('uses a zero baseline and integer y-axis ticks for fractional ramp values', () => {
+    const fractionalRamp = timeRamp({
+      series: [{
+        key: 'car',
+        label: 'Voiture',
+        points: [5, 10, 15, 20].map((minute, index) => ({
+          xValue: minute,
+          xLabel: `${minute} min`,
+          value: [1.2, 8.8, 6.3, 4.1][index]!,
+          referenceValue: null,
+        })),
+      }],
+    })
+    const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: fractionalRamp, territoryName: 'Territoire test' } })
+
+    expect(wrapper.findAll('.cahier-figure-tick-label--y').map((tick) => tick.text())).toEqual([
+      '0 types',
+      '5 types',
+      '9 types',
+    ])
+  })
+
   it('colors each mode line in its mode family and lists the modes in the legend', async () => {
     const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
 

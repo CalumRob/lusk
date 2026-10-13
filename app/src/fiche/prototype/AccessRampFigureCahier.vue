@@ -11,8 +11,10 @@ import type { Component } from 'vue'
 import { Bike, BusFront, CarFront, Footprints } from 'lucide-vue-next'
 
 import type { MobiliteAccessMode, MobiliteAccessRamp, MobiliteAccessRampPoint, TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territoryFacts'
+import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
+import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, CahierTooltipTone, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
+import { cahierIntegerYAxisScale, CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
@@ -24,11 +26,14 @@ const AEDAR_TIME_FIGURE_STYLE = {
   '--cahier-figure-axis-title-x-left': '50%',
 }
 
-const props = defineProps<{
+const props = withDefaults(defineProps<{
   ramp?: MobiliteAccessRamp
   timeRamp?: TimeRampFigureData
   territoryName: string
-}>()
+  selectedModes?: readonly AedarRampMode[]
+  showModeLegend?: boolean
+}>(), { showModeLegend: true })
+const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMode[]] }>()
 
 const MODE_ORDER: readonly MobiliteAccessMode[] = ['car', 'bike', 'walkTransit']
 const WIDTH = 640
@@ -251,20 +256,23 @@ function timeSeriesColor(key: string): string {
   return AEDAR_TIME_MODE_COLORS[key] ?? 'var(--cahier-theme-strong)'
 }
 const timePoints = computed(() => props.timeRamp?.series[0]?.points ?? [])
-const selectedTimeModes = ref(new Set(['car', 'transit', 'bike_lts2']))
-const visibleTimeSeries = computed(() => (props.timeRamp?.series ?? []).filter((series) => selectedTimeModes.value.has(series.key)))
-const visibleTimeModes = computed(() => new Set(visibleTimeSeries.value.map((series) => series.key)))
+const selectedTimeModes = ref(new Set<string>(AEDAR_DEFAULT_VISIBLE_RAMP_MODES))
+const visibleTimeModes = computed(() => new Set(props.selectedModes ?? [...selectedTimeModes.value]))
+const visibleTimeSeries = computed(() => (props.timeRamp?.series ?? []).filter((series) => visibleTimeModes.value.has(series.key)))
 function toggleTimeMode(key: string): void {
-  const selected = new Set(selectedTimeModes.value)
+  const selected = new Set(visibleTimeModes.value)
   if (selected.has(key)) selected.delete(key)
   else selected.add(key)
-  selectedTimeModes.value = selected
+  if (props.selectedModes) emit('update:selectedModes', [...selected] as AedarRampMode[])
+  else selectedTimeModes.value = selected
 }
-const timeMaximum = computed(() => Math.max(1, ...visibleTimeSeries.value.flatMap((series) => series.points.flatMap((point) => [point.value, point.referenceValue].filter((value): value is number => value !== null)))))
+const timeYAxis = computed(() => cahierIntegerYAxisScale(visibleTimeSeries.value.flatMap((series) =>
+  series.points.flatMap((point) => [point.value, point.referenceValue]),
+)))
 const timeX = (value: number) => MARGIN.left + ((value - (timePoints.value[0]?.xValue ?? 0)) / Math.max(1, (timePoints.value.at(-1)?.xValue ?? 1) - (timePoints.value[0]?.xValue ?? 0))) * PLOT_WIDTH
-const timeY = (value: number) => MARGIN.top + (1 - value / timeMaximum.value) * PLOT_HEIGHT
+const timeY = (value: number) => MARGIN.top + (1 - (value - timeYAxis.value.minimum) / (timeYAxis.value.maximum - timeYAxis.value.minimum)) * PLOT_HEIGHT
 const timeTicks = computed(() => timePoints.value.map((point) => ({ key: point.xValue, position: timeX(point.xValue), label: point.xLabel })))
-const timeYTicks = computed(() => [0, timeMaximum.value].map((value) => ({ key: value, position: timeY(value), label: `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}` })))
+const timeYTicks = computed(() => timeYAxis.value.ticks.map((value) => ({ key: value, position: timeY(value), label: `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}` })))
 
 function timePaths(points: readonly TimeRampPoint[], reference = false): string[] {
   const paths: string[] = []
@@ -371,7 +379,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
         <CahierFigureTooltip v-if="selectedTimeCut" class="access-ramp-tooltip cahier-figure-tooltip--chart" :title="selectedTimeCut.xLabel" :rows="timeTooltipRows" :anchor="timeTooltipAnchor" aria-live="polite" />
       </div>
     </template>
-    <CahierFigureLegend :entries="timeLegend" :mark-colors="timeLegendMarkColors" :selected-keys="[...visibleTimeModes]" :toggle-keys="timeRamp.series.map((series) => series.key)" label="Modes de déplacement et référence" @toggle="toggleTimeMode" />
+    <CahierFigureLegend v-if="props.showModeLegend" :entries="timeLegend" :mark-colors="timeLegendMarkColors" :selected-keys="[...visibleTimeModes]" :toggle-keys="timeRamp.series.map((series) => series.key)" label="Modes de déplacement et référence" @toggle="toggleTimeMode" />
   </CahierFigureFrame>
   <CahierFigureFrame
     v-else-if="ramp"

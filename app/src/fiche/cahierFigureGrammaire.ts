@@ -54,7 +54,7 @@ export const CAHIER_FIGURE_STYLE = {
       (CAHIER_FIGURE_GEOMETRY.width - CAHIER_FIGURE_GEOMETRY.margin.left - CAHIER_FIGURE_GEOMETRY.margin.right) / 2),
     CAHIER_FIGURE_GEOMETRY.width,
   ),
-  '--cahier-figure-axis-title-y-left': percent(22, CAHIER_FIGURE_GEOMETRY.width),
+  '--cahier-figure-axis-title-y-left': percent(0, CAHIER_FIGURE_GEOMETRY.width),
   '--cahier-figure-axis-title-y-top': percent(
     (CAHIER_FIGURE_GEOMETRY.margin.top +
       CAHIER_FIGURE_GEOMETRY.height - CAHIER_FIGURE_GEOMETRY.margin.bottom) / 2,
@@ -73,14 +73,80 @@ export const CAHIER_FIGURE_AXIS = {
   width: 1,
   tickLength: 7,
   xLabelOffset: 22,
-  yLabelOffset: 12,
+  yLabelOffset: 0,
   yLabelBaseline: 4,
 } as const
+
+export interface CahierIntegerYAxisScale {
+  readonly minimum: number
+  readonly maximum: number
+  readonly ticks: readonly number[]
+}
+
+/** Integer scale shared by Cahier time ramps and vertical bars. */
+export function cahierIntegerYAxisScale(values: readonly (number | null | undefined)[]): CahierIntegerYAxisScale {
+  const finiteValues = values.filter((value): value is number => value !== null && value !== undefined && Number.isFinite(value))
+  let minimum = Math.floor(Math.min(0, ...finiteValues))
+  let maximum = Math.max(0, Math.ceil(Math.max(0, ...finiteValues)))
+
+  if (minimum === 0) maximum = Math.max(2, maximum)
+  else if (maximum - minimum < 2) minimum = maximum - 2
+
+  const span = maximum - minimum
+  const middleTarget = (minimum + maximum) / 2
+  const firstInterior = minimum + 1
+  const lastInterior = maximum - 1
+  let middle = Math.max(firstInterior, Math.min(lastInterior, Math.round(middleTarget)))
+
+  const firstMultipleOfFive = Math.ceil(firstInterior / 5) * 5
+  const lastMultipleOfFive = Math.floor(lastInterior / 5) * 5
+  if (firstMultipleOfFive <= lastMultipleOfFive) {
+    const nearestMultipleOfFive = Math.round(middleTarget / 5) * 5
+    const candidate = Math.max(firstMultipleOfFive, Math.min(lastMultipleOfFive, nearestMultipleOfFive))
+    if (Math.abs(candidate - middleTarget) <= Math.max(1, span * 0.2)) middle = candidate
+  }
+
+  const ticks = [...new Set([
+    minimum,
+    ...(minimum < 0 && maximum > 0 ? [0] : []),
+    middle,
+    maximum,
+  ])].sort((left, right) => left - right)
+
+  return { minimum, maximum, ticks }
+}
 
 export interface CahierFigureAxisTick {
   key: string | number
   position: number
   label: string | null
+}
+
+export interface CahierGroupedVerticalBarCategory {
+  key: string
+  label: string
+  axisLabel: string
+}
+
+export interface CahierGroupedVerticalBarSeries {
+  key: string
+  label: string
+  color: string
+  /** One value per category, in the same order; null means unavailable. */
+  values: readonly (number | null)[]
+}
+
+/** Data contract for the reusable vertical grouped-bar figure. */
+export interface CahierGroupedVerticalBarFigureData {
+  categories: readonly CahierGroupedVerticalBarCategory[]
+  series: readonly CahierGroupedVerticalBarSeries[]
+  xAxisTitle: string
+  yAxisTitle: string
+  description: string
+  /** Optional localized value formatting for accessible labels and tooltips. */
+  formatValue?: (value: number) => string
+  /** Optional shorter format for numeric y-axis ticks. */
+  formatAxisTick?: (value: number) => string
 }
 
 export interface CahierFigureTickOptions {

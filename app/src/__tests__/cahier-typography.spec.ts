@@ -10,6 +10,10 @@ const layoutCss = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierLayout.css'),
   'utf8',
 )
+const varianteCahierLibreSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'VarianteCahierLibre.vue'),
+  'utf8',
+)
 const lectureSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierFigureLecture.vue'),
   'utf8',
@@ -55,4 +59,25 @@ describe('Cahier typography roles', () => {
       'font-size: var(--type-figure-lecture-size)',
     )
   })
+
+  it('styles argument prose globally so nested evidence uses the same reading typography', () => {
+    expect(cssRule(layoutCss, '.argument-copy')).toContain('font-size: 15px')
+    expect(cssRule(layoutCss, '.argument-copy')).toContain('text-align: justify')
+    expect(cssRule(layoutCss, '.argument-copy')).toContain('color: var(--cahier-default)')
+    expect(cssRule(layoutCss, '.argument-copy')).toContain('margin: var(--cahier-grid-jump) 0 0')
+  })
+
+  it('keeps a moderate gap between shared y-axis titles and tick labels', () => {
+    expect(cssRule(figureCss, '.cahier-figure-axis-title--y')).toContain(
+      'left: calc(var(--cahier-figure-axis-title-y-left) + 8px)',
+    )
+  })
+
+  it('lets the section 03 reading and plots use the full section draw area', () => {
+    const accessEvidenceRule = varianteCahierLibreSource.match(/\.aedar-access-evidence\s*\{([^}]*)\}/)?.[1] ?? ''
+    expect(accessEvidenceRule).toContain('grid-column: 1 / -1')
+    expect(accessEvidenceRule).toContain('width: 100%')
+    expect(accessEvidenceRule).not.toMatch(/width:\s*min\(|max-width/)
+  })
+
 })

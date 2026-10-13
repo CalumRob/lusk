@@ -157,6 +157,29 @@ export interface AedarEquipmentProfileEvidence {
   source: AedarEvidenceSource | null
 }
 
+export interface AedarEquipmentQuantileStatistic {
+  key: string
+  label: string
+  axisLabel: string
+}
+
+export interface AedarEquipmentExplorerEvidence {
+  kind: 'aedar-equipment-explorer'
+  facts: readonly AedarFact[]
+  initialTypequ: string
+  initialHorizonMinutes: 5 | 10 | 15 | 20
+  introduction: readonly TextBlock[]
+  volumeFigureTitle: string
+  volumeYAxisTitle: string
+  distributionFigureTitle: string
+  distributionStatistics: readonly AedarEquipmentQuantileStatistic[]
+  distributionAxisTitle: string
+  distributionYAxisTitle: string
+  distributionDescription: string
+  distributionUnavailableDescription: string
+  source: AedarEvidenceSource | null
+}
+
 export interface AedarEvidenceSource {
   label: string
   version: string
@@ -308,6 +331,7 @@ export type ContentEvidence =
   | AedarDiversityLossEvidence
   | AedarAccessEvidence
   | AedarEquipmentProfileEvidence
+  | AedarEquipmentExplorerEvidence
   | BpeProfilesEvidence
   | SummaryEvidence
   | AccessEvidence
@@ -332,6 +356,7 @@ export interface AedarAccessSection extends ContentSectionBase<'aedar-access', A
 export interface AedarCarAccessOverviewSection extends ContentSectionBase<'aedar-car-overview', AedarCarAccessOverviewEvidence> { label: string }
 export interface AedarDiversityLossSection extends ContentSectionBase<'aedar-diversity-loss', AedarDiversityLossEvidence> { label: string }
 export interface AedarEquipmentProfileSection extends ContentSectionBase<'aedar-equipment-profile', AedarEquipmentProfileEvidence> { label: string }
+export interface AedarEquipmentExplorerSection extends ContentSectionBase<'aedar-equipment-explorer', AedarEquipmentExplorerEvidence> { label: string }
 
 export interface ResumeSection extends ContentSectionBase<'resume', SummaryEvidence> {
   label: 'Résumé'
@@ -375,6 +400,7 @@ export type MobiliteContentSection =
   | AedarDiversityLossSection
   | AedarAccessSection
   | AedarEquipmentProfileSection
+  | AedarEquipmentExplorerSection
   | ResumeSection
   | ProfilsAccesParModeSection
   | ServicesEssentielsSection

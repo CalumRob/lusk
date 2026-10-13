@@ -62,10 +62,15 @@ function aedarReady(territoryId: string, territoryType: 'commune' | 'epci' = 'co
 }
 
 describe('aedarAccessSection', () => {
-  it('assembles overview, time ramps and the unchanged waffle as separate sections', () => {
+  it('appends the per-type explorer after the unchanged waffle with B207 as its initial type', () => {
     const sections = aedarPrototypeSections(aedarReady('22001'), territory)
 
-    expect(sections.map((section) => section.key)).toEqual(['aedar-car-overview', 'aedar-access', 'aedar-equipment-profile'])
+    expect(sections.map((section) => section.key)).toEqual([
+      'aedar-car-overview',
+      'aedar-access',
+      'aedar-equipment-profile',
+      'aedar-equipment-explorer',
+    ])
     expect(sections[0]?.evidence?.kind).toBe('aedar-car-overview')
     expect(sections[1]?.evidence?.kind).toBe('aedar-access')
     const profile = sections[2]
@@ -75,6 +80,12 @@ describe('aedarAccessSection', () => {
     expect(profile.evidence?.threshold).toBe(0.25)
     const threshold = profile.evidence?.prose[0]?.find((segment) => segment.kind === 'emphasis')
     expect(threshold).toMatchObject({ kind: 'emphasis', value: '25%', tone: 'neutral' })
+    expect(sections[3]?.evidence).toMatchObject({
+      kind: 'aedar-equipment-explorer',
+      initialTypequ: 'B207',
+      volumeYAxisTitle: 'Volume de l’offre',
+      distributionYAxisTitle: 'Nombre d’établissements',
+    })
   })
 
   it('carries the section label without a Lecture block', () => {
