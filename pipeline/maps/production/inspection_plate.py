@@ -236,6 +236,15 @@ def _paper_texture_luminance(texture_path: str, mtime_ns: int) -> np.ndarray:
     return _pixels(gray)[:, :, 0].astype(np.float32) / 255.0
 
 
+def _mask_window(mask: np.ndarray):
+    """Smallest pixel window a coverage mask can affect (None for no coverage)."""
+    rows = np.flatnonzero(np.any(mask, axis=1))
+    if not len(rows):
+        return None
+    columns = np.flatnonzero(np.any(mask, axis=0))
+    return slice(int(rows[0]), int(rows[-1]) + 1), slice(int(columns[0]), int(columns[-1]) + 1)
+
+
 def apply_engraved_ink(
     image: QImage,
     texture_luminance: np.ndarray,
@@ -246,7 +255,15 @@ def apply_engraved_ink(
 ) -> QImage:
     """Prototype's texture-multiplied ink with carved, inset edge relief."""
     image = image.copy().convertToFormat(QImage.Format_RGBA8888)
-    rgba = _pixels(image)
+    window = _mask_window(glyph_mask)
+    if window is None:
+        return image
+    rgba = _pixels(image)[window]
+    glyph_mask = glyph_mask[window]
+    texture_luminance = texture_luminance[window]
+    # Relief cannot affect a zero glyph pixel: both edge differences are
+    # clipped at zero. Neighbours beyond this window are zero by definition,
+    # so the existing zero-padded shifts and all float arithmetic stay exact.
     rgb = rgba[:, :, :3].astype(np.float32)
     grain = 1.0 - TEXTURE_OPACITY * (1.0 - texture_luminance)
     pigment = np.array([colour.red(), colour.green(), colour.blue()], dtype=np.float32)
@@ -267,7 +284,12 @@ def apply_engraved_ink(
 
 def _desaturate_masked_area(image: QImage, mask: np.ndarray, land_mask: np.ndarray) -> QImage:
     image = image.copy().convertToFormat(QImage.Format_RGBA8888)
-    rgba = _pixels(image)
+    window = _mask_window(mask)
+    if window is None:
+        return image
+    rgba = _pixels(image)[window]
+    mask = mask[window]
+    land_mask = land_mask[window]
     rgb = rgba[:, :, :3].astype(np.float32)
     gray = np.sum(rgb * np.array([0.2126, 0.7152, 0.0722]), axis=2)
     coverage = (np.clip(mask, 0, 1) * np.clip(land_mask, 0, 1))[:, :, None]
