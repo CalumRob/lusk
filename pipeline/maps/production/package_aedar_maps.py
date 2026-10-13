@@ -109,6 +109,25 @@ def package_export(source_dir, output_dir):
                           "qa": qa_path.name, "qa_sha256": sha256(qa_path)})
     if set(source_outputs) != set(expected):
         raise ValueError("Source manifest coverage does not match the complete planned inventory")
+    inline_outputs = [row for row in source_outputs.values() if row.get("profile") == "inline"]
+    has_inline_metadata = any("inline_legend" in row for row in inline_outputs)
+    for row in source_outputs.values():
+        metadata = row.get("inline_legend")
+        if row.get("profile") != "inline" and metadata is not None:
+            raise ValueError("Inline legend metadata is forbidden on inspection images")
+        if metadata is None:
+            continue
+        filename = Path(row["path"]).name
+        expected_key = config["prefix"] + filename
+        if not isinstance(metadata, dict):
+            raise ValueError(f"Malformed inline legend metadata: {filename}")
+        image = metadata.get("image", {})
+        if (row.get("family") != "aedar" or metadata.get("schema") != "lusk.aedar.inline-legend.v1"
+                or image.get("key") != expected_key or image.get("sha256") != row.get("output_sha256")
+                or image.get("bytes") != row.get("bytes")):
+            raise ValueError(f"Malformed or image-mismatched inline legend metadata: {filename}")
+    if has_inline_metadata and any(not row.get("inline_legend") for row in inline_outputs):
+        raise ValueError("AEDAR inline legend coverage is incomplete across source workers")
     actual_files = {path.resolve() for path in source.glob("shard-*/*.webp")}
     if actual_files != {Path(row["path"]).resolve() for row in source_outputs.values()}:
         raise ValueError("Source shard files disagree with source manifests")

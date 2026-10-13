@@ -79,6 +79,14 @@ def load_plan(prefix: str | None, manifest_path: Path | None = None, *,
         rows = data.get("outputs")
         if not isinstance(rows, list) or not rows:
             raise ValueError("AEDAR metadata selection is empty")
+        qa_inline_count = qa.get("profile_counts", {}).get("inline")
+        if not isinstance(qa_inline_count, int) or qa_inline_count != len(approved_images):
+            raise ValueError("Original approved QA inline coverage disagrees with its full manifest")
+        expected_sidecars = {Path(row["filename"]).stem + ".json" for row in approved_images.values()}
+        selected_names = [row.get("filename") for row in rows if isinstance(row, dict)]
+        if (data.get("upload_count") != len(rows) or len(selected_names) != len(rows)
+                or len(set(selected_names)) != len(rows) or set(selected_names) != expected_sidecars):
+            raise ValueError("AEDAR inline metadata coverage does not match every approved inline image")
         items = []
         seen = set()
         for row in rows:
@@ -91,9 +99,14 @@ def load_plan(prefix: str | None, manifest_path: Path | None = None, *,
             if row.get("key") != key or row.get("content_type") != "application/json":
                 raise ValueError(f"Invalid AEDAR inline metadata key/content type: {filename}")
             payload = json.loads(path.read_text(encoding="utf-8"))
+            if not isinstance(payload, dict) or not isinstance(payload.get("image"), dict):
+                raise ValueError(f"Malformed AEDAR inline metadata JSON: {filename}")
             image = payload.get("image", {})
-            approved = approved_images.get(image.get("key"))
+            expected_image_key = key[:-5] + ".webp"
+            approved = approved_images.get(expected_image_key)
             if (payload.get("schema") != "lusk.aedar.inline-legend.v1" or image.get("key") != key[:-5] + ".webp"
+                    or row.get("filename") != Path(expected_image_key).stem + ".json"
+                    or approved is None
                     or not approved or image.get("sha256") != approved.get("output_sha256")
                     or image.get("bytes") != approved.get("bytes")):
                 raise ValueError(f"Metadata does not bind to expected AEDAR inline image: {filename}")

@@ -126,20 +126,105 @@ class AedarPackageTests(unittest.TestCase):
             source, originals = self.fixture(root)
             manifest_path = source / "worker-0.manifest.json"
             worker = json.loads(manifest_path.read_text(encoding="utf-8"))
-            inline = next(row for row in worker["outputs"] if row["profile"] == "inline" and row["mode"] == "car")
-            inline["inline_legend"] = {"schema": "lusk.aedar.inline-legend.v1",
-                "image": {"key": "maps/aedar/v1/35238-car-inline.webp",
-                          "sha256": inline["output_sha256"], "bytes": inline["bytes"]}}
+            inline_rows = [row for row in worker["outputs"] if row["profile"] == "inline"]
+            for inline in inline_rows:
+                inline["inline_legend"] = {"schema": "lusk.aedar.inline-legend.v1",
+                    "image": {"key": "maps/aedar/v1/" + Path(inline["path"]).name,
+                              "sha256": inline["output_sha256"], "bytes": inline["bytes"]}}
             write_json(manifest_path, worker)
             destination = root / "publish"
             package_aedar_maps = __import__("package_aedar_maps").package_export
             package_aedar_maps(source, destination)
             metadata = json.loads((destination / "inline-metadata-manifest.json").read_text(encoding="utf-8"))
             sidecar = destination / "35238-car-inline.json"
-            self.assertEqual(metadata["upload_count"], 1)
+            self.assertEqual(metadata["upload_count"], len(inline_rows))
             self.assertEqual(json.loads(sidecar.read_text(encoding="utf-8"))["image"]["sha256"], inline["output_sha256"])
             image = next(row for row in originals if Path(row["path"]).name == "35238-car-inline.webp")
             self.assertEqual((destination / Path(image["path"]).name).read_bytes(), Path(image["path"]).read_bytes())
+
+    def test_mixed_future_inline_metadata_fails_before_upload_ready_manifests_or_side_effects(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _ = self.fixture(root)
+            worker_path = source / "worker-0.manifest.json"
+            worker = json.loads(worker_path.read_text(encoding="utf-8"))
+            inline = [row for row in worker["outputs"] if row["profile"] == "inline"]
+            row = inline[0]
+            row["inline_legend"] = {"schema": "lusk.aedar.inline-legend.v1",
+                "image": {"key": "maps/aedar/v1/35238-car-inline.webp",
+                          "sha256": row["output_sha256"], "bytes": row["bytes"]}}
+            write_json(worker_path, worker)
+            destination = root / "publish"
+            with self.assertRaisesRegex(ValueError, "inline legend coverage"):
+                __import__("package_aedar_maps").package_export(source, destination)
+            self.assertFalse((destination / "upload-manifest.json").exists())
+            self.assertFalse((destination / "full-manifest.json").exists())
+            self.assertFalse(any(destination.glob("*.webp")))
+
+    def test_package_rejects_malformed_stale_out_of_namespace_and_inspection_legends(self):
+        cases = (
+            ("malformed", lambda row: {"not": "legend"}),
+            ("stale image hash", lambda row: {"schema": "lusk.aedar.inline-legend.v1", "image": {
+                "key": "maps/aedar/v1/" + Path(row["path"]).name, "sha256": "0" * 64, "bytes": row["bytes"]}}),
+            ("outside namespace", lambda row: {"schema": "lusk.aedar.inline-legend.v1", "image": {
+                "key": "maps/v1/" + Path(row["path"]).name, "sha256": row["output_sha256"], "bytes": row["bytes"]}}),
+        )
+        package = __import__("package_aedar_maps").package_export
+        for label, metadata in cases:
+            with self.subTest(label=label), TemporaryDirectory() as directory:
+                root = Path(directory)
+                source, _ = self.fixture(root)
+                worker_path = source / "worker-0.manifest.json"
+                worker = json.loads(worker_path.read_text(encoding="utf-8"))
+                row = next(item for item in worker["outputs"] if item["profile"] == "inline")
+                row["inline_legend"] = metadata(row)
+                write_json(worker_path, worker)
+                destination = root / "publish"
+                with self.assertRaises(ValueError):
+                    package(source, destination)
+                self.assertFalse((destination / "upload-manifest.json").exists())
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _ = self.fixture(root)
+            worker_path = source / "worker-0.manifest.json"
+            worker = json.loads(worker_path.read_text(encoding="utf-8"))
+            row = next(item for item in worker["outputs"] if item["profile"] == "inspection")
+            row["inline_legend"] = {"schema": "lusk.aedar.inline-legend.v1", "image": {}}
+            write_json(worker_path, worker)
+            with self.assertRaisesRegex(ValueError, "forbidden on inspection"):
+                package(source, root / "publish")
+
+    def test_uploader_rejects_incomplete_inline_metadata_coverage_before_transfer(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _ = self.fixture(root)
+            destination = root / "publish"
+            __import__("package_aedar_maps").package_export(source, destination)
+            full = json.loads((destination / "full-manifest.json").read_text(encoding="utf-8"))
+            qa_path = destination / "full-qa.json"
+            qa = json.loads(qa_path.read_text(encoding="utf-8"))
+            qa["human_spot_check"]["upload_manifest_sha256"] = upload_maps.sha256(destination / "upload-manifest.json")
+            write_json(qa_path, qa)
+            image = next(row for row in full["outputs"] if row["profile"] == "inline")
+            sidecar = destination / (Path(image["filename"]).stem + ".json")
+            sidecar.write_text(json.dumps({"schema": "lusk.aedar.inline-legend.v1",
+                "image": {"key": image["key"], "sha256": image["output_sha256"], "bytes": image["bytes"]}}), encoding="utf-8")
+            manifest = {"family": "aedar-inline-metadata", "prefix": "maps/aedar/v1/",
+                "source_manifest_sha256": upload_maps.sha256(destination / "full-manifest.json"),
+                "source_upload_manifest_sha256": upload_maps.sha256(destination / "upload-manifest.json"),
+                "upload_count": 1,
+                "outputs": [{"filename": sidecar.name, "path": str(sidecar),
+                    "key": "maps/aedar/v1/" + sidecar.name, "content_type": "application/json",
+                    "bytes": sidecar.stat().st_size, "output_sha256": upload_maps.sha256(sidecar)}]}
+            manifest_path = destination / "incomplete-inline-metadata.json"
+            write_json(manifest_path, manifest)
+            previous = upload_maps.OUT
+            try:
+                upload_maps.configure_output(destination)
+                with self.assertRaisesRegex(ValueError, "coverage"):
+                    upload_maps.load_plan(None, manifest_path)
+            finally:
+                upload_maps.configure_output(previous)
 
     def test_existing_uploader_accepts_only_json_bound_to_an_approved_inline_image_record(self):
         with TemporaryDirectory() as directory:
@@ -153,23 +238,25 @@ class AedarPackageTests(unittest.TestCase):
             qa = json.loads(qa_path.read_text(encoding="utf-8"))
             qa["human_spot_check"]["upload_manifest_sha256"] = upload_maps.sha256(destination / "upload-manifest.json")
             write_json(qa_path, qa)
-            image = next(row for row in full["outputs"] if row["filename"] == "35238-car-inline.webp")
-            sidecar = destination / "35238-car-inline.json"
-            sidecar.write_text(json.dumps({"schema": "lusk.aedar.inline-legend.v1",
-                "image": {"key": image["key"], "sha256": image["output_sha256"], "bytes": image["bytes"]}}), encoding="utf-8")
+            metadata_rows = []
+            for image in (row for row in full["outputs"] if row["profile"] == "inline"):
+                sidecar = destination / (Path(image["filename"]).stem + ".json")
+                sidecar.write_text(json.dumps({"schema": "lusk.aedar.inline-legend.v1",
+                    "image": {"key": image["key"], "sha256": image["output_sha256"], "bytes": image["bytes"]}}), encoding="utf-8")
+                metadata_rows.append({"filename": sidecar.name, "path": str(sidecar),
+                    "key": "maps/aedar/v1/" + sidecar.name, "content_type": "application/json",
+                    "bytes": sidecar.stat().st_size, "output_sha256": upload_maps.sha256(sidecar)})
             manifest = {"family": "aedar-inline-metadata", "prefix": "maps/aedar/v1/",
                 "source_manifest_sha256": upload_maps.sha256(destination / "full-manifest.json"),
                 "source_upload_manifest_sha256": upload_maps.sha256(destination / "upload-manifest.json"),
-                "outputs": [{"filename": sidecar.name, "path": str(sidecar),
-                    "key": "maps/aedar/v1/35238-car-inline.json", "content_type": "application/json",
-                    "bytes": sidecar.stat().st_size, "output_sha256": upload_maps.sha256(sidecar)}]}
+                "upload_count": len(metadata_rows), "outputs": metadata_rows}
             manifest_path = destination / "inline-metadata-manifest.json"
             write_json(manifest_path, manifest)
             previous = upload_maps.OUT
             try:
                 upload_maps.configure_output(destination)
                 _, items = upload_maps.load_plan(None, manifest_path)
-                self.assertEqual(len(items), 1)
+                self.assertEqual(len(items), len(metadata_rows))
                 self.assertEqual(items[0]["content_type"], "application/json")
                 manifest["outputs"][0]["content_type"] = "image/webp"
                 write_json(manifest_path, manifest)
