@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { aedarCarMapAssetUrl, AEDAR_CAR_MAP_HORIZON_MINUTES, mapAssetUrl } from '@/fiche/mapAssetUrl'
+import { aedarCarMapAssetUrl, AEDAR_CAR_MAP_HORIZON_MINUTES, aedarDiversityLossMapAssetUrl, aedarDiversityLossMapMetadataUrl, mapAssetUrl } from '@/fiche/mapAssetUrl'
 
 describe('mapAssetUrl', () => {
   it.each(['commune 35238', 'EPCI 243500741', 'département 22', 'région 53'])('%s uses the canonical territory code', (territory) => {
@@ -19,5 +19,19 @@ describe('mapAssetUrl', () => {
     expect(aedarCarMapAssetUrl('22003', 'inline')).toBe(
       'https://images.calumrobertson.fr/maps/aedar-car-v1/22003-car-inline.webp',
     )
+  })
+
+  it('resolves published AEDAR loss-map profiles from the shared CDN contract', () => {
+    expect(aedarDiversityLossMapAssetUrl('200027027', 'transit', 'inline')).toBe(
+      'https://images.calumrobertson.fr/maps/aedar/v1/200027027-transit-inline.webp',
+    )
+    expect(aedarDiversityLossMapAssetUrl('22001', 'walk', 'inspection')).toBe(
+      'https://images.calumrobertson.fr/maps/aedar/v1/22001-walk-inspection.webp',
+    )
+    expect(aedarDiversityLossMapAssetUrl('../private', 'walk', 'inline')).toBeNull()
+    expect(aedarDiversityLossMapMetadataUrl('22001', 'walk')).toBe(
+      'https://images.calumrobertson.fr/maps/aedar/v1/22001-walk-inline.json',
+    )
+    expect(aedarDiversityLossMapMetadataUrl('../private', 'walk')).toBeNull()
   })
 })

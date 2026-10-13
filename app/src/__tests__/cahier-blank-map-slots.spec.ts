@@ -2,6 +2,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import { describe, expect, it } from 'vitest'
 
 import CahierBlankMapSlots from '@/fiche/prototype/CahierBlankMapSlots.vue'
+import CahierContinuousMapLegend from '@/fiche/prototype/CahierContinuousMapLegend.vue'
 
 describe('CahierBlankMapSlots', () => {
   const props = {
@@ -59,6 +60,25 @@ describe('CahierBlankMapSlots', () => {
     ])
     expect(legend.text()).toContain('* Sur 235 catégories d’équipements BPE')
     expect(legend.find('.cahier-map-legend__note').classes()).toContain('cahier-evidence-source')
+  })
+
+  it('formats territorial decimal breaks in French and accepts a metric-specific accessible label', () => {
+    const wrapper = mount(CahierContinuousMapLegend, {
+      props: {
+        title: 'Perte de diversité',
+        minimum: 0,
+        maximum: 212,
+        colors: ['#716ca2', '#8f85b1', '#ad9ebf', '#b186a3', '#ac5b78'],
+        ticks: [0, 42.4, 84.8, 127.2, 169.6, 212],
+        note: 'Échelle locale au territoire.',
+        ariaLabel: 'Perte de diversité, valeurs propres au territoire.',
+      },
+    })
+
+    expect(wrapper.findAll('.cahier-map-legend__tick').map((tick) => tick.text())).toEqual([
+      '0', '42,4', '84,8', '127,2', '169,6', '212',
+    ])
+    expect(wrapper.attributes('aria-label')).toBe('Perte de diversité, valeurs propres au territoire.')
   })
 
   it('locks background scrolling while the shared production zoom gallery is open', async () => {

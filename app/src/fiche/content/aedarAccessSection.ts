@@ -7,10 +7,12 @@ import type { AedarFetchResult } from './aedarApiClient'
 import { aedarTimeRampEvidence } from './aedarTimeRampFacts'
 import { AEDAR_EQUIPMENT_BUCKET_THRESHOLD, classifyAedarEquipmentTypes } from './aedarEquipmentBuckets'
 import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
+import { aedarDiversityLossSection } from './aedarDiversityLossMaps'
+import type { AedarDiversityLossMapMetadata } from './aedarDiversityLossMaps'
 import type { AedarTimeRampValues } from './aedarTimeRampFacts'
 import type { TerritoryIdentity } from './territoryFacts'
 import { emphasis, text, territoryLead, territoryTypeLabel } from './themeContent'
-import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
+import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
 
 /** Blank map slots and the highlighted ramp horizon share the provisional AEDAR15 horizon. */
 export const AEDAR_PROTOTYPE_HORIZON_MINUTES = 15
@@ -26,6 +28,8 @@ export interface AedarReferenceEvidence {
 
 export interface AedarAccessSectionOptions {
   reference?: AedarReferenceEvidence | null
+  /** Supplied only by the opt-in AEDAR prototype that displays production loss maps. */
+  lossMapMetadata?: AedarDiversityLossMapMetadata
 }
 
 function virtualResponse(data: AedarReady, territory: { type: string; id: string }) {
@@ -297,10 +301,29 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
   }
 }
 
+type AedarPrototypeSectionsWithoutLoss = [AedarCarAccessOverviewSection, AedarAccessSection, AedarEquipmentProfileSection]
+type AedarPrototypeSectionsWithLoss = [AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarAccessSection, AedarEquipmentProfileSection]
+
+export function aedarPrototypeSections(
+  data: AedarReady,
+  territory: TerritoryIdentity,
+  options: AedarAccessSectionOptions & { lossMapMetadata: AedarDiversityLossMapMetadata },
+): AedarPrototypeSectionsWithLoss
+export function aedarPrototypeSections(
+  data: AedarReady,
+  territory: TerritoryIdentity,
+  options?: Omit<AedarAccessSectionOptions, 'lossMapMetadata'>,
+): AedarPrototypeSectionsWithoutLoss
 export function aedarPrototypeSections(
   data: AedarReady,
   territory: TerritoryIdentity,
   options: AedarAccessSectionOptions = {},
-): [AedarCarAccessOverviewSection, AedarAccessSection, AedarEquipmentProfileSection] {
-  return [aedarCarAccessOverviewSection(data, territory, options), aedarAccessSection(data, territory, options), aedarEquipmentProfileSection(data)]
+): AedarPrototypeSectionsWithoutLoss | AedarPrototypeSectionsWithLoss {
+  const carOverview = aedarCarAccessOverviewSection(data, territory, options)
+  const access = aedarAccessSection(data, territory, options)
+  const equipmentProfile = aedarEquipmentProfileSection(data)
+  if (options.lossMapMetadata) {
+    return [carOverview, aedarDiversityLossSection(options.lossMapMetadata, territory), access, equipmentProfile]
+  }
+  return [carOverview, access, equipmentProfile]
 }

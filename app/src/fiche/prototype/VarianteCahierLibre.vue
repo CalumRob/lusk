@@ -72,7 +72,9 @@ import CartographicBreakoutPrototype from './CartographicBreakoutPrototype.vue'
 import CahierBlankMapSlots from './CahierBlankMapSlots.vue'
 import AedarEquipmentWaffleCahier from './AedarEquipmentWaffleCahier.vue'
 import CahierEvidenceSource from './CahierEvidenceSource.vue'
+import AedarDiversityLossMapsCahier from './AedarDiversityLossMapsCahier.vue'
 import { useCahierBaselineGrid } from './useCahierBaselineGrid'
+import type { AedarDiversityLossEvidence } from '@/fiche/content/themeContent'
 
 const props = defineProps<{
   content: ThemeContent | SingleUnitThemeContent
@@ -417,6 +419,11 @@ function aedarCarAccessOverviewEvidenceFor(section: ContentSection) {
   return section.evidence
 }
 
+function aedarDiversityLossEvidenceFor(section: ContentSection): AedarDiversityLossEvidence | null {
+  if (!props.aedarAccessEnabled || section.evidence?.kind !== 'aedar-diversity-loss') return null
+  return section.evidence
+}
+
 function isAedarAccessSection(section: ContentSection): boolean {
   return section.evidence?.kind === 'aedar-access'
 }
@@ -650,6 +657,17 @@ onBeforeUnmount(() => {
                     <CahierComparisonNote :label="aedarCarAccessOverviewEvidenceFor(section)!.comparisonLabel" />
                   </figure>
                 </aside>
+              </section>
+
+              <section
+                v-else-if="aedarDiversityLossEvidenceFor(section)"
+                class="figure-spread figure-spread--aedar-diversity-loss"
+                :id="`section-${section.key}`"
+                :data-figure="`section-${section.key}`"
+              >
+                <AedarDiversityLossMapsCahier
+                  :evidence="aedarDiversityLossEvidenceFor(section)!"
+                />
               </section>
 
               <div
@@ -1284,6 +1302,7 @@ onBeforeUnmount(() => {
 .cahier--sans-grille .concept-group-narrative { font-size: clamp(1.05rem, 1.4vw, 1.35rem); font-style: italic; font-weight: 400; line-height: 1.15; text-wrap: balance; }
 .figure-spread { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.2fr); column-gap: clamp(40px, 5vw, 76px); row-gap: var(--cahier-spread-gap, 34px); align-items: start; padding: var(--cahier-spread-padding, 22px) 0; }
 .figure-spread--aedar-equipment-profile { grid-template-columns: minmax(0, 1fr); }
+.figure-spread--aedar-diversity-loss { grid-template-columns: minmax(0, 1fr); }
 .cahier--sans-grille .figure-spread { grid-template-columns: 1fr; column-gap: 0; }
 .cahier--sans-grille .figure-spread--paired {
   grid-template-columns: repeat(2, minmax(0, 1fr));

@@ -110,6 +110,43 @@ export interface AedarCarAccessOverviewEvidence {
   availability: FactAvailability
 }
 
+export type AedarDiversityLossMapMode = 'walk' | 'transit' | 'bike_lts2' | 'bike_lts4'
+
+export interface AedarDiversityLossMapEvidence {
+  mode: AedarDiversityLossMapMode
+  label: string
+  inlineAvailable: boolean
+  inspectionAvailable: boolean
+}
+
+export interface AedarDiversityLossLegendEvidence {
+  title: string
+  colors: readonly string[]
+  tickLabels: readonly string[]
+  note: string
+  ariaLabel: string
+}
+
+export interface AedarDiversityLossComparisonGroup {
+  key: 'walk-transit' | 'bike-lts2-lts4'
+  label: string
+  mapModes: readonly [AedarDiversityLossMapMode, AedarDiversityLossMapMode]
+  prompt: string
+}
+
+export interface AedarDiversityLossEvidence {
+  kind: 'aedar-diversity-loss'
+  territory: { code: string; name: string }
+  horizonMinutes: number
+  mapModes: readonly AedarDiversityLossMapMode[]
+  mapFigureTitle: TextBlock
+  maps: readonly AedarDiversityLossMapEvidence[]
+  comparisonGroups: readonly AedarDiversityLossComparisonGroup[]
+  legend: AedarDiversityLossLegendEvidence | null
+  metadataState: 'loading' | 'ready' | 'unavailable'
+  metadataNote: string | null
+}
+
 export interface AedarEquipmentProfileEvidence {
   kind: 'aedar-equipment-profile'
   facts: readonly AedarFact[]
@@ -268,6 +305,7 @@ export interface SharingParkingEvidence {
 export type ContentEvidence =
   | DistributionEvidence
   | AedarCarAccessOverviewEvidence
+  | AedarDiversityLossEvidence
   | AedarAccessEvidence
   | AedarEquipmentProfileEvidence
   | BpeProfilesEvidence
@@ -292,6 +330,7 @@ interface ContentSectionBase<Key extends string, Evidence> {
 
 export interface AedarAccessSection extends ContentSectionBase<'aedar-access', AedarAccessEvidence> { label: string }
 export interface AedarCarAccessOverviewSection extends ContentSectionBase<'aedar-car-overview', AedarCarAccessOverviewEvidence> { label: string }
+export interface AedarDiversityLossSection extends ContentSectionBase<'aedar-diversity-loss', AedarDiversityLossEvidence> { label: string }
 export interface AedarEquipmentProfileSection extends ContentSectionBase<'aedar-equipment-profile', AedarEquipmentProfileEvidence> { label: string }
 
 export interface ResumeSection extends ContentSectionBase<'resume', SummaryEvidence> {
@@ -333,6 +372,7 @@ export interface OffreTransportsSection extends ContentSectionBase<'offre-transp
 
 export type MobiliteContentSection =
   | AedarCarAccessOverviewSection
+  | AedarDiversityLossSection
   | AedarAccessSection
   | AedarEquipmentProfileSection
   | ResumeSection

@@ -1,7 +1,9 @@
 <script setup lang="ts">
-import { computed } from 'vue'
+import { computed, ref, watch } from 'vue'
 import VarianteCahierLibre from './VarianteCahierLibre.vue'
 import { aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
+import { fetchAedarDiversityLossMapLegend } from '@/fiche/content/aedarDiversityLossMaps'
+import type { AedarDiversityLossMapMetadata } from '@/fiche/content/aedarDiversityLossMaps'
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { CahierPagination } from './cahierPagination'
@@ -20,6 +22,21 @@ const props = defineProps<{
   aedarReferenceStatus?: 'unavailable' | 'loading' | 'ready' | 'error'
 }>()
 
+const lossMapMetadata = ref<AedarDiversityLossMapMetadata>({ status: 'loading', legend: null })
+let lossMapMetadataRequest = 0
+
+watch(() => `${props.content.territory.type}/${props.content.territory.code}`, async () => {
+  const request = ++lossMapMetadataRequest
+  const territory = props.content.territory
+  lossMapMetadata.value = { status: 'loading', legend: null }
+  try {
+    const legend = await fetchAedarDiversityLossMapLegend(territory)
+    if (request === lossMapMetadataRequest) lossMapMetadata.value = { status: 'ready', legend }
+  } catch {
+    if (request === lossMapMetadataRequest) lossMapMetadata.value = { status: 'unavailable', legend: null }
+  }
+}, { immediate: true })
+
 const transformed = computed(() => {
   if (!props.aedarData || props.aedarData.status !== 'ready') return props.content
   const focal = props.aedarData
@@ -29,9 +46,16 @@ const transformed = computed(() => {
   const reference = referenceTerritoire && referenceData && referenceData.status === 'ready' && referenceData.contentVersion === focal.contentVersion
     ? { data: referenceData, territory: { type: referenceTerritoire.type, id: referenceTerritoire.id }, label: referenceTerritoire.nom }
     : null
-  const sections = aedarPrototypeSections(focal, props.content.territory, { reference })
+  const sections = aedarPrototypeSections(focal, props.content.territory, {
+    reference,
+    lossMapMetadata: lossMapMetadata.value,
+  })
+  const carOverview = sections.find((section) => section.key === 'aedar-car-overview')
+  const introduction = carOverview?.evidence?.kind === 'aedar-car-overview'
+    ? carOverview.evidence.unitIntroduction
+    : []
   const first = props.content.units[0]
-  return { ...props.content, units: [{ ...first, introduction: sections[0].evidence?.unitIntroduction ?? [], rundown: [], sections }, ...props.content.units.slice(1)] } as unknown as ThemeContent
+  return { ...props.content, units: [{ ...first, introduction, rundown: [], sections }, ...props.content.units.slice(1)] } as unknown as ThemeContent
 })
 </script>
 

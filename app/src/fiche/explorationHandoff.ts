@@ -162,6 +162,7 @@ const SECTION_PAGE_FALLBACKS: Readonly<Record<ContentSection['key'], string | nu
   reseaux: 'reseaux',
   'aedar-access': null,
   'aedar-car-overview': null,
+  'aedar-diversity-loss': null,
   'aedar-equipment-profile': null,
   'offre-cyclable': 'offre_cyclable',
   stationnement: 'places_stationnement_velo_1000',
