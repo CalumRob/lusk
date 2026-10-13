@@ -13,6 +13,7 @@ import { Bike, BusFront, CarFront, Footprints } from 'lucide-vue-next'
 import type { MobiliteAccessMode, MobiliteAccessRamp, MobiliteAccessRampPoint, TimeRampFigureData, TimeRampPoint } from '@/fiche/content/territoryFacts'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, CahierTooltipTone, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
+import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
@@ -236,22 +237,18 @@ const TIME_MODE_TONES: Readonly<Record<string, CahierTooltipTone>> = {
   transit: 't',
   walk: 't',
 }
-const TIME_MODE_COLORS: Readonly<Record<string, string>> = {
-  car: 'var(--cahier-mode-car)',
-  bike_lts2: 'var(--cahier-mode-bike)',
-  bike_lts4: 'color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper))',
-  transit: 'var(--cahier-mode-foot)',
-  walk: 'color-mix(in srgb, var(--cahier-mode-foot) 55%, var(--paper))',
-}
 const TIME_MODE_LINE_CLASS: Readonly<Record<string, string>> = {
   car: 'access-ramp-line--car',
-  bike_lts2: 'access-ramp-line--bike',
-  bike_lts4: 'access-ramp-line--bike-light',
+  bike_lts2: 'access-ramp-line--bike-light',
+  bike_lts4: 'access-ramp-line--bike',
   transit: 'access-ramp-line--walkTransit',
   walk: 'access-ramp-line--walkTransit-light',
 }
 function timeSeriesLineClass(key: string): string {
   return TIME_MODE_LINE_CLASS[key] ?? ''
+}
+function timeSeriesColor(key: string): string {
+  return AEDAR_TIME_MODE_COLORS[key] ?? 'var(--cahier-theme-strong)'
 }
 const timePoints = computed(() => props.timeRamp?.series[0]?.points ?? [])
 const selectedTimeModes = ref(new Set(['car', 'transit', 'bike_lts2']))
@@ -299,7 +296,7 @@ const timeLegend = computed<readonly FigureLegendEntry[]>(() => [
   }] : []),
 ])
 const timeLegendMarkColors = computed<Readonly<Record<string, string>>>(() => Object.fromEntries(
-  (props.timeRamp?.series ?? []).map((series) => [series.key, TIME_MODE_COLORS[series.key] ?? 'var(--cahier-theme-strong)']),
+  (props.timeRamp?.series ?? []).map((series) => [series.key, AEDAR_TIME_MODE_COLORS[series.key] ?? 'var(--cahier-theme-strong)']),
 ))
 const selectedTimeCut = ref<{ xValue: number; xLabel: string } | null>(null)
 const timeTooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => selectedTimeCut.value ? { x: `${Math.max(0.18, Math.min(0.82, timeX(selectedTimeCut.value.xValue) / WIDTH)) * 100}%`, y: '12%' } : undefined)
@@ -362,9 +359,9 @@ function timeHitboxStyle(index: number): Record<string, string> {
           </g>
           <g v-for="series in visibleTimeSeries" :key="series.key">
             <template v-if="timeRamp.comparisonLabel">
-              <path v-for="(path, index) in timePaths(series.points, true)" :key="`ref-${index}`" class="access-ramp-line access-ramp-line--comparison access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :d="path" aria-hidden="true" />
+              <path v-for="(path, index) in timePaths(series.points, true)" :key="`ref-${index}`" class="access-ramp-line access-ramp-line--comparison access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :style="{ stroke: timeSeriesColor(series.key) }" :d="path" aria-hidden="true" />
             </template>
-            <path v-for="(path, index) in timePaths(series.points)" :key="`value-${index}`" class="access-ramp-line access-ramp-line--territory access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :d="path" aria-hidden="true" />
+            <path v-for="(path, index) in timePaths(series.points)" :key="`value-${index}`" class="access-ramp-line access-ramp-line--territory access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :style="{ stroke: timeSeriesColor(series.key) }" :d="path" aria-hidden="true" />
           </g>
         </svg>
         <CahierFigureAxisLabels :geometry="FIGURE_GEOMETRY" :x-ticks="timeTicks" :y-ticks="timeYTicks" :x-label-offset="8" />
@@ -657,20 +654,6 @@ function timeHitboxStyle(index: number): Record<string, string> {
   stroke: var(--cahier-mode-foot);
   color: var(--cahier-mode-foot);
 }
-
-.access-ramp-line--bike-light {
-  stroke: color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper));
-  color: color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper));
-}
-
-.access-ramp-line--walkTransit-light {
-  stroke: color-mix(in srgb, var(--cahier-mode-foot) 55%, var(--paper));
-  color: color-mix(in srgb, var(--cahier-mode-foot) 55%, var(--paper));
-}
-
-.access-ramp-point--bike-light { stroke: color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper)); }
-
-.access-ramp-point--walkTransit-light { stroke: color-mix(in srgb, var(--cahier-mode-foot) 55%, var(--paper)); }
 
 @media (max-width: 640px) {
   .access-ramp-labels text {

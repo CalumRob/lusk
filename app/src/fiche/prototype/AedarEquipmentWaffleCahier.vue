@@ -6,6 +6,7 @@ import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS, AEDAR_EQUIPMENT_MODES, aedarEquipmentShareMeasureKey, classifyAedarEquipmentTypes } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
+import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierDialog from './CahierDialog.vue'
 
@@ -48,11 +49,11 @@ const modeIcons: Readonly<Record<string, Component>> = {
   car: CarFront,
 }
 const bucketPresentation = {
-  walk: { iconKey: 'walk', tone: 'foot', color: 'var(--cahier-mode-foot)' },
-  transit: { iconKey: 'transit', tone: 'foot', color: 'color-mix(in oklab, var(--cahier-mode-foot) 68%, white)' },
-  bike_lts2: { iconKey: 'bike', tone: 'bike', color: 'var(--cahier-mode-bike)' },
-  bike_lts4: { iconKey: 'bike', tone: 'bike', color: 'color-mix(in oklab, var(--cahier-mode-bike) 68%, white)' },
-  car: { iconKey: 'car', tone: 'car', color: 'var(--cahier-mode-car)' },
+  walk: { iconKey: 'walk', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.walk },
+  transit: { iconKey: 'transit', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.transit },
+  bike_lts2: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts2 },
+  bike_lts4: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts4 },
+  car: { iconKey: 'car', tone: 'car', color: AEDAR_TIME_MODE_COLORS.car },
   inaccessible: { iconKey: null, tone: 'foot', color: 'var(--text-tertiary)' },
 } satisfies Record<AedarEquipmentBucketKey, { iconKey: keyof typeof modeIcons | null; tone: string; color: string }>
 const bucketColors = Object.fromEntries(Object.entries(bucketPresentation).map(([key, value]) => [key, value.color])) as Record<AedarEquipmentBucketKey, string>
@@ -179,7 +180,7 @@ watch(horizonMinutes, (horizon) => {
           class="aedar-waffle-tile"
           :data-bucket="type.bucket"
           :data-typequ="type.typequ"
-          :style="{ order: index }"
+          :style="{ order: index, '--aedar-bucket-color': bucketColors[type.bucket] }"
           :aria-label="`${type.label}, ${type.typequ}, ${type.bucketLabel}. Afficher le détail.`"
           :title="`${type.label} (${type.typequ}) — ${type.bucketLabel}`"
           type="button"
@@ -293,12 +294,6 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle-tile { display: block; aspect-ratio: 1; min-width: 0; padding: 0; border: 0; border-radius: 2px; background: var(--aedar-bucket-color); cursor: pointer; }
 .aedar-waffle-tile:hover { filter: brightness(0.88); }
 .aedar-waffle-tile:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--text-primary); outline-offset: 1px; }
-.aedar-waffle-tile[data-bucket='walk'] { --aedar-bucket-color: var(--cahier-mode-foot); }
-.aedar-waffle-tile[data-bucket='transit'] { --aedar-bucket-color: color-mix(in oklab, var(--cahier-mode-foot) 68%, white); }
-.aedar-waffle-tile[data-bucket='bike_lts2'] { --aedar-bucket-color: var(--cahier-mode-bike); }
-.aedar-waffle-tile[data-bucket='bike_lts4'] { --aedar-bucket-color: color-mix(in oklab, var(--cahier-mode-bike) 68%, white); }
-.aedar-waffle-tile[data-bucket='car'] { --aedar-bucket-color: var(--cahier-mode-car); }
-.aedar-waffle-tile[data-bucket='inaccessible'] { --aedar-bucket-color: var(--text-tertiary); }
 .aedar-waffle :deep(.aedar-waffle-legend--centered) { justify-content: center; width: 100%; margin: 0; }
 .aedar-waffle :deep(.cahier-figure-legend-action) { min-height: 36px; }
 .aedar-waffle-state { max-width: 72ch; margin: 0; color: var(--text-secondary); font: var(--type-figure-label); line-height: 1.5; }

@@ -65,6 +65,31 @@ function secondSectionEvidence(): AedarEquipmentProfileEvidence {
 }
 
 describe('AedarEquipmentWaffleCahier', () => {
+  it('uses the time-ramp mode colors for the waffle tiles and mode filters', async () => {
+    const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
+    const modeColors = {
+      walk: 'color-mix(in srgb, var(--cahier-mode-foot) 55%, var(--paper))',
+      transit: 'var(--cahier-mode-foot)',
+      bike_lts2: 'color-mix(in srgb, var(--cahier-mode-bike) 55%, var(--paper))',
+      bike_lts4: 'var(--cahier-mode-bike)',
+      car: 'var(--cahier-mode-car)',
+    } as const
+
+    for (const [mode, color] of Object.entries(modeColors)) {
+      expect(wrapper.get(`.aedar-waffle-tile[data-bucket="${mode}"]`).attributes('style')).toContain(
+        `--aedar-bucket-color: ${color}`,
+      )
+    }
+
+    await wrapper.get('.aedar-waffle-explore').trigger('click')
+    const dialog = wrapper.get('dialog[open]')
+    for (const [mode, color] of Object.entries(modeColors)) {
+      expect(dialog.get(`.aedar-waffle-mode-filter button[data-mode="${mode}"]`).attributes('style')).toContain(
+        `--mode-color: ${color}`,
+      )
+    }
+  })
+
   it('keeps the same figure grammar when content, facts, threshold and initial horizon change', async () => {
     const content = secondSectionEvidence()
     const wrapper = mount(AedarEquipmentWaffleCahier, {
