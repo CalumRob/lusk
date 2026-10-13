@@ -1,5 +1,13 @@
 # Dense declared-detail profile projection. Descriptor axes are sourced only
 # from indicator_pages metadata; canonical rows may not extend or reorder them.
+# Fixed-context comparison coverage is deliberately an inventory, separate
+# from rendering/publishing mechanics. Keep it aligned with ADR-0039; the
+# contract test guards against dropping a family as its implementation evolves.
+FIXED_CONTEXT_COMPARISON_FAMILIES <- c(
+  "declared_profile", "essential_service", "numeric_period_collection",
+  "numeric_detail_collection", "scalar", "building_access", "ordered_series"
+)
+
 validate_declared_profile <- function(facts, descriptor, axes, eligible_territories = NULL) {
   required <- c("territory_id", "territory_type", "detail", "sex", "value", "status")
   if (!is.data.frame(facts) || !setequal(names(facts), required) ||

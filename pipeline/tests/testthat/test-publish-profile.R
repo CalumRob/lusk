@@ -1,3 +1,10 @@
+test_that("fixed-context comparison family inventory covers ADR-0039 families", {
+  expect_setequal(FIXED_CONTEXT_COMPARISON_FAMILIES, c(
+    "declared_profile", "essential_service", "numeric_period_collection",
+    "numeric_detail_collection", "scalar", "building_access", "ordered_series"
+  ))
+})
+
 test_that("dense profile validator rejects incomplete, duplicate, and undeclared cells", {
   axes <- data.frame(axis_name = c("detail", "detail", "sex", "sex"),
     axis_key = c("a", "b", "F", "M"), label = c("A", "B", "Femmes", "Hommes"), ordinal = c(0L,1L,0L,1L), unit="%")
