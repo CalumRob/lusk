@@ -40,7 +40,7 @@ def canonical_approval_members(members):
     return sorted(normalized)
 
 
-def approval_payload(manifest):
+def approval_payload(manifest, *, representative_pairs=None):
     if manifest.get("scope") != "representative":
         raise ValueError("approval requires a complete representative run")
     members = canonical_approval_members(manifest.get("approval_members", []))
@@ -51,8 +51,9 @@ def approval_payload(manifest):
         pairs.setdefault((kind, code, mode), set()).add(profile)
     if any(profiles != {"inspection", "inline"} for profiles in pairs.values()):
         raise ValueError("representative approval is missing an export profile")
-    if set(pairs) != REPRESENTATIVE_PAIRS or len(members) != len(REPRESENTATIVE_PAIRS) * 2:
-        raise ValueError("approval requires the exact current three-territory, three-mode cohort")
+    expected_pairs = REPRESENTATIVE_PAIRS if representative_pairs is None else set(representative_pairs)
+    if not expected_pairs or set(pairs) != expected_pairs or len(members) != len(expected_pairs) * 2:
+        raise ValueError("approval requires the exact current representative cohort")
     canonical = json.dumps(members, separators=(",", ":"), sort_keys=True)
     return json.loads(json.dumps({"approval_identity": sha256(canonical.encode()).hexdigest(),
             "recipe": manifest["recipe"], "recipe_version": manifest["recipe_version"],
@@ -62,10 +63,10 @@ def approval_payload(manifest):
             "members_sha256": sha256(canonical.encode()).hexdigest()}))
 
 
-def require_approval(manifest, approval):
+def require_approval(manifest, approval, *, representative_pairs=None):
     if not approval:
         raise ValueError("full production requires explicit human approval")
-    expected = approval_payload(manifest)
+    expected = approval_payload(manifest, representative_pairs=representative_pairs)
     if not isinstance(approval, dict):
         raise ValueError("representative approval is stale or incomplete")
     try:
@@ -81,7 +82,7 @@ def require_approval(manifest, approval):
         raise ValueError("approval record lacks an affirmative human visual review outcome")
 
 
-def validate_approval_claim(approval, recipe, renderer_identity):
+def validate_approval_claim(approval, recipe, renderer_identity, *, representative_pairs=None):
     """Cheaply reject malformed, wrong-recipe and wrong-renderer records."""
     if not isinstance(approval, dict):
         raise ValueError("full production requires explicit human approval")
@@ -91,7 +92,7 @@ def validate_approval_claim(approval, recipe, renderer_identity):
         "renderer_identity": approval.get("renderer_identity"),
         "approval_members": approval.get("approval_members"),
         "approval_pairs_complete": True}
-    require_approval(claim, approval)
+    require_approval(claim, approval, representative_pairs=representative_pairs)
     if (approval.get("recipe") != recipe.name
             or approval.get("recipe_version") != recipe.version
             or approval.get("foundation_version") != recipe.foundation.version
@@ -109,13 +110,14 @@ def read_approval(path):
     return value
 
 
-def record_human_approval(manifest, qa, reviewer, outcome, path):
+def record_human_approval(manifest, qa, reviewer, outcome, path, *, representative_pairs=None):
     """Explicit operator action; this function never runs as part of rendering."""
     if not reviewer or not outcome or outcome.strip().lower() not in {"approved", "approved after visual review"}:
         raise ValueError("human visual outcome must be explicitly affirmative (approved)")
-    if (qa.get("status") != "passed" or qa.get("artifact_count") != 18
-            or qa.get("expected_artifact_count") != 18 or qa.get("failures")
-            or qa.get("profile_counts") != {"inspection": 9, "inline": 9}):
+    pairs = REPRESENTATIVE_PAIRS if representative_pairs is None else set(representative_pairs)
+    if (qa.get("status") != "passed" or qa.get("artifact_count") != len(pairs) * 2
+            or qa.get("expected_artifact_count") != len(pairs) * 2 or qa.get("failures")
+            or qa.get("profile_counts") != {"inspection": len(pairs), "inline": len(pairs)}):
         raise ValueError("human approval requires automated QA of the complete representative set")
     outputs = manifest.get("outputs", [])
     output_members = canonical_approval_members((item["territory"]["kind"], item["territory"]["code"],
@@ -130,7 +132,7 @@ def record_human_approval(manifest, qa, reviewer, outcome, path):
             valid_hash = False
         if not valid_hash:
             raise ValueError(f"representative artifact is missing or changed: {artifact}")
-    payload = approval_payload(manifest)
+    payload = approval_payload(manifest, representative_pairs=pairs)
     payload.update({"human_approved": True, "reviewer": reviewer,
                     "visual_outcome": outcome})
     Path(path).write_text(json.dumps(payload, indent=2, sort_keys=True), encoding="utf-8")

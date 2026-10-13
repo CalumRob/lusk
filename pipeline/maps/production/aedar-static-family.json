@@ -1,0 +1,26 @@
+{
+  "version": 1,
+  "family": "aedar",
+  "horizon_minutes": 15,
+  "bucket": "lusk",
+  "prefix": "maps/aedar/v1/",
+  "public_base_url": "https://images.calumrobertson.fr",
+  "filename_template": "{code}-{mode}-{profile}.webp",
+  "modes": {
+    "car": {"value_field": "diversity_car_15", "measure": "diversity"},
+    "transit": {"value_field": "loss_car_only_transit_p1_15", "measure": "equipment_loss"},
+    "bike_lts2": {"value_field": "loss_car_only_bike_lts2_15", "measure": "equipment_loss"},
+    "bike_lts4": {"value_field": "loss_car_only_bike_lts4_15", "measure": "equipment_loss"},
+    "walk": {"value_field": "loss_car_only_walk_15", "measure": "equipment_loss"}
+  },
+  "profiles": {
+    "inspection": {"size": [2400, 2400], "transparent_outside": false},
+    "inline": {"size": [900, 900], "transparent_outside": true}
+  },
+  "palette": ["#716ca2", "#8f85b1", "#ad9ebf", "#b186a3", "#ac5b78"],
+  "car_bounds": [0, 218],
+  "car_footer": ["* ", "Sur 235 catégories d’équipements BPE"],
+  "class_count": 5,
+  "cell_width_px": 9,
+  "empty_address_policy": "skip-and-report"
+}

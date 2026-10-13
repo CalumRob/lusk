@@ -99,6 +99,7 @@ class PreparedTitle:
 
 TITLE_RELIEF = Engraving("ink-deep", "Deeper cut · ink at 55%", 0.065, 0.100, 0.130, _pixel(3))
 STATIC_FACE_CACHE: dict[tuple[str, int], str] = {}
+STATIC_FONT_DIRECTORY: Path | None = None
 
 
 def _pixels(image: QImage) -> np.ndarray:
@@ -134,6 +135,7 @@ def _set_static_names(font: TTFont, family: str, weight: int) -> None:
 
 
 def _load_static_face(slug: str, weight: int, assets: Path, temporary: Path) -> str:
+    global STATIC_FONT_DIRECTORY
     cache_key = (slug, weight)
     if cache_key in STATIC_FACE_CACHE:
         return STATIC_FACE_CACHE[cache_key]
@@ -156,7 +158,13 @@ def _load_static_face(slug: str, weight: int, assets: Path, temporary: Path) -> 
         "newsreader": "Newsreader",
     }[slug]
     _set_static_names(font, family, weight)
-    output = temporary / f"{slug}-{weight}.ttf"
+    # Qt keeps an application font registered by path. Keep the generated face
+    # alive for the process lifetime; compose_inspection's scratch folder is
+    # removed after each map and would leave STATIC_FACE_CACHE pointing at an
+    # unloaded family on the next render.
+    if STATIC_FONT_DIRECTORY is None:
+        STATIC_FONT_DIRECTORY = Path(tempfile.mkdtemp(prefix="lusk-static-fonts-"))
+    output = STATIC_FONT_DIRECTORY / f"{slug}-{weight}.ttf"
     font.save(str(output))
     font_id = QFontDatabase.addApplicationFont(str(output))
     families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
@@ -484,6 +492,30 @@ def _draw_map_furniture(image: QImage, extent: QgsRectangle, scale_spec: tuple[s
     return clear
 
 
+@dataclass(frozen=True)
+class PreparedInspectionContext:
+    """Mode-neutral map passes; every plate paints onto its own image copy."""
+
+    image: QImage
+    outside_land_mask: np.ndarray
+
+
+def prepare_inspection_context(ground, boundaries, outside_land, extent,
+                               desaturate_outside_land=True) -> PreparedInspectionContext:
+    """Prepare the shared background/desaturation and outside coverage once."""
+    if any(image.width() != OUTPUT_SIZE or image.height() != OUTPUT_SIZE
+           for image in (ground, boundaries)):
+        raise ValueError("Inspection context requires 2400×2400 ground and boundary renders")
+    image = ground.copy().convertToFormat(QImage.Format_RGBA8888)
+    painter = QPainter(image)
+    painter.drawImage(0, 0, boundaries)
+    painter.end()
+    if desaturate_outside_land:
+        from map_ground import desaturate_outside_image
+        desaturate_outside_image(image, outside_land, extent, OUTPUT_SIZE, OUTPUT_SIZE)
+    return PreparedInspectionContext(image, geometry_mask(outside_land, extent, OUTPUT_SIZE))
+
+
 def _compose_map_layers(
     ground: QImage,
     boundaries: QImage,
@@ -497,14 +529,12 @@ def _compose_map_layers(
     text_family: str,
     furniture_clear: QRect,
     desaturate_outside_land: bool = True,
+    annotation_clearances: tuple[QRect, ...] = (),
+    prepared_context: PreparedInspectionContext | None = None,
 ) -> QImage:
-    image = ground.copy().convertToFormat(QImage.Format_RGBA8888)
-    painter = QPainter(image)
-    painter.drawImage(0, 0, boundaries)
-    painter.end()
-    if desaturate_outside_land:
-        from map_ground import desaturate_outside_image
-        desaturate_outside_image(image, outside_land, extent, OUTPUT_SIZE, OUTPUT_SIZE)
+    context = prepared_context or prepare_inspection_context(
+        ground, boundaries, outside_land, extent, desaturate_outside_land)
+    image = context.image.copy()
 
     wordmark = QPainterPath(title.wordmark_path)
     wordmark_mask = _glyph_coverage(wordmark)
@@ -519,6 +549,10 @@ def _compose_map_layers(
                                                                 TEXT_BAND_PADDING_X, TEXT_BAND_PADDING_Y)
     furniture_band_mask = np.maximum(_rectangles_coverage((title_band, subtitle_band)),
                                      _rectangles_coverage((wordmark_clear,)))
+    annotation_clearance_mask = np.zeros((OUTPUT_SIZE, OUTPUT_SIZE), dtype=np.float32)
+    if annotation_clearances:
+        annotation_clearance_mask = _rectangles_coverage(annotation_clearances)
+        furniture_band_mask = np.maximum(furniture_band_mask, annotation_clearance_mask)
     image = _desaturate_masked_area(image, furniture_band_mask, land_mask)
     texture_path = assets / "texture" / "qgis-hub-paper-texture-cc0.jpg"
     texture_luminance = _paper_texture_luminance(
@@ -540,9 +574,10 @@ def _compose_map_layers(
     image = apply_engraved_ink(image, texture_luminance, wordmark_mask, PRIMARY_GREEN, WORDMARK_OPACITY, TITLE_RELIEF)
     furniture_clear = _draw_map_furniture(image, extent, scale_spec, assets, text_family)
 
-    outside_land_mask = geometry_mask(outside_land, extent, OUTPUT_SIZE)
+    outside_land_mask = context.outside_land_mask
     annotation_mask = _rectangles_coverage((furniture_clear,))
-    network_free = np.maximum(furniture_band_mask, annotation_mask)
+    network_free = np.maximum.reduce((furniture_band_mask, annotation_mask,
+                                      annotation_clearance_mask))
     network_free = (network_free > 0).astype(np.float32)
     overlay = _keep_original_network_color_over_text(
         networks,
@@ -613,6 +648,9 @@ def compose_inspection(
     metadata_dir: str | Path,
     scale_spec: tuple[str, float],
     desaturate_outside_land: bool = True,
+    citation_text: str | None = None,
+    annotation_clearances: tuple[QRect, ...] = (),
+    prepared_context: PreparedInspectionContext | None = None,
 ) -> QImage:
     """Produce the native 2400px inspection profile at the existing layout scale."""
     if ground.size().width() != OUTPUT_SIZE or ground.size().height() != OUTPUT_SIZE:
@@ -627,8 +665,9 @@ def compose_inspection(
         image = _compose_map_layers(
             ground, boundaries, networks, outside_land, land_mask, extent, title,
             scale_spec, assets, family_regular, QRect(), desaturate_outside_land,
+            annotation_clearances, prepared_context,
         )
-        citation = _source_citation(Path(metadata_dir), content["mode"])
+        citation = citation_text or _source_citation(Path(metadata_dir), content["mode"])
         _draw_footer(image, content["mode"], family_regular, family_semibold, citation,
                      content.get("footer"))
     return image

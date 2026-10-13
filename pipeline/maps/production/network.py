@@ -279,9 +279,13 @@ def build_representative_map_set(
         {"kind": "epci", "code": "243500741", "name": epci_label,
          "geometry": epci_full, "analytical_geometry": epci_analytical},
     )
+    from inspection_frame import InspectionFramePolicy
+    frame_policy = InspectionFramePolicy(family_config)
     features = []
     for territory in territory_specs:
         extent = _map_extent(territory["analytical_geometry"])
+        inspection_extent = frame_policy.extent_for(
+            territory["geometry"], extent, territory["name"])
         for mode in NETWORK_MODES:
             features.append({
                 "territory": {key: territory[key] for key in ("kind", "code", "name")},
@@ -290,6 +294,7 @@ def build_representative_map_set(
                 "analytical_geometry": territory["analytical_geometry"],
                 "region_geometry": region_geometry,
                 "extent": extent,
+                "inspection_extent": inspection_extent,
             })
     return Binding("network", MapSet({"network-outputs": tuple(features)}))
 
@@ -338,9 +343,12 @@ def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
         raise ValueError(f"Commune map-ready source is missing fields: {sorted(missing)}")
     territories = []
     department_parts = {code: [] for code in departments}
+    department_codes = {code: [] for code in departments}
     region_parts = []
+    region_codes = []
     epci_parts = {code: [] for code in epci_labels}
     epci_analysis_parts = {code: [] for code in epci_labels}
+    epci_analysis_codes = {code: [] for code in epci_labels}
     seen_communes = set()
     for row in source.getFeatures():
         code = str(row["code_insee"])
@@ -353,16 +361,19 @@ def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
             seen_communes.add(code)
             territories.append({"kind": "commune", "code": code,
                 "name": str(row["nom_officiel"]), "geometry": geometry,
-                "analytical_geometry": geometry})
+                "analytical_geometry": geometry, "territory_codes": (code,)})
             department_parts[department].append(geometry)
+            department_codes[department].append(code)
             if str(row["code_insee_de_la_region"]) == "53":
                 region_parts.append(geometry)
+                region_codes.append(code)
         for epci in epcis & epci_labels.keys():
             # Full administrative outline is used for inspection; Breton
             # communes alone define the analytical geometry of cross-border EPCIs.
             epci_parts[epci].append(geometry)
             if department in departments:
                 epci_analysis_parts[epci].append(geometry)
+                epci_analysis_codes[epci].append(code)
     if not seen_communes:
         raise ValueError("authoritative commune inventory has no supported departments")
     for code, name in sorted(epci_labels.items()):
@@ -374,26 +385,35 @@ def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
             raise ValueError(f"EPCI {code} has no in-scope analytical commune membership")
         territories.append({"kind": "epci", "code": code, "name": name,
             "geometry": _union(members, f"EPCI {code}"),
-            "analytical_geometry": _union(analytical, f"EPCI analysis {code}")})
+            "analytical_geometry": _union(analytical, f"EPCI analysis {code}"),
+            "territory_codes": tuple(sorted(epci_analysis_codes[code]))})
     for code, parts in sorted(department_parts.items()):
         if not parts:
             raise ValueError(f"supported department {code} has no communes")
         territories.append({"kind": "departement", "code": code, "name": department_labels[code],
             "geometry": _union(parts, f"department {code}"),
-            "analytical_geometry": _union(parts, f"department analysis {code}")})
+            "analytical_geometry": _union(parts, f"department analysis {code}"),
+            "territory_codes": tuple(sorted(department_codes[code]))})
     if not region_parts:
         raise ValueError("authoritative commune inventory has no Bretagne region membership")
     region = _union(region_parts, "Bretagne (region 53)")
     territories.append({"kind": "region", "code": "53", "name": "Bretagne",
-                        "geometry": region, "analytical_geometry": region})
+                        "geometry": region, "analytical_geometry": region,
+                        "territory_codes": tuple(sorted(region_codes))})
+    from inspection_frame import InspectionFramePolicy
+    frame_policy = InspectionFramePolicy(family_config)
     features = []
     for territory in territories:
         extent = _map_extent(territory["analytical_geometry"])
+        inspection_extent = frame_policy.extent_for(
+            territory["geometry"], extent, territory["name"])
         for mode in NETWORK_MODES:
             features.append({"territory": {key: territory[key] for key in ("kind", "code", "name")},
                 "mode": mode, "geometry": territory["geometry"],
                 "analytical_geometry": territory["analytical_geometry"],
-                "region_geometry": region, "extent": extent})
+                "territory_codes": territory["territory_codes"],
+                "region_geometry": region, "extent": extent,
+                "inspection_extent": inspection_extent})
     return Binding("network", MapSet({"network-outputs": tuple(features)}))
 
 
@@ -1058,6 +1078,24 @@ class NetworkAdapter:
         self.preflight(recipe, binding)
 
     def preflight_scope(self, recipe, binding, scope, profiles):
+        if scope == "inspection-refresh":
+            if tuple(profiles) != ("inspection",):
+                raise ValueError("network inspection refresh requires the inspection profile only")
+            from network_inspection_refresh import select_affected_network_inspection_binding
+            selected = select_affected_network_inspection_binding(binding)
+            actual = {
+                (str(feature["territory"]["kind"]), str(feature["territory"]["code"]),
+                 str(feature["mode"]))
+                for features in binding.map_set.layers.values() for feature in features
+            }
+            expected = {
+                (str(feature["territory"]["kind"]), str(feature["territory"]["code"]),
+                 str(feature["mode"]))
+                for features in selected.map_set.layers.values() for feature in features
+            }
+            if actual != expected:
+                raise ValueError("inspection-refresh scope may contain only affected territories")
+            return
         if scope != "full":
             return
         departments = {str(value) for value in self.family_config["scope"]["analytical_departments"]}
@@ -1164,9 +1202,8 @@ class NetworkAdapter:
         )
         if not features:
             raise ValueError("Cannot prepare an empty network map set")
-        combined_extent = QgsRectangle(features[0]["extent"])
-        for feature in features[1:]:
-            combined_extent.combineExtentWith(QgsRectangle(feature["extent"]))
+        from inspection_frame import shared_ground_extent
+        combined_extent = shared_ground_extent(features, profiles)
         assets = Path(__file__).with_name("assets")
         context_started = perf_counter()
         self._shared_ground = prepare_shared_ground(
@@ -1188,8 +1225,9 @@ class NetworkAdapter:
 
     def begin_production_scope(self, scope: str, output_dir: Path) -> None:
         """Select intermediate retention policy without changing shared caches."""
-        self._persist_territory_stages = scope != "full"
-        self._bounded_territory_state = scope == "full"
+        bounded_scope = scope in {"full", "inspection-refresh"}
+        self._persist_territory_stages = not bounded_scope
+        self._bounded_territory_state = bounded_scope
 
     def end_production_scope(self, scope: str, output_dir: Path, *, success: bool) -> None:
         # Full-run shared providers/frontier are intentionally kept alive until
