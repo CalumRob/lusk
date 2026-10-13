@@ -143,6 +143,7 @@ onMounted(() => {
       className: 'lusk-map-gallery',
       fullscreen: false,
       initialCoverage: 0.9,
+      maxZoomRatio: 1.2,
       navigation: true,
       navbar: { show: true, size: 'large', visibleItemCount: Math.max(1, props.images.length) },
       rotatable: false,
