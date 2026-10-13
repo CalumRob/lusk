@@ -658,6 +658,9 @@ owned_series_postgres_adapter <- function(con) {
     dataset_marker=function(dataset_id) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=$1",
       params=list(dataset_id)),
+    comparison_marker=function(dataset_id,indicator_id) DBI::dbGetQuery(con,
+      "SELECT ordered_series_content_version,reference_content_version FROM ordered_series_comparison_publication WHERE dataset_id=$1 AND indicator_id=$2",
+      params=list(dataset_id,indicator_id)),
     reference_marker=function() DBI::dbGetQuery(con,
       "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"),
     replace_dataset=function(projection, version) {
@@ -763,7 +766,14 @@ publish_owned_series_projection <- function(projection, db) {
     if (!nrow(ref)) stop("Territory reference publication is unavailable",call.=FALSE)
     changed <- !nrow(marker) || !identical(as.character(marker$content_version[[1L]]),version)
     rebound <- nrow(marker) && !identical(as.character(marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]]))
-    if (changed || rebound) db$replace_dataset(projection,version)
+    comparison_stale <- FALSE
+    if (!is.null(projection$descriptor$comparison_levels) && is.function(db$comparison_marker)) {
+      comparison_marker <- db$comparison_marker(dataset,projection$descriptor$indicator_id)
+      comparison_stale <- !nrow(comparison_marker) ||
+        !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]),version) ||
+        !identical(as.character(comparison_marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]]))
+    }
+    if (changed || rebound || comparison_stale) db$replace_dataset(projection,version)
     invisible(list(changed=changed,rebound=rebound,content_version=version,dataset_id=dataset))
   })
 }
@@ -1097,7 +1107,7 @@ project_ordered_series_comparisons <- function(series, territory_reference,
       values <- p$value[match(ids,p$territory_id)]
       status <- p$status[match(ids,p$territory_id)]; status[is.na(status)] <- "not_published"
       ok <- !is.na(values) & status=="measured"; v <- values[ok]
-      complete_required <- identical(d$indicator_id,"raccordement_courbe")
+      complete_required <- identical(d$comparison_scope,"selected_group") && statistic=="mean"
       if (complete_required && (length(v)!=length(ids) || any(!ok)))
         stop("Raccordement comparison requires complete support for every declared member and axis",call.=FALSE)
       group_rows[[length(group_rows)+1L]] <- data.frame(comparison_context=g$context,group_id=g$group,

@@ -448,7 +448,79 @@ class ReadRepository:
                 comparison_statistic = descriptor[9] if len(descriptor) > 9 else "median"
                 comparison_scope = descriptor[10] if len(descriptor) > 10 else "default_group"
                 if descriptor[3] is not None:
-                    if comparison_statistic == "mean" and comparison_scope == "selected_group" and indicator_id == "raccordement_courbe":
+                    fixed_context = None
+                    fixed_group_id = None
+                    if scope_level == "commune" and epci_id:
+                        fixed_context, fixed_group_id = "epci", epci_id
+                    elif scope_level == "commune" and not department_id and not epci_id:
+                        region_row = connection.execute(
+                            "SELECT territory_id FROM territory_reference WHERE territory_type='region' ORDER BY territory_id LIMIT 1"
+                        ).fetchone()
+                        if region_row:
+                            fixed_context, fixed_group_id = "bretagne", region_row[0]
+                    elif scope_level in ("epci", "departement"):
+                        region_row = connection.execute(
+                            "SELECT territory_id FROM territory_reference WHERE territory_type='region' ORDER BY territory_id LIMIT 1"
+                        ).fetchone()
+                        if region_row:
+                            fixed_context, fixed_group_id = "same_level", region_row[0]
+                    if fixed_context is not None:
+                        marker = connection.execute(
+                            """SELECT content_version,ordered_series_content_version,reference_content_version,
+                                      group_row_count,territory_row_count
+                               FROM ordered_series_comparison_publication WHERE dataset_id=%s AND indicator_id=%s""",
+                            (dataset_id,indicator_id),
+                        ).fetchone()
+                        if (not marker or not marker[0] or marker[1] != publication[0] or marker[2] != reference[0]
+                                or marker[3] is None or marker[4] is None or marker[3] < 0 or marker[4] < 0):
+                            raise HTTPException(503,"Owned series comparison publication is missing or stale")
+                        group_rows = connection.execute(
+                            """SELECT axis_value,statistic,group_value,member_count,eligible_count,missing_count
+                               FROM ordered_series_comparison_group WHERE dataset_id=%s AND indicator_id=%s
+                                 AND comparison_context=%s AND group_id=%s AND territory_type=%s
+                               ORDER BY array_position(%s::text[],axis_value)""",
+                            (dataset_id,indicator_id,fixed_context,fixed_group_id,scope_level,list(descriptor[1])),
+                        ).fetchall()
+                        territory_rows = connection.execute(
+                            """SELECT axis_value,territory_id,value,status,rank,tie_count,rank_size
+                               FROM ordered_series_comparison_territory WHERE dataset_id=%s AND indicator_id=%s
+                                 AND comparison_context=%s AND group_id=%s AND territory_type=%s
+                               ORDER BY array_position(%s::text[],axis_value),territory_id""",
+                            (dataset_id,indicator_id,fixed_context,fixed_group_id,scope_level,list(descriptor[1])),
+                        ).fetchall()
+                        expected_axes={r[0] for r in group_rows}; expected_ids=set(peer_ids)
+                        published_ids={r[1] for r in territory_rows}
+                        member_count=group_rows[0][3] if group_rows else 0
+                        expected_axis_order=[axis for axis in descriptor[1] if axis in expected_axes]
+                        if (not expected_axes or len(group_rows)!=len(expected_axes) or
+                            [r[0] for r in group_rows]!=expected_axis_order or
+                            marker[3] < len(group_rows) or marker[4] < len(territory_rows) or
+                            any(r[1]!=comparison_statistic or r[3]!=member_count or r[3]!=r[4]+r[5]
+                                for r in group_rows) or
+                            len(territory_rows)!=len(expected_axes)*member_count or not expected_ids.issubset(published_ids) or
+                            {(r[0],r[1]) for r in territory_rows}!={(a,t) for a in expected_axes for t in published_ids}):
+                            raise HTTPException(503,"Owned series comparison publication is incomplete")
+                        if comparison_scope=="selected_group" and any(r[4]!=r[3] or r[5]!=0 for r in group_rows):
+                            raise HTTPException(503,"Complete-support series comparison is incomplete")
+                        comparison_axis = "M3" if descriptor[0]=="declared_detail" and comparison_point not in expected_axes and "M3" in expected_axes else comparison_point
+                        facet=next((r for r in territory_rows if r[0]==comparison_axis and r[1]==territory_id),None)
+                        group_facet=next((r for r in group_rows if r[0]==comparison_axis),None)
+                        if facet is None or group_facet is None:
+                            raise HTTPException(503,"Owned series comparison point is unavailable")
+                        comparison={"point":comparison_point,"direction":descriptor[6],
+                            "comparable_count":group_facet[4],"rank":facet[4],"ties":facet[5],
+                            "median":group_facet[2] if comparison_statistic=="median" else None,
+                            "mean":group_facet[2] if comparison_statistic=="mean" else None,
+                            "scope":{"kind":"level","territory_type":scope_level,
+                            "department_id":department_id,"epci_id":epci_id}}
+                        for row in territory_rows:
+                            peer=grouped.get(row[1]); point=next((p for p in peer["points"]
+                                if p["axis"]==row[0] or p.get("state_role")==row[0]),None) if peer else None
+                            if point is not None:
+                                point["comparison_rank"],point["comparison_ties"],point["comparison_count"],point["comparison_median"] = row[4],row[5],row[6],group_facet[2] if row[0]==comparison_point else None
+                    if comparison is not None:
+                        pass
+                    elif comparison_statistic == "mean" and comparison_scope == "selected_group" and indicator_id == "raccordement_courbe":
                         mean_points=[]
                         for axis in descriptor[1]:
                             axis_points=[]
@@ -466,7 +538,7 @@ class ReadRepository:
                             "department_id":department_id,"epci_id":epci_id}}
                         mean_scope_series=[{"territory":{"type":scope_level,"id":None,"name":None},
                             "statistic":"mean","selected_member_count":len(peer_ids),"points":mean_points}]
-                    else:
+                    elif comparison is None:
                         cohort = []
                         for peer_id in peer_ids:
                             peer = grouped.get(peer_id)
