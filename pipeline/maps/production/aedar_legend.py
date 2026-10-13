@@ -8,6 +8,29 @@ def tick_label(value, boundaries):
     return (f"{value:.1f}".rstrip("0").rstrip(".") or "0").replace(".", ",")
 
 
+def inline_legend(feature, image_key, image_sha256, image_bytes):
+    """Build a readable, image-bound legend from the selected map feature."""
+    boundaries = list(feature["scale_breaks"])
+    scale = feature["_scale"]
+    return {
+        "schema": "lusk.aedar.inline-legend.v1",
+        "territory": dict(feature["territory"]),
+        "mode": feature["mode"], "measure": feature["measure"],
+        "horizon_minutes": feature["horizon"],
+        "label": feature["legend_label"], "helper": feature.get("helper"),
+        "image": {"key": image_key, "sha256": image_sha256, "bytes": image_bytes},
+        "scale": {
+            "type": feature["scale_type"], "semantics": feature["comparison"],
+            "scope": feature["scale_scope"],
+            "minimum": scale["min"], "maximum": scale["max"],
+            "boundaries": boundaries, "colours": list(feature["palette"]),
+            "display_ticks": [tick_label(value, boundaries) for value in boundaries],
+            "regional_reference": (feature["regional_mean"] if feature["mode"] == "car" else None),
+            "regional_reference_label": (feature.get("regional_reference_label") if feature["mode"] == "car" else None),
+        },
+    }
+
+
 def draw_legend(adapter, image, feature):
     """Preserve the two selected native layouts, including the car-only mean marker."""
     from qgis.PyQt.QtGui import QColor, QFont, QPainter
@@ -39,6 +62,6 @@ def draw_legend(adapter, image, feature):
         mean = feature["regional_mean"]
         x = round(left + width * (mean - lo) / (hi - lo))
         painter.drawLine(x, top - 7, x, top + height + 7)
-        for y, text in ((2256, f"{mean:.1f}".replace(".", ",")), (2282, "Moy. Bretagne")):
+        for y, text in ((2256, f"{mean:.1f}".replace(".", ",")), (2282, feature["regional_reference_label"])):
             painter.drawText(x - metrics.horizontalAdvance(text) // 2, y, text)
     painter.end()

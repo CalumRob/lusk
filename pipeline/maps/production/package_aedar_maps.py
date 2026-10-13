@@ -72,7 +72,6 @@ def package_export(source_dir, output_dir):
     if sorted(shard_indices) != list(range(len(territories))):
         raise ValueError("Source shard allocation does not partition its territory plan")
 
-    output.mkdir(parents=True, exist_ok=True)
     package_log = output / "package.log"
 
     def log(message):
@@ -81,7 +80,6 @@ def package_export(source_dir, output_dir):
         with package_log.open("a", encoding="utf-8") as stream:
             stream.write(line + "\n")
 
-    log(f"Checking {len(expected)} existing q80 WebPs; no rendering or upload")
     evidence_paths = [source / "complete.json", source / "full-plan.json"]
     manifests, source_outputs = [], {}
     for index, indices in enumerate(plan["shards"]):
@@ -109,6 +107,25 @@ def package_export(source_dir, output_dir):
                           "qa": qa_path.name, "qa_sha256": sha256(qa_path)})
     if set(source_outputs) != set(expected):
         raise ValueError("Source manifest coverage does not match the complete planned inventory")
+    inline_outputs = [row for row in source_outputs.values() if row.get("profile") == "inline"]
+    has_inline_metadata = any("inline_legend" in row for row in inline_outputs)
+    for row in source_outputs.values():
+        metadata = row.get("inline_legend")
+        if row.get("profile") != "inline" and metadata is not None:
+            raise ValueError("Inline legend metadata is forbidden on inspection images")
+        if metadata is None:
+            continue
+        filename = Path(row["path"]).name
+        expected_key = config["prefix"] + filename
+        if not isinstance(metadata, dict):
+            raise ValueError(f"Malformed inline legend metadata: {filename}")
+        image = metadata.get("image", {})
+        if (row.get("family") != "aedar" or metadata.get("schema") != "lusk.aedar.inline-legend.v1"
+                or image.get("key") != expected_key or image.get("sha256") != row.get("output_sha256")
+                or image.get("bytes") != row.get("bytes")):
+            raise ValueError(f"Malformed or image-mismatched inline legend metadata: {filename}")
+    if has_inline_metadata and any(not row.get("inline_legend") for row in inline_outputs):
+        raise ValueError("AEDAR inline legend coverage is incomplete across source workers")
     actual_files = {path.resolve() for path in source.glob("shard-*/*.webp")}
     if actual_files != {Path(row["path"]).resolve() for row in source_outputs.values()}:
         raise ValueError("Source shard files disagree with source manifests")
@@ -116,7 +133,10 @@ def package_export(source_dir, output_dir):
     if extra:
         raise ValueError(f"Publication directory contains unexpected WebPs: {sorted(extra)[:5]}")
 
+    output.mkdir(parents=True, exist_ok=True)
+    log(f"Checking {len(expected)} existing q80 WebPs; no rendering or upload")
     outputs = []
+    inline_metadata = []
     for number, filename in enumerate(sorted(expected), 1):
         territory, mode, profile = expected[filename]
         row = source_outputs[filename]
@@ -149,6 +169,17 @@ def package_export(source_dir, output_dir):
         outputs.append({**row, "path": str(destination), "filename": filename,
                         "key": key, "public_url": f"{config['public_base_url']}/{key}",
                         "content_type": "image/webp"})
+        if profile == "inline" and row.get("inline_legend"):
+            payload = row["inline_legend"]
+            if payload.get("image", {}).get("sha256") != row["output_sha256"]:
+                raise ValueError(f"Inline legend does not bind to image bytes: {filename}")
+            json_name = Path(filename).stem + ".json"
+            json_path = output / json_name
+            write_json(json_path, payload)
+            inline_metadata.append({"filename": json_name, "path": str(json_path),
+                "key": config["prefix"] + json_name, "content_type": "application/json",
+                "bytes": json_path.stat().st_size, "output_sha256": sha256(json_path),
+                "image_sha256": row["output_sha256"]})
         if number % 250 == 0 or number == len(expected):
             log(f"PACKAGED {number}/{len(expected)} byte-identical, decoded WebPs")
 
@@ -186,6 +217,13 @@ def package_export(source_dir, output_dir):
         "skipped_count": 0, "skipped_bytes": 0, "outputs": outputs, "skipped": [],
         "missing_territories": missing}
     write_json(output / "upload-manifest.json", selection)
+    if inline_metadata:
+        write_json(output / "inline-metadata-manifest.json", {
+            "family": "aedar-inline-metadata", "prefix": config["prefix"],
+            "source_manifest_sha256": sha256(output / "full-manifest.json"),
+            "source_upload_manifest_sha256": sha256(output / "upload-manifest.json"),
+            "source_qa_sha256": sha256(output / "full-qa.json"), "outputs": inline_metadata,
+            "upload_count": len(inline_metadata)})
     log(f"COMPLETE: {len(outputs)} staged WebPs; same R2 helper; upload approval remains pending")
     return selection
 

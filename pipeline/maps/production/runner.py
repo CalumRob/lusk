@@ -597,6 +597,14 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                         if callable(observe_hook):
                             observe_hook(feature)
                         output_sha256 = sha256(path.read_bytes()).hexdigest()
+                        inline_legend_metadata = None
+                        if recipe.family == "aedar" and name == "inline":
+                            from aedar_legend import inline_legend
+                            from aedar_map_plan import family_config
+                            cfg = family_config()
+                            image_key = cfg["prefix"] + path.name
+                            inline_legend_metadata = inline_legend(
+                                feature, image_key, output_sha256, path.stat().st_size)
                         cache_entry = {"path": str(path), "effective_identity": effective_identity,
                             "output_sha256": output_sha256, "artifact_contract": artifact_contract}
                         next_cached_outputs[key] = cache_entry
@@ -609,6 +617,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                             "render_identity": render_identity, "output_sha256": output_sha256,
                             "effective_identity": effective_identity,
                             "artifact_contract": artifact_contract, "decision": decision,
+                            "inline_legend": inline_legend_metadata,
                             "render_seconds": round(render_seconds, 3),
                             "validation_seconds": round(validation_seconds, 3)})
                         print(f"[maps] {artifact_number}/{artifact_total} {territory_key[0]}/{territory_key[1]} "
