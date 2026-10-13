@@ -1019,6 +1019,67 @@ series_comparison <- function(values, focal_id, direction) {
        rank=1L + ahead, tied=sum(eligible == focal), comparable_count=length(eligible))
 }
 
+# Fixed-context ordered-series projection. Membership is resolved from the
+# published territory reference; point provenance remains attached to source
+# observations (not collapsed to a group-wide vintage).
+project_ordered_series_comparisons <- function(series, territory_reference,
+    input_content_version, reference_content_version) {
+  validate_owned_series_projection(series)
+  d <- series$descriptor
+  refs <- territory_reference
+  required <- c("territory_id", "territory_type", "epci_id", "density_class_code")
+  if (!is.data.frame(refs) || !all(required %in% names(refs)) ||
+      anyDuplicated(refs[c("territory_id", "territory_type")]) ||
+      anyNA(refs[c("territory_id", "territory_type")]))
+    stop("Ordered-series comparison territory reference is invalid", call.=FALSE)
+  versions <- c(input_content_version, reference_content_version)
+  if (length(versions)!=2L || anyNA(versions) || any(!nzchar(versions)))
+    stop("Ordered-series comparison input publication identities are required", call.=FALSE)
+  allowed_contexts <- c("density_class", "epci", "bretagne", "same_level")
+  refs$territory_id <- as.character(refs$territory_id)
+  commune <- refs[refs$territory_type=="commune",,drop=FALSE]
+  groups <- list()
+  add <- function(context, group, level, ids) {
+    ids <- unique(as.character(ids))
+    if (length(ids)) groups[[length(groups)+1L]] <<- list(context=context,group=group,level=level,ids=ids)
+  }
+  for (g in unique(na.omit(as.character(commune$density_class_code))))
+    add("density_class",g,"commune",commune$territory_id[commune$density_class_code==g])
+  for (g in unique(na.omit(as.character(commune$epci_id))))
+    add("epci",g,"commune",commune$territory_id[commune$epci_id==g])
+  region <- refs[refs$territory_type=="region",,drop=FALSE]
+  for (g in region$territory_id) add("bretagne",g,"commune",commune$territory_id)
+  for (level in intersect(c("epci","departement"),d$allowed_levels))
+    for (g in region$territory_id) add("same_level",g,level,refs$territory_id[refs$territory_type==level])
+  point_rows <- series$points
+  group_rows <- list(); territory_rows <- list()
+  for (g in groups) {
+    if (is.null(d$comparison_levels) || !g$level %in% d$comparison_levels || !g$level %in% d$allowed_levels) next
+    obs <- point_rows[point_rows$territory_type==g$level & point_rows$territory_id %in% g$ids,,drop=FALSE]
+    for (axis in d$axis_values) {
+      p <- obs[obs$axis_value==axis,,drop=FALSE]
+      ids <- g$ids
+      values <- p$value[match(ids,p$territory_id)]
+      status <- p$status[match(ids,p$territory_id)]; status[is.na(status)] <- "not_published"
+      ok <- !is.na(values) & status=="measured"; v <- values[ok]
+      group_rows[[length(group_rows)+1L]] <- data.frame(comparison_context=g$context,group_id=g$group,
+        territory_type=g$level,indicator_id=d$indicator_id,axis_value=axis,statistic="median",
+        group_value=if(length(v)) stats::median(v) else NA_real_,member_count=length(ids),
+        eligible_count=length(v),missing_count=length(ids)-length(v),stringsAsFactors=FALSE)
+      ranks <- ties <- rep(NA_integer_,length(ids))
+      for (i in which(ok)) { ranks[i] <- 1L+sum(if(d$direction=="high") v>values[i] else v<values[i]); ties[i] <- sum(v==values[i]) }
+      territory_rows[[length(territory_rows)+1L]] <- data.frame(comparison_context=g$context,group_id=g$group,
+        territory_type=g$level,indicator_id=d$indicator_id,axis_value=axis,territory_id=ids,value=values,
+        status=status,rank=ranks,tie_count=ties,rank_size=ifelse(ok,length(v),NA_integer_),stringsAsFactors=FALSE)
+    }
+  }
+  if (!length(group_rows)) stop("No declared ordered-series comparison contexts",call.=FALSE)
+  out <- list(groups=do.call(rbind,group_rows),territories=do.call(rbind,territory_rows),
+    input_content_version=input_content_version,reference_content_version=reference_content_version)
+  out$content_version <- scalar_content_version(out)
+  out
+}
+
 # Project fixed-context comparisons for declared series axes. Unlike scalar
 # comparisons, a territory is comparable only when its complete declared curve
 # is present; a missing route/point is not a zero and cannot be silently dropped.
