@@ -509,7 +509,8 @@ class ReadRepository:
                             marker[3] < len(group_rows) or marker[4] < len(territory_rows) or
                             any(r[1]!=comparison_statistic or r[3]!=member_count or r[3]!=r[4]+r[5]
                                 for r in group_rows) or
-                            len(territory_rows)!=len(expected_axes)*member_count or not expected_ids.issubset(published_ids) or
+                            member_count!=len(expected_ids) or len(published_ids)!=len(expected_ids) or published_ids!=expected_ids or
+                            len(territory_rows)!=len(expected_axes)*len(expected_ids) or
                             {(r[0],r[1]) for r in territory_rows}!={(a,t) for a in expected_axes for t in published_ids}):
                             raise HTTPException(503,"Owned series comparison publication is incomplete")
                         if comparison_scope=="selected_group" and any(r[4]!=r[3] or r[5]!=0 for r in group_rows):

@@ -12,10 +12,11 @@ class Cursor:
 
 class FixedComparisonConnection:
     def __init__(self, *, context="density_class", stale=None, incomplete=False,
-                 stat="median", scope="default_group", custom=False, axis_kind=None):
+                 stat="median", scope="default_group", custom=False, axis_kind=None, extra_member=False):
         self.context=context; self.stale=stale; self.incomplete=incomplete
         self.stat=stat; self.scope=scope; self.custom=custom; self.sql=[]
         self.members=["c1","c2"] if context != "bretagne" else ["c1","c2","c3"]
+        self.extra_member=extra_member
         self.dataset="owned-v1"; self.indicator="series_x"
         self.axes=["2020","2021"] if stat!="mean" else ["t0000","t0005"]
         self.point=self.axes[-1]
@@ -62,10 +63,12 @@ class FixedComparisonConnection:
                 "series-v1","ref-v1"))
         if "FROM ordered_series_comparison_group" in sql:
             axes=["M2","M3"] if self.axis_kind=="declared_detail" else self.axes
-            rows=[(axis,self.stat,7.5,len(self.members),len(self.members),0) for axis in axes]
+            count=len(self.members)+(1 if self.extra_member else 0)
+            rows=[(axis,self.stat,7.5,count,count,0) for axis in axes]
             return Cursor(rows=rows[:1] if self.incomplete else rows)
         if "FROM ordered_series_comparison_territory" in sql:
             member_ids=params[5]
+            if self.extra_member: member_ids=list(member_ids)+["c3"]
             axes=["M2","M3"] if self.axis_kind=="declared_detail" else self.axes
             return Cursor(rows=[(axis,tid,10.0 if tid in ("c1","e1") else 5.0,"measured",
                 1 if tid in ("c1","e1") else 2,1,len(member_ids)) for axis in axes for tid in member_ids])
@@ -121,6 +124,14 @@ def test_incomplete_published_groups_fail_closed_and_noncanonical_custom_selecti
         cohort=("commune",("c1","c3"),{"kind":"explicit_selection"}))
     assert results[0]["median"]==7.5
     assert not any("ordered_series_comparison_" in sql for sql,_ in custom.sql)
+
+
+def test_overbroad_published_cohort_fails_closed_but_custom_selection_stays_request_time():
+    conn=FixedComparisonConnection(extra_member=True)
+    with pytest.raises(HTTPException,match="incomplete"):
+        main._owned_series_comparison_results(conn,[(conn.dataset,"milieux",False,conn.indicator)],
+            "commune","c1",None,cohort=("commune",tuple(conn.members),
+                {"kind":"density_class","density_class_code":"d1"}))
 
 
 def test_raccordement_fixed_default_uses_published_complete_mean_curve_contract():
