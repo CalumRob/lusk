@@ -224,6 +224,7 @@ project_artif_m2m3_projection <- function(indicators, histories, vintages, metad
     comparison_point=as.character(page$comparison$detail),
     label=page$label,unit=page$unit,direction=as.character(page$comparison$direction %||% page$direction),allowed_levels=levels,
     descriptor_version=as.character(page$descriptor_version %||% "1"))
+  descriptor$comparison_axis_values <- as.character(unlist(page$trajectory$endpoints,use.names=FALSE))
   descriptor <- declared_owned_series_route(descriptor,metadata)
   result <- list(dataset_id=dataset_id,points=points,descriptor=descriptor,
     provenance=provenance,point_provenance=point_provenance,
@@ -461,6 +462,7 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
     comparison_statistic=as.character(declaration$comparison_contract$statistic),
     comparison_scope=as.character(declaration$comparison_contract$scope),
     observation_period_kind=as.character(declaration$observation_period_contract$kind))
+  descriptor$comparison_levels <- as.character(unlist(declaration$comparison_levels %||% page$levels,use.names=FALSE))
   projection <- list(dataset_id=declaration$dataset_id,points=points,descriptor=descriptor,
     provenance=provenance,point_provenance=data.frame(dataset_id=points$dataset_id,indicator_id=points$indicator_id,
       territory_id=points$territory_id,axis_value=points$axis_value,provenance_revision_id=revision_id),
@@ -1037,7 +1039,7 @@ project_ordered_series_comparisons <- function(series, territory_reference,
   valid_version <- function(x) is.character(x) && length(x)==1L && !is.na(x) && nzchar(trimws(x))
   if (!valid_version(input_content_version) || !valid_version(reference_content_version))
     stop("Ordered-series comparison input publication identities are required", call.=FALSE)
-  statistic <- d$comparison_statistic
+  statistic <- d$comparison_statistic %||% "median"
   if (!is.character(statistic) || length(statistic)!=1L || is.na(statistic) ||
       !statistic %in% c("median", "mean") || !d$direction %in% c("high", "low"))
     stop("Owned-series route must declare a supported comparison statistic and direction",call.=FALSE)
@@ -1060,12 +1062,19 @@ project_ordered_series_comparisons <- function(series, territory_reference,
   for (level in intersect(c("epci","departement"),d$comparison_levels))
     for (g in region$territory_id) add("same_level",g,level,refs$territory_id[refs$territory_type==level])
   point_rows <- series$points
+  comparison_axes <- as.character(d$comparison_axis_values %||% d$axis_values)
+  axis_field <- if ("state_role" %in% names(point_rows) && all(comparison_axes %in% point_rows$state_role)) "state_role" else "axis_value"
+  available_axes <- if (axis_field=="state_role") as.character(point_rows$state_role) else as.character(point_rows$axis_value)
+  if (!length(comparison_axes) || anyNA(comparison_axes) || anyDuplicated(comparison_axes) ||
+      any(!comparison_axes %in% available_axes) ||
+      (axis_field=="axis_value" && any(!comparison_axes %in% d$axis_values)))
+    stop("Owned-series comparison axes are not a declared ordered subset",call.=FALSE)
   group_rows <- list(); territory_rows <- list()
   for (g in groups) {
     if (!g$level %in% d$comparison_levels || !g$level %in% d$allowed_levels) next
     obs <- point_rows[point_rows$territory_type==g$level & point_rows$territory_id %in% g$ids,,drop=FALSE]
-    for (axis in d$axis_values) {
-      p <- obs[obs$axis_value==axis,,drop=FALSE]
+    for (axis in comparison_axes) {
+      p <- obs[as.character(obs[[axis_field]])==axis,,drop=FALSE]
       ids <- g$ids
       values <- p$value[match(ids,p$territory_id)]
       status <- p$status[match(ids,p$territory_id)]; status[is.na(status)] <- "not_published"
@@ -1087,7 +1096,7 @@ project_ordered_series_comparisons <- function(series, territory_reference,
   if (!length(group_rows)) stop("No declared ordered-series comparison contexts",call.=FALSE)
   out <- list(groups=do.call(rbind,group_rows),territories=do.call(rbind,territory_rows),
     input_content_version=input_content_version,reference_content_version=reference_content_version,
-    axis_values=as.character(d$axis_values),statistic=statistic,direction=d$direction,
+    axis_values=comparison_axes,statistic=statistic,direction=d$direction,
     provenance=series$provenance,point_provenance=series$point_provenance)
   out$content_version <- scalar_content_version(out)
   out

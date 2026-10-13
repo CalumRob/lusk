@@ -315,6 +315,36 @@ test_that("OCS-GE projection uses typed per-role components and retains comparis
   expect_setequal(source_links[["200000003 M2"]],c("ocsge_artificialisation_35_2020","ocsge_artificialisation_56_2022"))
   expect_setequal(source_links[["200000003 M3"]],c("ocsge_artificialisation_35_2023","ocsge_artificialisation_56_2024"))
   expect_equal(projection$points$observation_period[3],periods[[3]])
+  comparison_reference <- data.frame(territory_id=c("22001","22002","200000003","region"),
+    territory_type=c("commune","commune","epci","region"),epci_id=c("200000003","200000003",NA,NA),
+    density_class_code=c("d1","d1",NA,NA),stringsAsFactors=FALSE)
+  # Add a second commune through the canonical source-fact input, then rerun the
+  # production projector so immutable provenance and role typing are generated normally.
+  second_commune <- fields[fields$territoire=="22001",,drop=FALSE]
+  second_commune$territoire <- "22002"
+  second_commune$value <- c(.18,.42)
+  fields_with_peer <- rbind(fields,second_commune)
+  histories_with_peer <- rbind(histories,data.frame(territoire="22002",type="commune",theme="milieux",
+    periode_artif="2021-2025",stringsAsFactors=FALSE))
+  production_projection <- project_artif_m2m3_projection(fields_with_peer,histories_with_peer,vintages,metadata)
+  comparison <- project_ordered_series_comparisons(production_projection,comparison_reference,
+    "series-publication-fixture-v1","territory-reference-fixture-v1")
+  expect_identical(comparison$axis_values,c("M2","M3"))
+  expect_identical(unique(comparison$groups$axis_value),c("M2","M3"))
+  expect_equal(comparison$groups$group_value[comparison$groups$comparison_context=="density_class"],c(.18,.42))
+  expect_equal(comparison$territories$rank[comparison$territories$comparison_context=="density_class"],rep(1L,4))
+  expect_equal(comparison$territories$tie_count[comparison$territories$comparison_context=="density_class"],rep(2L,4))
+  expect_identical(comparison$input_content_version,"series-publication-fixture-v1")
+  expect_identical(comparison$reference_content_version,"territory-reference-fixture-v1")
+  expect_identical(comparison$provenance,production_projection$provenance)
+  expect_identical(comparison$point_provenance,production_projection$point_provenance)
+  expect_identical(comparison$statistic,"median")
+  bad_route <- production_projection
+  bad_route$descriptor$comparison_statistic <- "mode"
+  expect_error(project_ordered_series_comparisons(bad_route,comparison_reference,"s1","r1"),
+    "supported comparison statistic")
+  expect_error(project_ordered_series_comparisons(production_projection,comparison_reference,"","r1"),
+    "publication identities")
   old_artifact <- nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet"))
   old_artifact <- old_artifact[old_artifact$key=="artif_par_habitant",]
   old_artifact$state_role <- NULL
@@ -604,6 +634,20 @@ test_that("owned raccordement publisher projects its declared serving-only refer
     date_reference=as.Date("2026-10-10"),date_publication=as.Date("2026-10-10"))
   projection <- project_raccordement_owned_series(canonical,vintages,metadata,
     producer_contract=list(date_mesure="2026-10-21"))
+  route_reference <- data.frame(territory_id=c("35238","29001","53"),
+    territory_type=c("commune","commune","region"),epci_id=c("e","e",NA),
+    density_class_code=c("d","d",NA),stringsAsFactors=FALSE)
+  route_comparison <- project_ordered_series_comparisons(projection,route_reference,
+    "raccordement-publication-fixture-v1","reference-publication-fixture-v1")
+  expect_identical(route_comparison$statistic,"mean")
+  expect_identical(route_comparison$axis_values,projection$descriptor$axis_values)
+  partial_route <- projection
+  removed <- which(partial_route$points$territory_id=="35238" & partial_route$points$axis_value=="t0000")
+  partial_route$points <- partial_route$points[-removed,,drop=FALSE]
+  partial_route$point_provenance <- partial_route$point_provenance[
+    !(partial_route$point_provenance$territory_id=="35238" & partial_route$point_provenance$axis_value=="t0000"),,drop=FALSE]
+  expect_error(project_ordered_series_comparisons(partial_route,route_reference,"s1","r1"),
+    "complete support")
   expect_no_error(validate_owned_series_projection(projection))
   expect_equal(projection$descriptor$axis_kind,"duration_minute")
   expect_true(projection$descriptor$active_read_route)
