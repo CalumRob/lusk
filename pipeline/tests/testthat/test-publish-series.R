@@ -670,5 +670,5 @@ test_that("canonical Mobility metadata locator validates the owned raccordement 
   partial <- canonical[-which(canonical$key == "raccordement_courbe" &
     canonical$type == "commune")[[1L]], , drop = FALSE]
   expect_error(project_raccordement_owned_series(partial, vintages, metadata,
-    producer_contract=RECETTE_RACCORDEMENT_NATIONAL), "partial or non-cumulative")
+    producer_contract=RECETTE_RACCORDEMENT_NATIONAL), "commune 22001.*t0000")
 })

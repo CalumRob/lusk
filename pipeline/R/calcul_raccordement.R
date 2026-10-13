@@ -561,9 +561,50 @@ calculer_raccordement_national <- function(matrice, population, membership,
   if (anyNA(matrice$reachable) || anyNA(matrice$origin_id) || anyNA(matrice$destination_id) ||
       anyDuplicated(matrice[c("origin_id", "destination_id")]))
     fail("matrix identities", "reachability and OD identities must be complete and unique")
-  if (!setequal(unique(matrice$origin_id), eligible) ||
-      !setequal(unique(matrice$destination_id), codes))
-    fail("matrix eligibility", "completed origins must match eligible roster and destinations the assessed universe")
+  format_communes <- function(ids, limit = 20L) {
+    ids <- sort(unique(as.character(ids)))
+    visibles <- head(ids, limit)
+    suffix <- if (length(ids) > limit) paste0(" … et ", length(ids) - limit, " autre(s)") else ""
+    paste0(paste(visibles, collapse = ", "), suffix)
+  }
+  self_routes <- matrice[matrice$origin_id == matrice$destination_id &
+    matrice$origin_id %in% eligible, , drop = FALSE]
+  missing_self_routes <- setdiff(eligible, self_routes$origin_id)
+  invalid_self_routes <- self_routes$origin_id[
+    !self_routes$reachable | !is.finite(self_routes$travel_time_min) |
+      self_routes$travel_time_min != 0
+  ]
+  affected_self_routes <- sort(unique(c(missing_self_routes, invalid_self_routes)))
+  if (length(affected_self_routes))
+    fail("self routes", paste0(
+      "eligible origin communes must have a saved reachable zero-minute self-route: ",
+      paste(affected_self_routes, collapse = ", ")))
+  missing_origins <- setdiff(eligible, unique(matrice$origin_id))
+  if (length(missing_origins))
+    fail("matrix eligibility", paste0("eligible origin communes are absent from the OD matrix: ",
+      format_communes(missing_origins)))
+  unexpected_origins <- setdiff(unique(matrice$origin_id), eligible)
+  unexpected_destinations <- setdiff(unique(matrice$destination_id), codes)
+  if (length(unexpected_origins) || length(unexpected_destinations))
+    fail("matrix eligibility", paste0(
+      "unexpected origin communes: ", format_communes(unexpected_origins),
+      "; unexpected destination communes: ", format_communes(unexpected_destinations)))
+  matrix_by_origin <- split(matrice, matrice$origin_id)
+  missing_destinations <- lapply(eligible, function(origin) {
+    setdiff(codes, matrix_by_origin[[origin]]$destination_id)
+  })
+  names(missing_destinations) <- eligible
+  affected_origins <- names(missing_destinations)[lengths(missing_destinations) > 0L]
+  if (length(affected_origins)) {
+    limit_origins <- 20L
+    shown_origins <- head(affected_origins, limit_origins)
+    details <- vapply(shown_origins, function(origin) paste0(origin, " -> ",
+      format_communes(missing_destinations[[origin]], limit = 10L)), character(1))
+    omitted <- length(affected_origins) - length(shown_origins)
+    suffix <- if (omitted > 0L) paste0("; et ", omitted, " autre(s) origine(s) affectée(s)") else ""
+    fail("origin result completeness", paste0("missing directed origin -> destination pair(s): ",
+      paste(details, collapse = "; "), suffix))
+  }
   counts <- table(matrice$origin_id)
   if (length(counts) != length(eligible) || any(counts != length(codes)))
     fail("completed origins", "every eligible origin needs one raw result for every assessed destination")
@@ -576,7 +617,6 @@ calculer_raccordement_national <- function(matrice, population, membership,
     fail("saved journey fields", "negative transfer counts are invalid")
 
   population_by_code <- stats::setNames(population$population, codes)
-  matrix_by_origin <- split(matrice, matrice$origin_id)
   curve_matrix <- matrix(0, nrow = length(codes), ncol = length(grid),
     dimnames = list(codes, as.character(grid)))
   routed_destination_count <- stats::setNames(integer(length(codes)), codes)

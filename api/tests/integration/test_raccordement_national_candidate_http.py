@@ -310,6 +310,59 @@ DBI::dbDisconnect(con)
         single_result=one_member.json()["result"]
         assert single_result["status"]=="unavailable" and single_result["reason"]=="fewer_than_two_comparable_values"
         assert single_result["mean"] is None and single_result["mean_curve"] is None
+
+        # A failed refresh must leave the previous complete publication readable
+        # through both the focal-series and selected-group comparison routes.
+        prior_curve = focal.json()
+        prior_selected_mean = selected_epci.json()["result"]["mean_curve"]
+
+        def reject_owned_refresh(rows, expected_error, name):
+            candidate = tmp_path / f"{name}-canonical.json"
+            candidate.write_text(json.dumps({"indicators": rows, "vintages": data["vintages"]}),
+                                 encoding="utf-8")
+            script = tmp_path / f"{name}-refresh.R"
+            script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; payload<-jsonlite::read_json(args[[2]],simplifyVector=TRUE)
+metadata<-jsonlite::read_json(args[[3]],simplifyVector=FALSE); schema<-args[[4]]; expected<-args[[5]]
+pkgload::load_all(file.path(root,"pipeline"),quiet=TRUE)
+canonical<-list(mobilite=list(indicateurs=as.data.frame(payload$indicators)),vintages=as.data.frame(payload$vintages))
+con<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub")
+identity<-DBI::dbGetQuery(con,"SELECT current_database() AS database,current_user AS role")
+stopifnot(identical(identity$database[[1L]],Sys.getenv("LUSK_TEST_DATABASE_NAME")),
+  identical(identity$role[[1L]],"lusk_it_contract_pub"))
+DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema))
+registry<-lusk:::register_raccordement_owned_publisher(list(),metadata)
+adapter<-lusk:::owned_series_postgres_adapter(con)
+failure<-tryCatch({lusk:::publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter);NULL},error=function(e) conditionMessage(e))
+stopifnot(!is.null(failure),grepl(expected,failure,fixed=TRUE))
+DBI::dbDisconnect(con)
+''', encoding="utf-8")
+            completed = subprocess.run(["Rscript", str(script), str(root), str(candidate),
+                str(metadata_path), schema, expected_error], cwd=root / "pipeline", env=env,
+                capture_output=True, text=True)
+            assert completed.returncode == 0, completed.stdout + completed.stderr
+            with TestClient(app) as client:
+                curve = client.get(f"/api/territories/commune/{combourg}/indicators/raccordement_courbe")
+                selected = client.post(
+                    f"/api/territories/commune/{combourg}/indicators/raccordement_courbe/comparison",
+                    json={"selection":[{"territory_type":"epci","territory_id":data["combourg_epci"]}]})
+            assert curve.status_code == selected.status_code == 200
+            assert curve.json()["publication_id"] == prior_curve["publication_id"]
+            assert curve.json()["points"] == prior_curve["points"]
+            assert selected.json()["result"]["mean_curve"] == prior_selected_mean
+
+        missing_member_rows = [row for row in data["indicators"] if not (
+            row["key"] == "raccordement_courbe" and row["type"] == "commune" and
+            row["territoire"] == combourg)]
+        reject_owned_refresh(missing_member_rows,
+            "Dense-complete duration publication omits reference territory/territories: commune/35085",
+            "missing-commune-curve")
+
+        missing_point_rows = [row for row in data["indicators"] if not (
+            row["key"] == "raccordement_courbe" and row["type"] == "commune" and
+            row["territoire"] == combourg and row["detail"] == "t0090")]
+        reject_owned_refresh(missing_point_rows,
+            "Canonical focal raccordement curve for commune 35085 is missing declared point(s): t0090",
+            "missing-duration-point")
     finally:
         app.dependency_overrides.pop(get_repository, None)
         pool.cache_clear()
