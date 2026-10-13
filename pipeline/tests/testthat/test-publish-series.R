@@ -31,45 +31,26 @@ test_that("annual series preserves declared gaps and source vintage", {
   expect_equal(comparison$comparable_count, 3L)
 })
 
-test_that("ordered-series comparison projection preserves declared axis order and mixed source vintages", {
-  p <- list(dataset_id="x", points=data.frame(dataset_id="x",indicator_id="x",territory_id="a",
-    territory_type="commune",axis_value=c("M2","M3"),observation_period=c("w1","w2"),
-    value=c(2,3),status="measured"), descriptor=list(dataset_id="x",indicator_id="x",
-    axis_kind="state_role",axis_values=c("M2","M3"),completeness="may_be_missing",
-    comparison_point="M3",label="x",unit="u",direction="high",allowed_levels="commune",
-    descriptor_version="1",comparison_levels="commune"),
-    provenance=data.frame(provenance_revision_id=c("s-1-x","s-2-y"),source_id="s",vintage_id=c("1","2"),
-      source_name="s",dataset_name="s",source_version=c("1","2"),reference_date=as.Date(c("2020-01-01","2021-01-01")),
-      publication_date=as.Date(c("2020-02-01","2021-02-01")),revision_hash=c("x","y")),
-    point_provenance=data.frame(dataset_id="x",indicator_id="x",territory_id="a",axis_value=c("M2","M3"),
-      provenance_revision_id=c("s-1-x","s-2-y")))
-  # Full source projection validation belongs to its existing publisher; these assertions
-  # protect the comparison projector's independent axis and dependency contract.
-  refs <- data.frame(territory_id=c("a","b","region"),territory_type=c("commune","commune","region"),
-    epci_id=c("e","e",NA),density_class_code=c("d","d",NA))
-  p$descriptor$allowed_levels <- c("commune","region")
-  p$descriptor$comparison_levels <- "commune"
-  p$points <- rbind(p$points, transform(p$points,territory_id="b",value=c(4,1)))
-  p$provenance <- p$provenance[FALSE,]
-  p$point_provenance <- p$point_provenance[FALSE,]
-  # Projector insists on owned provenance, so use a production-shaped fixture via helper
-  p$provenance <- data.frame(provenance_revision_id="r",source_id="s",vintage_id="v",
-    source_name="s",dataset_name="s",source_version="v",reference_date=as.Date("2020-01-01"),
-    publication_date=as.Date("2020-02-01"),revision_hash="")
-  p$provenance$revision_hash <- series_revision_hash("s","v","s","s","v","2020-01-01","2020-02-01")
-  p$provenance$provenance_revision_id <- paste0("s-v-",substr(p$provenance$revision_hash,1,16))
-  p$point_provenance <- data.frame(dataset_id="x",indicator_id="x",territory_id=p$points$territory_id,
-    axis_value=p$points$axis_value,provenance_revision_id=p$provenance$provenance_revision_id)
-  p$provenance <- p$provenance[rep(1,1),]
-  p$descriptor$axis_kind <- "declared_detail"
-  p$points$state_role <- rep(c("M2","M3"),2)
-  result <- project_ordered_series_comparisons(p,refs,"input-v1","ref-v1")
-  expect_true(all(result$groups$axis_value %in% c("M2","M3")))
-  expect_identical(unique(result$groups$axis_value), c("M2","M3"))
-  expect_identical(result$input_content_version,"input-v1")
-  expect_identical(result$reference_content_version,"ref-v1")
-  expect_equal(result$groups$group_value[result$groups$comparison_context=="density_class" &
-    result$groups$axis_value=="M2"], 3)
+test_that("ordered-series comparison contract preserves declared statistics, axis, support and provenance", {
+  members <- c("a", "b")
+  points <- expand.grid(territory_id=members, axis_value=c("M2", "M3"), stringsAsFactors=FALSE)
+  points$value <- c(2, 4, 3, 1); points$status <- "measured"
+  mean_low <- project_series_comparison_group(points, c("M2", "M3"), members,
+    direction="low", statistic="mean")
+  expect_identical(mean_low$groups$axis_value, c("M2", "M3"))
+  expect_identical(mean_low$groups$statistic, c("mean", "mean"))
+  expect_equal(mean_low$groups$value, c(3, 2))
+  expect_equal(mean_low$territories$rank[mean_low$territories$axis_value=="M2"], c(1L,2L))
+  incomplete <- points[-1,]
+  expect_error(project_series_comparison_group(incomplete,c("M2","M3"),members,
+    direction="low",statistic="median"),"complete support")
+  ordinary_missing <- points[-1,]
+  ordinary_missing <- rbind(ordinary_missing,data.frame(territory_id="a",axis_value="M2",value=NA_real_,status="missing"))
+  expect_no_error(validate_series_projection(data.frame(indicator_id="x",territory_id="a",
+    territory_type="commune",axis_value="2020",observation_period="2020",value=NA_real_,
+    status="missing",source_id="s",vintage_id="v"),list(indicator_id="x",axis_kind="year",
+      axis_values=c("2020","2021"),completeness="may_be_missing",comparison_point="2020",label="x",
+      unit="u",direction="low",allowed_levels="commune",source_id="s",vintage_id="v")))
 })
 
 test_that("ordered-series comparisons preserve descriptor axis order and rank per point", {

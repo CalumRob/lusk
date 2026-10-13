@@ -312,6 +312,8 @@ declared_owned_series_route <- function(descriptor,metadata) {
   descriptor$theme_id <- route$theme_id
   descriptor$active_read_route <- route$active_read_route
   descriptor$comparison_levels <- comparison_levels
+  if (!is.null(route$comparison_statistic))
+    descriptor$comparison_statistic <- as.character(route$comparison_statistic)
   descriptor
 }
 
@@ -1032,10 +1034,16 @@ project_ordered_series_comparisons <- function(series, territory_reference,
       anyDuplicated(refs[c("territory_id", "territory_type")]) ||
       anyNA(refs[c("territory_id", "territory_type")]))
     stop("Ordered-series comparison territory reference is invalid", call.=FALSE)
-  versions <- c(input_content_version, reference_content_version)
-  if (length(versions)!=2L || anyNA(versions) || any(!nzchar(versions)))
+  valid_version <- function(x) is.character(x) && length(x)==1L && !is.na(x) && nzchar(trimws(x))
+  if (!valid_version(input_content_version) || !valid_version(reference_content_version))
     stop("Ordered-series comparison input publication identities are required", call.=FALSE)
-  allowed_contexts <- c("density_class", "epci", "bretagne", "same_level")
+  statistic <- d$comparison_statistic
+  if (!is.character(statistic) || length(statistic)!=1L || is.na(statistic) ||
+      !statistic %in% c("median", "mean") || !d$direction %in% c("high", "low"))
+    stop("Owned-series route must declare a supported comparison statistic and direction",call.=FALSE)
+  if (is.null(d$comparison_levels) || !length(d$comparison_levels) ||
+      any(!d$comparison_levels %in% d$allowed_levels))
+    stop("Owned-series route must declare comparison levels",call.=FALSE)
   refs$territory_id <- as.character(refs$territory_id)
   commune <- refs[refs$territory_type=="commune",,drop=FALSE]
   groups <- list()
@@ -1049,12 +1057,12 @@ project_ordered_series_comparisons <- function(series, territory_reference,
     add("epci",g,"commune",commune$territory_id[commune$epci_id==g])
   region <- refs[refs$territory_type=="region",,drop=FALSE]
   for (g in region$territory_id) add("bretagne",g,"commune",commune$territory_id)
-  for (level in intersect(c("epci","departement"),d$allowed_levels))
+  for (level in intersect(c("epci","departement"),d$comparison_levels))
     for (g in region$territory_id) add("same_level",g,level,refs$territory_id[refs$territory_type==level])
   point_rows <- series$points
   group_rows <- list(); territory_rows <- list()
   for (g in groups) {
-    if (is.null(d$comparison_levels) || !g$level %in% d$comparison_levels || !g$level %in% d$allowed_levels) next
+    if (!g$level %in% d$comparison_levels || !g$level %in% d$allowed_levels) next
     obs <- point_rows[point_rows$territory_type==g$level & point_rows$territory_id %in% g$ids,,drop=FALSE]
     for (axis in d$axis_values) {
       p <- obs[obs$axis_value==axis,,drop=FALSE]
@@ -1062,9 +1070,12 @@ project_ordered_series_comparisons <- function(series, territory_reference,
       values <- p$value[match(ids,p$territory_id)]
       status <- p$status[match(ids,p$territory_id)]; status[is.na(status)] <- "not_published"
       ok <- !is.na(values) & status=="measured"; v <- values[ok]
+      complete_required <- identical(d$indicator_id,"raccordement_courbe")
+      if (complete_required && (length(v)!=length(ids) || any(!ok)))
+        stop("Raccordement comparison requires complete support for every declared member and axis",call.=FALSE)
       group_rows[[length(group_rows)+1L]] <- data.frame(comparison_context=g$context,group_id=g$group,
-        territory_type=g$level,indicator_id=d$indicator_id,axis_value=axis,statistic="median",
-        group_value=if(length(v)) stats::median(v) else NA_real_,member_count=length(ids),
+        territory_type=g$level,indicator_id=d$indicator_id,axis_value=axis,statistic=statistic,
+        group_value=if(length(v)) if(statistic=="median") stats::median(v) else mean(v) else NA_real_,member_count=length(ids),
         eligible_count=length(v),missing_count=length(ids)-length(v),stringsAsFactors=FALSE)
       ranks <- ties <- rep(NA_integer_,length(ids))
       for (i in which(ok)) { ranks[i] <- 1L+sum(if(d$direction=="high") v>values[i] else v<values[i]); ties[i] <- sum(v==values[i]) }
@@ -1075,7 +1086,9 @@ project_ordered_series_comparisons <- function(series, territory_reference,
   }
   if (!length(group_rows)) stop("No declared ordered-series comparison contexts",call.=FALSE)
   out <- list(groups=do.call(rbind,group_rows),territories=do.call(rbind,territory_rows),
-    input_content_version=input_content_version,reference_content_version=reference_content_version)
+    input_content_version=input_content_version,reference_content_version=reference_content_version,
+    axis_values=as.character(d$axis_values),statistic=statistic,direction=d$direction,
+    provenance=series$provenance,point_provenance=series$point_provenance)
   out$content_version <- scalar_content_version(out)
   out
 }
