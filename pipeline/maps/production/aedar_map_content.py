@@ -8,30 +8,35 @@ LOSS_MAP_CONTENT = {
         "title_mode": "en voiture",
         "helper": None,
         "legend_label": "Types d’équipements accessibles en 15 minutes",
+        "regional_reference_label": "Moy. Bretagne",
     },
     "transit": {
         "title_prefix": "Diversité perdue ",
         "title_mode": "en transports",
         "helper": "Nombre de types d’équipements BPE accessibles en 15 minutes en voiture, mais pas en transports.",
         "legend_label": "Types d’équipements BPE",
+        "regional_reference_label": None,
     },
     "bike_lts2": {
         "title_prefix": "Diversité perdue ",
         "title_mode": "à vélo (LTS 2)",
         "helper": "Nombre de types d’équipements BPE accessibles en 15 minutes en voiture, mais pas à vélo.",
         "legend_label": "Types d’équipements BPE",
+        "regional_reference_label": None,
     },
     "bike_lts4": {
         "title_prefix": "Diversité perdue ",
         "title_mode": "à vélo (LTS 4)",
         "helper": "Nombre de types d’équipements BPE accessibles en 15 minutes en voiture, mais pas à vélo.",
         "legend_label": "Types d’équipements BPE",
+        "regional_reference_label": None,
     },
     "walk": {
         "title_prefix": "Diversité perdue ",
         "title_mode": "à pied",
         "helper": "Nombre de types d’équipements BPE accessibles en 15 minutes en voiture, mais pas à pied.",
         "legend_label": "Types d’équipements BPE",
+        "regional_reference_label": None,
     },
 }
 

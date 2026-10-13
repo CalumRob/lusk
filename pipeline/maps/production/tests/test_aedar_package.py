@@ -111,6 +111,73 @@ class AedarPackageTests(unittest.TestCase):
                 package_export(source, destination)
             self.assertFalse((destination / "upload-manifest.json").exists())
 
+    def test_head_verification_uses_manifest_content_type_for_json_metadata(self):
+        item = {"bytes": 24, "sha256": "a" * 64, "content_type": "application/json"}
+        self.assertTrue(upload_maps.head_matches({"ContentLength": 24, "Metadata": {"sha256": "a" * 64},
+            "ContentType": "application/json"}, item))
+        self.assertFalse(upload_maps.head_matches({"ContentLength": 24, "Metadata": {"sha256": "a" * 64},
+            "ContentType": "image/webp"}, item))
+        self.assertTrue(upload_maps.head_matches({"ContentLength": 24, "Metadata": {"sha256": "a" * 64},
+            "ContentType": "image/webp"}, {"bytes": 24, "sha256": "a" * 64}))
+
+    def test_package_carries_runner_owned_inline_metadata_without_rewriting_image(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, originals = self.fixture(root)
+            manifest_path = source / "worker-0.manifest.json"
+            worker = json.loads(manifest_path.read_text(encoding="utf-8"))
+            inline = next(row for row in worker["outputs"] if row["profile"] == "inline" and row["mode"] == "car")
+            inline["inline_legend"] = {"schema": "lusk.aedar.inline-legend.v1",
+                "image": {"key": "maps/aedar/v1/35238-car-inline.webp",
+                          "sha256": inline["output_sha256"], "bytes": inline["bytes"]}}
+            write_json(manifest_path, worker)
+            destination = root / "publish"
+            package_aedar_maps = __import__("package_aedar_maps").package_export
+            package_aedar_maps(source, destination)
+            metadata = json.loads((destination / "inline-metadata-manifest.json").read_text(encoding="utf-8"))
+            sidecar = destination / "35238-car-inline.json"
+            self.assertEqual(metadata["upload_count"], 1)
+            self.assertEqual(json.loads(sidecar.read_text(encoding="utf-8"))["image"]["sha256"], inline["output_sha256"])
+            image = next(row for row in originals if Path(row["path"]).name == "35238-car-inline.webp")
+            self.assertEqual((destination / Path(image["path"]).name).read_bytes(), Path(image["path"]).read_bytes())
+
+    def test_existing_uploader_accepts_only_json_bound_to_an_approved_inline_image_record(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            source, _ = self.fixture(root)
+            destination = root / "publish"
+            package_aedar_maps = __import__("package_aedar_maps").package_export
+            package_aedar_maps(source, destination)
+            full = json.loads((destination / "full-manifest.json").read_text(encoding="utf-8"))
+            qa_path = destination / "full-qa.json"
+            qa = json.loads(qa_path.read_text(encoding="utf-8"))
+            qa["human_spot_check"]["upload_manifest_sha256"] = upload_maps.sha256(destination / "upload-manifest.json")
+            write_json(qa_path, qa)
+            image = next(row for row in full["outputs"] if row["filename"] == "35238-car-inline.webp")
+            sidecar = destination / "35238-car-inline.json"
+            sidecar.write_text(json.dumps({"schema": "lusk.aedar.inline-legend.v1",
+                "image": {"key": image["key"], "sha256": image["output_sha256"], "bytes": image["bytes"]}}), encoding="utf-8")
+            manifest = {"family": "aedar-inline-metadata", "prefix": "maps/aedar/v1/",
+                "source_manifest_sha256": upload_maps.sha256(destination / "full-manifest.json"),
+                "source_upload_manifest_sha256": upload_maps.sha256(destination / "upload-manifest.json"),
+                "outputs": [{"filename": sidecar.name, "path": str(sidecar),
+                    "key": "maps/aedar/v1/35238-car-inline.json", "content_type": "application/json",
+                    "bytes": sidecar.stat().st_size, "output_sha256": upload_maps.sha256(sidecar)}]}
+            manifest_path = destination / "inline-metadata-manifest.json"
+            write_json(manifest_path, manifest)
+            previous = upload_maps.OUT
+            try:
+                upload_maps.configure_output(destination)
+                _, items = upload_maps.load_plan(None, manifest_path)
+                self.assertEqual(len(items), 1)
+                self.assertEqual(items[0]["content_type"], "application/json")
+                manifest["outputs"][0]["content_type"] = "image/webp"
+                write_json(manifest_path, manifest)
+                with self.assertRaisesRegex(ValueError, "key/content type"):
+                    upload_maps.load_plan(None, manifest_path)
+            finally:
+                upload_maps.configure_output(previous)
+
 
 if __name__ == "__main__":
     unittest.main()

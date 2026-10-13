@@ -64,6 +64,7 @@ def binding_for(bases, facts, facts_path, config=None):
                 "facts_path": str(Path(facts_path).resolve()), "value_field": spec["value_field"],
                 "measure": spec["measure"], "horizon": int(config["horizon_minutes"]),
                 "comparison": "car-only-typequ", "scale_type": "equal-width", "scale_cap": high,
+                "scale_scope": "absolute" if mode == "car" else "territory-local-pooled-loss",
                 "scale_overflow": False, "scale_breaks": boundaries,
                 "_scale": {"min": low, "max": high, "breaks": boundaries},
                 "palette": tuple(config["palette"]),

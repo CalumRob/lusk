@@ -72,6 +72,26 @@ After the usual approval is recorded, add `-Upload` to that same command. No sep
 SDK installation or QGIS launcher is needed for upload.
 The old `output/upload-network-maps.ps1` path remains a compatibility alias.
 
+### AEDAR inline legend metadata
+
+Inline maps have an image-bound, readable JSON sidecar at the same registered AEDAR key prefix.
+For a preserved approved package, run the metadata-only backfill in the QGIS Python runtime
+(it reads Parquet metrics only; it does not load geometry, render, or rewrite package evidence):
+
+```powershell
+& $qgis -B "$maps\backfill_aedar_inline_legends.py" `
+  --package-dir "$maps\output\aedar-static-publish" `
+  --facts "$pipeline\data\processed\aedar\maps\bretagne-frame\address-access-metrics.parquet" `
+  --output-dir '<separate-sidecar-staging-directory>'
+```
+
+The command verifies the prepared-facts and family/plan signatures, complete inline coverage,
+original package approval bindings and every image digest. It writes an independent
+`inline-metadata-manifest.json`; changed or unverifiable source evidence fails closed. Dry-run
+publication uses the existing uploader and original package as `-OutputDir`, specifying the
+sidecar manifest with `--manifest`. Only the selected JSON objects are uploaded; the original
+image approval remains authoritative and unchanged.
+
 Owner-approved AEDAR object contract:
 
 ```text

@@ -58,6 +58,52 @@ def load_plan(prefix: str | None, manifest_path: Path | None = None, *,
               completed_log_path: Path | None = None) -> tuple[dict, list[dict]]:
     manifest_path = Path(manifest_path) if manifest_path else MANIFEST
     data = json.loads(manifest_path.read_text(encoding="utf-8"))
+    if data.get("family") == "aedar-inline-metadata":
+        config = json.loads((PRODUCTION / "aedar-static-family.json").read_text(encoding="utf-8"))
+        if prefix is None:
+            prefix = data.get("prefix")
+        if prefix != config["prefix"] or prefix != data.get("prefix"):
+            raise ValueError("AEDAR metadata prefix must match its registered namespace")
+        if not (OUT / "full-manifest.json").is_file() or sha256(OUT / "full-manifest.json") != data.get("source_manifest_sha256"):
+            raise ValueError("AEDAR metadata selection is not bound to the original full manifest")
+        if not (OUT / "upload-manifest.json").is_file() or sha256(OUT / "upload-manifest.json") != data.get("source_upload_manifest_sha256"):
+            raise ValueError("AEDAR metadata selection is not bound to the original upload manifest")
+        if not FULL_QA.is_file():
+            raise ValueError("Original AEDAR QA is missing")
+        qa = json.loads(FULL_QA.read_text(encoding="utf-8"))
+        if (qa.get("source_manifest_sha256") != data.get("source_manifest_sha256")
+                or qa.get("human_spot_check", {}).get("upload_manifest_sha256") != data.get("source_upload_manifest_sha256")):
+            raise ValueError("Original AEDAR QA/approval does not bind to metadata source manifests")
+        approved_images = {row.get("key"): row for row in json.loads(FULL_MANIFEST.read_text(encoding="utf-8")).get("outputs", [])
+                           if row.get("profile") == "inline"}
+        rows = data.get("outputs")
+        if not isinstance(rows, list) or not rows:
+            raise ValueError("AEDAR metadata selection is empty")
+        items = []
+        seen = set()
+        for row in rows:
+            filename = row.get("filename", "")
+            if not re.fullmatch(r"[0-9]+-(?:car|transit|bike_lts2|bike_lts4|walk)-inline\.json", filename) or filename in seen:
+                raise ValueError(f"Invalid or duplicate AEDAR inline metadata filename: {filename!r}")
+            seen.add(filename)
+            path = Path(row["path"])
+            key = prefix.rstrip("/") + "/" + filename
+            if row.get("key") != key or row.get("content_type") != "application/json":
+                raise ValueError(f"Invalid AEDAR inline metadata key/content type: {filename}")
+            payload = json.loads(path.read_text(encoding="utf-8"))
+            image = payload.get("image", {})
+            approved = approved_images.get(image.get("key"))
+            if (payload.get("schema") != "lusk.aedar.inline-legend.v1" or image.get("key") != key[:-5] + ".webp"
+                    or not approved or image.get("sha256") != approved.get("output_sha256")
+                    or image.get("bytes") != approved.get("bytes")):
+                raise ValueError(f"Metadata does not bind to expected AEDAR inline image: {filename}")
+            if path.stat().st_size != int(row["bytes"]) or sha256(path) != row["output_sha256"]:
+                raise ValueError(f"AEDAR inline metadata changed: {filename}")
+            items.append({"path": path, "filename": filename, "key": key,
+                          "sha256": row["output_sha256"], "bytes": int(row["bytes"]),
+                          "content_type": "application/json"})
+        data["_metadata_selection"] = True
+        return data, items
     replacement = data.get("mode") == "replace"
     if prefix is None:
         prefix = str(data.get("prefix") or DEFAULT_PREFIX)
@@ -142,6 +188,15 @@ def upload_is_approved(qa_path: Path | None = None) -> tuple[bool, str]:
 
 def plan_qa_path(data: dict, override: Path | None = None) -> Path:
     """Keep replacement approval tied to the QA report named by the plan."""
+    if data.get("family") == "aedar-inline-metadata":
+        declared = FULL_QA.resolve()
+        if override is not None and Path(override).resolve() != declared:
+            raise ValueError("AEDAR metadata approval must use its original package QA report")
+        qa = json.loads(declared.read_text(encoding="utf-8"))
+        if (qa.get("source_manifest_sha256") != data.get("source_manifest_sha256")
+                or qa.get("human_spot_check", {}).get("upload_manifest_sha256") != data.get("source_upload_manifest_sha256")):
+            raise ValueError("AEDAR metadata approval is not bound to its source package")
+        return declared
     if data.get("family") == "aedar":
         declared = FULL_QA.resolve()
         if override is not None and Path(override).resolve() != declared:
@@ -194,7 +249,7 @@ def head_matches(response: dict, item: dict) -> bool:
     metadata = {key.lower(): value for key, value in response.get("Metadata", {}).items()}
     return (response.get("ContentLength") == item["bytes"] and
             metadata.get("sha256") == item["sha256"] and
-            response.get("ContentType", "").split(";")[0].lower() == "image/webp")
+            response.get("ContentType", "").split(";")[0].lower() == item.get("content_type", "image/webp"))
 
 
 def run_upload(prefix: str, event_log: Path, items: list[dict], qa_path: Path) -> int:
@@ -254,7 +309,7 @@ def run_upload(prefix: str, event_log: Path, items: list[dict], qa_path: Path) -
                 raise ValueError("local file changed while preparing upload")
             put_options = {
                 "Bucket": BUCKET, "Key": item["key"], "Body": body,
-                "ContentType": "image/webp", "CacheControl": "public, max-age=3600",
+                "ContentType": item.get("content_type", "image/webp"), "CacheControl": "public, max-age=3600",
                 "Metadata": {"sha256": item["sha256"]},
                 "ContentMD5": __import__("base64").b64encode(
                     hashlib.md5(body, usedforsecurity=False).digest()).decode("ascii"),

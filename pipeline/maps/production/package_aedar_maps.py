@@ -117,6 +117,7 @@ def package_export(source_dir, output_dir):
         raise ValueError(f"Publication directory contains unexpected WebPs: {sorted(extra)[:5]}")
 
     outputs = []
+    inline_metadata = []
     for number, filename in enumerate(sorted(expected), 1):
         territory, mode, profile = expected[filename]
         row = source_outputs[filename]
@@ -149,6 +150,17 @@ def package_export(source_dir, output_dir):
         outputs.append({**row, "path": str(destination), "filename": filename,
                         "key": key, "public_url": f"{config['public_base_url']}/{key}",
                         "content_type": "image/webp"})
+        if profile == "inline" and row.get("inline_legend"):
+            payload = row["inline_legend"]
+            if payload.get("image", {}).get("sha256") != row["output_sha256"]:
+                raise ValueError(f"Inline legend does not bind to image bytes: {filename}")
+            json_name = Path(filename).stem + ".json"
+            json_path = output / json_name
+            write_json(json_path, payload)
+            inline_metadata.append({"filename": json_name, "path": str(json_path),
+                "key": config["prefix"] + json_name, "content_type": "application/json",
+                "bytes": json_path.stat().st_size, "output_sha256": sha256(json_path),
+                "image_sha256": row["output_sha256"]})
         if number % 250 == 0 or number == len(expected):
             log(f"PACKAGED {number}/{len(expected)} byte-identical, decoded WebPs")
 
@@ -186,6 +198,13 @@ def package_export(source_dir, output_dir):
         "skipped_count": 0, "skipped_bytes": 0, "outputs": outputs, "skipped": [],
         "missing_territories": missing}
     write_json(output / "upload-manifest.json", selection)
+    if inline_metadata:
+        write_json(output / "inline-metadata-manifest.json", {
+            "family": "aedar-inline-metadata", "prefix": config["prefix"],
+            "source_manifest_sha256": sha256(output / "full-manifest.json"),
+            "source_upload_manifest_sha256": sha256(output / "upload-manifest.json"),
+            "source_qa_sha256": sha256(output / "full-qa.json"), "outputs": inline_metadata,
+            "upload_count": len(inline_metadata)})
     log(f"COMPLETE: {len(outputs)} staged WebPs; same R2 helper; upload approval remains pending")
     return selection
 

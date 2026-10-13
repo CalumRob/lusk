@@ -7,6 +7,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 from aedar_map_plan import binding_for, family_config, partition
+from aedar_legend import inline_legend
 
 
 class IndexedFacts:
@@ -55,6 +56,24 @@ class AedarMapPlanTests(unittest.TestCase):
         self.assertEqual(sorted(index for shard in shards for index in shard), list(range(7)))
         self.assertTrue(all(shard == sorted(shard) for shard in shards))
         self.assertEqual(len(shards), 4)
+
+    def test_inline_legend_keeps_exact_classification_boundaries_and_only_car_reference(self):
+        base = {"territory": {"kind": "commune", "code": "22001", "name": "Test"},
+                "territory_codes": ("22001",)}
+        rows = binding_for([base], IndexedFacts(), "facts.parquet").map_set.layers[
+            "aedar-static-selected"]
+        by_mode = {row["mode"]: row for row in rows}
+        car = inline_legend(by_mode["car"], "maps/aedar/v1/22001-car-inline.webp", "a" * 64, 12)
+        transit = inline_legend(by_mode["transit"], "maps/aedar/v1/22001-transit-inline.webp", "b" * 64, 13)
+        self.assertEqual(car["scale"]["boundaries"], list(by_mode["car"]["scale_breaks"]))
+        self.assertEqual(car["scale"]["regional_reference"], 106.0)
+        self.assertEqual(car["scale"]["regional_reference_label"], "Moy. Bretagne")
+        self.assertEqual(car["scale"]["scope"], "absolute")
+        self.assertIsNone(transit["scale"]["regional_reference"])
+        self.assertIsNone(transit["scale"]["regional_reference_label"])
+        self.assertEqual(transit["scale"]["scope"], "territory-local-pooled-loss")
+        self.assertEqual(transit["scale"]["semantics"], "car-only-typequ")
+        self.assertEqual(len(transit["scale"]["display_ticks"]), 6)
 
 
 if __name__ == "__main__":
