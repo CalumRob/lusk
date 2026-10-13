@@ -175,6 +175,11 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data", con
     scalar <- publish_service_share_scalars(conn, donnees$scalar_access,
       donnees$scalar_metadata, donnees$scalar_eligible_territories,
       additional_projections=snapshot$additional_projections)
+    if (!identical(as.character(scalar$content_version), snapshot$comparison$scalar_content_version))
+      stop("Scalar comparison projection was built from a different scalar publication", call.=FALSE)
+    scalar_comparison <- publish_registered_scalar_comparison(snapshot$comparison,
+      scalar_comparison_postgres_adapter(conn))
+    write_scalar_comparison_parquets(snapshot$comparison, sortie)
     history_path <- file.path(sortie,"histoires_economie.parquet")
     vintage_path <- file.path(sortie,"vintages.parquet")
     if (!file.exists(history_path) || !file.exists(vintage_path)) stop("Canonical economy reading inputs are unavailable",call.=FALSE)
@@ -184,7 +189,8 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data", con
     economy_reading <- publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_input,conn)
     mobility_reading <- publish_canonical_mobility_reading(conn,sortie)
     milieux_reading <- publish_canonical_milieux_reading(conn,sortie,conso_source_path=conso_source_path)
-    list(access=access, scalar=scalar, economy_reading=economy_reading,mobility_reading=mobility_reading,
+    list(access=access, scalar=scalar, scalar_comparison=scalar_comparison,
+      economy_reading=economy_reading,mobility_reading=mobility_reading,
       milieux_reading=milieux_reading$reading, milieux_state_series=milieux_reading$owned_series)
   },
            finally = DBI::dbDisconnect(conn))
@@ -252,6 +258,10 @@ project_service_scalar_snapshot <- function(donnees, sortie) {
   housing <- project_housing_scalar_cohort(sortie, donnees$scalar_eligible_territories)
   additional <- list(economy, demography, mobility, housing)
   projection <- attach_essential_service_denominators(assemble_scalar_snapshot(service, additional))
+  comparison <- project_scalar_comparisons(projection, donnees$tables$territory_reference,
+    input_scalar_content_version=scalar_content_version(projection),
+    reference_content_version=as.character(donnees$versions[["territory_reference"]]))
   list(projection=projection,
-    additional_projections=additional)
+    additional_projections=additional,
+    comparison=comparison)
 }
