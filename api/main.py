@@ -513,6 +513,16 @@ class ReadRepository:
                             "mean":group_facet[2] if comparison_statistic=="mean" else None,
                             "scope":{"kind":"level","territory_type":scope_level,
                             "department_id":department_id,"epci_id":epci_id}}
+                        if comparison_scope=="selected_group" and comparison_statistic=="mean":
+                            comparison={"point":comparison_point,"statistic":"mean",
+                                "mean":group_facet[2],"selected_member_count":group_facet[3],
+                                "scope":{"kind":"level","territory_type":scope_level,
+                                "department_id":department_id,"epci_id":epci_id}}
+                            mean_scope_series=[{"territory":{"type":scope_level,"id":fixed_group_id,"name":None},
+                                "statistic":"mean","selected_member_count":group_facet[3],
+                                "points":[{"axis":row[0],"value":row[2],
+                                    "status":"measured" if row[4]==row[3] else "unavailable"}
+                                    for row in group_rows]}]
                         for row in territory_rows:
                             peer=grouped.get(row[1]); point=next((p for p in peer["points"]
                                 if p["axis"]==row[0] or p.get("state_role")==row[0]),None) if peer else None
