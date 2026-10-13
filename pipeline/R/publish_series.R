@@ -1018,3 +1018,47 @@ series_comparison <- function(values, focal_id, direction) {
   list(value=focal, median=if(length(eligible)) stats::median(eligible) else NULL,
        rank=1L + ahead, tied=sum(eligible == focal), comparable_count=length(eligible))
 }
+
+# Project fixed-context comparisons for declared series axes. Unlike scalar
+# comparisons, a territory is comparable only when its complete declared curve
+# is present; a missing route/point is not a zero and cannot be silently dropped.
+project_series_comparison_group <- function(points, axis_values, member_ids,
+    focal_ids=member_ids, direction, statistic="median") {
+  required <- c("territory_id", "axis_value", "value", "status")
+  if (!is.data.frame(points) || !all(required %in% names(points)) ||
+      !length(axis_values) || anyDuplicated(axis_values) ||
+      !direction %in% c("high", "low") || !statistic %in% c("median", "mean"))
+    stop("Invalid ordered-series comparison contract", call.=FALSE)
+  axes <- as.character(axis_values)
+  members <- unique(as.character(member_ids))
+  if (anyDuplicated(points[c("territory_id", "axis_value")]) ||
+      any(!points$territory_id %in% members) || any(!points$axis_value %in% axes))
+    stop("Ordered-series comparison has undeclared or duplicate points", call.=FALSE)
+  # Emit groups in descriptor axis order and require every member at every axis.
+  complete <- vapply(members, function(id) {
+    rows <- points[points$territory_id == id, , drop=FALSE]
+    setequal(as.character(rows$axis_value), axes) &&
+      all(rows$status == "measured") && all(is.finite(rows$value))
+  }, logical(1))
+  if (!all(complete)) stop("Ordered-series comparison requires complete support for every declared member", call.=FALSE)
+  groups <- lapply(axes, function(axis) {
+    rows <- points[points$axis_value == axis, , drop=FALSE]
+    rows <- rows[match(members, rows$territory_id), , drop=FALSE]
+    aggregate <- if (statistic == "median") stats::median(rows$value) else mean(rows$value)
+    data.frame(axis_value=axis, statistic=statistic, value=aggregate,
+      member_count=length(members), stringsAsFactors=FALSE)
+  })
+  territory_ids <- intersect(as.character(focal_ids), members)
+  territories <- do.call(rbind, lapply(territory_ids, function(id) do.call(rbind,
+    lapply(axes, function(axis) {
+      rows <- points[points$axis_value == axis, , drop=FALSE]
+      value <- rows$value[match(id, rows$territory_id)]
+      peers <- rows$value
+      ahead <- if (direction == "high") sum(peers > value) else sum(peers < value)
+      data.frame(territory_id=id, axis_value=axis, value=value,
+        rank=1L+ahead, tie_count=sum(peers == value), rank_size=length(peers),
+        stringsAsFactors=FALSE)
+    }))))
+  list(groups=do.call(rbind, groups), territories=territories,
+    axis_values=axes, statistic=statistic, direction=direction)
+}

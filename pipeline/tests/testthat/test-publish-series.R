@@ -31,6 +31,22 @@ test_that("annual series preserves declared gaps and source vintage", {
   expect_equal(comparison$comparable_count, 3L)
 })
 
+test_that("ordered-series comparisons preserve descriptor axis order and rank per point", {
+  points <- data.frame(territory_id=rep(c("a", "b"), each=3),
+    axis_value=rep(c("t0000", "t0010", "t0020"), 2),
+    value=c(1, 2, 3, 2, 2, 4), status="measured")
+  result <- project_series_comparison_group(points,
+    c("t0000", "t0010", "t0020"), c("a", "b"), direction="high")
+  expect_identical(result$groups$axis_value, c("t0000", "t0010", "t0020"))
+  expect_equal(result$groups$value, c(1.5, 2, 3.5))
+  expect_equal(result$territories$rank[result$territories$territory_id == "a"], c(2L, 1L, 2L))
+  expect_error(project_series_comparison_group(points[-1, ],
+    c("t0000", "t0010", "t0020"), c("a", "b"), direction="high"), "complete support")
+  points$value[1] <- NA_real_; points$status[1] <- "missing"
+  expect_error(project_series_comparison_group(points,
+    c("t0000", "t0010", "t0020"), c("a", "b"), direction="high"), "complete support")
+})
+
 test_that("owned prix_m2 projects annual canonical facts with their effective row lineage", {
   payload <- payload_habitat()
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_habitat.json"), simplifyVector=FALSE)
