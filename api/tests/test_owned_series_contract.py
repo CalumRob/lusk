@@ -111,6 +111,56 @@ def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
     assert all(point["provenance"][0]["version"] == "2025" for point in read["points"])
     assert read["comparison"]["point"] == "2025"
 
+
+def test_owned_series_reader_rejects_consistent_published_superset(monkeypatch):
+    from api import main
+
+    class Cursor:
+        def __init__(self, rows=()): self.rows=list(rows)
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+    class Transaction:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+    class Connection:
+        def transaction(self): return Transaction()
+        def execute(self, sql, params=()):
+            if sql.startswith("SET TRANSACTION"): return Cursor()
+            if "FROM series_dataset_publication" in sql: return Cursor([("v1", "ref", 1, "now")])
+            if "FROM table_publication" in sql: return Cursor([("ref",)])
+            if "FROM series_dataset_descriptor" in sql:
+                return Cursor([("year", ["2024"], "may_be_missing", "2024", "Series", "u", "high",
+                    ["commune"], "1", "median", "default_group")])
+            if "SELECT name,territory_type,department_id,epci_id" in sql:
+                return Cursor([("A", "commune", "22", "e")])
+            if "SELECT t.territory_id FROM territory_reference" in sql:
+                return Cursor([("a",), ("b",)])
+            if "FROM series_dataset_observation" in sql:
+                return Cursor([("a", "A", "commune", "2024", None, "2024", 1, "measured",
+                    "rev", "s", "v", "source", "dataset", "1", None, None, "hash", None)])
+            if "FROM ordered_series_comparison_publication" in sql:
+                return Cursor([("comparison-v1", "v1", "ref", 1, 3)])
+            if "FROM ordered_series_comparison_group" in sql:
+                return Cursor([("2024", "median", 1, 3, 3, 0)])
+            if "FROM ordered_series_comparison_territory" in sql:
+                return Cursor([("2024", member, 1, "measured", 1, 1, 3)
+                    for member in ("a", "b", "extra")])
+            raise AssertionError(sql)
+    class Connections:
+        def connection(self):
+            class Context:
+                def __enter__(self): return Connection()
+                def __exit__(self, *args): return False
+            return Context()
+
+    monkeypatch.setattr(main, "_comparison_cohort", lambda *args: ("commune", ("a", "b"),
+        {"kind": "density_class", "density_class_code": "d1"}))
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *args: ("density_class", "d1", "commune"))
+    with pytest.raises(HTTPException) as error:
+        ReadRepository(Connections()).read_owned_series("dataset", "commune", "a", "indicator",
+            "commune", None, None)
+    assert error.value.status_code == 503
+
 def test_owned_series_migration_is_additive_and_fresh_schema_matches():
     root = Path(__file__).resolve().parents[1]
     migration = (root / "migrations/011_owned_series_publications.sql").read_text()
