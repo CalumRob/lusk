@@ -80,7 +80,7 @@ class PreparedGround:
     boundaries: QImage
     territory_border: QImage
     outside_land: QgsGeometry
-    land_mask: np.ndarray
+    land_mask: np.ndarray | None
     extent: QgsRectangle
 
 
@@ -331,6 +331,22 @@ def geometry_pixel_path(
 
 
 def geometry_mask(geometry: QgsGeometry, extent: QgsRectangle, size: int) -> np.ndarray:
+    # Most commune frames are entirely inland. GEOS coverage predicates avoid
+    # converting the whole shared coastline (~1.2 million vertices) to a Qt
+    # path for a mask that is uniformly one or zero. Pad by one pixel so land
+    # just outside the frame can still contribute the original antialiasing.
+    coverage_frame = QgsRectangle(extent)
+    coverage_frame.grow(max(extent.width(), extent.height()) / size)
+    coverage_geometry = QgsGeometry.fromRect(coverage_frame)
+    # GEOS union semantics differ from Qt's odd-even fill for overlapping
+    # polygon parts/collections. Only valid polygonal inputs may use the full
+    # coverage shortcut; everything else keeps the old defined raster result.
+    if (geometry.type() == Qgis.GeometryType.Polygon and
+            geometry.contains(coverage_geometry) and geometry.isGeosValid()):
+        return np.ones((size, size), dtype=np.float32)
+    if geometry.disjoint(coverage_geometry):
+        return np.zeros((size, size), dtype=np.float32)
+    # Partial coverage (coasts, islands, holes) retains the exact rasterizer.
     mask = QImage(size, size, QImage.Format_RGBA8888)
     mask.fill(Qt.transparent)
     painter = QPainter(mask)
@@ -697,8 +713,13 @@ def prepare_ground(
     shared: SharedGround,
     include_ocsge: bool = True,
     ground_settings: Mapping | None = None,
+    include_land_mask: bool = True,
 ) -> PreparedGround:
-    """Render the original ground/context/border passes at this profile's size."""
+    """Render ground/context/borders; the inspection-only land mask is optional.
+
+    The default preserves all existing callers. Inline consumers that never
+    desaturate inspection furniture can explicitly omit the unused mask.
+    """
     extent = QgsRectangle(feature["extent"])
     geometry = QgsGeometry(feature["analytical_geometry"])
     if geometry.isEmpty() or extent.isEmpty():
@@ -761,7 +782,7 @@ def prepare_ground(
         territory_border = render_layers(
             project, extent, border_layers, QColor(0, 0, 0, 0), size
         )
-        land_mask = geometry_mask(context_geometry, extent, size)
+        land_mask = geometry_mask(context_geometry, extent, size) if include_land_mask else None
         return PreparedGround(ground, boundaries, territory_border, outside_land, land_mask, extent)
     finally:
         for layer in temporary_layers:

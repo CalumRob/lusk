@@ -1,5 +1,14 @@
 # Production map assets
 
+## Byte-preserving shared preparation
+
+Engraved ink and furniture desaturation process only their mask's pixel window,
+with the original arithmetic, rounding, alpha and edge relief. Geometry masks
+skip coastline conversion only for padded, valid full coverage or disjoint
+frames; partial coverage, holes and invalid overlaps keep the original rasterizer.
+Consumers can omit an unused inspection-only land mask without changing rendered
+layers. Differential fixtures compare these shortcuts with the original pixels.
+
 The selected-CS colour subset in `network-palette.json` records the used OCS-GE
 classes and the approved map treatment. The original class-colour source is
 `E:/lusk-hero/visual-class-map-paper.csv`; production ground rule expressions
