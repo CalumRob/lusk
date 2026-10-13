@@ -81,6 +81,12 @@ def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
                     "Médiane prix au m²", "€/m²", "low", ["commune", "epci", "departement"], "1")])
             if "SELECT name,territory_type,department_id,epci_id" in sql: return Cursor([("Commune A1", "commune", "22", "epci-a")])
             if "SELECT t.territory_id FROM territory_reference" in sql: return Cursor([("22001",)])
+            if "SELECT territory_id FROM territory_reference WHERE territory_type='commune'" in sql:
+                return Cursor([("22001",)])
+            if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id" in sql:
+                return Cursor([("22001","commune","d1")])
+            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
+                return Cursor([("22001","commune","22","epci-a","d1")])
             if "FROM series_dataset_observation" in sql:
                 return Cursor([
                     ("22001", "Commune A1", "commune", "2024", None, "2024", None, "missing",
@@ -170,13 +176,16 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
                 return Cursor([] if self.missing_marker else [("cmp-v1","wrong-source" if self.stale_source else "ocsge_v1",
                     "wrong-reference" if self.stale_reference else "ref1",8,10)])
             if "FROM ordered_series_comparison_group" in sql:
-                context=params[2]; ids={"epci":["35238","35239"],"bretagne":["35238","35239","35240","22001","35241"]}[context]
+                context=params[2]; ids={"density_class":["35238","35239","35240","22001","35241"],
+                    "epci":["35238","35239"],"bretagne":["35238","35239","35240","22001","35241"]}[context]
                 rows=[("M2","median",0.0,len(ids),len(ids),0),
-                    ("M3","median",50.0 if context=="epci" else 50.0,len(ids),len(ids)-int(context=="bretagne"),int(context=="bretagne"))]
+                    ("M3","median",50.0,len(ids),len(ids)-int(context in ("density_class","bretagne")),
+                        int(context in ("density_class","bretagne")))]
                 return Cursor(rows[:1] if self.incomplete_comparison else rows)
             if "FROM ordered_series_comparison_territory" in sql:
                 context=params[2]
-                ids={"epci":["35238","35239"],"bretagne":["35238","35239","35240","22001","35241"]}[context]
+                ids={"density_class":["35238","35239","35240","22001","35241"],
+                    "epci":["35238","35239"],"bretagne":["35238","35239","35240","22001","35241"]}[context]
                 values={"35238":50.0,"35239":50.0,"35240":70.0,"22001":10.0,"35241":None}
                 rows=[]
                 for axis in ("M2","M3"):
@@ -200,6 +209,20 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
                 if epci: return Cursor([("35238",),("35239",)])
                 if department: return Cursor([("35238",),("35239",),("35240",)])
                 return Cursor([("35238",),("35239",),("35240",),("22001",),("35241",)])
+            if "SELECT territory_id FROM territory_reference WHERE territory_type='commune'" in sql:
+                department, _, epci, _ = params[:4]
+                if epci: return Cursor([("35238",),("35239",)])
+                if department: return Cursor([("35238",),("35239",),("35240",)])
+                return Cursor([("35238",),("35239",),("35240",),("22001",),("35241",)])
+            if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id" in sql:
+                return Cursor([("35238","commune","d1")])
+            if "SELECT territory_id,epci_id,density_class_code" in sql and "territory_type='commune'" in sql:
+                return Cursor([(i,"243500139" if i in ("35238","35239") else "other","d1")
+                    for i in ("35238","35239","35240","22001","35241")])
+            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
+                return Cursor([(i,"commune","35" if i.startswith("35") else "22",
+                    "243500139" if i in ("35238","35239") else "other","d1")
+                    for i in ("35238","35239","35240","22001","35241")])
             if "FROM series_dataset_observation" in sql:
                 ids=params[2]
                 values={"35238":50.0,"35239":50.0,"35240":70.0,"22001":10.0,"35241":None}
@@ -234,7 +257,7 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
         "commune","35",None)
     assert not any("ordered_series_comparison_" in q for q,_ in connections.connection_value.queries)
     connections.connection_value.queries.clear()
-    bretagne=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+    density=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
         "commune",None,None)
     assert epci["comparison_point"] == epci["comparison"]["point"] == "2025"
     with pytest.raises(HTTPException,match="descriptor comparison point"):
@@ -245,17 +268,17 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
     assert epci["comparison"]["median"] == 50.0
     assert department["comparison"]["comparable_count"] == 3
     assert department["comparison"]["median"] == 50.0
-    assert bretagne["comparison"]["comparable_count"] == 4
-    assert bretagne["comparison"]["rank"] == 2 and bretagne["comparison"]["ties"] == 2
-    assert bretagne["comparison"]["median"] == 50.0
-    assert epci["comparison"]["median"] != bretagne["comparison"]["median"] or epci["comparison"]["comparable_count"] != bretagne["comparison"]["comparable_count"]
+    assert density["comparison"]["comparable_count"] == 4
+    assert density["comparison"]["rank"] == 2 and density["comparison"]["ties"] == 2
+    assert density["comparison"]["median"] == 50.0
+    assert epci["comparison"]["median"] != density["comparison"]["median"] or epci["comparison"]["comparable_count"] != density["comparison"]["comparable_count"]
     assert epci["publication_id"] == "ocsge_v1"
     assert epci["points"][0]["value"] == 0.0
     assert "rank_epci" not in epci["points"][0]
     facet=next(p for p in epci["scope_series"][0]["points"] if p["axis"]=="2025")
     assert facet["comparison_rank"] == 1 and facet["comparison_ties"] == 2
     assert epci["scope_series"][1]["points"][1]["value"] == 50.0
-    missing=next(p for p in bretagne["scope_series"][-1]["points"] if p["axis"]=="2025")
+    missing=next(p for p in density["scope_series"][-1]["points"] if p["axis"]=="2025")
     assert missing["status"] == "missing" and missing["comparison_rank"] is None
     connections.connection_value.no_comparison=True
     no_comparison=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",

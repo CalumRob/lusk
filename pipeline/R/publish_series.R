@@ -1074,21 +1074,12 @@ project_ordered_series_comparisons <- function(series, territory_reference,
   if (is.null(d$comparison_levels) || !length(d$comparison_levels) ||
       any(!d$comparison_levels %in% d$allowed_levels))
     stop("Owned-series route must declare comparison levels",call.=FALSE)
-  refs$territory_id <- as.character(refs$territory_id)
-  commune <- refs[refs$territory_type=="commune",,drop=FALSE]
-  groups <- list()
-  add <- function(context, group, level, ids) {
-    ids <- unique(as.character(ids))
-    if (length(ids)) groups[[length(groups)+1L]] <<- list(context=context,group=group,level=level,ids=ids)
-  }
-  for (g in unique(na.omit(as.character(commune$density_class_code))))
-    add("density_class",g,"commune",commune$territory_id[commune$density_class_code==g])
-  for (g in unique(na.omit(as.character(commune$epci_id))))
-    add("epci",g,"commune",commune$territory_id[commune$epci_id==g])
-  region <- refs[refs$territory_type=="region",,drop=FALSE]
-  for (g in region$territory_id) add("bretagne",g,"commune",commune$territory_id)
-  for (level in intersect(c("epci","departement"),d$comparison_levels))
-    for (g in region$territory_id) add("same_level",g,level,refs$territory_id[refs$territory_type==level])
+  membership <- comparison_context_membership(refs,d$comparison_levels)
+  groups <- lapply(seq_len(nrow(membership)), function(i) list(
+    context=as.character(membership$comparison_context[[i]]),
+    group=as.character(membership$group_id[[i]]),
+    level=as.character(membership$territory_type[[i]]),
+    ids=as.character(membership$member_ids[[i]])))
   point_rows <- series$points
   comparison_axes <- as.character(d$comparison_axis_values %||% d$axis_values)
   axis_field <- if ("state_role" %in% names(point_rows) && all(comparison_axes %in% point_rows$state_role)) "state_role" else "axis_value"

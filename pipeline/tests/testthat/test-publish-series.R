@@ -331,9 +331,32 @@ test_that("OCS-GE projection uses typed per-role components and retains comparis
     "series-publication-fixture-v1","territory-reference-fixture-v1")
   expect_identical(comparison$axis_values,c("M2","M3"))
   expect_identical(unique(comparison$groups$axis_value),c("M2","M3"))
+  expect_setequal(unique(comparison$groups$comparison_context),
+    c("density_class","epci","bretagne","same_level"))
   expect_equal(comparison$groups$group_value[comparison$groups$comparison_context=="density_class"],c(.18,.42))
   expect_equal(comparison$territories$rank[comparison$territories$comparison_context=="density_class"],rep(1L,4))
   expect_equal(comparison$territories$tie_count[comparison$territories$comparison_context=="density_class"],rep(2L,4))
+  density_members <- c("22001","22002")
+  density_points <- production_projection$points[
+    production_projection$points$territory_id %in% density_members &
+      production_projection$points$territory_type=="commune",,drop=FALSE]
+  parity <- project_series_comparison_group(data.frame(
+    territory_id=density_points$territory_id,axis_value=density_points$state_role,
+    value=density_points$value,status=density_points$status),comparison$axis_values,
+    density_members,direction=production_projection$descriptor$direction,statistic="median")
+  published_group <- comparison$groups[comparison$groups$comparison_context=="density_class" &
+    comparison$groups$group_id=="d1",,drop=FALSE]
+  expect_equal(published_group$group_value,parity$groups$value)
+  published_territories <- comparison$territories[
+    comparison$territories$comparison_context=="density_class" &
+      comparison$territories$group_id=="d1",,drop=FALSE]
+  published_territories <- published_territories[order(published_territories$axis_value,
+    published_territories$territory_id),,drop=FALSE]
+  parity_territories <- parity$territories[order(parity$territories$axis_value,
+    parity$territories$territory_id),,drop=FALSE]
+  expect_equal(published_territories$rank,parity_territories$rank)
+  expect_equal(published_territories$tie_count,parity_territories$tie_count)
+  expect_equal(published_territories$rank_size,parity_territories$rank_size)
   expect_identical(comparison$input_content_version,"series-publication-fixture-v1")
   expect_identical(comparison$reference_content_version,"territory-reference-fixture-v1")
   expect_identical(comparison$provenance,production_projection$provenance)
