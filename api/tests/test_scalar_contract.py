@@ -168,6 +168,35 @@ def test_fresh_and_additive_schema_define_independent_scalar_publication():
     assert "scalar_observation" in migration
 
 
+def test_fresh_and_additive_schema_define_versioned_fixed_scalar_comparison_grains():
+    from pathlib import Path
+
+    root = Path(__file__).parents[1]
+    fresh = (root / "schema.sql").read_text()
+    migration = (root / "migrations/030_scalar_comparison_aggregates.sql").read_text()
+    for sql in (fresh, migration):
+        assert "CREATE TABLE scalar_comparison_publication" in sql
+        assert "scalar_content_version text NOT NULL" in sql
+        assert "reference_content_version text NOT NULL" in sql
+        assert "CREATE TABLE scalar_comparison_group" in sql
+        assert "CREATE TABLE scalar_comparison_territory" in sql
+        assert "tie_count integer" in sql
+        assert "median double precision" in sql
+        assert "GRANT SELECT" in sql
+    assert "scalar_comparison_group" in fresh
+    assert "ON DELETE CASCADE" in migration
+
+
+def test_default_scalar_comparison_path_uses_fixed_projection_and_keeps_arbitrary_inputs_dynamic():
+    import inspect
+    from api.main import _theme_comparison_snapshot
+
+    source = inspect.getsource(_theme_comparison_snapshot)
+    assert "_fixed_scalar_comparison_context" in source
+    assert "_published_scalar_comparison_results" in source
+    assert "_selected_scalar_comparison_inputs" in source
+
+
 
 def test_ordered_series_route_and_fresh_schema_mirror_migration():
     from pathlib import Path

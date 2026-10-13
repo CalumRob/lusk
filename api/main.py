@@ -1095,6 +1095,48 @@ def _comparison_cohort(conn, territory_type, territory_id, selection):
     return "commune", members, {"kind": "explicit_selection"}
 
 
+def _fixed_scalar_comparison_context(conn, territory_type, territory_id, selection,
+                                     cohort_type, members, scope):
+    """Resolve a request to a published context only when its member set is exact."""
+    if selection is None:
+        if territory_type == "commune" and scope and scope.get("kind") == "density_class":
+            return ("density_class", scope["density_class_code"], "commune")
+        if territory_type in ("epci", "departement") and scope and scope.get("kind") == "same_level":
+            region = conn.execute("SELECT territory_id FROM territory_reference WHERE territory_type='region'").fetchall()
+            if len(region) != 1 or not region[0][0]:
+                raise HTTPException(503, "Published Bretagne comparison identity is unavailable")
+            return ("same_level", region[0][0], territory_type)
+        return None
+
+    # A user-defined peer set must not accidentally select an aggregate unless
+    # it is exactly one of the currently offered commune contexts.
+    if territory_type != "commune" or cohort_type != "commune" or not members:
+        return None
+    refs = conn.execute("""SELECT territory_id,epci_id,density_class_code
+        FROM territory_reference WHERE territory_type='commune'""").fetchall()
+    by_id = {row[0]: row[1:] for row in refs}
+    focal = by_id.get(territory_id)
+    if not focal:
+        return None
+    selected = set(members)
+    epci_id, density_class = focal
+    if epci_id:
+        epci_members = {row[0] for row in refs if row[1] == epci_id}
+        if selected == epci_members:
+            return ("epci", epci_id, "commune")
+    bretagne_members = {row[0] for row in refs}
+    if selected == bretagne_members:
+        region = conn.execute("SELECT territory_id FROM territory_reference WHERE territory_type='region'").fetchall()
+        if len(region) != 1 or not region[0][0]:
+            raise HTTPException(503, "Published Bretagne comparison identity is unavailable")
+        return ("bretagne", region[0][0], "commune")
+    if density_class:
+        density_members = {row[0] for row in refs if row[2] == density_class}
+        if selected == density_members:
+            return ("density_class", density_class, "commune")
+    return None
+
+
 def _comparison_sources_by_indicator(rows):
     sources = {}
     for row in rows:
@@ -1300,6 +1342,97 @@ def _selected_scalar_comparison_inputs(conn, *, theme_id, indicator_id, cohort_t
     return observations, _comparison_sources_by_indicator(source_rows)
 
 
+def _selected_scalar_comparison_sources(conn, *, indicator_ids, cohort_type, members):
+    """Fetch only source lineage for a published group, never peer fact values."""
+    if not members or not indicator_ids:
+        return {}
+    source_rows = conn.execute(
+        """SELECT DISTINCT os.indicator_id,os.source_id,os.vintage_id,sd.name,
+                  sv.version,sv.reference_date,sv.publication_date
+           FROM scalar_observation_source os
+           JOIN scalar_observation o ON o.indicator_id=os.indicator_id
+             AND o.territory_id=os.territory_id
+           JOIN scalar_descriptor d USING(indicator_id)
+           JOIN source_dataset sd USING(source_id)
+           JOIN source_vintage sv USING(source_id,vintage_id)
+           WHERE os.indicator_id=ANY(%s) AND o.territory_type=%s
+             AND os.territory_id=ANY(%s)
+           ORDER BY os.indicator_id,os.source_id,os.vintage_id""",
+        (list(indicator_ids), cohort_type, list(members)),
+    ).fetchall()
+    return _comparison_sources_by_indicator(source_rows)
+
+
+def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
+                                         cohort_type, members, territory_id):
+    """Read validated group statistics and one territory's precomputed result."""
+    context, group_id, territory_type = fixed_context
+    comparable = [row for row in scalar_descriptors
+        if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
+    if not comparable:
+        return {}
+    installed = conn.execute("SELECT to_regclass('scalar_comparison_publication')").fetchone()
+    if not installed or not installed[0]:
+        raise HTTPException(503, "Published scalar comparison is unavailable")
+    marker = conn.execute("""SELECT p.content_version,p.scalar_content_version,p.reference_content_version,
+            p.group_row_count,p.territory_row_count,s.content_version,s.reference_content_version,
+            t.content_version
+        FROM scalar_comparison_publication p
+        JOIN table_publication s ON s.table_name='scalar_observation'
+        JOIN table_publication t ON t.table_name='territory_reference'
+        WHERE p.singleton""").fetchone()
+    if (not marker or not marker[0] or marker[1] != marker[5] or marker[2] != marker[7]
+            or marker[6] != marker[7] or marker[3] < 1 or marker[4] < 1):
+        raise HTTPException(503, "Published scalar comparison is stale or incompatible")
+    indicator_ids = [row[0] for row in comparable]
+    groups = conn.execute("""SELECT indicator_id,statistic,median,member_count,eligible_count,missing_count
+        FROM scalar_comparison_group
+        WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
+          AND indicator_id=ANY(%s)""", (context, group_id, territory_type, indicator_ids)).fetchall()
+    territories = conn.execute("""SELECT indicator_id,value,status,rank,tie_count,rank_size
+        FROM scalar_comparison_territory
+        WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
+          AND territory_id=%s AND indicator_id=ANY(%s)""",
+        (context, group_id, territory_type, territory_id, indicator_ids)).fetchall()
+    group_by_indicator = {row[0]: row[1:] for row in groups}
+    territory_by_indicator = {row[0]: row[1:] for row in territories}
+    if len(group_by_indicator) != len(groups) or len(territory_by_indicator) != len(territories):
+        raise HTTPException(503, "Published scalar comparison contains duplicate results")
+    for indicator_id in indicator_ids:
+        group = group_by_indicator.get(indicator_id)
+        territory = territory_by_indicator.get(indicator_id)
+        if not group or not territory:
+            raise HTTPException(503, "Published scalar comparison is incomplete")
+        statistic, median_value, member_count, eligible_count, missing_count = group
+        value, status, rank, tie_count, rank_size = territory
+        if (statistic != "median" or member_count != len(members) or
+                eligible_count + missing_count != member_count or
+                (eligible_count == 0) != (median_value is None) or
+                (status == "measured" and (value is None or rank is None or tie_count is None or
+                    tie_count < 1 or rank_size != eligible_count or rank < 1 or
+                    rank > rank_size or tie_count > rank_size)) or
+                (status != "measured" and (value is not None or rank is not None or
+                    tie_count is not None or rank_size is not None))):
+            raise HTTPException(503, "Published scalar comparison result is invalid")
+    sources = _selected_scalar_comparison_sources(conn, indicator_ids=indicator_ids,
+        cohort_type=cohort_type, members=members)
+    results = {}
+    for indicator_id in indicator_ids:
+        _statistic, median_value, member_count, eligible_count, missing_count = group_by_indicator[indicator_id]
+        value, status, rank, _tie_count, rank_size = territory_by_indicator[indicator_id]
+        results[indicator_id] = {
+            "status": "available" if eligible_count else "unavailable",
+            "reason": None if eligible_count else "no_selected_comparable_values",
+            "selected_member_count": member_count, "eligible_count": eligible_count,
+            "missing_count": missing_count,
+            "focal_value": value if status == "measured" else None,
+            "median": median_value, "rank": rank,
+            "rank_size": rank_size if rank is not None else None,
+            "comparison_sources": sources.get(indicator_id, []),
+        }
+    return results
+
+
 def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
                                *, indicator_id=None, profiles=None, profile_version=None, has_readings=False):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
@@ -1344,12 +1477,25 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         if not scalar_marker or not scalar_marker[0] or scalar_marker[1] != reference[0]:
             raise HTTPException(503, "Scalar publication is unavailable or incompatible")
     cohort_type, members, scope = _comparison_cohort(conn, territory_type, territory_id, selection)
+    fixed_context = (_fixed_scalar_comparison_context(conn, territory_type, territory_id,
+        selection, cohort_type, members, scope) if scalar_descriptors else None)
+    if fixed_context and territory_id not in members:
+        # The current fixed groups all include the focal territory. Keep the
+        # request-time contract if a future resolver ever identifies a group
+        # that does not, rather than returning that territory's stored peer rank.
+        fixed_context = None
     results = []
     if scalar_descriptors:
-        scalar_rows, scalar_sources_by_indicator = _selected_scalar_comparison_inputs(
-            conn, theme_id=theme_id, indicator_id=indicator_id,
-            cohort_type=cohort_type, members=members,
-            territory_id=territory_id, territory_type=territory_type)
+        published_scalar = (_published_scalar_comparison_results(conn, scalar_descriptors,
+            fixed_context, cohort_type, members, territory_id) if fixed_context else {})
+        if fixed_context:
+            scalar_sources_by_indicator = {}
+            scalar_rows = []
+        else:
+            scalar_rows, scalar_sources_by_indicator = _selected_scalar_comparison_inputs(
+                conn, theme_id=theme_id, indicator_id=indicator_id,
+                cohort_type=cohort_type, members=members,
+                territory_id=territory_id, territory_type=territory_type)
         by_indicator = {}
         for row in scalar_rows:
             by_indicator.setdefault(row[0], []).append(row)
@@ -1357,6 +1503,14 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             if not facet or facet != indicator or direction not in ("high", "low") or cohort_type not in levels:
                 results.append({"indicator_id": indicator, "status": "unavailable",
                                 "reason": "unsupported_comparison_contract"})
+                continue
+            if fixed_context:
+                published = published_scalar.get(indicator)
+                if published is None:
+                    raise HTTPException(503, "Published scalar comparison omits a declared indicator")
+                results.append({"indicator_id": indicator, "label": label, "unit": unit,
+                    "direction": direction, "statistic": "median", "descriptor_version": version,
+                    "focal_in_selection": territory_id in members, **published})
                 continue
             rows = by_indicator.get(indicator, [])
             peers = [row for row in rows if row[2] == cohort_type and row[1] in members]

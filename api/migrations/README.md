@@ -329,3 +329,19 @@ the pinned national artifact, R curve and ordinary scalar publishers, and HTTP
 reads in an isolated `lusk_it_contract` schema. These are guarded local proofs,
 not approval to migrate, publish or activate production. Follow the gated operator
 procedure above before any live operation.
+
+# Migration 030 — fixed-context scalar comparisons
+
+`030_scalar_comparison_aggregates.sql` adds separate group-statistic and
+territory-result grains for the currently offered scalar comparison contexts.
+The singleton publication marker records the comparison content version and the
+exact scalar and territory-reference input versions. The R publisher replaces
+both grains and the marker in one transaction; API reads fail closed when those
+inputs are stale or the requested group is incomplete. Fresh installs carry the
+same constrained tables and reader/publisher grants in `schema.sql`.
+
+Apply 030 after 029 only through the reviewed operator migration procedure.
+`api/tests/test_scalar_published_comparison.py` covers fixed/dynamic routing,
+marker compatibility, and malformed or incomplete results; the R tests cover
+projection grains, retry/rollback, and the matching Parquet artifacts. These
+fixture/contract checks do not authorize a production migration or publication.

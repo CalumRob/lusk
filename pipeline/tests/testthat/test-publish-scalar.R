@@ -300,6 +300,13 @@ test_that("demography scalars are projected from the canonical producer into ful
   expect_false("structure_age" %in% projection$descriptors$indicator_id)
   service_inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
   snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))
+  expect_gt(nrow(snapshot$comparison$groups), 0L)
+  expect_gt(nrow(snapshot$comparison$territories), 0L)
+  expect_identical(snapshot$comparison$scalar_content_version,
+    scalar_content_version(snapshot$projection))
+  expect_identical(snapshot$comparison$reference_content_version,
+    as.character(service_inputs$versions[["territory_reference"]]))
+  expect_type(snapshot$comparison$content_version, "character")
   original_service <- project_service_share_scalars(service_inputs$scalar_access,
     service_inputs$scalar_metadata, service_inputs$scalar_eligible_territories)
   expect_equal(sum(snapshot$projection$facts$indicator_id %in% projection$descriptors$indicator_id), nrow(projection$facts))
