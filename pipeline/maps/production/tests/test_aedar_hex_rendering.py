@@ -16,6 +16,7 @@ from qgis.PyQt.QtGui import QColor, QImage
 sys.path.insert(0, str(Path(__file__).parents[1]))
 from aedar_map_content import loss_map_content
 from aedar_maps import AedarMapAdapter, LOSS_MODES, TERRITORIES, aedar_loss_recipe
+from inspection_plate import _font, _load_static_face
 from runner import Binding, MapSet, PROFILES, run_production
 from pipeline.maps.production.tests.qgis_fixture import fixture_folder, qgis_application
 
@@ -29,6 +30,13 @@ class AedarHexRenderingTests(unittest.TestCase):
     def tearDownClass(cls):
         QgsProject.instance().clear()
         gc.collect()
+
+    def test_registered_inspection_font_remains_available_after_scratch_exits(self):
+        assets = Path(__file__).parents[1] / "assets"
+        with tempfile.TemporaryDirectory(prefix="lusk-font-lifetime-") as temporary:
+            family = _load_static_face("mozilla-headline", 400, assets, Path(temporary))
+            self.assertEqual(family, "Mozilla Headline")
+        self.assertEqual(_font("Mozilla Headline", 30).family(), "Mozilla Headline")
 
     def fixture(self):
         root = fixture_folder(tempfile.mkdtemp(prefix="lusk-aedar-hex-render-"))

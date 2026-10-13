@@ -99,6 +99,7 @@ class PreparedTitle:
 
 TITLE_RELIEF = Engraving("ink-deep", "Deeper cut · ink at 55%", 0.065, 0.100, 0.130, _pixel(3))
 STATIC_FACE_CACHE: dict[tuple[str, int], str] = {}
+STATIC_FONT_DIRECTORY: Path | None = None
 
 
 def _pixels(image: QImage) -> np.ndarray:
@@ -134,6 +135,7 @@ def _set_static_names(font: TTFont, family: str, weight: int) -> None:
 
 
 def _load_static_face(slug: str, weight: int, assets: Path, temporary: Path) -> str:
+    global STATIC_FONT_DIRECTORY
     cache_key = (slug, weight)
     if cache_key in STATIC_FACE_CACHE:
         return STATIC_FACE_CACHE[cache_key]
@@ -156,7 +158,13 @@ def _load_static_face(slug: str, weight: int, assets: Path, temporary: Path) -> 
         "newsreader": "Newsreader",
     }[slug]
     _set_static_names(font, family, weight)
-    output = temporary / f"{slug}-{weight}.ttf"
+    # Qt keeps an application font registered by path. Keep the generated face
+    # alive for the process lifetime; compose_inspection's scratch folder is
+    # removed after each map and would leave STATIC_FACE_CACHE pointing at an
+    # unloaded family on the next render.
+    if STATIC_FONT_DIRECTORY is None:
+        STATIC_FONT_DIRECTORY = Path(tempfile.mkdtemp(prefix="lusk-static-fonts-"))
+    output = STATIC_FONT_DIRECTORY / f"{slug}-{weight}.ttf"
     font.save(str(output))
     font_id = QFontDatabase.addApplicationFont(str(output))
     families = QFontDatabase.applicationFontFamilies(font_id) if font_id >= 0 else []
