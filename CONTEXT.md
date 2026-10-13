@@ -148,7 +148,7 @@ The shared presentation contract for static maps: reusable visual rules and capa
 _Avoid_: style universel (suggests identical thematic marks for every family), utilitaires de rendu (too narrow: excludes cartographic rules)
 
 **Cadre cartographique**:
-The universal map extent: the analytical geography is contained by a circle with a configurable proportional margin, and the square frame enclosing that circle is shared by related map outputs.
+The universal map extent: the analytical geography is contained by a circle with a configurable proportional margin, and the square frame enclosing that circle is shared by related map outputs. An inspection-frame exception applies when the territory's filled mapped geography enters a padded fixed-heading or territory-name safe band, including a further 0.5% of image-height clearance; outline-only antialias fringes do not count. The heading band is measured once per title template and the subtitle band follows each territory's exact name. The exception changes framing only: it must not mask, clip, filter, or alter the territory's mapped data. It is shared across inspection families, while the inline profile keeps its independent analytical cut-out.
 _Avoid_: cadrage indépendant par mode (allows related maps to drift), emprise rectangulaire de territoire
 
 **Habillage cartographique**:
@@ -419,6 +419,23 @@ _Avoid_: mean of shares (diversity is a sum), building weighting (the universe i
 **Territoire de référence AEDAR**:
 The single published territory whose own AEDAR aggregates back the prototype's comparison lines: the commune's EPCI for the `epci` comparison mode, the région Bretagne for `bretagne` (and for EPCI/département levels, whose comparison universe is fixed). A density-class cohort has no single-territory reference — the aggregates declare territories, not cohorts — so the comparison honestly stays unavailable instead of fabricating a peer curve. The reference is labeled with the territory's own name, never « groupe comparé ».
 _Avoid_: courbe de cohorte, médiane de pairs AEDAR, groupe comparé AEDAR
+
+**Perte de diversité AEDAR**:
+For one address, horizon and comparison mode, the count of BPE equipment types for which at least one item is reachable by car but no item is reachable by the selected mode. This is a set difference over TYPEQU, not the net subtraction of the two modes' diversity counts: a type reachable only by the selected mode does not cancel a car-reachable type. Zero means no car-reachable type is lost; rare mode-only types remain distinct gains, not losses.
+_Avoid_: différence nette de diversité, diversité voiture moins diversité mode (these can conceal different reachable type sets)
+
+**Carte de perte de diversité AEDAR**:
+The spatial reading of **Perte de diversité AEDAR**, labelled « Types d'équipements BPE rendus inaccessibles ». In the owner's selected treatment (2026-10-12), all four loss readings share one five-colour lavender-to-rose palette. Colour denotes position within the territory's actual pooled minimum-to-maximum range across transit, bike LTS2, bike LTS4 and walking; it does not denote a shared absolute count across territories. There is no statistical pivot or mean marker on a loss map. Title accents identify the comparison mode, not another measure. The independent car-diversity baseline counts all types reachable by car, not a loss.
+_Avoid_: carte de diversité voiture (the absolute baseline is not a loss), perte nette, couleur du mode = nature de la perte
+
+**Carte de diversité voiture AEDAR** (contrat de production #730) :
+
+The independent spatial baseline: the absolute number of BPE equipment types reachable from an address by car in 15 minutes, with five equal-width classes over 0–218. It is not a loss or an equipment-item count. The owner's selected treatment (2026-10-12, following the car-only #730 track and shared-family #733 proof) uses occupied address-median hexes in both inspection and inline, keeps exterior address points for inspection context, and marks the address-weighted Bretagne mean on the car legend only. The shared lavender-to-rose palette does not change the baseline's absolute meaning. Allineuc, Rennes, Redon Agglomération and Bretagne form the selected review cohort. A completed full export and decoded QA do not themselves authorize publication or establish that historical PNG or network-map approvals apply to AEDAR WebPs.
+_Avoid_: perte voiture, diversité nette, densité d'adresses, approbation PNG = approbation WebP
+
+**Grille hexagonale AEDAR** (décision propriétaire 2026-10-10) :
+The AEDAR map's occupied-cell summary of address facts, selected for both inspection and inline (owner revision 2026-10-12). All readings share the same geometry and address membership within a territory/profile frame; different frames need not share one grid. Cells are 9 px wide in each native export. Car encodes uncapped median diversity; comparison modes encode uncapped median exact **Perte de diversité AEDAR**, never address density. Each address contributes one value, including zero: an occupied median-zero cell uses the lowest colour class, while an unoccupied cell has no thematic fill and reveals the basemap. Missing values are not zero. No interpolation or smoothing fills empty cells; a coloured cell is an areal summary of its addresses, not a continuously measured surface or isochrone. Five equal-width loss classes use the territory's pooled actual range across the four comparison modes, without percentile clipping or a capped `N+` endpoint. Rounded legend labels do not round the underlying boundaries.
+_Avoid_: carte de densité, isochrone, cellule vide = zéro, grille distincte par mode
 
 **Tension d’accès**:
 A meaningful contrast in the access of one type d’équipement across voiture, vélo + TC, and à pied + TC; a selected type earns space by making that contrast legible, never merely by being numerically unusual. The three mode values are read together so the role names a relationship rather than declaring a single winning mode.
