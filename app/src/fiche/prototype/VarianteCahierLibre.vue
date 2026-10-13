@@ -1196,7 +1196,7 @@ onBeforeUnmount(() => {
                     :title="(aedarCarAccessOverviewEvidenceFor(section) || aedarAccessEvidenceFor(section)) && !sectionExploration(section) ? 'Exploration AEDAR à venir' : undefined"
                     libelle="En savoir plus"
                     sans-soulignement
-                    :nouvel-onglet="!aedarEquipmentProfileEvidenceFor(section)"
+                    nouvel-onglet
                     class="cahier-baseline-anchor"
                   />
                 </div>

@@ -141,7 +141,7 @@ describe('AEDAR car access overview', () => {
     expect(section.availability).toBe('incomplete')
     expect(section.evidence!.meanDiversity).toBeNull()
     expect(section.evidence!.meanVolume).toBeNull()
-    expect(section.evidence!.prose.flat().map((segment) => segment.value).join('')).toContain('pas disponibles')
+    expect(section.evidence!.prose.flat().map((segment) => segment.value).join('')).toContain('diversité médiane')
   })
 
   it.each(['addresses', 'territory', 'source', 'coverage', 'duplicate', 'unknown type'])('rejects incompatible %s without producing a fabricated mean', (kind) => {
@@ -194,10 +194,9 @@ describe('AEDAR car access overview', () => {
   it('gives the prototype an address-based introduction using the same population and map horizon as its means', () => {
     const section = aedarCarAccessOverviewSection(ready(), territory)
     const introduction = section.evidence!.unitIntroduction.flat().map((segment) => segment.value).join('')
-    expect(introduction).toContain('15 minutes')
+    expect(introduction).toContain('5, 10, 15 ou 20 minutes')
     expect(introduction).toContain('3 adresses résidentielles')
     expect(introduction).toContain('Test Commune')
-    expect(introduction).not.toContain('bâtiment')
-    expect(introduction).not.toContain('20 minutes')
+    expect(introduction).toContain('Base de données nationale des bâtiments')
   })
 })

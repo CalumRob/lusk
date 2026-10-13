@@ -6,12 +6,12 @@
 import type { AedarFetchResult } from './aedarApiClient'
 import { aedarTimeRampEvidence, AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from './aedarTimeRampFacts'
 import { AEDAR_EQUIPMENT_BUCKET_THRESHOLD, classifyAedarEquipmentTypes } from './aedarEquipmentBuckets'
-import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
+import { AEDAR_TYPEQU_BPE_YEAR, AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 import { aedarDiversityLossSection } from './aedarDiversityLossMaps'
 import type { AedarDiversityLossMapMetadata } from './aedarDiversityLossMaps'
 import type { AedarTimeRampValues } from './aedarTimeRampFacts'
 import type { TerritoryIdentity } from './territoryFacts'
-import { emphasis, text, territoryLead, territoryTypeLabel } from './themeContent'
+import { emphasis, link, modeEmphasis, text, territoryLead, territoryTypeLabel } from './themeContent'
 import type { AedarAccessSection, AedarCarAccessOverviewSection, AedarDiversityLossSection, AedarEquipmentExplorerSection, AedarEquipmentProfileSection, AedarEvidenceSource, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
 
 /** Blank map slots and the highlighted ramp horizon share the provisional AEDAR15 horizon. */
@@ -120,7 +120,7 @@ export function aedarAccessSection(
   const provenance = data.provenance.sources.map((source) => source.source_id)
   return {
     key: 'aedar-access',
-    label: 'L’offre accessible selon le temps de trajet',
+    label: 'La ville du 1/12, du 1/6, du 1/4 et du 1/3 d’heure',
     availability,
     indicators: [],
     evidence: {
@@ -136,19 +136,7 @@ export function aedarAccessSection(
       comparisonLabel: referenceLabel && ramps.some((ramp) => ramp.reference !== null)
         ? `moyennes des adresses résidentielles de ${referenceLabel}` : null,
       sectionProse: [[
-        text('Les '),
-        emphasis('Transports en commun', 'foot'),
-        text(' incluent aussi la '),
-        emphasis('marche', 'foot'),
-        text('. Les itinéraires '),
-        emphasis('vélo', 'bike'),
-        text(' '),
-        emphasis('LTS2', 'bike'),
-        text(' s’adressent aux personnes averses au risque routier, tandis que ceux de '),
-        emphasis('LTS4', 'bike'),
-        text(' s’adressent aux personnes tolérantes au risque routier.'),
-      ], [
-        text('La diversité compte les types d’équipements ; le volume compte tous les établissements accessibles, y compris plusieurs d’un même type. Les deux courbes sont des moyennes par adresse résidentielle, y compris les adresses sans accès.'),
+        text(`La diversité décrit le nombre de différents types d'équipements (catégories BPE) accessibles sur un total de ${AEDAR_TYPEQU_REGISTRY.length} catégories recensées. Le nombre d’établissements ci-dessous décrit le volume de l’offre, y compris plusieurs établissements d’un même type. Les deux variables sont ici présentées pour chaque mode (sélectionnable via la légende) aux horizons de 5, 10, 15 et 20 minutes pour élucider l'importance que peuvent avoir les temps de trajet dans l'accessibilité des différents modes.`),
       ]],
       diversityGap: {
         horizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
@@ -258,15 +246,32 @@ export function aedarCarAccessOverviewSection(
       scalarFigureTitle: `En voiture en ${horizonMinutes} minutes (moyenne par adresse)`,
       comparisonLabel: reference && scalars.some((scalar) => scalar.reference !== null)
         ? `moyenne des adresses résidentielles de ${reference.label}` : null,
-      unitIntroduction: [[
-        text(`Cette page compare l’accès aux services selon le mode de déplacement, depuis les adresses résidentielles. Les cartes décrivent l’offre accessible en ${horizonMinutes} minutes.`),
-      ], ...(nAddresses !== null ? [[
-        text(`${new Intl.NumberFormat('fr-FR').format(nAddresses)} adresses résidentielles ${territoryLead(territory, false)} sont prises en compte.`),
-      ]] : [])],
+      unitIntroduction: [
+        [
+          text(`Cette page présente l’accès aux équipements issus de la Base permanente des équipements (BPE ${AEDAR_TYPEQU_BPE_YEAR}, INSEE) selon le mode de déplacement depuis les adresses résidentielles de la Base de données nationale des bâtiments (BDNB${nAddresses !== null ? `, ${new Intl.NumberFormat('fr-FR').format(nAddresses)} adresses résidentielles ${territoryLead(territory, false)}` : ''}). Elle s’appuie sur les jeux de données `),
+          ...(source?.source_url ? [link('AEDAR', source.source_url)] : [text('AEDAR')]),
+          text('.'),
+        ],
+        [
+          text('Elle positionne le territoire en termes d’accès. Cet accès est différencié en fonction de sa répartition spatiale, des inégalités potentielles qu’il implique, du temps de trajet autorisé pour accéder aux équipements (5, 10, 15 ou 20 minutes), de la catégorie d’équipement BPE (dont la liste exhaustive accompagnée de descriptions est téléchargeable '),
+          link('à ce lien', 'https://www.insee.fr/fr/metadonnees/source/serie/s1161'),
+          text('), et du mode de transport.'),
+        ],
+        [
+          text('Les modes de transport suivants y sont différenciés : '),
+          modeEmphasis('Marche', 'walk'), text(', '),
+          modeEmphasis('Transports en commun', 'transit'), text(', '),
+          modeEmphasis('Vélo LTS 2', 'bike_lts2'), text(' (averse au risque), '),
+          modeEmphasis('Vélo LTS 4', 'bike_lts4'), text(' (tolérant au risque), '),
+          modeEmphasis('Voiture', 'car'), text('.'),
+        ],
+      ],
       availability, source: means.source,
-      prose: meanDiversity !== null && meanVolume !== null ? [[
-        text('La diversité décrit les différents types de services accessibles. Le nombre d’établissements décrit le volume de l’offre, y compris plusieurs établissements d’un même type. Ces moyennes incluent les adresses sans accès.'),
-      ]] : [[text(`Les moyennes d’accès en voiture à ${horizonMinutes} minutes ne sont pas disponibles pour ce territoire.`)]],
+      prose: [[
+        text(`La diversité décrit le nombre de différents types d’équipements (catégories BPE) accessibles sur un total de ${AEDAR_TYPEQU_REGISTRY.length} catégories recensées. Ici, elle est définie sur la base de trajets de ${horizonMinutes} minutes. Les carreaux de la carte sont colorés en fonction de la diversité médiane des adresses qu’ils couvrent.`),
+      ], [
+        text('Le nombre d’établissements ci-dessous décrit le volume de l’offre, y compris plusieurs établissements d’un même type. Ces moyennes incluent les adresses sans accès.'),
+      ]],
     },
   }
 }
@@ -278,7 +283,7 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
   }).status
   return {
     key: 'aedar-equipment-profile',
-    label: 'Types d’équipements par premier mode d’accès',
+    label: 'Au moins un quart des adresses',
     availability,
     indicators: [],
     evidence: {
@@ -286,14 +291,20 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
       facts: data.facts,
       threshold: AEDAR_EQUIPMENT_BUCKET_THRESHOLD,
       initialHorizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
-      figureTitle: 'Types d’équipements accessibles par premier mode',
+      figureTitle: `Types d’équipements par premier mode permettant l'accès à au moins ${Math.round(AEDAR_EQUIPMENT_BUCKET_THRESHOLD * 100)}% des adresses`,
       source: aedarEvidenceSource(data),
       prose: [[
-        text('Chaque case représente un type BPE, classé une seule fois selon le premier mode dont la part atteint '),
-        emphasis('25%', 'neutral'),
-        text(' : à pied, transports en commun, vélo LTS2, vélo LTS4, puis voiture. Les parts sont mesurées parmi les adresses résidentielles atteignant au moins un équipement de ce type.'),
+        text('Chaque case représente un type BPE, classé une seule fois selon le mode le plus lent qui donne accès à au moins '),
+        emphasis(`${Math.round(AEDAR_EQUIPMENT_BUCKET_THRESHOLD * 100)}%`, 'neutral'),
+        text(' des adresses : à pied, '), modeEmphasis('transports en commun', 'transit'),
+        text(', '), modeEmphasis('vélo LTS2', 'bike_lts2'), text(', '),
+        modeEmphasis('vélo LTS4', 'bike_lts4'), text(', puis '),
+        modeEmphasis('voiture', 'car'),
+        text('. L’horizon de temps est sélectionnable. « Inaccessible » signifie qu’aucun des modes n’atteint le seuil de 25% des adresses.'),
       ], [
-        text('Les transports en commun incluent la marche : leur catégorie ne contient que les types qui restent sous le seuil à pied seul. « Inaccessible » signifie qu’aucun des cinq modes n’atteint le seuil.'),
+        text('Les '), modeEmphasis('transports en commun', 'transit'), text(' incluent la '), modeEmphasis('marche', 'walk'), text('.'),
+      ], [
+        text('Sélectionnez une case, un mode de transport ou le bouton « parcourir les équipements » pour voir les statistiques détaillées.'),
       ]],
     },
     provenance: data.provenance.sources.map((source) => source.source_id),
@@ -305,7 +316,7 @@ export function aedarEquipmentProfileSection(data: AedarReady): AedarEquipmentPr
 export function aedarEquipmentExplorerSection(data: AedarReady): AedarEquipmentExplorerSection {
   return {
     key: 'aedar-equipment-explorer',
-    label: 'Explorer un type d’équipement',
+    label: 'Bac à sable',
     availability: 'complete',
     indicators: [],
     evidence: {
@@ -314,9 +325,9 @@ export function aedarEquipmentExplorerSection(data: AedarReady): AedarEquipmentE
       initialTypequ: AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU,
       initialHorizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
       introduction: [[
-        text('Pour ce type BPE, le volume indique le nombre d’établissements accessibles par adresse résidentielle.'),
+        text('Vous pouvez ici explorer chaque catégorie BPE individuellement pour en visualiser, pour chaque mode de transport (sélectionnable), la distribution temporelle.'),
       ], [
-        text('Chaque barre indique un seuil du nombre d’établissements : minimum, déciles publiés et maximum. Les déciles sont des valeurs de coupure, pas des effectifs d’adresses.'),
+        text('Vous pouvez aussi sélectionner un horizon temporel et visualiser les inégalités d’accès entre les adresses les mieux loties et les moins bien loties.'),
       ]],
       volumeFigureTitle: 'Établissements accessibles (moyenne par adresse)',
       volumeYAxisTitle: 'Volume de l’offre',
@@ -324,7 +335,7 @@ export function aedarEquipmentExplorerSection(data: AedarReady): AedarEquipmentE
       distributionStatistics: AEDAR_EQUIPMENT_QUANTILE_STATISTICS,
       distributionAxisTitle: 'Décile',
       distributionYAxisTitle: 'Nombre d’établissements',
-      distributionDescription: 'Les barres montrent les seuils publiés (minimum, déciles et maximum), pas le nombre d’adresses.',
+      distributionDescription: 'Les barres montrent les seuils publiés : minimum, déciles et maximum.',
       distributionUnavailableDescription: 'Distribution indisponible pour ce type d’équipement et cet horizon.',
       source: aedarEvidenceSource(data),
     },
@@ -357,7 +368,7 @@ export function aedarPrototypeSections(
   const equipmentProfile = aedarEquipmentProfileSection(data)
   const equipmentExplorer = aedarEquipmentExplorerSection(data)
   if (options.lossMapMetadata) {
-    return [carOverview, aedarDiversityLossSection(options.lossMapMetadata, territory), access, equipmentProfile, equipmentExplorer]
+    return [carOverview, aedarDiversityLossSection(options.lossMapMetadata, territory, aedarEvidenceSource(data)), access, equipmentProfile, equipmentExplorer]
   }
   return [carOverview, access, equipmentProfile, equipmentExplorer]
 }

@@ -11,6 +11,7 @@ import CahierContinuousMapLegend from './CahierContinuousMapLegend.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
 import CahierProse from './CahierProse.vue'
+import CahierEvidenceSource from './CahierEvidenceSource.vue'
 
 const props = defineProps<{
   evidence: AedarDiversityLossEvidence
@@ -73,6 +74,8 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
 
 <template>
   <figure class="aedar-diversity-loss" :style="CAHIER_MAP_LAYOUT_STYLE">
+    <CahierProse class="argument-copy aedar-diversity-loss__introduction" :blocks="props.evidence.introduction" />
+    <CahierEvidenceSource v-if="props.evidence.source" :source="props.evidence.source" />
     <figcaption class="cahier-figure-title cahier-baseline-anchor">
       <CahierProse :blocks="[props.evidence.mapFigureTitle]" />
     </figcaption>
@@ -122,7 +125,7 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
               </div>
             </section>
           </template>
-          <p class="aedar-diversity-loss__comparison-copy">{{ group.prompt }}</p>
+          <CahierProse class="argument-copy aedar-diversity-loss__comparison-copy" :blocks="group.prompt" />
         </section>
       </div>
 
@@ -158,6 +161,8 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
 
 <style scoped>
 .aedar-diversity-loss { display: grid; gap: var(--space-4); width: 100%; margin: 0; container-type: inline-size; }
+.aedar-diversity-loss__introduction { width: 100%; }
+.aedar-diversity-loss > .cahier-figure-title { width: 72%; margin: 0; text-align: center; }
 .aedar-diversity-loss__layout { --aedar-loss-columns: repeat(2, minmax(0, 1fr)) minmax(12rem, .8fr); display: grid; grid-template-columns: var(--aedar-loss-columns); gap: clamp(var(--space-5), 4vw, var(--space-8)) clamp(var(--space-3), 2vw, var(--space-6)); }
 .aedar-diversity-loss__comparisons { display: grid; grid-column: 1 / -1; gap: clamp(var(--space-5), 4vw, var(--space-8)); }
 .aedar-diversity-loss__comparison-row { display: grid; grid-template-columns: var(--aedar-loss-columns); gap: clamp(var(--space-3), 2vw, var(--space-6)); align-items: center; }
@@ -168,11 +173,12 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
 .aedar-diversity-loss-map__unavailable { position: relative; display: grid; width: 100%; aspect-ratio: 1; place-content: center; justify-items: center; gap: 8px; overflow: hidden; border: var(--cahier-map-circle-border) solid var(--mode-ring); border-radius: 50%; background: color-mix(in srgb, var(--cahier-theme) 8%, var(--paper)); color: var(--muted); font: 600 12px/1.4 var(--font-sans); text-align: center; }
 .aedar-diversity-loss-map__number { position: absolute; top: 9px; left: 11px; color: var(--mode-ring); font-size: 9px; font-variant-numeric: tabular-nums; }
 .aedar-diversity-loss-map__territory { font-size: 11px; font-weight: 500; }
-.aedar-diversity-loss__comparison-copy { max-width: 34ch; margin: 0; color: var(--muted); font: var(--text-body-sm); line-height: 1.55; }
+.aedar-diversity-loss__comparison-copy { max-width: 34ch; margin: 0; color: var(--muted); font: var(--text-body-sm); line-height: 1.55; text-align: justify; }
 .aedar-diversity-loss__legend { grid-column: 1 / 3; width: min(100%, 520px); justify-self: center; }
 .aedar-diversity-loss__status-note { grid-column: 1 / -1; margin: 0; color: var(--muted); font: 500 12px/1.5 var(--font-sans); text-align: center; }
 @container (max-width: 760px) {
   .aedar-diversity-loss__layout { --aedar-loss-columns: repeat(2, minmax(0, 1fr)); }
+  .aedar-diversity-loss > .cahier-figure-title { width: 100%; }
   .aedar-diversity-loss__legend { grid-column: 1 / -1; }
   .aedar-diversity-loss__comparison-copy { grid-column: 1 / -1; max-width: 72ch; }
 }

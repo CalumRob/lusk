@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import { aedarAccessSection, aedarPrototypeSections, AEDAR_PROTOTYPE_HORIZON_MINUTES } from '@/fiche/content/aedarAccessSection'
+import { aedarDiversityLossSection } from '@/fiche/content/aedarDiversityLossMaps'
 import { AEDAR_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '@/fiche/content/aedarTypequRegistry'
 import type { AedarFetchResult } from '@/fiche/content/aedarApiClient'
@@ -62,6 +63,45 @@ function aedarReady(territoryId: string, territoryType: 'commune' | 'epci' = 'co
 }
 
 describe('aedarAccessSection', () => {
+  it('builds the five-section prose from semantic evidence and the live TYPEQU registry', () => {
+    const data = aedarReady('22001')
+    const sections = aedarPrototypeSections(data, territory)
+    const overview = sections[0]!.evidence!
+    const profile = sections[2]!
+    const explorer = sections[3]!.evidence!
+    const overviewText = overview.kind === 'aedar-car-overview'
+      ? [...overview.unitIntroduction, ...overview.prose].flat().map((part) => part.value).join(' ')
+      : ''
+    expect(overviewText).toContain('Base permanente des équipements')
+    expect(overviewText).toContain('Base de données nationale des bâtiments')
+    expect(overviewText).toContain(`${AEDAR_TYPEQU_REGISTRY.length} catégories recensées`)
+    expect(overviewText).toContain('100 adresses résidentielles')
+    expect(overviewText).toContain('médiane')
+    expect(overviewText).not.toContain('218')
+    if (overview.kind === 'aedar-car-overview') {
+      expect(overview.unitIntroduction.flat().some((part) => part.kind === 'link' && part.value === 'AEDAR')).toBe(true)
+      expect(overview.unitIntroduction.flat().some((part) => part.kind === 'link' && part.value === 'à ce lien')).toBe(true)
+      expect(overview.unitIntroduction.flat().map((part) => part.value).join('')).not.toContain('(à ce lien)')
+    }
+    expect(profile.label).toBe('Au moins un quart des adresses')
+    expect(profile.evidence?.kind === 'aedar-equipment-profile' && profile.evidence.figureTitle)
+      .toContain('25% des adresses')
+    expect(explorer.kind === 'aedar-equipment-explorer' && explorer.introduction.flat().map((part) => part.value).join(' '))
+      .toContain('chaque mode de transport (sélectionnable), la distribution temporelle')
+  })
+
+  it('owns the loss-map explanation and comparison prompts in semantic evidence', () => {
+    const section = aedarDiversityLossSection({ status: 'unavailable', legend: null }, territory)
+    expect(section.label).toBe('Et sans voiture alors ?')
+    expect(section.evidence?.kind).toBe('aedar-diversity-loss')
+    if (section.evidence?.kind !== 'aedar-diversity-loss') return
+    expect(section.evidence.introduction.flat().map((part) => part.value).join(' ')).toContain('Quelles mobilités douces remédient à cette perte ?')
+    expect(section.evidence.source).toBeNull()
+    expect(section.evidence.comparisonGroups[0]?.prompt.flat().map((part) => part.value).join(' ')).toContain('transport à la demande')
+    expect(section.evidence.comparisonGroups[1]?.prompt.flat().map((part) => part.value).join(' ')).toContain('50 km/h')
+    expect(section.evidence.comparisonGroups[1]?.prompt.flat().filter((part) => part.kind === 'mode-emphasis').map((part) => part.mode)).toEqual(['bike_lts2', 'bike_lts4'])
+  })
+
   it('appends the per-type explorer after the unchanged waffle with B207 as its initial type', () => {
     const sections = aedarPrototypeSections(aedarReady('22001'), territory)
 
@@ -75,7 +115,7 @@ describe('aedarAccessSection', () => {
     expect(sections[1]?.evidence?.kind).toBe('aedar-access')
     const profile = sections[2]
     expect(profile.evidence?.kind).toBe('aedar-equipment-profile')
-    expect(profile.label).toBe('Types d’équipements par premier mode d’accès')
+    expect(profile.label).toBe('Au moins un quart des adresses')
     expect(profile.evidence?.facts).toHaveLength(235)
     expect(profile.evidence?.threshold).toBe(0.25)
     const threshold = profile.evidence?.prose[0]?.find((segment) => segment.kind === 'emphasis')
@@ -91,7 +131,7 @@ describe('aedarAccessSection', () => {
   it('carries the section label without a Lecture block', () => {
     const section = aedarAccessSection(aedarReady('22001'), territory)
     expect(section.key).toBe('aedar-access')
-    expect(section.label).toBe('L’offre accessible selon le temps de trajet')
+    expect(section.label).toBe('La ville du 1/12, du 1/6, du 1/4 et du 1/3 d’heure')
     expect(section.lecture).toBeNull()
   })
 
@@ -128,11 +168,9 @@ describe('aedarAccessSection', () => {
     expect(section.evidence.diversityGap).toMatchObject({ value: 0, horizonMinutes: 15, territoryLead: 'à Test Commune' })
     expect(section.evidence.diversityGap.prose?.map((segment) => segment.value).join('')).toContain('à pied qu’en voiture dans la commune de Test Commune en 15 min')
     expect(section.evidence.source).toMatchObject({ label: 'AEDAR', version: '2026-v1', url: 'https://example.com' })
-    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('personnes averses au risque routier')
-    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('personnes tolérantes au risque routier')
-    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('moyennes par adresse résidentielle, y compris les adresses sans accès')
+    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('pour élucider l')
+    expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).toContain('sélectionnable via la légende')
     expect(section.evidence.sectionProse.flat().map((segment) => segment.value).join(' ')).not.toContain('transit_gain')
-    expect(section.evidence.sectionProse.flat().filter((segment) => segment.kind === 'emphasis').map((segment) => segment.tone)).toEqual(['foot', 'foot', 'bike', 'bike', 'bike'])
   })
 
   it('merges per-mode reference-territory values and labels them explicitly', () => {

@@ -1,7 +1,7 @@
 import { AEDAR_CAR_MAP_HORIZON_MINUTES, aedarDiversityLossMapMetadataUrl } from '@/fiche/mapAssetUrl'
-import type { AedarDiversityLossMapMode, AedarDiversityLossSection } from './themeContent'
+import type { AedarEvidenceSource, AedarDiversityLossMapMode, AedarDiversityLossSection } from './themeContent'
 import type { TerritoryIdentity } from './territoryFacts'
-import { text } from './themeContent'
+import { modeEmphasis, text } from './themeContent'
 
 export const AEDAR_DIVERSITY_LOSS_MAP_MODES = ['walk', 'transit', 'bike_lts2', 'bike_lts4'] as const
 export type AedarDiversityLossMetadataState = 'loading' | 'ready' | 'unavailable'
@@ -84,6 +84,7 @@ export async function fetchAedarDiversityLossMapLegend(
 export function aedarDiversityLossSection(
   metadata: AedarDiversityLossMapMetadata,
   territory: TerritoryIdentity,
+  source: AedarEvidenceSource | null = null,
 ): AedarDiversityLossSection {
   const maps = AEDAR_DIVERSITY_LOSS_MAP_MODES.map((mode) => ({
     mode,
@@ -103,28 +104,46 @@ export function aedarDiversityLossSection(
 
   return {
     key: 'aedar-diversity-loss',
-    label: 'Perte de diversité',
+    label: 'Et sans voiture alors ?',
     availability: metadata.status === 'ready' ? 'complete' : 'incomplete',
     indicators: [],
     evidence: {
       kind: 'aedar-diversity-loss',
       territory: { code: territory.code, name: territory.name },
+      source,
       horizonMinutes: AEDAR_CAR_MAP_HORIZON_MINUTES,
       mapModes: AEDAR_DIVERSITY_LOSS_MAP_MODES,
-      mapFigureTitle: [text(`Perte de diversité des équipements accessibles en ${AEDAR_CAR_MAP_HORIZON_MINUTES} minutes par rapport à la voiture`)],
+      introduction: [[text(`Qui perd le plus sans voiture ? Quelles mobilités douces remédient à cette perte ? Cet ensemble de cartes présente le nombre de types d’équipements auxquels les adresses avaient accès en voiture en ${AEDAR_CAR_MAP_HORIZON_MINUTES} minutes, mais auxquels elles perdent l’accès en adoptant différents modes de transport.`)]],
+      mapFigureTitle: [text(`Perte de diversité des équipements par rapport à la voiture en ${AEDAR_CAR_MAP_HORIZON_MINUTES} minutes`)],
       maps,
       comparisonGroups: [
         {
           key: 'walk-transit',
           label: 'À pied / Transports',
           mapModes: ['walk', 'transit'],
-          prompt: 'Les transports en commun incluent la marche : la comparaison montre si le réseau ajoute des types d’équipements par rapport à la marche seule.',
+          prompt: [[
+            text('Les '), modeEmphasis('transports en commun', 'transit'), text(' incluent la '),
+            modeEmphasis('marche', 'walk'), text(' et ils excluent le transport à la demande. La présence (ou l’absence) de différences entre ces deux cartes montre la capacité (ou l’incapacité) du réseau de '),
+            modeEmphasis('transports en commun', 'transit'), text(' existant à compenser la perte d’accès sans voiture.'),
+          ]],
         },
         {
           key: 'bike-lts2-lts4',
           label: 'Vélo LTS2 / Vélo LTS4',
           mapModes: ['bike_lts2', 'bike_lts4'],
-          prompt: 'LTS2 s’adresse aux personnes averses au risque routier, LTS4 aux personnes tolérantes : comparez la perte entre ces deux réseaux.',
+          prompt: [
+            [
+              modeEmphasis('Vélo LTS 2', 'bike_lts2'),
+              text(' : Un trajet de 15 minutes d’un·e cycliste qui emprunte les aménagements cyclables, les voies résidentielles, ou bien les voies où la vitesse autorisée est strictement inférieure à 50 km/h. Sinon, iel marche.'),
+            ],
+            [
+              modeEmphasis('Vélo LTS4', 'bike_lts4'),
+              text(' : Un trajet de 15 minutes d’un·e cycliste qui est prêt·e à rester sur le vélo sur toutes les portions qui lui sont autorisées.'),
+            ],
+            [
+              text('La présence (ou l’absence) de différences entre ces deux cartes montre l’incapacité (ou la capacité) du réseau d’aménagements cyclo-compatibles à compenser la perte d’accès sans voiture.'),
+            ],
+          ],
         },
       ],
       legend,

@@ -60,6 +60,8 @@ export type TextEmphasisTone =
 export type TextSegment =
   | { kind: 'text'; value: string }
   | { kind: 'emphasis'; tone: TextEmphasisTone; value: string }
+  | { kind: 'mode-emphasis'; mode: AedarRampMode; value: string }
+  | { kind: 'link'; href: string; value: string }
 
 export type TextBlock = readonly TextSegment[]
 
@@ -131,14 +133,16 @@ export interface AedarDiversityLossComparisonGroup {
   key: 'walk-transit' | 'bike-lts2-lts4'
   label: string
   mapModes: readonly [AedarDiversityLossMapMode, AedarDiversityLossMapMode]
-  prompt: string
+  prompt: readonly TextBlock[]
 }
 
 export interface AedarDiversityLossEvidence {
   kind: 'aedar-diversity-loss'
   territory: { code: string; name: string }
+  source: AedarEvidenceSource | null
   horizonMinutes: number
   mapModes: readonly AedarDiversityLossMapMode[]
+  introduction: readonly TextBlock[]
   mapFigureTitle: TextBlock
   maps: readonly AedarDiversityLossMapEvidence[]
   comparisonGroups: readonly AedarDiversityLossComparisonGroup[]
@@ -153,6 +157,7 @@ export interface AedarEquipmentProfileEvidence {
   threshold: number
   initialHorizonMinutes: 5 | 10 | 15 | 20
   figureTitle: string
+  /** Prose surrounding the first-mode classification, resolved by theme content. */
   prose: readonly TextBlock[]
   source: AedarEvidenceSource | null
 }
@@ -791,6 +796,14 @@ export function text(value: string): TextSegment {
 
 export function emphasis(value: string, tone: TextEmphasisTone = 'theme'): TextSegment {
   return { kind: 'emphasis', tone, value }
+}
+
+export function modeEmphasis(value: string, mode: AedarRampMode): TextSegment {
+  return { kind: 'mode-emphasis', mode, value }
+}
+
+export function link(value: string, href: string): TextSegment {
+  return { kind: 'link', href, value }
 }
 
 function regionalEmphasis(value: string): TextSegment {
