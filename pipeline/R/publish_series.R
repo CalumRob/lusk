@@ -730,6 +730,24 @@ owned_series_postgres_adapter <- function(con) {
           c("dataset_id","indicator_id","reference_id","axis_value","observation_period","value","status","missing_reason")],append=TRUE,row.names=FALSE)
         DBI::dbWriteTable(con,"series_named_reference_provenance",projection$named_reference_provenance,append=TRUE,row.names=FALSE)
       }
+      if (!is.null(d$comparison_levels)) {
+        territory_rows <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
+        comparison <- project_ordered_series_comparisons(projection,territory_rows,version,
+          as.character(reference$content_version[[1L]]))
+        DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_group WHERE dataset_id=$1 AND indicator_id=$2",
+          params=list(dataset_id,d$indicator_id))
+        groups <- comparison$groups; groups$dataset_id <- dataset_id; groups$indicator_id <- d$indicator_id
+        DBI::dbWriteTable(con,"ordered_series_comparison_group",groups[c("dataset_id","indicator_id",
+          "comparison_context","group_id","territory_type","axis_value","statistic","group_value",
+          "member_count","eligible_count","missing_count")],append=TRUE,row.names=FALSE)
+        territories <- comparison$territories; territories$dataset_id <- dataset_id; territories$indicator_id <- d$indicator_id
+        DBI::dbWriteTable(con,"ordered_series_comparison_territory",territories[c("dataset_id","indicator_id",
+          "comparison_context","group_id","territory_type","axis_value","territory_id","value","status",
+          "rank","tie_count","rank_size")],append=TRUE,row.names=FALSE)
+        DBI::dbExecute(con,"INSERT INTO ordered_series_comparison_publication(dataset_id,indicator_id,content_version,ordered_series_content_version,reference_content_version,group_row_count,territory_row_count) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(dataset_id,indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,ordered_series_content_version=EXCLUDED.ordered_series_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=now()",
+          params=list(dataset_id,d$indicator_id,comparison$content_version,version,
+            reference$content_version[[1L]],nrow(comparison$groups),nrow(comparison$territories)))
+      }
     })
 }
 

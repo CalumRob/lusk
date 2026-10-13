@@ -604,7 +604,43 @@ CREATE FUNCTION validate_ordered_series() RETURNS trigger LANGUAGE plpgsql AS $$
 CREATE TRIGGER ordered_series_contract BEFORE INSERT OR UPDATE ON ordered_series
  FOR EACH ROW EXECUTE FUNCTION validate_ordered_series();
 GRANT SELECT ON series_descriptor,ordered_series TO lusk_reader;
- GRANT SELECT,INSERT,UPDATE,DELETE ON series_descriptor,ordered_series TO lusk_publisher;
+  GRANT SELECT,INSERT,UPDATE,DELETE ON series_descriptor,ordered_series TO lusk_publisher;
+
+-- Fixed-context comparisons of owned ordered series. The point axis is part
+-- of both keys; source vintages intentionally remain observation provenance.
+CREATE TABLE ordered_series_comparison_publication (
+ dataset_id text NOT NULL, indicator_id text NOT NULL,
+ content_version text NOT NULL, ordered_series_content_version text NOT NULL,
+ reference_content_version text NOT NULL,
+ group_row_count integer NOT NULL CHECK(group_row_count>=0),
+ territory_row_count integer NOT NULL CHECK(territory_row_count>=0),
+ published_at timestamptz NOT NULL DEFAULT now(),
+ PRIMARY KEY(dataset_id,indicator_id));
+CREATE TABLE ordered_series_comparison_group (
+ dataset_id text NOT NULL, indicator_id text NOT NULL,
+ comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level')),
+ group_id text NOT NULL CHECK(length(trim(group_id))>0),
+ territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
+ axis_value text NOT NULL, statistic text NOT NULL CHECK(statistic IN ('median','mean')),
+ group_value double precision, member_count integer NOT NULL CHECK(member_count>0),
+ eligible_count integer NOT NULL CHECK(eligible_count>=0), missing_count integer NOT NULL CHECK(missing_count>=0),
+ PRIMARY KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value),
+ CHECK(member_count=eligible_count+missing_count),
+ CHECK((eligible_count=0 AND group_value IS NULL) OR (eligible_count>0 AND group_value IS NOT NULL AND group_value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))));
+CREATE TABLE ordered_series_comparison_territory (
+ dataset_id text NOT NULL, indicator_id text NOT NULL,
+ comparison_context text NOT NULL, group_id text NOT NULL,
+ territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
+ axis_value text NOT NULL, territory_id text NOT NULL REFERENCES territory_reference(territory_id),
+ value double precision, status text NOT NULL CHECK(status IN ('measured','missing','not_published')),
+ rank integer, tie_count integer, rank_size integer,
+ PRIMARY KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value,territory_id),
+ FOREIGN KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value)
+ REFERENCES ordered_series_comparison_group(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value) ON DELETE CASCADE,
+ CHECK((status='measured' AND value IS NOT NULL AND value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8) AND rank>0 AND tie_count>0 AND rank_size>0 AND rank<=rank_size AND tie_count<=rank_size)
+ OR (status<>'measured' AND value IS NULL AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)));
+GRANT SELECT ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory TO lusk_publisher;
 
 -- Additive dataset-owned contract (migration 011). Legacy ordered_series
 -- remains available for the ENAF reader during an explicit rollout.
