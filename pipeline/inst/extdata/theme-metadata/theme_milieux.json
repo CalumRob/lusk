@@ -92,7 +92,7 @@
   },
   "owned_series_routes": {
     "conso_enaf_annuel": { "active_read_route": true, "theme_id": "milieux", "serving_levels": ["commune", "epci", "departement", "region"] },
-    "artif_par_habitant": { "active_read_route": true, "theme_id": "milieux", "serving_levels": ["commune", "epci", "departement", "region"] }
+    "artif_par_habitant": { "active_read_route": true, "theme_id": "milieux", "serving_levels": ["commune", "epci", "departement", "region"], "comparison_statistic": "median" }
   },
   "source_records": {
     "serie_historique": { "dataset": "INSEE — Série historique du recensement", "publisher": "INSEE", "url": "https://www.data.gouv.fr/datasets/serie-historique-du-recensement-de-la-population", "licence": "Licence Ouverte 2.0", "vintage": "2023", "freshness": "30 juin 2026", "vintages": [{ "id": "serie_historique", "label": "Millésime 2023", "version": "2023", "licence": "Licence Ouverte 2.0", "dateReference": "2023-01-01", "datePublication": "2026-06-30" }], "clocks": [{ "name": "Population", "frequency": "au rythme des recensements", "reference": "RP 2017 et 2023 (fenêtre dérivée)", "trigger": "Quand l’INSEE publie un nouveau recensement, la fenêtre glisse." }] },

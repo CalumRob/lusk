@@ -81,6 +81,12 @@ def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
                     "Médiane prix au m²", "€/m²", "low", ["commune", "epci", "departement"], "1")])
             if "SELECT name,territory_type,department_id,epci_id" in sql: return Cursor([("Commune A1", "commune", "22", "epci-a")])
             if "SELECT t.territory_id FROM territory_reference" in sql: return Cursor([("22001",)])
+            if "SELECT territory_id FROM territory_reference WHERE territory_type='commune'" in sql:
+                return Cursor([("22001",)])
+            if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id" in sql:
+                return Cursor([("22001","commune","d1")])
+            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
+                return Cursor([("22001","commune","22","epci-a","d1")])
             if "FROM series_dataset_observation" in sql:
                 return Cursor([
                     ("22001", "Commune A1", "commune", "2024", None, "2024", None, "missing",
@@ -104,6 +110,56 @@ def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
     assert all(point["observation_period"] == point["axis"] for point in read["points"])
     assert all(point["provenance"][0]["version"] == "2025" for point in read["points"])
     assert read["comparison"]["point"] == "2025"
+
+
+def test_owned_series_reader_rejects_consistent_published_superset(monkeypatch):
+    from api import main
+
+    class Cursor:
+        def __init__(self, rows=()): self.rows=list(rows)
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+    class Transaction:
+        def __enter__(self): return self
+        def __exit__(self, *args): return False
+    class Connection:
+        def transaction(self): return Transaction()
+        def execute(self, sql, params=()):
+            if sql.startswith("SET TRANSACTION"): return Cursor()
+            if "FROM series_dataset_publication" in sql: return Cursor([("v1", "ref", 1, "now")])
+            if "FROM table_publication" in sql: return Cursor([("ref",)])
+            if "FROM series_dataset_descriptor" in sql:
+                return Cursor([("year", ["2024"], "may_be_missing", "2024", "Series", "u", "high",
+                    ["commune"], "1", "median", "default_group")])
+            if "SELECT name,territory_type,department_id,epci_id" in sql:
+                return Cursor([("A", "commune", "22", "e")])
+            if "SELECT t.territory_id FROM territory_reference" in sql:
+                return Cursor([("a",), ("b",)])
+            if "FROM series_dataset_observation" in sql:
+                return Cursor([("a", "A", "commune", "2024", None, "2024", 1, "measured",
+                    "rev", "s", "v", "source", "dataset", "1", None, None, "hash", None)])
+            if "FROM ordered_series_comparison_publication" in sql:
+                return Cursor([("comparison-v1", "v1", "ref", 1, 3)])
+            if "FROM ordered_series_comparison_group" in sql:
+                return Cursor([("2024", "median", 1, 3, 3, 0)])
+            if "FROM ordered_series_comparison_territory" in sql:
+                return Cursor([("2024", member, 1, "measured", 1, 1, 3)
+                    for member in ("a", "b", "extra")])
+            raise AssertionError(sql)
+    class Connections:
+        def connection(self):
+            class Context:
+                def __enter__(self): return Connection()
+                def __exit__(self, *args): return False
+            return Context()
+
+    monkeypatch.setattr(main, "_comparison_cohort", lambda *args: ("commune", ("a", "b"),
+        {"kind": "density_class", "density_class_code": "d1"}))
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *args: ("density_class", "d1", "commune"))
+    with pytest.raises(HTTPException) as error:
+        ReadRepository(Connections()).read_owned_series("dataset", "commune", "a", "indicator",
+            "commune", None, None)
+    assert error.value.status_code == 503
 
 def test_owned_series_migration_is_additive_and_fresh_schema_matches():
     root = Path(__file__).resolve().parents[1]
@@ -132,6 +188,13 @@ def test_owned_series_migration_is_additive_and_fresh_schema_matches():
     executable = "\n".join(line for line in migration.splitlines() if not line.lstrip().startswith("--"))
     assert not re.search(r"(?:INSERT|UPDATE|DELETE)\s+(?:INTO\s+)?table_publication\b", executable, re.I)
     assert "series_descriptor" in fresh and "ordered_series" in fresh
+    for table, columns in {
+        "ordered_series_comparison_publication": ("ordered_series_content_version", "reference_content_version", "content_version"),
+        "ordered_series_comparison_group": ("axis_value", "statistic", "group_value", "member_count", "eligible_count", "missing_count"),
+        "ordered_series_comparison_territory": ("axis_value", "territory_id", "value", "status", "rank", "tie_count", "rank_size"),
+    }.items():
+        statement=fresh.split(f"CREATE TABLE {table}",1)[1].split(";",1)[0]
+        assert all(re.search(rf"\b{column}\b",statement) for column in columns)
     metadata = json.loads((root.parent / "pipeline/inst/extdata/theme-metadata/theme_milieux.json").read_text(encoding="utf-8"))
     page = metadata["indicator_pages"]["artif_par_habitant"]
     assert page["series_dataset_id"] == "ocsge_artif_etats"
@@ -152,13 +215,39 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
         def __exit__(self, *args): return False
 
     class Connection:
-        def __init__(self): self.queries=[]; self.no_comparison=False
+        def __init__(self): self.queries=[]; self.no_comparison=False; self.missing_marker=False; self.stale_source=False; self.stale_reference=False; self.incomplete_comparison=False
         def transaction(self): return Tx()
         def execute(self, sql, params=()):
             self.queries.append((sql,params))
             if sql.startswith("SET TRANSACTION"): return Cursor([])
             if "FROM series_dataset_publication" in sql:
                 return Cursor([("ocsge_v1","ref1",1,"2026-09-30T00:00:00Z")])
+            if "FROM ordered_series_comparison_publication" in sql:
+                return Cursor([] if self.missing_marker else [("cmp-v1","wrong-source" if self.stale_source else "ocsge_v1",
+                    "wrong-reference" if self.stale_reference else "ref1",8,10)])
+            if "FROM ordered_series_comparison_group" in sql:
+                context=params[2]; ids={"density_class":["35238","35239","35240","22001","35241"],
+                    "epci":["35238","35239"],"bretagne":["35238","35239","35240","22001","35241"]}[context]
+                rows=[("M2","median",0.0,len(ids),len(ids),0),
+                    ("M3","median",50.0,len(ids),len(ids)-int(context in ("density_class","bretagne")),
+                        int(context in ("density_class","bretagne")))]
+                return Cursor(rows[:1] if self.incomplete_comparison else rows)
+            if "FROM ordered_series_comparison_territory" in sql:
+                context=params[2]
+                ids={"density_class":["35238","35239","35240","22001","35241"],
+                    "epci":["35238","35239"],"bretagne":["35238","35239","35240","22001","35241"]}[context]
+                values={"35238":50.0,"35239":50.0,"35240":70.0,"22001":10.0,"35241":None}
+                rows=[]
+                for axis in ("M2","M3"):
+                    eligible=[0.0]*len(ids) if axis=="M2" else [values[i] for i in ids if values[i] is not None]
+                    for peer in ids:
+                        value=0.0 if axis=="M2" else values[peer]
+                        rank=1+sum(v>value for v in eligible) if value is not None else None
+                        ties=eligible.count(value) if value is not None else None
+                        rows.append((axis,peer,value,"missing" if value is None else "measured",rank,ties,len(eligible) if value is not None else None))
+                return Cursor(rows)
+            if "SELECT territory_id FROM territory_reference WHERE territory_type='region'" in sql:
+                return Cursor([("53",)])
             if "FROM table_publication" in sql: return Cursor([("ref1",)])
             if "FROM series_dataset_descriptor" in sql:
                 assert params == ("ocsge_artif_etats","artif_par_habitant")
@@ -170,6 +259,20 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
                 if epci: return Cursor([("35238",),("35239",)])
                 if department: return Cursor([("35238",),("35239",),("35240",)])
                 return Cursor([("35238",),("35239",),("35240",),("22001",),("35241",)])
+            if "SELECT territory_id FROM territory_reference WHERE territory_type='commune'" in sql:
+                department, _, epci, _ = params[:4]
+                if epci: return Cursor([("35238",),("35239",)])
+                if department: return Cursor([("35238",),("35239",),("35240",)])
+                return Cursor([("35238",),("35239",),("35240",),("22001",),("35241",)])
+            if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id" in sql:
+                return Cursor([("35238","commune","d1")])
+            if "SELECT territory_id,epci_id,density_class_code" in sql and "territory_type='commune'" in sql:
+                return Cursor([(i,"243500139" if i in ("35238","35239") else "other","d1")
+                    for i in ("35238","35239","35240","22001","35241")])
+            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
+                return Cursor([(i,"commune","35" if i.startswith("35") else "22",
+                    "243500139" if i in ("35238","35239") else "other","d1")
+                    for i in ("35238","35239","35240","22001","35241")])
             if "FROM series_dataset_observation" in sql:
                 ids=params[2]
                 values={"35238":50.0,"35239":50.0,"35240":70.0,"22001":10.0,"35241":None}
@@ -199,7 +302,12 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
         "commune",None,"243500139")
     department=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
         "commune","35",None)
-    bretagne=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+    connections.connection_value.queries.clear()
+    repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+        "commune","35",None)
+    assert not any("ordered_series_comparison_" in q for q,_ in connections.connection_value.queries)
+    connections.connection_value.queries.clear()
+    density=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
         "commune",None,None)
     assert epci["comparison_point"] == epci["comparison"]["point"] == "2025"
     with pytest.raises(HTTPException,match="descriptor comparison point"):
@@ -210,17 +318,17 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
     assert epci["comparison"]["median"] == 50.0
     assert department["comparison"]["comparable_count"] == 3
     assert department["comparison"]["median"] == 50.0
-    assert bretagne["comparison"]["comparable_count"] == 4
-    assert bretagne["comparison"]["rank"] == 2 and bretagne["comparison"]["ties"] == 2
-    assert bretagne["comparison"]["median"] == 50.0
-    assert epci["comparison"]["median"] != bretagne["comparison"]["median"] or epci["comparison"]["comparable_count"] != bretagne["comparison"]["comparable_count"]
+    assert density["comparison"]["comparable_count"] == 4
+    assert density["comparison"]["rank"] == 2 and density["comparison"]["ties"] == 2
+    assert density["comparison"]["median"] == 50.0
+    assert epci["comparison"]["median"] != density["comparison"]["median"] or epci["comparison"]["comparable_count"] != density["comparison"]["comparable_count"]
     assert epci["publication_id"] == "ocsge_v1"
     assert epci["points"][0]["value"] == 0.0
     assert "rank_epci" not in epci["points"][0]
     facet=next(p for p in epci["scope_series"][0]["points"] if p["axis"]=="2025")
     assert facet["comparison_rank"] == 1 and facet["comparison_ties"] == 2
     assert epci["scope_series"][1]["points"][1]["value"] == 50.0
-    missing=next(p for p in bretagne["scope_series"][-1]["points"] if p["axis"]=="2025")
+    missing=next(p for p in density["scope_series"][-1]["points"] if p["axis"]=="2025")
     assert missing["status"] == "missing" and missing["comparison_rank"] is None
     connections.connection_value.no_comparison=True
     no_comparison=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
@@ -230,3 +338,25 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
     sql=" ".join(q for q,_ in connections.connection_value.queries)
     assert "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY" in sql
     assert "WHERE dataset_id=%s AND indicator_id=%s" in sql
+    assert any("FROM ordered_series_comparison_publication" in q for q,_ in connections.connection_value.queries)
+    assert any("FROM ordered_series_comparison_territory" in q for q,_ in connections.connection_value.queries)
+    # Department-filtered explicit selections were exercised above without querying fixed tables.
+    connections.connection_value.queries.clear(); connections.connection_value.no_comparison=False
+    connections.connection_value.stale_source=True
+    with pytest.raises(HTTPException,match="missing or stale"):
+        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+            "commune",None,"243500139")
+    connections.connection_value.stale_source=False; connections.connection_value.stale_reference=False
+    connections.connection_value.incomplete_comparison=True
+    with pytest.raises(HTTPException,match="incomplete"):
+        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+            "commune",None,"243500139")
+    connections.connection_value.incomplete_comparison=False; connections.connection_value.no_comparison=False
+    connections.connection_value.missing_marker=True
+    with pytest.raises(HTTPException,match="missing or stale"):
+        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+            "commune",None,"243500139")
+    connections.connection_value.stale_source=False; connections.connection_value.stale_reference=True
+    with pytest.raises(HTTPException,match="missing or stale"):
+        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
+            "commune",None,"243500139")

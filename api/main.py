@@ -403,6 +403,31 @@ class ReadRepository:
                 if len(scoped_ids)>territory_limit:
                     raise HTTPException(413,"Requested owned-series scope exceeds the bounded cohort")
                 peer_ids=[row[0] for row in scoped_ids]
+                comparison_selection=None
+                if department_id or epci_id:
+                    member_rows=connection.execute(
+                        """SELECT territory_id FROM territory_reference WHERE territory_type='commune'
+                           AND (%s::text IS NULL OR department_id=%s)
+                           AND (%s::text IS NULL OR epci_id=%s) ORDER BY territory_id LIMIT %s""",
+                        (department_id,department_id,epci_id,epci_id,territory_limit+1)).fetchall()
+                    if len(member_rows)>territory_limit:
+                        raise HTTPException(413,"Requested owned-series comparison exceeds the bounded cohort")
+                    comparison_selection=[("commune",row[0]) for row in member_rows]
+                comparison_cohort=None
+                has_default_or_comparable_selection = (
+                    comparison_selection is None and scope_level == territory_type
+                ) or (comparison_selection is not None and len(comparison_selection) >= 2)
+                if has_default_or_comparable_selection:
+                    comparison_cohort=_comparison_cohort(connection,territory_type,territory_id,comparison_selection)
+                    comparison_type,comparison_members,comparison_scope_record=comparison_cohort
+                    comparison_context=_fixed_scalar_comparison_context(connection,territory_type,territory_id,
+                        comparison_selection,comparison_type,comparison_members,comparison_scope_record)
+                    if comparison_context is not None and not department_id and not epci_id and comparison_type==scope_level:
+                        # The default fiche cohort is the canonical comparison set, not every
+                        # territory merely returned by a broad same-level scan.
+                        peer_ids=list(comparison_members)
+                else:
+                    comparison_context=None
                 read_ids=list(dict.fromkeys([*peer_ids,territory_id]))
                 scope_rows = connection.execute(
                     """SELECT o.territory_id,t.name,t.territory_type,o.axis_value,o.state_role,o.observation_period,
@@ -448,7 +473,78 @@ class ReadRepository:
                 comparison_statistic = descriptor[9] if len(descriptor) > 9 else "median"
                 comparison_scope = descriptor[10] if len(descriptor) > 10 else "default_group"
                 if descriptor[3] is not None:
-                    if comparison_statistic == "mean" and comparison_scope == "selected_group" and indicator_id == "raccordement_courbe":
+                    fixed_context = comparison_context
+                    if fixed_context is not None:
+                        marker = connection.execute(
+                            """SELECT content_version,ordered_series_content_version,reference_content_version,
+                                      group_row_count,territory_row_count
+                               FROM ordered_series_comparison_publication WHERE dataset_id=%s AND indicator_id=%s""",
+                            (dataset_id,indicator_id),
+                        ).fetchone()
+                        if (not marker or not marker[0] or marker[1] != publication[0] or marker[2] != reference[0]
+                                or marker[3] is None or marker[4] is None or marker[3] < 0 or marker[4] < 0):
+                            raise HTTPException(503,"Owned series comparison publication is missing or stale")
+                        context_id=fixed_context[1]
+                        fixed_level=fixed_context[2]
+                        group_rows = connection.execute(
+                            """SELECT axis_value,statistic,group_value,member_count,eligible_count,missing_count
+                               FROM ordered_series_comparison_group WHERE dataset_id=%s AND indicator_id=%s
+                                 AND comparison_context=%s AND group_id=%s AND territory_type=%s
+                               ORDER BY array_position(%s::text[],axis_value)""",
+                            (dataset_id,indicator_id,fixed_context[0],context_id,fixed_level,list(descriptor[1])),
+                        ).fetchall()
+                        territory_rows = connection.execute(
+                            """SELECT axis_value,territory_id,value,status,rank,tie_count,rank_size
+                               FROM ordered_series_comparison_territory WHERE dataset_id=%s AND indicator_id=%s
+                                 AND comparison_context=%s AND group_id=%s AND territory_type=%s
+                               ORDER BY array_position(%s::text[],axis_value),territory_id""",
+                            (dataset_id,indicator_id,fixed_context[0],context_id,fixed_level,list(descriptor[1])),
+                        ).fetchall()
+                        expected_axes={r[0] for r in group_rows}; expected_ids=set(peer_ids)
+                        published_ids={r[1] for r in territory_rows}
+                        member_count=group_rows[0][3] if group_rows else 0
+                        expected_axis_order=[axis for axis in descriptor[1] if axis in expected_axes]
+                        if (not expected_axes or len(group_rows)!=len(expected_axes) or
+                            [r[0] for r in group_rows]!=expected_axis_order or
+                            marker[3] < len(group_rows) or marker[4] < len(territory_rows) or
+                            any(r[1]!=comparison_statistic or r[3]!=member_count or r[3]!=r[4]+r[5]
+                                for r in group_rows) or
+                            member_count!=len(expected_ids) or len(published_ids)!=len(expected_ids) or published_ids!=expected_ids or
+                            len(territory_rows)!=len(expected_axes)*len(expected_ids) or
+                            {(r[0],r[1]) for r in territory_rows}!={(a,t) for a in expected_axes for t in published_ids}):
+                            raise HTTPException(503,"Owned series comparison publication is incomplete")
+                        if comparison_scope=="selected_group" and any(r[4]!=r[3] or r[5]!=0 for r in group_rows):
+                            raise HTTPException(503,"Complete-support series comparison is incomplete")
+                        comparison_axis = (expected_axis_order[-1] if descriptor[0]=="declared_detail" and
+                            comparison_point not in expected_axes else comparison_point)
+                        facet=next((r for r in territory_rows if r[0]==comparison_axis and r[1]==territory_id),None)
+                        group_facet=next((r for r in group_rows if r[0]==comparison_axis),None)
+                        if facet is None or group_facet is None:
+                            raise HTTPException(503,"Owned series comparison point is unavailable")
+                        comparison={"point":comparison_point,"direction":descriptor[6],
+                            "comparable_count":group_facet[4],"rank":facet[4],"ties":facet[5],
+                            "median":group_facet[2] if comparison_statistic=="median" else None,
+                            "mean":group_facet[2] if comparison_statistic=="mean" else None,
+                            "scope":{"kind":"level","territory_type":scope_level,
+                            "department_id":department_id,"epci_id":epci_id}}
+                        if comparison_scope=="selected_group" and comparison_statistic=="mean":
+                            comparison={"point":comparison_point,"statistic":"mean",
+                                "mean":group_facet[2],"selected_member_count":group_facet[3],
+                                "scope":{"kind":"level","territory_type":scope_level,
+                                "department_id":department_id,"epci_id":epci_id}}
+                            mean_scope_series=[{"territory":{"type":scope_level,"id":context_id,"name":None},
+                                "statistic":"mean","selected_member_count":group_facet[3],
+                                "points":[{"axis":row[0],"value":row[2],
+                                    "status":"measured" if row[4]==row[3] else "unavailable"}
+                                    for row in group_rows]}]
+                        for row in territory_rows:
+                            peer=grouped.get(row[1]); point=next((p for p in peer["points"]
+                                if p["axis"]==row[0] or p.get("state_role")==row[0]),None) if peer else None
+                            if point is not None:
+                                point["comparison_rank"],point["comparison_ties"],point["comparison_count"],point["comparison_median"] = row[4],row[5],row[6],group_facet[2] if row[0]==comparison_point else None
+                    if comparison is not None:
+                        pass
+                    elif comparison_statistic == "mean" and comparison_scope == "selected_group":
                         mean_points=[]
                         for axis in descriptor[1]:
                             axis_points=[]
@@ -466,7 +562,7 @@ class ReadRepository:
                             "department_id":department_id,"epci_id":epci_id}}
                         mean_scope_series=[{"territory":{"type":scope_level,"id":None,"name":None},
                             "statistic":"mean","selected_member_count":len(peer_ids),"points":mean_points}]
-                    else:
+                    elif comparison is None:
                         cohort = []
                         for peer_id in peer_ids:
                             peer = grouped.get(peer_id)
@@ -501,7 +597,7 @@ class ReadRepository:
                     "comparison":comparison,"comparison_point":comparison_point,
                     "points":focal["points"],"scope_series":mean_scope_series if mean_scope_series is not None else [grouped[peer_id] for peer_id in peer_ids if peer_id in grouped],
                     **({"comparison_contract":{"statistic":comparison_statistic,"scope":comparison_scope}}
-                       if indicator_id=="raccordement_courbe" else {}),
+                       if comparison_scope=="selected_group" else {}),
                     "availability":"complete" if all(p["status"]=="measured" for p in focal["points"]) else "incomplete"}
 
     def read_level(self, territory_type: str, territory_id: str, *, connection=None) -> dict:
@@ -2085,7 +2181,7 @@ def _owned_series_snapshot(conn, dataset_id, territory_type, territory_id, indic
         "descriptor_version":descriptor[7],"comparison_point":descriptor[9],"points":points,"scope_series":[],
         "observation_period_kind":descriptor[11],
         **({"comparison_contract":{"statistic":descriptor[13],"scope":descriptor[14]}}
-           if indicator_id=="raccordement_courbe" else {}),
+           if descriptor[14]=="selected_group" else {}),
         **_owned_series_context(conn,dataset_id,indicator_id,territory_type,territory_id,points),
         "named_references":list(reference_groups.values()),"availability":"no_record" if no_record else "complete" if all(
             point["status"]=="measured" for point in points) else "incomplete"}
@@ -2209,6 +2305,8 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         return [], {}, None, [], None
     cohort_type,members,scope=cohort or _comparison_cohort(
         conn,territory_type,territory_id,selection)
+    fixed_context=_fixed_scalar_comparison_context(conn,territory_type,territory_id,selection,
+        cohort_type,members,scope)
     datasets=list(dict.fromkeys(route[0] for route in routes))
     indicators=list(dict.fromkeys(route[3] for route in routes))
     markers=conn.execute("""SELECT p.dataset_id,p.content_version,p.reference_content_version,
@@ -2222,7 +2320,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         d.direction,d.allowed_levels,d.descriptor_version,d.axis_values,d.comparison_statistic,
         d.comparison_scope,
         CASE WHEN to_jsonb(d)->>'comparison_levels' IS NULL THEN d.allowed_levels
-          ELSE ARRAY(SELECT jsonb_array_elements_text(to_jsonb(d)->'comparison_levels')) END
+          ELSE ARRAY(SELECT jsonb_array_elements_text(to_jsonb(d)->'comparison_levels')) END,d.axis_kind
         FROM series_dataset_descriptor d
         WHERE d.dataset_id=ANY(%s) AND d.indicator_id=ANY(%s) AND d.active_read_route""",
         (datasets,indicators)).fetchall()
@@ -2233,7 +2331,8 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         a.provenance_revision_id,o.axis_value,o.missing_reason
         FROM series_dataset_descriptor d
         LEFT JOIN series_dataset_observation o ON o.dataset_id=d.dataset_id AND o.indicator_id=d.indicator_id
-          AND (d.comparison_statistic='mean' OR o.axis_value=d.comparison_point)
+          AND (d.comparison_statistic='mean' OR o.axis_value=d.comparison_point OR
+            (d.axis_kind='declared_detail' AND o.state_role IS NOT NULL))
           AND o.territory_type=%s AND o.territory_id=ANY(%s)
         LEFT JOIN series_observation_provenance a ON a.dataset_id=d.dataset_id
           AND a.indicator_id=d.indicator_id AND a.territory_id=o.territory_id
@@ -2259,14 +2358,15 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         if descriptor is None:
             raise HTTPException(503,"Owned-series active publication route is unavailable")
         (_dataset,_indicator,_theme,point,label,unit,direction,levels,version,axes,
-         statistic,comparison_scope,comparison_levels)=descriptor
+         statistic,comparison_scope,comparison_levels,axis_kind)=descriptor
         marker=marker_by_dataset[dataset_id]
         content_version,reference_version,territory_version=marker[1],marker[2],marker[3]
         if not content_version or reference_version!=territory_version:
             raise HTTPException(503,"Owned-series publication is stale or unavailable")
         if territory_type not in levels:
             raise HTTPException(422,"Indicator is not declared for this territory level")
-        mean_contract = statistic=="mean" and comparison_scope=="selected_group" and indicator_id=="raccordement_courbe"
+        statistic=statistic or "median"
+        mean_contract = statistic=="mean" and comparison_scope=="selected_group"
         median_contract = statistic=="median" and comparison_scope=="default_group"
         valid=bool(point and point in axes and direction in ("high","low") and
             (mean_contract or median_contract) and territory_type in comparison_levels and cohort_type in comparison_levels)
@@ -2274,6 +2374,113 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         if valid and any(r[5] is None or r[5] not in revision_by_id for r in observations):
             raise HTTPException(503,"Owned series comparison provenance is incomplete")
         axis_index = 6
+        if valid and fixed_context is not None:
+            publication=conn.execute("""SELECT p.content_version,p.ordered_series_content_version,
+                p.reference_content_version,p.group_row_count,p.territory_row_count,
+                s.content_version,t.content_version
+              FROM ordered_series_comparison_publication p
+              JOIN series_dataset_publication s ON s.dataset_id=p.dataset_id
+              JOIN table_publication t ON t.table_name='territory_reference'
+              WHERE p.dataset_id=%s AND p.indicator_id=%s""",(dataset_id,indicator_id)).fetchone()
+            if (not publication or not publication[0] or publication[1]!=content_version or
+                    publication[2]!=territory_version or publication[5]!=content_version or
+                    publication[6]!=territory_version or publication[3]<1 or publication[4]<1):
+                raise HTTPException(503,"Owned-series fixed comparison is unavailable or stale")
+            context,group_id,fixed_level=fixed_context
+            if fixed_level!=cohort_type:
+                raise HTTPException(503,"Owned-series fixed comparison level is incompatible")
+            groups=conn.execute("""SELECT axis_value,statistic,group_value,member_count,eligible_count,missing_count
+                FROM ordered_series_comparison_group WHERE dataset_id=%s AND indicator_id=%s
+                  AND comparison_context=%s AND group_id=%s AND territory_type=%s
+                ORDER BY array_position(%s::text[],axis_value)""",
+                (dataset_id,indicator_id,context,group_id,fixed_level,list(axes))).fetchall()
+            territory_results=conn.execute("""SELECT axis_value,territory_id,value,status,rank,tie_count,rank_size
+                FROM ordered_series_comparison_territory WHERE dataset_id=%s AND indicator_id=%s
+                  AND comparison_context=%s AND group_id=%s AND territory_type=%s AND territory_id=ANY(%s)
+                ORDER BY array_position(%s::text[],axis_value),territory_id""",
+                (dataset_id,indicator_id,context,group_id,fixed_level,list(members),list(axes))).fetchall()
+            axis_inventory=conn.execute("""SELECT DISTINCT state_role FROM series_dataset_observation
+                WHERE dataset_id=%s AND indicator_id=%s AND state_role IS NOT NULL
+                ORDER BY state_role""",(dataset_id,indicator_id)).fetchall()
+            declared_roles={row[0] for row in axis_inventory}
+            declared_axes=([axis for axis in axes if axis in declared_roles]
+                if declared_roles else list(axes))
+            group_axes=[row[0] for row in groups]
+            expected_group_axes=[axis for axis in declared_axes if axis in set(axes)]
+            expected_pairs={(axis,member) for axis in group_axes for member in members}
+            actual_pairs={(row[0],row[1]) for row in territory_results}
+            if (not group_axes or group_axes!=expected_group_axes or len(groups)!=len(group_axes) or
+                len(territory_results)!=len(expected_pairs) or actual_pairs!=expected_pairs or
+                publication[3]<len(groups) or publication[4]<len(territory_results) or
+                any(row[1]!=statistic or row[3]!=len(members) or row[3]!=row[4]+row[5]
+                    for row in groups)):
+                raise HTTPException(503,"Owned-series fixed comparison is incomplete")
+            if mean_contract and any(row[4]!=row[3] or row[5]!=0 for row in groups):
+                raise HTTPException(503,"Complete-support owned-series comparison is incomplete")
+            group_by_axis={row[0]:row for row in groups}
+            territory_by_axis_id={(row[0],row[1]):row for row in territory_results}
+            comparison_axis=point
+            if comparison_axis not in group_by_axis and axis_kind=="declared_detail" and group_axes:
+                comparison_axis=group_axes[-1]
+            group=group_by_axis.get(comparison_axis)
+            focal_result=territory_by_axis_id.get((comparison_axis,territory_id))
+            if group is None:
+                raise HTTPException(503,"Owned-series fixed comparison point is unavailable")
+            values=[(row[1],float(row[2])) for row in territory_results
+                if row[0]==comparison_axis and row[3]=="measured" and row[2] is not None]
+            enough=len(values)>=2
+            source_axis=None if mean_contract else comparison_axis
+            sources=[];seen=set()
+            for row in observations:
+                if source_axis is not None and row[6]!=source_axis: continue
+                if row[2] not in members or row[5] is None or row[5] in seen: continue
+                seen.add(row[5]); source=revision_by_id.get(row[5])
+                if source is None: raise HTTPException(503,"Owned-series comparison provenance revision is unavailable")
+                sources.append({"source_id":source[1],"vintage_id":source[2],"source_name":source[3],
+                    "dataset_name":source[4],"version":source[5],"reference_date":source[6],
+                    "publication_date":source[7],"revision_hash":source[8]})
+            focal_value=(focal_result[2] if focal_result and focal_result[3]=="measured" else None)
+            rank=focal_result[4] if focal_result else None
+            result={"indicator_id":indicator_id,"theme_id":theme_id,"label":label,"unit":unit,
+                "direction":direction,"descriptor_version":version,"source_facet":point,"statistic":statistic,
+                "status":"available" if enough else "unavailable",
+                "reason":None if enough else ("fewer_than_two_comparable_values" if values else "no_selected_comparable_values"),
+                "selected_member_count":len(members),"eligible_count":group[4],"missing_count":group[5],
+                "focal_value":focal_value,"focal_in_selection":territory_id in members,
+                "rank":rank,"rank_size":focal_result[6] if focal_result and rank is not None else None,
+                "comparison_sources":sources,"owned_content_version":content_version}
+            if mean_contract:
+                member_axis={}
+                for row in observations:
+                    if row[2] not in members or row[6] not in axes:
+                        continue
+                    key=(row[2],row[6]); fact=(row[3],row[4],row[7])
+                    previous=member_axis.get(key)
+                    if previous is not None and previous!=fact:
+                        raise HTTPException(503,"Published mean-curve provenance rows conflict")
+                    member_axis[key]=fact
+                zero_reason_counts={}
+                for member in members:
+                    facts=[member_axis.get((member,axis)) for axis in axes]
+                    if any(fact is None or fact[1]!="measured" or fact[0] is None for fact in facts):
+                        raise HTTPException(503,"Published mean-curve provenance support is incomplete")
+                    reasons={fact[2] for fact in facts}
+                    if len(reasons)>1:
+                        raise HTTPException(503,"Published mean-curve zero reason conflicts across axes")
+                    reason=next(iter(reasons))
+                    if reason is not None:
+                        if any(fact[0]!=0 for fact in facts):
+                            raise HTTPException(503,"Published mean-curve zero reason conflicts with values")
+                        zero_reason_counts[reason]=zero_reason_counts.get(reason,0)+1
+                result["mean"]=group[2] if enough else None
+                result["mean_curve"]={"statistic":"mean","axis_kind":axis_kind,
+                    "points":[{"axis":row[0],"value":row[2],"status":"measured" if row[4]==row[3] else "unavailable"}
+                              for row in groups],"selected_member_count":len(members),
+                    "eligible_count":len(members),"model_zero_reason_counts":zero_reason_counts,"scope":scope} if enough else None
+            else:
+                result["median"]=group[2] if enough else None
+            results.append(result)
+            continue
         if mean_contract:
             mean_curve_points,member_axis=_complete_owned_mean_curve(axes,members,observations,
                 territory_index=2,value_index=3,status_index=4,source_index=5,
@@ -2285,7 +2492,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                     zero_reason_counts[reason]=zero_reason_counts.get(reason,0)+1
             values=[(member,float(member_axis[(member,point)][3])) for member in members
                 if (member,point) in member_axis and member_axis[(member,point)][4]=="measured"]
-            mean_curve={"statistic":"mean","axis_kind":"duration_minute","points":mean_curve_points,
+            mean_curve={"statistic":"mean","axis_kind":axis_kind,"points":mean_curve_points,
                 "selected_member_count":len(members),"eligible_count":len(members),
                 "model_zero_reason_counts":zero_reason_counts,"scope":scope}
         else:
@@ -2299,6 +2506,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
             for _,value in values)) if enough and focal_value is not None and territory_id in members else None
         sources=[];seen=set()
         for row in observations:
+            if not mean_contract and row[axis_index]!=point: continue
             if row[2] not in members: continue
             revision_id=row[5]
             if revision_id is None or revision_id in seen: continue

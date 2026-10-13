@@ -31,6 +31,44 @@ test_that("annual series preserves declared gaps and source vintage", {
   expect_equal(comparison$comparable_count, 3L)
 })
 
+test_that("ordered-series comparison contract preserves declared statistics, axis, support and provenance", {
+  members <- c("a", "b")
+  points <- expand.grid(territory_id=members, axis_value=c("M2", "M3"), stringsAsFactors=FALSE)
+  points$value <- c(2, 4, 3, 1); points$status <- "measured"
+  mean_low <- project_series_comparison_group(points, c("M2", "M3"), members,
+    direction="low", statistic="mean")
+  expect_identical(mean_low$groups$axis_value, c("M2", "M3"))
+  expect_identical(mean_low$groups$statistic, c("mean", "mean"))
+  expect_equal(mean_low$groups$value, c(3, 2))
+  expect_equal(mean_low$territories$rank[mean_low$territories$axis_value=="M2"], c(1L,2L))
+  incomplete <- points[-1,]
+  expect_error(project_series_comparison_group(incomplete,c("M2","M3"),members,
+    direction="low",statistic="median"),"complete support")
+  ordinary_missing <- points[-1,]
+  ordinary_missing <- rbind(ordinary_missing,data.frame(territory_id="a",axis_value="M2",value=NA_real_,status="missing"))
+  expect_no_error(validate_series_projection(data.frame(indicator_id="x",territory_id="a",
+    territory_type="commune",axis_value="2020",observation_period="2020",value=NA_real_,
+    status="missing",source_id="s",vintage_id="v"),list(indicator_id="x",axis_kind="year",
+      axis_values=c("2020","2021"),completeness="may_be_missing",comparison_point="2020",label="x",
+      unit="u",direction="low",allowed_levels="commune",source_id="s",vintage_id="v")))
+})
+
+test_that("ordered-series comparisons preserve descriptor axis order and rank per point", {
+  points <- data.frame(territory_id=rep(c("a", "b"), each=3),
+    axis_value=rep(c("t0000", "t0010", "t0020"), 2),
+    value=c(1, 2, 3, 2, 2, 4), status="measured")
+  result <- project_series_comparison_group(points,
+    c("t0000", "t0010", "t0020"), c("a", "b"), direction="high")
+  expect_identical(result$groups$axis_value, c("t0000", "t0010", "t0020"))
+  expect_equal(result$groups$value, c(1.5, 2, 3.5))
+  expect_equal(result$territories$rank[result$territories$territory_id == "a"], c(2L, 1L, 2L))
+  expect_error(project_series_comparison_group(points[-1, ],
+    c("t0000", "t0010", "t0020"), c("a", "b"), direction="high"), "complete support")
+  points$value[1] <- NA_real_; points$status[1] <- "missing"
+  expect_error(project_series_comparison_group(points,
+    c("t0000", "t0010", "t0020"), c("a", "b"), direction="high"), "complete support")
+})
+
 test_that("owned prix_m2 projects annual canonical facts with their effective row lineage", {
   payload <- payload_habitat()
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_habitat.json"), simplifyVector=FALSE)
@@ -277,6 +315,59 @@ test_that("OCS-GE projection uses typed per-role components and retains comparis
   expect_setequal(source_links[["200000003 M2"]],c("ocsge_artificialisation_35_2020","ocsge_artificialisation_56_2022"))
   expect_setequal(source_links[["200000003 M3"]],c("ocsge_artificialisation_35_2023","ocsge_artificialisation_56_2024"))
   expect_equal(projection$points$observation_period[3],periods[[3]])
+  comparison_reference <- data.frame(territory_id=c("22001","22002","200000003","region"),
+    territory_type=c("commune","commune","epci","region"),epci_id=c("200000003","200000003",NA,NA),
+    density_class_code=c("d1","d1",NA,NA),stringsAsFactors=FALSE)
+  # Add a second commune through the canonical source-fact input, then rerun the
+  # production projector so immutable provenance and role typing are generated normally.
+  second_commune <- fields[fields$territoire=="22001",,drop=FALSE]
+  second_commune$territoire <- "22002"
+  second_commune$value <- c(.18,.42)
+  fields_with_peer <- rbind(fields,second_commune)
+  histories_with_peer <- rbind(histories,data.frame(territoire="22002",type="commune",theme="milieux",
+    periode_artif="2021-2025",stringsAsFactors=FALSE))
+  production_projection <- project_artif_m2m3_projection(fields_with_peer,histories_with_peer,vintages,metadata)
+  comparison <- project_ordered_series_comparisons(production_projection,comparison_reference,
+    "series-publication-fixture-v1","territory-reference-fixture-v1")
+  expect_identical(comparison$axis_values,c("M2","M3"))
+  expect_identical(unique(comparison$groups$axis_value),c("M2","M3"))
+  expect_setequal(unique(comparison$groups$comparison_context),
+    c("density_class","epci","bretagne","same_level"))
+  expect_equal(comparison$groups$group_value[comparison$groups$comparison_context=="density_class"],c(.18,.42))
+  expect_equal(comparison$territories$rank[comparison$territories$comparison_context=="density_class"],rep(1L,4))
+  expect_equal(comparison$territories$tie_count[comparison$territories$comparison_context=="density_class"],rep(2L,4))
+  density_members <- c("22001","22002")
+  density_points <- production_projection$points[
+    production_projection$points$territory_id %in% density_members &
+      production_projection$points$territory_type=="commune",,drop=FALSE]
+  parity <- project_series_comparison_group(data.frame(
+    territory_id=density_points$territory_id,axis_value=density_points$state_role,
+    value=density_points$value,status=density_points$status),comparison$axis_values,
+    density_members,direction=production_projection$descriptor$direction,statistic="median")
+  published_group <- comparison$groups[comparison$groups$comparison_context=="density_class" &
+    comparison$groups$group_id=="d1",,drop=FALSE]
+  expect_equal(published_group$group_value,parity$groups$value)
+  published_territories <- comparison$territories[
+    comparison$territories$comparison_context=="density_class" &
+      comparison$territories$group_id=="d1",,drop=FALSE]
+  published_territories <- published_territories[order(published_territories$axis_value,
+    published_territories$territory_id),,drop=FALSE]
+  parity_territories <- parity$territories[order(parity$territories$axis_value,
+    parity$territories$territory_id),,drop=FALSE]
+  expect_equal(published_territories$rank,parity_territories$rank)
+  expect_equal(published_territories$tie_count,parity_territories$tie_count)
+  expect_equal(published_territories$rank_size,parity_territories$rank_size)
+  expect_identical(comparison$input_content_version,"series-publication-fixture-v1")
+  expect_identical(comparison$reference_content_version,"territory-reference-fixture-v1")
+  expect_identical(comparison$provenance,production_projection$provenance)
+  expect_identical(comparison$point_provenance,production_projection$point_provenance)
+  expect_identical(comparison$statistic,"median")
+  bad_route <- production_projection
+  bad_route$descriptor$comparison_statistic <- "mode"
+  expect_error(project_ordered_series_comparisons(bad_route,comparison_reference,"s1","r1"),
+    "supported comparison statistic")
+  expect_error(project_ordered_series_comparisons(production_projection,comparison_reference,"","r1"),
+    "publication identities")
   old_artifact <- nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet"))
   old_artifact <- old_artifact[old_artifact$key=="artif_par_habitant",]
   old_artifact$state_role <- NULL
@@ -566,6 +657,20 @@ test_that("owned raccordement publisher projects its declared serving-only refer
     date_reference=as.Date("2026-10-10"),date_publication=as.Date("2026-10-10"))
   projection <- project_raccordement_owned_series(canonical,vintages,metadata,
     producer_contract=list(date_mesure="2026-10-21"))
+  route_reference <- data.frame(territory_id=c("35238","29001","53"),
+    territory_type=c("commune","commune","region"),epci_id=c("e","e",NA),
+    density_class_code=c("d","d",NA),stringsAsFactors=FALSE)
+  route_comparison <- project_ordered_series_comparisons(projection,route_reference,
+    "raccordement-publication-fixture-v1","reference-publication-fixture-v1")
+  expect_identical(route_comparison$statistic,"mean")
+  expect_identical(route_comparison$axis_values,projection$descriptor$axis_values)
+  partial_route <- projection
+  removed <- which(partial_route$points$territory_id=="35238" & partial_route$points$axis_value=="t0000")
+  partial_route$points <- partial_route$points[-removed,,drop=FALSE]
+  partial_route$point_provenance <- partial_route$point_provenance[
+    !(partial_route$point_provenance$territory_id=="35238" & partial_route$point_provenance$axis_value=="t0000"),,drop=FALSE]
+  expect_error(project_ordered_series_comparisons(partial_route,route_reference,"s1","r1"),
+    "complete support")
   expect_no_error(validate_owned_series_projection(projection))
   expect_equal(projection$descriptor$axis_kind,"duration_minute")
   expect_true(projection$descriptor$active_read_route)

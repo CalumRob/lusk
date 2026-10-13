@@ -545,39 +545,23 @@ validate_scalar_comparison_projection <- function(projection) {
   invisible(projection)
 }
 
-# Produce the two scalar comparison grains from the same canonical snapshot.
-# The cohort registry is intentionally closed: a scope is emitted only where
-# its membership comes from the published territory reference.
-project_scalar_comparisons <- function(scalar_projection, territory_reference,
-    input_scalar_content_version, reference_content_version) {
-  if (!is.list(scalar_projection) || !all(c("facts", "descriptors", "eligible_territories") %in% names(scalar_projection)))
-    stop("Scalar comparison requires a validated scalar fact projection", call.=FALSE)
-  validate_scalar_projection(scalar_projection$facts, scalar_projection$descriptors,
-    scalar_projection$eligible_territories)
+# The one canonical inventory of default comparison memberships shared by
+# every published comparison family. Membership is derived only from the
+# versioned territory reference; callers filter by their declared levels.
+comparison_context_membership <- function(territory_reference, comparison_levels) {
   required_reference <- c("territory_id", "territory_type", "epci_id", "density_class_code")
   if (!is.data.frame(territory_reference) || !all(required_reference %in% names(territory_reference)) ||
       anyNA(territory_reference[c("territory_id", "territory_type")]) ||
       any(!territory_reference$territory_type %in% c("commune", "epci", "departement", "region")) ||
       anyDuplicated(territory_reference[c("territory_id", "territory_type")]))
     stop("Comparison territory reference is invalid", call.=FALSE)
-  valid_version <- function(x) is.character(x) && length(x) == 1L && !is.na(x) && nzchar(trimws(x))
-  if (!valid_version(input_scalar_content_version) || !valid_version(reference_content_version))
-    stop("Scalar comparison input publication version is invalid", call.=FALSE)
+  comparison_levels <- unique(as.character(comparison_levels))
+  if (!length(comparison_levels) || anyNA(comparison_levels) ||
+      any(!comparison_levels %in% c("commune", "epci", "departement", "region")))
+    stop("Comparison levels are invalid", call.=FALSE)
   region_id <- as.character(territory_reference$territory_id[territory_reference$territory_type == "region"])
   if (length(region_id) != 1L || is.na(region_id) || !nzchar(region_id))
     stop("Comparison territory reference must contain exactly one Bretagne region row", call.=FALSE)
-
-  descriptors <- scalar_projection$descriptors
-  allowed_levels <- unique(unlist(lapply(descriptors$allowed_levels, as.character), use.names=FALSE))
-  reference_universe <- unique(territory_reference[territory_reference$territory_type %in% allowed_levels,
-    c("territory_id", "territory_type"), drop=FALSE])
-  eligible_universe <- unique(scalar_projection$eligible_territories[
-    scalar_projection$eligible_territories$territory_type %in% allowed_levels,
-    c("territory_id", "territory_type"), drop=FALSE])
-  if (!setequal(paste(reference_universe$territory_type, reference_universe$territory_id),
-      paste(eligible_universe$territory_type, eligible_universe$territory_id)))
-    stop("Comparison territory reference differs from the canonical scalar universe", call.=FALSE)
-
   refs <- territory_reference
   refs$territory_id <- as.character(refs$territory_id)
   refs$territory_type <- as.character(refs$territory_type)
@@ -599,11 +583,37 @@ project_scalar_comparisons <- function(scalar_projection, territory_reference,
   for (group_id in sort(unique(communes$epci_id[!is.na(communes$epci_id) & nzchar(communes$epci_id)])))
     add_group("epci", group_id, "commune", communes$territory_id[communes$epci_id == group_id])
   add_group("bretagne", region_id, "commune", communes$territory_id)
-  for (territory_type in c("epci", "departement"))
+  for (territory_type in intersect(c("epci", "departement"), comparison_levels))
     add_group("same_level", region_id, territory_type,
       refs$territory_id[refs$territory_type == territory_type])
   membership <- do.call(rbind, members)
   rownames(membership) <- NULL
+  membership
+}
+
+# Produce the two scalar comparison grains from the same canonical snapshot.
+# The cohort registry is intentionally closed: a scope is emitted only where
+# its membership comes from the published territory reference.
+project_scalar_comparisons <- function(scalar_projection, territory_reference,
+    input_scalar_content_version, reference_content_version) {
+  if (!is.list(scalar_projection) || !all(c("facts", "descriptors", "eligible_territories") %in% names(scalar_projection)))
+    stop("Scalar comparison requires a validated scalar fact projection", call.=FALSE)
+  validate_scalar_projection(scalar_projection$facts, scalar_projection$descriptors,
+    scalar_projection$eligible_territories)
+  valid_version <- function(x) is.character(x) && length(x) == 1L && !is.na(x) && nzchar(trimws(x))
+  if (!valid_version(input_scalar_content_version) || !valid_version(reference_content_version))
+    stop("Scalar comparison input publication version is invalid", call.=FALSE)
+  descriptors <- scalar_projection$descriptors
+  allowed_levels <- unique(unlist(lapply(descriptors$allowed_levels, as.character), use.names=FALSE))
+  reference_universe <- unique(territory_reference[territory_reference$territory_type %in% allowed_levels,
+    c("territory_id", "territory_type"), drop=FALSE])
+  eligible_universe <- unique(scalar_projection$eligible_territories[
+    scalar_projection$eligible_territories$territory_type %in% allowed_levels,
+    c("territory_id", "territory_type"), drop=FALSE])
+  if (!setequal(paste(reference_universe$territory_type, reference_universe$territory_id),
+      paste(eligible_universe$territory_type, eligible_universe$territory_id)))
+    stop("Comparison territory reference differs from the canonical scalar universe", call.=FALSE)
+  membership <- comparison_context_membership(territory_reference, allowed_levels)
 
   group_rows <- list()
   territory_rows <- list()
