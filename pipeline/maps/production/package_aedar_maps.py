@@ -72,7 +72,6 @@ def package_export(source_dir, output_dir):
     if sorted(shard_indices) != list(range(len(territories))):
         raise ValueError("Source shard allocation does not partition its territory plan")
 
-    output.mkdir(parents=True, exist_ok=True)
     package_log = output / "package.log"
 
     def log(message):
@@ -81,7 +80,6 @@ def package_export(source_dir, output_dir):
         with package_log.open("a", encoding="utf-8") as stream:
             stream.write(line + "\n")
 
-    log(f"Checking {len(expected)} existing q80 WebPs; no rendering or upload")
     evidence_paths = [source / "complete.json", source / "full-plan.json"]
     manifests, source_outputs = [], {}
     for index, indices in enumerate(plan["shards"]):
@@ -135,6 +133,8 @@ def package_export(source_dir, output_dir):
     if extra:
         raise ValueError(f"Publication directory contains unexpected WebPs: {sorted(extra)[:5]}")
 
+    output.mkdir(parents=True, exist_ok=True)
+    log(f"Checking {len(expected)} existing q80 WebPs; no rendering or upload")
     outputs = []
     inline_metadata = []
     for number, filename in enumerate(sorted(expected), 1):

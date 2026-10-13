@@ -157,6 +157,7 @@ class AedarPackageTests(unittest.TestCase):
             destination = root / "publish"
             with self.assertRaisesRegex(ValueError, "inline legend coverage"):
                 __import__("package_aedar_maps").package_export(source, destination)
+            self.assertFalse(destination.exists())
             self.assertFalse((destination / "upload-manifest.json").exists())
             self.assertFalse((destination / "full-manifest.json").exists())
             self.assertFalse(any(destination.glob("*.webp")))
