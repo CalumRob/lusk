@@ -380,17 +380,28 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
     stop("Canonical reference artifact does not match its producer reference locator",call.=FALSE)
   excluded <- focal_all[!focal_all$type %in% allowed_levels,,drop=FALSE]
    focal <- focal_all[focal_all$type %in% allowed_levels,,drop=FALSE]
-   if (national_outbound) {
-     if (anyNA(focal$value) || any(!is.finite(focal$value)) || any(focal$value<0 | focal$value>1) ||
-         anyNA(reference$value) || any(!is.finite(reference$value)) ||
-         any(reference$value<0 | reference$value>1))
-       stop("National outbound raccordement curves must contain complete finite measured shares",call.=FALSE)
-     for (id in unique(focal$territoire)) {
-       values <- focal$value[focal$territoire==id][match(axes,focal$detail[focal$territoire==id])]
+    if (national_outbound) {
+      invalid_focal <- is.na(focal$value) | !is.finite(focal$value) | focal$value<0 | focal$value>1
+      if (any(invalid_focal)) {
+        affected <- sort(unique(as.character(focal$territoire[invalid_focal])))
+        stop("National outbound raccordement curves contain invalid shares for commune(s): ",
+          paste(affected,collapse=", "),call.=FALSE)
+      }
+      if (anyNA(reference$value) || any(!is.finite(reference$value)) ||
+          any(reference$value<0 | reference$value>1))
+        stop("National outbound raccordement reference must contain complete finite measured shares",call.=FALSE)
+      for (id in unique(focal$territoire)) {
+        member <- focal[focal$territoire==id,,drop=FALSE]
+        missing_axes <- setdiff(axes,as.character(member$detail))
+        if (length(missing_axes))
+          stop("Canonical focal raccordement curve for commune ",id,
+            " is missing declared point(s): ",paste(missing_axes,collapse=", "),call.=FALSE)
+        values <- member$value[match(axes,as.character(member$detail))]
         if (length(values)!=length(axes) || anyNA(values) || any(diff(values) < -1e-12))
-         stop("National outbound raccordement member curve is partial or non-cumulative",call.=FALSE)
-     }
-   }
+          stop("National outbound raccordement curve is incomplete or non-cumulative for commune ",
+            id,call.=FALSE)
+      }
+    }
    for (id in unique(focal$territoire)) if (!setequal(as.character(focal$detail[focal$territoire==id]),axes))
      stop("Canonical focal raccordement curve is missing a declared point",call.=FALSE)
   if (!setequal(as.character(reference$detail),axes) || length(unique(reference$territoire))!=1L)
@@ -651,6 +662,27 @@ owned_series_postgres_adapter <- function(con) {
       reference <- DBI::dbGetQuery(con,
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
       if (nrow(reference)!=1L) stop("Territory reference publication is unavailable",call.=FALSE)
+      if (identical(d$axis_kind,"duration_minute") && identical(d$completeness,"dense_complete")) {
+        registered <- DBI::dbGetQuery(con,
+          "SELECT territory_id,territory_type FROM territory_reference")
+        expected <- registered[registered$territory_type %in% d$allowed_levels,,drop=FALSE]
+        actual <- unique(projection$points[c("territory_id","territory_type")])
+        key <- function(rows) paste(rows$territory_type,rows$territory_id,sep="\x1f")
+        describe <- function(rows,limit=20L) {
+          rows <- rows[order(rows$territory_type,rows$territory_id),,drop=FALSE]
+          labels <- paste0(rows$territory_type,"/",rows$territory_id)
+          suffix <- if (length(labels)>limit) paste0(" … et ",length(labels)-limit," autre(s)") else ""
+          paste0(paste(head(labels,limit),collapse=", "),suffix)
+        }
+        missing <- expected[!key(expected) %in% key(actual),,drop=FALSE]
+        unexpected <- actual[!key(actual) %in% key(expected),,drop=FALSE]
+        if (nrow(missing))
+          stop("Dense-complete duration publication omits reference territory/territories: ",
+            describe(missing),call.=FALSE)
+        if (nrow(unexpected))
+          stop("Dense-complete duration publication contains unregistered territory/territories: ",
+            describe(unexpected),call.=FALSE)
+      }
       # Revision records are insert-only; a reused ID/hash with different content is rejected.
       for (i in seq_len(nrow(projection$provenance))) {
         p <- projection$provenance[i,,drop=FALSE]
