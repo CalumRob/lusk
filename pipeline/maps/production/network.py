@@ -110,6 +110,8 @@ def _load_network_family_config() -> dict:
         raise ValueError("Network family config must declare analytical departments")
     if any(not isinstance(value, str) or not value for value in departments):
         raise ValueError("Network analytical departments must be nonempty strings")
+    from cartographic_policy import family_policy
+    family_policy(config.get("cartographic_policy", {}))
     return config
 CAR_HIGHWAYS = (
     "motorway", "motorway_link", "trunk", "trunk_link", "primary", "primary_link",
@@ -152,15 +154,17 @@ SHARED_CYCLING = (
 )
 
 
-def network_recipe() -> Recipe:
-    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
+def network_recipe(family_config: Mapping | None = None, *, resolved_cartographic_policy=None) -> Recipe:
+    from cartographic_policy import family_policy
+    family_config = family_config or _load_network_family_config()
+    policy = resolved_cartographic_policy or family_policy(family_config.get("cartographic_policy", {}))
     return Recipe(
         name="public-space-sharing-network",
         version=2,
         foundation=Foundation(
             version="network-plate-v2",
-            framing=SHARED_CARTOGRAPHIC_POLICY.framing(),
-            ground=SHARED_CARTOGRAPHIC_POLICY.ground(),
+            framing=policy.framing(),
+            ground=policy.ground(),
             composition={
                 "inspection": {"style": "engraved-network-plate", "desaturate_outside_land": True},
                 "inline": {
@@ -174,6 +178,7 @@ def network_recipe() -> Recipe:
                     "cross_border_frontier": "visible-on-analytical-edge",
                 },
             },
+            cartographic_policy=policy,
         ),
         family="network",
         required_fields=("geometry", "territory", "mode", "analytical_geometry", "extent"),
@@ -215,10 +220,13 @@ def build_representative_map_set(
     raw_dir: str | Path,
     project: QgsProject | None = None,
     family_config: Mapping | None = None,
+    *, resolved_cartographic_policy=None,
 ) -> Binding:
     """Bind authoritative territory membership, public labels and sample modes."""
     raw_dir = Path(raw_dir)
     family_config = family_config or _load_network_family_config()
+    from cartographic_policy import family_policy
+    policy = resolved_cartographic_policy or family_policy(family_config.get("cartographic_policy", {}))
     analytical_departments = frozenset(
         str(value) for value in family_config["scope"]["analytical_departments"]
     )
@@ -283,7 +291,7 @@ def build_representative_map_set(
     frame_policy = InspectionFramePolicy(registered_inspection_headings(family_config))
     features = []
     for territory in territory_specs:
-        extent = _map_extent(territory["analytical_geometry"])
+        extent = _map_extent(territory["analytical_geometry"], policy)
         inspection_extent = frame_policy.extent_for(
             territory["geometry"], extent, territory["name"])
         for mode in NETWORK_MODES:
@@ -295,6 +303,7 @@ def build_representative_map_set(
                 "region_geometry": region_geometry,
                 "extent": extent,
                 "inspection_extent": inspection_extent,
+                "cartographic_policy": policy.contract(),
             })
     return Binding("network", MapSet({"network-outputs": tuple(features)}))
 
@@ -321,10 +330,13 @@ def _department_labels(registry_path: Path, departments: set[str]) -> dict[str, 
 
 def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
                        family_config: Mapping | None = None,
-                       territory_registry_path: str | Path | None = None) -> Binding:
+                       territory_registry_path: str | Path | None = None, *,
+                       resolved_cartographic_policy=None) -> Binding:
     """Derive the full supported territory inventory from current map-ready sources."""
     raw_dir = Path(raw_dir)
     family_config = family_config or _load_network_family_config()
+    from cartographic_policy import family_policy
+    policy = resolved_cartographic_policy or family_policy(family_config.get("cartographic_policy", {}))
     departments = {str(code) for code in family_config["scope"]["analytical_departments"]}
     registry_path = Path(territory_registry_path) if territory_registry_path else Path(__file__).resolve().parents[3] / "public" / "data" / "territoires.json"
     department_labels = _department_labels(registry_path, departments)
@@ -405,7 +417,7 @@ def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
     frame_policy = InspectionFramePolicy(registered_inspection_headings(family_config))
     features = []
     for territory in territories:
-        extent = _map_extent(territory["analytical_geometry"])
+        extent = _map_extent(territory["analytical_geometry"], policy)
         inspection_extent = frame_policy.extent_for(
             territory["geometry"], extent, territory["name"])
         for mode in NETWORK_MODES:
@@ -414,7 +426,8 @@ def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
                 "analytical_geometry": territory["analytical_geometry"],
                 "territory_codes": territory["territory_codes"],
                 "region_geometry": region, "extent": extent,
-                "inspection_extent": inspection_extent})
+                "inspection_extent": inspection_extent,
+                "cartographic_policy": policy.contract()})
     return Binding("network", MapSet({"network-outputs": tuple(features)}))
 
 

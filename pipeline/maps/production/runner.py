@@ -11,6 +11,7 @@ import tempfile
 from typing import Mapping, Protocol, Sequence
 import zlib
 from time import perf_counter
+from cartographic_policy import CartographicPolicy
 
 
 @dataclass(frozen=True)
@@ -20,6 +21,15 @@ class Foundation:
     geography: Mapping = field(default_factory=dict)
     ground: Mapping = field(default_factory=dict)
     composition: Mapping = field(default_factory=dict)
+    cartographic_policy: CartographicPolicy | None = None
+
+
+def _foundation_contract(foundation):
+    return {"version": foundation.version, "framing": foundation.framing,
+        "geography": foundation.geography, "ground": foundation.ground,
+        "composition": foundation.composition,
+        "cartographic_policy": (foundation.cartographic_policy.contract()
+            if foundation.cartographic_policy is not None else None)}
 
 
 @dataclass(frozen=True)
@@ -241,7 +251,7 @@ def full_batch_admission(recipe, binding, requested_profiles, adapter, approval,
         indexes = partition_territories(rows, worker_count, lambda row: cost(row["feature"]))
         assignments = tuple(tuple(inventory[i] for i in sorted(group)) for group in indexes)
     return FullBatchAdmission(_stable_identity({"name": recipe.name, "version": recipe.version,
-        "family": recipe.family, "foundation": recipe.foundation.__dict__}),
+        "family": recipe.family, "foundation": _foundation_contract(recipe.foundation)}),
         _stable_identity(renderer), _stable_identity(inputs), _stable_identity(inventory),
         _stable_identity(sorted(requested_profiles)), _stable_identity(artifact_matrix),
          _stable_identity(approval), inventory, worker_count or 0, assignments)
@@ -307,10 +317,14 @@ def _profile_foundation(recipe: Recipe, profile: Profile) -> Mapping:
     if profile.name == "inline":
         return {"version": recipe.foundation.version,
                 "ground": {key: ground[key] for key in ("inline_surface", "water") if key in ground},
-                "composition": {"inline": composition.get("inline", {})}}
+                "composition": {"inline": composition.get("inline", {})},
+                "cartographic_policy": (recipe.foundation.cartographic_policy.profile_contract(profile.name)
+                    if recipe.foundation.cartographic_policy is not None else None)}
     return {"version": recipe.foundation.version,
             "ground": {key: ground[key] for key in ("inspection_surface", "water") if key in ground},
-            "composition": {"inspection": composition.get("inspection")}}
+            "composition": {"inspection": composition.get("inspection")},
+            "cartographic_policy": (recipe.foundation.cartographic_policy.profile_contract(profile.name)
+                if recipe.foundation.cartographic_policy is not None else None)}
 
 
 def _effective_identity_for(recipe, adapter, renderer_identity, feature, profile,
@@ -347,13 +361,7 @@ def _render_identity(recipe: Recipe, scope: str, profiles: Sequence[str],
             "version": recipe.version,
             "family": recipe.family,
             "required_fields": recipe.required_fields,
-            "foundation": {
-                "version": recipe.foundation.version,
-                "framing": recipe.foundation.framing,
-                "geography": recipe.foundation.geography,
-                "ground": recipe.foundation.ground,
-                "composition": recipe.foundation.composition,
-            },
+            "foundation": _foundation_contract(recipe.foundation),
         },
         "scope": scope,
         "profiles": [
@@ -493,6 +501,11 @@ def preflight(recipe: Recipe, binding: Binding, scope: str, profiles: Sequence[s
         if not features:
             raise ValueError(f"map-set layer {layer} has no territory coverage")
         for feature in features:
+            declared_policy = feature.get("cartographic_policy")
+            policy = recipe.foundation.cartographic_policy
+            if declared_policy is not None:
+                if policy is None or declared_policy != policy.contract():
+                    raise ValueError("map-ready frame policy differs from the recipe's resolved family policy")
             missing = set(recipe.required_fields) - feature.keys()
             if missing: raise ValueError(f"{layer} missing map-ready fields {sorted(missing)}")
             if not feature.get("geometry"):

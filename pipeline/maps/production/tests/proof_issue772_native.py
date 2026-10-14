@@ -21,6 +21,35 @@ OWNED = PRODUCTION / "output" / ("issue772-native" if RUN_LABEL == "head"
                                    else f"issue772-native-{RUN_LABEL}")
 CONTEXTS = PRODUCTION / "output/parity-inputs"
 
+EXPECTED_NATIVE_REFERENCES = {
+    ("network", "inspection", "35060-car-inspection.webp"): "84c9c6c6ba7d9f48e5b21da551bfe8a99f190107057c6d5fe5ece3b645c35048",
+    ("network", "inline", "35060-car-inline.webp"): "5e9f84e7610f62dd3e5bf47136cf91291f64676b5dd9edc04080f6e85acde11c",
+    ("aedar", "inspection", "35060-car-inspection.webp"): "1b53ecc9565438f885b7a03dbd7f94c55d7ec4213e1d882e220ead2be5efe479",
+    ("aedar", "inline", "35060-car-inline.webp"): "bde976cc7db47e8d7ca129463f28ead8137f8e64aabd991a1f7b093e9ecc6fb7",
+    ("aedar", "inspection", "35060-transit-inspection.webp"): "5c99373e1028a7ace25e18db203671966892c7f373adb162b107b87356a9cc0a",
+    ("aedar", "inline", "35060-transit-inline.webp"): "7d8b4ebf36f6d8b6de3494302ead403d8e27561244c3fcd2fbe29e7ed38de607",
+}
+
+
+def validate_native_parity(records):
+    """Require each curated reference exactly once and byte-identically."""
+    observed = {}
+    for row in records:
+        key = (row.get("family"), row.get("profile"), row.get("file"))
+        if key not in EXPECTED_NATIVE_REFERENCES:
+            continue  # Other bounded native outputs are QA-only/unclassified.
+        observed.setdefault(key, []).append(row.get("sha256"))
+    errors = []
+    for key, reference in EXPECTED_NATIVE_REFERENCES.items():
+        digests = observed.get(key, [])
+        if len(digests) != 1:
+            errors.append(f"{key}: expected exactly once, observed {len(digests)}")
+        elif digests[0] != reference:
+            errors.append(f"{key}: digest mismatch ({digests[0]} != {reference})")
+    if errors:
+        raise ValueError("native parity proof failed: " + "; ".join(errors))
+    return True
+
 
 def _bounded_context(cache_root, bbox):
     from mainland_context import load_context_covering
@@ -81,24 +110,22 @@ def main():
             ("inspection", "inline"), aa, aout, refresh=False)
 
         records = []
-        expected = {
-            "35060-car-inspection.webp": "84c9c6c6ba7d9f48e5b21da551bfe8a99f190107057c6d5fe5ece3b645c35048",
-            "35060-car-inline.webp": "5e9f84e7610f62dd3e5bf47136cf91291f64676b5dd9edc04080f6e85acde11c",
-            "35060-car-inspection.webp#aedar": "1b53ecc9565438f885b7a03dbd7f94c55d7ec4213e1d882e220ead2be5efe479",
-            "35060-car-inline.webp#aedar": "bde976cc7db47e8d7ca129463f28ead8137f8e64aabd991a1f7b093e9ecc6fb7",
-            "35060-transit-inspection.webp": "5c99373e1028a7ace25e18db203671966892c7f373adb162b107b87356a9cc0a",
-            "35060-transit-inline.webp": "7d8b4ebf36f6d8b6de3494302ead403d8e27561244c3fcd2fbe29e7ed38de607",
-        }
         results = (("network", nr), ("aedar", ar))
         for family, result in results:
             for row in result.outputs:
                 path = Path(row["path"])
                 actual = sha256(path.read_bytes()).hexdigest()
-                key = path.name + ("#aedar" if family == "aedar" and "car" in path.name else "")
                 records.append({"family": family, "profile": row["profile"], "mode": row["mode"],
-                    "file": path.name, "sha256": actual, "reference_sha256": expected.get(key),
-                    "byte_identical": (actual == expected[key]) if key in expected else None})
+                    "file": path.name, "sha256": actual})
+        for row in records:
+            key = (row["family"], row["profile"], row["file"])
+            reference = EXPECTED_NATIVE_REFERENCES.get(key)
+            row["reference_sha256"] = reference
+            row["byte_identical"] = row["sha256"] == reference if reference else None
+        validate_native_parity(records)
         report = {"network_qa": nr.qa["status"], "aedar_qa": ar.qa["status"],
+                  "parity": {"status": "passed", "expected_count": len(EXPECTED_NATIVE_REFERENCES),
+                             "validated_count": len(EXPECTED_NATIVE_REFERENCES)},
                   "network_input_identity": na.input_identity(),
                   "aedar_input_identity": aa.input_identity(),
                   "facts_sha256": sha256(FACTS_PATH.read_bytes()).hexdigest(),

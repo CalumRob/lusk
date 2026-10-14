@@ -2,6 +2,7 @@
   "version": 1,
   "family": "aedar",
   "geography_contract": "Admin Express COG 2025",
+  "cartographic_policy": {},
   "horizon_minutes": 15,
   "bucket": "lusk",
   "prefix": "maps/aedar/v1/",
