@@ -222,4 +222,18 @@ test_that("approved apostrophe and surrounding-space label differences validate 
   substantive <- hierarchy
   substantive$label[substantive$TYPEQU=="A135"] <- "COUR D’ASSISES MODIFIÉE"
   expect_error(validate_aedar_typequ_metadata(registry,substantive,gamme),"label")
+
+  c401 <- match("C401",hierarchy$TYPEQU)
+  hierarchy$label[c401] <- sub("GRANDES ÉCOLES$","GRANDES\nÉCOLES",hierarchy$label[c401])
+  c401_result <- validate_aedar_typequ_metadata(registry,hierarchy,gamme)
+  expect_identical(c401_result$LIB_TYPEQU[c401],hierarchy$label[c401])
+
+  other_newline <- hierarchy
+  other <- match("A135",other_newline$TYPEQU)
+  other_newline$label[other] <- sub(" ","\n",other_newline$label[other],fixed=TRUE)
+  expect_error(validate_aedar_typequ_metadata(registry,other_newline,gamme),"label")
+
+  gamme_newline <- gamme
+  gamme_newline$LIBELLE_TYPEQU[c401] <- sub(" ","\n",gamme_newline$LIBELLE_TYPEQU[c401],fixed=TRUE)
+  expect_error(validate_aedar_typequ_metadata(registry,hierarchy,gamme_newline),"gamme TYPEQU label")
 })

@@ -39,10 +39,16 @@ verify_aedar_typequ_metadata_hash <- function(path, expected, source_name=basena
 
 normalize_aedar_typequ_label_for_validation <- function(value) {
   value <- trimws(as.character(value))
-  # The official C401 hierarchy label is line-wrapped inside its HTML cell;
-  # compare that embedded line break as a single separating space only.
-  value <- gsub("\r\n|\r|\n"," ",value,perl=TRUE)
   gsub("'","’",value,fixed=TRUE)
+}
+
+compare_aedar_typequ_labels_for_validation <- function(value, expected, typequ) {
+  value <- normalize_aedar_typequ_label_for_validation(value)
+  expected <- normalize_aedar_typequ_label_for_validation(expected)
+  c401 <- !is.na(typequ) & typequ=="C401"
+  value[c401] <- gsub("\r\n|\r|\n"," ",value[c401],perl=TRUE)
+  expected[c401] <- gsub("\r\n|\r|\n"," ",expected[c401],perl=TRUE)
+  value==expected
 }
 
 # Validate the two official metadata extracts against the pinned 2025 code/label
@@ -63,8 +69,8 @@ validate_aedar_typequ_metadata <- function(registry, hierarchy, gamme) {
       length(unique(paste(hierarchy$domain_code,hierarchy$subdomain_code,sep="\r")))!=27L)
     stop("AEDAR hierarchy must contain exactly 7 domains and 27 subdomains",call.=FALSE)
   expected <- registry$LIB_TYPEQU[match(hierarchy$TYPEQU,registry$TYPEQU)]
-  if (anyNA(hierarchy$label) || any(normalize_aedar_typequ_label_for_validation(hierarchy$label)!=
-      normalize_aedar_typequ_label_for_validation(expected)))
+  if (anyNA(hierarchy$label) || any(!compare_aedar_typequ_labels_for_validation(hierarchy$label,
+      expected,hierarchy$TYPEQU)))
     stop("AEDAR hierarchy TYPEQU label does not agree with the canonical registry",call.=FALSE)
   expected_gamme <- registry$LIB_TYPEQU[match(gamme$TYPEQU,registry$TYPEQU)]
   if (anyNA(gamme$LIBELLE_TYPEQU) || any(normalize_aedar_typequ_label_for_validation(gamme$LIBELLE_TYPEQU)!=
@@ -162,8 +168,8 @@ validate_aedar_published_typequ_metadata <- function(metadata) {
     stop("AEDAR publication TYPEQU metadata is incomplete or duplicated",call.=FALSE)
   registry <- read_aedar_typequ_registry()
   expected <- registry$LIB_TYPEQU[match(metadata$TYPEQU,registry$TYPEQU)]
-  if (anyNA(metadata$LIB_TYPEQU) || any(normalize_aedar_typequ_label_for_validation(metadata$LIB_TYPEQU)!=
-      normalize_aedar_typequ_label_for_validation(expected)))
+  if (anyNA(metadata$LIB_TYPEQU) || any(!compare_aedar_typequ_labels_for_validation(metadata$LIB_TYPEQU,
+      expected,metadata$TYPEQU)))
     stop("AEDAR publication TYPEQU label differs from the canonical registry",call.=FALSE)
   required_text <- c("LIB_TYPEQU","description","domain_code","domain_label","subdomain_code","subdomain_label","gamme_status")
   empty_text <- vapply(metadata[required_text],function(column)
@@ -354,8 +360,8 @@ project_aedar_aggregates <- function(inputs, typequ_metadata=NULL) {
   if (!is.null(typequ_metadata)) typequ_metadata <- validate_aedar_published_typequ_metadata(typequ_metadata)
   if (!is.null(typequ_metadata)) {
     label_check <- typequ_metadata$LIB_TYPEQU[match(facts$TYPEQU,typequ_metadata$TYPEQU)]
-    if (anyNA(label_check) || any(normalize_aedar_typequ_label_for_validation(facts$LIB_TYPEQU)!=
-        normalize_aedar_typequ_label_for_validation(label_check)))
+    if (anyNA(label_check) || any(!compare_aedar_typequ_labels_for_validation(facts$LIB_TYPEQU,
+        label_check,facts$TYPEQU)))
       stop("AEDAR aggregate labels disagree with published TYPEQU metadata",call.=FALSE)
   }
   list(facts=facts,typequ_metadata=typequ_metadata,measures=AEDAR_AGGREGATE_MEASURES,source=list(

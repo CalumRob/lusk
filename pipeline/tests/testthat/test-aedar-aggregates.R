@@ -131,7 +131,14 @@ test_that("canonical aggregate labels compare with approved normalization but re
 
 test_that("published TYPEQU validator and aggregate projection accept the full 235-row metadata axis", {
   metadata <- make_aedar_test_typequ_metadata()
+  c401 <- match("C401",metadata$TYPEQU)
+  metadata$LIB_TYPEQU[c401] <- sub(" ","\n",metadata$LIB_TYPEQU[c401],fixed=TRUE)
   expect_equal(nrow(validate_aedar_published_typequ_metadata(metadata)),235L)
+  expect_identical(validate_aedar_published_typequ_metadata(metadata)$LIB_TYPEQU[c401],metadata$LIB_TYPEQU[c401])
+  other_newline <- metadata
+  other <- match("A135",other_newline$TYPEQU)
+  other_newline$LIB_TYPEQU[other] <- sub(" ","\n",other_newline$LIB_TYPEQU[other],fixed=TRUE)
+  expect_error(validate_aedar_published_typequ_metadata(other_newline),"canonical registry")
   projection <- project_aedar_aggregates(make_aedar_test_inputs(),metadata)
   expect_equal(nrow(projection$typequ_metadata),235L)
   expect_equal(nrow(projection$facts),4L*235L)
