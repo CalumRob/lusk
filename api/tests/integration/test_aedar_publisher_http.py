@@ -120,7 +120,7 @@ inputs <- list(
   departement=make('departement','code_departement','22','nom_departement','Fixture département'),
   region=make('region','code_region','53','nom_region','Fixture région'))
 i <- seq_len(nrow(source_axis))
-metadata <- data.frame(TYPEQU=source_axis$TYPEQU,LIB_TYPEQU=source_axis$LIB_TYPEQU,
+metadata <- data.frame(TYPEQU=source_axis$TYPEQU,LIB_TYPEQU=source_axis$LIB_TYPEQU,description=paste('Description',i),
   domain_code=paste0('D',((i-1L) %% 7L)+1L),domain_label=paste('Domain',((i-1L) %% 7L)+1L),
   subdomain_code=paste0('S',((i-1L) %% 27L)+1L),subdomain_label=paste('Subdomain',((i-1L) %% 27L)+1L),
   GAMME=rep(NA_character_,length(i)),gamme_status=rep('absent',length(i)),source_order=i)
@@ -178,6 +178,7 @@ stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n 
                     assert resp.status_code == 200, resp.text
                     fact = resp.json()["facts"][0]
                     assert fact["typequ_hierarchy_label"] == "COUR D’ASSISES"
+                    assert fact["typequ_description"] == "Description 1"
                     assert fact["typequ_label"] == "COUR D'ASSISES"
                     assert fact["measures"]["count_5_walk_share"] is None
                     assert fact["measures"]["count_5_walk_min"] == 0

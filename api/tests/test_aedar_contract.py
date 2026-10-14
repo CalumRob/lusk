@@ -37,7 +37,7 @@ def test_aedar_migration_updates_markers_and_grants_database_roles():
         normalized = "".join(sql.split()).upper()
         assert "LUSK_PUBLISHER" in normalized and "GRANTSELECT,INSERT,UPDATE,DELETE" in normalized
     metadata_migration = (root / "api/migrations/031_aedar_typequ_metadata.sql").read_text()
-    for field in ("typequ_hierarchy_label","typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
+    for field in ("typequ_hierarchy_label","typequ_description","typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
                   "typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order"):
         assert field in metadata_migration and field in fresh
     assert "typequ_gamme_status='hors_gamme' AND typequ_gamme='Hors Gamme'" in metadata_migration
@@ -49,7 +49,7 @@ def test_aedar_typed_response_rejects_incomplete_measure_maps():
     import pytest
     with pytest.raises(Exception, match="312"):
         AEDARFactResponse(territory_id="x", territory_type="commune", typequ="A104",
-            typequ_label="GENDARMERIE",typequ_hierarchy_label="GENDARMERIE",
+            typequ_label="GENDARMERIE",typequ_hierarchy_label="GENDARMERIE",typequ_description="Description",
             typequ_domain_code="A",typequ_domain_label="Services",
             typequ_subdomain_code="A1",typequ_subdomain_label="Publics",typequ_gamme=None,
             typequ_gamme_status="absent",typequ_source_order=1,
@@ -66,7 +66,7 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
 
     class Cursor:
         description = [type("Column", (), {"name": n}) for n in
-                       ("territory_id", "territory_type", "typequ", "typequ_label","typequ_hierarchy_label",
+                       ("territory_id", "territory_type", "typequ", "typequ_label","typequ_hierarchy_label","typequ_description",
                         "typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
                         "typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order",
                         "identity", "n_addresses", "n_observed", "coverage_status",
@@ -75,7 +75,8 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
         def fetchone(self): return ("aedar-v1", 1, "ref-v1", "ref-v1")
         def fetchall(self):
             return [("id", "commune", "C401", "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES ÉCOLES",
-                     "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES", "C","Services","C4","Publics",
+                     "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES",
+                     "Official description line one\nline two", "C","Services","C4","Publics",
                      "Hors Gamme","hors_gamme",1,{"code_insee": "id"},
                      10, 8, "covered", {key: (0 if key == "count_5_walk_share" else None)
                        for key in main._AEDAR_MEASURE_KEYS}, "aedar_bretagne",
@@ -104,6 +105,7 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
         assert body["facts"][0]["typequ_domain_code"] == "C"
         assert body["facts"][0]["typequ_label"] == "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES ÉCOLES"
         assert body["facts"][0]["typequ_hierarchy_label"] == "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES"
+        assert body["facts"][0]["typequ_description"] == "Official description line one\nline two"
         assert body["facts"][0]["typequ_gamme"] == "Hors Gamme"
         assert body["facts"][0]["typequ_gamme_status"] == "hors_gamme"
         assert body["facts"][0]["typequ_source_order"] == 1

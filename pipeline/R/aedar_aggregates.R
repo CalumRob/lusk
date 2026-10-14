@@ -85,7 +85,7 @@ validate_aedar_typequ_metadata <- function(registry, hierarchy, gamme) {
   joined$gamme_status <- ifelse(is.na(joined$GAMME),"absent",
     ifelse(trimws(joined$GAMME)=="Hors Gamme","hors_gamme","classified"))
   names(joined)[names(joined)=="label"] <- "LIB_TYPEQU"
-  joined <- joined[,c("TYPEQU","LIB_TYPEQU","domain_code","domain_label","subdomain_code",
+  joined <- joined[,c("TYPEQU","LIB_TYPEQU","description","domain_code","domain_label","subdomain_code",
     "subdomain_label","GAMME","gamme_status","source_order"),drop=FALSE]
   rownames(joined) <- NULL
   joined
@@ -154,7 +154,7 @@ read_aedar_typequ_metadata_sources <- function(hierarchy_path, gamme_path) {
 
 validate_aedar_published_typequ_metadata <- function(metadata) {
   required <- c("TYPEQU","LIB_TYPEQU","domain_code","domain_label","subdomain_code",
-    "subdomain_label","GAMME","gamme_status","source_order")
+    "subdomain_label","description","GAMME","gamme_status","source_order")
   if (!is.data.frame(metadata) || !all(required %in% names(metadata)) || nrow(metadata)!=AEDAR_TYPEQU_REGISTRY_COUNT ||
       anyDuplicated(metadata$TYPEQU) || anyDuplicated(metadata$source_order) ||
       !setequal(metadata$TYPEQU,read_aedar_typequ_registry()$TYPEQU) ||
@@ -165,7 +165,7 @@ validate_aedar_published_typequ_metadata <- function(metadata) {
   if (anyNA(metadata$LIB_TYPEQU) || any(normalize_aedar_typequ_label_for_validation(metadata$LIB_TYPEQU)!=
       normalize_aedar_typequ_label_for_validation(expected)))
     stop("AEDAR publication TYPEQU label differs from the canonical registry",call.=FALSE)
-  required_text <- c("LIB_TYPEQU","domain_code","domain_label","subdomain_code","subdomain_label","gamme_status")
+  required_text <- c("LIB_TYPEQU","description","domain_code","domain_label","subdomain_code","subdomain_label","gamme_status")
   empty_text <- vapply(metadata[required_text],function(column)
     is.na(column) | !nzchar(trimws(as.character(column))),logical(nrow(metadata)))
   if (any(empty_text) ||
@@ -454,6 +454,7 @@ publish_aedar_aggregates <- function(projection, db) {
           rows <- data.frame(territory_type=x$territory_type,territory_id=x$territory_id,typequ=x$TYPEQU,
             typequ_label=x$LIB_TYPEQU,
             typequ_hierarchy_label=typequ_metadata$LIB_TYPEQU,
+            typequ_description=typequ_metadata$description,
             typequ_domain_code=typequ_metadata$domain_code,typequ_domain_label=typequ_metadata$domain_label,
             typequ_subdomain_code=typequ_metadata$subdomain_code,typequ_subdomain_label=typequ_metadata$subdomain_label,
             typequ_gamme=typequ_metadata$GAMME,typequ_gamme_status=typequ_metadata$gamme_status,

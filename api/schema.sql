@@ -1446,6 +1446,7 @@ CREATE TABLE aedar_territorial_aggregate (
   territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement','region')),
   territory_id text NOT NULL, typequ text NOT NULL, typequ_label text NOT NULL,
   typequ_hierarchy_label text NOT NULL,
+  typequ_description text NOT NULL,
   typequ_domain_code text NOT NULL, typequ_domain_label text NOT NULL,
   typequ_subdomain_code text NOT NULL, typequ_subdomain_label text NOT NULL,
   typequ_gamme text, typequ_gamme_status text NOT NULL CHECK(typequ_gamme_status IN ('classified','hors_gamme','absent')),

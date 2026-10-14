@@ -7,7 +7,7 @@ make_aedar_test_typequ_metadata <- function() {
   axis <- read_aedar_typequ_registry()
   i <- seq_len(nrow(axis))
   domain <- ((i-1L) %% 27L) %% 7L + 1L
-  data.frame(TYPEQU=axis$TYPEQU,LIB_TYPEQU=axis$LIB_TYPEQU,
+  data.frame(TYPEQU=axis$TYPEQU,LIB_TYPEQU=axis$LIB_TYPEQU,description=paste("Description",i),
     domain_code=paste0("D",domain),domain_label=paste("Domain",domain),
     subdomain_code=paste0("S",((i-1L) %% 27L)+1L),subdomain_label=paste("Subdomain",((i-1L) %% 27L)+1L),
     GAMME=c("Proximité","Hors Gamme",rep(NA_character_,length(i)-2L)),
@@ -111,6 +111,7 @@ test_that("canonical Parquet round trip keeps source columns, null/zero and prov
   expect_identical(restored$typequ_metadata$GAMME[2],"Hors Gamme")
   expect_identical(restored$typequ_metadata$LIB_TYPEQU[a135],"COUR D’ASSISES")
   expect_identical(restored$typequ_metadata$LIB_TYPEQU[c401],metadata$LIB_TYPEQU[c401])
+  expect_identical(restored$typequ_metadata$description,metadata$description)
   expect_equal(restored$source$attribution,"© OpenStreetMap contributors; données AEDAR — licence ODbL")
 })
 

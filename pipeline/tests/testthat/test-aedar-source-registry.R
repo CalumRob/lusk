@@ -101,7 +101,7 @@ test_that("AEDAR TYPEQU metadata joins individual codes and preserves explicit n
     LIB_TYPEQU=paste("Equipment",1:235), stringsAsFactors=FALSE)
   i <- seq_len(235)
   domain <- ((i-1L) %% 27L) %% 7L + 1L
-  hierarchy <- data.frame(TYPEQU=registry$TYPEQU,label=registry$LIB_TYPEQU,
+  hierarchy <- data.frame(TYPEQU=registry$TYPEQU,label=registry$LIB_TYPEQU,description=paste("Description",i),
     domain_code=paste0("D",domain),domain_label=paste("Domain",domain),
     subdomain_code=paste0("S",((i-1L) %% 27L)+1L),subdomain_label=paste("Subdomain",((i-1L) %% 27L)+1L),source_order=i)
   gamme <- data.frame(TYPEQU=registry$TYPEQU, LIBELLE_TYPEQU=registry$LIB_TYPEQU,
@@ -171,10 +171,12 @@ test_that("source-faithful hierarchy fixture and individual TYPEQU workbook pars
   expect_equal(nrow(sources$hierarchy),235L)
   expect_equal(length(unique(sources$hierarchy$domain_code)),7L)
   expect_equal(length(unique(paste(sources$hierarchy$domain_code,sources$hierarchy$subdomain_code))),27L)
-  fields <- c("TYPEQU","label","domain_code","domain_label","subdomain_code","subdomain_label","source_order")
+  fields <- c("TYPEQU","label","description","domain_code","domain_label","subdomain_code","subdomain_label","source_order")
   expected$label <- expected$LIB_TYPEQU
   expected$source_order <- as.integer(expected$source_order)
   expect_equal(as.data.frame(sources$hierarchy[fields]),as.data.frame(expected[fields]))
+  expect_length(sources$hierarchy$description,235L)
+  expect_true(all(!is.na(sources$hierarchy$description)))
   expect_equal(sources$hierarchy$TYPEQU,registry$TYPEQU[match(sources$hierarchy$TYPEQU,registry$TYPEQU)])
   expect_equal(sources$hierarchy$source_order,seq_len(235L))
   # Workbook regroupement codes intentionally repeat; individual TYPEQU are unique.
@@ -183,6 +185,7 @@ test_that("source-faithful hierarchy fixture and individual TYPEQU workbook pars
   result <- validate_aedar_typequ_metadata(registry,sources$hierarchy,sources$gamme)
   expect_equal(result$source_order,seq_len(235L))
   expect_identical(result$LIB_TYPEQU,sources$hierarchy$label)
+  expect_identical(result$description,sources$hierarchy$description)
   c401 <- match("C401",result$TYPEQU)
   expect_match(result$LIB_TYPEQU[c401],"GRANDES\\nÉCOLES")
   expect_identical(result$LIB_TYPEQU[c401],expected$LIB_TYPEQU[match("C401",expected$TYPEQU)])
@@ -197,7 +200,7 @@ test_that("approved apostrophe and surrounding-space label differences validate 
   registry <- read_aedar_typequ_registry()
   i <- seq_len(nrow(registry)); subdomain <- (i-1L) %% 27L + 1L
   domain <- (subdomain-1L) %% 7L + 1L
-  hierarchy <- data.frame(TYPEQU=registry$TYPEQU,label=registry$LIB_TYPEQU,
+  hierarchy <- data.frame(TYPEQU=registry$TYPEQU,label=registry$LIB_TYPEQU,description=paste("Description",i),
     domain_code=paste0("D",domain),domain_label=paste("Domain",domain),
     subdomain_code=paste0("S",subdomain),subdomain_label=paste("Subdomain",subdomain),
     source_order=i,stringsAsFactors=FALSE)
