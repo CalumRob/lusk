@@ -224,6 +224,11 @@ class NetworkBatchNativeTests(unittest.TestCase):
         self.assertTrue(preserved)
         missing_before = self.expected_artifact_members - partial_members
         self.assertGreater(len(missing_before), 0)
+        plan = json.loads((partial / "full-plan.json").read_text(encoding="utf-8"))
+        failed_worker_expected = sum(len(item[2]) * len(PROFILES)
+            for item in plan["assignments"][0])
+        self.assertEqual(len(missing_before), failed_worker_expected)
+        self.assertEqual(len(partial_members), len(self.expected_artifact_members) - failed_worker_expected)
         self.assertEqual(len(partial_members) + len(missing_before), len(self.expected_artifact_members))
         resumed = self._run(4, partial)
         self.assertEqual(resumed.returncode, 0, resumed.stdout[-6000:])
@@ -236,6 +241,9 @@ class NetworkBatchNativeTests(unittest.TestCase):
         decisions = [row["decision"] for row in final["outputs"]]
         self.assertEqual(decisions.count("reused-output"), len(preserved))
         self.assertEqual(decisions.count("rendered"), len(missing_before))
+        print(f"native network batch: exact={len(self.expected_artifact_members)}; "
+            f"partial={len(partial_members)}/{len(self.expected_artifact_members)}; "
+            f"reused={decisions.count('reused-output')}; resumed={decisions.count('rendered')}")
 
         # Full inventory admission refuses before output creation or children.
         incomplete_root = self.root / "incomplete"
