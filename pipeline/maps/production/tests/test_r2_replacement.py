@@ -292,6 +292,40 @@ class R2ReplacementTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "no longer matches its manifest"):
                 build_replacement_plan(previous_path, candidate_path, qa_path)
 
+    def test_aedar_car_inspection_replacement_is_namespaced_and_car_only(self):
+        with TemporaryDirectory() as directory:
+            root = Path(directory)
+            old, new = root / "22001-car-inspection.webp", root / "candidate" / "22001-car-inspection.webp"
+            new.parent.mkdir()
+            old.write_bytes(b"old car image")
+            new.write_bytes(b"new car image")
+            territory = {"kind": "commune", "code": "22001", "name": "Allineuc"}
+            previous, candidate, qa = root / "previous.json", root / "candidate.json", root / "qa.json"
+            previous.write_text(json.dumps({"outputs": [{"territory": territory, "mode": "car",
+                "profile": "inspection", "path": str(old),
+                "output_sha256": hashlib.sha256(old.read_bytes()).hexdigest(), "bytes": old.stat().st_size}]}),
+                encoding="utf-8")
+            candidate.write_text(json.dumps({"family": "aedar", "scope": "inspection-refresh",
+                "outputs": [{"territory": territory, "mode": "car", "profile": "inspection",
+                "path": str(new), "output_sha256": hashlib.sha256(new.read_bytes()).hexdigest(),
+                "bytes": new.stat().st_size}]}), encoding="utf-8")
+            qa.write_text(json.dumps({"status": "passed", "failures": [], "artifact_count": 1,
+                "expected_artifact_count": 1, "profile_counts": {"inspection": 1},
+                "expected_outputs": [{"key": "commune/22001/car/inspection", "territory": territory,
+                    "mode": "car", "profile": "inspection"}]}), encoding="utf-8")
+
+            family = json.loads((Path(__file__).resolve().parents[1] / "aedar-static-family.json")
+                                .read_text(encoding="utf-8"))
+            plan = build_replacement_plan(previous, candidate, qa, prefix=family["prefix"],
+                                          family="aedar", modes=("car",))
+            outputs = validate_replacement_plan(plan)
+
+        self.assertEqual(plan["family"], "aedar")
+        self.assertEqual(plan["prefix"], family["prefix"])
+        self.assertEqual(len(outputs), 1)
+        self.assertEqual(outputs[0]["key"], f"{family['prefix']}22001-car-inspection.webp")
+        self.assertIn(family["public_base_url"], outputs[0]["public_url"])
+
 
 if __name__ == "__main__":
     unittest.main()

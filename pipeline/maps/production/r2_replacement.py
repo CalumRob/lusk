@@ -128,7 +128,8 @@ def _verified_local_identity(item: Mapping, *, digest_key: str, size_key: str, l
 
 
 def build_replacement_plan(previous_manifest_path, candidate_manifest_path, qa_path, *,
-                           prefix: str = "maps/v1/") -> dict:
+                           prefix: str = "maps/v1/", family: str = "network",
+                           modes: tuple[str, ...] = ("car", "walk", "bike")) -> dict:
     """Bind a QA-passed inspection refresh to its exact previous published files.
 
     This prepares a replacement-only upload plan; it does not contact R2 and it
@@ -138,14 +139,18 @@ def build_replacement_plan(previous_manifest_path, candidate_manifest_path, qa_p
     if (not isinstance(prefix, str) or not re.fullmatch(r"[A-Za-z0-9._/-]+/?", prefix)
             or prefix.startswith("/") or ".." in prefix.split("/")):
         raise ValueError("replacement prefix must be a simple relative object-key prefix")
+    if family not in {"network", "aedar"} or not modes or set(modes) - (
+            {"car", "walk", "bike"} if family == "network" else {"car"}):
+        raise ValueError("replacement plan family/modes are not supported")
     previous_path = Path(previous_manifest_path).resolve()
     candidate_path = Path(candidate_manifest_path).resolve()
     qa_file = Path(qa_path).resolve()
     previous_manifest = _read_json(previous_path, "previous full manifest")
     candidate_manifest = _read_json(candidate_path, "inspection-refresh manifest")
     qa = _read_json(qa_file, "inspection-refresh QA report")
-    if candidate_manifest.get("family") != "network" or candidate_manifest.get("scope") != "inspection-refresh":
-        raise ValueError("candidate manifest must be a network inspection-refresh run")
+    if (candidate_manifest.get("family") != family
+            or candidate_manifest.get("scope") != "inspection-refresh"):
+        raise ValueError(f"candidate manifest must be a {family} inspection-refresh run")
     if qa.get("status") != "passed" or qa.get("failures"):
         raise ValueError("replacement plan requires passed artifact QA with no failures")
 
@@ -180,9 +185,8 @@ def build_replacement_plan(previous_manifest_path, candidate_manifest_path, qa_p
     for key in sorted(candidate_keys):
         candidate = candidates[key]
         previous_item = previous[key]
-        if (candidate.get("family") not in (None, "network")
-                or candidate.get("mode") not in {"car", "walk", "bike"}):
-            raise ValueError(f"candidate is not a network map: {key}")
+        if candidate.get("family") not in (None, family) or candidate.get("mode") not in set(modes):
+            raise ValueError(f"candidate is not an allowed {family} map: {key}")
         new_sha, new_size, new_path = _verified_local_identity(
             candidate, digest_key="output_sha256", size_key="bytes", label=f"candidate artifact {key}")
         old_sha, old_size, _old_path = _verified_local_identity(
@@ -191,7 +195,7 @@ def build_replacement_plan(previous_manifest_path, candidate_manifest_path, qa_p
         expected_filename = f"{candidate['territory']['code']}-{candidate['mode']}-inspection.webp"
         if filename != expected_filename:
             raise ValueError(f"candidate path does not match its canonical object name: {key}")
-        entries.append({
+        entry = {
             "territory": candidate["territory"],
             "mode": candidate["mode"],
             "profile": "inspection",
@@ -202,9 +206,16 @@ def build_replacement_plan(previous_manifest_path, candidate_manifest_path, qa_p
             "expected_previous_sha256": old_sha,
             "expected_previous_bytes": old_size,
             "content_type": "image/webp",
-        })
+        }
+        if family == "aedar":
+            family_config = json.loads(Path(__file__).with_name("aedar-static-family.json").read_text(encoding="utf-8"))
+            if prefix != family_config["prefix"]:
+                raise ValueError("AEDAR replacement prefix must match the registered namespace")
+            entry["key"] = prefix.rstrip("/") + "/" + filename
+            entry["public_url"] = f"{family_config['public_base_url']}/{entry['key']}"
+        entries.append(entry)
 
-    return {
+    plan = {
         "schema": 1,
         "mode": "replace",
         "status": "pending-human-spot-check",
@@ -216,6 +227,13 @@ def build_replacement_plan(previous_manifest_path, candidate_manifest_path, qa_p
         "qa_path": str(qa_file),
         "outputs": entries,
     }
+    if family == "aedar":
+        plan["family"] = family
+        plan["modes"] = list(modes)
+        from upload_maps import BUCKET, ENDPOINT
+        plan["bucket"] = BUCKET
+        plan["endpoint"] = ENDPOINT
+    return plan
 
 
 def validate_replacement_plan(plan: Mapping) -> list[dict]:
@@ -225,7 +243,8 @@ def validate_replacement_plan(plan: Mapping) -> list[dict]:
     try:
         rebuilt = build_replacement_plan(
             plan["previous_manifest"], plan["candidate_manifest"], plan["qa_path"],
-            prefix=plan["prefix"],
+            prefix=plan["prefix"], family=plan.get("family", "network"),
+            modes=tuple(plan.get("modes", ("car", "walk", "bike"))),
         )
     except (KeyError, TypeError) as error:
         raise ValueError("replacement plan is missing source provenance") from error
