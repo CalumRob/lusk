@@ -100,7 +100,7 @@ const transformed = computed(() => {
     :retry-building="props.retryBuilding"
     show-all-units
     presentation="plain"
-    layout-variant="homepage-sections"
+    layout-variant="indexed-sections"
     network-figure-variant="traces"
     aedar-access-enabled
   />
