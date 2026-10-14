@@ -218,19 +218,26 @@ comparison_after_source_change <- DBI::dbGetQuery(con,"SELECT content_version,gr
 stopifnot(stale_replacement_failed,identical(comparison_before,comparison_after_source_change))
 compare_db_projection(comparison$groups,'aedar_comparison_group',group_columns,group_order)
 compare_db_projection(comparison$territories,'aedar_comparison_territory',territory_columns,territory_order)
+jsonlite::write_json(list(changed_source_content_version=changed_source$content_version),
+  Sys.getenv('AEDAR_STALE_VERSION_JSON'),auto_unbox=TRUE)
+restored_source <- publish_aedar_aggregates(projection,con)
+stopifnot(restored_source$changed,identical(restored_source$content_version,before))
 '''
         with tempfile.TemporaryDirectory(prefix="aedar-it-",dir="E:/Temp/opencode") as tmp:
             script = Path(tmp) / "fixture.R"; script.write_text(rscript,encoding="utf-8")
             expected_comparison_path = Path(tmp) / "expected-comparison.json"
+            stale_version_path = Path(tmp) / "stale-version.json"
             parts = urlsplit(publish_dsn)
             env = os.environ.copy(); env["AEDAR_IT_SCHEMA"] = schema
             env["AEDAR_EXPECTED_COMPARISON_JSON"] = str(expected_comparison_path)
+            env["AEDAR_STALE_VERSION_JSON"] = str(stale_version_path)
             env["PGHOST"] = parts.hostname or "localhost"; env["PGPORT"] = str(parts.port or 5432)
             env["PGDATABASE"] = parts.path.lstrip("/"); env["PGUSER"] = unquote(parts.username or "")
             env["PGPASSWORD"] = unquote(parts.password or "")
             done = subprocess.run(["Rscript",str(script)],cwd=pipeline,env=env,capture_output=True,text=True)
             assert done.returncode == 0, done.stdout + done.stderr
             expected_comparison = json.loads(expected_comparison_path.read_text(encoding="utf-8"))
+            stale_version = json.loads(stale_version_path.read_text(encoding="utf-8"))["changed_source_content_version"]
 
         dbread = psycopg.connect(scoped(read_dsn))
         class Connections:
@@ -291,6 +298,7 @@ compare_db_projection(comparison$territories,'aedar_comparison_territory',territ
                 stale=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
                 assert stale.status_code==503
                 pub.execute("UPDATE table_publication SET content_version='fixture-ref-v1' WHERE table_name='territory_reference'")
+                pub.execute("UPDATE table_publication SET content_version=%s WHERE table_name='aedar_territorial_aggregate'",(stale_version,))
                 stale_aedar=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
                 assert stale_aedar.status_code==503
                 mobility_after=client.get(mobility_url)
