@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from aedar_map_content import loss_map_content
-from runner import Binding, MapSet
+from runner import Binding, Foundation, MapSet, Recipe
 
 
 PRODUCTION = Path(__file__).resolve().parent
@@ -129,11 +129,14 @@ def partition(plan, workers):
 
 
 def selected_aedar_recipe():
-    from dataclasses import replace
-    from aedar_maps import aedar_loss_recipe
-    historical = aedar_loss_recipe()
-    declaration = family_config()["cartography"]
-    composition = {**historical.foundation.composition, **declaration}
-    foundation = replace(historical.foundation, version="aedar-selected-foundation-v1",
-                         composition=composition)
-    return replace(historical, name="aedar-selected-static", version=1, foundation=foundation)
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
+    config = family_config()
+    return Recipe(name="aedar-selected-static", version=1, family=config["family"],
+        foundation=Foundation(version="aedar-selected-foundation-v1",
+            framing=SHARED_CARTOGRAPHIC_POLICY.framing(),
+            geography={"territory": config["geography_contract"]},
+            ground=SHARED_CARTOGRAPHIC_POLICY.ground(inline=False),
+            composition=config["cartography"]),
+        required_fields=("geometry", "territory", "mode", "analytical_geometry", "extent",
+            "facts_path", "value_field", "measure", "horizon", "scale_breaks",
+            "comparison", "title_prefix", "title_mode", "legend_label"))
