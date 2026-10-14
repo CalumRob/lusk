@@ -881,13 +881,15 @@ class NetworkAdapter:
 
     def __init__(self, raw_dir: str | Path, cache_root: str | Path | None = None, *,
                  context_loader=None, context_cache_root: str | Path | None = None,
-                 read_only_source_cache: bool = False):
+                 read_only_source_cache: bool = False,
+                 stage_cache_root: str | Path | None = None):
         self.raw_dir = Path(raw_dir)
         self.cache_root = Path(cache_root) if cache_root is not None else None
         self.context_loader = context_loader
         self.context_cache_root = (Path(context_cache_root)
             if context_cache_root is not None else None)
         self.read_only_source_cache = bool(read_only_source_cache)
+        self.stage_cache_root = Path(stage_cache_root) if stage_cache_root is not None else None
         self.family_config_path = Path(__file__).with_name("network-family.json")
         self.family_config = _load_network_family_config()
         self._ground_cache = {}
@@ -936,6 +938,14 @@ class NetworkAdapter:
         }
 
     @staticmethod
+    def batch_cost(feature: Mapping) -> float:
+        """Estimate network rendering workload from map geometry complexity."""
+        geometry = feature.get("geometry")
+        if geometry is None or not geometry:
+            raise ValueError("Network workload estimate requires authoritative territory geometry")
+        return float(max(1, len(bytes(geometry.asWkb()))))
+
+    @staticmethod
     def output_contract(profile=None) -> Mapping:
         from webp_encoding import WEBP_ENCODING_CONTRACT
         return {**WEBP_ENCODING_CONTRACT,
@@ -981,7 +991,8 @@ class NetworkAdapter:
             try:
                 self.prepare_run(recipe, representatives, requested_profiles,
                     Path(scratch), refresh=False,
-                    context_cache_root=Path(output_dir) / ".stage-cache" / "official-context")
+                    context_cache_root=(self.context_cache_root or
+                        Path(output_dir) / ".stage-cache" / "official-context"))
                 freshly_built = self.current_approval_members(recipe, representatives,
                     requested_profiles, renderer_identity)
                 full_scope_sample = self.current_approval_members(recipe, full_binding,
@@ -1077,7 +1088,7 @@ class NetworkAdapter:
         self._requested_modes = {feature["mode"] for layer in binding.map_set.layers.values() for feature in layer}
         self.preflight(recipe, binding)
 
-    def preflight_scope(self, recipe, binding, scope, profiles):
+    def preflight_scope(self, recipe, binding, scope, profiles, *, delegation=None):
         if scope == "inspection-refresh":
             if tuple(profiles) != ("inspection",):
                 raise ValueError("network inspection refresh requires the inspection profile only")
@@ -1097,6 +1108,22 @@ class NetworkAdapter:
                 raise ValueError("inspection-refresh scope may contain only affected territories")
             return
         if scope != "full":
+            return
+        if delegation is not None:
+            from runner import verify_full_batch_shard
+            verify_full_batch_shard(delegation, delegation.admission)
+            expected = {(kind, code) for kind, code, _modes in delegation.members}
+            actual_features = [feature for rows in binding.map_set.layers.values() for feature in rows]
+            actual = {(str(feature["territory"]["kind"]), str(feature["territory"]["code"]))
+                      for feature in actual_features}
+            matrix = {(str(feature["territory"]["kind"]), str(feature["territory"]["code"]),
+                       str(feature["mode"])) for feature in actual_features}
+            expected_matrix = {(kind, code, mode) for kind, code, modes in delegation.members
+                               for mode in modes}
+            if actual != expected or matrix != expected_matrix or len(actual_features) != len(expected_matrix):
+                raise ValueError("Full batch shard differs from its delegated whole-territory mode matrix")
+            if set(profiles) != {"inspection", "inline"}:
+                raise ValueError("Full map batch requires both canonical profiles")
             return
         departments = {str(value) for value in self.family_config["scope"]["analytical_departments"]}
         epci_payload = json.loads(_metadata_path(self.raw_dir).read_text(encoding="utf-8"))
@@ -1178,6 +1205,7 @@ class NetworkAdapter:
         from map_ground import prepare_shared_ground
 
         output_dir = Path(output_dir)
+        stage_root = self.stage_cache_root or output_dir / ".stage-cache"
         context_cache_root = (Path(context_cache_root) if context_cache_root is not None else
             self.context_cache_root if self.context_cache_root is not None else
             output_dir / ".stage-cache" / "official-context")
@@ -1190,8 +1218,8 @@ class NetworkAdapter:
         self._ground_cache = {}
         self._network_scope_cache = {}
         self._visible_ground_parts_cache = {}
-        self._visible_ground_parts_cache_root = Path(output_dir) / ".stage-cache" / "visible-ground-derivatives"
-        self._network_scope_cache_root = Path(output_dir) / ".stage-cache" / "network-influence-scope"
+        self._visible_ground_parts_cache_root = stage_root / "visible-ground-derivatives"
+        self._network_scope_cache_root = stage_root / "network-influence-scope"
         self._scope_cache_refresh = refresh
         project.clear()
         project.setCrs(MAP_CRS)
@@ -1209,7 +1237,7 @@ class NetworkAdapter:
         self._shared_ground = prepare_shared_ground(
             project, self.raw_dir, combined_extent, assets,
             include_ocsge="inspection" in profiles,
-            cache_root=output_dir / ".stage-cache" / "context-land",
+            cache_root=stage_root / "context-land",
             refresh=refresh, stage_report=self._stage_events,
             context_loader=self.context_loader,
             context_cache_root=context_cache_root,
@@ -1598,7 +1626,7 @@ class NetworkAdapter:
         cache_key = ground_id
         prepared = self._ground_cache.get(cache_key)
         if prepared is None:
-            stage = output_dir / ".stage-cache" / "ground" / ground_id
+            stage = (self.stage_cache_root or output_dir / ".stage-cache") / "ground" / ground_id
             cache_validation_started = perf_counter()
             prepared = (None if self._refresh or not self._persist_territory_stages
                 else self._read_ground_stage(stage, profile.size, feature["extent"]))

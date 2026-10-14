@@ -103,6 +103,26 @@ def load_context(cache_root, bbox):
         raise RuntimeError(f"No valid pre-acquired mainland context for requested inspection frame: {error}") from error
 
 
+def load_context_covering(cache_root, bbox):
+    """Reuse an already validated full-batch context for a delegated sub-frame."""
+    requested = tuple(map(float, bbox))
+    errors = []
+    for pointer in Path(cache_root).glob("*/current.json"):
+        try:
+            state = json.loads(pointer.read_text(encoding="utf-8"))
+            root = pointer.parent
+            generation = state["generation"]
+            manifest = json.loads((root / "generations" / generation / "manifest.json").read_text(encoding="utf-8"))
+            source_bbox = tuple(map(float, manifest["bbox"]))
+            if (source_bbox[0] <= requested[0] and source_bbox[1] <= requested[1]
+                    and source_bbox[2] >= requested[2] and source_bbox[3] >= requested[3]):
+                return load_context(cache_root, source_bbox)
+        except (OSError, ValueError, KeyError, TypeError) as error:
+            errors.append(str(error))
+    raise RuntimeError("No validated full-batch mainland context covers delegated frame" +
+        (f": {'; '.join(errors)}" if errors else ""))
+
+
 def _context_identity(bbox):
     seed = json.dumps({"edition": CONTEXT_EDITION, "type": CONTEXT_TYPE,
         "bbox": list(map(float, bbox)), "crs": CONTEXT_CRS}, sort_keys=True, separators=(",", ":"))
