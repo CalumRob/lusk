@@ -461,6 +461,13 @@ does not read production data. This generated fixture evidence is distinct from
 the retained 1,266-territory/12,660-WebP export and the historical 40/40 byte
 parity; neither retained record is rewritten by this test.
 
+The bounded recovery case uses a test-only entrypoint driver to fail one
+four-worker command at dispatch; three other real QGIS workers finish with a
+partial matrix. The observed fixture run preserved 40 validated WebPs, resumed
+the 10 missing WebPs, and completed the exact 50-output matrix. Previously
+successful paths retained their hashes and modification times and were marked
+`reused-output` on resume.
+
 Run QGIS-owning test modules in separate Python processes: some older fixtures
 call `exitQgis()` in teardown, so one combined discovery process is not safe.
 

@@ -1,5 +1,6 @@
 """Bounded end-to-end verification of the real repository AEDAR child path."""
 import json
+from hashlib import sha256
 import os
 from pathlib import Path
 import subprocess
@@ -14,7 +15,7 @@ from qgis.core import QgsProject
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
 sys.path.insert(0, str(Path(__file__).parent))
-from qgis_fixture import qgis_application
+from qgis_fixture import fixture_folder, qgis_application
 
 
 class NativeAedarBatchTests(unittest.TestCase):
@@ -31,9 +32,9 @@ class NativeAedarBatchTests(unittest.TestCase):
         from webp_encoding import validate_webp
 
         raw, facts_path, registry, _config = CarProductionTests().geography_fixture()
-        # Re-home the fixture under this test's registered temporary root.
-        fixture_root = facts_path.parent
-        root = fixture_root
+        # Register the reused source builder's owned root with this module's
+        # QGIS teardown so cleanup follows this process's application shutdown.
+        root = fixture_folder(facts_path.parent)
         table = pq.read_table(facts_path).to_pydict()
         specs = FAMILY_CONFIG["modes"]
         for mode_index, (mode, spec) in enumerate(specs.items()):
@@ -73,14 +74,20 @@ class NativeAedarBatchTests(unittest.TestCase):
         acquire_context(context_cache, bbox, fetch=local_context_response)
         script = Path(__file__).parents[1] / "run_aedar_static_maps.py"
 
-        def execute(workers, output, *extra):
+        def arguments(workers, output, *extra):
             command = [sys.executable, "-B", str(script), "--raw-dir", str(raw),
                 "--facts-path", str(facts_path), "--territory-registry", str(registry),
                 "--family-config", str(family_path), "--context-cache-root", str(context_cache),
                 "--output-dir", str(output), "--workers", str(workers), *extra]
-            completed = subprocess.run(command, env=dict(os.environ, PYTHONIOENCODING="utf-8",
+            return command
+
+        def run(command, timeout=300):
+            return subprocess.run(command, env=dict(os.environ, PYTHONIOENCODING="utf-8",
                 PYTHONUNBUFFERED="1"), text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                timeout=240)
+                timeout=timeout)
+
+        def execute(workers, output, *extra):
+            completed = run(arguments(workers, output, *extra))
             if completed.returncode:
                 self.fail(f"native AEDAR child run ({workers} workers) failed:\n{completed.stdout}")
             return completed.stdout
@@ -112,17 +119,82 @@ class NativeAedarBatchTests(unittest.TestCase):
             self.assertEqual(names, expected_names)
             outputs[workers] = destination
 
+        # Fail one actual worker during a fresh four-worker entrypoint run.
+        # The other three remain real QGIS AEDAR workers and persist validated
+        # artifacts/checkpoints, leaving a partial output matrix for recovery.
+        partial = root / "native-partial-4"
+        driver = root / "fail-one-worker-driver.py"
+        driver.write_text("\n".join([
+            "import sys",
+            "from pathlib import Path",
+            "production = Path(sys.argv[1])",
+            "sys.path.insert(0, str(production))",
+            "import batch_execution",
+            "real_run_workers = batch_execution.run_workers",
+            "def fail_worker_zero(commands, *args, **kwargs):",
+            "    commands = list(commands)",
+            "    command, env = commands[0]",
+            "    command = list(command)",
+            "    command[command.index('--worker-index') + 1] = '999'",
+            "    commands[0] = (command, env)",
+            "    return real_run_workers(commands, *args, **kwargs)",
+            "batch_execution.run_workers = fail_worker_zero",
+            "import run_aedar_static_maps",
+            "sys.argv = [str(production / 'run_aedar_static_maps.py'), *sys.argv[2:]]",
+            "run_aedar_static_maps.main()",
+        ]) + "\n", encoding="utf-8")
+        failed_attempt = run([sys.executable, "-B", str(driver), str(script.parent),
+            *arguments(4, partial)[3:]], timeout=360)
+        self.assertNotEqual(failed_attempt.returncode, 0)
+        self.assertIn("Worker failure codes", failed_attempt.stdout)
+        self.assertIn("IndexError", failed_attempt.stdout)
+        partial_plan = json.loads((partial / "full-plan.json").read_text(encoding="utf-8"))
+        partial_expected = {FAMILY_CONFIG["filename_template"].format(
+            code=row["territory"]["code"], mode=mode, profile=profile)
+            for row in partial_plan["territories"] for mode in FAMILY_CONFIG["modes"]
+            for profile in FAMILY_CONFIG["profiles"]}
+        partial_records = []
+        for manifest_path in partial.glob("worker-*.manifest.json"):
+            worker_index = manifest_path.name.removeprefix("worker-").removesuffix(".manifest.json")
+            qa = json.loads((partial / f"worker-{worker_index}.qa.json").read_text(encoding="utf-8"))
+            self.assertEqual(qa["status"], "passed")
+            partial_records.extend(json.loads(manifest_path.read_text(encoding="utf-8"))["outputs"])
+        partial_names = [Path(row["path"]).name for row in partial_records]
+        self.assertGreater(len(partial_names), 0)
+        self.assertEqual(len(partial_names), len(set(partial_names)))
+        self.assertLess(len(partial_names), len(partial_expected))
+        partial_state = {Path(row["path"]):
+            (sha256(Path(row["path"]).read_bytes()).hexdigest(), Path(row["path"]).stat().st_mtime_ns)
+            for row in partial_records}
+        missing_before = partial_expected - set(partial_names)
+        self.assertGreater(len(missing_before), 0)
+
+        # Resume the same signed plan normally. Successful workers' native bytes
+        # must remain untouched/reused while the failed shard fills the gap.
+        execute(4, partial)
+        final_manifests = [json.loads(path.read_text(encoding="utf-8"))
+            for path in partial.glob("worker-*.manifest.json")]
+        final_records = [row for manifest in final_manifests for row in manifest["outputs"]]
+        final_names = [Path(row["path"]).name for row in final_records]
+        self.assertEqual(len(final_names), len(set(final_names)))
+        self.assertEqual(set(final_names), partial_expected)
+        self.assertEqual(json.loads((partial / "complete.json").read_text(encoding="utf-8"))["status"], "passed")
+        final_by_path = {Path(row["path"]): row for row in final_records}
+        self.assertTrue(all(final_by_path[path]["decision"] == "reused-output"
+            for path in partial_state))
+        self.assertTrue(all(sha256(path.read_bytes()).hexdigest() == digest
+            and path.stat().st_mtime_ns == mtime
+            for path, (digest, mtime) in partial_state.items()))
+        resumed_missing = [row for row in final_records
+            if Path(row["path"]).name in missing_before]
+        self.assertEqual(len(resumed_missing), len(missing_before))
+        self.assertTrue(all(row["decision"] == "rendered" for row in resumed_missing))
+        print("native partial recovery: "
+            f"expected={len(partial_expected)} completed_before={len(partial_names)} "
+            f"reused={len(partial_state)} missing_before={len(missing_before)} "
+            f"rendered_on_resume={len(resumed_missing)} final={len(final_names)}")
+
         # Existing immutable checkpoints/output hashes permit a clean retry.
-        failed_worker = subprocess.run([sys.executable, "-B", str(script), "--worker",
-            "--worker-index", "999", "--workers", "1", "--raw-dir", str(raw),
-            "--facts-path", str(facts_path), "--territory-registry", str(registry),
-            "--family-config", str(family_path), "--context-cache-root", str(context_cache),
-            "--output-dir", str(outputs[1]), "--worker-cache", str(outputs[1] / "cache-0"),
-            "--worker-source-cache", str(outputs[1] / "source-0")],
-            env=dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1"),
-            text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-        self.assertNotEqual(failed_worker.returncode, 0)
-        self.assertIn("IndexError", failed_worker.stdout)
         execute(1, outputs[1])
         retry_manifests = [json.loads(path.read_text(encoding="utf-8"))
             for path in outputs[1].glob("worker-*.manifest.json")]
