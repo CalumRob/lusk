@@ -187,13 +187,16 @@ def _execute_admitted(args, binding, adapter, approval, admission):
         stage_report.extend(manifest.get("stage_report", []))
         for row in manifest["outputs"]:
             source = Path(row["path"])
+            expected_shard_root = (output / f"shard-{index}").resolve()
+            if source.resolve().parent != expected_shard_root:
+                raise ValueError(f"Worker {index} artifact escaped its assigned shard directory: {source}")
             member_key = (row["territory"]["kind"], row["territory"]["code"], row["mode"])
             feature = features_by_member.get(member_key)
             if feature is None:
                 raise ValueError(f"Worker output is not in the admitted full member matrix: {member_key}")
             profile = __import__("runner").PROFILES[row["profile"]]
             declared_path = adapter.expected_output_path(feature, profile, output)
-            if source.name != declared_path.name or source.parent.resolve() != Path(row["path"]).parent.resolve():
+            if source.name != declared_path.name:
                 raise ValueError(f"Worker artifact path differs from declared full matrix: {source}")
             expected_hash = row.get("output_sha256")
             expected_size = row.get("bytes")
@@ -294,6 +297,8 @@ def _execute(args, binding, adapter, approval, admission):
         "started_at": datetime.now(timezone.utc).isoformat(), "workers": args.workers})
     write_json(output / "full-qa.json", {"status": "running", "production_status": "incomplete",
         "attempt_id": attempt_id, "failures": [], "checks": []})
+    write_json(output / "full-manifest.json", {"status": "running", "attempt_id": attempt_id,
+        "scope": "full", "outputs": [], "failures": []})
     write_json(output / "complete.json", {"status": "running", "attempt_id": attempt_id,
         "qa": "pending"})
     try:
@@ -306,6 +311,8 @@ def _execute(args, binding, adapter, approval, admission):
     except Exception as error:
         write_json(output / "full-qa.json", {"status": "failed", "production_status": "incomplete",
             "attempt_id": attempt_id, "failures": [f"{type(error).__name__}: {error}"], "checks": []})
+        write_json(output / "full-manifest.json", {"status": "failed", "attempt_id": attempt_id,
+            "scope": "full", "outputs": [], "failures": [f"{type(error).__name__}: {error}"]})
         write_json(output / "complete.json", {"status": "failed", "attempt_id": attempt_id,
             "qa": "failed"})
         write_json(output / "attempt.json", {"attempt_id": attempt_id, "status": "failed",

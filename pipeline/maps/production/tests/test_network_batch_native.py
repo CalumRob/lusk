@@ -187,6 +187,21 @@ class NetworkBatchNativeTests(unittest.TestCase):
                     "    data = bytearray(path.read_bytes()); data[-1] ^= 1; path.write_bytes(data)",
                     "    return result",
                 ]
+            elif fault == "redirect-artifact":
+                driver_lines += [
+                    "import json",
+                    "from pathlib import Path",
+                    "def inject_fault(commands, *args, **kwargs):",
+                    "    result = real(commands, *args, **kwargs)",
+                    "    output = Path(commands[0][0][commands[0][0].index('--output-dir') + 1])",
+                    "    manifest_path = output / 'worker-0.manifest.json'",
+                    "    manifest = json.loads(manifest_path.read_text(encoding='utf-8'))",
+                    "    row = manifest['outputs'][0]; source = Path(row['path'])",
+                    "    outside = output / 'outside-owned' / source.name; outside.parent.mkdir(exist_ok=True)",
+                    "    outside.write_bytes(source.read_bytes()); row['path'] = str(outside)",
+                    "    manifest_path.write_text(json.dumps(manifest), encoding='utf-8')",
+                    "    return result",
+                ]
             else:
                 raise ValueError(f"unknown native worker fault {fault}")
             driver_lines += [
@@ -213,10 +228,18 @@ class NetworkBatchNativeTests(unittest.TestCase):
 
     def _assert_failed_attempt_archived(self, output, previous):
         current_qa = json.loads((output / "full-qa.json").read_text(encoding="utf-8"))
+        current_manifest = json.loads((output / "full-manifest.json").read_text(encoding="utf-8"))
         current_complete = json.loads((output / "complete.json").read_text(encoding="utf-8"))
         attempt = json.loads((output / "attempt.json").read_text(encoding="utf-8"))
         self.assertNotEqual(current_qa.get("status"), "passed")
         self.assertNotEqual(current_qa.get("production_status"), "complete")
+        self.assertEqual(current_manifest["status"], "failed")
+        self.assertEqual(current_manifest["attempt_id"], attempt["attempt_id"])
+        self.assertEqual(current_manifest["outputs"], [])
+        self.assertNotIn("expected_outputs", current_manifest)
+        from upload_maps import upload_is_approved
+        approved, _reason = upload_is_approved(output / "full-qa.json")
+        self.assertFalse(approved)
         self.assertNotEqual(current_complete.get("status"), "passed")
         self.assertEqual(attempt["status"], "failed")
         archives = list((output / "metadata-history").glob("*/"))
@@ -301,6 +324,14 @@ class NetworkBatchNativeTests(unittest.TestCase):
         corrupt = self._run(4, hash_output, driver=True, fault="mutate-artifact")
         self.assertNotEqual(corrupt.returncode, 0)
         self.assertRegex(corrupt.stdout, "hash|digest|bytes|integrity|artifact")
+        self._assert_failed_attempt_archived(hash_output, old_success)
+
+        # A valid same-name, same-hash copy outside worker 0's assigned shard
+        # must still be rejected by the source-path ownership check.
+        old_success = self._metadata_bytes(hash_output)
+        redirected = self._run(4, hash_output, driver=True, fault="redirect-artifact")
+        self.assertNotEqual(redirected.returncode, 0)
+        self.assertIn("escaped its assigned shard directory", redirected.stdout)
         self._assert_failed_attempt_archived(hash_output, old_success)
 
         # Full inventory admission refuses before output creation or children.
