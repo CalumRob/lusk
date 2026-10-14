@@ -12,6 +12,7 @@ import secrets
 import shutil
 import sys
 import threading
+import uuid
 from datetime import datetime, timezone
 
 for _thread_var in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS",
@@ -110,7 +111,7 @@ def _run_worker(args):
         raise RuntimeError(f"network worker {args.worker_index} QA failed: {result.qa['failures']}")
 
 
-def _execute(args, binding, adapter, approval, admission):
+def _execute_admitted(args, binding, adapter, approval, admission):
     output = args.output_dir.resolve()
     stable_plan = json.loads(json.dumps(asdict(admission), sort_keys=True, default=str))
     plan_path = output / "full-plan.json"
@@ -173,6 +174,8 @@ def _execute(args, binding, adapter, approval, admission):
     outputs, failures, expected, stage_report = [], [], [], []
     seen_names = set()
     worker_qa = []
+    features_by_member = {(feature["territory"]["kind"], feature["territory"]["code"], feature["mode"]): feature
+        for feature in _all_features(binding)}
     for index, delegation in enumerate(delegations):
         qa = json.loads((output / f"worker-{index}.qa.json").read_text(encoding="utf-8"))
         manifest = json.loads((output / f"worker-{index}.manifest.json").read_text(encoding="utf-8"))
@@ -184,18 +187,41 @@ def _execute(args, binding, adapter, approval, admission):
         stage_report.extend(manifest.get("stage_report", []))
         for row in manifest["outputs"]:
             source = Path(row["path"])
-            canonical = output / source.name
+            member_key = (row["territory"]["kind"], row["territory"]["code"], row["mode"])
+            feature = features_by_member.get(member_key)
+            if feature is None:
+                raise ValueError(f"Worker output is not in the admitted full member matrix: {member_key}")
+            profile = __import__("runner").PROFILES[row["profile"]]
+            declared_path = adapter.expected_output_path(feature, profile, output)
+            if source.name != declared_path.name or source.parent.resolve() != Path(row["path"]).parent.resolve():
+                raise ValueError(f"Worker artifact path differs from declared full matrix: {source}")
+            expected_hash = row.get("output_sha256")
+            expected_size = row.get("bytes")
+            if (not isinstance(expected_hash, str) or len(expected_hash) != 64
+                    or not isinstance(expected_size, int)):
+                raise ValueError(f"Worker artifact lacks a recorded hash/size contract: {source}")
+            from webp_encoding import validate_webp
+            def verify_artifact(path):
+                if not Path(path).is_file():
+                    raise ValueError(f"Worker artifact is missing: {path}")
+                digest = hashlib.sha256(Path(path).read_bytes()).hexdigest()
+                if digest != expected_hash or Path(path).stat().st_size != expected_size:
+                    raise ValueError(f"Worker artifact hash/size integrity mismatch: {path}")
+                validate_webp(path, profile)
+            verify_artifact(source)
+            canonical = declared_path
             if source.name in seen_names:
                 raise ValueError(f"Duplicate worker artifact filename {canonical.name}")
             seen_names.add(source.name)
-            source_digest = hashlib.sha256(source.read_bytes()).digest()
-            if not canonical.is_file() or hashlib.sha256(canonical.read_bytes()).digest() != source_digest:
+            if not canonical.is_file() or hashlib.sha256(canonical.read_bytes()).hexdigest() != expected_hash:
                 staged = canonical.with_name(f".{canonical.name}-{os.getpid()}.stage")
                 shutil.copy2(source, staged)
+                verify_artifact(staged)
                 os.replace(staged, canonical)
+            verify_artifact(canonical)
             outputs.append({**row, "path": str(canonical)})
     expected = [{**row, "path": str(output / Path(row["path"]).name)} for row in expected]
-    expected_names = {f"{feature['territory']['code']}-{feature['mode']}-{profile}.webp"
+    expected_names = {adapter.expected_output_path(feature, __import__("runner").PROFILES[profile], output).name
         for feature in _all_features(binding) for profile in PROFILES}
     actual_names = {Path(row["path"]).name for row in outputs}
     if actual_names != expected_names or len(outputs) != len(expected_names) or failures:
@@ -233,6 +259,60 @@ def _execute(args, binding, adapter, approval, admission):
     write_json(output / "complete.json", {"status": "passed", "territories": len(admission.members),
         "artifacts": len(outputs), "qa": "passed"})
     return qa
+
+
+def _execute(args, binding, adapter, approval, admission):
+    """Archive old operational claims and give this admitted attempt its own state."""
+    output = args.output_dir.resolve()
+    plan = json.loads(json.dumps(asdict(admission), sort_keys=True, default=str))
+    plan_path = output / "full-plan.json"
+    if plan_path.is_file() and json.loads(plan_path.read_text(encoding="utf-8")) != plan:
+        raise ValueError("Full network plan inputs, approval, renderer, inventory or worker assignment changed; use a new output directory")
+    output.mkdir(parents=True, exist_ok=True)
+    attempt_id = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ-") + uuid.uuid4().hex[:8]
+    archive = output / "metadata-history" / attempt_id
+    archived = False
+    for name in ("full-manifest.json", "full-qa.json", "complete.json"):
+        source = output / name
+        if source.is_file():
+            archive.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(source, archive / name)
+            if (archive / name).read_bytes() != source.read_bytes():
+                raise IOError(f"Could not preserve exact prior {name} bytes")
+            archived = True
+    approval_path = Path(args.approval)
+    if approval_path.is_file():
+        archive.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(approval_path, archive / "approval.json")
+        if (archive / "approval.json").read_bytes() != approval_path.read_bytes():
+            raise IOError("Could not preserve exact prior approval bytes")
+    if archive.exists():
+        write_json(archive / "archive.json", {"attempt_id": attempt_id,
+            "prior_metadata_present": archived, "approval_source": str(approval_path)})
+    write_json(plan_path, plan)
+    write_json(output / "attempt.json", {"attempt_id": attempt_id, "status": "running",
+        "started_at": datetime.now(timezone.utc).isoformat(), "workers": args.workers})
+    write_json(output / "full-qa.json", {"status": "running", "production_status": "incomplete",
+        "attempt_id": attempt_id, "failures": [], "checks": []})
+    write_json(output / "complete.json", {"status": "running", "attempt_id": attempt_id,
+        "qa": "pending"})
+    try:
+        result = _execute_admitted(args, binding, adapter, approval, admission)
+        write_json(output / "attempt.json", {"attempt_id": attempt_id, "status": "passed",
+            "started_at": (output / "attempt.json").exists() and
+                json.loads((output / "attempt.json").read_text(encoding="utf-8")).get("started_at"),
+            "completed_at": datetime.now(timezone.utc).isoformat(), "workers": args.workers})
+        return result
+    except Exception as error:
+        write_json(output / "full-qa.json", {"status": "failed", "production_status": "incomplete",
+            "attempt_id": attempt_id, "failures": [f"{type(error).__name__}: {error}"], "checks": []})
+        write_json(output / "complete.json", {"status": "failed", "attempt_id": attempt_id,
+            "qa": "failed"})
+        write_json(output / "attempt.json", {"attempt_id": attempt_id, "status": "failed",
+            "completed_at": datetime.now(timezone.utc).isoformat(), "workers": args.workers,
+            "error": f"{type(error).__name__}: {error}",
+            "archived_prior_metadata": archived})
+        raise
 
 
 def main(argv=None):

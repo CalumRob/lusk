@@ -158,25 +158,43 @@ class NetworkBatchNativeTests(unittest.TestCase):
         cls.approval_path = cls.root / "fixture-approval.json"
         cls.approval_path.write_text(json.dumps(approval), encoding="utf-8")
 
-    def _run(self, workers, output, driver=False, *, raw=None, approval=None):
+    def _run(self, workers, output, driver=False, *, raw=None, approval=None, fault="fail-worker"):
         args = ["--approval", str(approval or self.approval_path), "--raw-dir", str(raw or self.raw),
             "--output-dir", str(output), "--territory-registry", str(self.registry),
             "--context-cache-root", str(self.context_root), "--workers", str(workers)]
         if driver:
-            script = self.root / "fail-worker-driver.py"
-            script.write_text("\n".join([
+            script = self.root / f"{fault}-driver.py"
+            driver_lines = [
                 "import sys",
                 f"sys.path.insert(0, {str(PRODUCTION)!r})",
                 "import batch_execution",
                 "real = batch_execution.run_workers",
-                "def fail_first(commands, *args, **kwargs):",
-                "    commands = list(commands); command, env = commands[0]",
-                "    command = list(command); command[command.index('--worker-index') + 1] = '999'",
-                "    commands[0] = (command, env); return real(commands, *args, **kwargs)",
-                "batch_execution.run_workers = fail_first",
+            ]
+            if fault == "fail-worker":
+                driver_lines += [
+                    "def inject_fault(commands, *args, **kwargs):",
+                    "    commands = list(commands); command, env = commands[0]",
+                    "    command = list(command); command[command.index('--worker-index') + 1] = '999'",
+                    "    commands[0] = (command, env); return real(commands, *args, **kwargs)",
+                ]
+            elif fault == "mutate-artifact":
+                driver_lines += [
+                    "from pathlib import Path",
+                    "def inject_fault(commands, *args, **kwargs):",
+                    "    result = real(commands, *args, **kwargs)",
+                    "    output = Path(commands[0][0][commands[0][0].index('--output-dir') + 1])",
+                    "    path = next((output / 'shard-0').glob('*.webp'))",
+                    "    data = bytearray(path.read_bytes()); data[-1] ^= 1; path.write_bytes(data)",
+                    "    return result",
+                ]
+            else:
+                raise ValueError(f"unknown native worker fault {fault}")
+            driver_lines += [
+                "batch_execution.run_workers = inject_fault",
                 "import run_full_network",
                 f"sys.argv = [{str(PRODUCTION / 'run_full_network.py')!r}, *{args!r}]",
-                "run_full_network.main()"]), encoding="utf-8")
+                "run_full_network.main()"]
+            script.write_text("\n".join(driver_lines), encoding="utf-8")
             cmd = [str(QGIS), "-B", str(script)]
         else:
             cmd = [str(QGIS), "-B", str(PRODUCTION / "run_full_network.py"), *args]
@@ -188,6 +206,25 @@ class NetworkBatchNativeTests(unittest.TestCase):
                 for log in output.glob("worker-*.log"):
                     shutil.copy2(log, self.root.parent / f"lusk-{output.name}-{log.name}")
         return result
+
+    def _metadata_bytes(self, output):
+        return {name: (output / name).read_bytes()
+            for name in ("full-manifest.json", "full-qa.json", "complete.json")}
+
+    def _assert_failed_attempt_archived(self, output, previous):
+        current_qa = json.loads((output / "full-qa.json").read_text(encoding="utf-8"))
+        current_complete = json.loads((output / "complete.json").read_text(encoding="utf-8"))
+        attempt = json.loads((output / "attempt.json").read_text(encoding="utf-8"))
+        self.assertNotEqual(current_qa.get("status"), "passed")
+        self.assertNotEqual(current_qa.get("production_status"), "complete")
+        self.assertNotEqual(current_complete.get("status"), "passed")
+        self.assertEqual(attempt["status"], "failed")
+        archives = list((output / "metadata-history").glob("*/"))
+        self.assertTrue(archives)
+        archive = max(archives, key=lambda path: path.stat().st_mtime_ns)
+        for name, content in previous.items():
+            self.assertEqual((archive / name).read_bytes(), content)
+        self.assertEqual((archive / "approval.json").read_bytes(), self.approval_path.read_bytes())
 
     def test_supported_entrypoint_runs_native_full_network_at_1_2_4_and_resumes(self):
         for workers in (1, 2, 4):
@@ -212,6 +249,10 @@ class NetworkBatchNativeTests(unittest.TestCase):
         failed = self._run(4, partial, driver=True)
         self.assertNotEqual(failed.returncode, 0)
         self.assertIn("Worker failure codes", failed.stdout)
+        self.assertEqual(json.loads((partial / "attempt.json").read_text(encoding="utf-8"))["status"], "failed")
+        self.assertEqual(json.loads((partial / "full-qa.json").read_text(encoding="utf-8"))["status"], "failed")
+        self.assertEqual(json.loads((partial / "complete.json").read_text(encoding="utf-8"))["status"], "failed")
+        self.assertFalse(any((partial / "metadata-history").glob("*/full-qa.json")))
         preserved = {}
         partial_members = set()
         for manifest_path in partial.glob("worker-*.manifest.json"):
@@ -244,6 +285,23 @@ class NetworkBatchNativeTests(unittest.TestCase):
         print(f"native network batch: exact={len(self.expected_artifact_members)}; "
             f"partial={len(partial_members)}/{len(self.expected_artifact_members)}; "
             f"reused={decisions.count('reused-output')}; resumed={decisions.count('rendered')}")
+
+        # A retry that fails after a prior completed batch must not leave a stale
+        # passed QA/completion claim as the current attempt; prior metadata and
+        # approval bytes are retained verbatim in its operation archive.
+        old_success = self._metadata_bytes(partial)
+        stale_failure = self._run(4, partial, driver=True, fault="fail-worker")
+        self.assertNotEqual(stale_failure.returncode, 0)
+        self._assert_failed_attempt_archived(partial, old_success)
+
+        # Mutate a real native child artifact after all children succeed but
+        # before parent aggregation. The parent must reject its recorded digest.
+        hash_output = self.root / "network-4"
+        old_success = self._metadata_bytes(hash_output)
+        corrupt = self._run(4, hash_output, driver=True, fault="mutate-artifact")
+        self.assertNotEqual(corrupt.returncode, 0)
+        self.assertRegex(corrupt.stdout, "hash|digest|bytes|integrity|artifact")
+        self._assert_failed_attempt_archived(hash_output, old_success)
 
         # Full inventory admission refuses before output creation or children.
         incomplete_root = self.root / "incomplete"
