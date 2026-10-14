@@ -89,6 +89,7 @@ const props = defineProps<{
   content: ThemeContent | SingleUnitThemeContent
   pagination: CahierPagination
   presentation?: 'ruled' | 'plain'
+  layoutVariant?: 'standard' | 'homepage-sections'
   showAllUnits?: boolean
   networkFigureVariant?: 'traces'
   showMapPrototype?: boolean
@@ -584,7 +585,10 @@ onBeforeUnmount(() => {
   <article
     ref="rootRef"
     class="cahier presentation-editorial"
-    :class="{ 'cahier--sans-grille': props.presentation === 'plain' }"
+    :class="{
+      'cahier--sans-grille': props.presentation === 'plain',
+      'cahier--homepage-sections': props.layoutVariant === 'homepage-sections',
+    }"
     :style="{
       '--cahier-theme': 'var(--theme-mobilite-line)',
       '--cahier-theme-strong': 'var(--theme-mobilite-strong)',
@@ -637,10 +641,26 @@ onBeforeUnmount(() => {
           >
             <div class="page-main">
               <header class="page-heading">
+                <span
+                  v-if="props.layoutVariant === 'homepage-sections'"
+                  class="page-heading-index"
+                >
+                  <span class="page-heading-sr-only">Page </span>
+                  <span>{{ String(pageEntryFor(currentUnit.key)?.page ?? pagination.currentPage).padStart(2, '0') }}</span>
+                  <small>/{{ String(pagination.totalPages).padStart(2, '0') }}</small>
+                </span>
                 <h2
                   class="cahier-baseline-anchor"
                   :id="`${pageAnchorFor(currentUnit.key)}-title`"
                 >{{ currentUnit.label }}</h2>
+                <span
+                  v-if="props.layoutVariant === 'homepage-sections'"
+                  class="page-heading-context"
+                >
+                  <span class="page-heading-theme">{{ props.content.label }}</span>
+                  <span class="page-heading-context-separator" aria-hidden="true">·</span>
+                  <span class="page-heading-territory" :title="props.content.territory.name">{{ props.content.territory.name }}</span>
+                </span>
               </header>
 
               <div class="page-copy">
@@ -657,7 +677,7 @@ onBeforeUnmount(() => {
               :class="`cahier-section--${section.availability}`"
             >
               <div v-if="!isMapPrototypeSection(currentUnit.key, section.key)" class="concept-group-heading cahier-baseline-group">
-                <span>{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
+                <span v-if="props.layoutVariant !== 'homepage-sections'">{{ String(sectionIndex + 1).padStart(2, '0') }}</span>
                 <div
                   v-if="props.presentation === 'plain' && section.lecture"
                   class="concept-group-heading-copy"
@@ -730,7 +750,7 @@ onBeforeUnmount(() => {
                 <CartographicBreakoutPrototype
                   :evidence="mapEvidenceFor(currentUnit)"
                   :cycling-evidence="mapCyclingEvidenceFor(currentUnit)"
-                  :section-number="String(sectionIndex + 1).padStart(2, '0')"
+                  :section-number="props.layoutVariant === 'homepage-sections' ? undefined : String(sectionIndex + 1).padStart(2, '0')"
                   :sources="mapSourcesFor(currentUnit)"
                   :tagline="mapTaglineFor(currentUnit)"
                   :exploration-to="mapExplorationFor(currentUnit)"
@@ -1205,7 +1225,7 @@ onBeforeUnmount(() => {
               </div>
             </div>
 
-            <aside class="page-margin" aria-label="Informations marginales">
+            <aside v-if="props.layoutVariant !== 'homepage-sections'" class="page-margin" aria-label="Informations marginales">
               <div class="page-number">
                 <span>page</span>
                 {{ String(pageEntryFor(currentUnit.key)?.page ?? pagination.currentPage).padStart(2, '0') }}<small>/{{ String(pagination.totalPages).padStart(2, '0') }}</small>
@@ -1224,7 +1244,7 @@ onBeforeUnmount(() => {
           :data-figure="sourceEntry?.anchor ?? 'figure-sources'"
           aria-labelledby="sources-title"
         >
-          <div class="page-margin" aria-hidden="true"><div class="page-number"><span>fin</span> ·</div></div>
+          <div v-if="props.layoutVariant !== 'homepage-sections'" class="page-margin" aria-hidden="true"><div class="page-number"><span>fin</span> ·</div></div>
           <header class="page-heading"><h2 id="sources-title">Carnet des sources</h2></header>
           <dl class="sources-list">
             <div v-for="source in content.sourceRegister" :key="source.id">
@@ -1339,6 +1359,42 @@ onBeforeUnmount(() => {
 .page-layout--sticky .page-heading { padding-right: 0; padding-left: 0; padding-bottom: var(--space-2); border-bottom: 1px solid var(--red-soft); }
 .page-layout--sticky .page-copy { padding-right: 0; padding-left: 0; }
 .page-heading h2 { max-width: none; margin: 0; color: var(--ink); font-family: var(--font-display-title); font-size: clamp(1.65rem, 2.8vw, 2.4rem); font-weight: 400; letter-spacing: -.035em; line-height: 1; text-align: center; }
+.cahier--homepage-sections { --cahier-page-right-inset: var(--cahier-page-left-inset); }
+.cahier--homepage-sections .cahier-page,
+.cahier--homepage-sections .sources-page { background-image: none; --page-left-inset: var(--cahier-page-left-inset, 64px); }
+.cahier--homepage-sections .page-layout--sticky { display: grid; grid-template-columns: minmax(0, 1fr); margin-right: 0; }
+.cahier--homepage-sections .page-layout--sticky .page-heading {
+  position: sticky;
+  top: var(--cahier-sticky-top);
+  z-index: var(--z-page-header);
+  display: grid;
+  grid-template-columns: 72px minmax(0, 1fr) auto;
+  align-items: baseline;
+  column-gap: 24px;
+  margin-bottom: 28px;
+  padding: 16px 0 14px;
+  border-bottom: 1px solid var(--red-soft);
+  background-color: var(--paper);
+}
+.cahier--homepage-sections .page-heading-index { color: var(--red); font: 500 12px/1.3 var(--font-ui); font-variant-numeric: tabular-nums; }
+.cahier--homepage-sections .page-heading-index small { margin-left: 3px; color: var(--muted); font-size: 9px; }
+.cahier--homepage-sections .page-heading-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
+.cahier--homepage-sections .page-heading-context { display: flex; align-items: baseline; justify-self: end; gap: 6px; max-width: min(32vw, 18rem); min-width: 0; font-family: var(--font-ui); font-size: 12px; line-height: 1.3; white-space: nowrap; }
+.cahier--homepage-sections .page-heading-theme { flex: none; color: var(--cahier-theme-strong); font-weight: 600; }
+.cahier--homepage-sections .page-heading-context-separator { flex: none; color: var(--muted); }
+.cahier--homepage-sections .page-heading-territory { min-width: 0; overflow: hidden; color: var(--accent-primary); font-weight: 600; text-align: right; text-overflow: ellipsis; }
+.cahier--homepage-sections .page-heading h2 {
+  max-width: none;
+  text-align: left;
+  font-family: var(--font-display-title);
+  font-size: clamp(18px, 1.7vw, 20px);
+  font-weight: 600;
+  letter-spacing: -.02em;
+  line-height: 1.25;
+}
+.cahier--homepage-sections .page-copy { padding-right: 0; padding-left: 0; }
+.cahier--homepage-sections .page-subtitle,
+.cahier--homepage-sections .argument-copy { text-align: left; }
 .page-subtitle { max-width: none; margin: 14px 0 0; color: var(--cahier-default); font-size: 15px; text-align: justify; }
 .figure-stack {
   position: static;
@@ -1510,6 +1566,7 @@ onBeforeUnmount(() => {
 
 @media (max-width: 760px) {
   .cahier--sans-grille { --cahier-page-left-inset: 28px; --cahier-page-right-inset: 116px; }
+  .cahier--homepage-sections { --cahier-page-right-inset: var(--cahier-page-left-inset); }
   .cahier { --margin-line: 82px; }
   .cahier-reader { grid-template-columns: 1fr; padding-top: 36px; }
   .cahier-spine { display: none; }
@@ -1523,6 +1580,7 @@ onBeforeUnmount(() => {
 }
 @media (max-width: 600px) {
   .cahier--sans-grille { --cahier-page-left-inset: 18px; --cahier-page-right-inset: 96px; }
+  .cahier--homepage-sections { --cahier-page-right-inset: var(--cahier-page-left-inset); }
   .cahier { --margin-line: 12px; }
   .cahier-cover { padding: 18px 20px 44px; }
   .cahier-local-nav { padding-left: 44px; font-size: 10px; }
@@ -1541,6 +1599,9 @@ onBeforeUnmount(() => {
   .margin-sources a { font-size: 14px; line-height: 1.4; }
   .page-number { font-size: 24px; }
   .page-heading h2 { font-size: clamp(1.35rem, 7vw, 1.85rem); }
+  .cahier--homepage-sections .page-layout--sticky .page-heading { grid-template-columns: 36px minmax(0, 1fr) auto; column-gap: 8px; margin-bottom: 20px; padding-block: 12px 10px; }
+  .cahier--homepage-sections .page-heading h2 { font-size: 18px; }
+  .cahier--homepage-sections .page-heading-context { max-width: 34vw; font-size: 10px; }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; }
 }

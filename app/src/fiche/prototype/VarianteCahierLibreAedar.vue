@@ -5,7 +5,7 @@ import { aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
 import { fetchAedarDiversityLossMapLegend } from '@/fiche/content/aedarDiversityLossMaps'
 import type { AedarDiversityLossMapMetadata } from '@/fiche/content/aedarDiversityLossMaps'
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
-import type { ThemeContent } from '@/fiche/content/themeContent'
+import type { ContentSource, ThemeContent } from '@/fiche/content/themeContent'
 import type { CahierPagination } from './cahierPagination'
 import type { OptionContexteComparaison } from '@/fiche/comparisonContext'
 
@@ -55,7 +55,26 @@ const transformed = computed(() => {
     ? carOverview.evidence.unitIntroduction
     : []
   const first = props.content.units[0]
-  return { ...props.content, units: [{ ...first, introduction, rundown: [], sections }, ...props.content.units.slice(1)] } as unknown as ThemeContent
+  const units = [{ ...first, introduction, rundown: [], sections }, ...props.content.units.slice(1)]
+  const usedSourceIds = new Set(units.flatMap((unit) => unit.sections.flatMap((section) => section.provenance)))
+  const sourceIdentity = (source: ContentSource) => [source.id, source.version, source.referenceDate, source.publicationDate].join('\u0000')
+  const sourceRegister = new Map(
+    props.content.sourceRegister
+      .filter((source) => usedSourceIds.has(source.id))
+      .map((source) => [sourceIdentity(source), source]),
+  )
+  for (const source of focal.provenance.sources) {
+    if (!usedSourceIds.has(source.source_id)) continue
+    const entry: ContentSource = {
+      id: source.source_id,
+      source: source.attribution || 'Source',
+      version: source.vintage_id,
+      referenceDate: source.reference_date,
+      publicationDate: source.publication_date,
+    }
+    sourceRegister.set(sourceIdentity(entry), entry)
+  }
+  return { ...props.content, sourceRegister: [...sourceRegister.values()], units } as unknown as ThemeContent
 })
 </script>
 
@@ -74,6 +93,7 @@ const transformed = computed(() => {
     :comparison-options="props.comparisonOptions"
     show-all-units
     presentation="plain"
+    layout-variant="homepage-sections"
     network-figure-variant="traces"
     aedar-access-enabled
   />

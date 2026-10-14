@@ -203,6 +203,9 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
     expect(wrapper.find('.blank-map-slots').exists()).toBe(false)
 
     expect(wrapper.findAll('.access-ramp-cahier--time')).toHaveLength(2)
+    expect(wrapper.find('.page-margin').exists()).toBe(true)
+    expect(wrapper.find('.page-heading-territory').exists()).toBe(false)
+    expect(wrapper.find('.concept-group-heading > span').exists()).toBe(true)
 
     // The AEDAR section has no generic Lecture block.
     const heading = wrapper.find('[data-section="aedar-access"] .concept-group-heading')
@@ -367,7 +370,17 @@ describe('VarianteCahierLibre — aedar-access opt-in', () => {
 
 describe('VarianteCahierLibreAedar wrapper', () => {
   it('renders production loss maps and metadata-driven legend in the opt-in prototype', async () => {
-    const content = baseContent()
+    const base = baseContent()
+    const content = {
+      ...base,
+      sourceRegister: [...base.sourceRegister, {
+        id: 'unused-source',
+        source: 'Source non présente sur cette page',
+        version: 'unused-v1',
+        referenceDate: null,
+        publicationDate: null,
+      }],
+    } as ThemeContent
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push({ path: '/territoire/commune/22001' })
     await router.isReady()
@@ -397,6 +410,21 @@ describe('VarianteCahierLibreAedar wrapper', () => {
       .slice(0, 5)
       .map((section) => section.attributes('data-section')))
       .toEqual(['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer'])
+
+    const firstPageHeading = wrapper.get('.cahier-page .page-heading')
+    const firstPage = cahierPaginationFor(payload, content).entries[0]
+    expect(firstPageHeading.find('.page-heading-index').text()).toContain(String(firstPage?.page).padStart(2, '0'))
+    expect(firstPageHeading.find('h2').text()).toBe(content.units[0]?.label)
+    expect(firstPageHeading.find('.page-heading-theme').text()).toBe(content.label)
+    expect(firstPageHeading.find('.page-heading-context-separator').text()).toBe('·')
+    expect(firstPageHeading.find('.page-heading-territory').text()).toBe(content.territory.name)
+    expect(wrapper.find('.page-margin').exists()).toBe(false)
+    expect(wrapper.find('.margin-sources').exists()).toBe(false)
+    expect(wrapper.findAll('.concept-group-heading > span')).toHaveLength(0)
+    expect(wrapper.findAll('.map-section-number')).toHaveLength(0)
+    const sourcesPage = wrapper.get('.sources-page .sources-list').text()
+    expect(sourcesPage).toContain('AEDAR')
+    expect(sourcesPage).not.toContain('Source non présente sur cette page')
 
     const lossSection = wrapper.get('[data-section="aedar-diversity-loss"]')
     expect(lossSection.findAll('.aedar-diversity-loss-map')).toHaveLength(4)
@@ -590,7 +618,7 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     expect(accessSections.map((section) => section.attributes('data-section'))).toEqual([
       'aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer',
     ])
-    expect(accessSections.map((section) => section.get('.concept-group-heading > span').text())).toEqual(['01', '02', '03', '04', '05'])
+    expect(accessSections.every((section) => !section.find('.concept-group-heading > span').exists())).toBe(true)
     expect(accessSections[2]!.findAll('.access-ramp-cahier--time')).toHaveLength(2)
     const timeRamps = accessSections[2]!.findAll('.access-ramp-cahier--time')
     const timeRamp = timeRamps[0]!
