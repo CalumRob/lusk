@@ -4,6 +4,7 @@ from __future__ import annotations
 import os
 import json
 import re
+import shutil
 import subprocess
 import tempfile
 import uuid
@@ -54,6 +55,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
 
     pub = psycopg.connect(publish_dsn, autocommit=True)
     created = False
+    fixture_tmp = None
     try:
         assert pub.execute("SELECT current_database(),current_user").fetchone() == (
             database_name, publisher.username)
@@ -123,13 +125,18 @@ inputs <- list(
   region=make('region','code_region','53','nom_region','Fixture région'))
 inputs$commune <- rbind(inputs$commune,make('commune','code_insee','mob-1','nom_commune','Mobility unchanged'))
 i <- seq_len(nrow(source_axis))
+hierarchy <- readr::read_csv(file.path("tests","testthat","fixtures","aedar-typequ-hierarchy-2025.csv"),
+  col_types=readr::cols(.default=readr::col_character()),trim_ws=FALSE,show_col_types=FALSE)
+hierarchy <- hierarchy[match(source_axis$TYPEQU,hierarchy$TYPEQU),,drop=FALSE]
+stopifnot(nrow(hierarchy)==nrow(source_axis),!anyNA(hierarchy$TYPEQU))
 metadata <- data.frame(TYPEQU=source_axis$TYPEQU,LIB_TYPEQU=source_axis$LIB_TYPEQU,description=paste('Description',i),
-  domain_code=paste0('D',((i-1L) %% 7L)+1L),domain_label=paste('Domain',((i-1L) %% 7L)+1L),
-  subdomain_code=paste0('S',((i-1L) %% 27L)+1L),subdomain_label=paste('Subdomain',((i-1L) %% 27L)+1L),
+  domain_code=hierarchy$domain_code,domain_label=hierarchy$domain_label,
+  subdomain_code=hierarchy$subdomain_code,subdomain_label=hierarchy$subdomain_label,
   GAMME=rep(NA_character_,length(i)),gamme_status=rep('absent',length(i)),source_order=i)
+metadata$description[metadata$TYPEQU=='A135'] <- 'Description 1'
 metadata$LIB_TYPEQU[metadata$TYPEQU=='A135'] <- gsub("'","’",metadata$LIB_TYPEQU[metadata$TYPEQU=='A135'],fixed=TRUE)
 projection <- project_aedar_aggregates(inputs,metadata)
-canonical_dir <- tempfile('aedar-canonical-')
+canonical_dir <- Sys.getenv('AEDAR_CANONICAL_AGGREGATE_DIR')
 write_aedar_canonical(projection,canonical_dir)
 projection <- read_aedar_canonical(canonical_dir)
 con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
@@ -158,7 +165,7 @@ mode_facts <- stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode) {
 comparison <- project_aedar_comparison_publication(projection,origins,mode_facts,refs,
   aedar_content_version=before,reference_content_version='fixture-ref-v1',
   input_hashes=c(address_origins='fixture',address_modes='fixture'))
-canonical_comparison <- tempfile('aedar-comparison-canonical-')
+canonical_comparison <- Sys.getenv('AEDAR_CANONICAL_COMPARISON_DIR')
 write_aedar_comparison_canonical(comparison,canonical_comparison)
 comparison <- read_aedar_comparison_canonical(canonical_comparison)
 published <- publish_aedar_comparisons(comparison,con)
@@ -167,6 +174,11 @@ compare_db_projection <- function(expected,table,columns,order_columns) {
   expected <- as.data.frame(expected[,columns,drop=FALSE])
   select_columns <- ifelse(columns=='TYPEQU','typequ AS "TYPEQU"',columns)
   actual <- DBI::dbGetQuery(con,paste0("SELECT ",paste(select_columns,collapse=',')," FROM ",table))
+  numeric_columns <- intersect(c('value','n_addresses','n_observed'),columns)
+  for (column in numeric_columns) {
+    expected[[column]] <- as.numeric(expected[[column]])
+    actual[[column]] <- as.numeric(actual[[column]])
+  }
   sort_frame <- function(x) {x<-x[do.call(order,x[order_columns]),,drop=FALSE];rownames(x)<-NULL;x}
   expected <- sort_frame(expected); actual <- sort_frame(actual)
   same <- all.equal(expected,actual,tolerance=0,check.attributes=FALSE)
@@ -202,42 +214,27 @@ comparison_after <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,
 stopifnot(comparison_failed,identical(comparison_before,comparison_after))
 compare_db_projection(comparison$groups,'aedar_comparison_group',group_columns,group_order)
 compare_db_projection(comparison$territories,'aedar_comparison_territory',territory_columns,territory_order)
-changed_projection <- projection
-changed_projection$facts$count_5_walk_mean[[1L]] <- 9
-changed_source <- publish_aedar_aggregates(changed_projection,con)
-stopifnot(changed_source$changed,!identical(changed_source$content_version,before))
-stale_replacement <- project_aedar_comparison_publication(changed_projection,origins,mode_facts,refs,
-  aedar_content_version=changed_source$content_version,reference_content_version='fixture-ref-v1',
-  input_hashes=c(address_origins='fixture',address_modes='fixture'))
-DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_stale_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced replacement failure'; END $$")
-DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_stale_insert BEFORE INSERT ON aedar_comparison_territory FOR EACH ROW EXECUTE FUNCTION reject_aedar_stale_insert()")
-stale_replacement_failed <- tryCatch({publish_aedar_comparisons(stale_replacement,con); FALSE},error=function(e) TRUE)
-DBI::dbExecute(con,"DROP TRIGGER reject_aedar_stale_insert ON aedar_comparison_territory")
-DBI::dbExecute(con,"DROP FUNCTION reject_aedar_stale_insert()")
-comparison_after_source_change <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
-stopifnot(stale_replacement_failed,identical(comparison_before,comparison_after_source_change))
-compare_db_projection(comparison$groups,'aedar_comparison_group',group_columns,group_order)
-compare_db_projection(comparison$territories,'aedar_comparison_territory',territory_columns,territory_order)
-jsonlite::write_json(list(changed_source_content_version=changed_source$content_version),
-  Sys.getenv('AEDAR_STALE_VERSION_JSON'),auto_unbox=TRUE)
-restored_source <- publish_aedar_aggregates(projection,con)
-stopifnot(restored_source$changed,identical(restored_source$content_version,before))
 '''
-        with tempfile.TemporaryDirectory(prefix="aedar-it-",dir="E:/Temp/opencode") as tmp:
-            script = Path(tmp) / "fixture.R"; script.write_text(rscript,encoding="utf-8")
+        fixture_tmp = Path(tempfile.mkdtemp(prefix="aedar-it-",dir="E:/Temp/opencode"))
+        try:
+            tmp = fixture_tmp
+            script = tmp / "fixture.R"; script.write_text(rscript,encoding="utf-8")
             expected_comparison_path = Path(tmp) / "expected-comparison.json"
-            stale_version_path = Path(tmp) / "stale-version.json"
+            canonical_aggregate_dir = Path(tmp) / "canonical-aggregate"
+            canonical_comparison_dir = Path(tmp) / "canonical-comparison"
             parts = urlsplit(publish_dsn)
             env = os.environ.copy(); env["AEDAR_IT_SCHEMA"] = schema
             env["AEDAR_EXPECTED_COMPARISON_JSON"] = str(expected_comparison_path)
-            env["AEDAR_STALE_VERSION_JSON"] = str(stale_version_path)
+            env["AEDAR_CANONICAL_AGGREGATE_DIR"] = str(canonical_aggregate_dir)
+            env["AEDAR_CANONICAL_COMPARISON_DIR"] = str(canonical_comparison_dir)
             env["PGHOST"] = parts.hostname or "localhost"; env["PGPORT"] = str(parts.port or 5432)
             env["PGDATABASE"] = parts.path.lstrip("/"); env["PGUSER"] = unquote(parts.username or "")
             env["PGPASSWORD"] = unquote(parts.password or "")
             done = subprocess.run(["Rscript",str(script)],cwd=pipeline,env=env,capture_output=True,text=True)
             assert done.returncode == 0, done.stdout + done.stderr
             expected_comparison = json.loads(expected_comparison_path.read_text(encoding="utf-8"))
-            stale_version = json.loads(stale_version_path.read_text(encoding="utf-8"))["changed_source_content_version"]
+        except Exception:
+            raise
 
         dbread = psycopg.connect(scoped(read_dsn))
         class Connections:
@@ -298,7 +295,44 @@ stopifnot(restored_source$changed,identical(restored_source$content_version,befo
                 stale=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
                 assert stale.status_code==503
                 pub.execute("UPDATE table_publication SET content_version='fixture-ref-v1' WHERE table_name='territory_reference'")
-                pub.execute("UPDATE table_publication SET content_version=%s WHERE table_name='aedar_territorial_aggregate'",(stale_version,))
+                stale_script = r'''pkgload::load_all('.',quiet=TRUE)
+schema <- Sys.getenv('AEDAR_IT_SCHEMA')
+con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
+  dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'),password=Sys.getenv('PGPASSWORD'))
+on.exit(DBI::dbDisconnect(con))
+DBI::dbExecute(con,sprintf('SET search_path TO "%s"',schema))
+projection <- read_aedar_canonical(Sys.getenv('AEDAR_CANONICAL_AGGREGATE_DIR'))
+comparison <- read_aedar_comparison_canonical(Sys.getenv('AEDAR_CANONICAL_COMPARISON_DIR'))
+refs <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference WHERE territory_type IN ('commune','epci','departement','region')")
+before <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
+changed_projection <- projection
+changed_projection$facts$count_5_walk_mean[[1L]] <- 9
+changed_source_version <- aedar_aggregate_content_version(changed_projection)
+stopifnot(!identical(changed_source_version,comparison$aedar_content_version))
+DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_name='aedar_territorial_aggregate'",
+  params=list(changed_source_version))
+mode_facts <- stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode) {
+  x <- as.data.frame(as.list(stats::setNames(rep(1,4),AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]])))
+  x$address_id <- 'fixture-a'; x$TYPEQU <- 'A104'; x
+}),AEDAR_ADDRESS_SOURCE_MODES)
+stale_replacement <- project_aedar_comparison_publication(changed_projection,
+  data.frame(address_id=c('fixture-a','fixture-b'),commune='22001'),mode_facts,refs,
+  aedar_content_version=changed_source_version,reference_content_version='fixture-ref-v1',
+  input_hashes=c(address_origins='fixture',address_modes='fixture'))
+DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_stale_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced replacement failure'; END $$")
+DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_stale_insert BEFORE INSERT ON aedar_comparison_territory FOR EACH ROW EXECUTE FUNCTION reject_aedar_stale_insert()")
+failed <- tryCatch({publish_aedar_comparisons(stale_replacement,con); FALSE},error=function(e) TRUE)
+DBI::dbExecute(con,"DROP TRIGGER reject_aedar_stale_insert ON aedar_comparison_territory")
+DBI::dbExecute(con,"DROP FUNCTION reject_aedar_stale_insert()")
+after <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
+stopifnot(failed,identical(before,after))
+'''
+                stale_script_path = fixture_tmp / "stale-fixture.R"
+                stale_script_path.write_text(stale_script,encoding="utf-8")
+                stale_env = env.copy()
+                stale_env["AEDAR_IT_SCHEMA"] = schema
+                stale_run = subprocess.run(["Rscript",str(stale_script_path)],cwd=pipeline,env=stale_env,capture_output=True,text=True)
+                assert stale_run.returncode==0,stale_run.stdout+stale_run.stderr
                 stale_aedar=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
                 assert stale_aedar.status_code==503
                 mobility_after=client.get(mobility_url)
@@ -312,3 +346,4 @@ stopifnot(restored_source$changed,identical(restored_source$content_version,befo
     finally:
         if created: pub.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         pub.close()
+        if fixture_tmp is not None: shutil.rmtree(fixture_tmp,ignore_errors=True)
