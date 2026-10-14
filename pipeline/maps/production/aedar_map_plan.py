@@ -122,17 +122,10 @@ def decode_plan(plan):
 
 
 def partition(plan, workers):
-    """Greedy largest-processing-time territory partition; never split a territory."""
-    if workers not in (1, 2, 4):
-        raise ValueError("Worker count must be 1, 2 or 4")
-    weights = [(1 + row["addresses"] ** 0.5 / 300, index)
-               for index, row in enumerate(plan["territories"])]
-    shards, totals = [[] for _ in range(workers)], [0.0] * workers
-    for weight, index in sorted(weights, reverse=True):
-        shard = min(range(workers), key=totals.__getitem__)
-        shards[shard].append(index)
-        totals[shard] += weight
-    return [sorted(shard) for shard in shards]
+    """AEDAR's family cost estimate supplied to common whole-territory scheduling."""
+    from batch_execution import partition_territories
+    return partition_territories(plan["territories"], workers,
+                                 lambda row: 1 + row["addresses"] ** 0.5 / 300)
 
 
 def selected_aedar_recipe():

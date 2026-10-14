@@ -144,7 +144,7 @@ def _worker(args, output, plan, config, all_bases, app):
         {"status": "complete", "territories": len(shard_rows), "artifacts": len(result.outputs)})
 
 
-def _run_workers(args, output, plan, config):
+def _run_workers(args, output, plan, config, layout):
     commands = []
     for index in range(args.workers):
         command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker",
@@ -152,8 +152,8 @@ def _run_workers(args, output, plan, config):
             "--worker-index", str(index), "--raw-dir", str(args.raw_dir),
             "--facts-path", str(args.facts_path), "--family-config", str(args.family_config),
             "--territory-registry", str(args.territory_registry),
-            "--worker-cache", str(output / f"cache-{index}"),
-            "--worker-source-cache", str(output / f"source-{index}"),
+            "--worker-cache", str(layout[index]["cache"]),
+            "--worker-source-cache", str(layout[index]["source"]),
             "--context-cache-root", str(args.context_cache_root or output / "official-context")]
         if args.refresh:
             command.append("--refresh")
@@ -298,17 +298,10 @@ def main(argv=None):
             common._shared_ground.frontier_for(bases[0]["region_geometry"])
         finally:
             common.end_production_scope("inspection-refresh", output / "seed", success=True)
-        shared_cache = cache_root
-        for index in range(args.workers):
-            worker_cache = output / f"cache-{index}"
-            shutil.copytree(shared_cache, worker_cache, dirs_exist_ok=True)
-            source_copy = output / f"source-{index}"
-            if not source_copy.exists():
-                shutil.copytree(source_seed, source_copy, dirs_exist_ok=True)
-            else:
-                shutil.copytree(source_seed, source_copy, dirs_exist_ok=True)
+        from batch_execution import prepare_worker_layout
+        layout = prepare_worker_layout(output, args.workers, cache_root, source_seed)
         log(main_log, f"Starting resumable render: {plan['territory_count']} territories; workers={args.workers}")
-        _run_workers(args, output, plan, FAMILY_CONFIG)
+        _run_workers(args, output, plan, FAMILY_CONFIG, layout)
         _validate_complete(output, plan, args)
         log(main_log, f"COMPLETE: {plan['territory_count']} territories, {plan['expected_webps']} decoded WebPs; no upload/approval")
         return 0

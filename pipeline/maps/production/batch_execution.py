@@ -7,9 +7,41 @@ durable log mirroring.
 from __future__ import annotations
 
 import re
+import shutil
 import subprocess
 import threading
 from pathlib import Path
+
+
+def partition_territories(territories, worker_count, cost):
+    """Greedy LPT allocation; each input territory is assigned exactly once."""
+    if worker_count not in (1, 2, 4):
+        raise ValueError("Worker count must be 1, 2 or 4")
+    weighted = [(float(cost(row)), index) for index, row in enumerate(territories)]
+    if any(weight < 0 for weight, _ in weighted):
+        raise ValueError("Territory costs must be nonnegative")
+    shards, totals = [[] for _ in range(worker_count)], [0.0] * worker_count
+    for weight, index in sorted(weighted, reverse=True):
+        shard = min(range(worker_count), key=totals.__getitem__)
+        shards[shard].append(index)
+        totals[shard] += weight
+    return [sorted(shard) for shard in shards]
+
+
+def prepare_worker_layout(output_dir, worker_count, seed_cache, seed_source):
+    """Create disjoint mutable shard/cache/source paths and copy immutable seeds."""
+    output = Path(output_dir)
+    seed_cache, seed_source = Path(seed_cache), Path(seed_source)
+    layout = []
+    for index in range(worker_count):
+        cache, source = output / f"cache-{index}", output / f"source-{index}"
+        shard = output / f"shard-{index}"
+        cache.mkdir(parents=True, exist_ok=True)
+        shutil.copytree(seed_cache, cache, dirs_exist_ok=True)
+        shutil.copytree(seed_source, source, dirs_exist_ok=True)
+        shard.mkdir(parents=True, exist_ok=True)
+        layout.append({"cache": cache, "source": source, "shard": shard})
+    return layout
 
 
 def run_workers(commands, output_dir, expected_artifacts, *, write_json, log,
@@ -52,6 +84,9 @@ def run_workers(commands, output_dir, expected_artifacts, *, write_json, log,
                                 write_json(output_dir / f"worker-{worker}.progress.json",
                                     {"status": "rendering", "completed_webps": int(match.group(1)),
                                      "expected_webps": int(match.group(2))})
+                                if int(match.group(1)) % 25 == 0 or match.group(1) == match.group(2):
+                                    log(output_dir / "run.log", f"TOTAL {current['completed_webps']}/"
+                                        f"{expected_artifacts} validated WebPs")
             thread = threading.Thread(target=mirror, daemon=True)
             thread.start()
             mirrors.append(thread)
