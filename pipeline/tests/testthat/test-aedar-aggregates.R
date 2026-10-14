@@ -93,6 +93,27 @@ test_that("density cohort without address origins is uncovered and null", {
   expect_true(all(is.na(result$count_5_walk_mean)))
 })
 
+test_that("density transit-gain max includes only observed or implicit zeros", {
+  axis <- read_aedar_region_typequ_fixture()
+  membership <- data.frame(territory_id="density",member_commune="1",
+    territory_type="commune",context="densite",stringsAsFactors=FALSE)
+  full_origins <- data.frame(address_id=c("a","b"),commune="1",stringsAsFactors=FALSE)
+  full_facts <- data.frame(address_id=c("a","b"),TYPEQU="A104",
+    count_5_transit_gain_p1=c(-4,-2),stringsAsFactors=FALSE)
+  full <- project_aedar_density_comparisons(full_origins,full_facts,membership,axis,
+    measures="count_5_transit_gain")
+  full_row <- full[full$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(full_row$count_5_transit_gain_min,-4)
+  expect_equal(full_row$count_5_transit_gain_max,-2)
+
+  sparse_origins <- rbind(full_origins,data.frame(address_id="c",commune="1"))
+  sparse <- project_aedar_density_comparisons(sparse_origins,full_facts,membership,axis,
+    measures="count_5_transit_gain")
+  sparse_row <- sparse[sparse$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(sparse_row$count_5_transit_gain_min,0)
+  expect_equal(sparse_row$count_5_transit_gain_max,0)
+})
+
 test_that("AEDAR observed key union excludes derived transit_gain rows and deduplicates", {
   modes<-list(walk=data.frame(address_id=c("a","a"),TYPEQU=c("A104","A104")),
     transit=data.frame(address_id="b",TYPEQU="A104"),

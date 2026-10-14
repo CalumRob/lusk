@@ -590,7 +590,7 @@ project_aedar_density_comparisons <- function(address_origins, address_facts,
             at <- function(rank) allv[which(cumulative>=rank)[[1L]]]
             quant <- vapply(probs,function(p) {h<-1+(n-1)*p; lo<-floor(h); f<-h-lo; a<-at(lo); if(!f||lo==n)a else a+f*(at(lo+1)-a)},numeric(1))
             numerator <- if (grepl("_transit_gain$", measure)) sum(weights[vals!=0]) else sum(weights[vals>0])
-            stats<-c(numerator/n, if(zeros>0) 0 else min(vals), max(c(0,vals)), quant, sum(vals*weights)/n)
+            stats<-c(numerator/n, if(zeros>0) 0 else min(vals), if(zeros>0) max(c(0,vals)) else max(vals), quant, sum(vals*weights)/n)
           } else stats<-c(0,0,0,rep(0,9),0)
         }
         names(stats)<-paste0(measure,"_",metric_suffixes)
