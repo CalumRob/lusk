@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 from functools import lru_cache
 import hashlib
 import json
+import statistics
 import os
 from contextlib import nullcontext
 import unicodedata
@@ -1285,17 +1286,110 @@ def _selected_profile_comparison_sources(conn, *, external, details, cohort_type
             _comparison_sources_by_indicator(detail_sources))
 
 
-def _profile_comparison_results(conn, profiles, members, cohort_type, territory_id):
+def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_type, members, territory_id):
+    """Read validated published detail facets; scalar-backed profiles use scalar publication."""
+    context, group_id, territory_type = fixed_context
+    details = [p for p in profiles if not p.get("comparison_scalar")]
+    if not details:
+        return {}
+    installed = conn.execute("SELECT to_regclass('profile_comparison_publication')").fetchone()
+    if not installed or not installed[0]:
+        raise HTTPException(503, "Published profile comparison is unavailable")
+    marker = conn.execute("""SELECT p.content_version,p.profile_content_version,p.reference_content_version,
+            p.group_row_count,p.territory_row_count,d.content_version,t.content_version
+        FROM profile_comparison_publication p
+        JOIN table_publication d ON d.table_name='declared_profile'
+        JOIN table_publication t ON t.table_name='territory_reference' WHERE p.singleton""").fetchone()
+    if (not marker or not marker[0] or marker[1] != marker[5] or marker[2] != marker[6]
+            or marker[3] < 1 or marker[4] < 1):
+        raise HTTPException(503, "Published profile comparison is stale or incompatible")
+    counts = conn.execute("""SELECT (SELECT count(*) FROM profile_comparison_group),
+        (SELECT count(*) FROM profile_comparison_territory)""").fetchone()
+    if tuple(counts or ()) != (marker[3], marker[4]):
+        raise HTTPException(503, "Published profile comparison is incomplete")
+    ids = [p["indicator"] for p in details]
+    groups = conn.execute("""SELECT indicator_id,detail_key,sex_key,statistic,median,member_count,
+        eligible_count,missing_count,profile_content_version,reference_content_version
+        FROM profile_comparison_group WHERE comparison_context=%s AND group_id=%s
+        AND territory_type=%s AND indicator_id=ANY(%s)""", (context, group_id, territory_type, ids)).fetchall()
+    territories = conn.execute("""SELECT indicator_id,detail_key,sex_key,territory_id,value,status,rank,tie_count,
+        rank_size,profile_content_version,reference_content_version FROM profile_comparison_territory
+        WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
+          AND indicator_id=ANY(%s)""", (context, group_id, territory_type, ids)).fetchall()
+    group_map = {(r[0], r[1], r[2]): r for r in groups}
+    territory_map = {(r[0], r[1], r[2], r[3]): r for r in territories}
+    if len(group_map) != len(groups) or len(territory_map) != len(territories):
+        raise HTTPException(503, "Published profile comparison contains duplicate results")
+    source_map = _selected_profile_comparison_sources(conn, external=[], details=ids,
+        cohort_type=cohort_type, members=members)[1]
+    output = {}
+    for profile in details:
+        point = profile.get("comparison_point") or {}
+        key = (profile["indicator"], point.get("detail"), point.get("sex") or "")
+        group, row = group_map.get(key), territory_map.get((*key, territory_id))
+        facet_rows = [r for r in territories if r[0:3] == key]
+        member_rows = [r for r in facet_rows if r[3] in members]
+        if not group or not row or {r[3] for r in member_rows} != set(members):
+            raise HTTPException(503, "Published profile comparison is incomplete")
+        _, _, _, stat, med, member_count, eligible, missing, pv, rv = group
+        _, _, _, _, value, status, rank, ties, rank_size, tpv, trv = row
+        measured_rows = [r for r in member_rows if r[5] == "measured"]
+        measured_values = [r[4] for r in measured_rows]
+        direction = point.get("direction", "high")
+        ascending = direction == "low"
+        expected_median = statistics.median(measured_values) if measured_values else None
+        invalid_row = False
+        for peer in facet_rows:
+            _, _, _, _, peer_value, peer_status, peer_rank, peer_ties, peer_size, peer_pv, peer_rv = peer
+            if (peer_pv != marker[1] or peer_rv != marker[2]
+                    or peer_status not in ("measured", "suppressed", "unsupported", "not_available", "not_published")
+                    or (peer_status == "measured" and (peer_value is None or peer_rank is None or peer_ties is None
+                        or peer_size != eligible or peer_rank < 1 or peer_rank > peer_size
+                        or peer_ties < 1 or peer_ties > peer_size
+                        or peer_ties != sum(v == peer_value for v in measured_values)
+                        or peer_rank != 1 + sum((v < peer_value if ascending else v > peer_value)
+                                                for v in measured_values)))
+                    or (peer_status != "measured" and any(v is not None for v in
+                        (peer_value, peer_rank, peer_ties, peer_size)))):
+                invalid_row = True
+        if (stat != "median" or member_count != len(members) or eligible + missing != member_count
+                or pv != marker[1] or rv != marker[2] or tpv != marker[1] or trv != marker[2]
+                or invalid_row or len(facet_rows) != len(members) or len(measured_rows) != eligible
+                or (eligible == 0) != (med is None)
+                or (eligible > 0 and med != expected_median)
+                or status not in ("measured", "suppressed", "unsupported", "not_available", "not_published")
+                or (status == "measured" and (value is None or rank is None or ties is None or rank_size != eligible or rank < 1 or rank > rank_size or ties < 1 or ties > rank_size))
+                or (status != "measured" and any(v is not None for v in (value, rank, ties, rank_size)))):
+            raise HTTPException(503, "Published profile comparison result is invalid")
+        enough = eligible >= 2
+        output[profile["indicator"]] = {"median": med if enough else None, "focal_value": value if status == "measured" else None,
+            "rank": rank if enough else None, "rank_size": rank_size if enough and status == "measured" else None,
+            "rank_ties": ties if enough and status == "measured" else None,
+            "eligible_count": eligible, "missing_count": missing,
+            "status": "available" if enough else "unavailable",
+            "reason": None if enough else "fewer_than_two_comparable_values",
+            "selected_member_count": member_count, "comparison_sources": source_map.get(profile["indicator"], [])}
+    return output
+
+
+def _profile_comparison_results(conn, profiles, members, cohort_type, territory_id, fixed_context=None):
     """Compare only declared profile facets, using one batch query per facet grain."""
     external = [p for p in profiles if p.get("comparison_scalar")]
     details = [p for p in profiles if not p.get("comparison_scalar")]
+    published_detail = (_published_profile_comparison_results(conn, details, fixed_context,
+        cohort_type, members, territory_id) if fixed_context and details else {})
+    scalar_descriptors = (conn.execute("""SELECT indicator_id,label,unit,direction,comparison_facet,
+        allowed_levels,descriptor_version FROM scalar_descriptor WHERE indicator_id=ANY(%s)""",
+        ([p["comparison_scalar"] for p in external],)).fetchall() if fixed_context and external else [])
+    published_scalar = (_published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
+        cohort_type, members, territory_id, include_ties=True) if fixed_context and external else {})
     read_ids = list(dict.fromkeys([*members, territory_id]))
     external_sources, detail_sources = _selected_profile_comparison_sources(
         conn, external=[p["indicator"] for p in external],
         details=[p["indicator"] for p in details],
         cohort_type=cohort_type, members=members)
     scalar_rows = []
-    if external:
+    if external and not fixed_context:
         scalar_rows = conn.execute(
             """SELECT p.indicator_id,s.label,s.unit,s.direction,s.comparison_facet,s.allowed_levels,
                       s.descriptor_version,o.territory_id,o.value,o.status
@@ -1308,7 +1402,7 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         ).fetchall()
     detail_rows = []
     detail_contracts = {}
-    if details:
+    if details and not fixed_context:
         detail_contracts = {row[0]: row for row in conn.execute(
             """SELECT d.indicator_id,d.comparison_detail,d.comparison_sex,d.unit,
                       d.denominator_semantics,d.descriptor_version,d.detail_units_required,a.unit
@@ -1362,6 +1456,28 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
 
     output = []
     for profile in external:
+        if fixed_context:
+            published = published_scalar.get(profile["comparison_scalar"])
+            if published is None:
+                raise HTTPException(503, "Published scalar profile comparison is incomplete")
+            point = profile.get("comparison_point") or {}
+            scalar_descriptor = next((r for r in scalar_descriptors if r[0] == profile["comparison_scalar"]), None)
+            enough = published["eligible_count"] >= 2
+            output.append({"indicator": profile["indicator"], "facet": profile["comparison_scalar"],
+                "label": profile["label"], "unit": scalar_descriptor[2] if scalar_descriptor else profile.get("unit"),
+                "direction": scalar_descriptor[3] if scalar_descriptor else point.get("direction"),
+                "statistic": "median", "profile_descriptor_version": profile.get("descriptor_version"),
+                "scalar_descriptor_version": scalar_descriptor[6] if scalar_descriptor else None,
+                "required_scalar_version": profile.get("required_scalar_version"),
+                "source_facet_label": scalar_descriptor[1] if scalar_descriptor else None,
+                "denominator_semantics": profile.get("denominator_semantics"), "focal_in_selection": territory_id in members,
+                **published, "status": "available" if enough else "unavailable",
+                "reason": None if enough else "fewer_than_two_comparable_values",
+                "median": published["median"] if enough else None,
+                "rank": published["rank"] if enough else None,
+                "rank_size": published["rank_size"] if enough else None,
+                "rank_ties": published["rank_ties"] if enough else None})
+            continue
         rows = scalar_by_profile.get(profile["indicator"], [])
         if not rows:
             raise HTTPException(503, "Profile scalar comparison facet is unavailable")
@@ -1378,6 +1494,20 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         output.append(summary(profile_metadata, profile["comparison_scalar"], descriptor[2], descriptor[3],
                               normalized, external_sources.get(profile["indicator"], [])))
     for profile in details:
+        if fixed_context:
+            published = published_detail.get(profile["indicator"])
+            if published is None:
+                raise HTTPException(503, "Published profile comparison is incomplete")
+            point = profile["comparison_point"]
+            cell = next(c for c in profile["cells"] if c["detail"] == point["detail"] and c.get("sex") == point.get("sex"))
+            output.append({"indicator": profile["indicator"], "facet": {"detail": point["detail"], "sex": point.get("sex")},
+                "label": profile["label"], "unit": cell["unit"], "direction": point["direction"], "statistic": "median",
+                "profile_descriptor_version": profile.get("descriptor_version"), "required_scalar_version": profile.get("required_scalar_version"),
+                "scalar_descriptor_version": profile.get("scalar_descriptor_version"),
+                "source_facet_label": profile.get("source_facet_label"),
+                "denominator_semantics": profile.get("denominator_semantics"), "focal_in_selection": territory_id in members,
+                **published})
+            continue
         point = profile.get("comparison_point")
         if not point or point.get("direction") not in ("high", "low"):
             raise HTTPException(503, "Profile detail comparison point is invalid")
@@ -1448,9 +1578,9 @@ def _selected_scalar_comparison_sources(conn, *, indicator_ids, cohort_type, mem
            FROM scalar_observation_source os
            JOIN scalar_observation o ON o.indicator_id=os.indicator_id
              AND o.territory_id=os.territory_id
-           JOIN scalar_descriptor d USING(indicator_id)
-           JOIN source_dataset sd USING(source_id)
-           JOIN source_vintage sv USING(source_id,vintage_id)
+           JOIN scalar_descriptor d ON d.indicator_id=os.indicator_id
+           JOIN source_dataset sd ON sd.source_id=os.source_id
+           JOIN source_vintage sv ON sv.source_id=os.source_id AND sv.vintage_id=os.vintage_id
            WHERE os.indicator_id=ANY(%s) AND o.territory_type=%s
              AND os.territory_id=ANY(%s)
            ORDER BY os.indicator_id,os.source_id,os.vintage_id""",
@@ -1460,7 +1590,7 @@ def _selected_scalar_comparison_sources(conn, *, indicator_ids, cohort_type, mem
 
 
 def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
-                                         cohort_type, members, territory_id):
+                                         cohort_type, members, territory_id, *, include_ties=False):
     """Read validated group statistics and one territory's precomputed result."""
     context, group_id, territory_type = fixed_context
     comparable = [row for row in scalar_descriptors
@@ -1515,7 +1645,7 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
     results = {}
     for indicator_id in indicator_ids:
         _statistic, median_value, member_count, eligible_count, missing_count = group_by_indicator[indicator_id]
-        value, status, rank, _tie_count, rank_size = territory_by_indicator[indicator_id]
+        value, status, rank, tie_count, rank_size = territory_by_indicator[indicator_id]
         results[indicator_id] = {
             "status": "available" if eligible_count else "unavailable",
             "reason": None if eligible_count else "no_selected_comparable_values",
@@ -1526,6 +1656,8 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
             "rank_size": rank_size if rank is not None else None,
             "comparison_sources": sources.get(indicator_id, []),
         }
+        if include_ties:
+            results[indicator_id]["rank_ties"] = tie_count if status == "measured" else None
     return results
 
 
@@ -1574,7 +1706,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             raise HTTPException(503, "Scalar publication is unavailable or incompatible")
     cohort_type, members, scope = _comparison_cohort(conn, territory_type, territory_id, selection)
     fixed_context = (_fixed_scalar_comparison_context(conn, territory_type, territory_id,
-        selection, cohort_type, members, scope) if scalar_descriptors else None)
+        selection, cohort_type, members, scope) if scalar_descriptors or profiles or collections else None)
     if fixed_context and territory_id not in members:
         # The current fixed groups all include the focal territory. Keep the
         # request-time contract if a future resolver ever identifies a group
@@ -1627,7 +1759,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 "median": median([value for _, value in values]) if values else None,
                 "rank": rank, "rank_size": len(values) if rank is not None else None,
                 "comparison_sources": sources})
-    profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id)
+    profile_fixed_context = fixed_context if profiles else None
+    profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id, profile_fixed_context)
     bpe_comparison = (_bpe_profile_comparison(conn, territory_type, territory_id, selection)
                       if bpe_available else None)
     bpe_results = bpe_comparison["results"] if bpe_comparison else []
@@ -1637,7 +1770,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         territory_type,territory_id,selection,cohort=(cohort_type,members,scope))
     results.extend(owned_results)
     results.extend(bpe_results)
-    collection_results = [collection_comparison(conn,descriptor,territory_type,territory_id,cohort_type,members)
+    collection_results = [collection_comparison(conn,descriptor,territory_type,territory_id,cohort_type,members,
+                           fixed_context if territory_id in members else None)
                           for descriptor in collections]
     results.extend(collection_results)
     reading_cloud = (_demographic_reading_cloud(conn, reading_marker, territory_type, territory_id,
@@ -2756,8 +2890,10 @@ def scalar_observation(
                     raise HTTPException(422, "Profile is not declared for this territory level")
                 profile = profiles[0]
                 cohort_type, members, scope = _comparison_cohort(conn, territory_type, territory_id, None)
+                fixed_context = _fixed_scalar_comparison_context(conn, territory_type, territory_id,
+                    None, cohort_type, members, scope)
                 profile_comparison_results = _profile_comparison_results(
-                    conn, [profile], members, cohort_type, territory_id)
+                    conn, [profile], members, cohort_type, territory_id, fixed_context)
                 profile["default_comparison"] = {
                     "scope": scope, "results": profile_comparison_results}
                 return profile
@@ -3659,7 +3795,12 @@ def indicator_comparison_only(
                 if focal[0]!=territory_type:
                     raise HTTPException(422,"Focal territory type does not match route")
                 cohort_type,members,scope = _comparison_cohort(conn,territory_type,territory_id,selection)
-                result = collection_comparison(conn,collections[0],territory_type,territory_id,cohort_type,members)
+                fixed_context = _fixed_scalar_comparison_context(conn,territory_type,territory_id,
+                    selection,cohort_type,members,scope)
+                if territory_id not in members:
+                    fixed_context = None
+                result = collection_comparison(conn,collections[0],territory_type,territory_id,cohort_type,members,
+                                               fixed_context)
                 return {"contract":"indicator-comparison-v1","complete_theme":False,"indicator_id":indicator_id,
                     "theme_id":collections[0]["theme_id"],"shape":"observed_collection",
                     "content_version":result["content_version"],"reference_content_version":result["reference_content_version"],

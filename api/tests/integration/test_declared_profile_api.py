@@ -55,6 +55,19 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env,
             ('part_passoires','29001','commune',0.3,'measured'),('part_passoires','29002','commune',0.1,'measured')""")
         conn.execute("INSERT INTO scalar_observation_source VALUES ('part_passoires','29001','dpe','v1'),('part_passoires','29002','dpe','v1')")
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-v1',2,'ref-v1')")
+        conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
+            reference_content_version,group_row_count,territory_row_count)
+            VALUES (true,'scalar-comparison-v1','scalar-v1','ref-v1',2,4)""")
+        conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,
+            statistic,median,member_count,eligible_count,missing_count)
+            VALUES ('density_class','D1','commune','part_passoires','median',0.2,2,2,0),
+                   ('epci','E1','commune','part_passoires','median',0.2,2,2,0)""")
+        conn.execute("""INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,indicator_id,
+            territory_id,value,status,rank,tie_count,rank_size)
+            VALUES ('density_class','D1','commune','part_passoires','29001',0.3,'measured',2,1,2),
+                   ('density_class','D1','commune','part_passoires','29002',0.1,'measured',1,1,2),
+                   ('epci','E1','commune','part_passoires','29001',0.3,'measured',2,1,2),
+                   ('epci','E1','commune','part_passoires','29002',0.1,'measured',1,1,2)""")
         conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,completeness,descriptor_version,
             comparison_detail,comparison_sex,comparison_direction,comparison_scalar,required_scalar_version) VALUES
             ('distribution_dpe','habitat','DPE','%',ARRAY['commune'],'dense_complete','dpe-d1',NULL,NULL,'low','part_passoires','scalar-v1')""")
@@ -316,6 +329,17 @@ def test_declared_profile_postgres_api_contract(installation):
                 conn.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('habitat_fixture',%s,'commune',%s,'measured')", (tid,value))
                 conn.execute("INSERT INTO scalar_observation_source VALUES ('habitat_fixture',%s,'indicator_fixture','v1')", (tid,))
             conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-fixture-v1',4,'ref-v1')")
+            if installation == 'fresh':
+                conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
+                    reference_content_version,group_row_count,territory_row_count)
+                    VALUES (true,'scalar-comparison-v1','scalar-fixture-v1','ref-v1',1,2)""")
+                conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,
+                    indicator_id,statistic,median,member_count,eligible_count,missing_count)
+                    VALUES ('density_class','D1','commune','habitat_fixture','median',.4,2,2,0)""")
+                conn.execute("""INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,
+                    indicator_id,territory_id,value,status,rank,tie_count,rank_size) VALUES
+                    ('density_class','D1','commune','habitat_fixture',%s,.2,'measured',2,1,2),
+                    ('density_class','D1','commune','habitat_fixture',%s,.6,'measured',1,1,2)""", (territory, peer))
             conn.execute("COMMIT")
             profile_insert = """INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction) VALUES
                 ('structure_age','Structure par âge','%',ARRAY['commune'],'dense_complete','fixture-v1','15-29','F','high')"""
@@ -368,8 +392,48 @@ def test_declared_profile_postgres_api_contract(installation):
                     (tid,value))
                 conn.execute("INSERT INTO profile_observation_source VALUES ('one_axis_fixture',%s,'length','','one_axis_source','v1')",
                     (tid,))
-            conn.execute("UPDATE table_publication SET row_count=row_count+4 WHERE table_name='declared_profile'")
+            conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,detail_key,
+                sex_key,sex_axis_name,value,status) VALUES
+                ('structure_age',%s,'commune','15-29','F','sex',NULL,'not_available'),
+                ('structure_age',%s,'commune','15-29','M','sex',NULL,'not_available'),
+                ('structure_age',%s,'commune','0-14','F','sex',NULL,'not_available'),
+                ('structure_age',%s,'commune','0-14','M','sex',NULL,'not_available'),
+                ('one_axis_fixture',%s,'commune','length','',NULL,NULL,'not_available')""",
+                (territory + 'n', territory + 'n', territory + 'n', territory + 'n', territory + 'n'))
+            conn.execute("""INSERT INTO profile_observation_source VALUES
+                ('structure_age',%s,'15-29','F','age_detail','v1'),
+                ('structure_age',%s,'15-29','M','age_detail','v1'),
+                ('structure_age',%s,'0-14','F','age_detail','v1'),
+                ('structure_age',%s,'0-14','M','age_detail','v1'),
+                ('one_axis_fixture',%s,'length','','one_axis_source','v1')""",
+                (territory + 'n', territory + 'n', territory + 'n', territory + 'n', territory + 'n'))
+            conn.execute("UPDATE table_publication SET row_count=row_count+7 WHERE table_name='declared_profile'")
             conn.execute("UPDATE table_publication SET reference_content_version='ref-v1' WHERE table_name='declared_profile'")
+            if installation == 'fresh':
+                conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,
+                    indicator_id,detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,
+                    profile_content_version,reference_content_version) VALUES
+                    ('density_class','D1','commune','structure_age','15-29','F','median',.4,2,2,0,'profile-v1','ref-v1'),
+                    ('density_class','D1','commune','one_axis_fixture','length','','median',.9,2,2,0,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','structure_age','15-29','F','median',.4,3,2,1,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','one_axis_fixture','length','','median',.9,3,2,1,'profile-v1','ref-v1')""")
+                conn.execute("""INSERT INTO profile_comparison_territory(comparison_context,group_id,territory_type,
+                    indicator_id,detail_key,sex_key,territory_id,value,status,rank,tie_count,rank_size,
+                    profile_content_version,reference_content_version) VALUES
+                    ('density_class','D1','commune','structure_age','15-29','F',%s,.2,'measured',2,1,2,'profile-v1','ref-v1'),
+                    ('density_class','D1','commune','structure_age','15-29','F',%s,.6,'measured',1,1,2,'profile-v1','ref-v1'),
+                    ('density_class','D1','commune','one_axis_fixture','length','',%s,.9,'measured',1,2,2,'profile-v1','ref-v1'),
+                    ('density_class','D1','commune','one_axis_fixture','length','',%s,.9,'measured',1,2,2,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','structure_age','15-29','F',%s,.2,'measured',2,1,2,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','structure_age','15-29','F',%s,.6,'measured',1,1,2,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','one_axis_fixture','length','',%s,.9,'measured',1,2,2,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','one_axis_fixture','length','',%s,.9,'measured',1,2,2,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','structure_age','15-29','F',%s,NULL,'not_available',NULL,NULL,NULL,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','one_axis_fixture','length','',%s,NULL,'not_available',NULL,NULL,NULL,'profile-v1','ref-v1')""",
+                    (territory, peer, territory, peer, territory, peer, territory, peer, territory + 'n', territory + 'n'))
+                conn.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
+                    profile_content_version,reference_content_version,group_row_count,territory_row_count)
+                    VALUES (true,'profile-comparison-v1','profile-v1','ref-v1',4,10)""")
 
         scoped = reader_dsn + ("&" if "?" in reader_dsn else "?") + "options=" + __import__('urllib.parse').parse.quote(f"-csearch_path={schema}")
         pool = ConnectionPool(conninfo=scoped, min_size=0, max_size=1, open=True, kwargs={"autocommit": True})
@@ -397,11 +461,18 @@ def test_declared_profile_postgres_api_contract(installation):
                 "detail": "15-29", "sex": "F", "direction": "high", "scope": "departement",
                 "scope_id": "29", "values": [
                     {"territory_id": territory, "name": "Focal", "value": .2, "status": "measured"},
+                    {"territory_id": territory + 'n', "name": "No density", "value": None, "status": "not_available"},
                     {"territory_id": peer, "name": "Peer", "value": .6, "status": "measured"}]}
             assert body["sources"] == [{"source_id":"age_detail","name":"INSEE fixture","version":"2023",
                 "reference_date":"2023-01-01","publication_date":None}]
             profile_only_url = f"/api/territories/commune/{territory}/themes/demographie/facts"
             profile_only = client.get(profile_only_url)
+            if installation == 'upgrade':
+                # This legacy schema has not installed the fixed-context
+                # comparison projection. The default read must fail closed
+                # rather than silently recompute peers from raw profile facts.
+                assert profile_only.status_code == 503, profile_only.text
+                return
             assert profile_only.status_code == 200, profile_only.text
             assert all(row['dimensions'] for row in profile_only.json()['indicators'])
             assert {row['indicator_id'] for row in profile_only.json()['indicators']} == {'structure_age', 'one_axis_fixture'}

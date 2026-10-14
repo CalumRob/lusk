@@ -101,8 +101,12 @@ tryCatch({
     }
     DBI::dbExecute(con, "INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation',$1,$2,$3)", params=list(scalar_version,nrow(territories),reference_version))
   })
+  scalar_publication <- DBI::dbGetQuery(con,
+    "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")
+  stopifnot(identical(scalar_publication$content_version[[1L]], scalar_version))
   mobility_metadata <- lire_theme_metadata("mobilite")
-  mobility_territories <- data.frame(territoire=territories$territory_id, type=territories$territory_type)
+  mobility_territories <- data.frame(territoire=payload$territoires$territoire,
+    type=payload$territoires$type, stringsAsFactors=FALSE)
   mobility_rows <- do.call(rbind, lapply(c("voitures_menage","reseaux","reseaux_par_habitant","offre_cyclable"), function(id) {
     page <- mobility_metadata$indicator_pages[[id]]
     details <- unlist(page$comparison$details, use.names=FALSE)
@@ -124,7 +128,8 @@ tryCatch({
         date_reference=v$dateReference, date_publication=v$datePublication, stringsAsFactors=FALSE)
     }))
   combined <- publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages)
+    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages,
+    scalar_publication=scalar_publication)
   read_user <- Sys.getenv("LUSK_TEST_READ_USER", unset="")
   read_dsn <- Sys.getenv("LUSK_TEST_READ_DSN", unset="")
   if (nzchar(read_user) || nzchar(read_dsn)) {
@@ -177,7 +182,8 @@ tryCatch({
   } else cat("Publisher-to-HTTP TestClient parity: SKIPPED (explicit read-only test DSN/role not configured)\n")
   age_after <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,detail_key,sex_key,value,status FROM profile_observation WHERE indicator_id='structure_age' ORDER BY territory_type,territory_id,detail_key,sex_key")
   no_op <- publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages)
+    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages,
+    scalar_publication=scalar_publication)
   stopifnot(combined$changed, identical(age_after,facts_before),
     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_axis WHERE indicator_id='distribution_dpe' AND axis_name='sex'")$n[[1L]]==0,
      DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_observation WHERE indicator_id='distribution_dpe'")$n[[1L]]==nrow(dpe_rows),
@@ -198,7 +204,8 @@ tryCatch({
   changed_mobility <- mobility_payload
   changed_mobility$indicateurs$value[[1L]] <- changed_mobility$indicateurs$value[[1L]] + 1
   failed_combined <- try(publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=changed_mobility, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages), silent=TRUE)
+    con=con, mobilite=changed_mobility, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages,
+    scalar_publication=scalar_publication), silent=TRUE)
   DBI::dbExecute(con, "DROP TRIGGER reject_combined_profile ON profile_observation")
   DBI::dbExecute(con, "DROP FUNCTION reject_combined_profile_insert()")
   stopifnot(inherits(failed_combined, "try-error"),
@@ -210,7 +217,8 @@ tryCatch({
     identical(combined_marker,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='declared_profile'")))
   DBI::dbExecute(con, "UPDATE table_publication SET content_version='stale-scalar' WHERE table_name='scalar_observation'")
   stale <- try(publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages),silent=TRUE)
+    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages,
+    scalar_publication=scalar_publication),silent=TRUE)
   stopifnot(inherits(stale,"try-error"),
     identical(combined_marker,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='declared_profile'")))
   cat("DPE complete-snapshot entrypoint, structure-age preservation, no fake axis, retry and scalar pin: PASS\n")

@@ -26,7 +26,7 @@ tryCatch({
     inputs$building_contract,inputs$building_sources)
   stopifnot(all(c("territory_reference","essential_service_access") %in% published))
   scalar <- project_service_scalar_snapshot(inputs,canonical_dir)
-  publish_service_share_scalars(con,inputs$scalar_access,inputs$scalar_metadata,
+  scalar_publication <- publish_service_share_scalars(con,inputs$scalar_access,inputs$scalar_metadata,
     inputs$scalar_eligible_territories,additional_projections=scalar$additional_projections)
 
   read_canonical <- function(name) nanoparquet::read_parquet(file.path(canonical_dir,paste0(name,".parquet")))
@@ -38,8 +38,10 @@ tryCatch({
   habitat <- list(indicateurs=read_canonical("indicateurs_habitat"),territoires=territories,source_vintages=vintages)
   mobility <- list(indicateurs=read_canonical("indicateurs_mobilite"),territoires=territories,source_vintages=vintages)
   scalar_version <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")[["content_version"]][[1L]]
+  stopifnot(identical(scalar_publication$content_version, scalar_version))
   profile <- publier_declared_profiles_postgres(demography,demography_metadata,habitat,habitat_metadata,
-    scalar_version,con=con,mobilite=mobility,mobilite_metadata=mobility_metadata,mobilite_vintages=vintages)
+    scalar_version,con=con,mobilite=mobility,mobilite_metadata=mobility_metadata,mobilite_vintages=vintages,
+    scalar_publication=scalar_publication)
   stopifnot(profile$changed,
     DBI::dbGetQuery(con,"SELECT count(*) FROM profile_observation_source WHERE indicator_id='distribution_dpe'")[[1L]][[1L]]>0L)
 

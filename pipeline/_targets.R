@@ -1233,18 +1233,26 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
   ))
 }
 
-# The age-profile table is an explicit operator publication, independent from
-# the static outputs and its own retryable publication marker.
+# Profile tables are an explicit opt-in and share the scalar publication run.
 publication_profile <- list()
 if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
-  if (identical(MODE_RUN, "cron") || !"demographie" %in% names(THEMES_RUN)) {
-    stop("LUSK_PUBLISH_PROFILE exige un run local incluant Démographie.", call. = FALSE)
+  profile_themes <- c("demographie", "habitat", "mobilite")
+  if (!identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1") || identical(MODE_RUN, "cron") ||
+      !all(profile_themes %in% names(THEMES_RUN))) {
+    stop("LUSK_PUBLISH_PROFILE exige LUSK_PUBLISH_DB=1 et un run local incluant Démographie, Habitat et Mobilité.", call. = FALSE)
   }
   publication_profile <- list(tar_target_raw(
-    "publie_profile_structure_age",
+    "publie_profiles_declares",
     bquote({
       publie_demographie
-      publier_structure_age_profile_postgres(publie_demographie, metadata_demographie)
+      publie_habitat
+      publie_mobilite
+      publie_tables_service
+      publier_declared_profiles_postgres(publie_demographie, metadata_demographie,
+        publie_habitat, metadata_habitat, publie_tables_service$scalar$content_version,
+        mobilite=publie_mobilite, mobilite_metadata=metadata_mobilite,
+        mobilite_vintages=fusion_vintages, scalar_publication=publie_tables_service$scalar,
+        output_directory=SORTIE_RUN)
     }),
     cue = tar_cue(mode = "always")
   ))

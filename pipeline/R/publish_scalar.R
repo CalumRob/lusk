@@ -854,7 +854,12 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
       !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
-  tables <- c("milieux_reading_source", "series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
+  tables <- c("observed_collection_comparison_territory", "observed_collection_comparison_group", "observed_collection_comparison_publication",
+    "profile_comparison_territory", "profile_comparison_group", "profile_comparison_publication",
+    "scalar_comparison_territory", "scalar_comparison_group", "scalar_comparison_publication",
+    "ordered_series_comparison_territory", "ordered_series_comparison_group", "ordered_series_comparison_publication",
+    "milieux_reading_absence", "aedar_territorial_aggregate",
+    "milieux_reading_source", "series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
     "economy_activity_evidence", "economy_typed_reading", "milieux_typed_reading", "mobility_typed_reading",
     "series_context_parent_policy", "habitat_typed_reading", "mobility_reading_clock", "mobility_reading_story", "mobility_reading_descriptor",
     "selected_reading_publication", "selected_reading_descriptor", "demographic_typed_reading", "demographic_reading_descriptor",
@@ -881,7 +886,8 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
      "validate_series_dataset_publication()", "validate_series_observation_provenance()",
      "assert_bpe_profile_evidence_complete()",
      "validate_series_named_reference()", "validate_series_named_reference_provenance()",
-     "validate_observed_collection_write()", "validate_anchored_membership()",
+      "validate_observed_collection_comparison_write()", "validate_observed_collection_comparison_publication()",
+      "validate_observed_collection_write()", "validate_anchored_membership()",
      "validate_period_detail_observation()", "validate_observed_collection_publication()",
       "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
      "reject_milieux_population_provenance_mutation()",

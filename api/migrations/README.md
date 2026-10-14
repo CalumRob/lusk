@@ -329,3 +329,20 @@ the pinned national artifact, R curve and ordinary scalar publishers, and HTTP
 reads in an isolated `lusk_it_contract` schema. These are guarded local proofs,
 not approval to migrate, publish or activate production. Follow the gated operator
 procedure above before any live operation.
+
+# Migration 030 — fixed-context profile and collection comparisons
+
+`030_fixed_context_profile_collection_comparisons.sql` adds the published
+comparison projections for detail-backed declared profiles and sparse numeric
+period/detail collections. It does not duplicate scalar comparisons, change
+categorical membership semantics, or rewrite existing facts. Profile and
+collection markers pin the source content and territory-reference versions;
+collection publication validation also checks group membership, missingness,
+and rank-size consistency. Fresh installs carry the same tables and grants in
+`schema.sql`.
+
+The guarded canonical programme publisher-to-HTTP rehearsal applies migration
+030 after recreating migration 018, then republishes through the registered R
+publisher. Apply only after the separate restored-database upgrade rehearsal,
+backup, and operator approval. This source change does not apply serving DDL or
+publish production data.

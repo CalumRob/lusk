@@ -324,13 +324,19 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
             assert legacy_absent.status_code == 503
             legacy_markers = pub.execute("SELECT dataset_id,content_version,row_count FROM series_dataset_publication ORDER BY dataset_id").fetchall()
             reference_marker = pub.execute("SELECT content_version,row_count FROM table_publication WHERE table_name='territory_reference'").fetchone()
-            for table in ("anchored_membership","period_detail_observation","observed_collection_category",
+            for table in ("observed_collection_comparison_territory","observed_collection_comparison_group",
+                          "observed_collection_comparison_publication","profile_comparison_territory",
+                          "profile_comparison_group","profile_comparison_publication",
+                          "anchored_membership","period_detail_observation","observed_collection_category",
                           "observed_collection_descriptor","observed_collection_publication"):
                 pub.execute(sql.SQL("DROP TABLE {}").format(sql.Identifier(table)))
-            for function in ("validate_observed_collection_write","validate_period_detail_observation",
+            for function in ("validate_observed_collection_comparison_write",
+                             "validate_observed_collection_comparison_publication",
+                             "validate_observed_collection_write","validate_period_detail_observation",
                              "validate_anchored_membership","validate_observed_collection_publication"):
                 pub.execute(sql.SQL("DROP FUNCTION {}()").format(sql.Identifier(function)))
             pub.execute((root / "api/migrations/018_observed_collections.sql").read_text(encoding="utf-8"))
+            pub.execute((root / "api/migrations/030_fixed_context_profile_collection_comparisons.sql").read_text(encoding="utf-8"))
             assert pub.execute("SELECT dataset_id,content_version,row_count FROM series_dataset_publication ORDER BY dataset_id").fetchall() == legacy_markers
             assert pub.execute("SELECT content_version,row_count FROM table_publication WHERE table_name='territory_reference'").fetchone() == reference_marker
             republished = subprocess.run(["Rscript","scripts/smoke-programme-postgres.R",schema,"--collections-only"],

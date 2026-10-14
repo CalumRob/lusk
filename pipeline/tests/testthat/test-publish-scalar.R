@@ -638,6 +638,14 @@ test_that("smoke schema cleanup is explicitly dependency ordered and restricted"
   expect_true(grepl("DROP SCHEMA IF EXISTS \"scalar_it_test\" RESTRICT", tail(sql, 1L), fixed=TRUE))
   expect_false(any(grepl("CASCADE", sql, fixed=TRUE)))
   expect_true(any(grepl('DROP TABLE IF EXISTS "scalar_it_test"."ordered_series" RESTRICT', serving_sql, fixed=TRUE)))
+  expect_true(any(grepl('DROP TABLE IF EXISTS "profile_it_test"."profile_comparison_territory" RESTRICT', profile_sql, fixed=TRUE)))
+  expect_true(any(grepl('DROP TABLE IF EXISTS "profile_it_test"."observed_collection_comparison_territory" RESTRICT', profile_sql, fixed=TRUE)))
+  expect_lt(which(grepl('"observed_collection_comparison_territory"', profile_sql, fixed=TRUE))[1L],
+    which(grepl('"observed_collection_category"', profile_sql, fixed=TRUE))[1L])
+  expect_lt(which(grepl('"profile_comparison_territory"', profile_sql, fixed=TRUE))[1L],
+    which(grepl('"profile_comparison_group"', profile_sql, fixed=TRUE))[1L])
+  expect_lt(which(grepl('"observed_collection_comparison_territory"', profile_sql, fixed=TRUE))[1L],
+    which(grepl('"observed_collection_comparison_group"', profile_sql, fixed=TRUE))[1L])
   expect_true(any(grepl('DROP TABLE IF EXISTS "scalar_it_test"."building_evidence_descriptor_source" RESTRICT', serving_sql, fixed=TRUE)))
   expect_lt(which(grepl('"scalar_observation_source"', serving_sql, fixed=TRUE))[1L],
             which(grepl('"scalar_observation"', serving_sql, fixed=TRUE))[1L])

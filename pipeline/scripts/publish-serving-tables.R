@@ -174,7 +174,8 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   }
   configuration_service_postgres() # fail before any upstream compute
   Sys.setenv(LUSK_PUBLISH_DB = "1")
-  targets::tar_make(names = "publie_tables_service", callr_function = NULL)
+  requested_targets <- serving_publication_target_names()
+  targets::tar_make(names = requested_targets, callr_function = NULL)
   failed <- targets::tar_errored()
   if (length(failed)) {
     stop("Targets publication failed: ", paste(failed, collapse = ", "),
