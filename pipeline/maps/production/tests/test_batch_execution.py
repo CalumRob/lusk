@@ -57,6 +57,7 @@ class BatchExecutionTests(unittest.TestCase):
             self.assertIn("worker-0.log", [p.name for p in root.glob("worker-*.log")])
             self.assertIn("worker-1.progress.json", writes)
             self.assertEqual(json.loads((root / "progress.json").read_text())["expected_webps"], 2)
+            self.assertIn("TOTAL 2/2 validated WebPs", (root / "run.log").read_text())
 
     def test_nonzero_child_fails_without_deleting_durable_worker_output(self):
         with tempfile.TemporaryDirectory() as directory:
