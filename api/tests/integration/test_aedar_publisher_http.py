@@ -65,6 +65,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         # Rehearse the actual additive migration against the disposable schema
         # as well as parsing the fresh-install DDL above.
         pub.execute((root / "api/migrations/028_aedar_territorial_aggregates.sql").read_text(encoding="utf-8"))
+        pub.execute((root / "api/migrations/032_aedar_fixed_comparisons.sql").read_text(encoding="utf-8"))
         assert re.fullmatch(r"[A-Za-z0-9_$-]+",read_role)
         pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{read_role}"')
         pub.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO "{read_role}"')
@@ -72,7 +73,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
           ('22001','commune','Fixture commune'),('200000001','epci','Fixture EPCI'),
           ('22','departement','Fixture département'),('53','region','Fixture région'),
           ('mob-1','commune','Mobility unchanged')""")
-        pub.execute("UPDATE territory_reference SET density_class_code='fixture-density',density_class_label='Fixture density' WHERE territory_id='mob-1'")
+        pub.execute("UPDATE territory_reference SET density_class_code='fixture-density',density_class_label='Fixture density',epci_id='200000001' WHERE territory_type='commune'")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',5)")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('essential_service_access','mobility-access-v1',3,'fixture-ref-v1')")
         pub.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES(true,'communes-bretagne','Fixture communes')")
@@ -119,6 +120,7 @@ inputs <- list(
   epci=make('epci','epci_code','200000001','nom_epci','Fixture EPCI'),
   departement=make('departement','code_departement','22','nom_departement','Fixture département'),
   region=make('region','code_region','53','nom_region','Fixture région'))
+inputs$commune <- rbind(inputs$commune,make('commune','code_insee','mob-1','nom_commune','Mobility unchanged'))
 i <- seq_len(nrow(source_axis))
 metadata <- data.frame(TYPEQU=source_axis$TYPEQU,LIB_TYPEQU=source_axis$LIB_TYPEQU,description=paste('Description',i),
   domain_code=paste0('D',((i-1L) %% 7L)+1L),domain_label=paste('Domain',((i-1L) %% 7L)+1L),
@@ -135,7 +137,7 @@ on.exit(DBI::dbDisconnect(con))
 DBI::dbExecute(con,sprintf('SET search_path TO "%s"',schema))
 first <- publish_aedar_aggregates(projection,con)
 second <- publish_aedar_aggregates(projection,con)
-stopifnot(first$changed,!second$changed,first$row_count==4L * nrow(source_axis))
+stopifnot(first$changed,!second$changed,first$row_count==5L * nrow(source_axis))
 before <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced rollback'; END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_insert BEFORE INSERT ON aedar_territorial_aggregate FOR EACH ROW EXECUTE FUNCTION reject_aedar_insert()")
@@ -144,7 +146,30 @@ failed <- tryCatch({publish_aedar_aggregates(projection,con); FALSE},error=funct
 DBI::dbExecute(con,"DROP TRIGGER reject_aedar_insert ON aedar_territorial_aggregate")
 DBI::dbExecute(con,"DROP FUNCTION reject_aedar_insert()")
 after <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
-stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_territorial_aggregate")$n[[1]]==4L * nrow(source_axis))
+stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_territorial_aggregate")$n[[1]]==5L * nrow(source_axis))
+projection <- read_aedar_canonical(canonical_dir)
+refs <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference WHERE territory_type IN ('commune','epci','departement','region')")
+origins <- data.frame(address_id=c('fixture-a','fixture-b'),commune='22001')
+mode_facts <- stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode) {
+  x <- as.data.frame(as.list(stats::setNames(rep(1,4),AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]])))
+  x$address_id <- 'fixture-a'; x$TYPEQU <- 'A104'; x
+}),AEDAR_ADDRESS_SOURCE_MODES)
+comparison <- project_aedar_comparison_publication(projection,origins,mode_facts,refs,
+  aedar_content_version=before,reference_content_version='fixture-ref-v1',
+  input_hashes=c(address_origins='fixture',address_modes='fixture'))
+canonical_comparison <- tempfile('aedar-comparison-canonical-')
+write_aedar_comparison_canonical(comparison,canonical_comparison)
+comparison <- read_aedar_comparison_canonical(canonical_comparison)
+published <- publish_aedar_comparisons(comparison,con)
+stopifnot(published$changed,nrow(comparison$groups)>0,nrow(comparison$territories)>0)
+comparison_before <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
+DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_comparison_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced comparison rollback'; END $$")
+DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_comparison_insert BEFORE INSERT ON aedar_comparison_territory FOR EACH ROW EXECUTE FUNCTION reject_aedar_comparison_insert()")
+comparison_failed <- tryCatch({publish_aedar_comparisons(comparison,con); FALSE},error=function(e) TRUE)
+DBI::dbExecute(con,"DROP TRIGGER reject_aedar_comparison_insert ON aedar_comparison_territory")
+DBI::dbExecute(con,"DROP FUNCTION reject_aedar_comparison_insert()")
+comparison_after <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
+stopifnot(comparison_failed,identical(comparison_before,comparison_after))
 '''
         with tempfile.TemporaryDirectory(prefix="aedar-it-",dir="E:/Temp/opencode") as tmp:
             script = Path(tmp) / "fixture.R"; script.write_text(rscript,encoding="utf-8")
@@ -188,6 +213,20 @@ stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n 
                     assert resp.json()["content_version"]
                     assert resp.json()["reference_content_version"] == "fixture-ref-v1"
                 assert client.get("/api/aedar/territories/region/53/aggregates?limit=101").status_code == 422
+                comparison=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+                assert comparison.status_code==200,comparison.text
+                compared=comparison.json()
+                assert compared["source_snapshot_id"]=="2026-v1"
+                assert compared["input_content_version"]
+                assert compared["input_identity"]["address_origins"]=="fixture"
+                assert compared["comparison"]["rank"]==1
+                assert compared["comparison"]["rank_size"]==2
+                assert compared["comparison"]["n_addresses"]==2
+                assert "rank_ties" not in compared["comparison"]
+                pub.execute("UPDATE table_publication SET content_version='fixture-ref-stale' WHERE table_name='territory_reference'")
+                stale=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+                assert stale.status_code==503
+                pub.execute("UPDATE table_publication SET content_version='fixture-ref-v1' WHERE table_name='territory_reference'")
                 mobility_after=client.get(mobility_url)
                 assert mobility_after.status_code == 200, mobility_after.text
                 assert mobility_after.json() == mobility_before.json()

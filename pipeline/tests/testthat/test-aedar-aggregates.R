@@ -63,14 +63,20 @@ test_that("density cohort pools distinct address facts and fills sparse zeros ac
   membership <- data.frame(territory_id="1", member_commune=c("1", "2"),
     territory_type="commune", context="densite", stringsAsFactors=FALSE)
   facts <- data.frame(address_id=c("a", "a", "b"), TYPEQU=c("A104", "A104", "A104"),
-    count_5_walk=c(1, 2, 4), stringsAsFactors=FALSE)
+    count_5_walk=c(1, 2, 4), count_5_transit_gain_p1=c(-1,3,0), stringsAsFactors=FALSE)
   facts <- facts[!duplicated(facts[c("address_id", "TYPEQU")]), , drop=FALSE]
   result <- project_aedar_density_comparisons(spine, facts, membership, axis,
-    measures="count_5_walk")
+    measures=c("count_5_walk","count_5_transit_gain"))
   row <- result[result$TYPEQU == "A104", ]
   expect_equal(row$n_addresses, 3)
   expect_equal(row$count_5_walk_mean, 5/3)
   expect_equal(row$count_5_walk_share, 2/3)
+  expect_equal(row$count_5_walk_min,0)
+  expect_equal(row$count_5_walk_max,4)
+  expect_equal(row$count_5_walk_decile1,.2)
+  expect_equal(row$count_5_walk_decile9,3.4)
+  expect_equal(row$count_5_transit_gain_share,1/3)
+  expect_equal(row$count_5_transit_gain_mean,-1/3)
   expect_equal(row$n_observed, 2)
   expect_equal(nrow(result), nrow(axis))
   expect_true(all(result$count_5_walk_mean[result$TYPEQU != "A104"] == 0))
@@ -85,6 +91,127 @@ test_that("density cohort without address origins is uncovered and null", {
     axis, measures="count_5_walk")
   expect_true(all(result$coverage_status == "uncovered_no_address_origins"))
   expect_true(all(is.na(result$count_5_walk_mean)))
+})
+
+test_that("AEDAR observed key union excludes derived transit_gain rows and deduplicates", {
+  modes<-list(walk=data.frame(address_id=c("a","a"),TYPEQU=c("A104","A104")),
+    transit=data.frame(address_id="b",TYPEQU="A104"),
+    transit_gain=data.frame(address_id="c",TYPEQU="A104"))
+  expect_equal(aedar_observed_address_type_keys(modes),
+    data.frame(address_id=c("a","b"),TYPEQU=c("A104","A104")))
+})
+
+test_that("AEDAR sparse mode tables combine by address/TYPEQU without losing source count fields", {
+  modes<-stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode) {
+    x<-as.data.frame(as.list(stats::setNames(rep(1,4),AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]])))
+    x$code_insee<-"22001"; x$cle_interop_adr<-"a"; x$TYPEQU<-"A104"; x
+  }),AEDAR_ADDRESS_SOURCE_MODES)
+  combined<-combine_aedar_address_mode_facts(modes)
+  expect_equal(nrow(combined),1)
+  expect_true(all(unlist(AEDAR_ADDRESS_SOURCE_COLUMNS)%in%names(combined)))
+  expect_equal(combined$address_id,aedar_address_identity("22001","a"))
+  expect_equal(nrow(aedar_observed_address_type_keys(modes)),1)
+})
+
+test_that("AEDAR comparison inputs load registered sparse modes and configured origin spine", {
+  dir <- tempfile("aedar-address-inputs-"); dir.create(dir)
+  modes <- stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES, function(mode) {
+    x <- as.data.frame(as.list(stats::setNames(rep(1,4), AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]])))
+    x$code_insee <- "22001"; x$cle_interop_adr <- "addr-1"; x$TYPEQU <- "A104"; x
+  }), AEDAR_ADDRESS_SOURCE_MODES)
+  paths <- stats::setNames(vapply(names(modes), function(mode) {
+    path <- file.path(dir,paste0(mode,".parquet")); nanoparquet::write_parquet(modes[[mode]],path); path
+  }, character(1)), names(modes))
+  spine_path <- file.path(dir,"origins.parquet")
+  nanoparquet::write_parquet(data.frame(address_id="addr-1",code_insee="22001",lon=1,lat=2),spine_path)
+  loaded <- read_aedar_comparison_inputs(paths,spine_path,verify_hashes=FALSE)
+  expect_equal(nrow(loaded$address_origins),1)
+  expect_equal(loaded$address_origins$commune,"22001")
+  expect_equal(nrow(loaded$address_facts),1)
+  expect_true(nzchar(loaded$input_content_version))
+  expect_true(identical(loaded$source_snapshot_id,"2026-v1"))
+  expect_equal(loaded$address_facts$count_5_transit_p1,1)
+  expect_equal(loaded$address_facts$count_5_transit_gain_p1,1)
+  identity_before<-loaded$input_content_version
+  changed<-modes$walk; changed$count_5_walk<-2
+  nanoparquet::write_parquet(changed,paths[["walk"]])
+  expect_false(identical(read_aedar_comparison_inputs(paths,spine_path,verify_hashes=FALSE)$input_content_version,identity_before))
+  duplicate_spine<-file.path(dir,"duplicate-origins.parquet")
+  nanoparquet::write_parquet(rbind(data.frame(address_id="addr-1",code_insee="22001",lon=1,lat=2),
+    data.frame(address_id="addr-1",code_insee="22001",lon=1,lat=2)),duplicate_spine)
+  expect_error(read_aedar_comparison_inputs(paths,duplicate_spine,verify_hashes=FALSE),"unique identity contract")
+  expect_error(read_aedar_comparison_inputs(paths,file.path(dir,"missing.parquet"),verify_hashes=FALSE),
+    "complete address-origin Parquet")
+  missing_mode<-paths[-1]
+  expect_error(read_aedar_comparison_inputs(missing_mode,spine_path,verify_hashes=FALSE),
+    "All six registered")
+})
+
+test_that("AEDAR density projection covers all 235 TYPEQU and all 312 measure results", {
+  address_origins<-data.frame(address_id=c("a","b"),commune=c("1","2"),stringsAsFactors=FALSE)
+  membership<-data.frame(territory_type="commune",territory_id="1",member_commune=c("1","2"),context="densite")
+  mode_facts<-stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode) {
+    fields<-AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]]
+    x<-as.data.frame(as.list(stats::setNames(rep(1,length(fields)),fields)))
+    x$address_id<-"a"; x$TYPEQU<-"A104"; x
+  }),AEDAR_ADDRESS_SOURCE_MODES)
+  facts<-combine_aedar_address_mode_facts(mode_facts)
+  result<-project_aedar_density_comparisons(address_origins,facts,membership,
+    read_aedar_region_typequ_fixture(),observed_keys=aedar_observed_address_type_keys(mode_facts))
+  expect_equal(nrow(result),AEDAR_TYPEQU_REGISTRY_COUNT)
+  expect_setequal(grep("^count_",names(result),value=TRUE),AEDAR_AGGREGATE_MEASURES)
+  expect_true(all(result$n_addresses==2))
+  row<-result[result$TYPEQU=="A104",]
+  expect_equal(row$count_5_walk_mean,0.5)
+  expect_equal(row$count_5_walk_share,0.5)
+})
+
+test_that("AEDAR fixed ranks use eligible peers, competition ties, and higher-is-better", {
+  measures<-AEDAR_AGGREGATE_MEASURES; ids<-c(as.character(1:4),"E1","E2","22","53")
+  types<-c(rep("commune",4),"epci","epci","departement","region")
+  facts<-as.data.frame(matrix(0,nrow=length(ids),ncol=length(measures),dimnames=list(NULL,measures)))
+  facts$territory_id<-ids; facts$territory_type<-types; facts$TYPEQU<-"A104"
+  facts$n_addresses<-1; facts$n_observed<-1; facts$coverage_status<-"covered"
+  facts$count_5_walk_mean[1:4]<-c(9,9,5,NA_real_); facts$count_5_walk_mean[5:6]<-c(8,4)
+  refs <- data.frame(territory_type=types, territory_id=ids,
+    epci_id=c("E1","E1","E2","E2",NA,NA,NA,NA),
+    density_class_code=c("1","1","1","1",NA,NA,NA,NA), stringsAsFactors=FALSE)
+  density<-as.data.frame(matrix(7,nrow=1,ncol=length(measures),dimnames=list(NULL,measures)))
+  density$territory_id<-"1"; density$TYPEQU<-"A104"; density$n_addresses<-12; density$n_observed<-9; density$coverage_status<-"covered"
+  result <- project_aedar_fixed_comparisons(facts, refs, "aedar-v1", "ref-v1",density)
+  peer <- subset(result$territories, comparison_context=="epci" & group_id=="E1" & measure=="count_5_walk_mean")
+  expect_equal(peer$rank, c(1L,1L))
+  expect_equal(peer$rank_size, c(2L,2L))
+  density_ranks<-subset(result$territories,comparison_context=="density_class"&measure=="count_5_walk_mean"&territory_id%in%c("1","2","3"))
+  expect_equal(density_ranks$rank,c(1L,1L,3L))
+  expect_true(all(density_ranks$rank_size==3L))
+  same_level_ranks<-subset(result$territories,comparison_context=="same_level"&territory_type=="epci"&measure=="count_5_walk_mean")
+  expect_equal(same_level_ranks$rank,c(1L,2L))
+  expect_equal(same_level_ranks$rank_size,c(2L,2L))
+  expect_equal(subset(result$groups,comparison_context=="epci"&group_id=="E1"&measure=="count_5_walk_mean")$value,8)
+  expect_equal(subset(result$groups,comparison_context=="same_level"&territory_type=="epci"&measure=="count_5_walk_mean")$value,6)
+  expect_equal(subset(result$groups,comparison_context=="density_class"&measure=="count_5_walk_mean")$value,7)
+  expect_equal(subset(result$groups,comparison_context=="bretagne"&measure=="count_5_walk_mean")$value,0)
+  expect_false("rank_ties" %in% names(result$territories))
+  expect_true(all(c("density_class","epci","bretagne","same_level") %in% result$groups$comparison_context))
+  expect_setequal(unique(result$groups$territory_type[result$groups$comparison_context=="same_level"]),c("epci","departement"))
+  expect_setequal(unique(result$groups$measure),AEDAR_AGGREGATE_MEASURES)
+  expect_true(validate_aedar_comparison_membership(result,refs))
+  stale_refs<-refs; stale_refs$density_class_code[stale_refs$territory_id=="1"]<-"changed"
+  expect_error(validate_aedar_comparison_membership(result,stale_refs),"contexts/groups differ")
+  dir<-tempfile("aedar-comparison-roundtrip-")
+  write_aedar_comparison_canonical(result,dir)
+  restored<-read_aedar_comparison_canonical(dir)
+  expect_equal(restored$groups,result$groups)
+  expect_equal(restored$territories,result$territories)
+  expect_identical(restored$content_version,result$content_version)
+  tampered<-result; tampered$input_identity<-'{"address_origins":"different"}'
+  tampered$groups$input_identity<-tampered$input_identity; tampered$territories$input_identity<-tampered$input_identity
+  expect_error(validate_aedar_comparison_projection(tampered),"content version|provenance hash")
+  before<-tools::md5sum(file.path(dir,c("aedar_comparison_groups.parquet","aedar_comparison_territories.parquet")))
+  invalid<-result; invalid$territories$rank[1]<-NA_integer_
+  expect_error(write_aedar_comparison_canonical(invalid,dir),"Invalid AEDAR comparison rank contract")
+  expect_identical(unname(tools::md5sum(file.path(dir,c("aedar_comparison_groups.parquet","aedar_comparison_territories.parquet")))),unname(before))
 })
 
 test_that("the pinned TYPEQU registry matches the producer region aggregate", {
@@ -191,6 +318,11 @@ test_that("AEDAR operator publish reads the validated canonical Parquets", {
   expect_match(script,"write_aedar_canonical\\(projection,canonical_dir\\)")
   expect_match(script,"projection <- read_aedar_canonical\\(canonical_dir\\)")
   expect_match(script,"publish_aedar_aggregates\\(projection,con\\)")
+  expect_match(script,"read_aedar_comparison_canonical\\(canonical_dir\\)")
+  expect_match(script,"read_aedar_comparison_inputs\\(mode_paths=address_resource_paths")
+  expect_match(script,"project_aedar_comparison_publication\\(")
+  expect_match(script,"write_aedar_comparison_canonical\\(comparison_projection,canonical_dir\\)")
+  expect_match(script,"publish_aedar_comparisons\\(comparison_projection,con\\)")
   expect_gt(regexpr("write_aedar_canonical\\(projection,canonical_dir\\)",script)[[1]],0)
   expect_gt(regexpr("projection <- read_aedar_canonical\\(canonical_dir\\)",script)[[1]],0)
   expect_match(script,"Canonical AEDAR Parquets are missing; run --check first")

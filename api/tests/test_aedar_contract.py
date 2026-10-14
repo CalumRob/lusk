@@ -1,3 +1,7 @@
+import inspect
+from pathlib import Path
+
+from api import main
 from api.main import app
 
 
@@ -11,6 +15,27 @@ def test_aedar_reader_is_named_typed_and_bounded():
     assert "LIMIT %s OFFSET %s" in sql
     assert "typequ=ANY(%s)" in sql
     assert "aedar_territorial_aggregate" in sql
+
+
+def test_aedar_fixed_comparison_read_is_bounded_and_fails_closed_on_stale_dependencies():
+    route = next(route for route in main.app.routes if getattr(route, "path", "") ==
+        "/api/aedar/territories/{territory_type}/{territory_id}/comparisons")
+    assert route.endpoint.__name__ == "aedar_fixed_comparisons"
+    source = inspect.getsource(route.endpoint)
+    assert "aedar_content_version" in source
+    assert "reference_content_version" in source
+    assert "aedar_comparison_territory" in source
+    assert "Query(min_length=1, max_length=64)" in source
+    assert "rank_ties" not in source
+    schema = (Path(__file__).resolve().parents[1] / "schema.sql").read_text(encoding="utf-8")
+    migration = (Path(__file__).resolve().parents[1] / "migrations" / "032_aedar_fixed_comparisons.sql").read_text(encoding="utf-8")
+    for table in ("aedar_comparison_publication", "aedar_comparison_group", "aedar_comparison_territory"):
+        assert f"CREATE TABLE {table}" in schema
+        assert f"CREATE TABLE IF NOT EXISTS {table}" in migration
+    assert "rank_ties" not in schema
+    assert "source_snapshot_id='2026-v1'" in migration
+    assert "input_content_version text NOT NULL" in migration
+    assert "input_identity jsonb NOT NULL" in migration
     assert "sql" not in route.endpoint.__annotations__
 
 
@@ -152,3 +177,46 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
         assert body["content_version"] == "aedar-v1"
         assert body["reference_content_version"] == "ref-v1"
         assert body["facts"][0]["attribution"] == "© OpenStreetMap contributors; données AEDAR — licence ODbL"
+
+
+def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monkeypatch):
+    from contextlib import contextmanager
+    from fastapi.testclient import TestClient
+    import api.main as main
+    state={"stale":False}
+
+    class Cursor:
+        description = [type("Column", (), {"name": n}) for n in
+            ("comparison_context","group_id","territory_type","typequ",
+             "typequ_label","source_id","vintage_id","source_url","licence","attribution","reference_date","publication_date",
+             "measure","statistic","group_value","group_n_addresses","group_n_observed","group_coverage_status",
+             "member_count","eligible_count","missing_count","value","status","n_addresses","n_observed","coverage_status","rank","rank_size")]
+        def __init__(self, row): self.row=row
+        def fetchone(self): return self.row
+    class Connection:
+        def execute(self, sql, *_args, **_kwargs):
+            if "aedar_comparison_publication" in sql:
+                return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,8,"old-aedar" if state["stale"] else "aed-v1","ref-v1")})()
+            if "FROM territory_reference" in sql:
+                return type("Territory",(),{"fetchone":lambda self:(1,)})()
+            return Cursor(("epci","E1","commune","A104","Fixture","aedar_bretagne","2026-v1","https://example.test","ODbL","AEDAR",None,"2026-09-30","count_5_walk_mean","median",4.0,None,None,None,2,2,0,5.0,"measured",10,8,"covered",1,2))
+        @contextmanager
+        def transaction(self): yield self
+    class FakePool:
+        @contextmanager
+        def connection(self): yield Connection()
+    monkeypatch.setattr(main,"pool",lambda:FakePool())
+    response=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+    assert response.status_code==200
+    body=response.json()
+    assert body["content_version"]=="cmp-v1"
+    assert body["source_snapshot_id"]=="2026-v1"
+    assert body["aedar_content_version"]=="aed-v1"
+    assert body["reference_content_version"]=="ref-v1"
+    assert body["input_content_version"]=="inputs-v1"
+    assert body["comparison"]["rank"]==1
+    assert body["comparison"]["rank_size"]==2
+    assert "rank_ties" not in body["comparison"]
+    state["stale"]=True
+    stale=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+    assert stale.status_code==503
