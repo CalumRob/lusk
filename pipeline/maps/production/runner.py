@@ -172,6 +172,11 @@ def _stable_identity(value):
         ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
 
 
+def _runner_identity():
+    """Bind shared runner implementation changes into every render plan."""
+    return sha256(Path(__file__).read_bytes()).hexdigest()
+
+
 def full_batch_admission(recipe, binding, requested_profiles, adapter, approval, output_dir,
                          *, worker_count=None):
     """Run the canonical full-run admission gate and capture its bound identities.
@@ -318,6 +323,7 @@ def _effective_identity_for(recipe, adapter, renderer_identity, feature, profile
     geometry_hashes = geometry_hashes if geometry_hashes is not None else {}
     feature = _feature_for_profile(feature, profile)
     contract = {"input": _profile_input_sha256(feature, profile, geometry_hashes),
+        "shared_runner": _runner_identity(),
         "recipe": {"name": recipe.name, "version": recipe.version,
             "family": recipe.family, "foundation": _profile_foundation(recipe, profile),
             "shared_foundation": {"framing": recipe.foundation.framing,
@@ -342,6 +348,7 @@ def _render_identity(recipe: Recipe, scope: str, profiles: Sequence[str],
     if not isinstance(authoritative_inputs, Mapping):
         raise ValueError("family adapter must provide authoritative input identities")
     contract = {
+        "shared_runner": _runner_identity(),
         "recipe": {
             "name": recipe.name,
             "version": recipe.version,
@@ -666,6 +673,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                             "seconds": round(perf_counter() - profile_input_started, 6)})
                         profile_contract_started = perf_counter()
                         effective_contract = {"input": profile_input_sha256,
+                            "shared_runner": _runner_identity(),
                             "recipe": {"name": recipe.name, "version": recipe.version,
                                 "family": recipe.family, "foundation": _profile_foundation(recipe, profile),
                                 "shared_foundation": {"framing": recipe.foundation.framing,
@@ -768,13 +776,13 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                             observe_hook(feature)
                         output_sha256 = sha256(path.read_bytes()).hexdigest()
                         inline_legend_metadata = None
-                        if recipe.family == "aedar" and name == "inline":
-                            from aedar_legend import inline_legend
-                            from aedar_map_plan import family_config
-                            cfg = family_config()
-                            image_key = cfg["prefix"] + path.name
-                            inline_legend_metadata = inline_legend(
-                                feature, image_key, output_sha256, path.stat().st_size)
+                        # Metadata is an opt-in family capability: historical
+                        # AEDAR recipes do not necessarily carry selected scale
+                        # semantics, even though they share the family label.
+                        metadata_hook = getattr(adapter, "inline_legend_metadata", None)
+                        if name == "inline" and callable(metadata_hook):
+                            inline_legend_metadata = metadata_hook(
+                                feature, path, output_sha256)
                         cache_entry = {"path": str(path), "effective_identity": effective_identity,
                             "output_sha256": output_sha256, "artifact_contract": artifact_contract}
                         next_cached_outputs[key] = cache_entry

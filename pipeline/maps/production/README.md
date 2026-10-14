@@ -31,6 +31,18 @@ they do not override this selected shared-family contract.
   the exact unrounded boundaries. Missing-address territories are skipped and reported,
   never given fabricated zeros/ranges.
 
+### Cartographic ownership seam
+
+`runner.py` owns shared execution mechanics and hashes its implementation into
+render/plan identities. It consumes map-ready inputs and adapter capabilities;
+it does not infer evidence semantics from a broad family label. Selected AEDAR
+inline legend metadata is declared by `AedarStaticAdapter`, whose selected
+facts include the scale contract. Historical AEDAR car/exploration adapters
+remain valid native callers but do not claim that capability; their evidence
+is not rewritten to satisfy the selected sidecar schema. Shared map framing,
+profile behavior and furniture mechanics remain foundation policy, while
+family recipes/adapters own thematic marks, scales and semantic content.
+
 ### Future generation (do not rerender just to stage the completed export)
 
 ```powershell

@@ -355,6 +355,13 @@ class AedarStaticAdapter(AedarCarAdapter):
                 "selected_scale": feature["_scale"] if feature else None,
                 "regional_mean": feature["regional_mean"] if feature else None}
 
+    @staticmethod
+    def inline_legend_metadata(feature, path, output_sha256):
+        """Describe selected inline evidence; historical adapters opt out."""
+        from aedar_legend import inline_legend
+        image_key = FAMILY_CONFIG["prefix"] + Path(path).name
+        return inline_legend(feature, image_key, output_sha256, Path(path).stat().st_size)
+
     def drain_stage_report(self):
         report = [*super().drain_stage_report(), *self._static_report]
         self._static_report.clear()

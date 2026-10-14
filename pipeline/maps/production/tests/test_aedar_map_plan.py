@@ -26,6 +26,13 @@ class IndexedFacts:
 
 
 class AedarMapPlanTests(unittest.TestCase):
+    def test_only_selected_static_adapter_declares_inline_legend_metadata(self):
+        from aedar_static import AedarStaticAdapter
+        from aedar_car import AedarCarAdapter
+
+        self.assertTrue(callable(getattr(AedarStaticAdapter, "inline_legend_metadata", None)))
+        self.assertFalse(callable(getattr(AedarCarAdapter, "inline_legend_metadata", None)))
+
     def test_binding_uses_config_modes_and_fact_index_for_pooled_loss_bounds(self):
         config = family_config()
         base = {"territory": {"kind": "region", "code": "53", "name": "Bretagne"},
