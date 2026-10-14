@@ -98,6 +98,14 @@ class AEDARFactResponse(BaseModel):
     territory_type: Literal["commune", "epci", "departement", "region"]
     typequ: str
     typequ_label: str
+    typequ_hierarchy_label: str
+    typequ_domain_code: str
+    typequ_domain_label: str
+    typequ_subdomain_code: str
+    typequ_subdomain_label: str
+    typequ_gamme: str | None
+    typequ_gamme_status: Literal["classified", "hors_gamme", "absent"]
+    typequ_source_order: int = Field(ge=1, le=235)
     identity: dict[str, str | None]
     n_addresses: int = Field(ge=0)
     n_observed: int = Field(ge=0)
@@ -4142,7 +4150,9 @@ def aedar_territorial_aggregates(
                                      (territory_type,territory_id)).fetchone()
             if not supported:
                 raise HTTPException(404,"Unknown territory type/id")
-            cursor = conn.execute("""SELECT territory_id,territory_type,typequ,typequ_label,identity,
+            cursor = conn.execute("""SELECT territory_id,territory_type,typequ,typequ_label,typequ_hierarchy_label,
+              typequ_domain_code,typequ_domain_label,typequ_subdomain_code,typequ_subdomain_label,
+              typequ_gamme,typequ_gamme_status,typequ_source_order,identity,
               n_addresses,n_observed,coverage_status,measures,source_id,vintage_id,source_url,licence,attribution,
               reference_date,publication_date
               FROM aedar_territorial_aggregate
@@ -4151,6 +4161,10 @@ def aedar_territorial_aggregates(
               (territory_type,territory_id,typequ,typequ,limit,offset))
             names = [d.name for d in cursor.description]
             rows = [dict(zip(names,row)) for row in cursor.fetchall()]
+            required_typequ_metadata = ("typequ_hierarchy_label","typequ_domain_code","typequ_domain_label",
+                "typequ_subdomain_code","typequ_subdomain_label","typequ_gamme_status","typequ_source_order")
+            if any(any(row[key] is None for key in required_typequ_metadata) for row in rows):
+                raise HTTPException(503,"AEDAR TYPEQU metadata publication is incomplete")
     return {"territory":{"territory_type":territory_type,"territory_id":territory_id},
       "content_version":marker[0],"reference_content_version":marker[2],"limit":limit,"offset":offset,
       "facts":rows}

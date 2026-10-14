@@ -15,6 +15,169 @@ AEDAR_TYPEQU_REGISTRY_COUNT <- 235L
 # Minimal code/label extract of the official INSEE TYPEQU_2025.csv. Upstream
 # SHA-256: 5598b5939f6491e266276934c5526e442f773921d9baddb3873077cd2bce360e.
 AEDAR_TYPEQU_REGISTRY_SHA256 <- "97e7b10f4cae822d765e594ac74daa54062cd03f52f84c86f5a541d07576a915"
+AEDAR_TYPEQU_HIERARCHY_URL <- "https://www.insee.fr/fr/metadonnees/source/fichier/BPE25_liste_hierarchisee_TYPEQU.html"
+AEDAR_TYPEQU_GAMME_URL <- "https://www.insee.fr/fr/statistiques/fichier/8217535/BPE_gammes_equipements_2025.xlsx"
+AEDAR_TYPEQU_GAMME_SHEET <- "Gammes 2025 1 ligne 1 Typequ"
+
+normalize_aedar_typequ_label_for_validation <- function(value) {
+  value <- trimws(as.character(value))
+  gsub("'","’",value,fixed=TRUE)
+}
+
+# Validate the two official metadata extracts against the pinned 2025 code/label
+# registry. Keeping these as separate source-shaped inputs makes it impossible
+# to accidentally join the regroupement code instead of individual TYPEQU.
+validate_aedar_typequ_metadata <- function(registry, hierarchy, gamme) {
+  if (!is.data.frame(hierarchy) || !all(c("TYPEQU","label","domain_code","domain_label",
+      "subdomain_code","subdomain_label","source_order") %in% names(hierarchy)) ||
+      !is.data.frame(gamme) || !all(c("TYPEQU","LIBELLE_TYPEQU","GAMME") %in% names(gamme)))
+    stop("AEDAR TYPEQU metadata inputs are missing required fields",call.=FALSE)
+  if (nrow(hierarchy)!=AEDAR_TYPEQU_REGISTRY_COUNT || anyDuplicated(hierarchy$TYPEQU) ||
+      !setequal(hierarchy$TYPEQU,registry$TYPEQU))
+    stop("AEDAR hierarchy must contain exactly one row for every TYPEQU",call.=FALSE)
+  if (nrow(gamme)!=AEDAR_TYPEQU_REGISTRY_COUNT || anyDuplicated(gamme$TYPEQU) ||
+      !setequal(gamme$TYPEQU,registry$TYPEQU))
+    stop("AEDAR gamme must contain exactly one row for every TYPEQU",call.=FALSE)
+  if (length(unique(hierarchy$domain_code))!=7L ||
+      length(unique(paste(hierarchy$domain_code,hierarchy$subdomain_code,sep="\r")))!=27L)
+    stop("AEDAR hierarchy must contain exactly 7 domains and 27 subdomains",call.=FALSE)
+  expected <- registry$LIB_TYPEQU[match(hierarchy$TYPEQU,registry$TYPEQU)]
+  if (anyNA(hierarchy$label) || any(normalize_aedar_typequ_label_for_validation(hierarchy$label)!=
+      normalize_aedar_typequ_label_for_validation(expected)))
+    stop("AEDAR hierarchy TYPEQU label does not agree with the canonical registry",call.=FALSE)
+  expected_gamme <- registry$LIB_TYPEQU[match(gamme$TYPEQU,registry$TYPEQU)]
+  if (anyNA(gamme$LIBELLE_TYPEQU) || any(normalize_aedar_typequ_label_for_validation(gamme$LIBELLE_TYPEQU)!=
+      normalize_aedar_typequ_label_for_validation(expected_gamme)))
+    stop("AEDAR gamme TYPEQU label does not agree with the canonical registry",call.=FALSE)
+  if (anyNA(hierarchy[c("domain_code","domain_label","subdomain_code","subdomain_label","source_order")]) ||
+      anyDuplicated(hierarchy$source_order) || any(!is.finite(hierarchy$source_order)) ||
+      !identical(sort(as.integer(hierarchy$source_order)),seq_len(AEDAR_TYPEQU_REGISTRY_COUNT)))
+    stop("AEDAR hierarchy ordering and parent labels must be complete",call.=FALSE)
+  domains <- unique(hierarchy[c("domain_code","domain_label")])
+  subdomains <- unique(hierarchy[c("domain_code","domain_label","subdomain_code","subdomain_label")])
+  if (anyDuplicated(domains$domain_code) || anyDuplicated(subdomains[c("domain_code","subdomain_code")]) ||
+      nrow(domains)!=7L || nrow(subdomains)!=27L)
+    stop("AEDAR hierarchy codes must map consistently to 7 domains and 27 subdomains",call.=FALSE)
+  hierarchy <- hierarchy[order(hierarchy$source_order),,drop=FALSE]
+  joined <- merge(hierarchy,gamme[,c("TYPEQU","GAMME"),drop=FALSE],by="TYPEQU",sort=FALSE)
+  joined <- joined[match(hierarchy$TYPEQU,joined$TYPEQU),,drop=FALSE]
+  joined$gamme_status <- ifelse(is.na(joined$GAMME),"absent",
+    ifelse(trimws(joined$GAMME)=="Hors Gamme","hors_gamme","classified"))
+  names(joined)[names(joined)=="label"] <- "LIB_TYPEQU"
+  joined <- joined[,c("TYPEQU","LIB_TYPEQU","domain_code","domain_label","subdomain_code",
+    "subdomain_label","GAMME","gamme_status","source_order"),drop=FALSE]
+  rownames(joined) <- NULL
+  joined
+}
+
+read_aedar_typequ_metadata_sources <- function(hierarchy_path, gamme_path) {
+  if (!file.exists(hierarchy_path) || !file.exists(gamme_path))
+    stop("Official AEDAR TYPEQU metadata sources are missing",call.=FALSE)
+  html <- paste(readLines(hierarchy_path,warn=FALSE,encoding="UTF-8"),collapse="\n")
+  tr <- gregexpr("(?s)<tr\\b[^>]*>.*?</tr>",html,perl=TRUE,ignore.case=TRUE)
+  rows <- regmatches(html,tr)[[1L]]
+  text_cell <- function(x) {
+    x <- gsub("<[^>]*>"," ",x,perl=TRUE)
+    x <- gsub("&nbsp;"," ",x,fixed=TRUE)
+    x <- gsub("&amp;","&",x,fixed=TRUE)
+    x <- gsub("&quot;","\"",x,fixed=TRUE)
+    x <- gsub("&#39;|&apos;","'",x,perl=TRUE)
+    numeric <- gregexpr("&#(x[[:xdigit:]]+|[0-9]+);",x,perl=TRUE)
+    tokens <- regmatches(x,numeric)[[1L]]
+    for (token in tokens) {
+      codepoint <- sub("^&#(x[[:xdigit:]]+|[0-9]+);$","\\1",token,perl=TRUE)
+      value <- if(startsWith(codepoint,"x")) strtoi(sub("^x","",codepoint),16L) else as.integer(codepoint)
+      if(!is.na(value)) x <- sub(token,intToUtf8(value),x,fixed=TRUE)
+    }
+    trimws(gsub("[[:space:]]+"," ",x,perl=TRUE))
+  }
+  current_domain_code <- current_domain_label <- current_subdomain_code <- current_subdomain_label <- NA_character_
+  records <- vector("list",length(rows)); n <- 0L
+  for (row in rows) {
+    cell_matches <- gregexpr("(?s)<td[^>]*>.*?</td>",row,perl=TRUE,ignore.case=TRUE)
+    cells <- regmatches(row,cell_matches)[[1L]]
+    if(length(cells)<3L) next
+    attributes <- sub("(?s)^<td([^>]*)>.*$","\\1",cells[[1L]],perl=TRUE,ignore.case=TRUE)
+    level <- as.integer(sub(".*indentlevel=['\"]?([0-9]+)['\"]?.*","\\1",attributes,perl=TRUE))
+    if(is.na(level)) next
+    cell_value <- function(cell) text_cell(sub("(?s)^<td[^>]*>(.*)</td>$","\\1",cell,perl=TRUE,ignore.case=TRUE))
+    code <- cell_value(cells[[1L]]); label <- cell_value(cells[[2L]])
+    description <- cell_value(cells[[3L]])
+    if (level==1L) { current_domain_code <- code; current_domain_label <- label }
+    if (level==2L) { current_subdomain_code <- code; current_subdomain_label <- label }
+    if (level==3L) {
+      n <- n+1L
+      records[[n]] <- data.frame(TYPEQU=code,label=label,description=description,
+        domain_code=current_domain_code,domain_label=current_domain_label,
+        subdomain_code=current_subdomain_code,subdomain_label=current_subdomain_label,
+        source_order=n,stringsAsFactors=FALSE)
+    }
+  }
+  hierarchy <- if(n) do.call(rbind,records[seq_len(n)]) else data.frame()
+  gamme <- readxl::read_excel(gamme_path,sheet=AEDAR_TYPEQU_GAMME_SHEET,
+    col_types="text",skip=4,.name_repair="minimal")
+  required <- c("TYPEQU_REGROUPEMENT","TYPEQU","LIBELLE_TYPEQU","GAMME","SDOM",
+    "LIBELLE_SDOM","DOM","LIBELLE_DOM")
+  if (!all(required %in% names(gamme))) stop("Official AEDAR gamme sheet has an unexpected header",call.=FALSE)
+  if (nrow(gamme)!=AEDAR_TYPEQU_REGISTRY_COUNT || anyNA(gamme$TYPEQU) ||
+      any(!nzchar(gamme$TYPEQU)) || anyDuplicated(gamme$TYPEQU))
+    stop("Official AEDAR gamme sheet must contain exactly 235 unique individual TYPEQU rows",call.=FALSE)
+  # Deliberately retain individual TYPEQU and its label; the regroupement field
+  # is validated as present but is never used for the metadata join.
+  gamme <- as.data.frame(gamme[,required,drop=FALSE],stringsAsFactors=FALSE)
+  if (anyDuplicated(gamme$TYPEQU)) stop("Official AEDAR gamme sheet duplicates individual TYPEQU",call.=FALSE)
+  list(hierarchy=hierarchy,gamme=gamme)
+}
+
+validate_aedar_published_typequ_metadata <- function(metadata) {
+  required <- c("TYPEQU","LIB_TYPEQU","domain_code","domain_label","subdomain_code",
+    "subdomain_label","GAMME","gamme_status","source_order")
+  if (!is.data.frame(metadata) || !all(required %in% names(metadata)) || nrow(metadata)!=AEDAR_TYPEQU_REGISTRY_COUNT ||
+      anyDuplicated(metadata$TYPEQU) || anyDuplicated(metadata$source_order) ||
+      !setequal(metadata$TYPEQU,read_aedar_typequ_registry()$TYPEQU) ||
+      !identical(sort(as.integer(metadata$source_order)),seq_len(AEDAR_TYPEQU_REGISTRY_COUNT)))
+    stop("AEDAR publication TYPEQU metadata is incomplete or duplicated",call.=FALSE)
+  registry <- read_aedar_typequ_registry()
+  expected <- registry$LIB_TYPEQU[match(metadata$TYPEQU,registry$TYPEQU)]
+  if (anyNA(metadata$LIB_TYPEQU) || any(normalize_aedar_typequ_label_for_validation(metadata$LIB_TYPEQU)!=
+      normalize_aedar_typequ_label_for_validation(expected)))
+    stop("AEDAR publication TYPEQU label differs from the canonical registry",call.=FALSE)
+  if (anyNA(metadata[c("domain_code","domain_label","subdomain_code","subdomain_label","gamme_status")]) ||
+      any(!nzchar(trimws(metadata[c("LIB_TYPEQU","domain_code","domain_label","subdomain_code","subdomain_label")]))) ||
+      any(!metadata$gamme_status %in% c("classified","hors_gamme","absent")) ||
+      any((metadata$gamme_status=="absent") != is.na(metadata$GAMME)) ||
+      any((metadata$gamme_status=="hors_gamme") != (!is.na(metadata$GAMME) & trimws(metadata$GAMME)=="Hors Gamme")))
+    stop("AEDAR publication TYPEQU gamme state is inconsistent with its source value",call.=FALSE)
+  if (length(unique(metadata$domain_code))!=7L ||
+      length(unique(paste(metadata$domain_code,metadata$subdomain_code,sep="\r")))!=27L)
+    stop("AEDAR publication TYPEQU hierarchy must contain 7 domains and 27 subdomains",call.=FALSE)
+  domains <- unique(metadata[c("domain_code","domain_label")])
+  subdomains <- unique(metadata[c("domain_code","domain_label","subdomain_code","subdomain_label")])
+  if (anyDuplicated(domains$domain_code) || anyDuplicated(subdomains[c("domain_code","subdomain_code")]))
+    stop("AEDAR publication TYPEQU parent codes have conflicting labels",call.=FALSE)
+  metadata
+}
+
+download_aedar_typequ_metadata <- function(raw_dir=file.path("data","raw"),download=utils::download.file) {
+  dir.create(raw_dir,recursive=TRUE,showWarnings=FALSE)
+  resources <- data.frame(url=c(AEDAR_TYPEQU_HIERARCHY_URL,AEDAR_TYPEQU_GAMME_URL),
+    filename=c("BPE25_liste_hierarchisee_TYPEQU.html","BPE_gammes_equipements_2025.xlsx"),
+    stringsAsFactors=FALSE)
+  paths <- file.path(raw_dir,resources$filename)
+  for(i in seq_along(paths)) if(!file.exists(paths[[i]])) {
+    temp <- paste0(paths[[i]],".part")
+    on.exit(unlink(temp),add=TRUE)
+    download(resources$url[[i]],temp,mode="wb",quiet=TRUE)
+    if(!file.exists(temp) || file.info(temp)$size<1L) stop("Downloaded AEDAR metadata source is empty",call.=FALSE)
+    if(!file.rename(temp,paths[[i]])) stop("Could not atomically install AEDAR metadata source",call.=FALSE)
+  }
+  stats::setNames(paths,resources$filename)
+}
+
+project_aedar_typequ_metadata <- function(hierarchy_path,gamme_path,registry=read_aedar_typequ_registry()) {
+  sources <- read_aedar_typequ_metadata_sources(hierarchy_path,gamme_path)
+  validate_aedar_typequ_metadata(registry,sources$hierarchy,sources$gamme)
+}
 AEDAR_AGGREGATE_MEASURES <- as.vector(unlist(lapply(c(5,10,15,20), function(m)
   unlist(lapply(c("walk","transit","transit_gain","bike_lts2","bike_lts4","car"), function(mode)
     paste0("count_",m,"_",mode,"_",c("share","min","max",paste0("decile",1:9),"mean")))))))
@@ -155,9 +318,16 @@ validate_aedar_aggregates <- function(inputs, measure_columns=AEDAR_AGGREGATE_ME
   out
 }
 
-project_aedar_aggregates <- function(inputs) {
+project_aedar_aggregates <- function(inputs, typequ_metadata=NULL) {
   facts <- dplyr::bind_rows(validate_aedar_aggregates(inputs)); rownames(facts)<-NULL
-  list(facts=facts,measures=AEDAR_AGGREGATE_MEASURES,source=list(
+  if (!is.null(typequ_metadata)) typequ_metadata <- validate_aedar_published_typequ_metadata(typequ_metadata)
+  if (!is.null(typequ_metadata)) {
+    label_check <- typequ_metadata$LIB_TYPEQU[match(facts$TYPEQU,typequ_metadata$TYPEQU)]
+    if (anyNA(label_check) || any(normalize_aedar_typequ_label_for_validation(facts$LIB_TYPEQU)!=
+        normalize_aedar_typequ_label_for_validation(label_check)))
+      stop("AEDAR aggregate labels disagree with published TYPEQU metadata",call.=FALSE)
+  }
+  list(facts=facts,typequ_metadata=typequ_metadata,measures=AEDAR_AGGREGATE_MEASURES,source=list(
     source_id=AEDAR_AGGREGATE_SOURCE_ID,name="Accès aux équipements depuis les adresses résidentielles — Bretagne",
     vintage=AEDAR_AGGREGATE_VINTAGE,url="https://www.data.gouv.fr/datasets/acces-aux-equipements-depuis-les-adresses-residentielles-bretagne",
     licence="ODbL",attribution="© OpenStreetMap contributors; données AEDAR — licence ODbL",
@@ -165,25 +335,30 @@ project_aedar_aggregates <- function(inputs) {
 }
 
 write_aedar_canonical <- function(projection, directory=file.path("data","processed","aedar")) {
+  if (!is.data.frame(projection$typequ_metadata) || nrow(projection$typequ_metadata)!=AEDAR_TYPEQU_REGISTRY_COUNT)
+    stop("Canonical AEDAR publication requires TYPEQU metadata",call.=FALSE)
   dir.create(directory,recursive=TRUE,showWarnings=FALSE)
   ecrire_parquet_si_modifie(projection$facts,file.path(directory,"aedar_territorial_aggregate.parquet"))
   source <- as.data.frame(projection$source,stringsAsFactors=FALSE)
   ecrire_parquet_si_modifie(source,file.path(directory,"aedar_territorial_aggregate_source.parquet"))
+  ecrire_parquet_si_modifie(projection$typequ_metadata,file.path(directory,"aedar_typequ_metadata.parquet"))
   invisible(directory)
 }
 
 read_aedar_canonical <- function(directory=file.path("data","processed","aedar")) {
   facts_path <- file.path(directory,"aedar_territorial_aggregate.parquet")
   source_path <- file.path(directory,"aedar_territorial_aggregate_source.parquet")
-  if (!file.exists(facts_path) || !file.exists(source_path)) stop("Canonical AEDAR Parquet facts/provenance are missing",call.=FALSE)
+  metadata_path <- file.path(directory,"aedar_typequ_metadata.parquet")
+  if (!file.exists(facts_path) || !file.exists(source_path) || !file.exists(metadata_path)) stop("Canonical AEDAR Parquet facts/provenance/TYPEQU metadata are missing",call.=FALSE)
   facts <- nanoparquet::read_parquet(facts_path); src <- nanoparquet::read_parquet(source_path)
+  typequ_metadata <- as.data.frame(nanoparquet::read_parquet(metadata_path),stringsAsFactors=FALSE)
   if (nrow(src)!=1L || src$source_id[[1L]]!=AEDAR_AGGREGATE_SOURCE_ID || src$vintage[[1L]]!=AEDAR_AGGREGATE_VINTAGE)
     stop("Canonical AEDAR source identity is not the registered 2026-v1 vintage",call.=FALSE)
   inputs <- lapply(AEDAR_AGGREGATE_LEVELS,function(level) {
     x <- facts[facts$territory_type==level,,drop=FALSE]
     x[,c(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],AEDAR_AGGREGATE_MEASURES),drop=FALSE]
   }); names(inputs)<-AEDAR_AGGREGATE_LEVELS
-  projection <- project_aedar_aggregates(inputs)
+  projection <- project_aedar_aggregates(inputs,typequ_metadata)
   projection$source <- as.list(src[1,,drop=FALSE])
   projection
 }
@@ -215,10 +390,14 @@ serialize_aedar_json_rows <- function(x) {
 read_aedar_aggregate_projection <- function(raw_dir=file.path("data","raw"))
   {
     download_aedar_sources(raw_dir)
-    project_aedar_aggregates(read_aedar_aggregate_inputs(download_aedar_aggregates(raw_dir)))
+    metadata_paths <- download_aedar_typequ_metadata(raw_dir)
+    metadata <- project_aedar_typequ_metadata(metadata_paths[[1L]],metadata_paths[[2L]])
+    project_aedar_aggregates(read_aedar_aggregate_inputs(download_aedar_aggregates(raw_dir)),metadata)
   }
 
 publish_aedar_aggregates <- function(projection, db) {
+  if (is.null(projection$typequ_metadata)) stop("AEDAR publication requires canonical TYPEQU metadata",call.=FALSE)
+  projection$typequ_metadata <- validate_aedar_published_typequ_metadata(projection$typequ_metadata)
   facts <- projection$facts
   version <- paste(as.character(openssl::sha256(serialize(projection,NULL))),collapse="")
   DBI::dbWithTransaction(db, {
@@ -240,8 +419,14 @@ publish_aedar_aggregates <- function(projection, db) {
         for (start in seq.int(1L,length(level_indices),by=chunk_size)) {
           selected <- level_indices[start:min(start+chunk_size-1L,length(level_indices))]
           x <- facts[selected,,drop=FALSE]
+          typequ_metadata <- projection$typequ_metadata[match(x$TYPEQU,projection$typequ_metadata$TYPEQU),,drop=FALSE]
           rows <- data.frame(territory_type=x$territory_type,territory_id=x$territory_id,typequ=x$TYPEQU,
             typequ_label=x$LIB_TYPEQU,
+            typequ_hierarchy_label=typequ_metadata$LIB_TYPEQU,
+            typequ_domain_code=typequ_metadata$domain_code,typequ_domain_label=typequ_metadata$domain_label,
+            typequ_subdomain_code=typequ_metadata$subdomain_code,typequ_subdomain_label=typequ_metadata$subdomain_label,
+            typequ_gamme=typequ_metadata$GAMME,typequ_gamme_status=typequ_metadata$gamme_status,
+            typequ_source_order=as.integer(typequ_metadata$source_order),
             identity=serialize_aedar_json_rows(as.data.frame(x[identity_columns],stringsAsFactors=FALSE)),
             n_addresses=as.numeric(x$n_addresses),n_observed=as.numeric(x$n_observed),coverage_status=x$coverage_status,
             measures=serialize_aedar_json_rows(as.data.frame(x[AEDAR_AGGREGATE_MEASURES],stringsAsFactors=FALSE)),

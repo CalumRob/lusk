@@ -1445,6 +1445,15 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON mobility_density_distribution_descriptor,mo
 CREATE TABLE aedar_territorial_aggregate (
   territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement','region')),
   territory_id text NOT NULL, typequ text NOT NULL, typequ_label text NOT NULL,
+  typequ_hierarchy_label text NOT NULL,
+  typequ_domain_code text NOT NULL, typequ_domain_label text NOT NULL,
+  typequ_subdomain_code text NOT NULL, typequ_subdomain_label text NOT NULL,
+  typequ_gamme text, typequ_gamme_status text NOT NULL CHECK(typequ_gamme_status IN ('classified','hors_gamme','absent')),
+  typequ_source_order integer NOT NULL CHECK(typequ_source_order BETWEEN 1 AND 235),
+  CONSTRAINT aedar_typequ_gamme_state_check CHECK (
+    (typequ_gamme_status='absent' AND typequ_gamme IS NULL) OR
+    (typequ_gamme_status='hors_gamme' AND typequ_gamme='Hors Gamme') OR
+    (typequ_gamme_status='classified' AND typequ_gamme IS NOT NULL AND typequ_gamme<>'Hors Gamme')),
   identity jsonb NOT NULL, n_addresses bigint NOT NULL CHECK(n_addresses>=0),
   n_observed bigint NOT NULL CHECK(n_observed>=0 AND n_observed<=n_addresses),
   coverage_status text NOT NULL, measures jsonb NOT NULL,

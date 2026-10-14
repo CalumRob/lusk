@@ -36,6 +36,12 @@ def test_aedar_migration_updates_markers_and_grants_database_roles():
         assert "lusk_reader" in sql and "GRANT SELECT" in sql
         normalized = "".join(sql.split()).upper()
         assert "LUSK_PUBLISHER" in normalized and "GRANTSELECT,INSERT,UPDATE,DELETE" in normalized
+    metadata_migration = (root / "api/migrations/031_aedar_typequ_metadata.sql").read_text()
+    for field in ("typequ_hierarchy_label","typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
+                  "typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order"):
+        assert field in metadata_migration and field in fresh
+    assert "typequ_gamme_status='hors_gamme' AND typequ_gamme='Hors Gamme'" in metadata_migration
+    assert "typequ_gamme_status='absent' AND typequ_gamme IS NULL" in metadata_migration
 
 
 def test_aedar_typed_response_rejects_incomplete_measure_maps():
@@ -43,7 +49,11 @@ def test_aedar_typed_response_rejects_incomplete_measure_maps():
     import pytest
     with pytest.raises(Exception, match="312"):
         AEDARFactResponse(territory_id="x", territory_type="commune", typequ="A104",
-            typequ_label="GENDARMERIE", identity={"code_insee":"x"}, n_addresses=1,
+            typequ_label="GENDARMERIE",typequ_hierarchy_label="GENDARMERIE",
+            typequ_domain_code="A",typequ_domain_label="Services",
+            typequ_subdomain_code="A1",typequ_subdomain_label="Publics",typequ_gamme=None,
+            typequ_gamme_status="absent",typequ_source_order=1,
+            identity={"code_insee":"x"}, n_addresses=1,
             n_observed=1, coverage_status="covered", measures={"count_5_walk_share":0},
             source_id="aedar_bretagne", vintage_id="2026-v1", source_url="https://example.test",
             licence="ODbL", attribution="AEDAR", reference_date=None, publication_date="2026-09-30")
@@ -56,13 +66,16 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
 
     class Cursor:
         description = [type("Column", (), {"name": n}) for n in
-                       ("territory_id", "territory_type", "typequ", "typequ_label",
+                       ("territory_id", "territory_type", "typequ", "typequ_label","typequ_hierarchy_label",
+                        "typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
+                        "typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order",
                         "identity", "n_addresses", "n_observed", "coverage_status",
                         "measures", "source_id", "vintage_id", "source_url", "licence", "attribution",
                         "reference_date", "publication_date")]
         def fetchone(self): return ("aedar-v1", 1, "ref-v1", "ref-v1")
         def fetchall(self):
-            return [("id", "commune", "A104", "GENDARMERIE", {"code_insee": "id"},
+            return [("id", "commune", "A135", "COUR D'ASSISES","COUR D’ASSISES", "A","Services","A1","Publics",
+                     "Hors Gamme","hors_gamme",1,{"code_insee": "id"},
                      10, 8, "covered", {key: (0 if key == "count_5_walk_share" else None)
                        for key in main._AEDAR_MEASURE_KEYS}, "aedar_bretagne",
                       "2026-v1", "https://example.test", "ODbL",
@@ -80,13 +93,19 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
     monkeypatch.setattr(main, "pool", lambda: FakePool())
     client = TestClient(main.app)
     for level in ("commune", "epci", "departement", "region"):
-        response = client.get(f"/api/aedar/territories/{level}/id/aggregates?limit=1&typequ=A104")
+        response = client.get(f"/api/aedar/territories/{level}/id/aggregates?limit=1&typequ=A135")
         assert response.status_code == 200
         body = response.json()
         assert body["territory"] == {"territory_type": level, "territory_id": "id"}
         assert len(body["facts"]) == 1
         assert body["facts"][0]["licence"] == "ODbL"
         assert body["facts"][0]["measures"]["count_5_walk_share"] == 0
+        assert body["facts"][0]["typequ_domain_code"] == "A"
+        assert body["facts"][0]["typequ_label"] == "COUR D'ASSISES"
+        assert body["facts"][0]["typequ_hierarchy_label"] == "COUR D’ASSISES"
+        assert body["facts"][0]["typequ_gamme"] == "Hors Gamme"
+        assert body["facts"][0]["typequ_gamme_status"] == "hors_gamme"
+        assert body["facts"][0]["typequ_source_order"] == 1
         assert len(body["facts"][0]["measures"]) == 312
         assert body["facts"][0]["publication_date"] == "2026-09-30"
         assert body["content_version"] == "aedar-v1"
