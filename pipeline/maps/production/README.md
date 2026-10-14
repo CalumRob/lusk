@@ -538,6 +538,9 @@ python pipeline/maps/production/tests/render_representative.py
 python pipeline/maps/production/record_network_approval.py --manifest pipeline/maps/production/output/manifest.json --qa pipeline/maps/production/output/qa.json --reviewer NAME --outcome approved --output pipeline/maps/production/output/human-approval.json
 python pipeline/maps/production/prepare_mainland_context.py --scope full
 python pipeline/maps/production/run_full_network.py --approval pipeline/maps/production/output/human-approval.json
+# Optional bounded overrides; the supported default is four workers.
+python pipeline/maps/production/run_full_network.py --approval pipeline/maps/production/output/human-approval.json --workers 1
+python pipeline/maps/production/run_full_network.py --approval pipeline/maps/production/output/human-approval.json --workers 2
 python pipeline/maps/production/record_spot_check.py --qa pipeline/maps/production/output/full-qa.json --reviewer NAME --outcome approved --output pipeline/maps/production/output/human-spot-check.json
 ```
 
@@ -549,8 +552,18 @@ recipe/renderer, partial-cohort or non-affirmative records cheaply. They then
 prepare only the bounded representative footprint in a temporary stage area,
 recompute all paired identities from live local inputs, and reject stale
 approval before creating/mutating the full output directory or starting full
-shared preparation. Only after that gate does `run_production()` prepare the
-full binding and render. Do not edit or synthesize approval JSON.
+shared preparation. Only after that gate does the parent prepare validated
+immutable network providers and sign the exact weighted whole-territory shard
+plan. Each child independently rebuilds and re-admits the complete authoritative
+inventory, current representative approval identities, source/renderer contract
+and artifact matrix before rendering its assigned territories with both modes
+and profiles. The signed worker plan cannot be changed between admission and
+execution. The shared `batch_execution.py` module owns 1/2/4 process scheduling,
+private shard/source-cache paths, logs, progress, failure preservation and
+resume; network owns its geometry-complexity workload estimate and rendering.
+No candidate/inspection-refresh scope is used for full workers. The usual
+`full-manifest.json` / `full-qa.json` names and flat full WebP output selection
+remain unchanged. Do not edit or synthesize approval JSON.
 
 The full-context hit-count feasibility probe is recorded at
 `E:\Temp\opencode\issue-611-full-context-hits.json`: the actual derived frame
@@ -565,7 +578,9 @@ non-transaction-safe service.
 Batch QA writes `full-manifest.json` and `full-qa.json` including the complete
 expected matrix and per-output failures. Successful unchanged files remain
 reusable on retry; missing, corrupt, changed or failed files are rebuilt and
-validated. `status=passed` is automated QA only; `production_status` remains
+validated. A changed full plan/source/approval/renderer or worker assignment is
+refused; use a new output directory rather than mixing provenance. `status=passed`
+is automated QA only; `production_status` remains
 `awaiting-human-spot-check` until the adapter-selected high-risk files have
 been visually reviewed and `record_spot_check.py` records the human outcome.
 The script also records a rejected outcome; rejection leaves production
