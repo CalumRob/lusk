@@ -2,12 +2,17 @@
 
 ## Selected AEDAR static family — durable generation and R2 staging
 
-Batch subprocess lifecycle is shared by `batch_execution.py`: the family caller
-still constructs its worker command and private cache/shard paths, while the
-executor owns child lifecycle, flushed log mirroring, progress updates, and
-failure preservation. The worker count remains four by default with explicit
-1/2/4 overrides. Family planning, source preparation, exact output coverage,
-checkpoint reuse, QA and publication/approval semantics remain family-owned.
+`batch_execution.py` owns deterministic weighted whole-territory scheduling,
+worker-private `shard-N/`, `cache-N/`, and `source-N/` paths (including copies
+from validated immutable preparation seeds), subprocess lifecycle, flushed
+logs and progress, and failure preservation. AEDAR supplies its address-based
+cost estimate, validated seed evidence, worker command, expected artifact
+matrix, rendering and validation. The common executor does not replace the
+existing runner checkpoints or family QA/approval/publication semantics.
+Four workers remain the default; explicit overrides are 1/2/4. Worker progress
+continues to use the existing runner protocol `[maps] n/n`; the aggregate
+`TOTAL completed/expected validated WebPs` line is emitted at each 25-output
+milestone and completion.
 
 The owner-selected shared car/loss treatment from [#733](https://github.com/CalumRob/lusk/issues/733)
 now lives in this directory, not in temporary comparison scripts. `aedar-static-family.json`
@@ -436,11 +441,25 @@ python -m unittest pipeline.maps.production.tests.test_contract pipeline.maps.pr
 python -m unittest pipeline.maps.production.tests.test_inline_contract -v
 python -m unittest pipeline.maps.production.tests.test_approval -v
 python -m unittest pipeline.maps.production.tests.test_checkpoint pipeline.maps.production.tests.test_webp_encoding -v
-python -m unittest pipeline.maps.production.tests.test_aedar_hex_grid pipeline.maps.production.tests.test_aedar_hex_rendering -v
+python -m unittest pipeline.maps.production.tests.test_aedar_hex_grid -v
+python -m unittest pipeline.maps.production.tests.test_aedar_hex_rendering -v
 python -m unittest pipeline.maps.production.tests.test_aedar_commune_frames pipeline.maps.production.tests.test_inspection_pixel_cost -v
 python -m unittest pipeline.maps.production.tests.test_aedar_car -v
 python -m unittest pipeline.maps.production.tests.test_inspection_frame -v
+python -m unittest pipeline.maps.production.tests.test_batch_execution pipeline.maps.production.tests.test_aedar_map_plan -v
+python -m unittest pipeline.maps.production.tests.test_aedar_batch_native -v
 ```
+
+For the repository worker proof, `test_aedar_batch_native` creates its own
+authoritative EPSG:2154 communes, official-land/context fixture, OCS-GE fixture
+sources, and Parquet metrics. It invokes the real `run_aedar_static_maps.py`
+entrypoint and its QGIS subprocess workers at 1, 2, and 4; checks exact selected
+five-mode × two-profile WebP coverage and private worker directories; then
+checks worker failure/retry, verified reuse, corrupt-output repair, and refusal
+of changed worker plans and input facts. It acquires no production context and
+does not read production data. This generated fixture evidence is distinct from
+the retained 1,266-territory/12,660-WebP export and the historical 40/40 byte
+parity; neither retained record is rewritten by this test.
 
 Run QGIS-owning test modules in separate Python processes: some older fixtures
 call `exitQgis()` in teardown, so one combined discovery process is not safe.

@@ -10,6 +10,13 @@ from batch_execution import partition_territories, prepare_worker_layout, run_wo
 
 
 class BatchExecutionTests(unittest.TestCase):
+    def test_selected_aedar_batch_retains_four_worker_default_and_one_two_four_options(self):
+        from run_aedar_static_maps import build_parser
+        parser = build_parser()
+        workers = next(action for action in parser._actions if action.dest == "workers")
+        self.assertEqual(workers.default, 4)
+        self.assertEqual(workers.choices, (1, 2, 4))
+
     def test_weighted_partition_is_deterministic_whole_territory_and_exact(self):
         territories = [{"key": str(index), "cost": cost} for index, cost in
                        enumerate((2, 100, 4, 80, 1, 40, 7))]
