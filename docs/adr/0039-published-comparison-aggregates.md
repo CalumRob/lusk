@@ -1,12 +1,14 @@
 # ADR-0039: Publish aggregates for declared comparison contexts
 
-- **Status:** accepted — product owner, 2026-10-08; publication-grain refinement accepted 2026-10-13.
+- **Status:** accepted — product owner, 2026-10-08; publication-grain refinement accepted 2026-10-13; comparison-scope revision accepted 2026-10-14.
 - **Parent:** ADR-0033; refines the comparison-serving direction in ADR-0035 and ADR-0038.
 - **Implementation:** #727, under publication/artifact-grain umbrella #751 and performance objective #726.
 
 ## Decision
 
-For every currently offered comparison context, compute its peer-derived numeric results from canonical pipeline data and publish them as a comparison projection. The API serves those published results for current contexts instead of loading all peer facts and recomputing their aggregates per request. This applies across current comparison families, including scalar/profile, ordered-series, essential-services, building-access, and numeric period/detail collections. The inventory is contract-tested so an in-scope family cannot silently be omitted.
+For every currently offered comparison context, compute its peer-derived numeric results from canonical pipeline data and publish them as a comparison projection. The API serves those published results for current contexts instead of loading all peer facts and recomputing their aggregates per request. This applies across current comparison families, including scalar/profile, ordered-series, numeric period/detail collections, and AEDAR fixed-context comparisons. The inventory is contract-tested so an in-scope family cannot silently be omitted.
+
+**Owner scope revision (2026-10-14):** essential-service comparison summaries are deprecated and are not a current comparison family. The non-AEDAR BPE/building-access comparisons are superseded by AEDAR comparisons and are not a current family either. The AEDAR comparison contract below is the in-scope access-comparison path.
 
 The currently offered contexts include the commune choices (density class, EPCI, Bretagne) and fixed level-specific contexts already exposed by product contracts. A declared context resolves to a peer group; compute group-level statistics once per distinct group and declared facet. Publish two logical result grains: group statistics by resolved context/group and declared comparison facet or axis point; and territory-specific comparison results (including ranks and ties) keyed by that same grain plus territory. Preserve each family's statistic, direction/tie behavior, weighting, support and missingness semantics, source lineage, and response contract.
 
