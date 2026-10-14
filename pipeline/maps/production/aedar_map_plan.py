@@ -129,5 +129,11 @@ def partition(plan, workers):
 
 
 def selected_aedar_recipe():
+    from dataclasses import replace
     from aedar_maps import aedar_loss_recipe
-    return aedar_loss_recipe()
+    historical = aedar_loss_recipe()
+    declaration = family_config()["cartography"]
+    composition = {**historical.foundation.composition, **declaration}
+    foundation = replace(historical.foundation, version="aedar-selected-foundation-v1",
+                         composition=composition)
+    return replace(historical, name="aedar-selected-static", version=1, foundation=foundation)

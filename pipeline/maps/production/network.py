@@ -153,17 +153,14 @@ SHARED_CYCLING = (
 
 
 def network_recipe() -> Recipe:
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
     return Recipe(
         name="public-space-sharing-network",
         version=2,
         foundation=Foundation(
             version="network-plate-v2",
-            framing={"shape": "square-circular-frame", "margin_ratio": 0.08},
-            ground={
-                "inspection_surface": "ocsge-selected-cs",
-                "inline_surface": "paper-only",
-                "water": "sea-colour",
-            },
+            framing=SHARED_CARTOGRAPHIC_POLICY.framing(),
+            ground=SHARED_CARTOGRAPHIC_POLICY.ground(),
             composition={
                 "inspection": {"style": "engraved-network-plate", "desaturate_outside_land": True},
                 "inline": {
@@ -204,11 +201,13 @@ def _union(geometries: list[QgsGeometry], label: str) -> QgsGeometry:
     return result
 
 
-def _map_extent(geometry: QgsGeometry) -> QgsRectangle:
+def _map_extent(geometry: QgsGeometry, policy=None) -> QgsRectangle:
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
+    policy = policy or SHARED_CARTOGRAPHIC_POLICY
     if geometry.isEmpty():
         raise ValueError("Cannot derive a map frame from empty analytical geometry")
     _, centre, radius = geometry.minimalEnclosingCircle(segments=96)
-    radius *= 1.08
+    radius *= 1 + policy.frame_margin_ratio
     return QgsRectangle(centre.x() - radius, centre.y() - radius, centre.x() + radius, centre.y() + radius)
 
 
@@ -280,7 +279,8 @@ def build_representative_map_set(
          "geometry": epci_full, "analytical_geometry": epci_analytical},
     )
     from inspection_frame import InspectionFramePolicy
-    frame_policy = InspectionFramePolicy(family_config)
+    from inspection_headings import registered_inspection_headings
+    frame_policy = InspectionFramePolicy(registered_inspection_headings(family_config))
     features = []
     for territory in territory_specs:
         extent = _map_extent(territory["analytical_geometry"])
@@ -401,7 +401,8 @@ def build_full_map_set(raw_dir: str | Path, project: QgsProject | None = None,
                         "geometry": region, "analytical_geometry": region,
                         "territory_codes": tuple(sorted(region_codes))})
     from inspection_frame import InspectionFramePolicy
-    frame_policy = InspectionFramePolicy(family_config)
+    from inspection_headings import registered_inspection_headings
+    frame_policy = InspectionFramePolicy(registered_inspection_headings(family_config))
     features = []
     for territory in territories:
         extent = _map_extent(territory["analytical_geometry"])

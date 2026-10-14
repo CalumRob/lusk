@@ -341,7 +341,8 @@ class AedarStaticAdapter(AedarCarAdapter):
             return self._static_render_identity
         identity = super().render_identity()
         tracked = [PRODUCTION / name for name in ("aedar_static.py", "aedar_hex_preparation.py",
-            "aedar_legend.py", "aedar_map_plan.py", "aedar-static-family.json", "inspection_frame.py")]
+            "aedar_legend.py", "aedar_map_plan.py", "aedar-static-family.json", "inspection_frame.py",
+            "inspection_headings.py", "cartographic_policy.py")]
         hasher = sha256()
         for path in tracked:
             hasher.update(path.name.encode())

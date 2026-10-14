@@ -77,15 +77,16 @@ MODE_LABELS = {"car": "en voiture", "transit": "en transports",
 
 
 def aedar_recipe() -> Recipe:
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
     return Recipe(
         name="aedar-address-access-exploration",
         version=19,
         family="aedar",
         foundation=Foundation(
             version="shared-network-map-ground-v2",
-            framing={"shape": "square-circular-frame", "margin_ratio": 0.08},
+            framing=SHARED_CARTOGRAPHIC_POLICY.framing(),
             geography={"territory": "Admin Express COG 2025"},
-            ground={"inspection_surface": "ocsge-selected-cs", "water": "sea-colour"},
+            ground=SHARED_CARTOGRAPHIC_POLICY.ground(inline=False),
             composition={"inspection": {"style": "aedar-address-dot-map", "version": 20},
                          "inline": {"style": "aedar-median-hex-grid", "version": 1,
                                     "cell_width_px": 9}},
@@ -97,15 +98,16 @@ def aedar_recipe() -> Recipe:
 
 def aedar_loss_recipe() -> Recipe:
     """Recipe for continuous car-diversity and exact TYPEQU-loss maps."""
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
     return Recipe(
         name="aedar-address-equipment-loss-exploration",
         version=1,
         family="aedar",
         foundation=Foundation(
             version="shared-network-map-ground-v2",
-            framing={"shape": "square-circular-frame", "margin_ratio": 0.08},
+            framing=SHARED_CARTOGRAPHIC_POLICY.framing(),
             geography={"territory": "Admin Express COG 2025"},
-            ground={"inspection_surface": "ocsge-selected-cs", "water": "sea-colour"},
+            ground=SHARED_CARTOGRAPHIC_POLICY.ground(inline=False),
             composition={"inspection": {"style": "aedar-address-equipment-loss", "version": 1},
                          "inline": {"style": "aedar-median-hex-grid", "version": 1,
                                     "cell_width_px": 9}},
@@ -118,7 +120,7 @@ def aedar_loss_recipe() -> Recipe:
 
 def _aedar_representative_bases(raw_dir: str | Path) -> dict[tuple[str, str], dict]:
     """Reuse standard territory frames and derive the exploratory commune if needed."""
-    from network import _load_network_family_config, _map_extent, _projected, build_representative_map_set
+    from network import _load_network_family_config, _projected, build_representative_map_set
 
     representative = build_representative_map_set(raw_dir)
     bases = {(feature["territory"]["kind"], feature["territory"]["code"]): feature
@@ -134,13 +136,14 @@ def _aedar_representative_bases(raw_dir: str | Path) -> dict[tuple[str, str], di
     project = QgsProject.instance()
     region = bases[("region", "53")]
     from inspection_frame import InspectionFramePolicy
-    frame_policy = InspectionFramePolicy(_load_network_family_config())
+    from inspection_headings import registered_inspection_headings
+    frame_policy = InspectionFramePolicy(registered_inspection_headings(_load_network_family_config()))
     for source_feature in layer.getFeatures():
         if str(source_feature["code_insee"]) != commune_key[1]:
             continue
         geometry = _projected(source_feature.geometry(), layer.crs(), project)
         name = str(source_feature["nom_officiel"])
-        extent = _map_extent(geometry)
+        extent = _aedar_frame_extent(geometry)
         bases[commune_key] = {
             "territory": {"kind": "commune", "code": commune_key[1],
                           "name": name},
@@ -154,6 +157,13 @@ def _aedar_representative_bases(raw_dir: str | Path) -> dict[tuple[str, str], di
     if commune_key not in bases:
         raise ValueError(f"Authoritative commune source has no geometry for {commune_key[1]}")
     return bases
+
+
+def _aedar_frame_extent(geometry, policy=None):
+    """Apply the AEDAR family's declared foundation to the common frame math."""
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
+    from network import _map_extent
+    return _map_extent(geometry, policy or SHARED_CARTOGRAPHIC_POLICY)
 
 
 def build_aedar_map_set(raw_dir: str | Path, facts_dir: str | Path,

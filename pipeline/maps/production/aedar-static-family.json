@@ -17,6 +17,10 @@
     "inspection": {"size": [2400, 2400], "transparent_outside": false},
     "inline": {"size": [900, 900], "transparent_outside": true}
   },
+  "cartography": {
+    "inspection": {"style": "aedar-selected-hex-plate", "version": 1},
+    "inline": {"style": "aedar-selected-median-hex-grid", "version": 1, "cell_width_px": 9}
+  },
   "palette": ["#716ca2", "#8f85b1", "#ad9ebf", "#b186a3", "#ac5b78"],
   "car_bounds": [0, 218],
   "car_footer": ["* ", "Sur 235 catégories d’équipements BPE"],
