@@ -45,6 +45,48 @@ test_that("AEDAR projection preserves the complete 2025 TYPEQU registry at all f
   expect_equal(projection$source$licence, "ODbL")
 })
 
+test_that("AEDAR fixed comparison inventory is complete and excludes custom groups", {
+  expect_equal(AEDAR_FIXED_COMPARISON_SCOPES,
+    list(commune=c("densite", "epci", "bretagne"), epci="epci", departement="departement"))
+  expect_false(any(grepl("custom|arbitrary", unlist(AEDAR_FIXED_COMPARISON_SCOPES))))
+  adr <- paste(readLines(testthat::test_path("..","..","..","docs","adr",
+    "0039-published-comparison-aggregates.md"),warn=FALSE),collapse="\n")
+  expect_match(adr,"commune choices \\(density class, EPCI, Bretagne\\)")
+  expect_match(adr,"AEDAR's existing EPCI and Bretagne comparisons continue to use their direct")
+  expect_match(adr,"Explicit arbitrary territory selections remain request-time")
+})
+
+test_that("density cohort pools distinct address facts and fills sparse zeros across TYPEQU", {
+  axis <- read_aedar_region_typequ_fixture()
+  spine <- data.frame(address_id=c("a", "b", "c"), commune=c("1", "1", "2"),
+    stringsAsFactors=FALSE)
+  membership <- data.frame(territory_id="1", member_commune=c("1", "2"),
+    territory_type="commune", context="densite", stringsAsFactors=FALSE)
+  facts <- data.frame(address_id=c("a", "a", "b"), TYPEQU=c("A104", "A104", "A104"),
+    count_5_walk=c(1, 2, 4), stringsAsFactors=FALSE)
+  facts <- facts[!duplicated(facts[c("address_id", "TYPEQU")]), , drop=FALSE]
+  result <- project_aedar_density_comparisons(spine, facts, membership, axis,
+    measures="count_5_walk")
+  row <- result[result$TYPEQU == "A104", ]
+  expect_equal(row$n_addresses, 3)
+  expect_equal(row$count_5_walk_mean, 5/3)
+  expect_equal(row$count_5_walk_share, 2/3)
+  expect_equal(row$n_observed, 2)
+  expect_equal(nrow(result), nrow(axis))
+  expect_true(all(result$count_5_walk_mean[result$TYPEQU != "A104"] == 0))
+})
+
+test_that("density cohort without address origins is uncovered and null", {
+  axis <- read_aedar_region_typequ_fixture()
+  result <- project_aedar_density_comparisons(
+    data.frame(address_id=character(), commune=character()),
+    data.frame(address_id=character(), TYPEQU=character(), count_5_walk=numeric()),
+    data.frame(territory_id="empty", member_commune="none", territory_type="commune", context="densite"),
+    axis, measures="count_5_walk")
+  expect_true(all(result$coverage_status == "uncovered_no_address_origins"))
+  expect_true(all(is.na(result$count_5_walk_mean)))
+})
+
 test_that("the pinned TYPEQU registry matches the producer region aggregate", {
   expect_equal(read_aedar_typequ_registry(),read_aedar_region_typequ_fixture())
 })

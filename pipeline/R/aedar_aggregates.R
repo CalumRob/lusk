@@ -3,6 +3,12 @@
 AEDAR_AGGREGATE_LEVELS <- c("commune", "epci", "departement", "region")
 AEDAR_AGGREGATE_SOURCE_ID <- "aedar_bretagne"
 AEDAR_AGGREGATE_VINTAGE <- "2026-v1"
+# Current product-declared AEDAR comparison contexts. Keep this inventory
+# explicit: arbitrary member selections are intentionally resolved at request time.
+AEDAR_FIXED_COMPARISON_SCOPES <- list(
+  commune=c("densite", "epci", "bretagne"),
+  epci="epci",
+  departement="departement")
 AEDAR_AGGREGATE_ID_COLUMNS <- c(commune="code_insee", epci="epci_code",
   departement="code_departement", region="code_region")
 AEDAR_AGGREGATE_LEVEL_COLUMNS <- list(
@@ -409,6 +415,70 @@ validate_aedar_territory_reference <- function(facts, reference_pairs) {
   if (any(!key(projected) %in% key(published)))
     stop("AEDAR territory type/id pairs do not exist in published territory_reference",call.=FALSE)
   invisible(TRUE)
+}
+
+# Build the density-class result from address facts, never from territorial
+# aggregate rows. `address_facts` is sparse and wide: one row per address/TYPEQU
+# with count_* source columns; absent pairs are implicit zeros.
+project_aedar_density_comparisons <- function(address_origins, address_facts,
+    membership, typequ_axis, measures=AEDAR_AGGREGATE_MEASURES) {
+  required_spine <- c("address_id", "commune")
+  required_membership <- c("territory_id", "member_commune", "territory_type", "context")
+  required_facts <- c("address_id", "TYPEQU", measures)
+  if (!all(required_spine %in% names(address_origins)) ||
+      !all(required_membership %in% names(membership)) ||
+      !all(required_facts %in% names(address_facts)))
+    stop("Invalid AEDAR density comparison inputs", call.=FALSE)
+  if (anyDuplicated(address_origins$address_id) || anyNA(address_origins[c("address_id","commune")]))
+    stop("AEDAR address origins must have unique, complete address identities", call.=FALSE)
+  if (anyDuplicated(address_facts[c("address_id","TYPEQU")]) ||
+      anyNA(address_facts[c("address_id","TYPEQU")]))
+    stop("AEDAR address facts contain duplicate or incomplete address/TYPEQU keys", call.=FALSE)
+  if (any(!address_facts$address_id %in% address_origins$address_id))
+    stop("AEDAR address facts contain addresses absent from the origin spine", call.=FALSE)
+  if (!all(c("TYPEQU","LIB_TYPEQU") %in% names(typequ_axis)) ||
+      anyDuplicated(typequ_axis$TYPEQU)) stop("Invalid AEDAR TYPEQU axis",call.=FALSE)
+  density <- membership[membership$territory_type=="commune" & membership$context=="densite",,drop=FALSE]
+  if (anyDuplicated(density[c("territory_id","member_commune")]))
+    stop("Duplicate AEDAR density membership",call.=FALSE)
+  origins <- merge(address_origins, density, by.x="commune", by.y="member_commune", all=FALSE)
+  groups <- unique(density[c("territory_id","context")])
+  probs <- seq(.1,.9,.1)
+  metric_suffixes <- c("share","min","max",paste0("decile",1:9),"mean")
+  output <- vector("list", nrow(groups)*nrow(typequ_axis)); k <- 0L
+  for (g in seq_len(nrow(groups))) {
+    addresses <- unique(origins$address_id[origins$territory_id==groups$territory_id[[g]]])
+    n <- length(addresses)
+    for (t in seq_len(nrow(typequ_axis))) {
+      k <- k+1L; code <- typequ_axis$TYPEQU[[t]]
+      row <- data.frame(territory_type="commune", territory_id=groups$territory_id[[g]],
+        context=groups$context[[g]], TYPEQU=code, LIB_TYPEQU=typequ_axis$LIB_TYPEQU[[t]],
+        n_addresses=n, n_observed=length(unique(address_facts$address_id[
+          address_facts$TYPEQU==code & address_facts$address_id %in% addresses])),
+        coverage_status=if(n) "covered" else "uncovered_no_address_origins", stringsAsFactors=FALSE)
+      for (measure in measures) {
+        values <- address_facts[[measure]][address_facts$TYPEQU==code & address_facts$address_id %in% addresses]
+        if (n==0L) stats <- rep(NA_real_,13L) else {
+          hist <- as.data.frame(table(values),stringsAsFactors=FALSE)
+          if(length(values)) {
+            vals <- as.numeric(as.character(hist$values)); weights <- as.numeric(hist$Freq)
+            ord <- order(vals); vals<-vals[ord]; weights<-weights[ord]
+            zeros <- n-sum(weights); allv<-c(0,vals); allw<-c(zeros,weights)
+            ord<-order(allv); allv<-allv[ord]; cumulative<-cumsum(allw[ord])
+            at <- function(rank) allv[which(cumulative>=rank)[[1L]]]
+            quant <- vapply(probs,function(p) {h<-1+(n-1)*p; lo<-floor(h); f<-h-lo; a<-at(lo); if(!f||lo==n)a else a+f*(at(lo+1)-a)},numeric(1))
+            numerator <- if (grepl("_transit_gain$", measure)) sum(weights[vals!=0]) else sum(weights[vals>0])
+            stats<-c(numerator/n, if(zeros>0) 0 else min(vals), max(c(0,vals)), quant, sum(vals*weights)/n)
+          } else stats<-c(0,0,0,rep(0,9),0)
+        }
+        names(stats)<-paste0(measure,"_",metric_suffixes)
+        row[names(stats)]<-as.list(stats)
+      }
+      output[[k]]<-row
+    }
+  }
+  if (!length(output)) return(data.frame())
+  dplyr::bind_rows(output)
 }
 
 serialize_aedar_json_rows <- function(x) {
