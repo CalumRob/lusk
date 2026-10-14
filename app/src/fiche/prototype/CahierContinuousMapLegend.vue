@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './cahierEvidenceSource.css'
 import { computed } from 'vue'
 
 const props = defineProps<{
@@ -60,5 +61,3 @@ const accessibleLabel = computed(() => props.ariaLabel ?? [
 .cahier-map-legend__ticks { display: flex; justify-content: space-between; font-variant-numeric: tabular-nums; }
 .cahier-map-legend__note { text-align: center; }
 </style>
-
-<style src="./cahierEvidenceSource.css"></style>

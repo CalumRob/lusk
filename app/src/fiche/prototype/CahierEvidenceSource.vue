@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './cahierEvidenceSource.css'
 import type { AedarEvidenceSource } from '@/fiche/content/themeContent'
 
 defineProps<{ source: AedarEvidenceSource }>()
@@ -11,5 +12,3 @@ defineProps<{ source: AedarEvidenceSource }>()
     <span v-if="source.credit"> · {{ source.credit }}</span>
   </p>
 </template>
-
-<style src="./cahierEvidenceSource.css"></style>

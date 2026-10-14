@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import './cahierEvidenceSource.css'
 import { Bike, BusFront, CarFront } from 'lucide-vue-next'
 import type { Component } from 'vue'
 import { computed, ref, watch } from 'vue'
@@ -168,7 +169,6 @@ function markInspectionUnavailable(): void {
 </template>
 
 <style src="./cahierLayout.css"></style>
-<style src="./cahierEvidenceSource.css"></style>
 
 <style scoped>
 .blank-map-slots { margin: 0; padding: 0 0 var(--space-3); }
