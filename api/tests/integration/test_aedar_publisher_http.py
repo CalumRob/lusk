@@ -119,7 +119,13 @@ inputs <- list(
   epci=make('epci','epci_code','200000001','nom_epci','Fixture EPCI'),
   departement=make('departement','code_departement','22','nom_departement','Fixture département'),
   region=make('region','code_region','53','nom_region','Fixture région'))
-projection <- project_aedar_aggregates(inputs)
+i <- seq_len(nrow(source_axis))
+metadata <- data.frame(TYPEQU=source_axis$TYPEQU,LIB_TYPEQU=source_axis$LIB_TYPEQU,description=paste('Description',i),
+  domain_code=paste0('D',((i-1L) %% 7L)+1L),domain_label=paste('Domain',((i-1L) %% 7L)+1L),
+  subdomain_code=paste0('S',((i-1L) %% 27L)+1L),subdomain_label=paste('Subdomain',((i-1L) %% 27L)+1L),
+  GAMME=rep(NA_character_,length(i)),gamme_status=rep('absent',length(i)),source_order=i)
+metadata$LIB_TYPEQU[metadata$TYPEQU=='A135'] <- gsub("'","’",metadata$LIB_TYPEQU[metadata$TYPEQU=='A135'],fixed=TRUE)
+projection <- project_aedar_aggregates(inputs,metadata)
 canonical_dir <- tempfile('aedar-canonical-')
 write_aedar_canonical(projection,canonical_dir)
 projection <- read_aedar_canonical(canonical_dir)
@@ -168,9 +174,12 @@ stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n 
                 mobility_before=client.get(mobility_url)
                 assert mobility_before.status_code == 200, mobility_before.text
                 for level, territory_id in (("commune","22001"),("epci","200000001"),("departement","22"),("region","53")):
-                    resp = client.get(f"/api/aedar/territories/{level}/{territory_id}/aggregates?typequ=A104&limit=1")
+                    resp = client.get(f"/api/aedar/territories/{level}/{territory_id}/aggregates?typequ=A135&limit=1")
                     assert resp.status_code == 200, resp.text
                     fact = resp.json()["facts"][0]
+                    assert fact["typequ_hierarchy_label"] == "COUR D’ASSISES"
+                    assert fact["typequ_description"] == "Description 1"
+                    assert fact["typequ_label"] == "COUR D'ASSISES"
                     assert fact["measures"]["count_5_walk_share"] is None
                     assert fact["measures"]["count_5_walk_min"] == 0
                     assert fact["measures"]["count_5_walk_max"] == pytest.approx(0.12345678901234566, rel=1e-15)

@@ -5,11 +5,13 @@ if (length(args)!=1L || !args[[1]] %in% c("--check","--publish","--full-vintage"
   stop("Usage: Rscript scripts/publish-aedar-aggregates.R --check|--publish|--full-vintage (from pipeline/)",call.=FALSE)
 canonical_dir <- Sys.getenv("LUSK_AEDAR_CANONICAL_DIR",file.path("data","processed","aedar"))
 # Operator sequence: --check acquires, validates, and atomically materializes the
-# canonical facts + source Parquets. --publish reads only those artifacts, so a
+# canonical facts, source Parquets, and TYPEQU metadata. --publish reads only
+# those artifacts, so a
 # database outage can be retried without re-acquiring or silently changing input.
 # This explicit command is intentionally not called by the cron/static pipeline.
 canonical_facts <- file.exists(file.path(canonical_dir,"aedar_territorial_aggregate.parquet")) &&
-  file.exists(file.path(canonical_dir,"aedar_territorial_aggregate_source.parquet"))
+  file.exists(file.path(canonical_dir,"aedar_territorial_aggregate_source.parquet")) &&
+  file.exists(file.path(canonical_dir,"aedar_typequ_metadata.parquet"))
 if (args[[1]]=="--publish") {
   if (!canonical_facts)
     stop("Canonical AEDAR Parquets are missing; run --check first. This keeps a DB retry independent of source acquisition.",call.=FALSE)

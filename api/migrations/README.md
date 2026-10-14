@@ -350,3 +350,15 @@ The guarded canonical programme publisher-to-HTTP rehearsal applies migration
 publisher. Apply only after the separate restored-database upgrade rehearsal,
 backup, and operator approval. This source change does not apply serving DDL or
 publish production data.
+
+# Migration 031 — AEDAR TYPEQU metadata
+
+`031_aedar_typequ_metadata.sql` adds the official BPE 2025 domain/subdomain
+codes and labels, source order, and individual gamme value/status to the
+existing AEDAR territorial facts. Existing rows are left readable but carry
+all metadata columns as NULL until the canonical AEDAR publisher replaces the
+complete fact set; the bounded AEDAR API fails closed on such rows. New rows
+must carry a complete hierarchy and a consistent `classified` / `hors_gamme` /
+`absent` state. Fresh installs enforce the same contract in `schema.sql`.
+Metadata is versioned coherently with the AEDAR aggregate publication; this
+migration does not publish data or imply production rollout.
