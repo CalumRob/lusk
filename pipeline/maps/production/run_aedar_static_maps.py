@@ -67,6 +67,7 @@ def signatures(args):
              args.territory_registry, _metadata_path(args.raw_dir),
              PRODUCTION / "aedar-static-family.json"]
     paths.extend(PRODUCTION / name for name in ("aedar_map_plan.py", "run_aedar_static_maps.py",
+        "batch_execution.py",
         "aedar_static.py", "aedar_legend.py", "aedar_hex_preparation.py", "aedar_hex_grid.py",
         "aedar_car.py", "aedar_maps.py", "aedar_map_content.py", "runner.py", "network.py",
         "map_ground.py", "inspection_plate.py", "inspection_frame.py", "webp_encoding.py"))
@@ -143,68 +144,24 @@ def _worker(args, output, plan, config, all_bases, app):
         {"status": "complete", "territories": len(shard_rows), "artifacts": len(result.outputs)})
 
 
-def _run_workers(args, output, plan, config):
-    main_log = output / "run.log"
-    write_json(output / "progress.json", {"status": "starting", "completed_webps": 0,
-        "expected_webps": plan["expected_webps"], "by_worker": {}})
-    processes, mirrors = [], []
-    completed = {}
-    progress_pattern = re.compile(r"\[maps\]\s+(\d+)/(\d+)\s")
-    try:
-        for index in range(args.workers):
-            worker_log = output / f"worker-{index}.log"
-            command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker",
-                "--output-dir", str(output), "--workers", str(args.workers),
-                "--worker-index", str(index), "--raw-dir", str(args.raw_dir),
-                "--facts-path", str(args.facts_path), "--family-config", str(args.family_config),
-                "--territory-registry", str(args.territory_registry),
-                "--worker-cache", str(output / f"cache-{index}"),
-                "--worker-source-cache", str(output / f"source-{index}"),
-                "--context-cache-root", str(args.context_cache_root or output / "official-context")]
-            if args.refresh:
-                command.append("--refresh")
-            env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
-            process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
-                text=True, encoding="utf-8", errors="replace", bufsize=1, env=env)
-            processes.append(process)
-
-            def mirror(proc=process, destination=worker_log, worker=index):
-                with destination.open("a", encoding="utf-8") as stream:
-                    for line in proc.stdout:
-                        stream.write(line)
-                        stream.flush()
-                        log(main_log, f"worker-{worker}: {line.rstrip()}")
-                        match = progress_pattern.search(line)
-                        if match:
-                            with LOG_LOCK:
-                                completed[worker] = int(match.group(1))
-                                current = {"status": "rendering", "completed_webps": sum(completed.values()),
-                                    "expected_webps": plan["expected_webps"], "by_worker": dict(completed)}
-                                write_json(output / "progress.json", current)
-                                write_json(output / f"worker-{worker}.progress.json", {"status": "rendering",
-                                    "completed_webps": int(match.group(1)), "expected_webps": int(match.group(2))})
-                                if int(match.group(1)) % 25 == 0 or match.group(1) == match.group(2):
-                                    log(main_log, f"TOTAL {current['completed_webps']}/{current['expected_webps']} validated WebPs")
-            thread = threading.Thread(target=mirror, daemon=True)
-            thread.start()
-            mirrors.append(thread)
-        codes = [process.wait() for process in processes]
-    except BaseException:
-        for process in processes:
-            if process.poll() is None:
-                process.terminate()
-        for process in processes:
-            try:
-                process.wait(timeout=10)
-            except subprocess.TimeoutExpired:
-                process.kill()
-                process.wait()
-        raise
-    finally:
-        for thread in mirrors:
-            thread.join()
-    if any(codes):
-        raise RuntimeError(f"Worker failure codes={codes}; completed artifacts are preserved for resume")
+def _run_workers(args, output, plan, config, layout):
+    commands = []
+    for index in range(args.workers):
+        command = [sys.executable, "-B", str(Path(__file__).resolve()), "--worker",
+            "--output-dir", str(output), "--workers", str(args.workers),
+            "--worker-index", str(index), "--raw-dir", str(args.raw_dir),
+            "--facts-path", str(args.facts_path), "--family-config", str(args.family_config),
+            "--territory-registry", str(args.territory_registry),
+            "--worker-cache", str(layout[index]["cache"]),
+            "--worker-source-cache", str(layout[index]["source"]),
+            "--context-cache-root", str(args.context_cache_root or output / "official-context")]
+        if args.refresh:
+            command.append("--refresh")
+        env = dict(os.environ, PYTHONIOENCODING="utf-8", PYTHONUNBUFFERED="1")
+        commands.append((command, env))
+    from batch_execution import run_workers
+    run_workers(commands, output, plan["expected_webps"],
+                write_json=write_json, log=log, log_lock=LOG_LOCK)
 
 
 def _validate_complete(output, plan, args):
@@ -341,17 +298,10 @@ def main(argv=None):
             common._shared_ground.frontier_for(bases[0]["region_geometry"])
         finally:
             common.end_production_scope("inspection-refresh", output / "seed", success=True)
-        shared_cache = cache_root
-        for index in range(args.workers):
-            worker_cache = output / f"cache-{index}"
-            shutil.copytree(shared_cache, worker_cache, dirs_exist_ok=True)
-            source_copy = output / f"source-{index}"
-            if not source_copy.exists():
-                shutil.copytree(source_seed, source_copy, dirs_exist_ok=True)
-            else:
-                shutil.copytree(source_seed, source_copy, dirs_exist_ok=True)
+        from batch_execution import prepare_worker_layout
+        layout = prepare_worker_layout(output, args.workers, cache_root, source_seed)
         log(main_log, f"Starting resumable render: {plan['territory_count']} territories; workers={args.workers}")
-        _run_workers(args, output, plan, FAMILY_CONFIG)
+        _run_workers(args, output, plan, FAMILY_CONFIG, layout)
         _validate_complete(output, plan, args)
         log(main_log, f"COMPLETE: {plan['territory_count']} territories, {plan['expected_webps']} decoded WebPs; no upload/approval")
         return 0
