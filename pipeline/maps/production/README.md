@@ -2,6 +2,13 @@
 
 ## Selected AEDAR static family — durable generation and R2 staging
 
+Batch subprocess lifecycle is shared by `batch_execution.py`: the family caller
+still constructs its worker command and private cache/shard paths, while the
+executor owns child lifecycle, flushed log mirroring, progress updates, and
+failure preservation. The worker count remains four by default with explicit
+1/2/4 overrides. Family planning, source preparation, exact output coverage,
+checkpoint reuse, QA and publication/approval semantics remain family-owned.
+
 The owner-selected shared car/loss treatment from [#733](https://github.com/CalumRob/lusk/issues/733)
 now lives in this directory, not in temporary comparison scripts. `aedar-static-family.json`
 owns the mode-to-fact mapping, selected palette, profile sizes and publication namespace.
