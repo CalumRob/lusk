@@ -11,6 +11,7 @@ import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierDialog from './CahierDialog.vue'
 import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
+import CahierActionButton from './CahierActionButton.vue'
 
 const props = defineProps<{
   evidence: AedarEquipmentProfileEvidence
@@ -198,7 +199,7 @@ watch(horizonMinutes, (horizon) => {
         label="Types par premier mode d’accès — ouvrir le détail d’une catégorie"
         @activate="openBucket"
       />
-      <button class="aedar-waffle-explore" type="button" @click="openExplorer">Parcourir les équipements</button>
+      <CahierActionButton class="aedar-waffle-explore" @click="openExplorer">Parcourir les équipements</CahierActionButton>
     </template>
 
     <CahierDialog
@@ -280,8 +281,6 @@ watch(horizonMinutes, (horizon) => {
 }
 .aedar-waffle > .cahier-figure-title { width: 100%; margin: 0; text-align: center; }
 .aedar-waffle-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3) var(--space-5); width: 100%; }
-.aedar-waffle-explore { min-height: 36px; padding: var(--space-2) 0; border: 0; border-radius: 0; background: transparent; color: var(--red, var(--cahier-theme-strong)); font: var(--type-figure-label); font-weight: 700; text-decoration: underline; text-decoration-thickness: 1px; text-underline-offset: 0.22em; cursor: pointer; }
-.aedar-waffle-explore:hover { text-decoration-thickness: 2px; }
 .aedar-waffle-dialog button:focus-visible, .aedar-waffle-dialog input:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 .aedar-waffle-grid { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; width: min(100%, 1000px); margin-inline: auto; }
 .aedar-waffle-tile { display: block; aspect-ratio: 1; min-width: 0; padding: 0; border: 0; border-radius: 2px; background: var(--aedar-bucket-color); cursor: pointer; }

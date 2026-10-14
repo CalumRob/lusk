@@ -17,6 +17,7 @@ import CahierProse from './CahierProse.vue'
 import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
 import AccessRampFigureCahier from './AccessRampFigureCahier.vue'
 import AedarEquipmentQuantileFigureCahier from './AedarEquipmentQuantileFigureCahier.vue'
+import CahierActionButton from './CahierActionButton.vue'
 
 const props = defineProps<{
   evidence: AedarEquipmentExplorerEvidence
@@ -111,9 +112,9 @@ function chooseType(fact: AedarFact): void {
         <p class="aedar-equipment-explorer-selected" role="status" aria-live="polite">
           <strong>{{ selectedTypeLabel }}</strong>
         </p>
-        <button class="aedar-equipment-explorer-change" type="button" aria-label="Choisir un autre équipement" @click="pickerOpen = true">
+        <CahierActionButton class="aedar-equipment-explorer-change" aria-label="Choisir un autre équipement" @click="pickerOpen = true">
           Choisir un autre équipement
-        </button>
+        </CahierActionButton>
       </div>
       <AedarTravelTimeSelector
         class="aedar-equipment-explorer-horizon"
@@ -201,8 +202,6 @@ function chooseType(fact: AedarFact): void {
 .aedar-equipment-explorer-selection-label { margin: 0; color: var(--cahier-default); font: var(--type-figure-label); }
 .aedar-equipment-explorer-selected { max-width: 100%; margin: 0; color: var(--cahier-default); font: var(--text-h3); letter-spacing: var(--text-h3-tracking); text-align: center; overflow-wrap: anywhere; }
 .aedar-equipment-explorer-horizon { justify-self: center; max-width: 100%; }
-.aedar-equipment-explorer-change { min-height: 36px; padding: var(--space-2) var(--space-3); border: 1px solid color-mix(in oklab, var(--cahier-default) 24%, transparent); border-radius: 0; background: transparent; color: var(--red, var(--cahier-theme-strong)); font: var(--type-figure-label); cursor: pointer; }
-.aedar-equipment-explorer-change:hover { background: color-mix(in srgb, var(--cahier-theme) 8%, transparent); }
 .aedar-equipment-explorer :deep(button:focus-visible), .aedar-equipment-explorer :deep(input:focus-visible) { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 .aedar-equipment-explorer :deep(.aedar-equipment-explorer-modes) { justify-content: center; margin: 0; }
 .aedar-equipment-explorer :deep(.cahier-figure-legend-toggle) { min-height: 36px; }
