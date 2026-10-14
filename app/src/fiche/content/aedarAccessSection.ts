@@ -239,7 +239,7 @@ export function aedarCarAccessOverviewSection(
     indicators: [], lecture: null, explorationTargets: [],
     provenance: data.provenance.sources.map((source) => source.source_id),
     evidence: {
-      kind: 'aedar-car-overview', territory: { code: territory.code, name: territory.name },
+      kind: 'aedar-car-overview', territory: { type: territory.type, code: territory.code, name: territory.name },
       horizonMinutes, mapModes: ['car'],
       mapFigureTitle: [text(`Diversité de l’offre accessible en voiture en ${horizonMinutes} minutes`)],
       meanDiversity, meanVolume, nAddresses, scalars,

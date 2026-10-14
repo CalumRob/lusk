@@ -1,12 +1,18 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import CahierBlankMapSlots from '@/fiche/prototype/CahierBlankMapSlots.vue'
 import CahierContinuousMapLegend from '@/fiche/prototype/CahierContinuousMapLegend.vue'
+import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
+
+beforeEach(() => {
+  vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => carInlineLegend() }) as Response))
+})
+afterEach(() => vi.unstubAllGlobals())
 
 describe('CahierBlankMapSlots', () => {
   const props = {
-    territory: { code: '22003', name: 'Allineuc' },
+    territory: { type: 'commune' as const, code: '22003', name: 'Allineuc' },
     horizonMinutes: 15,
     title: [{ kind: 'text' as const, value: "Combien de types d'équipements accessibles en 15 minutes depuis les adresses résidentielles ?" }],
   }
@@ -37,26 +43,27 @@ describe('CahierBlankMapSlots', () => {
     expect(wrapper.find('.blank-map-slot--car a').exists()).toBe(false)
   })
 
-  it('renders the production map scale and BPE universe as an inline legend', () => {
+  it('renders the metadata-owned scale through the existing inline legend without the Bretagne mean tick', async () => {
     const wrapper = mount(CahierBlankMapSlots, { props })
+    await flushPromises()
     const legend = wrapper.find('.aedar-car-map-legend')
 
     expect(legend.attributes('role')).toBe('group')
     expect(legend.classes()).toContain('cahier-figure-legend')
     expect(legend.find('.cahier-map-legend__title').classes()).toContain('type-figure-label')
-    expect(legend.attributes('aria-label')).toContain('Types d’équipements accessibles. Échelle de 0 à 218')
+    expect(legend.attributes('aria-label')).toContain('Types d’équipements accessibles en 15 minutes. Échelle de 0 à 218')
     expect(legend.attributes('aria-label')).toContain('235 catégories d’équipements BPE')
-    expect(legend.text()).toContain('Types d’équipements accessibles*')
-    expect(legend.text()).not.toContain('en 15 minutes')
+    expect(legend.text()).toContain('Types d’équipements accessibles en 15 minutes*')
+    expect(legend.text()).not.toContain('Moy. Bretagne')
     expect(legend.findAll('.cahier-map-legend__tick').map((tick) => tick.text())).toEqual([
       '0', '44', '87', '131', '174', '218',
     ])
     expect(legend.findAll('.cahier-map-legend__swatch').map((swatch) => swatch.attributes('style'))).toEqual([
-      'background-color: #E9B2BE;',
-      'background-color: #D78A9C;',
-      'background-color: #C4667E;',
-      'background-color: #AD4562;',
-      'background-color: #87334E;',
+      'background-color: #716ca2;',
+      'background-color: #8f85b1;',
+      'background-color: #ad9ebf;',
+      'background-color: #b186a3;',
+      'background-color: #ac5b78;',
     ])
     expect(legend.text()).toContain('* Sur 235 catégories d’équipements BPE')
     expect(legend.find('.cahier-map-legend__note').classes()).toContain('cahier-evidence-source')
@@ -136,7 +143,9 @@ describe('CahierBlankMapSlots', () => {
     expect(wrapper.text()).toContain('Carte à venir')
     expect(wrapper.find('.blank-map-slot--bike-lts2 img').exists()).toBe(false)
     expect(wrapper.find('.blank-map-slot--transit img').exists()).toBe(false)
-    expect(wrapper.text()).not.toMatch(/légende|réseau recensé/i)
+    for (const mode of ['bike-lts2', 'transit']) {
+      expect(wrapper.get(`.blank-map-slot--${mode}`).text()).not.toMatch(/légende|réseau recensé/i)
+    }
   })
 
   it('shows the horizon and exposes territory and map state accessibly', () => {

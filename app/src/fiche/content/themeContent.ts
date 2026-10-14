@@ -95,7 +95,7 @@ export interface AedarCarAccessOverviewScalar {
 
 export interface AedarCarAccessOverviewEvidence {
   kind: 'aedar-car-overview'
-  territory: { code: string; name: string }
+  territory: Pick<TerritoryIdentity, 'type' | 'code' | 'name'>
   horizonMinutes: number
   mapModes: readonly ['car']
   mapFigureTitle: TextBlock

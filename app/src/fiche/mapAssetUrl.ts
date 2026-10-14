@@ -18,6 +18,12 @@ export function aedarCarMapAssetUrl(code: string, profile: MapProfile): string {
   return `${AEDAR_CAR_MAPS_BASE_URL}${code}-car-${profile}.webp`
 }
 
+/** Production JSON sidecar paired with the inline car diversity map. */
+export function aedarCarMapMetadataUrl(code: string): string | null {
+  if (!/^[a-z\d_-]+$/i.test(code)) return null
+  return `${AEDAR_CAR_MAPS_BASE_URL}${code}-car-inline.json`
+}
+
 /** Published AEDAR loss-map assets, addressed by the territory/mode/profile contract. */
 export function aedarDiversityLossMapAssetUrl(
   code: string,

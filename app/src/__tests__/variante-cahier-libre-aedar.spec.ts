@@ -20,6 +20,7 @@ import {
 } from '@/payload/fixtures'
 import type { Payload } from '@/payload/types'
 import { routes } from '@/router'
+import { carInlineLegend } from './fixtures/aedar-car-inline-legend'
 
 const payload: Payload = {
   territoires: territoiresFixture,
@@ -145,6 +146,9 @@ const aedarReferenceReady: Extract<AedarFetchResult, { status: 'ready' }> = {
 const lossMapModes = ['walk', 'transit', 'bike_lts2', 'bike_lts4'] as const
 beforeEach(() => {
   vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    if (String(input).endsWith('/22001-car-inline.json')) {
+      return { ok: true, json: async () => carInlineLegend({ type: 'commune', code: '22001', name: 'Allineuc' }) } as Response
+    }
     const mode = lossMapModes.find((candidate) => String(input).endsWith(`22001-${candidate}-inline.json`))
     if (!mode) throw new Error(`Unexpected request: ${String(input)}`)
     return { ok: true, json: async () => lossInlineLegend(mode) } as Response
@@ -387,7 +391,7 @@ describe('VarianteCahierLibreAedar wrapper', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual(lossMapModes.map((mode) =>
+    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([...lossMapModes, 'car'].map((mode) =>
       `https://images.calumrobertson.fr/maps/aedar/v1/22001-${mode}-inline.json`))
     expect(wrapper.findAll('.figure-stack > [data-section]')
       .slice(0, 5)

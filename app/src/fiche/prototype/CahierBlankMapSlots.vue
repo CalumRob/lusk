@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import { Bike, BusFront, CarFront } from 'lucide-vue-next'
 import type { Component } from 'vue'
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
 import type { TextBlock } from '@/fiche/content/themeContent'
 import { AEDAR_CAR_MAP_HORIZON_MINUTES, aedarCarMapAssetUrl } from '@/fiche/mapAssetUrl'
-import { AEDAR_CAR_MAP_LEGEND } from '@/fiche/content/aedarCarMapLegend'
+import { fetchAedarCarMapLegend } from '@/fiche/content/aedarCarMapLegend'
+import type { AedarCarMapLegend } from '@/fiche/content/aedarCarMapLegend'
+import type { TerritoryIdentity } from '@/fiche/content/territoryFacts'
 import CahierFigureLecture from './CahierFigureLecture.vue'
 import CahierContinuousMapLegend from './CahierContinuousMapLegend.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
@@ -14,7 +16,7 @@ import CahierMapPanel from './CahierMapPanel.vue'
 import CahierProse from './CahierProse.vue'
 
 const props = defineProps<{
-  territory: { code: string; name: string }
+  territory: Pick<TerritoryIdentity, 'type' | 'code' | 'name'>
   horizonMinutes: number
   /** Figure title owned by the semantic content layer (shared figure-title primitive). */
   title: TextBlock
@@ -37,8 +39,29 @@ const carMapAlternativeText = computed(() => `${props.title.map((segment) => seg
 const carMapGalleryImages = computed(() => props.horizonMinutes === AEDAR_CAR_MAP_HORIZON_MINUTES
   ? [{ key: 'car', src: aedarCarMapAssetUrl(props.territory.code, 'inspection'), alt: carMapAlternativeText.value }]
   : [])
-const showCarMapLegend = computed(() => slots.value.some((slot) => usesCarMap(slot.key))
+const carMapLegend = ref<AedarCarMapLegend | null>(null)
+const legendStatus = ref<'loading' | 'ready' | 'unavailable'>('loading')
+const needsCarMapLegend = computed(() => slots.value.some((slot) => usesCarMap(slot.key))
   && !unavailableCarMapCodes.value.has(props.territory.code))
+const showCarMapLegend = computed(() => needsCarMapLegend.value && carMapLegend.value !== null)
+
+watch(
+  () => [props.territory.type, props.territory.code, props.horizonMinutes, needsCarMapLegend.value].join('|'),
+  async (_, __, onCleanup) => {
+    let current = true
+    onCleanup(() => { current = false })
+    carMapLegend.value = null
+    legendStatus.value = 'loading'
+    if (!needsCarMapLegend.value) return
+    try {
+      const legend = await fetchAedarCarMapLegend(props.territory)
+      if (current) { carMapLegend.value = legend; legendStatus.value = 'ready' }
+    } catch {
+      if (current) legendStatus.value = 'unavailable'
+    }
+  },
+  { immediate: true },
+)
 
 function usesCarMap(slotKey: 'car' | 'bike-lts2' | 'transit'): boolean {
   return slotKey === 'car'
@@ -119,14 +142,17 @@ function markInspectionUnavailable(): void {
     >
       <CahierContinuousMapLegend
         class="aedar-car-map-legend"
-        :title="AEDAR_CAR_MAP_LEGEND.title"
-        :minimum="AEDAR_CAR_MAP_LEGEND.minimum"
-        :maximum="AEDAR_CAR_MAP_LEGEND.maximum"
-        :colors="AEDAR_CAR_MAP_LEGEND.colors"
-        :ticks="AEDAR_CAR_MAP_LEGEND.ticks"
-        :note="AEDAR_CAR_MAP_LEGEND.note"
+        :title="carMapLegend!.title"
+        :minimum="carMapLegend!.minimum"
+        :maximum="carMapLegend!.maximum"
+        :colors="carMapLegend!.colors"
+        :tick-labels="carMapLegend!.tickLabels"
+        :note="carMapLegend!.note"
       />
     </div>
+    <p v-else-if="needsCarMapLegend" class="cahier-evidence-source" role="status">
+      {{ legendStatus === 'loading' ? 'Chargement des métadonnées de légende AEDAR…' : 'Les métadonnées de légende de la carte AEDAR voiture ne sont pas disponibles.' }}
+    </p>
     <CahierFigureLecture v-if="props.lecture && props.lecture.length > 0">
       <CahierProse :blocks="props.lecture" />
     </CahierFigureLecture>
@@ -142,6 +168,7 @@ function markInspectionUnavailable(): void {
 </template>
 
 <style src="./cahierLayout.css"></style>
+<style src="./cahierEvidenceSource.css"></style>
 
 <style scoped>
 .blank-map-slots { margin: 0; padding: 0 0 var(--space-3); }
