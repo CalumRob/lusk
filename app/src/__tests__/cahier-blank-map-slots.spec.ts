@@ -27,7 +27,7 @@ describe('CahierBlankMapSlots', () => {
 
     const inlineMap = wrapper.find('.blank-map-slot--car img')
     expect(inlineMap.attributes('src')).toBe(
-      'https://images.calumrobertson.fr/maps/aedar-car-v1/22003-car-inline.webp',
+      'https://images.calumrobertson.fr/maps/aedar/v1/22003-car-inline.webp',
     )
     expect(inlineMap.attributes('alt')).toBe(`${props.title[0].value} — ${props.territory.name}`)
 
@@ -93,7 +93,7 @@ describe('CahierBlankMapSlots', () => {
       await flushPromises()
 
       expect(wrapper.findAll('.map-gallery-source img').map((image) => image.attributes('src'))).toEqual([
-        'https://images.calumrobertson.fr/maps/aedar-car-v1/22003-car-inspection.webp',
+        'https://images.calumrobertson.fr/maps/aedar/v1/22003-car-inspection.webp',
       ])
       const viewer = document.querySelector('.lusk-map-gallery')
       expect(viewer).not.toBeNull()

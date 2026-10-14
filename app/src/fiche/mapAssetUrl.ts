@@ -7,7 +7,7 @@ export const MAPS_PUBLIC_BASE_URL = import.meta.env.VITE_MAPS_PUBLIC_BASE_URL
   ?? 'https://images.calumrobertson.fr/maps/v1/'
 
 export const AEDAR_CAR_MAP_HORIZON_MINUTES = 15
-const AEDAR_CAR_MAPS_BASE_URL = 'https://images.calumrobertson.fr/maps/aedar-car-v1/'
+const AEDAR_CAR_MAPS_BASE_URL = 'https://images.calumrobertson.fr/maps/aedar/v1/'
 const AEDAR_DIVERSITY_LOSS_MAPS_BASE_URL = 'https://images.calumrobertson.fr/maps/aedar/v1/'
 
 export function mapAssetUrl(code: string, mode: MapMode, profile: MapProfile): string {

@@ -14,10 +14,10 @@ describe('mapAssetUrl', () => {
   it('resolves the published 15-minute AEDAR car map profiles independently of the generic map base', () => {
     expect(AEDAR_CAR_MAP_HORIZON_MINUTES).toBe(15)
     expect(aedarCarMapAssetUrl('22003', 'inspection')).toBe(
-      'https://images.calumrobertson.fr/maps/aedar-car-v1/22003-car-inspection.webp',
+      'https://images.calumrobertson.fr/maps/aedar/v1/22003-car-inspection.webp',
     )
     expect(aedarCarMapAssetUrl('22003', 'inline')).toBe(
-      'https://images.calumrobertson.fr/maps/aedar-car-v1/22003-car-inline.webp',
+      'https://images.calumrobertson.fr/maps/aedar/v1/22003-car-inline.webp',
     )
   })
 
