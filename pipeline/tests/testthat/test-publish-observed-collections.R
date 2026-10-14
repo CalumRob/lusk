@@ -66,3 +66,139 @@ test_that("registered collections reject vocabulary, source, anchor and clock dr
   bad$programmes$membres$territoire[[2L]] <- "C_TEST"
   expect_error(registry$couverture_programmes$project(bad),"double badge")
 })
+
+test_that("period/detail inventory is metadata-derived and excludes categorical memberships", {
+  fixture <- programme_collection_fixture()
+  registry <- register_programme_observed_collections(fixture$metadata)
+  expected <- names(Filter(function(x) identical(x$kind,"period_detail"),fixture$metadata$observed_collection_contracts))
+  expect_setequal(observed_collection_inventory(fixture$metadata),
+    expected)
+  registered_periods <- names(registry)[vapply(registry,function(x)
+    identical(x$project(fixture$canonical)$descriptor$kind,"period_detail"),logical(1L))]
+  expect_setequal(expected, registered_periods)
+  expect_false("couverture_programmes" %in% observed_collection_inventory(fixture$metadata))
+  broken <- fixture$metadata
+  broken$indicator_pages$subventions_par_domaine$comparison$dimension <- NULL
+  expect_error(observed_collection_inventory(broken),"typed comparison descriptor")
+})
+
+test_that("sparse comparison projection emits every canonical context member without synthesizing facts", {
+  fixture <- programme_collection_fixture()
+  p <- register_programme_observed_collections(fixture$metadata)$subventions_par_domaine$project(fixture$canonical)
+  p$facts <- data.frame(indicator_id=p$descriptor$indicator_id,territory_id=c("C_TEST","C_ORT"),
+    territory_type="commune",detail_key=p$descriptor$comparison_detail,
+    observation_period=p$descriptor$comparison_period,value=c(100,200),source_id="subventions_scdl",
+    vintage_id=p$vintages$vintage_id[[1L]])
+  refs <- data.frame(territory_id=c("C_TEST","C_ORT","C_MISSING","E_TEST","D_TEST","BZH"),
+    territory_type=c("commune","commune","commune","epci","departement","region"),
+    epci_id=c("E_TEST","E_TEST","E_TEST",NA,NA,NA),density_class_code=c("d","d","d",NA,NA,NA))
+  out <- project_observed_collection_comparisons(p,refs,"collection-v1","reference-v1")
+  bretagne <- out$territories[out$territories$comparison_context=="bretagne",]
+  expect_equal(nrow(bretagne),3L)
+  expect_equal(sum(bretagne$status=="not_published"),1L)
+  expect_true(is.na(bretagne$value[bretagne$territory_id=="C_MISSING"]))
+  expect_equal(out$groups$eligible_count[out$groups$comparison_context=="bretagne"],2L)
+  expect_equal(out$groups$missing_count[out$groups$comparison_context=="bretagne"],1L)
+  high <- bretagne[bretagne$status=="measured",]
+  expect_equal(high$rank[match("C_TEST",high$territory_id)],2L)
+  expect_equal(high$rank[match("C_ORT",high$territory_id)],1L)
+  expect_equal(high$tie_count,c(1L,1L))
+  expect_equal(high$rank_size,c(2L,2L))
+  absent <- bretagne[bretagne$status=="not_published",]
+  expect_true(all(is.na(absent[c("rank","tie_count","rank_size")])) )
+  expect_equal(out$groups$median[out$groups$comparison_context=="bretagne"],150)
+  low_tie <- p; low_tie$descriptor$direction <- "low"; low_tie$facts$value <- 100
+  tied <- project_observed_collection_comparisons(low_tie,refs,"collection-v1","reference-v1")
+  tied_bretagne <- tied$territories[tied$territories$comparison_context=="bretagne" & tied$territories$status=="measured",]
+  expect_equal(tied_bretagne$rank,c(1L,1L))
+  expect_equal(tied_bretagne$tie_count,c(2L,2L))
+  expect_equal(tied$groups$median[tied$groups$comparison_context=="bretagne"],100)
+  expect_error(project_observed_collection_comparisons(p,rbind(refs,refs[1,]),"v","r"),"reference")
+})
+
+test_that("collection competition ranking shares tie ranks and skips the next position", {
+  fixture <- programme_collection_fixture()
+  projection <- register_programme_observed_collections(fixture$metadata)$subventions_par_domaine$project(fixture$canonical)
+  projection$facts <- data.frame(indicator_id=projection$descriptor$indicator_id,
+    territory_id=c("C_TEST","C_ORT","C_OTHER"), territory_type="commune",
+    detail_key=projection$descriptor$comparison_detail,
+    observation_period=projection$descriptor$comparison_period,value=c(100,100,50),
+    source_id="subventions_scdl",vintage_id=projection$vintages$vintage_id[[1L]])
+  refs <- data.frame(territory_id=c("C_TEST","C_ORT","C_OTHER","BZH"),
+    territory_type=c("commune","commune","commune","region"), epci_id=NA_character_,
+    density_class_code=NA_character_)
+  comparison <- project_observed_collection_comparisons(projection,refs,"cv","rv")
+  bretagne <- comparison$territories[comparison$territories$comparison_context=="bretagne",]
+  expect_equal(bretagne$rank[match(c("C_TEST","C_ORT","C_OTHER"),bretagne$territory_id)],c(1L,1L,3L))
+  expect_equal(bretagne$tie_count[match(c("C_TEST","C_ORT","C_OTHER"),bretagne$territory_id)],c(2L,2L,1L))
+})
+
+test_that("observed collection comparison Parquet generations are immutable and version-keyed", {
+  fixture <- programme_collection_fixture()
+  projection <- register_programme_observed_collections(fixture$metadata)$subventions_par_domaine$project(fixture$canonical)
+  projection$facts <- data.frame(indicator_id=projection$descriptor$indicator_id,
+    territory_id=c("C_TEST","C_ORT"),territory_type="commune",
+    detail_key=projection$descriptor$comparison_detail,
+    observation_period=projection$descriptor$comparison_period,value=c(100,200),
+    source_id="subventions_scdl",vintage_id=projection$vintages$vintage_id[[1L]])
+  refs <- data.frame(territory_id=c("C_TEST","C_ORT","C_MISSING","BZH"),
+    territory_type=c("commune","commune","commune","region"),
+    epci_id=c("E_TEST","E_TEST","E_TEST",NA),density_class_code=c("d","d","d",NA))
+  comparison <- project_observed_collection_comparisons(projection,refs,"collection-v1","reference-v1")
+  directory <- tempfile("observed-collection-comparison-")
+  first <- write_observed_collection_comparison_parquets(comparison,directory,
+    projection$descriptor$indicator_id)
+  old_bytes <- lapply(first,function(path) readBin(path,what="raw",n=file.info(path)$size))
+  expect_true(isTRUE(all.equal(nanoparquet::read_parquet(first[[1L]]),comparison$groups,check.attributes=FALSE)))
+  expect_true(isTRUE(all.equal(nanoparquet::read_parquet(first[[2L]]),comparison$territories,check.attributes=FALSE)))
+
+  changed <- projection
+  changed$facts$value[[1L]] <- changed$facts$value[[1L]]+10
+  refreshed <- project_observed_collection_comparisons(changed,refs,"collection-v2","reference-v1")
+  second <- write_observed_collection_comparison_parquets(refreshed,directory,
+    projection$descriptor$indicator_id)
+  expect_false(identical(first,second))
+  expect_identical(lapply(first,function(path) readBin(path,what="raw",n=file.info(path)$size)),old_bytes)
+  expect_identical(write_observed_collection_comparison_parquets(refreshed,directory,
+    projection$descriptor$indicator_id),second)
+})
+
+test_that("observed collection publication repairs comparison state and rebuilds atomically", {
+  fixture <- programme_collection_fixture()
+  p <- register_programme_observed_collections(fixture$metadata)$subventions_par_domaine$project(fixture$canonical)
+  p$facts <- data.frame(indicator_id=p$descriptor$indicator_id,territory_id=c("C_TEST","C_ORT"),
+    territory_type="commune",detail_key=p$descriptor$comparison_detail,
+    observation_period=p$descriptor$comparison_period,value=c(100,200),source_id="subventions_scdl",
+    vintage_id=p$vintages$vintage_id[[1L]])
+  refs <- data.frame(territory_id=c("C_TEST","C_ORT","C_MISSING","E_TEST","D_TEST","BZH"),
+    territory_type=c("commune","commune","commune","epci","departement","region"),
+    epci_id=c("E_TEST","E_TEST","E_TEST",NA,NA,NA),density_class_code=c("d","d","d",NA,NA,NA))
+  state <- new.env(parent=emptyenv()); state$reference_version <- "r1"; state$territory_reference <- refs
+  state$collection_version <- NULL; state$collection_reference_version <- NULL; state$comparison <- NULL
+  adapter <- list(
+    transaction=function(fn) { before <- as.list.environment(state); tryCatch(fn(),error=function(e) {rm(list=ls(state),envir=state);list2env(before,state);stop(e)}) },
+    state=function(id) as.list.environment(state),
+    replace_base=function(x,v,r) {state$collection_version <- v;state$collection_reference_version <- r},
+    replace_comparisons=function(x,v,c,r) {state$comparison <- list(content_version=v,collection_content_version=c,
+      reference_content_version=r,group_row_count=nrow(x$groups),territory_row_count=nrow(x$territories),
+      actual_group_rows=nrow(x$groups),actual_territory_rows=nrow(x$territories))}
+  )
+  first <- publish_observed_collection_with_adapter(p,adapter)
+  expect_true(first$changed)
+  expect_false(publish_observed_collection_with_adapter(p,adapter)$changed)
+  state$comparison$actual_group_rows <- 0L
+  expect_true(publish_observed_collection_with_adapter(p,adapter)$changed)
+  state$mismatched_group_versions <- 1L
+  expect_true(publish_observed_collection_with_adapter(p,adapter)$changed)
+  state$mismatched_group_versions <- 0L
+  state$comparison <- NULL
+  expect_true(publish_observed_collection_with_adapter(p,adapter)$changed)
+  state$reference_version <- "r2"
+  expect_true(publish_observed_collection_with_adapter(p,adapter)$changed)
+  old <- state$comparison
+  adapter$replace_comparisons <- function(...) stop("injected comparison write failure")
+  state$reference_version <- "r3"
+  expect_error(publish_observed_collection_with_adapter(p,adapter),"injected")
+  expect_equal(state$comparison,old)
+  expect_equal(state$collection_reference_version,"r2")
+})
