@@ -3,6 +3,18 @@ read_aedar_region_typequ_fixture <- function() {
     col_types=readr::cols(.default=readr::col_character()),trim_ws=FALSE,show_col_types=FALSE)
 }
 
+make_aedar_test_typequ_metadata <- function() {
+  axis <- read_aedar_typequ_registry()
+  i <- seq_len(nrow(axis))
+  domain <- ((i-1L) %% 27L) %% 7L + 1L
+  data.frame(TYPEQU=axis$TYPEQU,LIB_TYPEQU=axis$LIB_TYPEQU,description=paste("Description",i),
+    domain_code=paste0("D",domain),domain_label=paste("Domain",domain),
+    subdomain_code=paste0("S",((i-1L) %% 27L)+1L),subdomain_label=paste("Subdomain",((i-1L) %% 27L)+1L),
+    GAMME=c("Proximité","Hors Gamme",rep(NA_character_,length(i)-2L)),
+    gamme_status=c("classified","hors_gamme",rep("absent",length(i)-2L)),
+    source_order=i,stringsAsFactors=FALSE)
+}
+
 make_aedar_test_inputs <- function() {
   axis <- read_aedar_region_typequ_fixture()
   stats::setNames(lapply(AEDAR_AGGREGATE_LEVELS, function(level) {
@@ -35,6 +47,15 @@ test_that("AEDAR projection preserves the complete 2025 TYPEQU registry at all f
 
 test_that("the pinned TYPEQU registry matches the producer region aggregate", {
   expect_equal(read_aedar_typequ_registry(),read_aedar_region_typequ_fixture())
+})
+
+test_that("hash-pinned TYPEQU artifacts retain LF bytes", {
+  paths <- c(testthat::test_path("..","..","inst","extdata",AEDAR_TYPEQU_REGISTRY_FILE),
+    testthat::test_path("fixtures","aedar-region-2026v1-typequ.csv"))
+  for (path in paths) {
+    bytes <- readBin(path,"raw",n=file.info(path)$size)
+    expect_false(any(bytes == as.raw(13L)))
+  }
 })
 
 test_that("AEDAR projection rejects a registered TYPEQU omitted at every level", {
@@ -73,14 +94,54 @@ test_that("AEDAR publication refuses territory identities absent from the servin
 test_that("canonical Parquet round trip keeps source columns, null/zero and provenance", {
   levels <- AEDAR_AGGREGATE_LEVELS
   inputs <- make_aedar_test_inputs()
-  original<-project_aedar_aggregates(inputs); path<-tempfile("aedar-canonical-")
+  metadata <- make_aedar_test_typequ_metadata()
+  a135 <- match("A135",metadata$TYPEQU); d710 <- match("D710",metadata$TYPEQU)
+  c401 <- match("C401",metadata$TYPEQU)
+  metadata$LIB_TYPEQU[a135] <- gsub("'","’",metadata$LIB_TYPEQU[a135],fixed=TRUE)
+  metadata$LIB_TYPEQU[d710] <- trimws(metadata$LIB_TYPEQU[d710])
+  metadata$LIB_TYPEQU[c401] <- "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES"
+  original<-project_aedar_aggregates(inputs,metadata); path<-tempfile("aedar-canonical-")
   write_aedar_canonical(original,path)
   restored<-read_aedar_canonical(path)
   expect_equal(restored$facts$count_5_walk_share,rep(NA_real_,4L * AEDAR_TYPEQU_REGISTRY_COUNT))
   expect_equal(restored$facts$count_5_walk_min,rep(0,4L * AEDAR_TYPEQU_REGISTRY_COUNT))
   expect_equal(restored$facts$territory_type,rep(levels,each=AEDAR_TYPEQU_REGISTRY_COUNT))
   expect_equal(restored$source$licence,"ODbL")
+  expect_equal(restored$typequ_metadata$gamme_status,original$typequ_metadata$gamme_status)
+  expect_identical(restored$typequ_metadata$GAMME[2],"Hors Gamme")
+  expect_identical(restored$typequ_metadata$LIB_TYPEQU[a135],"COUR D’ASSISES")
+  expect_identical(restored$typequ_metadata$LIB_TYPEQU[c401],metadata$LIB_TYPEQU[c401])
+  expect_identical(restored$typequ_metadata$description,metadata$description)
   expect_equal(restored$source$attribution,"© OpenStreetMap contributors; données AEDAR — licence ODbL")
+})
+
+test_that("canonical aggregate labels compare with approved normalization but retain hierarchy text", {
+  inputs <- make_aedar_test_inputs()
+  metadata <- make_aedar_test_typequ_metadata()
+  a135 <- match("A135",metadata$TYPEQU)
+  d710 <- match("D710",metadata$TYPEQU)
+  metadata$LIB_TYPEQU[a135] <- gsub("'","’",metadata$LIB_TYPEQU[a135],fixed=TRUE)
+  metadata$LIB_TYPEQU[d710] <- trimws(metadata$LIB_TYPEQU[d710])
+  projection <- project_aedar_aggregates(inputs,metadata)
+  expect_identical(projection$typequ_metadata$LIB_TYPEQU[a135],metadata$LIB_TYPEQU[a135])
+  bad <- metadata
+  bad$LIB_TYPEQU[a135] <- "COUR D’ASSISES MODIFIÉE"
+  expect_error(project_aedar_aggregates(inputs,bad),"canonical registry")
+})
+
+test_that("published TYPEQU validator and aggregate projection accept the full 235-row metadata axis", {
+  metadata <- make_aedar_test_typequ_metadata()
+  c401 <- match("C401",metadata$TYPEQU)
+  metadata$LIB_TYPEQU[c401] <- sub(" ","\n",metadata$LIB_TYPEQU[c401],fixed=TRUE)
+  expect_equal(nrow(validate_aedar_published_typequ_metadata(metadata)),235L)
+  expect_identical(validate_aedar_published_typequ_metadata(metadata)$LIB_TYPEQU[c401],metadata$LIB_TYPEQU[c401])
+  other_newline <- metadata
+  other <- match("A135",other_newline$TYPEQU)
+  other_newline$LIB_TYPEQU[other] <- sub(" ","\n",other_newline$LIB_TYPEQU[other],fixed=TRUE)
+  expect_error(validate_aedar_published_typequ_metadata(other_newline),"canonical registry")
+  projection <- project_aedar_aggregates(make_aedar_test_inputs(),metadata)
+  expect_equal(nrow(projection$typequ_metadata),235L)
+  expect_equal(nrow(projection$facts),4L*235L)
 })
 
 test_that("AEDAR operator publish reads the validated canonical Parquets", {
@@ -93,4 +154,10 @@ test_that("AEDAR operator publish reads the validated canonical Parquets", {
   expect_match(script,"Canonical AEDAR Parquets are missing; run --check first")
   expect_match(script,"LUSK_PUBLISH_AEDAR")
   expect_match(script,"disabled for cron")
+})
+
+test_that("AEDAR canonical output and database publication require complete TYPEQU metadata", {
+  projection <- project_aedar_aggregates(make_aedar_test_inputs())
+  expect_error(write_aedar_canonical(projection,tempfile("aedar-metadata-required-")),"requires TYPEQU metadata")
+  expect_error(publish_aedar_aggregates(projection,NULL),"requires canonical TYPEQU metadata")
 })

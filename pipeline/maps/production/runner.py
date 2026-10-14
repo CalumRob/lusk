@@ -100,9 +100,18 @@ def _input_sha256(feature: Mapping, geometry_hashes: dict[int, tuple[str, int]])
     return sha256(encoded).hexdigest()
 
 
+def _feature_for_profile(feature: Mapping, profile: Profile) -> Mapping:
+    """Use inspection framing only for the full plate; inline keeps its cut-out."""
+    inspection_extent = feature.get("inspection_extent")
+    if profile.name == "inspection" and inspection_extent is not None:
+        return {**feature, "extent": inspection_extent}
+    return feature
+
+
 def _profile_input_sha256(feature: Mapping, profile: Profile,
                           geometry_hashes: dict[int, tuple[str, int]]) -> str:
     """Hash only map-ready feature content consumed by the selected profile."""
+    feature = _feature_for_profile(feature, profile)
     territory = feature["territory"]
     selected = {
         "territory": {"kind": territory["kind"], "code": territory["code"]},
@@ -132,6 +141,7 @@ def _profile_foundation(recipe: Recipe, profile: Profile) -> Mapping:
 def _effective_identity_for(recipe, adapter, renderer_identity, feature, profile,
                             geometry_hashes=None):
     geometry_hashes = geometry_hashes if geometry_hashes is not None else {}
+    feature = _feature_for_profile(feature, profile)
     contract = {"input": _profile_input_sha256(feature, profile, geometry_hashes),
         "recipe": {"name": recipe.name, "version": recipe.version,
             "family": recipe.family, "foundation": _profile_foundation(recipe, profile),
@@ -294,8 +304,8 @@ def preflight(recipe: Recipe, binding: Binding, scope: str, profiles: Sequence[s
         raise ValueError("recipe and foundation must be versioned")
     if binding.family != recipe.family:
         raise ValueError("map-set family does not match recipe")
-    if scope not in {"representative", "full"}:
-        raise ValueError("scope must be representative or full")
+    if scope not in {"representative", "full", "inspection-refresh"}:
+        raise ValueError("scope must be representative, full, or inspection-refresh")
     if not profiles or set(profiles) - PROFILES.keys():
         raise ValueError("unknown or empty export profile request")
     if len(set(profiles)) != len(profiles):
@@ -351,7 +361,10 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
         if approval.get("human_approved") is not True:
             raise ValueError("approval record must explicitly record human_approved=true")
         from approval import validate_approval_claim, require_approval
-        validate_approval_claim(approval, recipe, renderer_identity)
+        cohort_hook = getattr(adapter, "approval_pairs", None)
+        representative_pairs = cohort_hook() if callable(cohort_hook) else None
+        validate_approval_claim(approval, recipe, renderer_identity,
+                                representative_pairs=representative_pairs)
         bounded_identity_check = getattr(adapter, "prepare_current_approval_members", None)
         if not callable(bounded_identity_check):
             raise ValueError("adapter cannot independently prepare current representative identities")
@@ -360,7 +373,8 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
         require_approval({"scope": "representative", "approval_pairs_complete": True,
             "recipe": recipe.name, "recipe_version": recipe.version,
             "foundation_version": recipe.foundation.version,
-            "renderer_identity": renderer_identity, "approval_members": current_members}, approval)
+            "renderer_identity": renderer_identity, "approval_members": current_members}, approval,
+            representative_pairs=representative_pairs)
     preflight_seconds = perf_counter() - preflight_started
     print(f"[maps] input preflight: {preflight_seconds:.1f}s", flush=True)
     authoritative_inputs = adapter.input_identity()
@@ -420,7 +434,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
     outputs = []
     failures = []
     identity_report = []
-    stage_report_spool = StageReportSpool() if scope == "full" else None
+    stage_report_spool = StageReportSpool() if scope in {"full", "inspection-refresh"} else None
     drain_adapter_report = getattr(adapter, "drain_stage_report", None)
 
     def flush_adapter_report():
@@ -471,10 +485,11 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                           f"{feature['mode']}: {hash_seconds:.2f}s", flush=True)
                     for name in requested_profiles:
                         profile = PROFILES[name]
+                        profile_feature = _feature_for_profile(feature, profile)
                         artifact_contract = _output_contract(adapter, profile)
                         key = f"{territory_key[0]}/{territory_key[1]}/{feature['mode']}/{name}"
                         profile_input_started = perf_counter()
-                        profile_input_sha256 = _profile_input_sha256(feature, profile, geometry_hashes)
+                        profile_input_sha256 = _profile_input_sha256(profile_feature, profile, geometry_hashes)
                         identity_report.append({"stage": "profile-input-identity", "profile": name,
                             "territory": f"{territory_key[0]}/{territory_key[1]}",
                             "mode": feature["mode"], "decision": "validated",
@@ -485,7 +500,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                                 "family": recipe.family, "foundation": _profile_foundation(recipe, profile),
                                 "shared_foundation": {"framing": recipe.foundation.framing,
                                     "geography": recipe.foundation.geography}},
-                            "renderer": (adapter.profile_identity(profile, feature, recipe)
+                            "renderer": (adapter.profile_identity(profile, profile_feature, recipe)
                                 if callable(getattr(adapter, "profile_identity", None)) else renderer_identity),
                             "profile": {"name": name, "size": profile.size, "context": profile.context,
                                 "furniture": profile.furniture,
@@ -498,7 +513,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                         effective_inputs = getattr(adapter, "effective_input_identity", None)
                         if callable(effective_inputs):
                             effective_started = perf_counter()
-                            effective_contract["displayed_content"] = effective_inputs(feature, profile)
+                            effective_contract["displayed_content"] = effective_inputs(profile_feature, profile)
                             identity_report.append({"stage": "effective-content-identity", "profile": name,
                                 "territory": f"{territory_key[0]}/{territory_key[1]}",
                                 "mode": feature["mode"], "decision": "validated",
@@ -536,14 +551,14 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                         try:
                             if not reusable:
                                 render_started = perf_counter()
-                                staged_path = Path(adapter.render(recipe, feature, profile, output_dir))
+                                staged_path = Path(adapter.render(recipe, profile_feature, profile, output_dir))
                                 path = staged_path
                                 render_seconds = perf_counter() - render_started
                             if not path.is_file() or path.stat().st_size == 0:
                                 raise ValueError(f"renderer did not produce a nonempty artifact: {path}")
                             validation_started = perf_counter()
                             _validate_artifact(path, profile, artifact_contract)
-                            adapter.validate(path, feature, profile)
+                            adapter.validate(path, profile_feature, profile)
                             validation_seconds = perf_counter() - validation_started
                             promote = getattr(adapter, "promote_output", None)
                             if not reusable and callable(promote):
@@ -582,6 +597,14 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                         if callable(observe_hook):
                             observe_hook(feature)
                         output_sha256 = sha256(path.read_bytes()).hexdigest()
+                        inline_legend_metadata = None
+                        if recipe.family == "aedar" and name == "inline":
+                            from aedar_legend import inline_legend
+                            from aedar_map_plan import family_config
+                            cfg = family_config()
+                            image_key = cfg["prefix"] + path.name
+                            inline_legend_metadata = inline_legend(
+                                feature, image_key, output_sha256, path.stat().st_size)
                         cache_entry = {"path": str(path), "effective_identity": effective_identity,
                             "output_sha256": output_sha256, "artifact_contract": artifact_contract}
                         next_cached_outputs[key] = cache_entry
@@ -594,6 +617,7 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                             "render_identity": render_identity, "output_sha256": output_sha256,
                             "effective_identity": effective_identity,
                             "artifact_contract": artifact_contract, "decision": decision,
+                            "inline_legend": inline_legend_metadata,
                             "render_seconds": round(render_seconds, 3),
                             "validation_seconds": round(validation_seconds, 3)})
                         print(f"[maps] {artifact_number}/{artifact_total} {territory_key[0]}/{territory_key[1]} "

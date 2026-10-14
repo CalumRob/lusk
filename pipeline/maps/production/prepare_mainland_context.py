@@ -5,11 +5,12 @@ import argparse
 from pathlib import Path
 import sys
 
-from qgis.core import QgsApplication, QgsProject, QgsRectangle
+from qgis.core import QgsApplication, QgsProject
 
 ROOT = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(Path(__file__).parent))
 from mainland_context import acquire_context  # noqa: E402
+from inspection_frame import shared_ground_extent  # noqa: E402
 from network import build_full_map_set, build_representative_map_set  # noqa: E402
 
 
@@ -27,12 +28,11 @@ def main():
     try:
         builder = build_full_map_set if args.scope == "full" else build_representative_map_set
         binding = builder(args.raw_dir, QgsProject.instance())
-        frames = [feature["extent"] for values in binding.map_set.layers.values() for feature in values]
-        if not frames:
-            raise RuntimeError("Cannot acquire mainland context without map-ready frames")
-        extent = QgsRectangle(frames[0])
-        for frame in frames[1:]:
-            extent.combineExtentWith(QgsRectangle(frame))
+        features = [feature for values in binding.map_set.layers.values() for feature in values]
+        try:
+            extent = shared_ground_extent(features, ("inspection", "inline"))
+        except ValueError as error:
+            raise RuntimeError("Cannot acquire mainland context without map-ready frames") from error
         bbox = (extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum())
         cache = args.output_dir / ".stage-cache" / "official-context"
         path, manifest = acquire_context(cache, bbox, refresh=args.refresh)

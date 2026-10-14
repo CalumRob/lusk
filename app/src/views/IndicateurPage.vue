@@ -26,7 +26,9 @@ import { PayloadError, validerThemeMetadata } from '@/payload/validate'
 import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, orderedSeriesReaderEnabled, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
 import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
-import type { Indicateur, ThemeMetadata } from '@/payload/types'
+import type { Indicateur, IndicatorPageMetadata, Payload, ThemeMetadata } from '@/payload/types'
+import { validateRaccordementIndicatorRead } from '@/payload/raccordementIndicatorApi'
+import type { RaccordementIndicatorComparison, RaccordementIndicatorRead } from '@/payload/raccordementIndicatorApi'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -61,6 +63,7 @@ const orderedSeriesAdapter = computed(() => {
   const enabled = orderedSeriesReaderEnabled(indicator.value, import.meta.env as Record<string, string | undefined>)
   return enabled ? { ...adapter, datasetId, publicationMode } : null
 })
+const raccordementApiActive = computed(() => orderedSeriesAdapter.value?.indicator === 'raccordement_courbe')
 const themeValide = computed(() => (THEMES_CANONIQUES as readonly string[]).includes(theme.value))
 const selectedTheme = theme.value as Theme
 const profilAgeApi = selectedTheme === 'demographie' && indicator.value === 'structure_age' &&
@@ -267,6 +270,15 @@ watch(
 )
 
 const serieLecture = ref<OrderedSeriesRead | null>(null)
+const raccordementApiLecture = ref<{ metadata: RaccordementIndicatorRead; comparison: RaccordementIndicatorComparison; facts: Indicateur[]; referenceFacts: Indicateur[] } | null>(null)
+const raccordementApiErreur = ref(false)
+const raccordementSource = computed(() => {
+  const point = raccordementApiLecture.value?.metadata.points[0]
+  if (!point || typeof point !== 'object') return null
+  const provenance = (point as { provenance?: unknown }).provenance
+  if (!Array.isArray(provenance) || !provenance[0] || typeof provenance[0] !== 'object') return null
+  return provenance[0] as { source_name?: string; version?: string; reference_date?: string; publication_date?: string }
+})
 const serieErreur = ref(false)
 const serieChargement = ref(false)
 let serieRequete = 0
@@ -297,8 +309,32 @@ async function chargerSerie(force = false) {
   serieRequestKey = url
   serieChargement.value = true
   serieErreur.value = false
+  raccordementApiErreur.value = false
   serieLecture.value = null
+  raccordementApiLecture.value = null
   try {
+    if (adapter.indicator === 'raccordement_courbe') {
+      const readUrl = `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/indicators/raccordement_courbe`
+      const compareUrl = `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/indicators/raccordement_courbe/comparison`
+      const selectedIds = niveauSerie.value === 'commune' && (department || epci)
+        ? scopeTerritories.filter((territory) => territory.type === 'commune')
+          .map((territory) => ({ territory_type: 'commune', territory_id: territory.territoire }))
+        : undefined
+      const [readResponse, comparisonResponse] = await Promise.all([
+        fetch(readUrl),
+        fetch(compareUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(selectedIds === undefined ? {} : { selection: selectedIds }) }),
+      ])
+      if (!readResponse.ok || !comparisonResponse.ok) throw new Error('Raccordement API unavailable')
+      const [read, comparison] = await Promise.all([readResponse.json(), comparisonResponse.json()])
+      if (request !== serieRequete) return
+      const canonicalScopeLabel = selectedIds === undefined
+        ? focal.classe_densite_libelle_public ?? undefined
+        : typeof model.value?.scopeLabel === 'string' ? model.value.scopeLabel : undefined
+      const adapted = validateRaccordementIndicatorRead(read, comparison, focal, selectedIds, canonicalScopeLabel)
+      raccordementApiLecture.value = adapted
+      return
+    }
     const response = await fetch(url)
     if (!response.ok) throw new Error(`HTTP ${response.status}`)
     const result = await response.json() as OrderedSeriesRead
@@ -307,12 +343,18 @@ async function chargerSerie(force = false) {
       !Array.isArray(result.scope_series)) throw new Error('Invalid ordered-series response')
     if (request === serieRequete) serieLecture.value = result
   } catch {
-    if (request === serieRequete) serieErreur.value = true
+    if (request === serieRequete) {
+      serieErreur.value = true
+      if (adapter.indicator === 'raccordement_courbe') raccordementApiErreur.value = true
+    }
   } finally {
-    if (request === serieRequete) serieChargement.value = false
+    if (request === serieRequete) {
+      serieChargement.value = false
+      if (adapter.indicator === 'raccordement_courbe' && !serieErreur.value) raccordementApiErreur.value = false
+    }
   }
 }
-const payload = computed(() => {
+const payload = computed<Payload>(() => {
   const baseInitial = profilAgeApi
     ? { ...payloadLegacy.value,
         indicateurs: remplacerStructureAgeStatique(payloadLegacy.value.indicateurs, faitsProfilAge.value),
@@ -330,6 +372,30 @@ const payload = computed(() => {
   }
   const adapter = orderedSeriesAdapter.value
   if (!adapter) return base
+  if (adapter.indicator === 'raccordement_courbe' && !raccordementApiLecture.value) {
+    return { ...base, indicateurs: base.indicateurs.filter((fact) => fact.key !== 'raccordement_courbe' &&
+      fact.key !== 'raccordement_reference' && fact.key !== 'raccordement_tc') }
+  }
+  if (adapter.indicator === 'raccordement_courbe' && raccordementApiLecture.value) {
+    const read = raccordementApiLecture.value
+    const page = base.themeMetadata?.mobilite?.indicator_pages?.raccordement_courbe
+    if (!page || page.family !== 'trajectory') return base
+    const namedReference = read.metadata.named_references[0]
+    const trajectory = page.trajectory
+    const updatedPage: Extract<IndicatorPageMetadata, { family: 'trajectory' }> = { ...page,
+      label: read.metadata.label, unit: read.metadata.unit, direction: read.metadata.direction,
+      comparison: { ...page.comparison, details: read.metadata.axis_values },
+      trajectory: { ...trajectory, endpoints: [read.metadata.axis_values[0]!, read.metadata.axis_values.at(-1)!],
+        ...(trajectory.reference && namedReference && typeof namedReference.id === 'string' && typeof namedReference.label === 'string'
+          ? { reference: { ...trajectory.reference, territoire: namedReference.id, label: namedReference.label } } : {}) },
+    }
+    const themeMetadata = base.themeMetadata?.mobilite
+    const indicators = base.indicateurs.filter((fact) => fact.key !== 'raccordement_courbe' &&
+      fact.key !== 'raccordement_reference' && fact.key !== 'raccordement_tc')
+    return { ...base, themeMetadata: themeMetadata ? { ...base.themeMetadata, mobilite: {
+      ...themeMetadata, indicator_pages: { ...themeMetadata.indicator_pages, raccordement_courbe: updatedPage },
+    } } : base.themeMetadata, indicateurs: [...indicators, ...read.facts, ...read.referenceFacts] } as Payload
+  }
   const page = base.themeMetadata?.[adapter.theme]?.indicator_pages?.[adapter.indicator]
   const apiFacts = serieLecture.value && page
     ? orderedSeriesFacts(serieLecture.value, adapter.theme, base.territoires).map((fact) => ({ ...fact, unit: page.unit }))
@@ -398,7 +464,7 @@ const trajectoire = computed(() => {
   const dispatch = familyDispatch.value
   if (!dispatch || dispatch.family !== 'trajectory' || !model.value) return null
   const { niveau, departement, epci, territoire } = model.value.state
-  return modeleTrajectoire(
+  const trajectoryModel = modeleTrajectoire(
     facts.value,
     dispatch.facet,
     dispatch.representation.endpoints,
@@ -408,6 +474,18 @@ const trajectoire = computed(() => {
     dispatch.representation.extension.reference?.label ?? null,
     { axis: dispatch.representation.extension.axis, labelsDetail: dispatch.representation.labelsDetail },
   )
+  if (indicator.value !== 'raccordement_courbe' || !raccordementApiLecture.value) return trajectoryModel
+  const comparison = raccordementApiLecture.value.comparison
+  const byDetail = new Map(trajectoryModel.etapes.map((step) => [step.detail, step] as const))
+  return { ...trajectoryModel,
+    hideCohortDistribution: true,
+    serieComparaison: comparison.points.map((point) => ({ detail: point.detail,
+      label: byDetail.get(point.detail)?.label ?? point.detail,
+      x: byDetail.get(point.detail)?.x ?? 0, value: point.value })),
+    comparaisonScopeLabel: comparison.scopeLabel,
+    comparaisonStatistic: comparison.statistic,
+    comparaisonMemberCount: comparison.selectedMemberCount,
+  }
 })
 // La signature intra-territoire de la distribution (#440), dans le MÊME
 // périmètre résolu que la comparaison — les libellés canonical viennent des
@@ -496,9 +574,9 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
 </script>
 <template>
   <section class="indicateur-page presentation-editorial" :class="`theme-${theme}`" :style="themeVars">
-    <div v-if="orderedSeriesAdapter && serieChargement" role="status">Chargement des données actualisées…</div>
-    <div v-if="orderedSeriesAdapter && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
-    <div v-if="chargement" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur" role="alert">Impossible de charger l’indicateur.<button v-if="profilAgeApi" type="button" @click="retryProfilAge++">Réessayer</button><button v-if="scalaireApiOptionnelle" type="button" @click="retryScalaireApi++">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
+    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieChargement" role="status">Chargement des données actualisées…</div>
+    <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
+    <div v-if="chargement || (raccordementApiActive && serieChargement)" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur || (raccordementApiActive && serieErreur)" role="alert">Impossible de charger l’indicateur.<button v-if="profilAgeApi" type="button" @click="retryProfilAge++">Réessayer</button><button v-if="scalaireApiOptionnelle" type="button" @click="retryScalaireApi++">Réessayer</button><button v-if="raccordementApiActive" type="button" @click="chargerSerie(true)">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <!-- La note de contexte permanente (#472) : UNE ligne partagée par toutes
@@ -507,17 +585,18 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
       <nav class="vues" aria-label="Vues de l’indicateur"><button :class="{ active: vue === 'reperes' }" @click="setVue('reperes')">Repères</button><button :class="{ active: vue === 'carte' }" @click="setVue('carte')">Carte</button><button :class="{ active: vue === 'indicateur' }" @click="setVue('indicateur')">L’indicateur</button></nav>
         <main v-if="vue === 'reperes'"><RepereFamilyOutlet v-if="familyDispatch" :dispatch="familyDispatch" :modele="trajectoire" :signature="distribution" :profil="profil" :relation="relation" :composition="composition" :ensemble="ensemble">
          <template #default>
-          <div v-if="familyDispatch.family !== 'distribution'" class="hero"><article class="median"><span>Médiane</span><strong>{{ model!.median === null ? '—' : formaterValeur({ value: model!.median, unit: familyDispatch.facet.unit }) }} <small>{{ familyDispatch.facet.unit }}</small></strong><p>{{ model!.scopeLabel }}</p></article><article class="distribution"><h2>Distribution</h2><svg class="density" viewBox="0 0 600 180" role="img" aria-label="Densité des valeurs"><title>Densité des valeurs</title><desc v-if="markerDescription">{{ markerDescription }}</desc><path :d="`M ${model!.density.map((point, index) => `${index * (600 / Math.max(model!.density.length - 1, 1))},${20 + point.y * 1.5}`).join(' L ')}`" /><circle v-if="model!.markerX !== null && model!.markerY !== null" :cx="model!.markerX! * 6" :cy="20 + model!.markerY! * 1.5" r="7" class="point-highlight" :aria-label="markerDescription" /></svg><span v-if="markerDescription" class="visually-hidden">{{ markerDescription }}</span></article></div>
-          <div class="extremes"><article><h2>Valeurs les plus hautes</h2><span v-if="model!.high.count > 1">{{ model!.high.count }} territoires à égalité</span><RouterLink v-for="row in model!.high.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article><article><h2>Valeurs les plus basses</h2><span v-if="model!.low.count > 1">{{ model!.low.count }} territoires à égalité</span><RouterLink v-for="row in model!.low.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article></div>
+           <section v-if="raccordementApiLecture" class="raccordement-comparison-summary" data-testid="raccordement-selected-mean"><h2>Moyenne — {{ raccordementApiLecture.comparison.scopeLabel }}</h2><p>{{ raccordementApiLecture.comparison.selectedMemberCount }} membres · moyenne à {{ raccordementApiLecture.metadata.comparison_point }}</p><strong>{{ formaterValeur({ value: raccordementApiLecture.comparison.valueAtComparisonPoint, unit: page.unit }) }} {{ page.unit }}</strong><p v-if="raccordementApiLecture.comparison.rank !== null">Rang à {{ raccordementApiLecture.metadata.comparison_point }} : {{ formaterRang(raccordementApiLecture.comparison.rank, raccordementApiLecture.comparison.rankSize) }}</p><p v-else>Rang indisponible à {{ raccordementApiLecture.metadata.comparison_point }}.</p><p v-if="raccordementApiLecture.facts.find((fact) => fact.detail === raccordementApiLecture?.metadata.comparison_point)">Territoire à {{ raccordementApiLecture.metadata.comparison_point }} : {{ formaterValeur({ value: raccordementApiLecture.facts.find((fact) => fact.detail === raccordementApiLecture?.metadata.comparison_point)?.value ?? null, unit: page.unit }) }} {{ page.unit }}</p><p v-if="raccordementSource">Source : {{ raccordementSource.source_name }} · version {{ raccordementSource.version }} · référence {{ raccordementSource.reference_date }} · publication {{ raccordementSource.publication_date }}</p></section>
+           <div v-if="familyDispatch.family !== 'distribution' && !raccordementApiLecture" class="hero"><article class="median"><span>Médiane</span><strong>{{ model!.median === null ? '—' : formaterValeur({ value: model!.median, unit: familyDispatch.facet.unit }) }} <small>{{ familyDispatch.facet.unit }}</small></strong><p>{{ model!.scopeLabel }}</p></article><article class="distribution"><h2>Distribution</h2><svg class="density" viewBox="0 0 600 180" role="img" aria-label="Densité des valeurs"><title>Densité des valeurs</title><desc v-if="markerDescription">{{ markerDescription }}</desc><path :d="`M ${model!.density.map((point, index) => `${index * (600 / Math.max(model!.density.length - 1, 1))},${20 + point.y * 1.5}`).join(' L ')}`" /><circle v-if="model!.markerX !== null && model!.markerY !== null" :cx="model!.markerX! * 6" :cy="20 + model!.markerY! * 1.5" r="7" class="point-highlight" :aria-label="markerDescription" /></svg><span v-if="markerDescription" class="visually-hidden">{{ markerDescription }}</span></article></div>
+           <div v-if="!raccordementApiLecture" class="extremes"><article><h2>Valeurs les plus hautes</h2><span v-if="model!.high.count > 1">{{ model!.high.count }} territoires à égalité</span><RouterLink v-for="row in model!.high.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article><article><h2>Valeurs les plus basses</h2><span v-if="model!.low.count > 1">{{ model!.low.count }} territoires à égalité</span><RouterLink v-for="row in model!.low.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article></div>
            <div class="controls"><label>Niveau <select :value="model!.state.niveau" @change="setQuery(PARAM_NIVEAU, ($event.target as HTMLSelectElement).value)"><option v-for="niveau in page.levels" :key="niveau" :value="niveau">{{ niveau === 'commune' ? 'Communes' : niveau === 'epci' ? 'EPCI' : 'Départements' }}</option></select></label><label v-if="model!.state.niveau === 'commune'">Département <input :value="route.query.departement ?? ''" @input="setQuery('departement', ($event.target as HTMLInputElement).value)" /></label><label v-if="model!.state.niveau === 'commune'">EPCI <input :value="route.query.epci ?? ''" @input="setQuery('epci', ($event.target as HTMLInputElement).value)" /></label><label>Rechercher <input v-model="recherche" @input="setQuery('recherche', recherche)" /></label><label v-if="familyDispatch.family === 'trajectory'">Détail (actif) <select aria-label="Détail (actif)" :value="familyDispatch.facet.detail ?? ''" @change="setQuery('detail', ($event.target as HTMLSelectElement).value)"><option v-for="detail in familyDispatch.facet.details" :key="detail" :value="detail">{{ libelleDetail(detail) }}</option></select></label><label v-if="familyDispatch.family === 'list'">Catégorie comparée <select aria-label="Catégorie comparée" :value="familyDispatch.facet.detail ?? ''" @change="setQuery('detail', ($event.target as HTMLSelectElement).value)"><option v-for="detail in familyDispatch.facet.details" :key="detail" :value="detail">{{ familyDispatch.facet.labels[detail] ?? detail }}</option></select></label></div>
-           <table><caption>Territoires comparables — {{ model!.scopeLabel }}</caption><thead><tr><th><button type="button" @click="setSort('nom')">Territoire</button></th><th><button type="button" @click="setSort('valeur')">Valeur</button></th><th><button type="button" @click="setSort('rang')">Rang</button> <span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></th><th /></tr></thead><tbody><tr v-for="row in model!.rows" :key="row.territoire.territoire" :class="{ selection: row.highlighted }"><td><RouterLink :to="row.fiche">{{ row.territoire.nom }}</RouterLink></td><td>{{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</td><td><span :title="`${directionGlyph} ${directionText}`" :aria-label="`${formaterRang(row.rang, row.rangTaille)} · ${directionText}`">{{ formaterRang(row.rang, row.rangTaille) }}</span></td><td><button type="button" @click="setQuery(PARAM_TERRITOIRE, row.territoire.territoire)">Voir sur la distribution</button></td></tr></tbody></table>
+            <table v-if="!raccordementApiLecture"><caption>Territoires comparables — {{ model!.scopeLabel }}</caption><thead><tr><th><button type="button" @click="setSort('nom')">Territoire</button></th><th><button type="button" @click="setSort('valeur')">Valeur</button></th><th><button type="button" @click="setSort('rang')">Rang</button> <span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></th><th /></tr></thead><tbody><tr v-for="row in model!.rows" :key="row.territoire.territoire" :class="{ selection: row.highlighted }"><td><RouterLink :to="row.fiche">{{ row.territoire.nom }}</RouterLink></td><td>{{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</td><td><span :title="`${formaterRang(row.rang, row.rangTaille)} · ${directionText}`" :aria-label="`${formaterRang(row.rang, row.rangTaille)} · ${directionText}`">{{ formaterRang(row.rang, row.rangTaille) }}</span></td><td><button type="button" @click="setQuery(PARAM_TERRITOIRE, row.territoire.territoire)">Voir sur la distribution</button></td></tr></tbody></table>
           </template></RepereFamilyOutlet></main>
        <section v-else-if="vue === 'carte'" class="carte-indicateur"><div v-if="geometrie.masques.value" class="map-wrap"><MapExplorer :masques="geometrie.masques.value" :payload="payloadCarte" :active-ids="payloadCarte.indicateurs.map((fact) => fact.territoire)" :theme="theme as Theme" :couche="couche" :niveau="niveauMasque" :territoire-cible="territoireCible" :requete-zoom="requeteZoom" /></div><div v-else role="status">Chargement de la carte…</div></section>
-        <aside v-else><h2>L’indicateur</h2><dl><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></dl><p v-if="horlogeService" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
+        <aside v-else><h2>L’indicateur</h2><dl><template v-if="raccordementApiLecture"><dt>Définition</dt><dd>{{ raccordementApiLecture.metadata.label }}</dd><dt>Unité</dt><dd>{{ raccordementApiLecture.metadata.unit }}</dd><dt>Mesure</dt><dd>{{ raccordementApiLecture.metadata.comparison_contract.statistic }} · {{ raccordementApiLecture.metadata.axis_values.length }} points déclarés</dd></template><template v-else><dt>Définition</dt><dd>{{ page.definition }}</dd><dt>Unité</dt><dd>{{ page.unit }}</dd><dt>Calcul</dt><dd>{{ page.calculation }}</dd><dt>Direction</dt><dd><span :title="directionText" :aria-label="directionText">{{ directionGlyph }} {{ directionText }}</span></dd><dt>Précautions</dt><dd>{{ page.caveats }}</dd></template></dl><p v-if="horlogeService && !raccordementApiLecture" class="indicator-date-caveat" data-testid="raccordement-dates">Les résultats reposent sur les horaires planifiés pour le {{ horlogeService.service }} ; les sources ont été acquises le {{ horlogeService.acquisition }}.</p><section v-for="source in sources" :id="`indicator-source-${source.id}`" :key="source.id" class="source-card"><h3>{{ source.dataset }}</h3><p>Éditeur : {{ source.publisher }} · Licence : {{ source.licence ?? '—' }} · Millésime : {{ source.vintage ?? '—' }} · Fraîcheur : {{ source.freshness ?? '—' }}</p><p v-if="source.caveat">Limite de la source : {{ source.caveat }}</p><a v-if="source.url" :href="source.url" target="_blank" rel="noopener noreferrer">Voir le jeu de données</a><RouterLink :to="{ name: 'sources', hash: `#${ancreSource(source.id)}` }">Voir la fiche source</RouterLink><ul><li v-for="vintage in source.vintages" :key="vintage.id">{{ vintage.label }} · {{ vintage.version ?? '—' }} · {{ vintage.licence ?? '—' }} · {{ vintage.dateReference ?? '—' }} · {{ vintage.datePublication ?? '—' }}</li></ul><dl v-if="source.clocks.length"><template v-for="clock in source.clocks" :key="`${clock.name}-${clock.reference}`"><dt>{{ clock.name }}</dt><dd>{{ clock.frequency }} · Référence : {{ clock.reference }}<span v-if="clock.trigger"> · Déclencheur : {{ clock.trigger }}</span></dd></template></dl></section></aside>
      </template>
   </section>
 </template>
 <style scoped>
 .visually-hidden{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
-.indicateur-page{min-height:100%;padding:clamp(24px,5vw,64px) max(16px,calc((100% - 1200px)/2));color:var(--text-primary)}header{max-width:760px}h1{font:var(--text-h1);margin:.3rem 0 1rem}h2{font:var(--text-h3)}.sur-titre{color:var(--indicateur-strong);font:var(--text-overline);text-transform:uppercase}.vues{display:flex;gap:24px;margin:32px 0;border-bottom:1px solid var(--border-default);padding-bottom:12px}.vues button.active{border-bottom:3px solid var(--indicateur-accent);font-weight:700}.hero,.extremes{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.hero article,.extremes article,aside{padding:24px;background:var(--surface-primary);border:1px solid var(--border-default);border-radius:12px;margin-bottom:16px}.median strong{display:block;font:600 clamp(3rem,9vw,7rem)/1 var(--font-ui);margin:20px 0}.median small{font:var(--text-body)}.density{width:100%;height:170px;border-bottom:2px solid var(--indicateur-line)}.density path{fill:none;stroke:var(--indicateur-accent);stroke-width:4}.point-highlight{fill:var(--status-error)}.extremes article{display:flex;flex-direction:column;gap:8px}.indicator-date-caveat{margin:0 0 16px;color:var(--text-secondary)}.controls{display:flex;gap:16px;flex-wrap:wrap;margin:24px 0}label{display:flex;flex-direction:column;gap:4px}select,input{padding:8px;border:1px solid var(--border-default);border-radius:6px}table{width:100%;border-collapse:collapse;background:var(--surface-primary)}th,td{padding:12px;border-bottom:1px solid var(--border-subtle);text-align:left}tr.selection{background:var(--indicateur-soft)}button{border:0;background:none;color:var(--accent-primary);cursor:pointer}.carte-indicateur,.map-wrap{min-height:540px}.map-wrap{position:relative;height:540px}.map-wrap :deep(.map-explorer){height:100%}dt{font-weight:700;margin-top:12px}dd{margin:0}@media(max-width:700px){.hero,.extremes{grid-template-columns:1fr}table{font-size:.85rem}}
+.indicateur-page{min-height:100%;padding:clamp(24px,5vw,64px) max(16px,calc((100% - 1200px)/2));color:var(--text-primary)}header{max-width:760px}h1{font:var(--text-h1);margin:.3rem 0 1rem}h2{font:var(--text-h3)}.sur-titre{color:var(--indicateur-strong);font:var(--text-overline);text-transform:uppercase}.vues{display:flex;gap:24px;margin:32px 0;border-bottom:1px solid var(--border-default);padding-bottom:12px}.vues button.active{border-bottom:0;box-shadow:inset 0 -3px 0 var(--indicateur-accent);border-radius:0;font-weight:700}.hero,.extremes{display:grid;grid-template-columns:repeat(2,1fr);gap:16px}.hero article,.extremes article,aside{padding:24px;background:var(--surface-primary);border:1px solid var(--border-default);border-radius:12px;margin-bottom:16px}.median strong{display:block;font:600 clamp(3rem,9vw,7rem)/1 var(--font-ui);margin:20px 0}.median small{font:var(--text-body)}.density{width:100%;height:170px;border-bottom:2px solid var(--indicateur-line)}.density path{fill:none;stroke:var(--indicateur-accent);stroke-width:4}.point-highlight{fill:var(--status-error)}.extremes article{display:flex;flex-direction:column;gap:8px}.indicator-date-caveat{margin:0 0 16px;color:var(--text-secondary)}.controls{display:flex;gap:16px;flex-wrap:wrap;margin:24px 0}label{display:flex;flex-direction:column;gap:4px}select,input{padding:8px;border:1px solid var(--border-default);border-radius:6px}table{width:100%;border-collapse:collapse;background:var(--surface-primary)}th,td{padding:12px;border-bottom:1px solid var(--border-subtle);text-align:left}tr.selection{background:var(--indicateur-soft)}button{border:0;background:none;color:var(--accent-primary);cursor:pointer}.carte-indicateur,.map-wrap{min-height:540px}.map-wrap{position:relative;height:540px}.map-wrap :deep(.map-explorer){height:100%}dt{font-weight:700;margin-top:12px}dd{margin:0}@media(max-width:700px){.hero,.extremes{grid-template-columns:1fr}table{font-size:.85rem}}
 </style>

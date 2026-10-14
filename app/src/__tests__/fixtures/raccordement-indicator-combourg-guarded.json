@@ -1,0 +1,3111 @@
+{
+  "dataset_id": "raccordement_courbe",
+  "publication_id": "f93b59437500f0d37eb912507923c2ef",
+  "reference_content_version": "national-test-ref-v1",
+  "published_at": "2026-10-11T11:13:58.169327Z",
+  "territory": {
+    "id": "35085",
+    "type": "commune",
+    "name": "35085"
+  },
+  "indicator_id": "raccordement_courbe",
+  "theme_id": "mobilite",
+  "axis_kind": "duration_minute",
+  "axis_values": [
+    "t0000",
+    "t0005",
+    "t0010",
+    "t0015",
+    "t0020",
+    "t0025",
+    "t0030",
+    "t0035",
+    "t0040",
+    "t0045",
+    "t0050",
+    "t0055",
+    "t0060",
+    "t0065",
+    "t0070",
+    "t0075",
+    "t0080",
+    "t0085",
+    "t0090",
+    "t0095",
+    "t0100",
+    "t0105",
+    "t0110",
+    "t0115",
+    "t0120",
+    "t0125",
+    "t0130",
+    "t0135",
+    "t0140",
+    "t0145",
+    "t0150",
+    "t0155",
+    "t0160",
+    "t0165",
+    "t0170",
+    "t0175",
+    "t0180",
+    "t0185",
+    "t0190",
+    "t0195",
+    "t0200",
+    "t0205",
+    "t0210",
+    "t0215",
+    "t0220",
+    "t0225",
+    "t0230",
+    "t0235",
+    "t0240",
+    "t0245",
+    "t0250",
+    "t0255",
+    "t0260",
+    "t0265",
+    "t0270",
+    "t0275",
+    "t0280",
+    "t0285",
+    "t0290",
+    "t0295",
+    "t0300",
+    "t0305",
+    "t0310",
+    "t0315",
+    "t0320",
+    "t0325",
+    "t0330",
+    "t0335",
+    "t0340",
+    "t0345",
+    "t0350",
+    "t0355",
+    "t0360"
+  ],
+  "axis_numeric_values": [
+    0,
+    5,
+    10,
+    15,
+    20,
+    25,
+    30,
+    35,
+    40,
+    45,
+    50,
+    55,
+    60,
+    65,
+    70,
+    75,
+    80,
+    85,
+    90,
+    95,
+    100,
+    105,
+    110,
+    115,
+    120,
+    125,
+    130,
+    135,
+    140,
+    145,
+    150,
+    155,
+    160,
+    165,
+    170,
+    175,
+    180,
+    185,
+    190,
+    195,
+    200,
+    205,
+    210,
+    215,
+    220,
+    225,
+    230,
+    235,
+    240,
+    245,
+    250,
+    255,
+    260,
+    265,
+    270,
+    275,
+    280,
+    285,
+    290,
+    295,
+    300,
+    305,
+    310,
+    315,
+    320,
+    325,
+    330,
+    335,
+    340,
+    345,
+    350,
+    355,
+    360
+  ],
+  "completeness": "dense_complete",
+  "label": "Courbe de population bretonne jointe selon le temps de trajet",
+  "unit": "%",
+  "direction": "high",
+  "descriptor_version": "1",
+  "comparison_point": "t0090",
+  "points": [
+    {
+      "axis": "t0000",
+      "observation_period": "2026-10-21",
+      "value": 0.0018586002661355552,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0005",
+      "observation_period": "2026-10-21",
+      "value": 0.0027981921336359974,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0010",
+      "observation_period": "2026-10-21",
+      "value": 0.005189643326172605,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0015",
+      "observation_period": "2026-10-21",
+      "value": 0.005189643326172605,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0020",
+      "observation_period": "2026-10-21",
+      "value": 0.07343978755540867,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0025",
+      "observation_period": "2026-10-21",
+      "value": 0.07427907125069215,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0030",
+      "observation_period": "2026-10-21",
+      "value": 0.08970913529137205,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0035",
+      "observation_period": "2026-10-21",
+      "value": 0.09773900741294787,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0040",
+      "observation_period": "2026-10-21",
+      "value": 0.11373961042161322,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0045",
+      "observation_period": "2026-10-21",
+      "value": 0.13878505350252365,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0050",
+      "observation_period": "2026-10-21",
+      "value": 0.16710355804103358,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0055",
+      "observation_period": "2026-10-21",
+      "value": 0.1867654093356178,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0060",
+      "observation_period": "2026-10-21",
+      "value": 0.20498496826956808,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0065",
+      "observation_period": "2026-10-21",
+      "value": 0.22680054618669496,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0070",
+      "observation_period": "2026-10-21",
+      "value": 0.2426315530082305,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0075",
+      "observation_period": "2026-10-21",
+      "value": 0.25521298092115374,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0080",
+      "observation_period": "2026-10-21",
+      "value": 0.28065820715087103,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0085",
+      "observation_period": "2026-10-21",
+      "value": 0.28864517288664304,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0090",
+      "observation_period": "2026-10-21",
+      "value": 0.31532250816815827,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0095",
+      "observation_period": "2026-10-21",
+      "value": 0.3232407657050418,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0100",
+      "observation_period": "2026-10-21",
+      "value": 0.34166528960360876,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0105",
+      "observation_period": "2026-10-21",
+      "value": 0.3566315008247883,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0110",
+      "observation_period": "2026-10-21",
+      "value": 0.3679648747452433,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0115",
+      "observation_period": "2026-10-21",
+      "value": 0.3811319168427858,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0120",
+      "observation_period": "2026-10-21",
+      "value": 0.41213120076999565,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0125",
+      "observation_period": "2026-10-21",
+      "value": 0.4237715872753575,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0130",
+      "observation_period": "2026-10-21",
+      "value": 0.4498389560992297,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0135",
+      "observation_period": "2026-10-21",
+      "value": 0.4615158710141272,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0140",
+      "observation_period": "2026-10-21",
+      "value": 0.49526464252892555,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0145",
+      "observation_period": "2026-10-21",
+      "value": 0.5158730434833028,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0150",
+      "observation_period": "2026-10-21",
+      "value": 0.5713527397756691,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0155",
+      "observation_period": "2026-10-21",
+      "value": 0.6123808115684893,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0160",
+      "observation_period": "2026-10-21",
+      "value": 0.6299724297480409,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0165",
+      "observation_period": "2026-10-21",
+      "value": 0.6420050617938928,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0170",
+      "observation_period": "2026-10-21",
+      "value": 0.6513406796023622,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0175",
+      "observation_period": "2026-10-21",
+      "value": 0.6584367580166813,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0180",
+      "observation_period": "2026-10-21",
+      "value": 0.6618736175011669,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0185",
+      "observation_period": "2026-10-21",
+      "value": 0.6730330466143093,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0190",
+      "observation_period": "2026-10-21",
+      "value": 0.684796644024851,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0195",
+      "observation_period": "2026-10-21",
+      "value": 0.6972163032669734,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0200",
+      "observation_period": "2026-10-21",
+      "value": 0.7080246537773565,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0205",
+      "observation_period": "2026-10-21",
+      "value": 0.7245065040862534,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0210",
+      "observation_period": "2026-10-21",
+      "value": 0.7374448087621798,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0215",
+      "observation_period": "2026-10-21",
+      "value": 0.7494043839889603,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0220",
+      "observation_period": "2026-10-21",
+      "value": 0.7632741631080459,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0225",
+      "observation_period": "2026-10-21",
+      "value": 0.7722850839428649,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0230",
+      "observation_period": "2026-10-21",
+      "value": 0.7874707555292706,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0235",
+      "observation_period": "2026-10-21",
+      "value": 0.7999405688575015,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0240",
+      "observation_period": "2026-10-21",
+      "value": 0.8051168764151135,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0245",
+      "observation_period": "2026-10-21",
+      "value": 0.8180664875035152,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0250",
+      "observation_period": "2026-10-21",
+      "value": 0.8246998727303827,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0255",
+      "observation_period": "2026-10-21",
+      "value": 0.8295265512252962,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0260",
+      "observation_period": "2026-10-21",
+      "value": 0.8317860942722874,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0265",
+      "observation_period": "2026-10-21",
+      "value": 0.8349078237475249,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0270",
+      "observation_period": "2026-10-21",
+      "value": 0.8388543415174365,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0275",
+      "observation_period": "2026-10-21",
+      "value": 0.8418873591409446,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0280",
+      "observation_period": "2026-10-21",
+      "value": 0.8448528281976129,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0285",
+      "observation_period": "2026-10-21",
+      "value": 0.8450711289307903,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0290",
+      "observation_period": "2026-10-21",
+      "value": 0.8459985446617788,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0295",
+      "observation_period": "2026-10-21",
+      "value": 0.8469413255174133,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0300",
+      "observation_period": "2026-10-21",
+      "value": 0.8469413255174133,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0305",
+      "observation_period": "2026-10-21",
+      "value": 0.8479951411417157,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0310",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0315",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0320",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0325",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0330",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0335",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0340",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0345",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0350",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0355",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    },
+    {
+      "axis": "t0360",
+      "observation_period": "2026-10-21",
+      "value": 0.8486625093857719,
+      "status": "measured",
+      "missing_reason": null,
+      "provenance": [
+        {
+          "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+          "source_id": "raccordement_gtfs_national",
+          "vintage_id": "2026-10-21",
+          "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+          "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+          "version": "2026-10-21",
+          "reference_date": "2026-10-10",
+          "publication_date": "2026-10-10",
+          "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+        }
+      ]
+    }
+  ],
+  "scope_series": [],
+  "observation_period_kind": "snapshot_date",
+  "comparison_contract": {
+    "statistic": "mean",
+    "scope": "selected_group"
+  },
+  "named_references": [
+    {
+      "id": "bretagne_all_assessed_communes_mean",
+      "label": "Bretagne — moyenne des 1 202 courbes communales évaluées",
+      "role": "analytical_reference",
+      "statistic": "mean_all_assessed_communes",
+      "unit": "%",
+      "observation_period_kind": "snapshot_date",
+      "points": [
+        {
+          "axis": "t0000",
+          "observation_period": "2026-10-21",
+          "value": 0.0008611485961527702,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0005",
+          "observation_period": "2026-10-21",
+          "value": 0.0030145257372398136,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0010",
+          "observation_period": "2026-10-21",
+          "value": 0.004926769597903424,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0015",
+          "observation_period": "2026-10-21",
+          "value": 0.007715005730844665,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0020",
+          "observation_period": "2026-10-21",
+          "value": 0.01023875096977486,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0025",
+          "observation_period": "2026-10-21",
+          "value": 0.013059785056990103,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0030",
+          "observation_period": "2026-10-21",
+          "value": 0.016521848931809812,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0035",
+          "observation_period": "2026-10-21",
+          "value": 0.01989508253157729,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0040",
+          "observation_period": "2026-10-21",
+          "value": 0.02365082081086287,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0045",
+          "observation_period": "2026-10-21",
+          "value": 0.0282597443811112,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0050",
+          "observation_period": "2026-10-21",
+          "value": 0.03293522258232721,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0055",
+          "observation_period": "2026-10-21",
+          "value": 0.03758297308403811,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0060",
+          "observation_period": "2026-10-21",
+          "value": 0.04244108561491542,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0065",
+          "observation_period": "2026-10-21",
+          "value": 0.04800707319594115,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0070",
+          "observation_period": "2026-10-21",
+          "value": 0.05361492498929258,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0075",
+          "observation_period": "2026-10-21",
+          "value": 0.0600627920012228,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0080",
+          "observation_period": "2026-10-21",
+          "value": 0.06714584481478802,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0085",
+          "observation_period": "2026-10-21",
+          "value": 0.07452301726592268,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0090",
+          "observation_period": "2026-10-21",
+          "value": 0.0815863775592058,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0095",
+          "observation_period": "2026-10-21",
+          "value": 0.08950842126578594,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0100",
+          "observation_period": "2026-10-21",
+          "value": 0.0972540209746855,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0105",
+          "observation_period": "2026-10-21",
+          "value": 0.10597301264162459,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0110",
+          "observation_period": "2026-10-21",
+          "value": 0.11422312320101165,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0115",
+          "observation_period": "2026-10-21",
+          "value": 0.12292860882064084,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0120",
+          "observation_period": "2026-10-21",
+          "value": 0.13231172234075086,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0125",
+          "observation_period": "2026-10-21",
+          "value": 0.14174728991602445,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0130",
+          "observation_period": "2026-10-21",
+          "value": 0.15160611185325473,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0135",
+          "observation_period": "2026-10-21",
+          "value": 0.1614477730209549,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0140",
+          "observation_period": "2026-10-21",
+          "value": 0.1712336145957194,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0145",
+          "observation_period": "2026-10-21",
+          "value": 0.1815658690998178,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0150",
+          "observation_period": "2026-10-21",
+          "value": 0.19156955845663914,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0155",
+          "observation_period": "2026-10-21",
+          "value": 0.20185170976530345,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0160",
+          "observation_period": "2026-10-21",
+          "value": 0.2116226917455331,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0165",
+          "observation_period": "2026-10-21",
+          "value": 0.22214860021920035,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0170",
+          "observation_period": "2026-10-21",
+          "value": 0.2323449228378471,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0175",
+          "observation_period": "2026-10-21",
+          "value": 0.24290456483415715,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0180",
+          "observation_period": "2026-10-21",
+          "value": 0.2526816983150947,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0185",
+          "observation_period": "2026-10-21",
+          "value": 0.2624183409083499,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0190",
+          "observation_period": "2026-10-21",
+          "value": 0.2724262935047914,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0195",
+          "observation_period": "2026-10-21",
+          "value": 0.28194450222907663,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0200",
+          "observation_period": "2026-10-21",
+          "value": 0.290926688645553,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0205",
+          "observation_period": "2026-10-21",
+          "value": 0.2998011436046218,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0210",
+          "observation_period": "2026-10-21",
+          "value": 0.3084321197296743,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0215",
+          "observation_period": "2026-10-21",
+          "value": 0.31721173666104896,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0220",
+          "observation_period": "2026-10-21",
+          "value": 0.3258835464019746,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0225",
+          "observation_period": "2026-10-21",
+          "value": 0.3341444718326316,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0230",
+          "observation_period": "2026-10-21",
+          "value": 0.34192891318546353,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0235",
+          "observation_period": "2026-10-21",
+          "value": 0.34937809135823433,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0240",
+          "observation_period": "2026-10-21",
+          "value": 0.3567577625173609,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0245",
+          "observation_period": "2026-10-21",
+          "value": 0.36405228465433875,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0250",
+          "observation_period": "2026-10-21",
+          "value": 0.37091684957281523,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0255",
+          "observation_period": "2026-10-21",
+          "value": 0.37746481733525655,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0260",
+          "observation_period": "2026-10-21",
+          "value": 0.3836807198297278,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0265",
+          "observation_period": "2026-10-21",
+          "value": 0.38961960315915223,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0270",
+          "observation_period": "2026-10-21",
+          "value": 0.3953956925274599,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0275",
+          "observation_period": "2026-10-21",
+          "value": 0.40065609535671703,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0280",
+          "observation_period": "2026-10-21",
+          "value": 0.40586919518356956,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0285",
+          "observation_period": "2026-10-21",
+          "value": 0.4107257016433544,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0290",
+          "observation_period": "2026-10-21",
+          "value": 0.41521225533108397,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0295",
+          "observation_period": "2026-10-21",
+          "value": 0.41950744054701794,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0300",
+          "observation_period": "2026-10-21",
+          "value": 0.42350463505749925,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0305",
+          "observation_period": "2026-10-21",
+          "value": 0.42712423981813996,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0310",
+          "observation_period": "2026-10-21",
+          "value": 0.4305609244413037,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0315",
+          "observation_period": "2026-10-21",
+          "value": 0.43374376372772927,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0320",
+          "observation_period": "2026-10-21",
+          "value": 0.4367341622203774,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0325",
+          "observation_period": "2026-10-21",
+          "value": 0.43931066107000455,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0330",
+          "observation_period": "2026-10-21",
+          "value": 0.44158795869145595,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0335",
+          "observation_period": "2026-10-21",
+          "value": 0.44362227963236983,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0340",
+          "observation_period": "2026-10-21",
+          "value": 0.445565186692053,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0345",
+          "observation_period": "2026-10-21",
+          "value": 0.4471706897867197,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0350",
+          "observation_period": "2026-10-21",
+          "value": 0.44858501880714313,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0355",
+          "observation_period": "2026-10-21",
+          "value": 0.44984705808753706,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        },
+        {
+          "axis": "t0360",
+          "observation_period": "2026-10-21",
+          "value": 0.45089866177641535,
+          "status": "measured",
+          "missing_reason": null,
+          "provenance": [
+            {
+              "revision_id": "raccordement_gtfs_national-2026-10-21-47f23f4e204dd041",
+              "source_id": "raccordement_gtfs_national",
+              "vintage_id": "2026-10-21",
+              "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+              "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+              "version": "2026-10-21",
+              "reference_date": "2026-10-10",
+              "publication_date": "2026-10-10",
+              "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "availability": "complete"
+}

@@ -46,7 +46,6 @@ const cible = computed(() => {
         params: { type: props.resultat.type, id: props.resultat.territoire },
         query: {
           ...(route.query.theme === 'mobilite' ? { theme: 'mobilite' } : {}),
-          ...(route.query['aedar-proto'] === '1' ? { 'aedar-proto': '1' } : {}),
           ...(route.query.comparaison !== undefined ? { comparaison: route.query.comparaison } : {}),
         },
       }

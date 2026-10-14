@@ -121,14 +121,14 @@ test_that("verifier_descripteur_mobilite : un membre requis manquant échoue bru
   expect_error(verifier_descripteur_mobilite(sans_directions), "directions")
 })
 
-test_that("vintages_mobilite : seize sources publiques (les sources techniques OCS-GE regroupées + les deux faits construits)", {
+test_that("vintages_mobilite : dix-sept sources publiques incluent la production nationale du raccordement", {
   v <- vintages_mobilite()
 
   # L'export d'équipements reste une entrée opérationnelle du manifeste, mais
   # ses projections citent mobilite_snapshot : il ne devient pas une seconde
-  # source dans la table publique. Les treize autres sources manifestées + les
-  # DEUX faits construits du raccordement (#486) restent présents.
-  expect_equal(nrow(v), 16L)
+  # source dans la table publique. L'ancienne matrice de recherche (#486) et la
+  # matrice nationale publiable sont deux producteurs versionnés distincts.
+  expect_equal(nrow(v), 17L)
   expect_named(v, c("id", "source", "version", "licence",
                     "date_reference", "date_publication"))
   expect_setequal(v$id,
@@ -138,8 +138,9 @@ test_that("vintages_mobilite : seize sources publiques (les sources techniques O
                    "bornes-recharges",
                    "stationnement-velo", "bpe_b316", "cog_passage",
                    "sncf_voyageurs", "dila_bdl",
-                   "matrice_temps_mairies", "population_raccordement",
-                   "ocsge_reseaux_routiers"))
+                    "matrice_temps_mairies", "population_raccordement",
+                    "raccordement_gtfs_national",
+                    "ocsge_reseaux_routiers"))
 
   # le raccordement : l'horloge du FIGÉ — la production de la matrice
   # (le run vérifié du 25 août) comme référence, la migration comme
@@ -149,6 +150,10 @@ test_that("vintages_mobilite : seize sources publiques (les sources techniques O
   expect_equal(mat$version, "2026-09-16")
   expect_equal(mat$date_reference, "2026-08-25")
   expect_equal(mat$date_publication, "2026-08-26")
+  national <- v[v$id == "raccordement_gtfs_national", ]
+  expect_equal(national$version, "2026-10-21")
+  expect_equal(national$date_reference, "2026-10-10")
+  expect_equal(national$date_publication, "2026-10-10")
   pop_rac <- v[v$id == "population_raccordement", ]
   expect_equal(pop_rac$version, "2023")
   expect_equal(pop_rac$date_reference, "2023-01-01")
@@ -2535,9 +2540,9 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(ind$multiplicite[ind$key == cle], 1L, info = cle)
   }
-  # le raccordement (issue #486) : 1 / 11 / NA (la référence est variable —
+   # le raccordement national (#728) : 1 / 73 / NA (la référence est variable —
   # la seule région la porte)
-  grille_n <- length(grille_raccordement())
+  grille_n <- length(grille_raccordement_national())
   expect_equal(ind$multiplicite[ind$key == "raccordement_tc"], 1L)
   expect_equal(ind$multiplicite[ind$key == "raccordement_courbe"],
                grille_n)
@@ -2574,14 +2579,13 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
   expect_equal(ind$source_reference[ind$key == "places_stationnement_velo_1000"],
                "stationnement-velo")
   expect_equal(ind$source_reference[ind$key == "offre_cyclable"], "osm_reseaux")
-  # le raccordement (issue #486) -> le fait construit matrice_temps_mairies
-  # (l'horloge du figé — la recette du mercredi 2026-09-16)
-  expect_equal(ind$source_reference[ind$key == "raccordement_tc"],
-               "matrice_temps_mairies")
-  expect_equal(ind$source_reference[ind$key == "raccordement_courbe"],
-               "matrice_temps_mairies")
-  expect_equal(ind$source_reference[ind$key == "raccordement_reference"],
-               "matrice_temps_mairies")
+   # le raccordement -> le producteur national GTFS et son millésime distinct
+   expect_equal(ind$source_reference[ind$key == "raccordement_tc"],
+                "raccordement_gtfs_national")
+   expect_equal(ind$source_reference[ind$key == "raccordement_courbe"],
+                "raccordement_gtfs_national")
+   expect_equal(ind$source_reference[ind$key == "raccordement_reference"],
+                "raccordement_gtfs_national")
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
     expect_equal(ind$source_reference[ind$key == cle], "mobilite_snapshot",
                  info = cle)
@@ -2589,54 +2593,21 @@ test_that("INDICATEURS_MOBILITE : les clés du payload, dont nb_buildings, chacu
 })
 
 # fixture_raccordement ------------------------------------------------------------
-# L'enveloppe du raccordement MOCKÉE pour l'assemblage des indicateurs (issue
-# #486) : la forme EXACTE de lire_raccordement()$calcul sur l'univers du
-# fixture — 4 communes (29002 « non routée » : NA + motif nommé), les deux
-# EPCIs, les deux départements, la région — et la grille complète de la
-# recette figée pour les deux clés de matière de figure. Les agrégats portent
-# leur COUVERTURE (la part de population réellement mesurée par le routage —
-# sémantique routés-seuls) : 200000002 / 22 / la région sont volontairement
-# incomplets pour exercer la phrase de couverture du payload.
+# L'assembleur national consomme un résultat complet et validé, jamais une
+# miniature présentée comme la production nationale. Les exemples de calcul à
+# trois communes restent à la couture du calcul dans test-raccordement-national.
 fixture_raccordement <- function() {
-  minutes <- as.integer(sub("^t", "", grille_raccordement()))
-  grille <- grille_raccordement()
-  codes <- c("22001", "22002", "29001", "29002")
-  part_communes <- c(0.31, 0.62, 0.11, NA_real_)
-  courbes <- tidyr::crossing(
-    code = codes[1:3], minute = minutes
-  ) %>%
-    dplyr::mutate(part = 0.001 * dplyr::row_number())
-  list(
-    calcul = list(
-      communes = tibble::tibble(
-        code = codes,
-        part_90 = part_communes,
-        motif = c(NA_character_, NA_character_, NA_character_,
-                  "Non routée — géocode DILA aberrant")
-      ),
-      courbes_communes = courbes,
-      reference = tibble::tibble(minute = minutes,
-                                 part_mediane = 0.001 * seq_along(minutes)),
-      exclusions = tibble::tibble(code = "29002"),
-      epcis = tibble::tibble(code = c("200000001", "200000002"),
-                             part_90 = c(0.42, 0.11),
-                             couverture = c(1, 0.9)),
-      departements = tibble::tibble(code = c("22", "29"),
-                                    part_90 = c(0.43, 0.28),
-                                    couverture = c(0.85, 1)),
-      region = tibble::tibble(code = "53", part_90 = 1, couverture = 0.99),
-      courbes_epcis = tidyr::crossing(code = c("200000001", "200000002"),
-                                      minute = minutes) %>%
-        dplyr::mutate(part = 0.002 * dplyr::row_number()),
-      courbes_departements = tidyr::crossing(code = c("22", "29"),
-                                             minute = minutes) %>%
-        dplyr::mutate(part = 0.003 * dplyr::row_number()),
-      courbe_region = tibble::tibble(code = "53", minute = minutes,
-                                     part = 1),
-      seuil = SEUIL_RACCORDEMENT_MIN, pas = PAS_COURBE_RACCORDEMENT
-    ),
-    entrees = list(recette = RECETTE_MATRICE_TEMPS_MAIRIES)
-  )
+  lire_artefact_raccordement_national()
+}
+
+territoires_fixture_indicateurs_mobilite <- function() {
+  path <- file.path(pkgload::pkg_path(), "..", "public", "data", "territoires.parquet")
+  nanoparquet::read_parquet(path) %>% dplyr::rename(code = territoire)
+}
+
+histoires_fixture_indicateurs_mobilite <- function() {
+  nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data",
+                                    "histoires_mobilite.parquet"))
 }
 
 # fixture_indicateurs_mobilite ---------------------------------------------------
@@ -2647,13 +2618,8 @@ fixture_raccordement <- function() {
 # demande/réseaux et le sous-bloc. La forme de chaque table est celle des
 # builders réels — le seam ne calcule RIEN, il assemble.
 fixture_indicateurs_mobilite <- function() {
-  base <- base_epci_mini_analytique()
-  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
-                          nb_buildings = c(100, 300, 200, 400))
-  territoires <- construire_territoires_mobilite(
-    base, list(mobilite_communes = poids)
-  )
-  codes <- territoires$code  # 9 territoires (4 communes + 2 EPCIs + 2 déps + région)
+  territoires <- territoires_fixture_indicateurs_mobilite()
+  codes <- territoires$code
 
   # les parts d'isolation MOCKÉES : une valeur synthétique en [0, 1] par
   # (territoire × clé) — la forme longue (code, key, value) de
@@ -2661,12 +2627,12 @@ fixture_indicateurs_mobilite <- function() {
   isolation_territoires <- tidyr::crossing(
     code = codes, key = names(CLES_ISOLATION_MOBILITE)
   ) %>%
-    dplyr::mutate(value = 0.1 + 0.05 * match(code, codes))
+    dplyr::mutate(value = 0.1 + 0.05 * ((match(code, codes) - 1L) %% 9L + 1L))
 
   acces_territoires <- tidyr::crossing(
     code = codes, key = names(CLES_ACCES_MOBILITE)
   ) %>%
-    dplyr::mutate(value = 0.5 + 0.01 * match(code, codes))
+    dplyr::mutate(value = 0.5 + 0.01 * ((match(code, codes) - 1L) %% 9L + 1L))
 
   # les rangs MOCKÉS : la forme longue (code, key, rang_epci/dep/reg et leurs
   # tailles) de isolation_rangs.rds — des ORDINAUX directionnels (ADR-0015) :
@@ -2755,7 +2721,7 @@ fixture_indicateurs_mobilite <- function() {
                     0.1 * match(code, codes))
 
   list(
-    nb_buildings_territoires = agreger_nb_buildings_territoires(poids, base),
+    nb_buildings_territoires = tibble::tibble(code = codes, value = 100),
     acces_territoires = acces_territoires,
     acces_rangs = acces_rangs,
     isolation_territoires = isolation_territoires,
@@ -2773,18 +2739,14 @@ fixture_indicateurs_mobilite <- function() {
 
 test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec les 5 parts d'isolation et LE RACCORDEMENT (#486), leurs rangs et leurs estampilles", {
   fx <- fixture_indicateurs_mobilite()
-  base <- base_epci_mini_analytique()
-  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
-                          nb_buildings = c(100, 300, 200, 400))
-  territoires <- construire_territoires_mobilite(
-    base, list(mobilite_communes = poids)
-  )
+  territoires <- territoires_fixture_indicateurs_mobilite()
+  n_territoires <- nrow(territoires)
 
   ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
 
   # les seize clés : la demande/réseaux + le sous-bloc
   # (issue #140 + #231) + les 5 parts d'isolation (issue #141) + le
-   # raccordement (issue #486) — une ligne par (territoire × détail) ;
+   # raccordement national (issue #728) — une ligne par (territoire × détail) ;
    # `nb_buildings` publie la taille des bâtiments par territoire.
   expect_setequal(unique(ind$key), c(
      "voitures_menage", "reseaux", "reseaux_par_habitant", "surface_reseaux_routiers",
@@ -2799,33 +2761,32 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
      "raccordement_tc", "raccordement_courbe", "raccordement_reference",
      "nb_buildings"
   ))
-  grille_n <- length(grille_raccordement())
-   # 9 territoires × 24 lignes historiques = 216 ; + la taille : 9 ; + le raccordement :
-  # le scalaire × 9 + la courbe × 9 territoires + la référence × 1 région
-    expect_equal(nrow(ind), 216 + 9 + 9 * length(CLES_ACCES_MOBILITE) +
-                   9 * length(CLES_MOYENNES_ACCES_MOBILITE) + 9 + 9 +
-                   9 * grille_n + grille_n + 9 * 3)
-   expect_equal(sum(ind$key == "nb_buildings"), 9)
-  expect_equal(sum(ind$key == "voitures_menage"), 9 * 3)
-   expect_equal(sum(ind$key == "reseaux"), 9 * 3)
-   expect_equal(sum(ind$key == "reseaux_par_habitant"), 9 * 3)
-   expect_equal(sum(ind$key == "surface_reseaux_routiers"), 9)
+  grille_n <- length(grille_raccordement_national())
+    # Même multiplicité sur tout le référentiel : familles historiques, taille,
+    # scalaire national et 73 points par territoire ; référence régionale seule.
+    expect_equal(nrow(ind), n_territoires * (24 + 1 + length(CLES_ACCES_MOBILITE) +
+                   length(CLES_MOYENNES_ACCES_MOBILITE) + 1 + 1 + grille_n + 3) + grille_n)
+   expect_equal(sum(ind$key == "nb_buildings"), n_territoires)
+  expect_equal(sum(ind$key == "voitures_menage"), n_territoires * 3)
+   expect_equal(sum(ind$key == "reseaux"), n_territoires * 3)
+   expect_equal(sum(ind$key == "reseaux_par_habitant"), n_territoires * 3)
+   expect_equal(sum(ind$key == "surface_reseaux_routiers"), n_territoires)
   for (cle in c("offre_tc", "bornes_recharge",
                 "places_stationnement_velo_1000")) {
-    expect_equal(sum(ind$key == cle), 9, info = cle)
+    expect_equal(sum(ind$key == cle), n_territoires, info = cle)
   }
   # la figure « L'offre cyclable » (issue #231) : les 5 mesures par territoire
-  expect_equal(sum(ind$key == "offre_cyclable"), 9 * 5)
+  expect_equal(sum(ind$key == "offre_cyclable"), n_territoires * 5)
   expect_setequal(unique(ind$detail[ind$key == "offre_cyclable"]),
                   c("protege_longueur", "protege_km_1000", "partage_longueur",
                     "partage_km_1000", "total_longueur"))
   # les détails des clés scalaires du sous-bloc restent NA
   expect_true(all(is.na(ind$detail[ind$key == "offre_tc"])))
   for (cle in names(CLES_ISOLATION_MOBILITE)) {
-    expect_equal(sum(ind$key == cle), 9, info = cle)
+    expect_equal(sum(ind$key == cle), n_territoires, info = cle)
   }
   for (cle in names(CLES_ACCES_MOBILITE)) {
-    expect_equal(sum(ind$key == cle), 9, info = cle)
+    expect_equal(sum(ind$key == cle), n_territoires, info = cle)
   }
 
   # chaque part d'isolation porte la valeur MOCKÉE de son artefact (la forme
@@ -2834,7 +2795,7 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
   expect_equal(lire("22001", "iso_alimentation"),
                0.1 + 0.05 * match("22001", territoires$code))
   expect_equal(lire("53", "iso_banque"),
-               0.1 + 0.05 * match("53", territoires$code))
+               0.5)
   expect_equal(lire("22001", "share_food_t"),
                0.5 + 0.01 * match("22001", territoires$code))
 
@@ -2898,23 +2859,18 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
   expect_true(all(cyclable_ind$vintage_date_reference == "2026-08-05"))
   expect_true(all(cyclable_ind$vintage_date_publication == "2026-08-06"))
 
-  # LE RACCORDEMENT (issue #486) : le scalaire porte la valeur mockée, le
-  # motif nommé du non-routé dans `rider`, la direction HIGH aux rangs ; les
+  # LE RACCORDEMENT (#728) : le scalaire est la facette t0090; le zéro de
+  # modèle reste mesuré avec son motif source et la moyenne inclut les membres ;
   # deux clés de matière ne portent AUCUN rang (des courbes ne se classent
-  # pas) ; les estampilles viennent du fait construit matrice_temps_mairies
+  # pas) ; les estampilles viennent du producteur national GTFS versionné.
   racc_ind <- ind[ind$key == "raccordement_tc", ]
-  expect_equal(racc_ind$value[racc_ind$territoire == "22001"], 0.31)
-  expect_equal(racc_ind$value[racc_ind$territoire == "200000001"], 0.42)
-  expect_equal(racc_ind$value[racc_ind$territoire == "53"], 1)
-  non_routee <- racc_ind[racc_ind$territoire == "29002", ]
-  expect_true(is.na(non_routee$value))
-  expect_match(non_routee$rider, "Non routée")
-  # la COUVERTURE des agrégats (revue pass 2 — sémantique routés-seuls) :
-  # l'agrégat à population partiellement mesurée porte la phrase précalculée
-  # dans `rider`, jamais une part amputée en silence
-  expect_match(racc_ind$rider[racc_ind$territoire == "200000002"],
-               "réellement mesurée par le réseau", fixed = TRUE)
-  expect_true(all(is.na(racc_ind$rang_epci[racc_ind$territoire %in% c("29002")])))
+  expect_equal(racc_ind$value[racc_ind$territoire == "35238"], 0.43772196082183124)
+  expect_equal(racc_ind$value[racc_ind$territoire == "243500139"], 0.3083244523721925)
+  expect_equal(racc_ind$value[racc_ind$territoire == "53"], 0.0815863775592058)
+  non_routee <- racc_ind[racc_ind$territoire == "22001", ]
+  expect_equal(non_routee$value, 0)
+  expect_equal(non_routee$rider, "no_modeled_endpoint_stops")
+  expect_true(!is.na(non_routee$rang_epci))
   # la direction HIGH passe par la machinerie partagée : les parts classées
   # en ordinaux (1 = la plus grande part, ADR-0015), une commune ne se classe
   # que dans son EPCI
@@ -2924,30 +2880,30 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
   # départemental ni régional)
   expect_true(is.na(racc_ind$rang_dep[racc_ind$territoire == "22001"]))
   expect_true(is.na(racc_ind$rang_reg[racc_ind$territoire == "22001"]))
-  ref_matrice <- vintages_mobilite()$source[
-    vintages_mobilite()$id == "matrice_temps_mairies"]
-  expect_true(all(racc_ind$vintage_source == ref_matrice))
-  expect_true(all(racc_ind$vintage_date_reference == "2026-08-25"))
-  expect_true(all(racc_ind$vintage_version == "2026-09-16"))
+  ref_national <- vintages_mobilite()$source[
+    vintages_mobilite()$id == "raccordement_gtfs_national"]
+  expect_true(all(racc_ind$vintage_source == ref_national))
+  expect_true(all(racc_ind$vintage_date_reference == "2026-10-10"))
+  expect_true(all(racc_ind$vintage_version == "2026-10-21"))
 
   courbe_ind <- ind[ind$key == "raccordement_courbe", ]
-  expect_true(all(courbe_ind$observation_period == RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure))
+  expect_true(all(courbe_ind$observation_period == RECETTE_RACCORDEMENT_NATIONAL$date_mesure))
   expect_equal(sum(courbe_ind$territoire == "22001"), grille_n)
-  grille_attendue <- grille_raccordement()
+  grille_attendue <- grille_raccordement_national()
   expect_setequal(courbe_ind$detail[courbe_ind$territoire == "22001"],
                   grille_attendue)
   expect_equal(courbe_ind$value[courbe_ind$territoire == "22001" &
                                   courbe_ind$detail == "t0090"],
-               0.001 * 6)
-  # la commune NON ROUTÉE garde ses 11 détails à NA (jamais une ligne
-  # manquante — la multiplicité déclarée)
-  expect_equal(sum(courbe_ind$territoire == "29002"), grille_n)
-  expect_true(all(is.na(courbe_ind$value[courbe_ind$territoire == "29002"])))
+               0)
+  # Les zéros du modèle sont mesurés et portent leur raison source sur la grille.
+  expect_equal(sum(courbe_ind$territoire == "22001"), grille_n)
+  expect_true(all(courbe_ind$value[courbe_ind$territoire == "22001"] == 0))
+  expect_true(all(courbe_ind$rider[courbe_ind$territoire == "22001"] == "no_modeled_endpoint_stops"))
   # jamais classée : aucun rang sur la courbe
   expect_true(all(is.na(courbe_ind$rang_epci)) && all(is.na(courbe_ind$rang_reg)))
 
   reference_ind <- ind[ind$key == "raccordement_reference", ]
-  expect_true(all(reference_ind$observation_period == RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure))
+  expect_true(all(reference_ind$observation_period == RECETTE_RACCORDEMENT_NATIONAL$date_mesure))
   expect_setequal(unique(reference_ind$territoire), "53")
   expect_equal(nrow(reference_ind), grille_n)
 })
@@ -2955,12 +2911,7 @@ test_that("construire_indicateurs_mobilite : les clés dont nb_buildings, avec l
 test_that("construire_indicateurs_mobilite : un territoire absent du snapshot garde ses deux clés tot_loss", {
   fx <- fixture_indicateurs_mobilite()
   fx$tot_loss_territoires <- dplyr::filter(fx$tot_loss_territoires, code != "29002")
-  base <- base_epci_mini_analytique()
-  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
-                          nb_buildings = c(100, 300, 200, 400))
-  territoires <- construire_territoires_mobilite(
-    base, list(mobilite_communes = poids)
-  )
+  territoires <- territoires_fixture_indicateurs_mobilite()
 
   ind <- construire_indicateurs_mobilite(fx, territoires, vintages_mobilite())
   absent <- ind[ind$territoire == "29002" &
@@ -3028,12 +2979,7 @@ test_that("construire_rangs_detail : le rang PAR DÉTAIL consomme la direction D
 
 test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer la validation bruyamment", {
   fx <- fixture_indicateurs_mobilite()
-  base <- base_epci_mini_analytique()
-  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
-                          nb_buildings = c(100, 300, 200, 400))
-  territoires <- construire_territoires_mobilite(
-    base, list(mobilite_communes = poids)
-  )
+  territoires <- territoires_fixture_indicateurs_mobilite()
 
   # un payload sain passe la validation générique + les validations du thème
   # (les histoires RÉSOLUES du fixture — issue #312 : la validation générique
@@ -3041,9 +2987,7 @@ test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer
   payload <- list(
     indicateurs = construire_indicateurs_mobilite(fx, territoires,
                                                   vintages_mobilite()),
-    histoires = resoudre_histoires(
-      compute_histoires_mobilite(analytiques_mobilite_fixture(),
-                                 vintages_mobilite()), "mobilite"),
+    histoires = histoires_fixture_indicateurs_mobilite(),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, list())
   )
@@ -3087,9 +3031,7 @@ test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer
   payload <- list(
     indicateurs = construire_indicateurs_mobilite(fx, territoires,
                                                   vintages_mobilite()),
-    histoires = resoudre_histoires(
-      compute_histoires_mobilite(analytiques_mobilite_fixture(),
-                                 vintages_mobilite()), "mobilite"),
+    histoires = histoires_fixture_indicateurs_mobilite(),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, list())
   )
@@ -3108,18 +3050,11 @@ test_that("validations_mobilite : une part d'isolation hors [0, 1] fait échouer
 
 test_that("validations_mobilite : le raccordement hors domaine ou hors grille fait échouer la validation bruyamment (#486)", {
   fx <- fixture_indicateurs_mobilite()
-  base <- base_epci_mini_analytique()
-  poids <- tibble::tibble(commune = c("22001", "22002", "29001", "29002"),
-                          nb_buildings = c(100, 300, 200, 400))
-  territoires <- construire_territoires_mobilite(
-    base, list(mobilite_communes = poids)
-  )
+  territoires <- territoires_fixture_indicateurs_mobilite()
   fabriquer_payload <- function() list(
     indicateurs = construire_indicateurs_mobilite(fx, territoires,
                                                   vintages_mobilite()),
-    histoires = resoudre_histoires(
-      compute_histoires_mobilite(analytiques_mobilite_fixture(),
-                                 vintages_mobilite()), "mobilite"),
+    histoires = histoires_fixture_indicateurs_mobilite(),
     territoires = reference_territoires(territoires),
     apercu = assemble_apercu(territoires, list())
   )
@@ -3134,11 +3069,11 @@ test_that("validations_mobilite : le raccordement hors domaine ou hors grille fa
     vintages = vintages_mobilite(), validations = validations_mobilite,
     apercu = APERCU_MOBILITE), "population joignable")
 
-  # un détail de courbe HORS GRILLE (un point d'axe inventé) fait échouer
+  # un détail de courbe HORS GRILLE (91 minutes) fait échouer
   payload <- fabriquer_payload()
   courbe <- which(payload$indicateurs$key == "raccordement_courbe" &
                     payload$indicateurs$detail == "t0090")
-  payload$indicateurs$detail[courbe[1]] <- "t0095"
+  payload$indicateurs$detail[courbe[1]] <- "t0091"
   expect_error(validate_payload(
     payload, indicateurs = INDICATEURS_MOBILITE,
     vintages = vintages_mobilite(), validations = validations_mobilite,

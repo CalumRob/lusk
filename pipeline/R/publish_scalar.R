@@ -350,6 +350,59 @@ project_scalar_canonical_rows <- function(rows, metadata, indicator_ids,
   projection
 }
 
+# A coordinate-free public scalar is still producer-owned: for raccordement it
+# must be the exact 90-minute projection of the owned curve and its provenance
+# must resolve against the matching metadata/vintage bundle. In particular, a
+# current descriptor cannot relabel an older static Parquet snapshot.
+validate_raccordement_scalar_bundle <- function(rows, metadata, source_vintages) {
+  required <- c("territoire", "type", "key", "detail", "value", "unit", "vintage_source",
+    "vintage_version", "vintage_date_reference", "vintage_date_publication")
+  abort <- function(...) stop(..., call.=FALSE)
+  if (!is.data.frame(rows) || !all(required %in% names(rows)) ||
+      !is.list(metadata$sources) || !is.list(metadata$indicator_pages) ||
+      !is.data.frame(source_vintages) ||
+      !all(c("id", "source", "version", "date_reference", "date_publication") %in% names(source_vintages)))
+    abort("Raccordement scalar canonical producer bundle is incomplete")
+  source_id <- metadata$sources[["raccordement_tc"]]
+  page <- metadata$indicator_pages[["raccordement_tc"]]
+  curve_page <- metadata$indicator_pages[["raccordement_courbe"]]
+  if (!is.character(source_id) || length(source_id)!=1L || is.na(source_id) || !nzchar(source_id) ||
+      is.null(page) || is.null(curve_page) ||
+      !source_id %in% as.character(unlist(page$sources, use.names=FALSE)) ||
+      !source_id %in% as.character(unlist(curve_page$sources, use.names=FALSE)))
+    abort("Raccordement scalar source is not declared by its producer metadata")
+  vintage <- source_vintages[as.character(source_vintages$id)==source_id, , drop=FALSE]
+  if (nrow(vintage)!=1L)
+    abort("Raccordement scalar source vintage is unavailable in its metadata bundle")
+  levels <- as.character(unlist(metadata$scalar_contracts$raccordement_tc$allowed_levels, use.names=FALSE))
+  if (!length(levels)) levels <- as.character(unlist(page$levels, use.names=FALSE))
+  scalar <- rows[rows$key=="raccordement_tc" & is.na(rows$detail) & rows$type %in% levels, , drop=FALSE]
+  curve <- rows[rows$key=="raccordement_courbe" & rows$detail=="t0090" & rows$type %in% levels, , drop=FALSE]
+  key <- function(x) paste(as.character(x$territoire), as.character(x$type), sep="\r")
+  if (!nrow(scalar) || !nrow(curve) || anyDuplicated(key(scalar)) || anyDuplicated(key(curve)) ||
+      !setequal(key(scalar), key(curve)))
+    abort("Raccordement scalar and t0090 trajectory territories are incomplete or duplicated")
+  expected_source <- as.character(vintage$source[[1L]])
+  expected_version <- as.character(vintage$version[[1L]])
+  expected_reference <- as.character(vintage$date_reference[[1L]])
+  expected_publication <- as.character(vintage$date_publication[[1L]])
+  source_matches <- function(facts) {
+    all(as.character(facts$vintage_source)==expected_source) &&
+      all(as.character(facts$vintage_version)==expected_version) &&
+      all(as.character(as.Date(facts$vintage_date_reference))==expected_reference) &&
+      all(as.character(as.Date(facts$vintage_date_publication))==expected_publication)
+  }
+  if (!source_matches(scalar) || !source_matches(curve))
+    abort("Raccordement scalar provenance disagrees with its producer vintage")
+  scalar <- scalar[match(key(curve), key(scalar)), , drop=FALSE]
+  same_value <- (is.na(scalar$value) & is.na(curve$value)) |
+    (!is.na(scalar$value) & !is.na(curve$value) & as.numeric(scalar$value)==as.numeric(curve$value))
+  if (any(as.character(scalar$unit)!=as.character(curve$unit)) ||
+      any(!same_value))
+    abort("Raccordement scalar does not match its t0090 trajectory fact")
+  invisible(TRUE)
+}
+
 # Build one canonical table-owned scalar snapshot from the projections of
 # registered publishers. It remains neutral: no cohort owns another publisher.
 assemble_scalar_snapshot <- function(base_projection, additional_projections=list()) {
@@ -417,6 +470,339 @@ scalar_content_version <- function(projection) {
   unname(tools::md5sum(path))
 }
 
+validate_scalar_comparison_projection <- function(projection) {
+  group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
+    "statistic", "median", "member_count", "eligible_count", "missing_count",
+    "scalar_content_version", "reference_content_version", "content_version")
+  territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
+    "territory_id", "value", "status", "rank", "tie_count", "rank_size",
+    "scalar_content_version", "reference_content_version", "content_version")
+  if (!is.list(projection) || !all(c("groups", "territories", "scalar_content_version",
+      "reference_content_version", "content_version") %in% names(projection)) ||
+      !is.data.frame(projection$groups) || !is.data.frame(projection$territories) ||
+      !setequal(names(projection$groups), group_fields) ||
+      !setequal(names(projection$territories), territory_fields))
+    stop("Scalar comparison projection is missing or contains undeclared fields", call.=FALSE)
+  if (anyNA(projection[c("scalar_content_version", "reference_content_version", "content_version")]) ||
+      any(!nzchar(unlist(projection[c("scalar_content_version", "reference_content_version", "content_version")]))))
+    stop("Scalar comparison publication versions are invalid", call.=FALSE)
+  groups <- projection$groups
+  territories <- projection$territories
+  contexts <- c("density_class", "epci", "bretagne", "same_level")
+  levels <- c("commune", "epci", "departement")
+  if (anyNA(groups[c("comparison_context", "group_id", "territory_type", "indicator_id", "statistic")]) ||
+      any(!groups$comparison_context %in% contexts) || any(!groups$territory_type %in% levels) ||
+      any(!grepl("^[a-z][a-z0-9_]{0,95}$", groups$indicator_id)) ||
+      any(!nzchar(trimws(groups$group_id))) || any(groups$statistic != "median") ||
+      anyDuplicated(groups[c("comparison_context", "group_id", "territory_type", "indicator_id")]) ||
+      any(!is.na(groups$median) & !is.finite(groups$median)) ||
+      any(is.na(groups$member_count) | groups$member_count < 1L) ||
+      any(is.na(groups$eligible_count) | groups$eligible_count < 0L) ||
+      any(is.na(groups$missing_count) | groups$missing_count < 0L) ||
+      any(groups$member_count != groups$eligible_count + groups$missing_count) ||
+      any((groups$eligible_count == 0L) != is.na(groups$median)))
+    stop("Scalar comparison group statistics are invalid", call.=FALSE)
+  if (anyNA(territories[c("comparison_context", "group_id", "territory_type", "indicator_id", "territory_id", "status")]) ||
+      any(!territories$comparison_context %in% contexts) || any(!territories$territory_type %in% levels) ||
+      any(!grepl("^[a-z][a-z0-9_]{0,95}$", territories$indicator_id)) ||
+      any(!nzchar(trimws(territories$group_id)) | !nzchar(trimws(territories$territory_id))) ||
+      any(!territories$status %in% c("measured", "suppressed", "unsupported", "not_available", "not_published")) ||
+      anyDuplicated(territories[c("comparison_context", "group_id", "territory_type", "indicator_id", "territory_id")]) ||
+      any(!is.na(territories$value) & !is.finite(territories$value)) ||
+      any((territories$status == "measured") != !is.na(territories$value)))
+    stop("Scalar comparison territory results are invalid", call.=FALSE)
+  if (nrow(territories)) {
+    group_key <- paste(groups$comparison_context, groups$group_id, groups$territory_type,
+      groups$indicator_id, sep="\r")
+    territory_group_key <- paste(territories$comparison_context, territories$group_id,
+      territories$territory_type, territories$indicator_id, sep="\r")
+    if (any(!territory_group_key %in% group_key))
+      stop("Scalar comparison territory result has no matching group statistic", call.=FALSE)
+    expected_size <- groups$eligible_count[match(territory_group_key, group_key)]
+    measured <- territories$status == "measured"
+    if (any(measured & (is.na(territories$rank) | territories$rank < 1L |
+        is.na(territories$tie_count) | territories$tie_count < 1L |
+        is.na(territories$rank_size) | territories$rank_size != expected_size |
+        territories$rank > territories$rank_size |
+        territories$tie_count > territories$rank_size)) ||
+        any(!measured & (!is.na(territories$rank) | !is.na(territories$tie_count) |
+        !is.na(territories$rank_size))))
+      stop("Scalar comparison ranks or tie counts are invalid", call.=FALSE)
+  }
+  for (field in c("scalar_content_version", "reference_content_version", "content_version")) {
+    if (any(as.character(groups[[field]]) != projection[[field]]) ||
+        any(as.character(territories[[field]]) != projection[[field]]))
+      stop("Scalar comparison rows disagree with their publication versions", call.=FALSE)
+  }
+  dependency_columns <- c("scalar_content_version", "reference_content_version", "content_version")
+  computed_version <- scalar_content_version(list(
+    scalar_content_version=projection$scalar_content_version,
+    reference_content_version=projection$reference_content_version,
+    groups=groups[setdiff(names(groups), dependency_columns)],
+    territories=territories[setdiff(names(territories), dependency_columns)]))
+  if (!identical(computed_version, projection$content_version))
+    stop("Scalar comparison content version does not match its rows and dependencies", call.=FALSE)
+  invisible(projection)
+}
+
+# The one canonical inventory of default comparison memberships shared by
+# every published comparison family. Membership is derived only from the
+# versioned territory reference; callers filter by their declared levels.
+comparison_context_membership <- function(territory_reference, comparison_levels) {
+  required_reference <- c("territory_id", "territory_type", "epci_id", "density_class_code")
+  if (!is.data.frame(territory_reference) || !all(required_reference %in% names(territory_reference)) ||
+      anyNA(territory_reference[c("territory_id", "territory_type")]) ||
+      any(!territory_reference$territory_type %in% c("commune", "epci", "departement", "region")) ||
+      anyDuplicated(territory_reference[c("territory_id", "territory_type")]))
+    stop("Comparison territory reference is invalid", call.=FALSE)
+  comparison_levels <- unique(as.character(comparison_levels))
+  if (!length(comparison_levels) || anyNA(comparison_levels) ||
+      any(!comparison_levels %in% c("commune", "epci", "departement", "region")))
+    stop("Comparison levels are invalid", call.=FALSE)
+  region_id <- as.character(territory_reference$territory_id[territory_reference$territory_type == "region"])
+  if (length(region_id) != 1L || is.na(region_id) || !nzchar(region_id))
+    stop("Comparison territory reference must contain exactly one Bretagne region row", call.=FALSE)
+  refs <- territory_reference
+  refs$territory_id <- as.character(refs$territory_id)
+  refs$territory_type <- as.character(refs$territory_type)
+  refs$epci_id <- as.character(refs$epci_id)
+  refs$density_class_code <- as.character(refs$density_class_code)
+  members <- list()
+  add_group <- function(context, group_id, territory_type, ids) {
+    ids <- sort(unique(as.character(ids)))
+    if (!length(ids)) return(invisible(NULL))
+    members[[length(members) + 1L]] <<- data.frame(comparison_context=context,
+      group_id=as.character(group_id), territory_type=territory_type,
+      member_ids=I(list(ids)), stringsAsFactors=FALSE)
+    invisible(NULL)
+  }
+  communes <- refs[refs$territory_type == "commune", , drop=FALSE]
+  for (group_id in sort(unique(communes$density_class_code[!is.na(communes$density_class_code) &
+      nzchar(communes$density_class_code)])))
+    add_group("density_class", group_id, "commune", communes$territory_id[communes$density_class_code == group_id])
+  for (group_id in sort(unique(communes$epci_id[!is.na(communes$epci_id) & nzchar(communes$epci_id)])))
+    add_group("epci", group_id, "commune", communes$territory_id[communes$epci_id == group_id])
+  add_group("bretagne", region_id, "commune", communes$territory_id)
+  for (territory_type in intersect(c("epci", "departement"), comparison_levels))
+    add_group("same_level", region_id, territory_type,
+      refs$territory_id[refs$territory_type == territory_type])
+  membership <- do.call(rbind, members)
+  rownames(membership) <- NULL
+  membership
+}
+
+# Produce the two scalar comparison grains from the same canonical snapshot.
+# The cohort registry is intentionally closed: a scope is emitted only where
+# its membership comes from the published territory reference.
+project_scalar_comparisons <- function(scalar_projection, territory_reference,
+    input_scalar_content_version, reference_content_version) {
+  if (!is.list(scalar_projection) || !all(c("facts", "descriptors", "eligible_territories") %in% names(scalar_projection)))
+    stop("Scalar comparison requires a validated scalar fact projection", call.=FALSE)
+  validate_scalar_projection(scalar_projection$facts, scalar_projection$descriptors,
+    scalar_projection$eligible_territories)
+  valid_version <- function(x) is.character(x) && length(x) == 1L && !is.na(x) && nzchar(trimws(x))
+  if (!valid_version(input_scalar_content_version) || !valid_version(reference_content_version))
+    stop("Scalar comparison input publication version is invalid", call.=FALSE)
+  descriptors <- scalar_projection$descriptors
+  allowed_levels <- unique(unlist(lapply(descriptors$allowed_levels, as.character), use.names=FALSE))
+  reference_universe <- unique(territory_reference[territory_reference$territory_type %in% allowed_levels,
+    c("territory_id", "territory_type"), drop=FALSE])
+  eligible_universe <- unique(scalar_projection$eligible_territories[
+    scalar_projection$eligible_territories$territory_type %in% allowed_levels,
+    c("territory_id", "territory_type"), drop=FALSE])
+  if (!setequal(paste(reference_universe$territory_type, reference_universe$territory_id),
+      paste(eligible_universe$territory_type, eligible_universe$territory_id)))
+    stop("Comparison territory reference differs from the canonical scalar universe", call.=FALSE)
+  membership <- comparison_context_membership(territory_reference, allowed_levels)
+
+  group_rows <- list()
+  territory_rows <- list()
+  facts <- scalar_projection$facts
+  for (descriptor_index in seq_len(nrow(descriptors))) {
+    descriptor <- descriptors[descriptor_index, , drop=FALSE]
+    indicator_id <- as.character(descriptor$indicator_id[[1L]])
+    direction <- as.character(descriptor$direction[[1L]])
+    facet <- as.character(descriptor$comparison_facet[[1L]])
+    if (is.na(facet) || !identical(facet, indicator_id) || !direction %in% c("high", "low")) next
+    permitted <- as.character(descriptor$allowed_levels[[1L]])
+    indicator_facts <- facts[facts$indicator_id == indicator_id, , drop=FALSE]
+    for (group_index in seq_len(nrow(membership))) {
+      group <- membership[group_index, , drop=FALSE]
+      territory_type <- as.character(group$territory_type[[1L]])
+      if (!territory_type %in% permitted) next
+      ids <- as.character(group$member_ids[[1L]])
+      selected <- indicator_facts[indicator_facts$territory_type == territory_type &
+        indicator_facts$territory_id %in% ids, , drop=FALSE]
+      selected <- selected[match(ids, selected$territory_id), , drop=FALSE]
+      status <- as.character(selected$status)
+      status[is.na(status)] <- "not_published"
+      value <- as.numeric(selected$value)
+      measured <- !is.na(value) & status == "measured"
+      values <- value[measured]
+      ranks <- ties <- rank_sizes <- rep(NA_integer_, length(ids))
+      for (i in which(measured)) {
+        better <- if (direction == "high") values > value[[i]] else values < value[[i]]
+        ranks[[i]] <- 1L + sum(better)
+        ties[[i]] <- sum(values == value[[i]])
+        rank_sizes[[i]] <- length(values)
+      }
+      key <- paste(group$comparison_context[[1L]], group$group_id[[1L]], territory_type,
+        indicator_id, sep="\r")
+      group_rows[[length(group_rows) + 1L]] <- data.frame(
+        comparison_context=as.character(group$comparison_context[[1L]]),
+        group_id=as.character(group$group_id[[1L]]), territory_type=territory_type,
+        indicator_id=indicator_id, statistic="median",
+        median=if (length(values)) stats::median(values) else NA_real_,
+        member_count=as.integer(length(ids)), eligible_count=as.integer(length(values)),
+        missing_count=as.integer(length(ids) - length(values)), stringsAsFactors=FALSE)
+      territory_rows[[length(territory_rows) + 1L]] <- data.frame(
+        comparison_context=as.character(group$comparison_context[[1L]]),
+        group_id=as.character(group$group_id[[1L]]), territory_type=territory_type,
+        indicator_id=indicator_id, territory_id=ids, value=value, status=status,
+        rank=ranks, tie_count=ties, rank_size=rank_sizes, stringsAsFactors=FALSE)
+    }
+  }
+  if (!length(group_rows)) stop("No declared comparable scalar contexts were projected", call.=FALSE)
+  groups <- do.call(rbind, group_rows)
+  territories <- do.call(rbind, territory_rows)
+  group_key <- c("comparison_context", "group_id", "territory_type", "indicator_id")
+  groups <- groups[!duplicated(groups[group_key]), , drop=FALSE]
+  order_rows <- function(x, keys) {
+    x <- x[do.call(order, c(x[keys], list(na.last=TRUE, method="radix"))), , drop=FALSE]
+    rownames(x) <- NULL
+    x
+  }
+  groups <- order_rows(groups, group_key)
+  territories <- order_rows(territories, c(group_key, "territory_id"))
+  version <- scalar_content_version(list(scalar_content_version=input_scalar_content_version,
+    reference_content_version=reference_content_version, groups=groups, territories=territories))
+  add_versions <- function(x) {
+    x$scalar_content_version <- input_scalar_content_version
+    x$reference_content_version <- reference_content_version
+    x$content_version <- version
+    x
+  }
+  result <- list(groups=add_versions(groups), territories=add_versions(territories),
+    scalar_content_version=input_scalar_content_version,
+    reference_content_version=reference_content_version, content_version=version)
+  validate_scalar_comparison_projection(result)
+  result
+}
+
+write_scalar_comparison_parquets <- function(projection, directory) {
+  validate_scalar_comparison_projection(projection)
+  if (!requireNamespace("nanoparquet", quietly=TRUE))
+    stop("nanoparquet is required to write scalar comparison projections", call.=FALSE)
+  if (length(directory) != 1L || is.na(directory) || !nzchar(directory))
+    stop("Scalar comparison Parquet directory is invalid", call.=FALSE)
+  dir.create(directory, recursive=TRUE, showWarnings=FALSE)
+  targets <- file.path(directory, c("scalar_comparison_groups.parquet",
+    "scalar_comparison_territories.parquet"))
+  staged <- vapply(targets, function(path) tempfile(pattern="scalar-comparison-",
+    tmpdir=dirname(path), fileext=".parquet"), character(1))
+  backups <- vapply(targets, function(path) tempfile(pattern="scalar-comparison-backup-",
+    tmpdir=dirname(path), fileext=".parquet"), character(1))
+  backed_up <- rep(FALSE, length(targets))
+  installed <- rep(FALSE, length(targets))
+  completed <- FALSE
+  on.exit({
+    unlink(staged[file.exists(staged)])
+    if (!completed) {
+      for (i in seq_along(targets)) {
+        if (installed[[i]] && file.exists(targets[[i]])) unlink(targets[[i]])
+        if (backed_up[[i]] && file.exists(backups[[i]])) {
+          if (file.exists(targets[[i]])) unlink(targets[[i]])
+          file.rename(backups[[i]], targets[[i]])
+        }
+      }
+    } else {
+      unlink(backups[file.exists(backups)])
+    }
+  }, add=TRUE)
+  nanoparquet::write_parquet(projection$groups, staged[[1L]])
+  nanoparquet::write_parquet(projection$territories, staged[[2L]])
+  for (i in seq_along(targets)) {
+    if (file.exists(targets[[i]])) {
+      if (!file.rename(targets[[i]], backups[[i]]))
+        stop("Could not stage the previous scalar comparison Parquet", call.=FALSE)
+      backed_up[[i]] <- TRUE
+    }
+  }
+  for (i in seq_along(targets)) {
+    if (!file.rename(staged[[i]], targets[[i]]))
+      stop("Could not install the complete scalar comparison Parquet set", call.=FALSE)
+    installed[[i]] <- TRUE
+  }
+  completed <- TRUE
+  invisible(targets)
+}
+
+publish_registered_scalar_comparison <- function(projection, db) {
+  validate_scalar_comparison_projection(projection)
+  if (!is.list(db) || !is.function(db$transaction) || !is.function(db$input_markers) ||
+      !is.function(db$marker) || !is.function(db$replace))
+    stop("Invalid scalar comparison database adapter", call.=FALSE)
+  db$transaction({
+    if (is.function(db$lock)) db$lock()
+    inputs <- db$input_markers()
+    if (!is.data.frame(inputs) || nrow(inputs) != 1L ||
+        !identical(as.character(inputs$scalar_content_version[[1L]]), projection$scalar_content_version) ||
+        !identical(as.character(inputs$reference_content_version[[1L]]), projection$reference_content_version))
+      stop("Scalar comparison input publications are stale or unavailable", call.=FALSE)
+    marker <- db$marker()
+    changed <- !(is.data.frame(marker) && nrow(marker) == 1L &&
+      identical(as.character(marker$content_version[[1L]]), projection$content_version) &&
+      identical(as.character(marker$scalar_content_version[[1L]]), projection$scalar_content_version) &&
+      identical(as.character(marker$reference_content_version[[1L]]), projection$reference_content_version))
+    if (changed) db$replace(projection)
+    invisible(list(changed=changed, content_version=projection$content_version,
+      scalar_content_version=projection$scalar_content_version,
+      reference_content_version=projection$reference_content_version,
+      group_row_count=nrow(projection$groups), territory_row_count=nrow(projection$territories)))
+  })
+}
+
+scalar_comparison_postgres_adapter <- function(con) {
+  if (!requireNamespace("DBI", quietly=TRUE)) stop("DBI is required")
+  list(
+    transaction=function(expr) DBI::dbWithTransaction(con, expr),
+    lock=function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
+    input_markers=function() DBI::dbGetQuery(con, paste(
+      "SELECT scalar.content_version AS scalar_content_version,",
+      "reference.content_version AS reference_content_version",
+      "FROM table_publication scalar CROSS JOIN table_publication reference",
+      "WHERE scalar.table_name='scalar_observation'",
+      "AND reference.table_name='territory_reference'",
+      "FOR SHARE OF scalar, reference")),
+    marker=function() DBI::dbGetQuery(con, "SELECT content_version, scalar_content_version,
+      reference_content_version FROM scalar_comparison_publication WHERE singleton"),
+    replace=function(projection) {
+      DBI::dbExecute(con, "DELETE FROM scalar_comparison_territory")
+      DBI::dbExecute(con, "DELETE FROM scalar_comparison_group")
+      group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
+        "statistic", "median", "member_count", "eligible_count", "missing_count")
+      territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
+        "territory_id", "value", "status", "rank", "tie_count", "rank_size")
+      DBI::dbWriteTable(con, "scalar_comparison_group",
+        projection$groups[group_fields], append=TRUE, row.names=FALSE)
+      DBI::dbWriteTable(con, "scalar_comparison_territory",
+        projection$territories[territory_fields], append=TRUE, row.names=FALSE)
+      DBI::dbExecute(con, paste(
+        "INSERT INTO scalar_comparison_publication(singleton, content_version, scalar_content_version,",
+        "reference_content_version, group_row_count, territory_row_count, published_at)",
+        "VALUES (true, $1, $2, $3, $4, $5, now())",
+        "ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,",
+        "scalar_content_version=EXCLUDED.scalar_content_version,",
+        "reference_content_version=EXCLUDED.reference_content_version,",
+        "group_row_count=EXCLUDED.group_row_count,",
+        "territory_row_count=EXCLUDED.territory_row_count, published_at=EXCLUDED.published_at"),
+        params=list(projection$content_version, projection$scalar_content_version,
+        projection$reference_content_version, nrow(projection$groups), nrow(projection$territories)))
+      invisible(TRUE)
+    }
+  )
+}
+
 # Split the repository's PostgreSQL DDL script without altering quoted SQL.
 # Supports standard doubled quote escapes, line comments and dollar-quoted
 # function bodies used by api/schema.sql.
@@ -468,7 +854,12 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
       !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
-  tables <- c("milieux_reading_source", "series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
+  tables <- c("observed_collection_comparison_territory", "observed_collection_comparison_group", "observed_collection_comparison_publication",
+    "profile_comparison_territory", "profile_comparison_group", "profile_comparison_publication",
+    "scalar_comparison_territory", "scalar_comparison_group", "scalar_comparison_publication",
+    "ordered_series_comparison_territory", "ordered_series_comparison_group", "ordered_series_comparison_publication",
+    "milieux_reading_absence", "aedar_territorial_aggregate",
+    "milieux_reading_source", "series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
     "economy_activity_evidence", "economy_typed_reading", "milieux_typed_reading", "mobility_typed_reading",
     "series_context_parent_policy", "habitat_typed_reading", "mobility_reading_clock", "mobility_reading_story", "mobility_reading_descriptor",
     "selected_reading_publication", "selected_reading_descriptor", "demographic_typed_reading", "demographic_reading_descriptor",
@@ -495,7 +886,8 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
      "validate_series_dataset_publication()", "validate_series_observation_provenance()",
      "assert_bpe_profile_evidence_complete()",
      "validate_series_named_reference()", "validate_series_named_reference_provenance()",
-     "validate_observed_collection_write()", "validate_anchored_membership()",
+      "validate_observed_collection_comparison_write()", "validate_observed_collection_comparison_publication()",
+      "validate_observed_collection_write()", "validate_anchored_membership()",
      "validate_period_detail_observation()", "validate_observed_collection_publication()",
       "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
      "reject_milieux_population_provenance_mutation()",

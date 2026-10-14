@@ -6,6 +6,8 @@ import type { Payload } from '@/payload/types'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
 import { mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { validateRaccordementIndicatorRead } from '@/payload/raccordementIndicatorApi'
 
 // Wire fields are producer-owned indicator observations, not storage-family rows.
 const sources = [{ source_id: 'mobilite_snapshot', name: 'SQL mobility', version: 'sql-v1',
@@ -192,6 +194,138 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(rendered.find('.transit-legend-reference').exists()).toBe(false)
     expect(rendered.findAll('.transit-point--territory').map((point)=>point.attributes('data-value')))
       .toEqual(values.map(String))
+  })
+  it('renders the API-selected 73-point mean curve separately from the focal curve and national reference', () => {
+    const data = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-theme-facts-guarded.json', 'utf8'))
+    const target = data.territory
+    const sourceFactsPayload: Payload = { ...payload, territoires: [{
+      territoire: target.territory_id, type: target.territory_type, nom: target.name,
+      departement: '35', epci: '243500139', classe_densite_code: data.default_comparison.scope.density_class_code,
+    }] }
+    const numericAxes = data.indicator_metadata.find((item: any) => item.indicator_id === 'raccordement_courbe').axis_numeric_values
+    const facts = mobilityFactsFromThemeApi(sourceFactsPayload, target.territory_id, data)
+    const compared = applyThemeComparisonApiFacts(facts, data.default_comparison, context)
+    const content = resolveMobiliteThemeContent(compared)
+    const section = content.units.find((unit) => unit.key === 'offre-transports-commun')?.sections[0]
+    expect(section?.evidence?.kind).toBe('public-transport')
+    if (section?.evidence?.kind !== 'public-transport') throw new Error('Transport trajectory missing')
+    const rendered = mount(CahierOffreTransportsFigure, { props: {
+      offer: section.evidence.offer, trajectory: section.evidence.trajectory,
+      comparisonTrajectory: section.evidence.comparisonTrajectory,
+      metadata: { axis: 'numeric', axisLabels: { x: 'Temps (minutes)', y: 'Population joignable (%)' },
+        ticks: numericAxes.filter((minute: number) => minute % 30 === 0).map((minute: number) => ({
+          detail: `t${String(minute).padStart(4, '0')}`, label: String(minute),
+        })), endpoints: ['t0000', 't0360'], marker: { detail: 't0090', label: '90 minutes' } },
+    } })
+    expect(rendered.findAll('.transit-point--territory')).toHaveLength(73)
+    expect(rendered.findAll('.transit-point--comparison')).toHaveLength(73)
+    expect(((rendered.find('[data-series="territory"]').attributes('d') ?? '').match(/L/g) ?? [])).toHaveLength(72)
+    expect(((rendered.find('[data-series="comparison"]').attributes('d') ?? '').match(/L/g) ?? [])).toHaveLength(72)
+    expect(rendered.find('[data-series="reference"]').exists()).toBe(false)
+    expect(rendered.findAll('.transit-point--comparison').map((point) => point.attributes('data-value')))
+      .toEqual(data.default_comparison.results[0].mean_curve.points.map((point: any) => String(point.value)))
+    expect(rendered.find('.transit-legend-comparison').text()).toContain(context.scope.label)
+    expect(rendered.find('.transit-legend-comparison').text()).toContain('Moyenne')
+    expect(compared.mobility.namedTrajectoryReferences).toHaveLength(1)
+    expect(compared.mobility.namedTrajectoryReferences[0]?.label).not.toBe(context.scope.label)
+  })
+
+  it('rejects an incomplete selected mean curve rather than drawing a shrunken cohort', () => {
+    const data = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-theme-facts-guarded.json', 'utf8'))
+    const target = data.territory
+    const sourceFactsPayload: Payload = { ...payload, territoires: [{
+      territoire: target.territory_id, type: target.territory_type, nom: target.name,
+      departement: '35', epci: '243500139', classe_densite_code: data.default_comparison.scope.density_class_code,
+    }] }
+    const facts = mobilityFactsFromThemeApi(sourceFactsPayload, target.territory_id, data)
+    const incomplete = structuredClone(data.default_comparison)
+    incomplete.results.find((item: any) => item.indicator_id === 'raccordement_courbe').mean_curve.points.pop()
+    expect(() => applyThemeComparisonApiFacts(facts, incomplete, context))
+      .toThrow('Courbe moyenne Mobilité partielle, non mesurée ou désordonnée')
+  })
+  it('rejects a mean curve whose API-owned scope is absent or contradicts its envelope', () => {
+    const data = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-theme-facts-guarded.json', 'utf8'))
+    const target = data.territory
+    const sourceFactsPayload: Payload = { ...payload, territoires: [{
+      territoire: target.territory_id, type: target.territory_type, nom: target.name,
+      departement: '35', epci: '243500139', classe_densite_code: data.default_comparison.scope.density_class_code,
+    }] }
+    const facts = mobilityFactsFromThemeApi(sourceFactsPayload, target.territory_id, data)
+    for (const badScope of [{}, { kind: 'density_class', density_class_code: '4', territory_type: 'commune' }]) {
+      const changed = structuredClone(data.default_comparison)
+      changed.results.find((item: any) => item.indicator_id === 'raccordement_courbe').mean_curve.scope = badScope
+      expect(() => applyThemeComparisonApiFacts(facts, changed, context))
+        .toThrow('Portée réelle de la courbe moyenne Mobilité invalide')
+    }
+  })
+  it('accepts and preserves a current guarded API scope, statistic, members and all mean points', () => {
+    const comparison = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-indicator-rennes-comparison-guarded.json', 'utf8'))
+    const factsFixture = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-theme-facts-guarded.json', 'utf8'))
+    const target = factsFixture.territory
+    const sourceFactsPayload: Payload = { ...payload, territoires: [{
+      territoire: target.territory_id, type: target.territory_type, nom: target.name,
+      departement: '35', epci: '243500139',
+      classe_densite_code: comparison.result.mean_curve.scope.density_class_code,
+    }] }
+    const facts = mobilityFactsFromThemeApi(sourceFactsPayload, target.territory_id, factsFixture)
+    const compared = applyThemeComparisonApiFacts(facts, comparison, context)
+    expect(compared.mobility.selectedTrajectoryComparison).toMatchObject({
+      statistic: 'mean', selectedMemberCount: 14, eligibleCount: 14,
+      points: comparison.result.mean_curve.points.map((point: any) => expect.objectContaining({
+        detail: point.axis, value: point.value,
+      })),
+    })
+  })
+  it('adapts actual guarded indicator reads to the production trajectory facts without a static grid', () => {
+    const read = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-indicator-rennes-guarded.json', 'utf8'))
+    const comparison = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-indicator-rennes-comparison-guarded.json', 'utf8'))
+    const target = { territoire: '35238', type: 'commune' as const, nom: 'Rennes', departement: '35', epci: null,
+      classe_densite_code: comparison.result.mean_curve.scope.density_class_code,
+      classe_densite_libelle_public: 'Classe source Rennes' }
+    const adapted = validateRaccordementIndicatorRead(read, comparison, target)
+    expect(adapted.facts).toHaveLength(read.axis_values.length)
+    expect(adapted.referenceFacts).toHaveLength(read.axis_values.length)
+    expect(adapted.metadata.axis_values).toEqual(read.axis_values)
+    expect(adapted.facts.find((fact) => fact.detail === read.comparison_point)?.value)
+      .toBe(read.points.find((point: any) => point.axis === read.comparison_point).value)
+    expect(adapted.comparison).toMatchObject({ statistic: 'mean', selectedMemberCount: 14,
+      valueAtComparisonPoint: comparison.result.mean, rank: 1, rankSize: 14 })
+    const malformed = structuredClone(comparison)
+    malformed.result.mean_curve.scope = {}
+    expect(() => validateRaccordementIndicatorRead(read, malformed, target))
+      .toThrow('Portée ou courbe moyenne raccordement incohérente avec la réponse API')
+  })
+  it('keeps the API-proven all-zero measured commune curve distinct from missing data', () => {
+    const read = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-indicator-zero-22001-guarded.json', 'utf8'))
+    const comparison = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-indicator-zero-22001-comparison-guarded.json', 'utf8'))
+    const target = { territoire: read.territory.id, type: 'commune' as const, nom: read.territory.name,
+      departement: '22', epci: null, classe_densite_code: comparison.scope.density_class_code,
+      classe_densite_libelle_public: 'Classe publiée' }
+    const adapted = validateRaccordementIndicatorRead(read, comparison, target)
+    expect(adapted.facts).toHaveLength(73)
+    expect(adapted.facts.every((fact) => fact.value === 0 && fact.observation_status === 'measured' &&
+      fact.provenance_revisions?.length)).toBe(true)
+  })
+
+  it('plots all 73 source-proven model zeros as measured zero facts without an absence claim', () => {
+    const response = JSON.parse(readFileSync('src/__tests__/fixtures/raccordement-zero-commune-guarded.json', 'utf8'))
+    expect(response.points).toHaveLength(73)
+    expect(response.points.every((point: any) => point.status === 'measured' && point.value === 0 &&
+      point.missing_reason === 'no_modeled_endpoint_stops' && point.provenance.length > 0)).toBe(true)
+    const axisValues = response.axis_numeric_values
+    const trajectory = response.points.map((point: any, index: number) => ({ label: point.axis,
+      fact: { key: 'raccordement_courbe', detail: point.axis, axisValue: axisValues[index], value: point.value,
+        unit: '%', availability: 'complete' as const, provenance: null, comparison: null,
+        comparisonBasis: 'territory-mean' as const, reason: null } }))
+    const rendered = mount(CahierOffreTransportsFigure, { props: { offer: null, trajectory,
+      comparisonTrajectory: null, metadata: { axis: 'numeric', axisLabels: { x: 'Temps (minutes)', y: 'Population joignable (%)' },
+        ticks: axisValues.filter((minute: number) => minute % 30 === 0).map((minute: number) => ({
+          detail: `t${String(minute).padStart(4, '0')}`, label: String(minute),
+        })), endpoints: ['t0000', 't0360'] } } })
+    expect(rendered.findAll('.transit-point--territory')).toHaveLength(73)
+    expect(((rendered.find('[data-series="territory"]').attributes('d') ?? '').match(/L/g) ?? [])).toHaveLength(72)
+    expect(rendered.text()).not.toContain('sans transport')
+    expect(rendered.text()).not.toContain('absence de transport')
   })
   it('rejects measured facts without source lineage instead of presenting static provenance', () => {
     const data = response()

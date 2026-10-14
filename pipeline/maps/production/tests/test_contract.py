@@ -649,6 +649,26 @@ class ContractTests(unittest.TestCase):
         self.assertEqual(result.qa["status"], "incomplete")
         self.assertIn("dimensions", result.qa["failures"][0]["error"])
 
+    def test_inspection_refresh_scope_runs_a_profile_only_batch(self):
+        class InspectionRefresh(FixtureAdapter):
+            def preflight_scope(self, recipe, binding, scope, profiles):
+                if scope != "inspection-refresh" or tuple(profiles) != ("inspection",):
+                    raise ValueError("inspection refresh is an inspection-only scope")
+
+        recipe = Recipe("fixture", 1, Foundation("v1"), "fixture")
+        binding = Binding("fixture", MapSet({"fixture": [{
+            "geometry": "polygon", "territory": {
+                "kind": "fixture", "code": "1", "name": "Fixture"},
+            "mode": "car",
+        }]}))
+        with TemporaryDirectory() as directory:
+            result = run_production(recipe, binding, "inspection-refresh", ("inspection",),
+                                    InspectionRefresh(), directory)
+
+        self.assertEqual(result.manifest["scope"], "inspection-refresh")
+        self.assertEqual(result.qa["status"], "passed")
+        self.assertEqual(result.qa["profile_counts"], {"inspection": 1})
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,30 @@
+{
+  "schema": "lusk-raccordement-national-curves-refresh-receipt-v1",
+  "status": "complete-candidate-only-not-production",
+  "matrix_sha256": "ae3c7e37bc788010968855d949e875f45481c7e05f80a98718f980a8841a4df5",
+  "matrix_receipt_sha256": "571d46471a66411bc9d7a5caea24f3992412551840ef82cb9d772ddbd2376060",
+  "router_cpp_sha256": "f36f09ebedb4d92898ecd2b6ca7b6c4dcdf207b497591e644e6434787732c876",
+  "curve_calculation_source_sha256": "1daadb161b30d5e381d1c4c99382e0c4405051bdf44d9e0359ca90df7e0d4c35",
+  "membership_source": "pinned candidate membership facts; no missing member dropped",
+  "coverage": {
+    "communes": 1202,
+    "commune_curve_rows": 87746,
+    "eligible_origins": 664,
+    "matrix_rows": 798128,
+    "reachable_rows": 431327,
+    "unreachable_rows": 366801,
+    "aggregate_curve_rows": 5329,
+    "denominator_population": 3449370,
+    "maximum_elapsed_min": 693
+  },
+  "combourg": {
+    "outbound_share_90": 0.3153,
+    "Rennes_to_Combourg_elapsed_min": 20,
+    "Saint_Malo_to_Combourg_elapsed_min": 22
+  },
+  "output": {
+    "envelope": "raccordement_national_outbound_v1.rds",
+    "envelope_sha256": "260d7e096c5fcad534edc863fe7d3ec9cb6b2b51d868f4363aed1e98981079b6"
+  },
+  "limitation": "Candidate derivation only; no canonical pin, serving table, migration, or production action."
+}

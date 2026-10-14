@@ -15,7 +15,11 @@ def test_mobility_canonical_pages_declare_regional_motorisation_and_curve():
         "sans_voiture", "une_voiture", "deux_plus"]
     assert "region" in published["indicator_pages"]["voitures_menage"]["levels"]
     assert published["indicator_pages"]["voitures_menage"] == pages["voitures_menage"]
-    assert published["indicator_pages"]["raccordement_courbe"] == pages["raccordement_courbe"]
+    # The checked-in static payload is an immutable incumbent snapshot; the
+    # active owned-series metadata declares the new 73-point canonical route.
+    assert len(published["indicator_pages"]["raccordement_courbe"]["comparison"]["details"]) == 11
+    assert len(pages["raccordement_courbe"]["comparison"]["details"]) == 73
+    assert pages["raccordement_courbe"]["comparison"]["detail"] == "t0090"
 
 
 def test_owned_series_contract_keeps_descriptor_and_named_reference_independent():

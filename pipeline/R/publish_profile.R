@@ -1,5 +1,125 @@
 # Dense declared-detail profile projection. Descriptor axes are sourced only
 # from indicator_pages metadata; canonical rows may not extend or reorder them.
+# Fixed-context comparison coverage is deliberately an inventory, separate
+# from rendering/publishing mechanics. Keep it aligned with ADR-0039; the
+# contract test guards against dropping a family as its implementation evolves.
+# ADR-0039 comparison families represented by this constrained publisher set.
+ADR0039_COMPARISON_FAMILIES <- c(
+  "declared_profile", "numeric_period_collection",
+  "numeric_detail_collection", "scalar", "ordered_series"
+)
+
+serving_publication_target_names <- function(profile_opt_in = identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset=""), "1")) {
+  targets <- "publie_tables_service"
+  if (isTRUE(profile_opt_in)) c(targets, "publie_profiles_declares") else targets
+}
+
+# Profiles compare their declared facet (or, for the DPE scalar-backed facet,
+# the scalar publication itself). The statistic and rank semantics intentionally
+# match the established scalar publication contract: median and competition rank.
+project_declared_profile_comparisons <- function(profiles, territory_reference,
+    profile_content_version, reference_content_version, scalar_comparisons = NULL) {
+  if (!is.list(profiles) || !length(profiles) ||
+      any(!vapply(profiles, function(p) is.list(p) && !is.null(p$descriptor), logical(1))))
+    stop("Declared profile comparison projections are required", call.=FALSE)
+  group_rows <- list(); territory_rows <- list()
+  for (profile in profiles) {
+    d <- profile$descriptor
+    id <- d$indicator_id
+    detail <- d$comparison_detail
+    sex <- d$comparison_sex
+    # The projection is selected by the producer contract, not by a second
+    # domain-ID inventory: only descriptors that declare a comparison facet
+    # are comparable profiles.
+    if (is.null(d$comparison_direction) || is.null(d$comparison_detail) ||
+        length(d$comparison_detail) != 1L || is.na(d$comparison_detail) ||
+        !nzchar(d$comparison_detail)) next
+    # DPE's declared comparison is exactly the scalar facet. It is deliberately
+    # not copied into profile comparison storage; publication/API consume the
+    # shared scalar comparison tables by this descriptor reference.
+    if (!is.null(d$comparison_scalar)) {
+      next
+    }
+    if (!d$comparison_direction %in% c("high", "low")) stop("Invalid declared profile comparison direction", call.=FALSE)
+    facts <- profile$facts[profile$facts$detail == detail & profile$facts$sex == ifelse(is.na(sex), "", sex),,drop=FALSE]
+    if (!nrow(facts)) stop(sprintf("Declared profile comparison facet is empty: %s", id),call.=FALSE)
+    membership <- comparison_context_membership(territory_reference, d$levels)
+    for (i in seq_len(nrow(membership))) {
+      g <- membership[i,,drop=FALSE]
+      type <- as.character(g$territory_type)
+      if (!type %in% d$levels) next
+      ids <- g$member_ids[[1L]]
+      selected <- facts[facts$territory_type == type & facts$territory_id %in% ids,,drop=FALSE]
+      if (anyDuplicated(selected$territory_id) || !setequal(selected$territory_id, ids))
+        stop("Profile comparison membership differs from declared territory facts", call.=FALSE)
+      selected <- selected[match(ids, selected$territory_id),,drop=FALSE]
+      selected$status[is.na(selected$status)] <- "not_published"
+      if (any(!selected$status %in% c("measured", "suppressed", "unsupported", "not_available", "not_published")))
+        stop("Invalid profile comparison availability state", call.=FALSE)
+      if (any(selected$status == "measured" & is.na(selected$value)))
+        stop("Measured profile comparison facts must have values", call.=FALSE)
+      ok <- selected$status == "measured" & !is.na(selected$value)
+      vals <- selected$value[ok]
+      ranks <- rep(NA_integer_,length(ids)); ties <- ranks; sizes <- ranks
+      for (j in which(ok)) {
+        ranks[j] <- 1L + sum(if (d$comparison_direction == "high") vals > selected$value[j] else vals < selected$value[j])
+        ties[j] <- sum(vals == selected$value[j]); sizes[j] <- length(vals)
+      }
+      key <- data.frame(comparison_context=as.character(g$comparison_context),
+        group_id=as.character(g$group_id), territory_type=type, indicator_id=id,
+        detail_key=detail, sex_key=ifelse(is.na(sex),"",sex), stringsAsFactors=FALSE)
+      group_rows[[length(group_rows)+1L]] <- cbind(key,
+        statistic="median", median=if(length(vals)) stats::median(vals) else NA_real_,
+        member_count=length(ids), eligible_count=length(vals), missing_count=length(ids)-length(vals),
+        profile_content_version=profile_content_version, reference_content_version=reference_content_version)
+      territory_rows[[length(territory_rows)+1L]] <- cbind(key,
+        territory_id=ids, value=selected$value, status=selected$status, rank=ranks,
+        tie_count=ties, rank_size=sizes, profile_content_version=profile_content_version,
+        reference_content_version=reference_content_version)
+    }
+  }
+  groups <- if(length(group_rows)) do.call(rbind,group_rows) else data.frame()
+  territories <- if(length(territory_rows)) do.call(rbind,territory_rows) else data.frame()
+  if (nrow(groups)) {
+    groups <- groups[order(groups$comparison_context, groups$group_id, groups$territory_type, groups$indicator_id, groups$detail_key, groups$sex_key),,drop=FALSE]
+    territories <- territories[order(territories$comparison_context, territories$group_id, territories$territory_type, territories$indicator_id, territories$detail_key, territories$sex_key, territories$territory_id),,drop=FALSE]
+  }
+  list(groups=groups, territories=territories,
+       profile_content_version=profile_content_version,
+       reference_content_version=reference_content_version)
+}
+
+write_profile_comparison_parquets <- function(projection, directory,
+    write_fn = nanoparquet::write_parquet, rename_fn = file.rename) {
+  if (!is.list(projection) || !all(c("groups", "territories") %in% names(projection)) ||
+      !is.data.frame(projection$groups) || !is.data.frame(projection$territories))
+    stop("Invalid profile comparison projection", call.=FALSE)
+  if (!requireNamespace("nanoparquet", quietly=TRUE)) stop("nanoparquet is required", call.=FALSE)
+  dir.create(directory, recursive=TRUE, showWarnings=FALSE)
+  version <- profile_content_version(projection)
+  generation <- file.path(directory, paste0("profile-comparison-", version))
+  targets <- file.path(generation, c("groups.parquet", "territories.parquet"))
+  dir.create(generation, recursive=TRUE, showWarnings=FALSE)
+  expected <- list(projection$groups, projection$territories)
+  present <- file.exists(targets)
+  for (i in which(present)) {
+    existing <- tryCatch(nanoparquet::read_parquet(targets[i]), error=function(e) NULL)
+    if (is.null(existing) || !isTRUE(all.equal(existing, expected[[i]], check.attributes=FALSE)))
+      stop("Existing profile comparison generation does not match its content version", call.=FALSE)
+  }
+  if (all(present)) return(invisible(targets))
+  staged <- vapply(targets, function(p) tempfile("profile-comparison-", dirname(p), fileext=".parquet"), character(1))
+  on.exit(unlink(staged[file.exists(staged)]), add=TRUE)
+  for (i in which(!present)) write_fn(expected[[i]], staged[i])
+  for (i in which(!present)) {
+    checked <- nanoparquet::read_parquet(staged[i])
+    if (!isTRUE(all.equal(checked, expected[[i]], check.attributes=FALSE)))
+      stop("Staged profile comparison artifact validation failed", call.=FALSE)
+    if (!rename_fn(staged[i], targets[i])) stop("Could not install profile comparison artifacts", call.=FALSE)
+  }
+  invisible(targets)
+}
+
 validate_declared_profile <- function(facts, descriptor, axes, eligible_territories = NULL) {
   required <- c("territory_id", "territory_type", "detail", "sex", "value", "status")
   if (!is.data.frame(facts) || !setequal(names(facts), required) ||
@@ -378,7 +498,7 @@ publish_registered_profile <- function(registry, name, canonical, db, additional
   }
   if (length(profiles) > 1L) projection <- list(profiles=profiles[order(ids)])
   version <- profile_content_version(projection)
-  db$transaction({
+  result <- db$transaction({
     if (is.function(db$lock)) db$lock()
     reference <- db$reference_marker()
     if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
@@ -400,10 +520,16 @@ publish_registered_profile <- function(registry, name, canonical, db, additional
     changed <- !(nrow(marker) && identical(as.character(marker$content_version[[1L]]), version))
     reference_changed <- !changed && "reference_content_version" %in% names(marker) &&
       !identical(as.character(marker$reference_content_version[[1L]]), as.character(reference$content_version[[1L]]))
-    if (changed) publisher$publish(projection, db, version)
-    else if (reference_changed && is.function(db$set_reference_version)) db$set_reference_version(reference$content_version[[1L]])
-    invisible(list(changed=changed, compatibility_updated=reference_changed, content_version=version))
+    comparison_stale <- FALSE
+    if (is.function(db$prepare_comparisons)) {
+      comparison_state <- db$prepare_comparisons(profiles, version, reference$content_version[[1L]])
+      comparison_stale <- isTRUE(comparison_state$stale)
+    }
+    if (changed || reference_changed || comparison_stale) publisher$publish(projection, db, version)
+    invisible(list(changed=changed || reference_changed || comparison_stale,
+      compatibility_updated=reference_changed, content_version=version))
   })
+  result
 }
 
 register_structure_age_profile_publisher <- function(registry, metadata) {
@@ -412,13 +538,37 @@ register_structure_age_profile_publisher <- function(registry, metadata) {
   }, function(projection, db, version) db$replace(projection, version))
 }
 
-profile_postgres_adapter <- function(con) {
+profile_postgres_adapter <- function(con, artifact_directory = NULL) {
   if (!requireNamespace("DBI", quietly = TRUE)) stop("DBI is required")
+  comparison_artifact <- NULL
+  comparisons <- NULL
   list(
+    write_artifacts = function() {
+      if (!is.null(artifact_directory)) {
+        if (is.null(comparison_artifact)) stop("Current profile comparison artifact was not prepared", call.=FALSE)
+        write_profile_comparison_parquets(comparison_artifact, artifact_directory)
+      }
+    },
     transaction = function(expr) DBI::dbWithTransaction(con, expr),
     lock = function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(596, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),
+    prepare_comparisons = function(profiles, version, reference_version) {
+      refs <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
+      comparisons <<- project_declared_profile_comparisons(profiles, refs, version, reference_version)
+      marker <- DBI::dbGetQuery(con, "SELECT content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count FROM profile_comparison_publication WHERE singleton=true")
+      comparison_version <- profile_content_version(comparisons)
+      expected <- c(nrow(comparisons$groups), nrow(comparisons$territories))
+      stale <- !nrow(marker) || !identical(as.character(marker$profile_content_version[[1L]]), as.character(version)) ||
+        !identical(as.character(marker$reference_content_version[[1L]]), as.character(reference_version)) ||
+        !identical(as.character(marker$content_version[[1L]]), comparison_version) ||
+        !identical(as.integer(c(marker$group_row_count[[1L]], marker$territory_row_count[[1L]])), as.integer(expected))
+      # Files are immutable generations. The DB marker is their pointer; a
+      # rollback may leave an unreferenced orphan, but cannot invalidate the
+      # prior committed generation. Never overwrite a referenced generation.
+      if (!is.null(artifact_directory)) write_profile_comparison_parquets(comparisons, artifact_directory)
+      list(stale=stale, projection=comparisons)
+    },
     reference_marker = function() DBI::dbGetQuery(con,
       "SELECT p.content_version,p.row_count,(SELECT count(*) FROM territory_reference) AS actual_rows FROM table_publication p WHERE p.table_name='territory_reference'"),
     set_reference_version = function(version) DBI::dbExecute(con,
@@ -437,15 +587,23 @@ profile_postgres_adapter <- function(con) {
     validate_territories = function(territories, descriptor) {
       actual <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type FROM territory_reference")
       actual <- actual[actual$territory_type %in% unlist(descriptor$levels, use.names=FALSE), , drop=FALSE]
-      expected <- unique(territories[c("territory_id","territory_type")])
-      if (!setequal(paste(actual$territory_type,actual$territory_id),paste(expected$territory_type,expected$territory_id)))
-        stop("Profile eligible territory universe differs from committed reference", call.=FALSE)
+       expected <- unique(territories[c("territory_id","territory_type")])
+       if (!setequal(paste(actual$territory_type,actual$territory_id),paste(expected$territory_type,expected$territory_id)))
+         stop("Profile eligible territory universe differs from committed reference for ",
+           descriptor$indicator_id, call.=FALSE)
     },
     replace = function(projection, version) {
       profiles <- if (!is.null(projection$profiles)) projection$profiles else list(projection)
+      reference_version <- DBI::dbGetQuery(con, "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version[[1L]]
+      if (is.null(comparisons) || !identical(comparisons$profile_content_version, version) ||
+          !identical(comparisons$reference_content_version, reference_version))
+        stop("Profile comparisons were not prepared for the current publication snapshot", call.=FALSE)
+      comparison_version <- profile_content_version(comparisons)
       ids <- vapply(profiles, function(p) p$descriptor$indicator_id, character(1))
       existing <- DBI::dbGetQuery(con, "SELECT indicator_id FROM profile_descriptor")$indicator_id
       if (any(!existing %in% ids)) stop("Complete profile snapshot would discard an existing profile", call.=FALSE)
+      DBI::dbExecute(con, "DELETE FROM profile_comparison_territory")
+      DBI::dbExecute(con, "DELETE FROM profile_comparison_group")
       DBI::dbExecute(con, "DELETE FROM profile_observation")
       DBI::dbExecute(con, "DELETE FROM profile_descriptor_source")
       DBI::dbExecute(con, "DELETE FROM profile_descriptor")
@@ -485,6 +643,10 @@ profile_postgres_adapter <- function(con) {
       if (actual_rows != nrow(projection$facts))
         stop("Published profile row count differs from validated projection", call.=FALSE)
       }
+      DBI::dbWriteTable(con, "profile_comparison_group", comparisons$groups, append=TRUE, row.names=FALSE)
+      DBI::dbWriteTable(con, "profile_comparison_territory", comparisons$territories, append=TRUE, row.names=FALSE)
+      DBI::dbExecute(con, "INSERT INTO profile_comparison_publication(singleton,content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count,published_at) VALUES(true,$1,$2,$3,$4,$5,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,profile_content_version=EXCLUDED.profile_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=EXCLUDED.published_at",
+        params=list(comparison_version, version, reference_version, nrow(comparisons$groups), nrow(comparisons$territories)))
       reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
       if (!nrow(reference)) stop("Territory reference publication is unavailable", call.=FALSE)
       DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('declared_profile',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",
@@ -505,20 +667,32 @@ publier_structure_age_profile_postgres <- function(payload, metadata) {
 # authorised. scalar_version is the verified canonical shared scalar token.
 publier_declared_profiles_postgres <- function(demography, demography_metadata,
     habitat, habitat_metadata, scalar_version, con = NULL, mobilite = NULL, mobilite_metadata = NULL,
-    mobilite_vintages = NULL) {
+    mobilite_vintages = NULL, scalar_publication = NULL, output_directory = NULL) {
+  if (is.null(scalar_publication) || !identical(as.character(scalar_publication$content_version), as.character(scalar_version)))
+    stop("Profile publication requires the same-run scalar publication token", call.=FALSE)
   owned <- is.null(con)
   if (owned) con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
   if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
   registry <- register_structure_age_profile_publisher(list(), demography_metadata)
   additional <- list(project_dpe_profile(habitat, habitat_metadata, scalar_version))
-  housing_ids <- c("mix_logements", "statut", "type", "age_du_bati")
+  housing_ids <- declared_detail_profile_ids(habitat_metadata)
   additional <- c(additional, lapply(housing_ids, function(id)
     project_declared_detail_profile(habitat, habitat_metadata, id)))
   if (!is.null(mobilite) || !is.null(mobilite_metadata)) {
     if (is.null(mobilite) || is.null(mobilite_metadata)) stop("Canonical mobility payload and metadata must be supplied together", call.=FALSE)
     if (is.null(mobilite_vintages)) stop("Canonical Mobility source vintages must be supplied", call.=FALSE)
-    additional <- c(additional, lapply(c("voitures_menage","reseaux","reseaux_par_habitant","offre_cyclable"),
+    additional <- c(additional, lapply(declared_detail_profile_ids(mobilite_metadata),
       function(id) project_mobility_profile(mobilite, mobilite_metadata, id, mobilite_vintages)))
   }
-  publish_registered_profile(registry, "structure_age", demography, profile_postgres_adapter(con), additional_projections=additional)
+  adapter <- profile_postgres_adapter(con, output_directory)
+  result <- publish_registered_profile(registry, "structure_age", demography, adapter, additional_projections=additional)
+  result
+}
+
+declared_detail_profile_ids <- function(metadata) {
+  pages <- metadata$indicator_pages
+  contracts <- metadata$profile_contracts
+  if (is.null(pages) || is.null(contracts)) stop("Profile inventory requires typed metadata contracts", call.=FALSE)
+  names(Filter(function(contract) identical(contract$completeness, "dense_complete") &&
+    !is.null(contract$detail_units), contracts))
 }

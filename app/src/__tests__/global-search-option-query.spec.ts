@@ -4,8 +4,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 
 import GlobalSearchOptionRecherche from '../components/GlobalSearchOptionRecherche.vue'
 
-describe('navigation depuis la recherche globale avec le prototype AEDAR', () => {
-  it('conserve thème, prototype et comparaison explicite', async () => {
+describe('navigation depuis la recherche globale', () => {
+  it('conserve le thème et la comparaison explicite', async () => {
     const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/territoire/:type/:id', name: 'territoire', component: { template: '<div />' } }, { path: '/', component: { template: '<div />' } }] })
     await router.push('/?theme=mobilite&aedar-proto=1&comparaison=epci')
     const wrapper = mount(GlobalSearchOptionRecherche, {
@@ -13,6 +13,6 @@ describe('navigation depuis la recherche globale avec le prototype AEDAR', () =>
       global: { plugins: [router] },
     })
     const target = wrapper.findComponent({ name: 'RouterLink' }).props('to')
-    expect(router.resolve(target).query).toEqual({ theme: 'mobilite', 'aedar-proto': '1', comparaison: 'epci' })
+    expect(router.resolve(target).query).toEqual({ theme: 'mobilite', comparaison: 'epci' })
   })
 })

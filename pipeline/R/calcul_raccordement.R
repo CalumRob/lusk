@@ -503,6 +503,291 @@ calculer_raccordement <- function(matrice, population, codes_cog,
   resultat
 }
 
+# calculer_raccordement_national ----------------------------------------------------
+# Public pure-calculation seam for the versioned national GTFS matrix (#728).
+# Unlike the historical mairie artifact above, this consumes directed
+# origin-commune -> destination-commune journeys and an explicit assessment
+# roster. Every commune curve has the same all-Breton RP denominator; group
+# series are equal member-commune means, including source-proven model zeros.
+calculer_raccordement_national <- function(matrice, population, membership,
+                                           grille = seq.int(0L, 360L, 5L),
+                                           seuil = 90L) {
+  fail <- function(rule, detail) stop(sprintf(
+    "National outbound raccordement calculation failed — %s: %s.", rule, detail),
+    call. = FALSE)
+  required_matrix <- c("origin_id", "destination_id", "reachable", "travel_time_min",
+    "departure_min", "arrival_min", "transfers", "walking_transfers")
+  required_population <- c("code_commune", "population")
+  required_membership <- c("code", "population_2023", "eligible_first_boarding_origin",
+    "structural_zero_reason", "epci_code", "epci_reference_name", "department_code",
+    "region_code", "density_class_code", "density_class_registered_label",
+    "endpoint_stop_count", "assessed", "calculation_status")
+  if (!is.data.frame(matrice) || length(setdiff(required_matrix, names(matrice))))
+    fail("matrix schema", "directed origin/destination and saved journey fields are required")
+  if (!is.data.frame(population) || length(setdiff(required_population, names(population))))
+    fail("population schema", "RP 2023 code_commune and population are required")
+  if (!is.data.frame(membership) || length(setdiff(required_membership, names(membership))))
+    fail("membership schema", "complete assessed membership and explicit zero reasons are required")
+  grid <- as.integer(grille)
+  if (length(grid) != 73L || anyNA(grid) || anyDuplicated(grid) ||
+      !identical(grid, seq.int(0L, 360L, 5L)) || !identical(as.integer(seuil), 90L))
+    fail("publication grid", "the declared 0,5,…,360-minute grid and scalar@90 are required")
+  codes <- as.character(population$code_commune)
+  member_codes <- as.character(membership$code)
+  if (anyNA(codes) || anyDuplicated(codes) || !setequal(codes, member_codes) ||
+      anyNA(member_codes) || anyDuplicated(member_codes))
+    fail("assessed identities", "population and assessment roster must cover the same unique commune codes")
+  if (any(!is.finite(population$population)) || any(population$population < 0) ||
+      any(!is.finite(membership$population_2023)) || any(membership$population_2023 < 0) ||
+      !isTRUE(all.equal(unname(population$population[match(member_codes, codes)]),
+                        unname(membership$population_2023), tolerance = 0)))
+    fail("population weights", "invalid or mismatched RP 2023 destination weights")
+  denominator <- sum(population$population)
+  if (!is.finite(denominator) || denominator <= 0)
+    fail("population denominator", "the full Breton RP 2023 population must be positive")
+  eligible <- member_codes[membership$eligible_first_boarding_origin]
+  zeros <- !membership$eligible_first_boarding_origin
+  if (anyNA(membership$eligible_first_boarding_origin) || any(!membership$assessed) ||
+      any(membership$calculation_status != "complete") ||
+      any(!membership$structural_zero_reason[zeros] %in% c(
+        "no_modeled_endpoint_stops", "endpoint_stops_but_no_permitted_first_boarding")) ||
+      any(!is.na(membership$structural_zero_reason[!zeros])) ||
+      any(membership$endpoint_stop_count[zeros & membership$structural_zero_reason == "no_modeled_endpoint_stops"] != 0L) ||
+      any(membership$endpoint_stop_count[zeros & membership$structural_zero_reason == "endpoint_stops_but_no_permitted_first_boarding"] <= 0L))
+    fail("structural zero facts", "failed/partial assessments and generic NA-to-zero coercion are forbidden")
+  if (!is.character(matrice$origin_id) || !is.character(matrice$destination_id) ||
+      !is.logical(matrice$reachable))
+    fail("matrix types", "origin/destination IDs must be strings and reachability logical")
+  if (anyNA(matrice$reachable) || anyNA(matrice$origin_id) || anyNA(matrice$destination_id) ||
+      anyDuplicated(matrice[c("origin_id", "destination_id")]))
+    fail("matrix identities", "reachability and OD identities must be complete and unique")
+  format_communes <- function(ids, limit = 20L) {
+    ids <- sort(unique(as.character(ids)))
+    visibles <- head(ids, limit)
+    suffix <- if (length(ids) > limit) paste0(" … et ", length(ids) - limit, " autre(s)") else ""
+    paste0(paste(visibles, collapse = ", "), suffix)
+  }
+  self_routes <- matrice[matrice$origin_id == matrice$destination_id &
+    matrice$origin_id %in% eligible, , drop = FALSE]
+  missing_self_routes <- setdiff(eligible, self_routes$origin_id)
+  invalid_self_routes <- self_routes$origin_id[
+    !self_routes$reachable | !is.finite(self_routes$travel_time_min) |
+      self_routes$travel_time_min != 0
+  ]
+  affected_self_routes <- sort(unique(c(missing_self_routes, invalid_self_routes)))
+  if (length(affected_self_routes))
+    fail("self routes", paste0(
+      "eligible origin communes must have a saved reachable zero-minute self-route: ",
+      paste(affected_self_routes, collapse = ", ")))
+  missing_origins <- setdiff(eligible, unique(matrice$origin_id))
+  if (length(missing_origins))
+    fail("matrix eligibility", paste0("eligible origin communes are absent from the OD matrix: ",
+      format_communes(missing_origins)))
+  unexpected_origins <- setdiff(unique(matrice$origin_id), eligible)
+  unexpected_destinations <- setdiff(unique(matrice$destination_id), codes)
+  if (length(unexpected_origins) || length(unexpected_destinations))
+    fail("matrix eligibility", paste0(
+      "unexpected origin communes: ", format_communes(unexpected_origins),
+      "; unexpected destination communes: ", format_communes(unexpected_destinations)))
+  matrix_by_origin <- split(matrice, matrice$origin_id)
+  missing_destinations <- lapply(eligible, function(origin) {
+    setdiff(codes, matrix_by_origin[[origin]]$destination_id)
+  })
+  names(missing_destinations) <- eligible
+  affected_origins <- names(missing_destinations)[lengths(missing_destinations) > 0L]
+  if (length(affected_origins)) {
+    limit_origins <- 20L
+    shown_origins <- head(affected_origins, limit_origins)
+    details <- vapply(shown_origins, function(origin) paste0(origin, " -> ",
+      format_communes(missing_destinations[[origin]], limit = 10L)), character(1))
+    omitted <- length(affected_origins) - length(shown_origins)
+    suffix <- if (omitted > 0L) paste0("; et ", omitted, " autre(s) origine(s) affectée(s)") else ""
+    fail("origin result completeness", paste0("missing directed origin -> destination pair(s): ",
+      paste(details, collapse = "; "), suffix))
+  }
+  counts <- table(matrice$origin_id)
+  if (length(counts) != length(eligible) || any(counts != length(codes)))
+    fail("completed origins", "every eligible origin needs one raw result for every assessed destination")
+  if (any(!is.finite(matrice$travel_time_min[matrice$reachable])) ||
+      any(matrice$travel_time_min[matrice$reachable] < 0) ||
+      any(!is.na(matrice$travel_time_min[!matrice$reachable])))
+    fail("saved journey values", "reachable times must be finite/nonnegative and unreachable times must remain NA")
+  if (any(!is.na(matrice$transfers[matrice$reachable]) & matrice$transfers[matrice$reachable] < 0) ||
+      any(!is.na(matrice$walking_transfers[matrice$reachable]) & matrice$walking_transfers[matrice$reachable] < 0))
+    fail("saved journey fields", "negative transfer counts are invalid")
+
+  population_by_code <- stats::setNames(population$population, codes)
+  curve_matrix <- matrix(0, nrow = length(codes), ncol = length(grid),
+    dimnames = list(codes, as.character(grid)))
+  routed_destination_count <- stats::setNames(integer(length(codes)), codes)
+  for (origin in eligible) {
+    od <- matrix_by_origin[[origin]]
+    if (nrow(od) != length(codes) || anyDuplicated(od$destination_id) ||
+        !setequal(od$destination_id, codes))
+      fail("origin result completeness", paste0("missing or duplicate destination row for origin ", origin))
+    reached <- od[od$reachable, , drop = FALSE]
+    if (!nrow(reached)) fail("completed search", paste0("eligible origin has no successful route: ", origin))
+    weights <- population_by_code[reached$destination_id]
+    if (anyNA(weights)) fail("destination weights", "reachable destination has no RP 2023 population")
+    routed_destination_count[[origin]] <- nrow(reached)
+    curve_matrix[origin, ] <- vapply(grid, function(t) {
+      sum(weights[reached$travel_time_min <= t]) / denominator
+    }, numeric(1))
+  }
+  if (anyNA(curve_matrix) || any(!is.finite(curve_matrix)) ||
+      any(curve_matrix < 0 | curve_matrix > 1) ||
+      any(apply(curve_matrix, 1, function(x) any(diff(x) < -1e-12))) ||
+      any(curve_matrix[zeros, , drop = FALSE] != 0))
+    fail("complete curves", "each assessed commune needs 73 finite bounded monotone values")
+
+  commune_curves <- data.frame(code = rep(codes, each = length(grid)),
+    minute = rep(grid, times = length(codes)), share = as.vector(t(curve_matrix)),
+    stringsAsFactors = FALSE)
+  commune_scalars <- data.frame(code = codes,
+    share_90 = as.numeric(curve_matrix[, as.character(seuil)]),
+    curve_status = ifelse(member_codes[match(codes, member_codes)] %in% eligible,
+      "routed_complete", "structural_model_zero_complete"),
+    structural_zero_reason = membership$structural_zero_reason[match(codes, member_codes)],
+    origin_search_completed = codes %in% eligible,
+    reachable_destinations_from_origin = unname(routed_destination_count[codes]),
+    stringsAsFactors = FALSE)
+
+  defs <- list(
+    epci = list(code = "epci_code", label = "epci_reference_name", include_na = FALSE),
+    department = list(code = "department_code", label = "department_code", include_na = FALSE),
+    region = list(code = "region_code", label = "region_code", include_na = FALSE),
+    density_class = list(code = "density_class_code", label = "density_class_registered_label", include_na = FALSE))
+  curve_parts <- scalar_parts <- membership_parts <- list()
+  for (level in names(defs)) {
+    def <- defs[[level]]
+    group_value <- as.character(membership[[def$code]])
+    group_codes <- sort(unique(group_value[!is.na(group_value) & nzchar(group_value)]))
+    if (!length(group_codes)) fail("group membership", paste0("no groups declared for ", level))
+    for (group in group_codes) {
+      indexes <- which(!is.na(group_value) & group_value == group)
+      ids <- member_codes[indexes]
+      if (!length(ids) || any(!ids %in% codes))
+        fail("group membership", paste0("unresolved required member in ", level, " ", group))
+      member_curves <- curve_matrix[ids, , drop = FALSE]
+      if (nrow(member_curves) != length(ids) || anyNA(member_curves))
+        fail("group curve completeness", paste0("missing member curve in ", level, " ", group))
+      mean_curve <- colMeans(member_curves)
+      routed_count <- sum(ids %in% eligible)
+      zero_count <- length(ids) - routed_count
+      no_endpoint <- sum(membership$structural_zero_reason[indexes] == "no_modeled_endpoint_stops", na.rm = TRUE)
+      no_boarding <- sum(membership$structural_zero_reason[indexes] == "endpoint_stops_but_no_permitted_first_boarding", na.rm = TRUE)
+      labels <- unique(as.character(membership[[def$label]][indexes]))
+      labels <- labels[!is.na(labels) & nzchar(labels)]
+      if (length(labels) > 1L) fail("group label", paste0("source label changes within ", level, " ", group))
+      label <- if (length(labels)) labels[[1]] else group
+      curve_parts[[length(curve_parts) + 1L]] <- data.frame(
+        level = level, group_code = group, group_label = label, minute = grid,
+        share_mean = as.numeric(mean_curve), members_expected = length(ids),
+        members_assessed = length(ids), routed_members = routed_count,
+        structural_zero_members = zero_count, no_endpoint_members = no_endpoint,
+        no_eligible_first_boarding_members = no_boarding, failed_members = 0L,
+        assessment_complete = TRUE, stringsAsFactors = FALSE)
+      scalar_parts[[length(scalar_parts) + 1L]] <- data.frame(
+        level = level, group_code = group, group_label = label, minute = seuil,
+        share_mean_90 = as.numeric(mean_curve[match(seuil, grid)]),
+        members_expected = length(ids), members_assessed = length(ids),
+        routed_members = routed_count, structural_zero_members = zero_count,
+        no_endpoint_members = no_endpoint, no_eligible_first_boarding_members = no_boarding,
+        failed_members = 0L, assessment_complete = TRUE, stringsAsFactors = FALSE)
+      membership_parts[[length(membership_parts) + 1L]] <- data.frame(
+        level = level, group_code = group, group_label = label, commune_code = ids,
+        curve_status = commune_scalars$curve_status[match(ids, codes)],
+        structural_zero_reason = commune_scalars$structural_zero_reason[match(ids, codes)],
+        stringsAsFactors = FALSE)
+    }
+  }
+  aggregate_curves <- do.call(rbind, curve_parts)
+  aggregate_scalars <- do.call(rbind, scalar_parts)
+  aggregate_membership <- do.call(rbind, membership_parts)
+  if (any(aggregate_curves$members_expected != aggregate_curves$members_assessed) ||
+      any(aggregate_curves$failed_members != 0L) ||
+      any(!aggregate_curves$assessment_complete))
+    fail("aggregate completeness", "no member may be silently omitted from any threshold")
+  region <- aggregate_curves[aggregate_curves$level == "region", , drop = FALSE]
+  format_reference_count <- function(value, big_mark = ",") format(as.integer(value), big.mark = big_mark,
+    decimal.mark = ".", scientific = FALSE, trim = TRUE)
+  assessed_counts <- unique(as.integer(region$members_assessed))
+  structural_zero_counts <- unique(as.integer(region$structural_zero_members))
+  if (length(assessed_counts) != 1L || is.na(assessed_counts) ||
+      length(structural_zero_counts) != 1L || is.na(structural_zero_counts))
+    fail("regional reference facts", "regional member and structural-zero counts must be unique")
+  region$reference_id <- RECETTE_RACCORDEMENT_NATIONAL$regional_reference_id
+  region$reference_name <- paste0(RECETTE_RACCORDEMENT_NATIONAL$regional_reference_name,
+    " — moyenne des ", format_reference_count(assessed_counts[[1L]], " "),
+    " courbes communales évaluées")
+  region$reference_statistic <- paste0(
+    "equal arithmetic mean over all ", format_reference_count(assessed_counts[[1L]]),
+    " assessed commune curves, including ",
+    format_reference_count(structural_zero_counts[[1L]]),
+    " complete structural model-zero curves")
+  region <- region[, c("reference_id", "reference_name", "reference_statistic", "minute",
+    "share_mean", "members_expected", "members_assessed", "routed_members",
+    "structural_zero_members", "no_endpoint_members", "no_eligible_first_boarding_members",
+    "failed_members", "assessment_complete")]
+  list(commune_curves = commune_curves, commune_scalars = commune_scalars,
+    aggregate_curves = aggregate_curves, aggregate_scalars = aggregate_scalars,
+    aggregate_membership = aggregate_membership, regional_mean_reference = region,
+    denominator = denominator, grid_minutes = grid, scalar_minute = seuil)
+}
+
+# Turn the already-computed, source-pinned national result into the canonical
+# indicator rows consumed by Mobility's publisher. No fixture values or
+# renderer-owned labels enter this projection.
+lignes_indicateurs_raccordement_national <- function(calculation, vintages) {
+  source_id <- "raccordement_gtfs_national"
+  vintage <- vintages[as.character(vintages$id) == source_id, , drop = FALSE]
+  if (nrow(vintage) != 1L) stop("National raccordement vintage must be uniquely declared.", call. = FALSE)
+  if (is.null(calculation$commune_curves) || is.null(calculation$aggregate_curves) ||
+      is.null(calculation$regional_mean_reference) ||
+      nrow(calculation$commune_curves) != RECETTE_RACCORDEMENT_NATIONAL$assessed_commune_count *
+        length(RECETTE_RACCORDEMENT_NATIONAL$grille_publication_min))
+    stop("National raccordement canonical facts require all ",
+         format(RECETTE_RACCORDEMENT_NATIONAL$assessed_commune_count,
+           big.mark = ",", decimal.mark = ".", scientific = FALSE, trim = TRUE),
+         " complete commune curves.", call. = FALSE)
+  common <- function(code, key, detail, type, value, rider = NA_character_) {
+    data.frame(code = as.character(code), theme = "mobilite", key = key,
+      detail = as.character(detail), type = type, territoire = as.character(code),
+      value = as.numeric(value), unit = "%", rider = as.character(rider),
+      observation_period = RECETTE_RACCORDEMENT_NATIONAL$date_mesure,
+      vintage_source = as.character(vintage$source[[1L]]),
+      vintage_version = as.character(vintage$version[[1L]]),
+      vintage_date_reference = as.character(vintage$date_reference[[1L]]),
+      vintage_date_publication = as.character(vintage$date_publication[[1L]]),
+      stringsAsFactors = FALSE)
+  }
+  code_type <- c(epci = "epci", department = "departement", region = "region")
+  commune_reason <- stats::setNames(calculation$commune_scalars$structural_zero_reason,
+                                     calculation$commune_scalars$code)
+  commune <- calculation$commune_curves
+  rows <- common(commune$code, "raccordement_courbe",
+    paste0("t", sprintf("%04d", commune$minute)), "commune", commune$share,
+    unname(commune_reason[commune$code]))
+  grouped <- calculation$aggregate_curves[
+    calculation$aggregate_curves$level %in% names(code_type), , drop = FALSE]
+  if (nrow(grouped)) rows <- rbind(rows, common(grouped$group_code,
+    "raccordement_courbe", paste0("t", sprintf("%04d", grouped$minute)),
+    unname(code_type[grouped$level]), grouped$share_mean))
+  reference <- calculation$regional_mean_reference
+  region_codes <- unique(calculation$aggregate_curves$group_code[
+    calculation$aggregate_curves$level == "region"])
+  if (length(region_codes) != 1L) stop("National raccordement requires exactly one registered regional group.", call. = FALSE)
+  rows <- rbind(rows, common(region_codes, "raccordement_reference",
+    paste0("t", sprintf("%04d", reference$minute)), "region", reference$share_mean))
+  # The canonical headline is a projection of these very same published
+  # observations, not a separately stamped incumbent scalar snapshot.
+  scalar <- rows[rows$key == "raccordement_courbe" & rows$detail == "t0090", , drop = FALSE]
+  scalar$key <- "raccordement_tc"
+  scalar$detail <- NA_character_
+  rows <- rbind(rows, scalar)
+  rows
+}
+
 # empreinte_fichier_raccordement ----------------------------------------------------
 # L'empreinte sha256 des OCTETS d'un fichier relu sur le disque (la même
 # discipline que les contrats — openssl exige une connexion binaire).

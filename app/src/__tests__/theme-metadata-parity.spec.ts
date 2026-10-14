@@ -21,7 +21,23 @@ function lireFaits(theme: string): Array<Record<string, unknown>> {
 
 describe('métadonnées de thème — autorité canonique et snapshot public', () => {
   it('garde le snapshot public sémantiquement identique au fichier épinglé', () => {
-    for (const theme of themes) expect(lire(publicDir, theme), theme).toEqual(lire(canonicalDir, theme))
+    // Mobilité raccordement: the incumbent public bundle intentionally remains
+    // paired with its historical metadata until publication. Candidate 73-axis
+    // metadata is validated separately against the active API descriptor.
+    for (const theme of themes.filter((item) => item !== 'mobilite')) {
+      expect(lire(publicDir, theme), theme).toEqual(lire(canonicalDir, theme))
+    }
+  })
+
+  it('keeps incumbent Mobilité curve metadata paired with its own static 11-point facts', () => {
+    const metadata = lire(publicDir, 'mobilite') as { indicator_pages: Record<string, { comparison?: { details?: string[] } }> }
+    const details = metadata.indicator_pages.raccordement_courbe?.comparison?.details ?? []
+    const rows = lireFaits('mobilite').filter((row) => row.key === 'raccordement_courbe')
+    expect(details).toHaveLength(11)
+    expect(rows.length).toBeGreaterThan(0)
+    for (const territoire of new Set(rows.map((row) => row.territoire))) {
+      expect(rows.filter((row) => row.territoire === territoire).map((row) => row.detail)).toEqual(details)
+    }
   })
 
   it('ne porte AUCUN lien vers /methodologie — Méthodes est retirée par la bascule (#410)', () => {

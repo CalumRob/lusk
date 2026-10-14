@@ -167,6 +167,11 @@ VINTAGES_RACCORDEMENT <- tibble::tribble(
          "3 449 370), transcription épinglée du run de recherche vérifié ",
          "(calcul_raccordement.R, issue #486)"),
   "2023", "lov2", "2023-01-01", "2026-08-26"
+  ,"raccordement_gtfs_national",
+  paste0("Lusk — matrice nationale GTFS de raccordement, trajets planifiés ",
+    "aller simples par arrêts communaux (Korrigo v80630 + SNCF national ",
+    "acquis le 2026-10-10 ; mesure le 2026-10-21)"),
+  "2026-10-21", "odbl", "2026-10-10", "2026-10-10"
 )
 
 # VINTAGES_MOBILITE_OCSGE_RESEAUX -----------------------------------------------
@@ -682,16 +687,13 @@ construire_analytiques_mobilite <- function(donnees, base_epci,
 #     la date d'instantané de l'analyse, le fait de vintage de première classe
 #     du flagship, ADR-0012).
 #   - « raccordement_tc » / « raccordement_courbe » / « raccordement_reference »
-#     (issue #486) : LE RACCORDEMENT — la part de la population bretonne
-#     joignable en 90 minutes en TC (le scalaire classé), sa courbe cumulative
-#     (11 détails « t0000 » → « t0360 », la matière de la figure) et la courbe
-#     de référence de la commune bretonne médiane (les mêmes détails, portés
-#     par la seule ligne régionale). Calculés depuis la matrice temps FIGÉE
-#     SEULE + la population RP 2023 épinglée — jamais re-routés. Source de
-#     référence : matrice_temps_mairies (le fait construit de VINTAGES_
-#     RACCORDEMENT — l'horloge du figé, la recette 2026-09-16). Multiplicité
-#     NA pour la référence : elle ne vit que sur la région (nombre de lignes
-#     variable par territoire).
+#     (#728) : parts de population des communes de destination atteintes depuis
+#     les arrêts du territoire, à 90 minutes et sur la grille complète de 73
+#     points. Les courbes EPCI, département, région et densité sont des moyennes
+#     égales de tous leurs membres évalués, zéros structurels du modèle inclus.
+#     La référence de Bretagne est la moyenne des 1 202 courbes communales, pas
+#     l'ancienne médiane des seules communes routées. Source nationale GTFS et
+#     millésime de mesure restent distincts dans VINTAGES_RACCORDEMENT.
 INDICATEURS_MOBILITE <- tibble::tibble(
   key = c("voitures_menage", "reseaux", "reseaux_par_habitant", "surface_reseaux_routiers",
           "offre_tc", "bornes_recharge", "places_stationnement_velo_1000",
@@ -743,9 +745,9 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      "Part des bâtiments avec accès à la banque — à pied ou en transports en commun",
      "Part des bâtiments avec accès à la banque — à vélo",
      "Part des bâtiments avec accès à la banque — en voiture",
-     "Population bretonne joignable en 90 minutes en TC",
-    "Courbe cumulative — population bretonne joignable en TC",
-     "Référence médiane — commune bretonne",
+      "Population bretonne jointe en 90 minutes en transports en commun",
+     "Courbe de population bretonne jointe selon le temps de trajet",
+      "Moyenne de Bretagne — communes évaluées",
      "Bâtiments résidentiels analysés"
   ),
   sources = list(
@@ -768,7 +770,7 @@ INDICATEURS_MOBILITE <- tibble::tibble(
      "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
      "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
      "mobilite_snapshot", "mobilite_snapshot", "mobilite_snapshot",
-      "matrice_temps_mairies", "matrice_temps_mairies", "matrice_temps_mairies",
+       "raccordement_gtfs_national", "raccordement_gtfs_national", "raccordement_gtfs_national",
       "mobilite_snapshot"
   ),
   source_reference = c("rp_logement_princ", "amenagements_cyclables",
@@ -780,13 +782,13 @@ INDICATEURS_MOBILITE <- tibble::tibble(
                           rep("mobilite_snapshot", 6),
                           rep("mobilite_snapshot", 5),
                          rep("mobilite_snapshot", 15),
-                         "matrice_temps_mairies", "matrice_temps_mairies",
-                         "matrice_temps_mairies", "mobilite_snapshot"),
+                          "raccordement_gtfs_national", "raccordement_gtfs_national",
+                          "raccordement_gtfs_national", "mobilite_snapshot"),
   multiplicite = c(3L, 3L, 3L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 1L, 5L,
                    rep(1L, 6), rep(1L, 5),
                      rep(1L, 15),
                     1L,
-                    length(grille_raccordement()),
+                     length(grille_raccordement_national()),
                      NA_integer_, 1L)
 )
 
@@ -872,7 +874,18 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
          call. = FALSE)
   }
   racc <- analytiques$raccordement
-  grille <- grille_raccordement()
+  grille <- grille_raccordement_national()
+  calcul_racc <- racc$calculation
+  if (is.null(calcul_racc)) {
+    stop("Le calcul national versionné du raccordement est absent.", call. = FALSE)
+  }
+  scalar_to_legacy_shape <- function(level) {
+    rows <- calcul_racc$aggregate_scalars[calcul_racc$aggregate_scalars$level == level, , drop = FALSE]
+    tibble::tibble(code = rows$group_code, part_90 = rows$share_mean_90,
+      couverture = 1, complete = rows$assessment_complete,
+      communes_attendues = rows$members_expected,
+      communes_disponibles = rows$members_assessed)
+  }
 
   aligner <- function(table_agregee, key, unit) {
     if (!"rider" %in% names(table_agregee)) table_agregee$rider <- NA_character_
@@ -933,33 +946,18 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
   names(moyennes) <- CLES_MOYENNES_ACCES_MOBILITE
   tables <- c(tables, moyennes)
 
-  # le scalaire classé du raccordement : la part @90 aux QUATRE niveaux —
-  # les communes non routées portent NA + leur motif nommé dans `rider`
-  # (l'alignement sur la référence garantit une ligne par territoire) ;
-  # les agrégats portent dans `rider` la phrase de COUVERTURE précalculée
-  # quand une part de leur population n'est pas mesurable par le réseau
-  # (sémantique routés-seuls — rien n'est caché)
-  rider_couverture <- function(couverture) {
-    dplyr::if_else(
-      !is.na(couverture) & couverture < 1,
-      paste0("Part de la population réellement mesurée par le réseau : ",
-             sub(".", ",",
-                 sprintf("%.1f", 100 * couverture), fixed = TRUE),
-             " % (les communes non routées sont exclues du calcul)."),
-      NA_character_)
-  }
+  # Scalar@90 is the same point as the complete outbound curve. Proven model
+  # zeros remain measured zero facts and carry their assessment reason.
   racc_scalaire <- dplyr::bind_rows(
-    racc$calcul$communes %>%
-      dplyr::transmute(code = code, value = part_90, rider = motif),
-    racc$calcul$epcis %>%
-      dplyr::transmute(code = code, value = part_90,
-                       rider = rider_couverture(couverture)),
-    racc$calcul$departements %>%
-      dplyr::transmute(code = code, value = part_90,
-                       rider = rider_couverture(couverture)),
-    racc$calcul$region %>%
-      dplyr::transmute(code = code, value = part_90,
-                       rider = rider_couverture(couverture))
+    calcul_racc$commune_scalars %>%
+      dplyr::transmute(code = code, value = share_90,
+        rider = structural_zero_reason),
+    scalar_to_legacy_shape("epci") %>%
+      dplyr::transmute(code = code, value = part_90, rider = NA_character_),
+    scalar_to_legacy_shape("department") %>%
+      dplyr::transmute(code = code, value = part_90, rider = NA_character_),
+    scalar_to_legacy_shape("region") %>%
+      dplyr::transmute(code = code, value = part_90, rider = NA_character_)
   )
   tables$raccordement_tc <- aligner(racc_scalaire, "raccordement_tc", "%")
   rangs <- compute_ranks(territoires, tables, scalaires = list(),
@@ -1066,43 +1064,17 @@ construire_indicateurs_mobilite <- function(analytiques, territoires, vintages,
     tot_loss %>% dplyr::select(code, key, detail, value),
     territoires)
 
-  # la COURBE du raccordement (la matière de la figure) : les 11 points de la
-  # grille déclarée aux quatre niveaux — le squelette (territoire × détail)
-  # garantit la multiplicité déclarée partout, NA pour les communes non
-  # routées (leur motif voyage sur le scalaire) ; JAMAIS classée (des courbes
-  # ne sont pas désirables, elles sont vraies)
-  racc_courbes <- dplyr::bind_rows(
-    racc$calcul$courbes_communes,
-    racc$calcul$courbes_epcis,
-    racc$calcul$courbes_departements,
-    racc$calcul$courbe_region
-  ) %>%
-    dplyr::transmute(code = code,
-                     detail = paste0("t", sprintf("%04d", minute)),
-                     value = part)
-  raccordement_courbe <- tidyr::crossing(
-    code = territoires$code, detail = grille
-  ) %>%
-    dplyr::left_join(racc_courbes, by = c("code", "detail")) %>%
-    dplyr::mutate(key = "raccordement_courbe", unit = "%") %>%
-    dplyr::select(code, key, detail, value, unit)
-  raccordement_courbe$observation_period <- as.character(
-    racc$entrees$recette$date_mesure)
-
-  # la RÉFÉRENCE médiane bretonne : les mêmes marques de grille, portées par
-  # la seule ligne régionale (la multiplicité NA de la table déclarative
-  # l'autorise — un nombre de lignes variable par territoire)
-  raccordement_reference <- tibble::tibble(
-    code = "53",
-    key = "raccordement_reference",
-    detail = grille,
-    value = racc$calcul$reference$part_mediane[
-      match(as.integer(sub("^t", "", grille)),
-            racc$calcul$reference$minute)],
-    unit = "%"
-  )
-  raccordement_reference$observation_period <- as.character(
-    racc$entrees$recette$date_mesure)
+  # La grille nationale complète aux quatre niveaux : 73 points par territoire,
+  # y compris les zéros mesurés avec leur motif source. La référence analytique
+  # reste distincte des agrégats territoriaux. Les courbes ne portent aucun rang.
+  raccordement_lignes <- lignes_indicateurs_raccordement_national(
+    calcul_racc, vintages)
+  raccordement_courbe <- raccordement_lignes %>%
+    dplyr::filter(key == "raccordement_courbe") %>%
+    dplyr::select(code, key, detail, value, unit, rider, observation_period)
+  raccordement_reference <- raccordement_lignes %>%
+    dplyr::filter(key == "raccordement_reference") %>%
+    dplyr::select(code, key, detail, value, unit, rider, observation_period)
 
   # l'assemblage : les onze clés + leurs rangs (le détail NA des clés
   # scalaires joint sur le détail NA des rangs partagés) + les tampons de la
@@ -1488,11 +1460,11 @@ validations_mobilite <- list(
     verifier_contrat_rampe_acces_batiments(payload$rampe_acces_batiments)
     invisible(payload)
   },
-  # la GRILLE de la courbe du raccordement : les 11 détails déclarés « t0000 »
-  # → « t0360 » — un détail hors grille, ancien ou mal formé est une
+  # la GRILLE de la courbe du raccordement : les 73 détails déclarés « t0000 »
+  # → « t0360 » par pas de cinq minutes — un détail hors grille ou mal formé est une
   # corruption, jamais une courbe qui ment sur son axe
   function(payload) {
-    grille_attendue <- grille_raccordement()
+    grille_attendue <- grille_raccordement_national()
     for (cle in c("raccordement_courbe", "raccordement_reference")) {
       lignes <- payload$indicateurs[
         payload$indicateurs$key == cle &
@@ -1582,8 +1554,10 @@ publier_mobilite <- function(donnees, cache = "data/raw", vintages = NULL,
                                                   sortie = sortie_analytiques,
                                                   classes_densite = classes_densite,
                                                   noms_epci_geo_api = noms_epci_geo_api)
-  analytiques$raccordement <- lire_raccordement(
-    if (is.null(raccordement)) sortie_analytiques else raccordement)
+  # The existing argument remains accepted for run/targets compatibility, but
+  # the canonical v1 reader is bound to its own package pins. It never opens
+  # the historical mairie artifact or external research-cache paths.
+  analytiques$raccordement <- lire_artefact_raccordement_national()
   payload <- construire_payload_mobilite(
     analytiques,
     base_epci,

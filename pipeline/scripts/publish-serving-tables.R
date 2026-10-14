@@ -41,6 +41,7 @@ if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
   annual <- annual_registry$subventions_annuelles_owned$project(inputs$canonical)
   collection_registry <- register_programme_observed_collections(inputs$metadata)
   collections <- lapply(collection_registry,function(publisher) publisher$project(inputs$canonical))
+  artifact_directory <- Sys.getenv("LUSK_SORTIE",file.path("..","public","data"))
   projections <- c(list(subventions_annuelles=annual),collections)
   for (name in names(projections)) {
     projection <- projections[[name]]
@@ -52,7 +53,7 @@ if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
     con <- do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
     tryCatch({
       publish_owned_series_projection(annual,owned_series_postgres_adapter(con))
-      lapply(collections,function(projection) publish_observed_collection(projection,con))
+      lapply(collections,function(projection) publish_observed_collection(projection,con,artifact_directory))
     },finally=DBI::dbDisconnect(con))
   }
   quit(status=0L)
@@ -174,7 +175,8 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   }
   configuration_service_postgres() # fail before any upstream compute
   Sys.setenv(LUSK_PUBLISH_DB = "1")
-  targets::tar_make(names = "publie_tables_service", callr_function = NULL)
+  requested_targets <- serving_publication_target_names()
+  targets::tar_make(names = requested_targets, callr_function = NULL)
   failed <- targets::tar_errored()
   if (length(failed)) {
     stop("Targets publication failed: ", paste(failed, collapse = ", "),
@@ -182,10 +184,17 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   }
 } else if (args[[1L]] == "--check") {
   tables <- preparer_tables_service(file.path("..", "public", "data"))
-  scalar_projection <- project_service_scalar_snapshot(tables, file.path("..", "public", "data"))$projection
+  scalar_snapshot <- project_service_scalar_snapshot(tables, file.path("..", "public", "data"))
+  scalar_projection <- scalar_snapshot$projection
+  comparison_projection <- scalar_snapshot$comparison
   cat("Validated complete scalar snapshot:", nrow(scalar_projection$facts), "facts across",
       nrow(scalar_projection$descriptors), "registered indicators; version",
       scalar_content_version(scalar_projection), "\n")
+  cat("Validated fixed-context scalar comparisons:", nrow(comparison_projection$groups),
+      "group statistics and", nrow(comparison_projection$territories),
+      "territory results; version", comparison_projection$content_version,
+      "; scalar input", comparison_projection$scalar_content_version,
+      "; territory reference", comparison_projection$reference_content_version, "\n")
   print(data.frame(table_name = names(tables$tables),
                    rows = vapply(tables$tables, nrow, integer(1)),
                    content_version = unname(tables$versions)))

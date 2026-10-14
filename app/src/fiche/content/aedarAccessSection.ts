@@ -1,7 +1,6 @@
 /**
- * [PROTOTYPE #710 — AEDAR] Semantic assembly of the prototype's first
- * "Accès aux services" section. ThemeContent owns the wording: the renderer
- * only lays this section out through the shared Cahier primitives.
+ * Semantic assembly of AEDAR evidence for Mobilité. ThemeContent owns the
+ * wording; the renderer lays sections out through the shared Cahier primitives.
  */
 import type { AedarFetchResult } from './aedarApiClient'
 import { aedarTimeRampEvidence, AEDAR_EQUIPMENT_QUANTILE_STATISTICS } from './aedarTimeRampFacts'
@@ -29,7 +28,7 @@ export interface AedarReferenceEvidence {
 
 export interface AedarAccessSectionOptions {
   reference?: AedarReferenceEvidence | null
-  /** Supplied only by the opt-in AEDAR prototype that displays production loss maps. */
+  /** Supplied by the production Mobility cahier when it displays published loss maps. */
   lossMapMetadata?: AedarDiversityLossMapMetadata
 }
 
@@ -76,7 +75,7 @@ function rampEvidence(
 }
 
 /**
- * Build the AEDAR prototype section from validated, complete AEDAR fetches.
+ * Build the AEDAR section from validated, complete AEDAR fetches.
  * Fails closed: an error result never reaches this seam (the wrapper keeps the
  * production content and shows the honest unavailable state instead).
  */

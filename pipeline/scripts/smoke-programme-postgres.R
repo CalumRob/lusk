@@ -16,9 +16,14 @@ run_smoke <- function() tryCatch({
     identical(identity$username[[1L]], Sys.getenv("LUSK_PROFILE_TEST_USER")))
   DBI::dbExecute(con, paste("SET search_path TO", DBI::dbQuoteIdentifier(con, args[[1L]])))
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR")
+  artifact_directory <- Sys.getenv("LUSK_TEST_ARTIFACT_DIR",
+    unset=file.path(tempdir(),"observed-collection-comparison-artifacts"))
   if (length(args)==2L) {
     inputs <- read_programme_serving_inputs(canonical_dir)
-    publish_registered_observed_collections(inputs$canonical,inputs$metadata,con)
+    published <- publish_registered_observed_collections(inputs$canonical,inputs$metadata,con,artifact_directory)
+    comparison <- published[["subventions_par_domaine"]]
+    stopifnot(length(comparison$comparison_artifacts)==2L,
+      all(file.exists(comparison$comparison_artifacts)))
     return(invisible(TRUE))
   }
   reference <- preparer_tables_service(canonical_dir)$tables$territory_reference
@@ -32,10 +37,13 @@ run_smoke <- function() tryCatch({
   result <- publish_registered_series(registry, "subventions_annuelles_owned", inputs$canonical, adapter)
   retry <- publish_registered_series(registry, "subventions_annuelles_owned", inputs$canonical, adapter)
   stopifnot(result$changed, !retry$changed)
-  observed <- publish_registered_observed_collections(inputs$canonical,inputs$metadata,con)
-  observed_retry <- publish_registered_observed_collections(inputs$canonical,inputs$metadata,con)
+  observed <- publish_registered_observed_collections(inputs$canonical,inputs$metadata,con,artifact_directory)
+  observed_retry <- publish_registered_observed_collections(inputs$canonical,inputs$metadata,con,artifact_directory)
   stopifnot(all(vapply(observed,function(result) result$changed,logical(1))),
     !any(vapply(observed_retry,function(result) result$changed,logical(1))))
+  comparison <- observed[["subventions_par_domaine"]]
+  stopifnot(length(comparison$comparison_artifacts)==2L,all(file.exists(comparison$comparison_artifacts)),
+    nzchar(comparison$comparison_content_version))
   marker <- adapter$dataset_marker("subventions_annuelles")
   inconsistent <- inputs$canonical
   inconsistent$programmes$subventions$vintage_version[[1L]] <- "stale-input"

@@ -224,6 +224,7 @@ project_artif_m2m3_projection <- function(indicators, histories, vintages, metad
     comparison_point=as.character(page$comparison$detail),
     label=page$label,unit=page$unit,direction=as.character(page$comparison$direction %||% page$direction),allowed_levels=levels,
     descriptor_version=as.character(page$descriptor_version %||% "1"))
+  descriptor$comparison_axis_values <- as.character(unlist(page$trajectory$endpoints,use.names=FALSE))
   descriptor <- declared_owned_series_route(descriptor,metadata)
   result <- list(dataset_id=dataset_id,points=points,descriptor=descriptor,
     provenance=provenance,point_provenance=point_provenance,
@@ -312,6 +313,8 @@ declared_owned_series_route <- function(descriptor,metadata) {
   descriptor$theme_id <- route$theme_id
   descriptor$active_read_route <- route$active_read_route
   descriptor$comparison_levels <- comparison_levels
+  if (!is.null(route$comparison_statistic))
+    descriptor$comparison_statistic <- as.character(route$comparison_statistic)
   descriptor
 }
 
@@ -321,6 +324,10 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
   route_key <- "raccordement_courbe"
   indicator_id <- as.character(page$indicator %||% NA_character_)
   reference_contract <- declaration$reference
+  national_outbound <- identical(declaration$comparison_contract$statistic,"mean") &&
+    identical(declaration$comparison_contract$scope,"selected_group")
+  legacy_routed_median <- identical(declaration$comparison_contract$statistic,"median") &&
+    identical(declaration$comparison_contract$scope,"default_group")
   if (is.null(declaration) || is.null(page) || is.null(reference_contract) ||
       length(indicator_id)!=1L || is.na(indicator_id) || !nzchar(indicator_id) ||
       !identical(indicator_id,route_key) || !identical(as.character(declaration$indicator_id),indicator_id) ||
@@ -335,14 +342,17 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
       !identical(declaration$observation_period_contract$source,"raccordement_recipe_date_mesure") ||
        !is.list(producer_contract) ||
        !grepl("^[0-9]{4}-[0-9]{2}-[0-9]{2}$",producer_contract$date_mesure %||% "") ||
-      !identical(declaration$comparison_contract$statistic,"median") ||
-      !identical(declaration$comparison_contract$scope,"default_group"))
+        !(national_outbound || legacy_routed_median))
     stop("Raccordement duration/reference metadata contract is incomplete",call.=FALSE)
   minutes <- as.integer(unlist(declaration$axis_values,use.names=FALSE))
   axes <- paste0("t",sprintf("%04d",minutes))
   if (!length(axes) || anyNA(minutes) || any(minutes<0 | minutes>9999) ||
       anyDuplicated(minutes) || any(diff(minutes)<=0))
-    stop("Raccordement duration axis must be explicitly ordered",call.=FALSE)
+     stop("Raccordement duration axis must be explicitly ordered",call.=FALSE)
+   if (national_outbound && (!identical(minutes,seq.int(0L,360L,by=5L)) ||
+       !identical(reference_contract$id,"bretagne_all_assessed_communes_mean") ||
+       !identical(reference_contract$statistic,"mean_all_assessed_communes")))
+     stop("National outbound raccordement requires its full grid and all-assessed-commune mean reference",call.=FALSE)
   page_axes <- as.character(unlist(page$comparison$details,use.names=FALSE))
   if (!length(page_axes) || !identical(page_axes,axes) ||
       !identical(as.character(declaration$theme_id),as.character(metadata$theme)) ||
@@ -372,9 +382,31 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
       !identical(as.character(reference_contract$statistic),as.character(declaration$reference_statistic)))
     stop("Canonical reference artifact does not match its producer reference locator",call.=FALSE)
   excluded <- focal_all[!focal_all$type %in% allowed_levels,,drop=FALSE]
-  focal <- focal_all[focal_all$type %in% allowed_levels,,drop=FALSE]
-  for (id in unique(focal$territoire)) if (!setequal(as.character(focal$detail[focal$territoire==id]),axes))
-    stop("Canonical focal raccordement curve is missing a declared point",call.=FALSE)
+   focal <- focal_all[focal_all$type %in% allowed_levels,,drop=FALSE]
+    if (national_outbound) {
+      invalid_focal <- is.na(focal$value) | !is.finite(focal$value) | focal$value<0 | focal$value>1
+      if (any(invalid_focal)) {
+        affected <- sort(unique(as.character(focal$territoire[invalid_focal])))
+        stop("National outbound raccordement curves contain invalid shares for commune(s): ",
+          paste(affected,collapse=", "),call.=FALSE)
+      }
+      if (anyNA(reference$value) || any(!is.finite(reference$value)) ||
+          any(reference$value<0 | reference$value>1))
+        stop("National outbound raccordement reference must contain complete finite measured shares",call.=FALSE)
+      for (id in unique(focal$territoire)) {
+        member <- focal[focal$territoire==id,,drop=FALSE]
+        missing_axes <- setdiff(axes,as.character(member$detail))
+        if (length(missing_axes))
+          stop("Canonical focal raccordement curve for commune ",id,
+            " is missing declared point(s): ",paste(missing_axes,collapse=", "),call.=FALSE)
+        values <- member$value[match(axes,as.character(member$detail))]
+        if (length(values)!=length(axes) || anyNA(values) || any(diff(values) < -1e-12))
+          stop("National outbound raccordement curve is incomplete or non-cumulative for commune ",
+            id,call.=FALSE)
+      }
+    }
+   for (id in unique(focal$territoire)) if (!setequal(as.character(focal$detail[focal$territoire==id]),axes))
+     stop("Canonical focal raccordement curve is missing a declared point",call.=FALSE)
   if (!setequal(as.character(reference$detail),axes) || length(unique(reference$territoire))!=1L)
     stop("Canonical named raccordement reference is incomplete",call.=FALSE)
   source_id <- as.character(declaration$source_id)
@@ -430,6 +462,7 @@ project_raccordement_owned_series <- function(indicators,vintages,metadata,produ
     comparison_statistic=as.character(declaration$comparison_contract$statistic),
     comparison_scope=as.character(declaration$comparison_contract$scope),
     observation_period_kind=as.character(declaration$observation_period_contract$kind))
+  descriptor$comparison_levels <- as.character(unlist(declaration$comparison_levels %||% page$levels,use.names=FALSE))
   projection <- list(dataset_id=declaration$dataset_id,points=points,descriptor=descriptor,
     provenance=provenance,point_provenance=data.frame(dataset_id=points$dataset_id,indicator_id=points$indicator_id,
       territory_id=points$territory_id,axis_value=points$axis_value,provenance_revision_id=revision_id),
@@ -600,7 +633,7 @@ register_prix_m2_owned_publisher <- function(registry, metadata) {
   registry
 }
 
-register_raccordement_owned_publisher <- function(registry,metadata,producer_contract=RECETTE_MATRICE_TEMPS_MAIRIES) {
+register_raccordement_owned_publisher <- function(registry,metadata,producer_contract=RECETTE_RACCORDEMENT_NATIONAL) {
   registry <- register_series_publisher(registry,"raccordement_courbe_owned",
     project=function(canonical) project_raccordement_owned_series(canonical$mobilite$indicateurs,canonical$vintages,metadata,producer_contract),
     publish=function(projection,db,version) db$replace_dataset(projection,version))
@@ -625,6 +658,9 @@ owned_series_postgres_adapter <- function(con) {
     dataset_marker=function(dataset_id) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=$1",
       params=list(dataset_id)),
+    comparison_marker=function(dataset_id,indicator_id) DBI::dbGetQuery(con,
+      "SELECT ordered_series_content_version,reference_content_version FROM ordered_series_comparison_publication WHERE dataset_id=$1 AND indicator_id=$2",
+      params=list(dataset_id,indicator_id)),
     reference_marker=function() DBI::dbGetQuery(con,
       "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"),
     replace_dataset=function(projection, version) {
@@ -633,6 +669,27 @@ owned_series_postgres_adapter <- function(con) {
       reference <- DBI::dbGetQuery(con,
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
       if (nrow(reference)!=1L) stop("Territory reference publication is unavailable",call.=FALSE)
+      if (identical(d$axis_kind,"duration_minute") && identical(d$completeness,"dense_complete")) {
+        registered <- DBI::dbGetQuery(con,
+          "SELECT territory_id,territory_type FROM territory_reference")
+        expected <- registered[registered$territory_type %in% d$allowed_levels,,drop=FALSE]
+        actual <- unique(projection$points[c("territory_id","territory_type")])
+        key <- function(rows) paste(rows$territory_type,rows$territory_id,sep="\x1f")
+        describe <- function(rows,limit=20L) {
+          rows <- rows[order(rows$territory_type,rows$territory_id),,drop=FALSE]
+          labels <- paste0(rows$territory_type,"/",rows$territory_id)
+          suffix <- if (length(labels)>limit) paste0(" … et ",length(labels)-limit," autre(s)") else ""
+          paste0(paste(head(labels,limit),collapse=", "),suffix)
+        }
+        missing <- expected[!key(expected) %in% key(actual),,drop=FALSE]
+        unexpected <- actual[!key(actual) %in% key(expected),,drop=FALSE]
+        if (nrow(missing))
+          stop("Dense-complete duration publication omits reference territory/territories: ",
+            describe(missing),call.=FALSE)
+        if (nrow(unexpected))
+          stop("Dense-complete duration publication contains unregistered territory/territories: ",
+            describe(unexpected),call.=FALSE)
+      }
       # Revision records are insert-only; a reused ID/hash with different content is rejected.
       for (i in seq_len(nrow(projection$provenance))) {
         p <- projection$provenance[i,,drop=FALSE]
@@ -676,6 +733,24 @@ owned_series_postgres_adapter <- function(con) {
           c("dataset_id","indicator_id","reference_id","axis_value","observation_period","value","status","missing_reason")],append=TRUE,row.names=FALSE)
         DBI::dbWriteTable(con,"series_named_reference_provenance",projection$named_reference_provenance,append=TRUE,row.names=FALSE)
       }
+      if (!is.null(d$comparison_levels)) {
+        territory_rows <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
+        comparison <- project_ordered_series_comparisons(projection,territory_rows,version,
+          as.character(reference$content_version[[1L]]))
+        DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_group WHERE dataset_id=$1 AND indicator_id=$2",
+          params=list(dataset_id,d$indicator_id))
+        groups <- comparison$groups; groups$dataset_id <- dataset_id; groups$indicator_id <- d$indicator_id
+        DBI::dbWriteTable(con,"ordered_series_comparison_group",groups[c("dataset_id","indicator_id",
+          "comparison_context","group_id","territory_type","axis_value","statistic","group_value",
+          "member_count","eligible_count","missing_count")],append=TRUE,row.names=FALSE)
+        territories <- comparison$territories; territories$dataset_id <- dataset_id; territories$indicator_id <- d$indicator_id
+        DBI::dbWriteTable(con,"ordered_series_comparison_territory",territories[c("dataset_id","indicator_id",
+          "comparison_context","group_id","territory_type","axis_value","territory_id","value","status",
+          "rank","tie_count","rank_size")],append=TRUE,row.names=FALSE)
+        DBI::dbExecute(con,"INSERT INTO ordered_series_comparison_publication(dataset_id,indicator_id,content_version,ordered_series_content_version,reference_content_version,group_row_count,territory_row_count) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(dataset_id,indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,ordered_series_content_version=EXCLUDED.ordered_series_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=now()",
+          params=list(dataset_id,d$indicator_id,comparison$content_version,version,
+            reference$content_version[[1L]],nrow(comparison$groups),nrow(comparison$territories)))
+      }
     })
 }
 
@@ -691,7 +766,14 @@ publish_owned_series_projection <- function(projection, db) {
     if (!nrow(ref)) stop("Territory reference publication is unavailable",call.=FALSE)
     changed <- !nrow(marker) || !identical(as.character(marker$content_version[[1L]]),version)
     rebound <- nrow(marker) && !identical(as.character(marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]]))
-    if (changed || rebound) db$replace_dataset(projection,version)
+    comparison_stale <- FALSE
+    if (!is.null(projection$descriptor$comparison_levels) && is.function(db$comparison_marker)) {
+      comparison_marker <- db$comparison_marker(dataset,projection$descriptor$indicator_id)
+      comparison_stale <- !nrow(comparison_marker) ||
+        !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]),version) ||
+        !identical(as.character(comparison_marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]]))
+    }
+    if (changed || rebound || comparison_stale) db$replace_dataset(projection,version)
     invisible(list(changed=changed,rebound=rebound,content_version=version,dataset_id=dataset))
   })
 }
@@ -967,4 +1049,118 @@ series_comparison <- function(values, focal_id, direction) {
   ahead <- if (direction == "high") sum(eligible > focal) else sum(eligible < focal)
   list(value=focal, median=if(length(eligible)) stats::median(eligible) else NULL,
        rank=1L + ahead, tied=sum(eligible == focal), comparable_count=length(eligible))
+}
+
+# Fixed-context ordered-series projection. Membership is resolved from the
+# published territory reference; point provenance remains attached to source
+# observations (not collapsed to a group-wide vintage).
+project_ordered_series_comparisons <- function(series, territory_reference,
+    input_content_version, reference_content_version) {
+  validate_owned_series_projection(series)
+  d <- series$descriptor
+  refs <- territory_reference
+  required <- c("territory_id", "territory_type", "epci_id", "density_class_code")
+  if (!is.data.frame(refs) || !all(required %in% names(refs)) ||
+      anyDuplicated(refs[c("territory_id", "territory_type")]) ||
+      anyNA(refs[c("territory_id", "territory_type")]))
+    stop("Ordered-series comparison territory reference is invalid", call.=FALSE)
+  valid_version <- function(x) is.character(x) && length(x)==1L && !is.na(x) && nzchar(trimws(x))
+  if (!valid_version(input_content_version) || !valid_version(reference_content_version))
+    stop("Ordered-series comparison input publication identities are required", call.=FALSE)
+  statistic <- d$comparison_statistic %||% "median"
+  if (!is.character(statistic) || length(statistic)!=1L || is.na(statistic) ||
+      !statistic %in% c("median", "mean") || !d$direction %in% c("high", "low"))
+    stop("Owned-series route must declare a supported comparison statistic and direction",call.=FALSE)
+  if (is.null(d$comparison_levels) || !length(d$comparison_levels) ||
+      any(!d$comparison_levels %in% d$allowed_levels))
+    stop("Owned-series route must declare comparison levels",call.=FALSE)
+  membership <- comparison_context_membership(refs,d$comparison_levels)
+  groups <- lapply(seq_len(nrow(membership)), function(i) list(
+    context=as.character(membership$comparison_context[[i]]),
+    group=as.character(membership$group_id[[i]]),
+    level=as.character(membership$territory_type[[i]]),
+    ids=as.character(membership$member_ids[[i]])))
+  point_rows <- series$points
+  comparison_axes <- as.character(d$comparison_axis_values %||% d$axis_values)
+  axis_field <- if ("state_role" %in% names(point_rows) && all(comparison_axes %in% point_rows$state_role)) "state_role" else "axis_value"
+  available_axes <- if (axis_field=="state_role") as.character(point_rows$state_role) else as.character(point_rows$axis_value)
+  if (!length(comparison_axes) || anyNA(comparison_axes) || anyDuplicated(comparison_axes) ||
+      any(!comparison_axes %in% available_axes) ||
+      (axis_field=="axis_value" && any(!comparison_axes %in% d$axis_values)))
+    stop("Owned-series comparison axes are not a declared ordered subset",call.=FALSE)
+  group_rows <- list(); territory_rows <- list()
+  for (g in groups) {
+    if (!g$level %in% d$comparison_levels || !g$level %in% d$allowed_levels) next
+    obs <- point_rows[point_rows$territory_type==g$level & point_rows$territory_id %in% g$ids,,drop=FALSE]
+    for (axis in comparison_axes) {
+      p <- obs[as.character(obs[[axis_field]])==axis,,drop=FALSE]
+      ids <- g$ids
+      values <- p$value[match(ids,p$territory_id)]
+      status <- p$status[match(ids,p$territory_id)]; status[is.na(status)] <- "not_published"
+      ok <- !is.na(values) & status=="measured"; v <- values[ok]
+      complete_required <- identical(d$comparison_scope,"selected_group") && statistic=="mean"
+      if (complete_required && (length(v)!=length(ids) || any(!ok)))
+        stop("Raccordement comparison requires complete support for every declared member and axis",call.=FALSE)
+      group_rows[[length(group_rows)+1L]] <- data.frame(comparison_context=g$context,group_id=g$group,
+        territory_type=g$level,indicator_id=d$indicator_id,axis_value=axis,statistic=statistic,
+        group_value=if(length(v)) if(statistic=="median") stats::median(v) else mean(v) else NA_real_,member_count=length(ids),
+        eligible_count=length(v),missing_count=length(ids)-length(v),stringsAsFactors=FALSE)
+      ranks <- ties <- rep(NA_integer_,length(ids))
+      for (i in which(ok)) { ranks[i] <- 1L+sum(if(d$direction=="high") v>values[i] else v<values[i]); ties[i] <- sum(v==values[i]) }
+      territory_rows[[length(territory_rows)+1L]] <- data.frame(comparison_context=g$context,group_id=g$group,
+        territory_type=g$level,indicator_id=d$indicator_id,axis_value=axis,territory_id=ids,value=values,
+        status=status,rank=ranks,tie_count=ties,rank_size=ifelse(ok,length(v),NA_integer_),stringsAsFactors=FALSE)
+    }
+  }
+  if (!length(group_rows)) stop("No declared ordered-series comparison contexts",call.=FALSE)
+  out <- list(groups=do.call(rbind,group_rows),territories=do.call(rbind,territory_rows),
+    input_content_version=input_content_version,reference_content_version=reference_content_version,
+    axis_values=comparison_axes,statistic=statistic,direction=d$direction,
+    provenance=series$provenance,point_provenance=series$point_provenance)
+  out$content_version <- scalar_content_version(out)
+  out
+}
+
+# Project fixed-context comparisons for declared series axes. Unlike scalar
+# comparisons, a territory is comparable only when its complete declared curve
+# is present; a missing route/point is not a zero and cannot be silently dropped.
+project_series_comparison_group <- function(points, axis_values, member_ids,
+    focal_ids=member_ids, direction, statistic="median") {
+  required <- c("territory_id", "axis_value", "value", "status")
+  if (!is.data.frame(points) || !all(required %in% names(points)) ||
+      !length(axis_values) || anyDuplicated(axis_values) ||
+      !direction %in% c("high", "low") || !statistic %in% c("median", "mean"))
+    stop("Invalid ordered-series comparison contract", call.=FALSE)
+  axes <- as.character(axis_values)
+  members <- unique(as.character(member_ids))
+  if (anyDuplicated(points[c("territory_id", "axis_value")]) ||
+      any(!points$territory_id %in% members) || any(!points$axis_value %in% axes))
+    stop("Ordered-series comparison has undeclared or duplicate points", call.=FALSE)
+  # Emit groups in descriptor axis order and require every member at every axis.
+  complete <- vapply(members, function(id) {
+    rows <- points[points$territory_id == id, , drop=FALSE]
+    setequal(as.character(rows$axis_value), axes) &&
+      all(rows$status == "measured") && all(is.finite(rows$value))
+  }, logical(1))
+  if (!all(complete)) stop("Ordered-series comparison requires complete support for every declared member", call.=FALSE)
+  groups <- lapply(axes, function(axis) {
+    rows <- points[points$axis_value == axis, , drop=FALSE]
+    rows <- rows[match(members, rows$territory_id), , drop=FALSE]
+    aggregate <- if (statistic == "median") stats::median(rows$value) else mean(rows$value)
+    data.frame(axis_value=axis, statistic=statistic, value=aggregate,
+      member_count=length(members), stringsAsFactors=FALSE)
+  })
+  territory_ids <- intersect(as.character(focal_ids), members)
+  territories <- do.call(rbind, lapply(territory_ids, function(id) do.call(rbind,
+    lapply(axes, function(axis) {
+      rows <- points[points$axis_value == axis, , drop=FALSE]
+      value <- rows$value[match(id, rows$territory_id)]
+      peers <- rows$value
+      ahead <- if (direction == "high") sum(peers > value) else sum(peers < value)
+      data.frame(territory_id=id, axis_value=axis, value=value,
+        rank=1L+ahead, tie_count=sum(peers == value), rank_size=length(peers),
+        stringsAsFactors=FALSE)
+    }))))
+  list(groups=do.call(rbind, groups), territories=territories,
+    axis_values=axes, statistic=statistic, direction=direction)
 }

@@ -1,0 +1,4 @@
+/pipeline/inst/extdata/aedar-typequ-2025.csv text eol=lf
+/pipeline/tests/testthat/fixtures/aedar-region-2026v1-typequ.csv text eol=lf
+/pipeline/tests/testthat/fixtures/aedar-typequ-hierarchy-2025.csv text eol=lf
+/pipeline/tests/testthat/fixtures/aedar-typequ-hierarchy-2025.html text eol=lf

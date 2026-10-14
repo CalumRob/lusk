@@ -64,6 +64,17 @@ test_that("parité bidirectionnelle métadonnées épinglées ↔ payload commit
     # déclaré est publié quelque part)
     for (cle in names(meta$detail_labels)) {
       declares <- names(meta$detail_labels[[cle]])
+      owned_route <- Filter(function(route) isTRUE(route$active_read_route) &&
+        (identical(route$indicator_id, cle) || identical(route$reference_indicator, cle)),
+        meta$owned_series_routes %||% list())
+      if (length(owned_route)) {
+        # The active owned-series contract describes the next canonical
+        # publication; committed public/data remains the incumbent snapshot.
+        expected <- paste0("t", sprintf("%04d", as.integer(unlist(
+          owned_route[[1L]]$axis_values, use.names = FALSE))))
+        expect_setequal(declares, expected)
+        next
+      }
       publies <- unique(indicateurs$detail[indicateurs$key == cle &
                                              !is.na(indicateurs$detail)])
       morts <- setdiff(declares, publies)

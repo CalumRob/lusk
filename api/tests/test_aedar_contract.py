@@ -36,6 +36,50 @@ def test_aedar_migration_updates_markers_and_grants_database_roles():
         assert "lusk_reader" in sql and "GRANT SELECT" in sql
         normalized = "".join(sql.split()).upper()
         assert "LUSK_PUBLISHER" in normalized and "GRANTSELECT,INSERT,UPDATE,DELETE" in normalized
+    metadata_migration = (root / "api/migrations/031_aedar_typequ_metadata.sql").read_text()
+    for field in ("typequ_hierarchy_label","typequ_description","typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
+                  "typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order"):
+        assert field in metadata_migration and field in fresh
+    assert "typequ_gamme_status='hors_gamme' AND typequ_gamme IS NOT NULL AND typequ_gamme='Hors Gamme'" in metadata_migration
+    assert "typequ_gamme_status='absent' AND typequ_gamme IS NULL" in metadata_migration
+
+
+def test_aedar_metadata_complete_check_fails_closed_for_partial_gamme_states():
+    import re
+    import sqlite3
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    migration = (root / "api/migrations/031_aedar_typequ_metadata.sql").read_text(encoding="utf-8")
+    fresh = (root / "api/schema.sql").read_text(encoding="utf-8")
+    pattern = r"aedar_typequ_metadata_complete_check\s+CHECK\s*\(COALESCE\((.*?),\s*FALSE\)\)"
+
+    def expression(sql):
+        match = re.search(pattern, sql, flags=re.IGNORECASE | re.DOTALL)
+        assert match, "complete metadata constraint must COALESCE unknown to FALSE"
+        return match.group(1)
+
+    migration_check = expression(migration)
+    fresh_check = expression(fresh)
+    assert "".join(migration_check.split()).lower() == "".join(fresh_check.split()).lower()
+    assert "typequ_gammeisnotnull" in "".join(migration_check.split()).lower()
+
+    # SQLite shares PostgreSQL's relevant CHECK rule: NULL passes unless the
+    # expression explicitly collapses UNKNOWN to FALSE. This is a hermetic
+    # truth-table test of the exact constraint expression used by both schemas.
+    columns = ("typequ_hierarchy_label", "typequ_description", "typequ_domain_code", "typequ_domain_label",
+               "typequ_subdomain_code", "typequ_subdomain_label", "typequ_gamme_status", "typequ_source_order", "typequ_gamme")
+    connection = sqlite3.connect(":memory:")
+    connection.execute(f"CREATE TABLE metadata ({', '.join(columns)}, CHECK ({migration_check}))")
+    names = ",".join(columns)
+    placeholders = ",".join("?" for _ in columns)
+    connection.execute(f"INSERT INTO metadata ({names}) VALUES ({placeholders})", (None,) * len(columns))
+    absent = ("label", "description", "D", "Domain", "S", "Subdomain", "absent", 1, None)
+    connection.execute(f"INSERT INTO metadata ({names}) VALUES ({placeholders})", absent)
+    hors_gamme_null = ("label", "description", "D", "Domain", "S", "Subdomain", "hors_gamme", 1, None)
+    import pytest
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(f"INSERT INTO metadata ({names}) VALUES ({placeholders})", hors_gamme_null)
 
 
 def test_aedar_typed_response_rejects_incomplete_measure_maps():
@@ -43,7 +87,11 @@ def test_aedar_typed_response_rejects_incomplete_measure_maps():
     import pytest
     with pytest.raises(Exception, match="312"):
         AEDARFactResponse(territory_id="x", territory_type="commune", typequ="A104",
-            typequ_label="GENDARMERIE", identity={"code_insee":"x"}, n_addresses=1,
+            typequ_label="GENDARMERIE",typequ_hierarchy_label="GENDARMERIE",typequ_description="Description",
+            typequ_domain_code="A",typequ_domain_label="Services",
+            typequ_subdomain_code="A1",typequ_subdomain_label="Publics",typequ_gamme=None,
+            typequ_gamme_status="absent",typequ_source_order=1,
+            identity={"code_insee":"x"}, n_addresses=1,
             n_observed=1, coverage_status="covered", measures={"count_5_walk_share":0},
             source_id="aedar_bretagne", vintage_id="2026-v1", source_url="https://example.test",
             licence="ODbL", attribution="AEDAR", reference_date=None, publication_date="2026-09-30")
@@ -56,13 +104,18 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
 
     class Cursor:
         description = [type("Column", (), {"name": n}) for n in
-                       ("territory_id", "territory_type", "typequ", "typequ_label",
+                       ("territory_id", "territory_type", "typequ", "typequ_label","typequ_hierarchy_label","typequ_description",
+                        "typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
+                        "typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order",
                         "identity", "n_addresses", "n_observed", "coverage_status",
                         "measures", "source_id", "vintage_id", "source_url", "licence", "attribution",
                         "reference_date", "publication_date")]
         def fetchone(self): return ("aedar-v1", 1, "ref-v1", "ref-v1")
         def fetchall(self):
-            return [("id", "commune", "A104", "GENDARMERIE", {"code_insee": "id"},
+            return [("id", "commune", "C401", "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES ÉCOLES",
+                     "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES",
+                     "Official description line one\nline two", "C","Services","C4","Publics",
+                     "Hors Gamme","hors_gamme",1,{"code_insee": "id"},
                      10, 8, "covered", {key: (0 if key == "count_5_walk_share" else None)
                        for key in main._AEDAR_MEASURE_KEYS}, "aedar_bretagne",
                       "2026-v1", "https://example.test", "ODbL",
@@ -80,13 +133,20 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
     monkeypatch.setattr(main, "pool", lambda: FakePool())
     client = TestClient(main.app)
     for level in ("commune", "epci", "departement", "region"):
-        response = client.get(f"/api/aedar/territories/{level}/id/aggregates?limit=1&typequ=A104")
+        response = client.get(f"/api/aedar/territories/{level}/id/aggregates?limit=1&typequ=C401")
         assert response.status_code == 200
         body = response.json()
         assert body["territory"] == {"territory_type": level, "territory_id": "id"}
         assert len(body["facts"]) == 1
         assert body["facts"][0]["licence"] == "ODbL"
         assert body["facts"][0]["measures"]["count_5_walk_share"] == 0
+        assert body["facts"][0]["typequ_domain_code"] == "C"
+        assert body["facts"][0]["typequ_label"] == "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES ÉCOLES"
+        assert body["facts"][0]["typequ_hierarchy_label"] == "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES"
+        assert body["facts"][0]["typequ_description"] == "Official description line one\nline two"
+        assert body["facts"][0]["typequ_gamme"] == "Hors Gamme"
+        assert body["facts"][0]["typequ_gamme_status"] == "hors_gamme"
+        assert body["facts"][0]["typequ_source_order"] == 1
         assert len(body["facts"][0]["measures"]) == 312
         assert body["facts"][0]["publication_date"] == "2026-09-30"
         assert body["content_version"] == "aedar-v1"

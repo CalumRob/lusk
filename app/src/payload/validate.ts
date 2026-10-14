@@ -92,12 +92,6 @@ export class PayloadError extends Error {
 
 type LigneBrute = Record<string, unknown>
 
-/** Published raccordement curve grid — the pipeline contract mirrored here. */
-const DETAILS_COURBE_RACCORDEMENT = [
-  't0000', 't0015', 't0030', 't0045', 't0060', 't0090',
-  't0120', 't0180', 't0240', 't0300', 't0360',
-] as const
-
 const TYPES_TERRITOIRE: readonly TerritoireType[] = [
   'commune',
   'epci',
@@ -2848,7 +2842,11 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
               })
             }
             if (key === 'raccordement_courbe') {
-              exiger(axis === 'numeric' && detailsDeclarees.length === DETAILS_COURBE_RACCORDEMENT.length && detailsDeclarees.every((detail, index) => detail === DETAILS_COURBE_RACCORDEMENT[index]), fichier, 0, `« indicator_pages.${key}.comparison.details » doit déclarer exactement la grille publiée du raccordement (0, 15, 30, 45, 60, 90, 120, 180, 240, 300, 360 minutes)`)
+              const minutes = detailsDeclarees.map((detail) => /^t\d{4}$/.test(detail) ? Number(detail.slice(1)) : NaN)
+              exiger(axis === 'numeric' && minutes.length >= 2 && minutes.every(Number.isFinite) &&
+                minutes.every((minute, index) => index === 0 || minute > minutes[index - 1]!) &&
+                endpoints[0] === detailsDeclarees[0] && endpoints[endpoints.length - 1] === detailsDeclarees[detailsDeclarees.length - 1],
+              fichier, 0, `« indicator_pages.${key}.comparison.details » doit déclarer une grille numérique complète, ordonnée et alignée sur ses bornes`)
             }
             // An ordinal trajectory uses non-year details (for example M2/M3)
             // as its endpoints. A numeric axis such as t0000…t0360 is a real

@@ -31,6 +31,44 @@ test_that("annual series preserves declared gaps and source vintage", {
   expect_equal(comparison$comparable_count, 3L)
 })
 
+test_that("ordered-series comparison contract preserves declared statistics, axis, support and provenance", {
+  members <- c("a", "b")
+  points <- expand.grid(territory_id=members, axis_value=c("M2", "M3"), stringsAsFactors=FALSE)
+  points$value <- c(2, 4, 3, 1); points$status <- "measured"
+  mean_low <- project_series_comparison_group(points, c("M2", "M3"), members,
+    direction="low", statistic="mean")
+  expect_identical(mean_low$groups$axis_value, c("M2", "M3"))
+  expect_identical(mean_low$groups$statistic, c("mean", "mean"))
+  expect_equal(mean_low$groups$value, c(3, 2))
+  expect_equal(mean_low$territories$rank[mean_low$territories$axis_value=="M2"], c(1L,2L))
+  incomplete <- points[-1,]
+  expect_error(project_series_comparison_group(incomplete,c("M2","M3"),members,
+    direction="low",statistic="median"),"complete support")
+  ordinary_missing <- points[-1,]
+  ordinary_missing <- rbind(ordinary_missing,data.frame(territory_id="a",axis_value="M2",value=NA_real_,status="missing"))
+  expect_no_error(validate_series_projection(data.frame(indicator_id="x",territory_id="a",
+    territory_type="commune",axis_value="2020",observation_period="2020",value=NA_real_,
+    status="missing",source_id="s",vintage_id="v"),list(indicator_id="x",axis_kind="year",
+      axis_values=c("2020","2021"),completeness="may_be_missing",comparison_point="2020",label="x",
+      unit="u",direction="low",allowed_levels="commune",source_id="s",vintage_id="v")))
+})
+
+test_that("ordered-series comparisons preserve descriptor axis order and rank per point", {
+  points <- data.frame(territory_id=rep(c("a", "b"), each=3),
+    axis_value=rep(c("t0000", "t0010", "t0020"), 2),
+    value=c(1, 2, 3, 2, 2, 4), status="measured")
+  result <- project_series_comparison_group(points,
+    c("t0000", "t0010", "t0020"), c("a", "b"), direction="high")
+  expect_identical(result$groups$axis_value, c("t0000", "t0010", "t0020"))
+  expect_equal(result$groups$value, c(1.5, 2, 3.5))
+  expect_equal(result$territories$rank[result$territories$territory_id == "a"], c(2L, 1L, 2L))
+  expect_error(project_series_comparison_group(points[-1, ],
+    c("t0000", "t0010", "t0020"), c("a", "b"), direction="high"), "complete support")
+  points$value[1] <- NA_real_; points$status[1] <- "missing"
+  expect_error(project_series_comparison_group(points,
+    c("t0000", "t0010", "t0020"), c("a", "b"), direction="high"), "complete support")
+})
+
 test_that("owned prix_m2 projects annual canonical facts with their effective row lineage", {
   payload <- payload_habitat()
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_habitat.json"), simplifyVector=FALSE)
@@ -277,6 +315,59 @@ test_that("OCS-GE projection uses typed per-role components and retains comparis
   expect_setequal(source_links[["200000003 M2"]],c("ocsge_artificialisation_35_2020","ocsge_artificialisation_56_2022"))
   expect_setequal(source_links[["200000003 M3"]],c("ocsge_artificialisation_35_2023","ocsge_artificialisation_56_2024"))
   expect_equal(projection$points$observation_period[3],periods[[3]])
+  comparison_reference <- data.frame(territory_id=c("22001","22002","200000003","region"),
+    territory_type=c("commune","commune","epci","region"),epci_id=c("200000003","200000003",NA,NA),
+    density_class_code=c("d1","d1",NA,NA),stringsAsFactors=FALSE)
+  # Add a second commune through the canonical source-fact input, then rerun the
+  # production projector so immutable provenance and role typing are generated normally.
+  second_commune <- fields[fields$territoire=="22001",,drop=FALSE]
+  second_commune$territoire <- "22002"
+  second_commune$value <- c(.18,.42)
+  fields_with_peer <- rbind(fields,second_commune)
+  histories_with_peer <- rbind(histories,data.frame(territoire="22002",type="commune",theme="milieux",
+    periode_artif="2021-2025",stringsAsFactors=FALSE))
+  production_projection <- project_artif_m2m3_projection(fields_with_peer,histories_with_peer,vintages,metadata)
+  comparison <- project_ordered_series_comparisons(production_projection,comparison_reference,
+    "series-publication-fixture-v1","territory-reference-fixture-v1")
+  expect_identical(comparison$axis_values,c("M2","M3"))
+  expect_identical(unique(comparison$groups$axis_value),c("M2","M3"))
+  expect_setequal(unique(comparison$groups$comparison_context),
+    c("density_class","epci","bretagne","same_level"))
+  expect_equal(comparison$groups$group_value[comparison$groups$comparison_context=="density_class"],c(.18,.42))
+  expect_equal(comparison$territories$rank[comparison$territories$comparison_context=="density_class"],rep(1L,4))
+  expect_equal(comparison$territories$tie_count[comparison$territories$comparison_context=="density_class"],rep(2L,4))
+  density_members <- c("22001","22002")
+  density_points <- production_projection$points[
+    production_projection$points$territory_id %in% density_members &
+      production_projection$points$territory_type=="commune",,drop=FALSE]
+  parity <- project_series_comparison_group(data.frame(
+    territory_id=density_points$territory_id,axis_value=density_points$state_role,
+    value=density_points$value,status=density_points$status),comparison$axis_values,
+    density_members,direction=production_projection$descriptor$direction,statistic="median")
+  published_group <- comparison$groups[comparison$groups$comparison_context=="density_class" &
+    comparison$groups$group_id=="d1",,drop=FALSE]
+  expect_equal(published_group$group_value,parity$groups$value)
+  published_territories <- comparison$territories[
+    comparison$territories$comparison_context=="density_class" &
+      comparison$territories$group_id=="d1",,drop=FALSE]
+  published_territories <- published_territories[order(published_territories$axis_value,
+    published_territories$territory_id),,drop=FALSE]
+  parity_territories <- parity$territories[order(parity$territories$axis_value,
+    parity$territories$territory_id),,drop=FALSE]
+  expect_equal(published_territories$rank,parity_territories$rank)
+  expect_equal(published_territories$tie_count,parity_territories$tie_count)
+  expect_equal(published_territories$rank_size,parity_territories$rank_size)
+  expect_identical(comparison$input_content_version,"series-publication-fixture-v1")
+  expect_identical(comparison$reference_content_version,"territory-reference-fixture-v1")
+  expect_identical(comparison$provenance,production_projection$provenance)
+  expect_identical(comparison$point_provenance,production_projection$point_provenance)
+  expect_identical(comparison$statistic,"median")
+  bad_route <- production_projection
+  bad_route$descriptor$comparison_statistic <- "mode"
+  expect_error(project_ordered_series_comparisons(bad_route,comparison_reference,"s1","r1"),
+    "supported comparison statistic")
+  expect_error(project_ordered_series_comparisons(production_projection,comparison_reference,"","r1"),
+    "publication identities")
   old_artifact <- nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet"))
   old_artifact <- old_artifact[old_artifact$key=="artif_par_habitant",]
   old_artifact$state_role <- NULL
@@ -529,56 +620,70 @@ test_that("series smoke cleanup is limited to owned RESTRICT schema drops", {
     "owned series smoke schema")
 })
 test_that("owned raccordement publisher projects its declared serving-only reference locator", {
-  axis_keys <- paste0("t",sprintf("%04d",c(0,15,30,45,60,90,120,180,240,300,360)))
+  minutes <- seq.int(0L,360L,by=5L)
+  axis_keys <- paste0("t",sprintf("%04d",minutes))
   metadata <- list(theme="mobilite",owned_series_routes=list(raccordement_courbe=list(
      dataset_id="raccordement_curve",indicator_id="raccordement_courbe",theme_id="mobilite",
      active_read_route=TRUE,reference_read_route=TRUE,axis_kind="duration_minute",
-     axis_values=c(0,15,30,45,60,90,120,180,240,300,360),
+      axis_values=minutes,
       observation_period_contract=list(kind="snapshot_date",source="raccordement_recipe_date_mesure"),
-     comparison_contract=list(statistic="median",scope="default_group"),
-     reference_indicator="raccordement_reference",reference=list(id="commune_bretonne_mediane",
-        label="Commune bretonne médiane",role="analytical_reference",statistic="median_routed_communes"),
-     reference_id="commune_bretonne_mediane",reference_role="analytical_reference",
-     reference_label="Commune bretonne médiane",reference_statistic="median_routed_communes",
-     source_id="matrice_temps_mairies")),
+      comparison_contract=list(statistic="mean",scope="selected_group"),
+      reference_indicator="raccordement_reference",reference=list(id="bretagne_all_assessed_communes_mean",
+         label="Bretagne — moyenne des communes évaluées",role="analytical_reference",statistic="mean_all_assessed_communes"),
+      reference_id="bretagne_all_assessed_communes_mean",reference_role="analytical_reference",
+      reference_label="Bretagne — moyenne des communes évaluées",reference_statistic="mean_all_assessed_communes",
+      source_id="raccordement_gtfs_national")),
     indicator_pages=list(raccordement_courbe=list(indicator="raccordement_courbe",unit="%",direction="high",
-      comparison=list(detail="t0090",details=axis_keys),label="Courbe raccordement",sources="matrice_temps_mairies",
+       comparison=list(detail="t0090",details=axis_keys),label="Courbe raccordement",sources="raccordement_gtfs_national",
        trajectory=list(reference=list(indicator="raccordement_reference",territoire="53",
-         label="Commune bretonne médiane")),levels=c("commune","epci","departement"))),
-    source_records=list(matrice_temps_mairies=list(dataset="Matrice de temps",vintages=list(list(
-       id="matrice_temps_mairies",version="2026-09-18",dateReference="2026-08-25",
-      datePublication="2026-08-26")))))
+          label="Bretagne — moyenne des communes évaluées")),levels=c("commune","epci","departement","region"))),
+     source_records=list(raccordement_gtfs_national=list(dataset="Matrice nationale",vintages=list(list(
+        id="raccordement_gtfs_national",version="national-gtfs-outbound-v1",dateReference="2026-10-10",
+       datePublication="2026-10-10")))))
   keys <- axis_keys
   rows <- function(key, values, territory, type) data.frame(key=key,theme="mobilite",detail=keys,
-    type=type,territoire=territory,value=values,unit="%",vintage_source="Fixture matrix",
-    observation_period=rep("2026-09-16",length(keys)),
-    vintage_version="2026-09-18",vintage_date_reference=as.Date("2026-08-25"),
-    vintage_date_publication=as.Date("2026-08-26"),stringsAsFactors=FALSE)
+    type=type,territoire=territory,value=values,unit="%",vintage_source="National GTFS fixture",
+    observation_period=rep("2026-10-21",length(keys)),
+    vintage_version="national-gtfs-outbound-v1",vintage_date_reference=as.Date("2026-10-10"),
+    vintage_date_publication=as.Date("2026-10-10"),stringsAsFactors=FALSE)
   metadata$indicator_pages$raccordement_courbe$levels <- c("commune","epci","departement","region")
-  regional_values <- c(.985199,rep(1,10))
-  reference_values <- c(.000399,.000476,.001036,.002318,.004568,.014585,
-    .043124,.114126,.214321,.249159,.268105)
-  canonical <- rbind(rows("raccordement_courbe",seq(.1,1,length.out=11),"35238","commune"),
-    rows("raccordement_courbe",rep(NA_real_,11),"29001","commune"),
+  regional_values <- seq(0,.72,length.out=73)
+  reference_values <- seq(0,.1,length.out=73)
+  canonical <- rbind(rows("raccordement_courbe",seq(.01,.73,length.out=73),"35238","commune"),
+    rows("raccordement_courbe",rep(0,73),"29001","commune"),
     rows("raccordement_courbe",regional_values,"53","region"),
     rows("raccordement_reference",reference_values,"53","region"))
-  vintages <- data.frame(id="matrice_temps_mairies",source="Fixture matrix",version="2026-09-18",
-    date_reference=as.Date("2026-08-25"),date_publication=as.Date("2026-08-26"))
+  vintages <- data.frame(id="raccordement_gtfs_national",source="National GTFS fixture",version="national-gtfs-outbound-v1",
+    date_reference=as.Date("2026-10-10"),date_publication=as.Date("2026-10-10"))
   projection <- project_raccordement_owned_series(canonical,vintages,metadata,
-    producer_contract=list(date_mesure="2026-09-16"))
+    producer_contract=list(date_mesure="2026-10-21"))
+  route_reference <- data.frame(territory_id=c("35238","29001","53"),
+    territory_type=c("commune","commune","region"),epci_id=c("e","e",NA),
+    density_class_code=c("d","d",NA),stringsAsFactors=FALSE)
+  route_comparison <- project_ordered_series_comparisons(projection,route_reference,
+    "raccordement-publication-fixture-v1","reference-publication-fixture-v1")
+  expect_identical(route_comparison$statistic,"mean")
+  expect_identical(route_comparison$axis_values,projection$descriptor$axis_values)
+  partial_route <- projection
+  removed <- which(partial_route$points$territory_id=="35238" & partial_route$points$axis_value=="t0000")
+  partial_route$points <- partial_route$points[-removed,,drop=FALSE]
+  partial_route$point_provenance <- partial_route$point_provenance[
+    !(partial_route$point_provenance$territory_id=="35238" & partial_route$point_provenance$axis_value=="t0000"),,drop=FALSE]
+  expect_error(project_ordered_series_comparisons(partial_route,route_reference,"s1","r1"),
+    "complete support")
   expect_no_error(validate_owned_series_projection(projection))
   expect_equal(projection$descriptor$axis_kind,"duration_minute")
   expect_true(projection$descriptor$active_read_route)
   regional <- projection$points[projection$points$territory_id=="53",]
   expect_equal(regional$value,regional_values)
-  expect_equal(nrow(regional),11L)
+  expect_equal(nrow(regional),73L)
   rennes <- projection$points[projection$points$territory_id=="35238",]
   unavailable <- projection$points[projection$points$territory_id=="29001",]
-  expect_equal(rennes$value,seq(.1,1,length.out=11))
-  expect_true(all(unavailable$status=="missing"))
-  expect_true(all(is.na(unavailable$value)))
+  expect_equal(rennes$value,seq(.01,.73,length.out=73))
+  expect_true(all(unavailable$status=="measured"))
+  expect_true(all(unavailable$value==0))
   expect_equal(projection$named_reference$value,reference_values)
-  expect_equal(nrow(projection$named_reference),11L)
+  expect_equal(nrow(projection$named_reference),73L)
   expect_false("territory_id" %in% names(projection$named_reference))
   sortie <- tempfile("owned-raccordement-reader-"); dir.create(sortie)
   on.exit(unlink(sortie,recursive=TRUE),add=TRUE)
@@ -614,9 +719,9 @@ test_that("owned raccordement publisher projects its declared serving-only refer
   all_owned <- read_owned_series_projections(sortie,milieux_metadata,habitat_metadata,metadata_file)
   expect_true("raccordement_courbe_owned" %in% names(all_owned))
   expect_true("prix_m2_owned" %in% names(all_owned))
-  expect_equal(unique(projection$points$observation_period),"2026-09-16")
-  expect_equal(unique(projection$named_reference$observation_period),"2026-09-16")
-  expect_equal(sum(projection$points$territory_type=="region"),11L)
+  expect_equal(unique(projection$points$observation_period),"2026-10-21")
+  expect_equal(unique(projection$named_reference$observation_period),"2026-10-21")
+  expect_equal(sum(projection$points$territory_type=="region"),73L)
   expect_false("territory_id" %in% names(projection$named_reference))
   changed_recipe <- project_raccordement_owned_series(
     transform(canonical, observation_period="2026-09-17"),vintages,metadata,
@@ -626,10 +731,10 @@ test_that("owned raccordement publisher projects its declared serving-only refer
     producer_contract=list(date_mesure="2026-09-17")),"observation period")
   expect_equal(projection$named_reference_descriptors$reference_indicator_id,"raccordement_reference")
   expect_true(projection$named_reference_descriptors$active_read_route)
-  expect_equal(projection$descriptor$comparison_statistic,"median")
-  expect_equal(projection$descriptor$comparison_scope,"default_group")
+  expect_equal(projection$descriptor$comparison_statistic,"mean")
+  expect_equal(projection$descriptor$comparison_scope,"selected_group")
   expect_false("territory_id" %in% names(projection$named_reference))
-  expect_true(all(projection$named_reference$reference_id=="commune_bretonne_mediane"))
+  expect_true(all(projection$named_reference$reference_id=="bretagne_all_assessed_communes_mean"))
   missing_identity <- metadata; missing_identity$indicator_pages$raccordement_courbe$indicator <- NULL
   expect_error(project_raccordement_owned_series(canonical,vintages,missing_identity,
     producer_contract=list(date_mesure="2026-09-16")),
@@ -657,30 +762,18 @@ test_that("canonical Mobility metadata locator validates the owned raccordement 
   expect_identical(page$trajectory$reference$territoire, "53")
   expect_identical(page$trajectory$reference$label, declaration$reference$label)
 
-  axes <- as.character(unlist(declaration$axis_values, use.names=FALSE))
-  details <- paste0("t", sprintf("%04d", as.integer(axes)))
-  source_id <- declaration$source_id
-  vintage <- metadata$source_records[[source_id]]$vintages[[1L]]
-  observation_period <- RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure
-  make_rows <- function(key, territory, type, values) data.frame(
-    theme="mobilite", key=key, detail=details, type=type, territoire=territory,
-    value=values, unit=page$unit, rider=NA_character_,
-    vintage_source=metadata$source_records[[source_id]]$dataset,
-    vintage_version=vintage$version,
-    vintage_date_reference=as.Date(vintage$dateReference),
-    vintage_date_publication=as.Date(vintage$datePublication),
-    observation_period=observation_period, stringsAsFactors=FALSE)
-  canonical <- dplyr::bind_rows(
-    make_rows("raccordement_courbe", "35238", "commune", seq(0.1, 1, length.out=length(details))),
-    make_rows("raccordement_courbe", "53", "region", rep(NA_real_, length(details))),
-    make_rows(declaration$reference_indicator, "53", "region", seq(0.01, 0.11, length.out=length(details))))
-  vintages <- data.frame(id=source_id, source=metadata$source_records[[source_id]]$dataset,
-    version=vintage$version, date_reference=as.Date(vintage$dateReference),
-    date_publication=as.Date(vintage$datePublication), stringsAsFactors=FALSE)
+  artifact <- lire_artefact_raccordement_national()
+  vintages <- vintages_mobilite()
+  canonical <- lignes_indicateurs_raccordement_national(artifact$calculation, vintages)
   projection <- project_raccordement_owned_series(canonical, vintages, metadata,
-    producer_contract=RECETTE_MATRICE_TEMPS_MAIRIES)
+    producer_contract=RECETTE_RACCORDEMENT_NATIONAL)
   expect_no_error(validate_owned_series_projection(projection))
-  expect_equal(projection$named_reference$value, seq(0.01, 0.11, length.out=length(details)))
+  expect_equal(nrow(projection$points), 1268L * 73L)
+  expect_equal(nrow(projection$named_reference), 73L)
   expect_equal(projection$named_reference_descriptors$reference_indicator_id,
     declaration$reference_indicator)
+  partial <- canonical[-which(canonical$key == "raccordement_courbe" &
+    canonical$type == "commune")[[1L]], , drop = FALSE]
+  expect_error(project_raccordement_owned_series(partial, vintages, metadata,
+    producer_contract=RECETTE_RACCORDEMENT_NATIONAL), "commune 22001.*t0000")
 })

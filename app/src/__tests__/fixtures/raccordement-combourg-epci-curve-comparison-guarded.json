@@ -1,0 +1,526 @@
+{
+  "contract": "indicator-comparison-v1",
+  "complete_theme": false,
+  "indicator_id": "raccordement_courbe",
+  "theme_id": "mobilite",
+  "shape": "series",
+  "content_version": "f93b59437500f0d37eb912507923c2ef",
+  "reference_content_version": "national-test-ref-v1",
+  "selection": [
+    {
+      "territory_type": "commune",
+      "territory_id": "35017"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35029"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35050"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35056"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35085"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35092"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35094"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35130"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35134"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35148"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35156"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35159"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35172"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35225"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35226"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35233"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35258"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35265"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35286"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35308"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35318"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35337"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35342"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35345"
+    },
+    {
+      "territory_type": "commune",
+      "territory_id": "35346"
+    }
+  ],
+  "scope": {
+    "kind": "explicit_selection",
+    "member_count": 25
+  },
+  "result": {
+    "indicator_id": "raccordement_courbe",
+    "theme_id": "mobilite",
+    "label": "Courbe de population bretonne jointe selon le temps de trajet",
+    "unit": "%",
+    "direction": "high",
+    "descriptor_version": "1",
+    "source_facet": "t0090",
+    "statistic": "mean",
+    "status": "available",
+    "reason": null,
+    "selected_member_count": 25,
+    "eligible_count": 25,
+    "missing_count": 0,
+    "focal_in_selection": true,
+    "rank": 1,
+    "rank_size": 25,
+    "comparison_sources": [
+      {
+        "source_id": "raccordement_gtfs_national",
+        "vintage_id": "2026-10-21",
+        "source_name": "Lusk — matrice nationale GTFS de raccordement, trajets planifiés aller simples par arrêts communaux (Korrigo v80630 + SNCF national acquis le 2026-10-10 ; mesure le 2026-10-21)",
+        "dataset_name": "Lusk – matrice nationale de trajets GTFS planifiés entre arrêts communaux (issue #728)",
+        "version": "2026-10-21",
+        "reference_date": "2026-10-10",
+        "publication_date": "2026-10-10",
+        "revision_hash": "47f23f4e204dd0416f08d5ea040fb36df0c00795518048e457dbedd6c966a00b"
+      }
+    ],
+    "owned_content_version": "f93b59437500f0d37eb912507923c2ef",
+    "mean": 0.09881832334600231,
+    "mean_curve": {
+      "statistic": "mean",
+      "axis_kind": "duration_minute",
+      "points": [
+        {
+          "axis": "t0000",
+          "value": 0.0003122193328057007,
+          "status": "measured"
+        },
+        {
+          "axis": "t0005",
+          "value": 0.0008559476078240374,
+          "status": "measured"
+        },
+        {
+          "axis": "t0010",
+          "value": 0.001149995506425811,
+          "status": "measured"
+        },
+        {
+          "axis": "t0015",
+          "value": 0.0014806066035247015,
+          "status": "measured"
+        },
+        {
+          "axis": "t0020",
+          "value": 0.007264804877412398,
+          "status": "measured"
+        },
+        {
+          "axis": "t0025",
+          "value": 0.01425037035748557,
+          "status": "measured"
+        },
+        {
+          "axis": "t0030",
+          "value": 0.018702105022076497,
+          "status": "measured"
+        },
+        {
+          "axis": "t0035",
+          "value": 0.02349435404146264,
+          "status": "measured"
+        },
+        {
+          "axis": "t0040",
+          "value": 0.02589152221999959,
+          "status": "measured"
+        },
+        {
+          "axis": "t0045",
+          "value": 0.03851138033901843,
+          "status": "measured"
+        },
+        {
+          "axis": "t0050",
+          "value": 0.048155239942366285,
+          "status": "measured"
+        },
+        {
+          "axis": "t0055",
+          "value": 0.05424241528163114,
+          "status": "measured"
+        },
+        {
+          "axis": "t0060",
+          "value": 0.061574745533242305,
+          "status": "measured"
+        },
+        {
+          "axis": "t0065",
+          "value": 0.06788726057222044,
+          "status": "measured"
+        },
+        {
+          "axis": "t0070",
+          "value": 0.07369801442002452,
+          "status": "measured"
+        },
+        {
+          "axis": "t0075",
+          "value": 0.07907822008076837,
+          "status": "measured"
+        },
+        {
+          "axis": "t0080",
+          "value": 0.08653936226035479,
+          "status": "measured"
+        },
+        {
+          "axis": "t0085",
+          "value": 0.09163303443817278,
+          "status": "measured"
+        },
+        {
+          "axis": "t0090",
+          "value": 0.09881832334600231,
+          "status": "measured"
+        },
+        {
+          "axis": "t0095",
+          "value": 0.10456634109996898,
+          "status": "measured"
+        },
+        {
+          "axis": "t0100",
+          "value": 0.11096022751980796,
+          "status": "measured"
+        },
+        {
+          "axis": "t0105",
+          "value": 0.11747825255046575,
+          "status": "measured"
+        },
+        {
+          "axis": "t0110",
+          "value": 0.12393107147102224,
+          "status": "measured"
+        },
+        {
+          "axis": "t0115",
+          "value": 0.12959079484079702,
+          "status": "measured"
+        },
+        {
+          "axis": "t0120",
+          "value": 0.13576903608485028,
+          "status": "measured"
+        },
+        {
+          "axis": "t0125",
+          "value": 0.14306290134140437,
+          "status": "measured"
+        },
+        {
+          "axis": "t0130",
+          "value": 0.14928234431214973,
+          "status": "measured"
+        },
+        {
+          "axis": "t0135",
+          "value": 0.15572461058106263,
+          "status": "measured"
+        },
+        {
+          "axis": "t0140",
+          "value": 0.16607374680014034,
+          "status": "measured"
+        },
+        {
+          "axis": "t0145",
+          "value": 0.17309991099824024,
+          "status": "measured"
+        },
+        {
+          "axis": "t0150",
+          "value": 0.18348949518317836,
+          "status": "measured"
+        },
+        {
+          "axis": "t0155",
+          "value": 0.19172914474237324,
+          "status": "measured"
+        },
+        {
+          "axis": "t0160",
+          "value": 0.1987405236318516,
+          "status": "measured"
+        },
+        {
+          "axis": "t0165",
+          "value": 0.20599929842261053,
+          "status": "measured"
+        },
+        {
+          "axis": "t0170",
+          "value": 0.21978162968889972,
+          "status": "measured"
+        },
+        {
+          "axis": "t0175",
+          "value": 0.22785716812055534,
+          "status": "measured"
+        },
+        {
+          "axis": "t0180",
+          "value": 0.23462022340311417,
+          "status": "measured"
+        },
+        {
+          "axis": "t0185",
+          "value": 0.2463872533245201,
+          "status": "measured"
+        },
+        {
+          "axis": "t0190",
+          "value": 0.25568960128951085,
+          "status": "measured"
+        },
+        {
+          "axis": "t0195",
+          "value": 0.2640440660178525,
+          "status": "measured"
+        },
+        {
+          "axis": "t0200",
+          "value": 0.2724049203187829,
+          "status": "measured"
+        },
+        {
+          "axis": "t0205",
+          "value": 0.28271446669971617,
+          "status": "measured"
+        },
+        {
+          "axis": "t0210",
+          "value": 0.2924607450056097,
+          "status": "measured"
+        },
+        {
+          "axis": "t0215",
+          "value": 0.3004223495884756,
+          "status": "measured"
+        },
+        {
+          "axis": "t0220",
+          "value": 0.3086207046504144,
+          "status": "measured"
+        },
+        {
+          "axis": "t0225",
+          "value": 0.31478986597552594,
+          "status": "measured"
+        },
+        {
+          "axis": "t0230",
+          "value": 0.32049539481122635,
+          "status": "measured"
+        },
+        {
+          "axis": "t0235",
+          "value": 0.32551094257792,
+          "status": "measured"
+        },
+        {
+          "axis": "t0240",
+          "value": 0.33056872414382915,
+          "status": "measured"
+        },
+        {
+          "axis": "t0245",
+          "value": 0.3366413113119207,
+          "status": "measured"
+        },
+        {
+          "axis": "t0250",
+          "value": 0.34141527293389806,
+          "status": "measured"
+        },
+        {
+          "axis": "t0255",
+          "value": 0.34595134763739466,
+          "status": "measured"
+        },
+        {
+          "axis": "t0260",
+          "value": 0.3500123094941975,
+          "status": "measured"
+        },
+        {
+          "axis": "t0265",
+          "value": 0.3543663567550016,
+          "status": "measured"
+        },
+        {
+          "axis": "t0270",
+          "value": 0.3584632324163543,
+          "status": "measured"
+        },
+        {
+          "axis": "t0275",
+          "value": 0.36252918069096673,
+          "status": "measured"
+        },
+        {
+          "axis": "t0280",
+          "value": 0.3665394086456367,
+          "status": "measured"
+        },
+        {
+          "axis": "t0285",
+          "value": 0.3709747809020198,
+          "status": "measured"
+        },
+        {
+          "axis": "t0290",
+          "value": 0.3743208064081267,
+          "status": "measured"
+        },
+        {
+          "axis": "t0295",
+          "value": 0.3774179052986487,
+          "status": "measured"
+        },
+        {
+          "axis": "t0300",
+          "value": 0.38057212766389226,
+          "status": "measured"
+        },
+        {
+          "axis": "t0305",
+          "value": 0.383418838802448,
+          "status": "measured"
+        },
+        {
+          "axis": "t0310",
+          "value": 0.3861390456808055,
+          "status": "measured"
+        },
+        {
+          "axis": "t0315",
+          "value": 0.3885801755103106,
+          "status": "measured"
+        },
+        {
+          "axis": "t0320",
+          "value": 0.390827020586368,
+          "status": "measured"
+        },
+        {
+          "axis": "t0325",
+          "value": 0.3930628259653212,
+          "status": "measured"
+        },
+        {
+          "axis": "t0330",
+          "value": 0.39553082446939586,
+          "status": "measured"
+        },
+        {
+          "axis": "t0335",
+          "value": 0.39763036148630043,
+          "status": "measured"
+        },
+        {
+          "axis": "t0340",
+          "value": 0.39936142541971437,
+          "status": "measured"
+        },
+        {
+          "axis": "t0345",
+          "value": 0.40085896265115084,
+          "status": "measured"
+        },
+        {
+          "axis": "t0350",
+          "value": 0.4020896105665673,
+          "status": "measured"
+        },
+        {
+          "axis": "t0355",
+          "value": 0.40305974714223175,
+          "status": "measured"
+        },
+        {
+          "axis": "t0360",
+          "value": 0.40379685565769985,
+          "status": "measured"
+        }
+      ],
+      "selected_member_count": 25,
+      "eligible_count": 25,
+      "model_zero_reason_counts": {
+        "no_modeled_endpoint_stops": 13
+      },
+      "scope": {
+        "kind": "explicit_selection"
+      }
+    }
+  }
+}

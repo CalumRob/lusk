@@ -2,7 +2,8 @@ import type { Payload, Indicateur, ProfilAccesBpeRow, DistributionAccesBatiments
   RampeAccesBatimentsRow } from '@/payload/types'
 import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
 import { ACCESS_INDICATOR_KEYS, territoryFactsFor } from './territoryFacts'
-import type { FactProvenance, NamedTrajectoryReference, NumericFact, TerritoryFacts } from './territoryFacts'
+import type { FactProvenance, MobilityTrajectoryContract, NamedTrajectoryReference, NumericFact,
+  SelectedTrajectoryComparison, TerritoryFacts } from './territoryFacts'
 import { clearBuildingApiPeers } from './buildingApiFacts'
 
 type Row = Record<string, unknown>
@@ -254,8 +255,49 @@ export function mobilityFactsFromThemeApi(
       !Array.isArray(response.named_reference_evidence) ||
       !Array.isArray(response.readings)) throw new Error('Réponse de faits Mobilité invalide')
   const projected = payloadFromSql(payload, response)
-  const facts = territoryFactsFor(projected, territoryId, context)
+  let facts = territoryFactsFor(projected, territoryId, context)
   if (!facts) throw new Error('Territoire inconnu')
+  const curveDescriptor = rows(response.indicator_metadata, 'indicator_metadata')
+    .find((row) => row.indicator_id === 'raccordement_courbe')
+  let trajectoryContract: MobilityTrajectoryContract | null = null
+  if (curveDescriptor && isRecord(curveDescriptor.comparison_contract)) {
+    if (curveDescriptor.comparison_contract.statistic !== 'mean' ||
+        curveDescriptor.comparison_contract.scope !== 'selected_group') {
+      throw new Error('Contrat de comparaison de trajectoire Mobilité non pris en charge')
+    }
+    const axes = curveDescriptor.axis_values
+    if (curveDescriptor.axis_kind !== 'duration_minute' || !Array.isArray(axes) || axes.length < 2 ||
+        axes.some((axis) => !text(axis)) || !text(curveDescriptor.comparison_point) ||
+        !Array.isArray(curveDescriptor.axis_numeric_values) ||
+        curveDescriptor.axis_numeric_values.length !== axes.length ||
+        curveDescriptor.axis_numeric_values.some((value) => !finite(value)) ||
+        new Set(axes).size !== axes.length ||
+        curveDescriptor.axis_numeric_values.some((value, index, values) => index > 0 && value <= values[index - 1]!)) {
+      throw new Error('Descripteur de trajectoire Mobilité invalide')
+    }
+    const axisValues = axes as string[]
+    const axisNumericValues = curveDescriptor.axis_numeric_values as number[]
+    const focalAxes = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe')
+      .map((fact) => fact.detail)
+    const rawCurveRows = rows(response.indicators, 'indicators')
+      .filter((row) => row.indicator_id === 'raccordement_courbe')
+    if (curveDescriptor.completeness !== 'dense_complete' ||
+        !axisValues.includes(curveDescriptor.comparison_point) ||
+        focalAxes.length !== axisValues.length ||
+        focalAxes.some((axis, index) => axis !== axisValues[index]) ||
+        rawCurveRows.length !== axisValues.length ||
+        rawCurveRows.some((row, index) => !isRecord(row.dimensions) ||
+          row.dimensions.axis !== axisValues[index] ||
+          row.dimensions.numeric_axis_value !== axisNumericValues[index])) {
+      throw new Error('Grille de trajectoire Mobilité incomplète ou désordonnée')
+    }
+    trajectoryContract = { axisKind: 'duration_minute', axisValues, axisNumericValues,
+      comparisonPoint: curveDescriptor.comparison_point, comparisonStatistic: 'mean', comparisonScope: 'selected_group' }
+    const numericByAxis = new Map(axisValues.map((axis, index) => [axis, axisNumericValues[index]!]))
+    facts = { ...facts, mobility: { ...facts.mobility,
+      indicators: facts.mobility.indicators.map((fact) => fact.key === 'raccordement_courbe'
+        ? { ...fact, axisValue: numericByAxis.get(fact.detail ?? '') } : fact) } }
+  }
   const namedTrajectoryReferences: NamedTrajectoryReference[] = rows(response.named_reference_evidence,
     'named_reference_evidence').filter((row) => row.indicator_id === 'raccordement_courbe').map((reference) => {
     if (!text(reference.id) || !text(reference.label) || !text(reference.role) ||
@@ -277,6 +319,7 @@ export function mobilityFactsFromThemeApi(
       }))
       const source = provenance[0] ?? null
       return { key: reference.indicator_id as string, detail: point.axis,
+        axisValue: trajectoryContract?.axisNumericValues[trajectoryContract.axisValues.indexOf(point.axis as string)],
         value: point.status === 'measured' ? point.value as number : null, unit: reference.unit as string,
         availability: point.status === 'measured' ? 'complete' as const : 'incomplete' as const,
         provenance: source, sourceLineage: provenance, comparison: null, comparisonBasis: 'territory-median' as const,
@@ -299,7 +342,83 @@ export function mobilityFactsFromThemeApi(
       version: reading.provenance.source_version, reference_date: reading.provenance.source_reference_date,
       publication_date: reading.provenance.source_publication_date,
     }] : []) } : facts.mobility.losses
-  return { ...facts, mobility: { ...facts.mobility, losses: loss, namedTrajectoryReferences } }
+  return { ...facts, mobility: { ...facts.mobility, losses: loss, namedTrajectoryReferences, trajectoryContract } }
+}
+
+function selectedTrajectoryComparison(
+  facts: TerritoryFacts,
+  resultRows: readonly Row[],
+  context?: TerritoryComparisonContext,
+  envelope?: Row,
+  expectedSelection?: readonly { territory_type: string; territory_id: string }[],
+): SelectedTrajectoryComparison | null {
+  const contract = facts.mobility.trajectoryContract
+  if (!contract) return null
+  const result = resultRows.find((candidate) => candidate.indicator_id === 'raccordement_courbe')
+  if (!result) throw new Error('Comparaison moyenne de trajectoire Mobilité absente')
+  if (result.status !== 'available') return null
+  if (result.statistic !== contract.comparisonStatistic || result.source_facet !== contract.comparisonPoint ||
+      !finite(result.mean) || !finite(result.selected_member_count) || !finite(result.eligible_count) ||
+      result.selected_member_count < 2 || result.eligible_count !== result.selected_member_count ||
+      !Array.isArray(result.comparison_sources) || result.comparison_sources.length === 0 ||
+      !context?.scope.label) throw new Error('Comparaison moyenne de trajectoire Mobilité invalide')
+  const meanCurve = result.mean_curve
+  const sourceScope = isRecord(meanCurve) && isRecord(meanCurve.scope) ? meanCurve.scope : null
+  const envelopeScope = envelope && isRecord(envelope.scope) ? envelope.scope : null
+  const sourceSelection = envelope?.selection
+  const expectedKeys = (expectedSelection ?? []).map((item) => `${item.territory_type}/${item.territory_id}`).sort()
+  const actualSelection = Array.isArray(sourceSelection) ? sourceSelection.filter(isRecord)
+    .map((item) => `${String(item.territory_type)}/${String(item.territory_id)}`).sort() : []
+  const modeMatches = context?.mode === 'densite'
+    ? envelopeScope?.kind === 'density_class' && sourceScope?.kind === 'density_class' &&
+      sourceScope.territory_type === facts.territory.type &&
+      text(sourceScope.density_class_code) && sourceScope.density_class_code === facts.territory.densityClassCode &&
+      envelopeScope.density_class_code === sourceScope.density_class_code
+    : (context?.mode === 'epci' || context?.mode === 'bretagne')
+      ? envelopeScope?.kind === 'explicit_selection' && sourceScope?.kind === 'explicit_selection' &&
+        expectedKeys.length >= 2 && actualSelection.length === expectedKeys.length &&
+        actualSelection.every((key, index) => key === expectedKeys[index]) &&
+        finite(envelopeScope.member_count) && envelopeScope.member_count === expectedKeys.length
+      : false
+  if (!sourceScope || !envelopeScope || !modeMatches ||
+      envelopeScope.member_count !== result.selected_member_count ||
+      (expectedSelection === undefined && sourceSelection != null) ||
+      (expectedSelection !== undefined && (!Array.isArray(sourceSelection) ||
+        sourceSelection.length !== expectedSelection.length || actualSelection.some((key, index) => key !== expectedKeys[index])))) {
+    throw new Error('Portée réelle de la courbe moyenne Mobilité invalide')
+  }
+  if (!isRecord(meanCurve) || meanCurve.statistic !== contract.comparisonStatistic ||
+      meanCurve.axis_kind !== contract.axisKind || !Array.isArray(meanCurve.points) ||
+      meanCurve.selected_member_count !== result.selected_member_count ||
+      meanCurve.eligible_count !== result.eligible_count ||
+      !sourceScope || !envelopeScope) {
+    throw new Error('Courbe moyenne de comparaison Mobilité invalide')
+  }
+  const points = rows(meanCurve.points, 'mean_curve.points')
+  if (points.length !== contract.axisValues.length || points.some((point, index) =>
+    point.axis !== contract.axisValues[index] || point.status !== 'measured' || !finite(point.value))) {
+    throw new Error('Courbe moyenne Mobilité partielle, non mesurée ou désordonnée')
+  }
+  const facetPoint = points.find((point) => point.axis === contract.comparisonPoint)
+  if (!facetPoint || Math.abs((facetPoint.value as number) - result.mean as number) > 1e-12) {
+    throw new Error('Facette de comparaison Mobilité incohérente avec sa moyenne')
+  }
+  const reasons = meanCurve.model_zero_reason_counts
+  if (!isRecord(reasons) || Object.values(reasons).some((count) => !finite(count) || count < 0)) {
+    throw new Error('Motifs de zéros du modèle Mobilité invalides')
+  }
+  const lineage = apiSources(rows(result.comparison_sources, 'comparison_sources').map((source) => ({
+    source_id: source.source_id, name: source.source_name, version: source.version,
+    reference_date: source.reference_date, publication_date: source.publication_date,
+  })))
+  return { statistic: 'mean', scope: context.scope,
+    selectedMemberCount: result.selected_member_count, eligibleCount: result.eligible_count,
+    modelZeroReasonCounts: reasons as Record<string, number>, sourceLineage: lineage,
+    points: points.map((point) => ({ key: 'raccordement_courbe', detail: point.axis as string,
+      axisValue: contract.axisNumericValues[contract.axisValues.indexOf(point.axis as string)],
+      value: point.value as number, unit: facts.mobility.indicators.find((fact) => fact.key === 'raccordement_courbe')?.unit ?? '%',
+      availability: 'complete', provenance: lineage[0] ?? null, sourceLineage: lineage,
+      comparison: null, comparisonBasis: 'territory-mean', reason: null })) }
 }
 
 /** Replace only comparison references; focal SQL facts and provenance remain untouched. */
@@ -307,13 +426,16 @@ export function applyThemeComparisonApiFacts(
   facts: TerritoryFacts,
   response: unknown,
   context?: TerritoryComparisonContext,
+  expectedSelection?: readonly { territory_type: string; territory_id: string }[],
 ): TerritoryFacts {
-  if (!isRecord(response) || (response.contract !== 'theme-comparison-v1' && response.contract !== undefined) ||
+  if (!isRecord(response) || (response.contract !== 'theme-comparison-v1' &&
+      response.contract !== 'indicator-comparison-v1' && response.contract !== undefined) ||
       (response.theme_id !== 'mobilite' && response.theme_id !== undefined)) {
     throw new Error('Réponse de comparaison Mobilité invalide')
   }
-  const resultRows = rows(response.results, 'results')
-  const profileRows = rows(response.profile_comparisons, 'profile_comparisons')
+  const resultRows = Array.isArray(response.results) ? rows(response.results, 'results')
+    : isRecord(response.result) ? [response.result] : rows(response.results, 'results')
+  const profileRows = response.profile_comparisons === undefined ? [] : rows(response.profile_comparisons, 'profile_comparisons')
   const comparisons = new Map<string, Row>()
   for (const result of resultRows) {
     if (text(result.indicator_id)) comparisons.set(result.indicator_id, result)
@@ -381,7 +503,8 @@ export function applyThemeComparisonApiFacts(
     })) as unknown as TerritoryFacts['mobility']['access']['byService'],
     summary,
   } as TerritoryFacts['mobility']['access']
-  return { ...facts, mobility: { ...facts.mobility, indicators, access, bpeAccess } }
+  return { ...facts, mobility: { ...facts.mobility, indicators, access, bpeAccess,
+    selectedTrajectoryComparison: selectedTrajectoryComparison(facts, resultRows, context, response, expectedSelection) } }
 }
 
 export function clearThemeComparisonApiFacts(facts: TerritoryFacts): TerritoryFacts {
@@ -389,6 +512,7 @@ export function clearThemeComparisonApiFacts(facts: TerritoryFacts): TerritoryFa
   const clear = (fact: NumericFact): NumericFact => ({ ...fact, comparison: null })
   return { ...facts, mobility: { ...facts.mobility,
     indicators: facts.mobility.indicators.map(clear),
+    selectedTrajectoryComparison: null,
     access: { ...facts.mobility.access,
       byService: Object.fromEntries(Object.entries(facts.mobility.access.byService).map(([service, modes]) =>
         [service, Object.fromEntries(Object.entries(modes).map(([mode, fact]) => [mode, clear(fact)]))])) as unknown as TerritoryFacts['mobility']['access']['byService'],

@@ -43,7 +43,7 @@ tryCatch({
     "building_ramp", "building_grid") %in% published_service),
     DBI::dbGetQuery(con, "SELECT row_count FROM table_publication WHERE table_name='building_ramp'")$row_count[[1L]] == nrow(inputs$tables$building_ramp),
     DBI::dbGetQuery(con, "SELECT row_count FROM table_publication WHERE table_name='building_grid'")$row_count[[1L]] == nrow(inputs$tables$building_grid))
-  publish_service_share_scalars(con, inputs$scalar_access, inputs$scalar_metadata,
+  scalar_publication <- publish_service_share_scalars(con, inputs$scalar_access, inputs$scalar_metadata,
     inputs$scalar_eligible_territories, additional_projections=complete$additional_projections)
   economy_histories <- nanoparquet::read_parquet(file.path(canonical_dir,"histoires_economie.parquet"))
   economy_vintages <- nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
@@ -204,9 +204,11 @@ tryCatch({
     source_vintages=canonical_vintages)
   scalar_version <- DBI::dbGetQuery(con,
     "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]]
+  stopifnot(identical(scalar_publication$content_version, scalar_version))
   profile_result <- publier_declared_profiles_postgres(demography, demography_metadata,
     habitat, habitat_metadata, scalar_version, con=con, mobilite=mobility,
-    mobilite_metadata=mobility_metadata, mobilite_vintages=canonical_vintages)
+    mobilite_metadata=mobility_metadata, mobilite_vintages=canonical_vintages,
+    scalar_publication=scalar_publication)
   housing_ids <- c("mix_logements", "statut", "type", "age_du_bati")
   expected_profiles <- lapply(housing_ids, function(id)
     project_declared_detail_profile(habitat, habitat_metadata, id, canonical_vintages))
@@ -258,7 +260,8 @@ tryCatch({
     "SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='declared_profile'")
   profile_noop <- publier_declared_profiles_postgres(demography, demography_metadata,
     habitat, habitat_metadata, scalar_version, con=con, mobilite=mobility,
-    mobilite_metadata=mobility_metadata, mobilite_vintages=canonical_vintages)
+    mobilite_metadata=mobility_metadata, mobilite_vintages=canonical_vintages,
+    scalar_publication=scalar_publication)
   stopifnot(!profile_noop$changed, identical(profile_marker_before_noop,
     DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='declared_profile'")))
   manifest <- lapply(housing_ids, function(id) {

@@ -98,6 +98,7 @@ project_programme_memberships <- function(canonical,metadata,indicator) {
 }
 
 register_programme_observed_collections <- function(metadata) {
+  observed_collection_inventory(metadata)
   registry <- lapply(names(metadata$observed_collection_contracts),function(indicator) {
     kind <- metadata$observed_collection_contracts[[indicator]]$kind
     project <- switch(kind,period_detail=project_programme_period_details,
@@ -108,15 +109,150 @@ register_programme_observed_collections <- function(metadata) {
   registry
 }
 
-publish_observed_collection <- function(projection,con) {
+# Numeric sparse collection comparisons are derived solely from each typed
+# observed-collection descriptor and the committed territory reference.
+project_observed_collection_comparisons <- function(projections, territory_reference,
+    collection_content_version, reference_content_version) {
+  p <- projections
+  if (!is.list(p) || is.null(p$descriptor) || is.null(p$facts)) stop("One validated observed collection projection is required",call.=FALSE)
+  d <- p$descriptor
+  valid_version <- function(x) is.character(x) && length(x)==1L && !is.na(x) && nzchar(x)
+  if (!valid_version(collection_content_version) || !valid_version(reference_content_version)) stop("Invalid comparison publication versions",call.=FALSE)
+  if (!identical(d$kind,"period_detail")) return(list(groups=data.frame(),territories=data.frame(),
+    collection_content_version=collection_content_version,reference_content_version=reference_content_version))
+  required <- c("territory_id","territory_type","detail_key","observation_period","value")
+  if (!all(required %in% names(p$facts)) || !d$direction %in% c("high","low") ||
+      length(d$comparison_detail)!=1L || is.na(d$comparison_detail) ||
+      length(d$comparison_period)!=1L || is.na(d$comparison_period)) stop("Invalid period/detail comparison descriptor or facts",call.=FALSE)
+  if (anyDuplicated(p$facts[c("territory_id","territory_type","detail_key","observation_period")]) ||
+      any(!is.finite(p$facts$value))) stop("Duplicate or non-finite sparse collection fact",call.=FALSE)
+  if (any(!paste(p$facts$territory_id,p$facts$territory_type) %in%
+      paste(territory_reference$territory_id,territory_reference$territory_type))) stop("Sparse collection fact is outside committed territory reference",call.=FALSE)
+  groups <- list(); territories <- list()
+    facts <- p$facts[p$facts$detail_key==d$comparison_detail & p$facts$observation_period==d$comparison_period,,drop=FALSE]
+    membership <- comparison_context_membership(territory_reference,d$allowed_levels)
+    for (i in seq_len(nrow(membership))) {
+      g <- membership[i,,drop=FALSE]; type <- as.character(g$territory_type)
+      if (!type %in% d$allowed_levels) next
+      ids <- as.character(g$member_ids[[1L]])
+      selected <- facts[facts$territory_type==type & facts$territory_id %in% ids,,drop=FALSE]
+      if (anyDuplicated(selected$territory_id)) stop("Duplicate comparison facts for territory",call.=FALSE)
+      ix <- match(ids,selected$territory_id)
+      status <- ifelse(is.na(ix),"not_published","measured")
+      values <- rep(NA_real_,length(ids)); values[!is.na(ix)] <- selected$value[ix[!is.na(ix)]]
+      eligible <- values[!is.na(values)]
+      ranks <- ties <- sizes <- rep(NA_integer_,length(ids))
+      for (j in which(!is.na(values))) {
+        ranks[j] <- 1L+sum(if(d$direction=="high") eligible>values[j] else eligible<values[j])
+        ties[j] <- sum(eligible==values[j]); sizes[j] <- length(eligible)
+      }
+      key <- data.frame(comparison_context=as.character(g$comparison_context),group_id=as.character(g$group_id),
+        territory_type=type,indicator_id=d$indicator_id,detail_key=d$comparison_detail,
+        observation_period=d$comparison_period,stringsAsFactors=FALSE)
+      groups[[length(groups)+1L]] <- cbind(key,statistic="median",median=if(length(eligible)) stats::median(eligible) else NA_real_,
+        member_count=length(ids),eligible_count=length(eligible),missing_count=length(ids)-length(eligible),
+        collection_content_version=collection_content_version,reference_content_version=reference_content_version)
+      territories[[length(territories)+1L]] <- cbind(key,territory_id=ids,value=values,status=status,rank=ranks,
+        tie_count=ties,rank_size=sizes,collection_content_version=collection_content_version,
+        reference_content_version=reference_content_version)
+    }
+  list(groups=if(length(groups)) do.call(rbind,groups) else data.frame(),
+    territories=if(length(territories)) do.call(rbind,territories) else data.frame(),
+    collection_content_version=collection_content_version,reference_content_version=reference_content_version)
+}
+
+# Keep comparison artifacts as immutable generations. The database publication
+# marker can then identify the same comparison content without overwriting the
+# previous complete artifact when a refresh fails.
+write_observed_collection_comparison_parquets <- function(projection,directory,indicator_id,
+    write_fn=nanoparquet::write_parquet,rename_fn=file.rename) {
+  if (!is.list(projection) || !all(c("groups","territories","collection_content_version",
+      "reference_content_version") %in% names(projection)) ||
+      !is.data.frame(projection$groups) || !is.data.frame(projection$territories))
+    stop("Invalid observed collection comparison projection",call.=FALSE)
+  if (!is.character(indicator_id) || length(indicator_id)!=1L || is.na(indicator_id) ||
+      !grepl("^[a-z][a-z0-9_]{0,95}$",indicator_id) || !is.character(directory) ||
+      length(directory)!=1L || is.na(directory) || !nzchar(directory) ||
+      !is.function(write_fn) || !is.function(rename_fn))
+    stop("Observed collection comparison artifact destination is invalid",call.=FALSE)
+  if (!requireNamespace("nanoparquet",quietly=TRUE))
+    stop("nanoparquet is required to write observed collection comparison artifacts",call.=FALSE)
+  dir.create(directory,recursive=TRUE,showWarnings=FALSE)
+  version <- scalar_content_version(projection)
+  generation <- file.path(directory,paste0("observed-collection-comparison-",indicator_id,"-",version))
+  dir.create(generation,recursive=TRUE,showWarnings=FALSE)
+  targets <- file.path(generation,c("groups.parquet","territories.parquet"))
+  expected <- list(projection$groups,projection$territories)
+  present <- file.exists(targets)
+  for (i in which(present)) {
+    existing <- tryCatch(nanoparquet::read_parquet(targets[[i]]),error=function(e) NULL)
+    if (is.null(existing) || !isTRUE(all.equal(existing,expected[[i]],check.attributes=FALSE)))
+      stop("Existing observed collection comparison generation differs from its content version",call.=FALSE)
+  }
+  if (all(present)) return(invisible(targets))
+  staged <- vapply(targets,function(path) tempfile("observed-collection-comparison-",dirname(path),fileext=".parquet"),character(1))
+  on.exit(unlink(staged[file.exists(staged)]),add=TRUE)
+  for (i in which(!present)) write_fn(expected[[i]],staged[[i]])
+  for (i in which(!present)) {
+    checked <- nanoparquet::read_parquet(staged[[i]])
+    if (!isTRUE(all.equal(checked,expected[[i]],check.attributes=FALSE)))
+      stop("Staged observed collection comparison artifact validation failed",call.=FALSE)
+    if (!rename_fn(staged[[i]],targets[[i]]))
+      stop("Could not install observed collection comparison artifacts",call.=FALSE)
+  }
+  invisible(targets)
+}
+
+observed_collection_inventory <- function(metadata) {
+  contracts <- metadata$observed_collection_contracts
+  if (is.null(contracts) || is.null(metadata$indicator_pages)) stop("Observed collection inventory requires typed metadata",call.=FALSE)
+  ids <- names(Filter(function(x) identical(x$kind,"period_detail"),contracts))
+  for (id in ids) {
+    contract <- contracts[[id]]; page <- metadata$indicator_pages[[id]]
+    if (is.null(page) || !identical(page$indicator,id) || is.null(page$comparison$detail) ||
+        is.null(page$comparison$dimension) || !identical(contract$completeness,"observed_sparse") ||
+        !page$direction %in% c("high","low") || is.null(page$levels) || is.null(page$list$categories))
+      stop(sprintf("Period/detail inventory has no typed comparison descriptor: %s",id),call.=FALSE)
+  }
+  ids
+}
+
+observed_collection_comparison_stale <- function(marker, expected_version, collection_version,
+    reference_version, expected_groups, expected_territories, actual_groups,
+    actual_territories, mismatched_group_versions=0L, mismatched_territory_versions=0L) {
+  is.null(marker) || !identical(as.character(marker$content_version),as.character(expected_version)) ||
+    !identical(as.character(marker$collection_content_version),as.character(collection_version)) ||
+    !identical(as.character(marker$reference_content_version),as.character(reference_version)) ||
+    as.integer(marker$group_row_count)!=as.integer(expected_groups) ||
+    as.integer(marker$territory_row_count)!=as.integer(expected_territories) ||
+    as.integer(actual_groups)!=as.integer(expected_groups) ||
+    as.integer(actual_territories)!=as.integer(expected_territories) ||
+    as.integer(mismatched_group_versions)!=0L || as.integer(mismatched_territory_versions)!=0L
+}
+
+publish_observed_collection <- function(projection,con,artifact_directory=NULL) {
   d <- projection$descriptor; indicator <- d$indicator_id
   version <- scalar_content_version(projection)
   DBI::dbWithTransaction(con,{
     DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock(hashtext('observed-collection'),hashtext($1))",params=list(indicator))
     ref <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
     if (nrow(ref)!=1L) stop("Observed collection reference is unavailable",call.=FALSE)
+    reference <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
     previous <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version FROM observed_collection_publication WHERE indicator_id=$1",params=list(indicator))
     changed <- !nrow(previous) || previous$content_version[[1L]]!=version || previous$reference_content_version[[1L]]!=ref$content_version[[1L]]
+    comparisons <- project_observed_collection_comparisons(projection,reference,version,ref$content_version[[1L]])
+    comparison_version <- scalar_content_version(comparisons)
+    artifact_paths <- if (identical(d$kind,"period_detail") && !is.null(artifact_directory))
+      write_observed_collection_comparison_parquets(comparisons,artifact_directory,indicator) else NULL
+    comparison_marker <- DBI::dbGetQuery(con,"SELECT content_version,collection_content_version,reference_content_version,group_row_count,territory_row_count FROM observed_collection_comparison_publication WHERE indicator_id=$1",params=list(indicator))
+    actual_groups <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_group WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
+    actual_territories <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_territory WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
+    mismatched_groups <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_group WHERE indicator_id=$1 AND (collection_content_version<>$2 OR reference_content_version<>$3)",params=list(indicator,version,ref$content_version[[1L]]))$n[[1L]]
+    mismatched_territories <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_territory WHERE indicator_id=$1 AND (collection_content_version<>$2 OR reference_content_version<>$3)",params=list(indicator,version,ref$content_version[[1L]]))$n[[1L]]
+    comparison_stale <- identical(d$kind,"period_detail") && observed_collection_comparison_stale(
+      if(nrow(comparison_marker)) as.list(comparison_marker[1,,drop=FALSE]) else NULL,comparison_version,version,
+      ref$content_version[[1L]],nrow(comparisons$groups),nrow(comparisons$territories),actual_groups,actual_territories,
+      mismatched_groups,mismatched_territories)
     if (changed) {
       for (i in seq_len(nrow(projection$datasets))) {
         r <- projection$datasets[i,,drop=FALSE]
@@ -141,13 +277,46 @@ publish_observed_collection <- function(projection,con) {
         stop("Unknown observed fact shape",call.=FALSE))
       DBI::dbWriteTable(con,table,projection$facts,append=TRUE,row.names=FALSE)
     }
-    list(changed=changed,content_version=version,indicator_id=indicator)
+    if (identical(d$kind,"period_detail") && (changed || comparison_stale)) {
+      DBI::dbExecute(con,"INSERT INTO observed_collection_comparison_publication(indicator_id,content_version,collection_content_version,reference_content_version,group_row_count,territory_row_count,published_at) VALUES($1,$2,$3,$4,$5,$6,now()) ON CONFLICT(indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,collection_content_version=EXCLUDED.collection_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=EXCLUDED.published_at",
+        params=list(indicator,comparison_version,version,ref$content_version[[1L]],nrow(comparisons$groups),nrow(comparisons$territories)))
+      DBI::dbExecute(con,"DELETE FROM observed_collection_comparison_group WHERE indicator_id=$1",params=list(indicator))
+      DBI::dbWriteTable(con,"observed_collection_comparison_group",transform(comparisons$groups,indicator_id=indicator),append=TRUE,row.names=FALSE)
+      DBI::dbWriteTable(con,"observed_collection_comparison_territory",transform(comparisons$territories,indicator_id=indicator),append=TRUE,row.names=FALSE)
+    }
+    list(changed=changed || comparison_stale,content_version=version,indicator_id=indicator,
+      comparison_content_version=comparison_version,comparison_artifacts=artifact_paths)
   })
 }
 
-publish_registered_observed_collections <- function(canonical,metadata,con) {
+# Small adapter seam for exercising publication recovery/atomicity without a
+# database. Adapters implement transaction(), state(), replace_base(), and
+# replace_comparisons(); the production path above performs the same operations
+# directly through DBI inside dbWithTransaction().
+publish_observed_collection_with_adapter <- function(projection, adapter) {
+  d <- projection$descriptor; version <- scalar_content_version(projection)
+  adapter$transaction(function() {
+    state <- adapter$state(d$indicator_id)
+    if (is.null(state$reference_version) || !nzchar(state$reference_version)) stop("Observed collection reference is unavailable",call.=FALSE)
+    comparisons <- project_observed_collection_comparisons(projection,state$territory_reference,version,state$reference_version)
+    comparison_version <- scalar_content_version(comparisons)
+    changed <- is.null(state$collection_version) || state$collection_version!=version || state$collection_reference_version!=state$reference_version
+    expected_groups <- nrow(comparisons$groups); expected_territories <- nrow(comparisons$territories)
+    stale <- identical(d$kind,"period_detail") && observed_collection_comparison_stale(
+      state$comparison,comparison_version,version,state$reference_version,expected_groups,expected_territories,
+      state$actual_group_rows %||% state$comparison$actual_group_rows %||% NA_integer_,
+      state$actual_territory_rows %||% state$comparison$actual_territory_rows %||% NA_integer_,
+      state$mismatched_group_versions %||% 0L,state$mismatched_territory_versions %||% 0L)
+    if (changed) adapter$replace_base(projection,version,state$reference_version)
+    if (identical(d$kind,"period_detail") && (changed || stale))
+      adapter$replace_comparisons(comparisons,comparison_version,version,state$reference_version)
+    invisible(list(changed=changed||stale,content_version=version,indicator_id=d$indicator_id))
+  })
+}
+
+publish_registered_observed_collections <- function(canonical,metadata,con,artifact_directory=NULL) {
   registry <- register_programme_observed_collections(metadata)
   # All registered inputs validate before the first collection replacement.
   projections <- lapply(registry,function(publisher) publisher$project(canonical))
-  lapply(projections,function(projection) publish_observed_collection(projection,con))
+  lapply(projections,function(projection) publish_observed_collection(projection,con,artifact_directory))
 }
