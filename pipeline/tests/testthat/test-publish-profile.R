@@ -1,7 +1,7 @@
 test_that("ADR-0039 comparison family inventory covers in-scope publisher families", {
   expect_setequal(ADR0039_COMPARISON_FAMILIES, c(
     "declared_profile", "numeric_period_collection",
-    "numeric_detail_collection", "scalar", "building_access", "ordered_series"
+    "numeric_detail_collection", "scalar", "ordered_series"
   ))
   themes <- lapply(c("habitat", "mobilite"), lire_theme_metadata)
   details <- unlist(lapply(themes, declared_detail_profile_ids), use.names=FALSE)

@@ -41,6 +41,7 @@ if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
   annual <- annual_registry$subventions_annuelles_owned$project(inputs$canonical)
   collection_registry <- register_programme_observed_collections(inputs$metadata)
   collections <- lapply(collection_registry,function(publisher) publisher$project(inputs$canonical))
+  artifact_directory <- Sys.getenv("LUSK_SORTIE",file.path("..","public","data"))
   projections <- c(list(subventions_annuelles=annual),collections)
   for (name in names(projections)) {
     projection <- projections[[name]]
@@ -52,7 +53,7 @@ if (args[[1L]] %in% c("--programme-check","--programme-publish")) {
     con <- do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
     tryCatch({
       publish_owned_series_projection(annual,owned_series_postgres_adapter(con))
-      lapply(collections,function(projection) publish_observed_collection(projection,con))
+      lapply(collections,function(projection) publish_observed_collection(projection,con,artifact_directory))
     },finally=DBI::dbDisconnect(con))
   }
   quit(status=0L)

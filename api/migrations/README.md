@@ -339,7 +339,11 @@ categorical membership semantics, or rewrite existing facts. Profile and
 collection markers pin the source content and territory-reference versions;
 collection publication validation also checks group membership, missingness,
 and rank-size consistency. Fresh installs carry the same tables and grants in
-`schema.sql`.
+`schema.sql`. The explicit programme publisher also writes immutable
+`observed-collection-comparison-<indicator>-<content-version>` generations
+under its configured sortie directory (`groups.parquet` and
+`territories.parquet`); retries verify and reuse an existing generation rather
+than replacing it.
 
 The guarded canonical programme publisher-to-HTTP rehearsal applies migration
 030 after recreating migration 018, then republishes through the registered R

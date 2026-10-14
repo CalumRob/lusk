@@ -31,6 +31,9 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
     expected = next(row for row in rows if row["key"] == "subventions_annuelles"
                     and row["territoire"] == "35238")
     schema = "it_" + uuid.uuid4().hex[:20]
+    artifact_directory = tmp_path / "comparison-artifacts"
+    smoke_env = os.environ.copy()
+    smoke_env["LUSK_TEST_ARTIFACT_DIR"] = str(artifact_directory)
 
     def scoped(dsn):
         url = urlsplit(dsn)
@@ -54,7 +57,7 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
             pub.execute((root / "api/schema.sql").read_text(encoding="utf-8"))
             completed = subprocess.run(
                 ["Rscript", "scripts/smoke-programme-postgres.R", schema],
-                cwd=root / "pipeline", env=os.environ.copy(), capture_output=True,
+                cwd=root / "pipeline", env=smoke_env, capture_output=True,
                 text=True, encoding="utf-8", errors="replace", timeout=180,
             )
             assert completed.returncode == 0, completed.stdout + completed.stderr
@@ -156,6 +159,57 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
                 statistics.median(row["value"] for row in domain_peers), rel=0, abs=1e-6)
             assert "entries" not in domain_comparison.json()
             assert "focal_value" not in domain_comparison.json()["result"]
+            facet_rows = [row for row in domain_expected if row["type"] == "commune"
+                          and row["detail"] == facet["detail"]
+                          and row["dimension"] == facet["dimension"]]
+            density_by_id = dict(pub.execute("SELECT territory_id,density_class_code FROM territory_reference WHERE territory_type='commune'").fetchall())
+            values_by_density = {}
+            for row in facet_rows:
+                density_code = density_by_id.get(row["territoire"])
+                if density_code is not None:
+                    values_by_density.setdefault(density_code, []).append(row)
+            density_code, density_facts = next((key, rows) for key, rows in sorted(values_by_density.items())
+                if len(rows) >= 2)
+            focal_domain = density_facts[0]
+            focal_id = focal_domain["territoire"]
+            density_values = [row["value"] for row in density_facts]
+            with TestClient(app) as client:
+                fixed_domain = client.post(
+                    f"/api/territories/commune/{focal_id}/indicators/subventions_par_domaine/comparison")
+            assert fixed_domain.status_code == 200, fixed_domain.text
+            fixed_result = fixed_domain.json()["result"]
+            assert fixed_result["median"] == pytest.approx(statistics.median(density_values), rel=0, abs=1e-6)
+            direction = metadata["indicator_pages"]["subventions_par_domaine"]["direction"]
+            focal_value = focal_domain["value"]
+            better = sum(value > focal_value if direction == "high" else value < focal_value
+                         for value in density_values)
+            assert fixed_result["rank"] == 1 + better
+            assert fixed_result["rank_size"] == len(density_values)
+            assert fixed_domain.json()["scope"]["kind"] == "density_class"
+            import pyarrow.parquet as pq
+            generations = list(artifact_directory.glob(
+                "observed-collection-comparison-subventions_par_domaine-*"))
+            assert len(generations) == 1
+            group_artifact = pq.read_table(generations[0] / "groups.parquet").to_pylist()
+            territory_artifact = pq.read_table(generations[0] / "territories.parquet").to_pylist()
+            group_columns = ("indicator_id","comparison_context","group_id","territory_type","detail_key",
+                "observation_period","statistic","median","member_count","eligible_count","missing_count",
+                "collection_content_version","reference_content_version")
+            territory_columns = ("indicator_id","comparison_context","group_id","territory_type","detail_key",
+                "observation_period","territory_id","value","status","rank","tie_count","rank_size",
+                "collection_content_version","reference_content_version")
+            group_database = [dict(zip(group_columns,row)) for row in pub.execute(
+                """SELECT indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period,
+                    statistic,median,member_count,eligible_count,missing_count,collection_content_version,
+                    reference_content_version FROM observed_collection_comparison_group
+                    WHERE indicator_id='subventions_par_domaine'""").fetchall()]
+            territory_database = [dict(zip(territory_columns,row)) for row in pub.execute(
+                """SELECT indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period,
+                    territory_id,value,status,rank,tie_count,rank_size,collection_content_version,
+                    reference_content_version FROM observed_collection_comparison_territory
+                    WHERE indicator_id='subventions_par_domaine'""").fetchall()]
+            assert sorted(group_artifact,key=repr) == sorted(group_database,key=repr)
+            assert sorted(territory_artifact,key=repr) == sorted(territory_database,key=repr)
             with TestClient(app) as client:
                 for selection in ([],[{"territory_type":"commune","territory_id":domain_peers[0]["territoire"]}]):
                     limited = client.post("/api/territories/commune/35238/indicators/subventions_par_domaine/comparison",
@@ -340,7 +394,7 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
             assert pub.execute("SELECT dataset_id,content_version,row_count FROM series_dataset_publication ORDER BY dataset_id").fetchall() == legacy_markers
             assert pub.execute("SELECT content_version,row_count FROM table_publication WHERE table_name='territory_reference'").fetchone() == reference_marker
             republished = subprocess.run(["Rscript","scripts/smoke-programme-postgres.R",schema,"--collections-only"],
-                cwd=root / "pipeline",env=os.environ.copy(),capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=180)
+                cwd=root / "pipeline",env=smoke_env,capture_output=True,text=True,encoding="utf-8",errors="replace",timeout=180)
             assert republished.returncode == 0, republished.stdout + republished.stderr
             pub.execute(sql.SQL("GRANT SELECT ON ALL TABLES IN SCHEMA {} TO {}").format(sql.Identifier(schema),sql.Identifier(role)))
             with TestClient(app) as client:

@@ -161,6 +161,48 @@ project_observed_collection_comparisons <- function(projections, territory_refer
     collection_content_version=collection_content_version,reference_content_version=reference_content_version)
 }
 
+# Keep comparison artifacts as immutable generations. The database publication
+# marker can then identify the same comparison content without overwriting the
+# previous complete artifact when a refresh fails.
+write_observed_collection_comparison_parquets <- function(projection,directory,indicator_id,
+    write_fn=nanoparquet::write_parquet,rename_fn=file.rename) {
+  if (!is.list(projection) || !all(c("groups","territories","collection_content_version",
+      "reference_content_version") %in% names(projection)) ||
+      !is.data.frame(projection$groups) || !is.data.frame(projection$territories))
+    stop("Invalid observed collection comparison projection",call.=FALSE)
+  if (!is.character(indicator_id) || length(indicator_id)!=1L || is.na(indicator_id) ||
+      !grepl("^[a-z][a-z0-9_]{0,95}$",indicator_id) || !is.character(directory) ||
+      length(directory)!=1L || is.na(directory) || !nzchar(directory) ||
+      !is.function(write_fn) || !is.function(rename_fn))
+    stop("Observed collection comparison artifact destination is invalid",call.=FALSE)
+  if (!requireNamespace("nanoparquet",quietly=TRUE))
+    stop("nanoparquet is required to write observed collection comparison artifacts",call.=FALSE)
+  dir.create(directory,recursive=TRUE,showWarnings=FALSE)
+  version <- scalar_content_version(projection)
+  generation <- file.path(directory,paste0("observed-collection-comparison-",indicator_id,"-",version))
+  dir.create(generation,recursive=TRUE,showWarnings=FALSE)
+  targets <- file.path(generation,c("groups.parquet","territories.parquet"))
+  expected <- list(projection$groups,projection$territories)
+  present <- file.exists(targets)
+  for (i in which(present)) {
+    existing <- tryCatch(nanoparquet::read_parquet(targets[[i]]),error=function(e) NULL)
+    if (is.null(existing) || !isTRUE(all.equal(existing,expected[[i]],check.attributes=FALSE)))
+      stop("Existing observed collection comparison generation differs from its content version",call.=FALSE)
+  }
+  if (all(present)) return(invisible(targets))
+  staged <- vapply(targets,function(path) tempfile("observed-collection-comparison-",dirname(path),fileext=".parquet"),character(1))
+  on.exit(unlink(staged[file.exists(staged)]),add=TRUE)
+  for (i in which(!present)) write_fn(expected[[i]],staged[[i]])
+  for (i in which(!present)) {
+    checked <- nanoparquet::read_parquet(staged[[i]])
+    if (!isTRUE(all.equal(checked,expected[[i]],check.attributes=FALSE)))
+      stop("Staged observed collection comparison artifact validation failed",call.=FALSE)
+    if (!rename_fn(staged[[i]],targets[[i]]))
+      stop("Could not install observed collection comparison artifacts",call.=FALSE)
+  }
+  invisible(targets)
+}
+
 observed_collection_inventory <- function(metadata) {
   contracts <- metadata$observed_collection_contracts
   if (is.null(contracts) || is.null(metadata$indicator_pages)) stop("Observed collection inventory requires typed metadata",call.=FALSE)
@@ -188,7 +230,7 @@ observed_collection_comparison_stale <- function(marker, expected_version, colle
     as.integer(mismatched_group_versions)!=0L || as.integer(mismatched_territory_versions)!=0L
 }
 
-publish_observed_collection <- function(projection,con) {
+publish_observed_collection <- function(projection,con,artifact_directory=NULL) {
   d <- projection$descriptor; indicator <- d$indicator_id
   version <- scalar_content_version(projection)
   DBI::dbWithTransaction(con,{
@@ -200,6 +242,8 @@ publish_observed_collection <- function(projection,con) {
     changed <- !nrow(previous) || previous$content_version[[1L]]!=version || previous$reference_content_version[[1L]]!=ref$content_version[[1L]]
     comparisons <- project_observed_collection_comparisons(projection,reference,version,ref$content_version[[1L]])
     comparison_version <- scalar_content_version(comparisons)
+    artifact_paths <- if (identical(d$kind,"period_detail") && !is.null(artifact_directory))
+      write_observed_collection_comparison_parquets(comparisons,artifact_directory,indicator) else NULL
     comparison_marker <- DBI::dbGetQuery(con,"SELECT content_version,collection_content_version,reference_content_version,group_row_count,territory_row_count FROM observed_collection_comparison_publication WHERE indicator_id=$1",params=list(indicator))
     actual_groups <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_group WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
     actual_territories <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_territory WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
@@ -240,7 +284,8 @@ publish_observed_collection <- function(projection,con) {
       DBI::dbWriteTable(con,"observed_collection_comparison_group",transform(comparisons$groups,indicator_id=indicator),append=TRUE,row.names=FALSE)
       DBI::dbWriteTable(con,"observed_collection_comparison_territory",transform(comparisons$territories,indicator_id=indicator),append=TRUE,row.names=FALSE)
     }
-    list(changed=changed || comparison_stale,content_version=version,indicator_id=indicator)
+    list(changed=changed || comparison_stale,content_version=version,indicator_id=indicator,
+      comparison_content_version=comparison_version,comparison_artifacts=artifact_paths)
   })
 }
 
@@ -269,9 +314,9 @@ publish_observed_collection_with_adapter <- function(projection, adapter) {
   })
 }
 
-publish_registered_observed_collections <- function(canonical,metadata,con) {
+publish_registered_observed_collections <- function(canonical,metadata,con,artifact_directory=NULL) {
   registry <- register_programme_observed_collections(metadata)
   # All registered inputs validate before the first collection replacement.
   projections <- lapply(registry,function(publisher) publisher$project(canonical))
-  lapply(projections,function(projection) publish_observed_collection(projection,con))
+  lapply(projections,function(projection) publish_observed_collection(projection,con,artifact_directory))
 }

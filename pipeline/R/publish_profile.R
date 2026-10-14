@@ -6,7 +6,7 @@
 # ADR-0039 comparison families represented by this constrained publisher set.
 ADR0039_COMPARISON_FAMILIES <- c(
   "declared_profile", "numeric_period_collection",
-  "numeric_detail_collection", "scalar", "building_access", "ordered_series"
+  "numeric_detail_collection", "scalar", "ordered_series"
 )
 
 serving_publication_target_names <- function(profile_opt_in = identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset=""), "1")) {

@@ -133,6 +133,36 @@ test_that("collection competition ranking shares tie ranks and skips the next po
   expect_equal(bretagne$tie_count[match(c("C_TEST","C_ORT","C_OTHER"),bretagne$territory_id)],c(2L,2L,1L))
 })
 
+test_that("observed collection comparison Parquet generations are immutable and version-keyed", {
+  fixture <- programme_collection_fixture()
+  projection <- register_programme_observed_collections(fixture$metadata)$subventions_par_domaine$project(fixture$canonical)
+  projection$facts <- data.frame(indicator_id=projection$descriptor$indicator_id,
+    territory_id=c("C_TEST","C_ORT"),territory_type="commune",
+    detail_key=projection$descriptor$comparison_detail,
+    observation_period=projection$descriptor$comparison_period,value=c(100,200),
+    source_id="subventions_scdl",vintage_id=projection$vintages$vintage_id[[1L]])
+  refs <- data.frame(territory_id=c("C_TEST","C_ORT","C_MISSING","BZH"),
+    territory_type=c("commune","commune","commune","region"),
+    epci_id=c("E_TEST","E_TEST","E_TEST",NA),density_class_code=c("d","d","d",NA))
+  comparison <- project_observed_collection_comparisons(projection,refs,"collection-v1","reference-v1")
+  directory <- tempfile("observed-collection-comparison-")
+  first <- write_observed_collection_comparison_parquets(comparison,directory,
+    projection$descriptor$indicator_id)
+  old_bytes <- lapply(first,function(path) readBin(path,what="raw",n=file.info(path)$size))
+  expect_true(isTRUE(all.equal(nanoparquet::read_parquet(first[[1L]]),comparison$groups,check.attributes=FALSE)))
+  expect_true(isTRUE(all.equal(nanoparquet::read_parquet(first[[2L]]),comparison$territories,check.attributes=FALSE)))
+
+  changed <- projection
+  changed$facts$value[[1L]] <- changed$facts$value[[1L]]+10
+  refreshed <- project_observed_collection_comparisons(changed,refs,"collection-v2","reference-v1")
+  second <- write_observed_collection_comparison_parquets(refreshed,directory,
+    projection$descriptor$indicator_id)
+  expect_false(identical(first,second))
+  expect_identical(lapply(first,function(path) readBin(path,what="raw",n=file.info(path)$size)),old_bytes)
+  expect_identical(write_observed_collection_comparison_parquets(refreshed,directory,
+    projection$descriptor$indicator_id),second)
+})
+
 test_that("observed collection publication repairs comparison state and rebuilds atomically", {
   fixture <- programme_collection_fixture()
   p <- register_programme_observed_collections(fixture$metadata)$subventions_par_domaine$project(fixture$canonical)
