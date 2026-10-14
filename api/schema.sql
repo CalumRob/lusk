@@ -1451,10 +1451,15 @@ CREATE TABLE aedar_territorial_aggregate (
   typequ_subdomain_code text NOT NULL, typequ_subdomain_label text NOT NULL,
   typequ_gamme text, typequ_gamme_status text NOT NULL CHECK(typequ_gamme_status IN ('classified','hors_gamme','absent')),
   typequ_source_order integer NOT NULL CHECK(typequ_source_order BETWEEN 1 AND 235),
-  CONSTRAINT aedar_typequ_gamme_state_check CHECK (
-    (typequ_gamme_status='absent' AND typequ_gamme IS NULL) OR
-    (typequ_gamme_status='hors_gamme' AND typequ_gamme='Hors Gamme') OR
-    (typequ_gamme_status='classified' AND typequ_gamme IS NOT NULL AND typequ_gamme<>'Hors Gamme')),
+  CONSTRAINT aedar_typequ_metadata_complete_check CHECK (COALESCE(
+    (typequ_hierarchy_label IS NULL AND typequ_description IS NULL AND typequ_domain_code IS NULL AND typequ_domain_label IS NULL AND
+     typequ_subdomain_code IS NULL AND typequ_subdomain_label IS NULL AND typequ_gamme_status IS NULL AND typequ_source_order IS NULL AND typequ_gamme IS NULL)
+    OR
+    (typequ_hierarchy_label IS NOT NULL AND typequ_description IS NOT NULL AND typequ_domain_code IS NOT NULL AND typequ_domain_label IS NOT NULL AND
+     typequ_subdomain_code IS NOT NULL AND typequ_subdomain_label IS NOT NULL AND typequ_gamme_status IS NOT NULL AND typequ_source_order IS NOT NULL AND
+     ((typequ_gamme_status='absent' AND typequ_gamme IS NULL) OR
+      (typequ_gamme_status='hors_gamme' AND typequ_gamme IS NOT NULL AND typequ_gamme='Hors Gamme') OR
+      (typequ_gamme_status='classified' AND typequ_gamme IS NOT NULL AND typequ_gamme<>'Hors Gamme'))), FALSE)),
   identity jsonb NOT NULL, n_addresses bigint NOT NULL CHECK(n_addresses>=0),
   n_observed bigint NOT NULL CHECK(n_observed>=0 AND n_observed<=n_addresses),
   coverage_status text NOT NULL, measures jsonb NOT NULL,

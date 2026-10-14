@@ -40,8 +40,46 @@ def test_aedar_migration_updates_markers_and_grants_database_roles():
     for field in ("typequ_hierarchy_label","typequ_description","typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
                   "typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order"):
         assert field in metadata_migration and field in fresh
-    assert "typequ_gamme_status='hors_gamme' AND typequ_gamme='Hors Gamme'" in metadata_migration
+    assert "typequ_gamme_status='hors_gamme' AND typequ_gamme IS NOT NULL AND typequ_gamme='Hors Gamme'" in metadata_migration
     assert "typequ_gamme_status='absent' AND typequ_gamme IS NULL" in metadata_migration
+
+
+def test_aedar_metadata_complete_check_fails_closed_for_partial_gamme_states():
+    import re
+    import sqlite3
+    from pathlib import Path
+
+    root = Path(__file__).resolve().parents[2]
+    migration = (root / "api/migrations/031_aedar_typequ_metadata.sql").read_text(encoding="utf-8")
+    fresh = (root / "api/schema.sql").read_text(encoding="utf-8")
+    pattern = r"aedar_typequ_metadata_complete_check\s+CHECK\s*\(COALESCE\((.*?),\s*FALSE\)\)"
+
+    def expression(sql):
+        match = re.search(pattern, sql, flags=re.IGNORECASE | re.DOTALL)
+        assert match, "complete metadata constraint must COALESCE unknown to FALSE"
+        return match.group(1)
+
+    migration_check = expression(migration)
+    fresh_check = expression(fresh)
+    assert "".join(migration_check.split()).lower() == "".join(fresh_check.split()).lower()
+    assert "typequ_gammeisnotnull" in "".join(migration_check.split()).lower()
+
+    # SQLite shares PostgreSQL's relevant CHECK rule: NULL passes unless the
+    # expression explicitly collapses UNKNOWN to FALSE. This is a hermetic
+    # truth-table test of the exact constraint expression used by both schemas.
+    columns = ("typequ_hierarchy_label", "typequ_description", "typequ_domain_code", "typequ_domain_label",
+               "typequ_subdomain_code", "typequ_subdomain_label", "typequ_gamme_status", "typequ_source_order", "typequ_gamme")
+    connection = sqlite3.connect(":memory:")
+    connection.execute(f"CREATE TABLE metadata ({', '.join(columns)}, CHECK ({migration_check}))")
+    names = ",".join(columns)
+    placeholders = ",".join("?" for _ in columns)
+    connection.execute(f"INSERT INTO metadata ({names}) VALUES ({placeholders})", (None,) * len(columns))
+    absent = ("label", "description", "D", "Domain", "S", "Subdomain", "absent", 1, None)
+    connection.execute(f"INSERT INTO metadata ({names}) VALUES ({placeholders})", absent)
+    hors_gamme_null = ("label", "description", "D", "Domain", "S", "Subdomain", "hors_gamme", 1, None)
+    import pytest
+    with pytest.raises(sqlite3.IntegrityError):
+        connection.execute(f"INSERT INTO metadata ({names}) VALUES ({placeholders})", hors_gamme_null)
 
 
 def test_aedar_typed_response_rejects_incomplete_measure_maps():
