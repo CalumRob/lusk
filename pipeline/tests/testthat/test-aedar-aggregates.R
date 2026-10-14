@@ -167,36 +167,48 @@ test_that("AEDAR density projection covers all 235 TYPEQU and all 312 measure re
 })
 
 test_that("AEDAR fixed ranks use eligible peers, competition ties, and higher-is-better", {
-  measures<-AEDAR_AGGREGATE_MEASURES; ids<-c(as.character(1:4),"E1","E2","22","53")
+  measures<-AEDAR_AGGREGATE_MEASURES; axis<-read_aedar_typequ_registry()$TYPEQU
+  ids<-c(as.character(1:4),"E1","E2","22","53")
   types<-c(rep("commune",4),"epci","epci","departement","region")
-  facts<-as.data.frame(matrix(0,nrow=length(ids),ncol=length(measures),dimnames=list(NULL,measures)))
-  facts$territory_id<-ids; facts$territory_type<-types; facts$TYPEQU<-"A104"
-  facts$n_addresses<-1; facts$n_observed<-1; facts$coverage_status<-"covered"
-  facts$count_5_walk_mean[1:4]<-c(9,9,5,NA_real_); facts$count_5_walk_mean[5:6]<-c(8,4)
+  facts<-as.data.frame(matrix(0,nrow=length(ids)*length(axis),ncol=length(measures),dimnames=list(NULL,measures)))
+  facts$territory_id<-rep(ids,each=length(axis)); facts$territory_type<-rep(types,each=length(axis))
+  facts$TYPEQU<-rep(axis,times=length(ids)); facts$n_addresses<-1; facts$n_observed<-1; facts$coverage_status<-"covered"
+  special<-facts$TYPEQU=="A104"
+  facts$count_5_walk_mean[special&facts$territory_id%in%as.character(1:4)]<-c(9,9,5,NA_real_)
+  facts$count_5_walk_mean[special&facts$territory_id=="E1"]<-8
+  facts$count_5_walk_mean[special&facts$territory_id=="E2"]<-4
   refs <- data.frame(territory_type=types, territory_id=ids,
     epci_id=c("E1","E1","E2","E2",NA,NA,NA,NA),
     density_class_code=c("1","1","1","1",NA,NA,NA,NA), stringsAsFactors=FALSE)
-  density<-as.data.frame(matrix(7,nrow=1,ncol=length(measures),dimnames=list(NULL,measures)))
-  density$territory_id<-"1"; density$TYPEQU<-"A104"; density$n_addresses<-12; density$n_observed<-9; density$coverage_status<-"covered"
+  density<-as.data.frame(matrix(7,nrow=length(axis),ncol=length(measures),dimnames=list(NULL,measures)))
+  density$territory_id<-"1"; density$TYPEQU<-axis; density$n_addresses<-12; density$n_observed<-9; density$coverage_status<-"covered"
   result <- project_aedar_fixed_comparisons(facts, refs, "aedar-v1", "ref-v1",density)
-  peer <- subset(result$territories, comparison_context=="epci" & group_id=="E1" & measure=="count_5_walk_mean")
+  expect_equal(nrow(result$groups),6L*length(axis)*length(measures))
+  expect_equal(nrow(result$territories),15L*length(axis)*length(measures))
+  peer <- subset(result$territories, comparison_context=="epci" & group_id=="E1" & TYPEQU=="A104" & measure=="count_5_walk_mean")
   expect_equal(peer$rank, c(1L,1L))
   expect_equal(peer$rank_size, c(2L,2L))
-  density_ranks<-subset(result$territories,comparison_context=="density_class"&measure=="count_5_walk_mean"&territory_id%in%c("1","2","3"))
+  density_ranks<-subset(result$territories,comparison_context=="density_class"&TYPEQU=="A104"&measure=="count_5_walk_mean"&territory_id%in%c("1","2","3"))
   expect_equal(density_ranks$rank,c(1L,1L,3L))
   expect_true(all(density_ranks$rank_size==3L))
-  same_level_ranks<-subset(result$territories,comparison_context=="same_level"&territory_type=="epci"&measure=="count_5_walk_mean")
+  same_level_ranks<-subset(result$territories,comparison_context=="same_level"&territory_type=="epci"&TYPEQU=="A104"&measure=="count_5_walk_mean")
   expect_equal(same_level_ranks$rank,c(1L,2L))
   expect_equal(same_level_ranks$rank_size,c(2L,2L))
-  expect_equal(subset(result$groups,comparison_context=="epci"&group_id=="E1"&measure=="count_5_walk_mean")$value,8)
-  expect_equal(subset(result$groups,comparison_context=="same_level"&territory_type=="epci"&measure=="count_5_walk_mean")$value,6)
-  expect_equal(subset(result$groups,comparison_context=="density_class"&measure=="count_5_walk_mean")$value,7)
-  expect_equal(subset(result$groups,comparison_context=="bretagne"&measure=="count_5_walk_mean")$value,0)
+  expect_equal(subset(result$groups,comparison_context=="epci"&group_id=="E1"&TYPEQU=="A104"&measure=="count_5_walk_mean")$value,8)
+  expect_equal(subset(result$groups,comparison_context=="same_level"&territory_type=="epci"&TYPEQU=="A104"&measure=="count_5_walk_mean")$value,6)
+  expect_equal(subset(result$groups,comparison_context=="density_class"&TYPEQU=="A104"&measure=="count_5_walk_mean")$value,7)
+  expect_equal(subset(result$groups,comparison_context=="bretagne"&TYPEQU=="A104"&measure=="count_5_walk_mean")$value,0)
   expect_false("rank_ties" %in% names(result$territories))
   expect_true(all(c("density_class","epci","bretagne","same_level") %in% result$groups$comparison_context))
   expect_setequal(unique(result$groups$territory_type[result$groups$comparison_context=="same_level"]),c("epci","departement"))
   expect_setequal(unique(result$groups$measure),AEDAR_AGGREGATE_MEASURES)
   expect_true(validate_aedar_comparison_membership(result,refs))
+  missing_typequ<-subset(result$groups,TYPEQU!=axis[[1L]])
+  expect_error(validate_aedar_comparison_projection(within(result,groups<-missing_typequ)),"full TYPEQU")
+  missing_territory_typequ<-result
+  missing_territory_typequ$territories<-missing_territory_typequ$territories[
+    missing_territory_typequ$territories$TYPEQU!=axis[[1L]],,drop=FALSE]
+  expect_error(validate_aedar_comparison_projection(missing_territory_typequ),"full TYPEQU")
   stale_refs<-refs; stale_refs$density_class_code[stale_refs$territory_id=="1"]<-"changed"
   expect_error(validate_aedar_comparison_membership(result,stale_refs),"contexts/groups differ")
   dir<-tempfile("aedar-comparison-roundtrip-")

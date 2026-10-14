@@ -606,6 +606,20 @@ project_aedar_density_comparisons <- function(address_origins, address_facts,
 # Project the declared fixed AEDAR scopes from published aggregate facts. The
 # density-class reference is supplied by the address-grain projection above;
 # commune ranks always use the commune's own published aggregate.
+aedar_comparison_content_version <- function(groups,territories) {
+  groups<-as.data.frame(groups,stringsAsFactors=FALSE); territories<-as.data.frame(territories,stringsAsFactors=FALSE)
+  group_numeric<-c("value","n_addresses","n_observed")
+  group_integer<-c("member_count","eligible_count","missing_count")
+  territory_numeric<-c("value","n_addresses","n_observed")
+  territory_integer<-c("rank","rank_size")
+  for(column in group_numeric) groups[[column]]<-as.numeric(groups[[column]])
+  for(column in group_integer) groups[[column]]<-as.integer(groups[[column]])
+  for(column in territory_numeric) territories[[column]]<-as.numeric(territories[[column]])
+  for(column in territory_integer) territories[[column]]<-as.integer(territories[[column]])
+  rownames(groups)<-NULL; rownames(territories)<-NULL
+  paste(as.character(openssl::sha256(serialize(list(groups,territories),NULL))),collapse="")
+}
+
 project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference,
     aedar_content_version, reference_content_version, density_group_facts,
     input_content_version=NULL,input_hashes=c(synthetic="fixture")) {
@@ -619,6 +633,7 @@ project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference
     stop("Invalid AEDAR fixed comparison inputs",call.=FALSE)
   measures <- intersect(AEDAR_AGGREGATE_MEASURES,names(aggregate_facts))
   if (length(measures)!=312L) stop("AEDAR comparisons require the exact 312 published measures",call.=FALSE)
+  typequ_axis<-read_aedar_typequ_registry()$TYPEQU
   refs <- territory_reference
   refs$territory_id <- as.character(refs$territory_id)
   comm <- refs[refs$territory_type=="commune",,drop=FALSE]
@@ -626,49 +641,57 @@ project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference
   if(length(region)!=1L) stop("AEDAR comparison reference requires one region",call.=FALSE)
   groups <- list(); territory_rows <- list(); ng <- nt <- 0L
   rank_scope <- function(context, group_id, type, ids, statistic_source=NULL) {
+    ids<-as.character(ids)
     rows <- aggregate_facts[aggregate_facts$territory_type==type & aggregate_facts$territory_id %in% ids,,drop=FALSE]
-    if(!setequal(as.character(rows$territory_id),as.character(ids))||anyDuplicated(rows[c("territory_id","TYPEQU")]))
+    expected_pairs<-expand.grid(territory_id=ids,TYPEQU=typequ_axis,stringsAsFactors=FALSE)
+    expected_keys<-paste(expected_pairs$territory_id,expected_pairs$TYPEQU,sep="\r")
+    actual_keys<-paste(as.character(rows$territory_id),as.character(rows$TYPEQU),sep="\r")
+    if(anyDuplicated(rows[c("territory_id","TYPEQU")])||length(actual_keys)!=length(expected_keys)||!setequal(actual_keys,expected_keys))
       stop("AEDAR fixed comparison membership is incompatible with territorial facts",call.=FALSE)
-    rows <- rows[match(ids,rows$territory_id),,drop=FALSE]
-    for (typequ in unique(rows$TYPEQU)) {
+    rows<-rows[match(expected_keys,actual_keys),,drop=FALSE]
+    for (typequ in typequ_axis) {
       axis_rows <- rows[rows$TYPEQU==typequ,,drop=FALSE]
-      for (measure in measures) {
-      values <- axis_rows[[measure]]
-      eligible <- is.finite(values) & !is.na(axis_rows$coverage_status) & axis_rows$coverage_status=="covered"
+      values<-as.matrix(axis_rows[,measures,drop=FALSE]); storage.mode(values)<-"double"
+      eligible<-is.finite(values)&!is.na(axis_rows$coverage_status)&axis_rows$coverage_status=="covered"
       values[!eligible]<-NA_real_
-        group_value <- if(!is.null(statistic_source)) {
-          picked<-statistic_source[statistic_source$TYPEQU==typequ,,drop=FALSE]
-          if(nrow(picked)) as.numeric(picked[[measure]][[1L]]) else NA_real_
-        } else if(context %in% c("epci","bretagne") && type=="commune") {
-          target_type<-if(context=="epci") "epci" else "region"
-          target_id<-if(context=="epci") group_id else region
-          direct<-aggregate_facts[aggregate_facts$territory_type==target_type & aggregate_facts$territory_id==target_id & aggregate_facts$TYPEQU==typequ,,drop=FALSE]
-          if(nrow(direct)) as.numeric(direct[[measure]][[1L]]) else NA_real_
-        } else if(any(eligible)) stats::median(values[eligible]) else NA_real_
-        denominator<-observed<-NA_real_; coverage<-NA_character_
-        if(!is.null(statistic_source)) {
-          picked<-statistic_source[statistic_source$TYPEQU==typequ,,drop=FALSE]
-          if(nrow(picked)) {denominator<-as.numeric(picked$n_addresses[[1L]]);observed<-as.numeric(picked$n_observed[[1L]]);coverage<-as.character(picked$coverage_status[[1L]])}
-        } else if(context %in% c("epci","bretagne") && type=="commune") {
-          target_type<-if(context=="epci") "epci" else "region"; target_id<-if(context=="epci") group_id else region
-          picked<-aggregate_facts[aggregate_facts$territory_type==target_type&aggregate_facts$territory_id==target_id&aggregate_facts$TYPEQU==typequ,,drop=FALSE]
-          if(nrow(picked)){denominator<-as.numeric(picked$n_addresses[[1L]]);observed<-as.numeric(picked$n_observed[[1L]]);coverage<-as.character(picked$coverage_status[[1L]])}
-        }
-        ng <<- ng+1L
-        groups[[ng]] <<- data.frame(comparison_context=context,group_id=group_id,
-          territory_type=type,TYPEQU=typequ,measure=measure,statistic=if(context %in% c("epci","bretagne") && type=="commune") "direct" else "median",
-          value=group_value,n_addresses=denominator,n_observed=observed,coverage_status=coverage,
-          member_count=length(ids),eligible_count=sum(eligible),missing_count=sum(!eligible),stringsAsFactors=FALSE)
-        ranks<-rep(NA_integer_,length(ids)); size<-sum(eligible)
-        if(size) ranks[eligible]<-rank(-values[eligible],ties.method="min")
-        nt <<- nt+1L
-        territory_rows[[nt]] <<- data.frame(comparison_context=context,group_id=group_id,
-          territory_type=type,territory_id=ids,TYPEQU=typequ,measure=measure,
-          value=values,status=ifelse(eligible,"measured","not_available"),
-          n_addresses=as.numeric(axis_rows$n_addresses),n_observed=as.numeric(axis_rows$n_observed),
-          coverage_status=as.character(axis_rows$coverage_status),rank=ranks,
-          rank_size=ifelse(eligible,size,NA_integer_),stringsAsFactors=FALSE)
+      eligible_count<-colSums(eligible); group_value<-rep(NA_real_,length(measures))
+      denominator<-observed<-rep(NA_real_,length(measures)); coverage<-rep(NA_character_,length(measures))
+      statistic<-if(context%in%c("epci","bretagne")&&type=="commune") "direct" else "median"
+      picked<-NULL
+      if(!is.null(statistic_source)) {
+        picked<-statistic_source[statistic_source$TYPEQU==typequ,,drop=FALSE]
+        if(nrow(picked)>1L) stop("AEDAR density comparison has duplicate group/TYPEQU statistics",call.=FALSE)
+      } else if(statistic=="direct") {
+        target_type<-if(context=="epci") "epci" else "region"
+        target_id<-if(context=="epci") group_id else region
+        picked<-aggregate_facts[aggregate_facts$territory_type==target_type&aggregate_facts$territory_id==target_id&aggregate_facts$TYPEQU==typequ,,drop=FALSE]
+        if(nrow(picked)>1L) stop("AEDAR direct reference has duplicate territory/TYPEQU facts",call.=FALSE)
       }
+      if(!is.null(picked)&&nrow(picked)) {
+        group_value<-as.numeric(picked[1L,measures,drop=TRUE])
+        denominator[]<-as.numeric(picked$n_addresses[[1L]])
+        observed[]<-as.numeric(picked$n_observed[[1L]])
+        coverage[]<-as.character(picked$coverage_status[[1L]])
+      } else if(is.null(statistic_source)&&statistic=="median") {
+        for(j in seq_along(measures)) if(eligible_count[[j]]) group_value[[j]]<-stats::median(values[eligible[,j],j])
+      }
+      ranks<-matrix(NA_integer_,nrow=length(ids),ncol=length(measures))
+      for(j in seq_along(measures)) if(eligible_count[[j]]) ranks[eligible[,j],j]<-rank(-values[eligible[,j],j],ties.method="min")
+      rank_sizes<-matrix(rep(eligible_count,each=length(ids)),nrow=length(ids),ncol=length(measures))
+      rank_sizes[!eligible]<-NA_integer_
+      ng<<-ng+1L
+      groups[[ng]]<<-data.frame(comparison_context=context,group_id=group_id,territory_type=type,
+        TYPEQU=typequ,measure=measures,statistic=statistic,value=group_value,n_addresses=denominator,
+        n_observed=observed,coverage_status=coverage,member_count=length(ids),eligible_count=eligible_count,
+        missing_count=length(ids)-eligible_count,stringsAsFactors=FALSE)
+      nt<<-nt+1L
+      territory_rows[[nt]]<<-data.frame(comparison_context=context,group_id=group_id,territory_type=type,
+        territory_id=rep(ids,each=length(measures)),TYPEQU=typequ,measure=rep(measures,times=length(ids)),
+        value=as.vector(t(values)),status=as.vector(t(ifelse(eligible,"measured","not_available"))),
+        n_addresses=rep(as.numeric(axis_rows$n_addresses),each=length(measures)),
+        n_observed=rep(as.numeric(axis_rows$n_observed),each=length(measures)),
+        coverage_status=rep(as.character(axis_rows$coverage_status),each=length(measures)),
+        rank=as.vector(t(ranks)),rank_size=as.vector(t(rank_sizes)),stringsAsFactors=FALSE)
     }
   }
   for(id in sort(unique(comm$density_class_code[!is.na(comm$density_class_code)&nzchar(comm$density_class_code)]))) {
@@ -683,6 +706,7 @@ project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference
     rank_scope("same_level",region,type,sort(refs$territory_id[refs$territory_type==type]))
   group_rows<-dplyr::bind_rows(groups); result_rows<-dplyr::bind_rows(territory_rows)
   group_rows<-as.data.frame(group_rows); result_rows<-as.data.frame(result_rows)
+  rownames(group_rows)<-NULL; rownames(result_rows)<-NULL
   group_rows$aedar_content_version<-aedar_content_version
   group_rows$reference_content_version<-reference_content_version
   result_rows$aedar_content_version<-aedar_content_version
@@ -691,7 +715,7 @@ project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference
   result_rows$input_content_version<-input_content_version
   group_rows$input_identity<-input_identity
   result_rows$input_identity<-input_identity
-  content_version<-paste(as.character(openssl::sha256(serialize(list(group_rows,result_rows),NULL))),collapse="")
+  content_version<-aedar_comparison_content_version(group_rows,result_rows)
   group_rows$content_version<-content_version; result_rows$content_version<-content_version
   list(groups=group_rows,territories=result_rows,aedar_content_version=aedar_content_version,
     reference_content_version=reference_content_version,input_content_version=input_content_version,
@@ -721,8 +745,10 @@ project_aedar_comparison_publication <- function(aggregate_projection,address_or
   }
   density<-project_aedar_density_comparisons(address_origins,address_facts,membership,axis,observed_keys=observed_keys)
   if(is.null(input_hashes)) input_hashes<-c(address_origins="synthetic-input",address_modes="synthetic-input")
-  if(is.null(input_content_version)) input_content_version<-paste(as.character(openssl::sha256(charToRaw(input_identity))),collapse="")
-  if(!identical(input_content_version,paste(as.character(openssl::sha256(charToRaw(input_identity))),collapse="")))
+  input_identity<-as.character(jsonlite::toJSON(as.list(input_hashes),auto_unbox=TRUE))
+  expected_input_version<-paste(as.character(openssl::sha256(charToRaw(input_identity))),collapse="")
+  if(is.null(input_content_version)) input_content_version<-expected_input_version
+  if(!identical(input_content_version,expected_input_version))
     stop("AEDAR comparison input identity hash is inconsistent",call.=FALSE)
   project_aedar_fixed_comparisons(aggregate_projection$facts,territory_reference,
     aedar_content_version,reference_content_version,density,input_content_version,input_hashes)
@@ -746,6 +772,31 @@ validate_aedar_comparison_projection <- function(x) {
     stop("Invalid AEDAR fixed comparison keys or eligibility",call.=FALSE)
   if(!setequal(unique(x$groups$comparison_context),c("density_class","epci","bretagne","same_level")))
     stop("AEDAR fixed comparison projection omits a declared context",call.=FALSE)
+  typequ_axis<-read_aedar_typequ_registry()$TYPEQU
+  if(any(!x$groups$TYPEQU%in%typequ_axis)||any(!x$territories$TYPEQU%in%typequ_axis)||
+     any(!x$groups$measure%in%AEDAR_AGGREGATE_MEASURES)||any(!x$territories$measure%in%AEDAR_AGGREGATE_MEASURES))
+    stop("AEDAR comparison is missing the full TYPEQU × measure domain",call.=FALSE)
+  scope_columns<-c("comparison_context","group_id","territory_type")
+  scope_key<-function(frame) do.call(paste,c(frame[scope_columns],sep="\r"))
+  expected_cross_product<-length(typequ_axis)*length(AEDAR_AGGREGATE_MEASURES)
+  group_indices<-split(seq_len(nrow(x$groups)),scope_key(x$groups))
+  territory_scope<-scope_key(x$territories)
+  territory_indices<-split(seq_len(nrow(x$territories)),territory_scope)
+  for(key in names(group_indices)) {
+    gi_scope<-group_indices[[key]]
+    if(length(gi_scope)!=expected_cross_product)
+      stop("AEDAR comparison group is missing the full TYPEQU × measure cross product",call.=FALSE)
+    member_count<-unique(x$groups$member_count[gi_scope])
+    if(length(member_count)!=1L) stop("AEDAR comparison group has inconsistent member counts",call.=FALSE)
+    ti_scope<-territory_indices[[key]]
+    if(is.null(ti_scope)) stop("AEDAR comparison territory membership is incomplete",call.=FALSE)
+    members<-unique(as.character(x$territories$territory_id[ti_scope]))
+    if(length(members)!=member_count)
+      stop("AEDAR comparison territory membership is incomplete",call.=FALSE)
+    per_member<-table(as.character(x$territories$territory_id[ti_scope]))
+    if(any(per_member!=expected_cross_product))
+      stop("AEDAR comparison territory is missing the full TYPEQU × measure cross product",call.=FALSE)
+  }
   keys<-c("comparison_context","group_id","territory_type","TYPEQU","measure")
   gi<-match(do.call(paste,c(x$territories[keys],sep="\r")),do.call(paste,c(x$groups[keys],sep="\r")))
   if(anyNA(gi)) stop("AEDAR comparison territory has no group statistic",call.=FALSE)
@@ -760,7 +811,7 @@ validate_aedar_comparison_projection <- function(x) {
   }
   unhashed_groups<-x$groups[setdiff(group_cols,"content_version")]
   unhashed_territories<-x$territories[setdiff(territory_cols,"content_version")]
-  calculated<-paste(as.character(openssl::sha256(serialize(list(unhashed_groups,unhashed_territories),NULL))),collapse="")
+  calculated<-aedar_comparison_content_version(unhashed_groups,unhashed_territories)
   if(!identical(calculated,x$content_version)) stop("AEDAR comparison content version does not match projection",call.=FALSE)
   if(!identical(paste(as.character(openssl::sha256(charToRaw(x$input_identity))),collapse=""),x$input_content_version))
     stop("AEDAR comparison input provenance hash does not match its identity",call.=FALSE)
@@ -861,8 +912,12 @@ publish_aedar_comparisons <- function(x,con) {
     } else {
       DBI::dbExecute(con,"DELETE FROM aedar_comparison_territory")
       DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
-      DBI::dbWriteTable(con,"aedar_comparison_group",x$groups[c("comparison_context","group_id","territory_type","TYPEQU","measure","statistic","value","n_addresses","n_observed","coverage_status","member_count","eligible_count","missing_count")],append=TRUE,row.names=FALSE)
-      DBI::dbWriteTable(con,"aedar_comparison_territory",x$territories[c("comparison_context","group_id","territory_type","territory_id","TYPEQU","measure","value","status","n_addresses","n_observed","coverage_status","rank","rank_size")],append=TRUE,row.names=FALSE)
+      group_data<-x$groups[c("comparison_context","group_id","territory_type","TYPEQU","measure","statistic","value","n_addresses","n_observed","coverage_status","member_count","eligible_count","missing_count")]
+      territory_data<-x$territories[c("comparison_context","group_id","territory_type","territory_id","TYPEQU","measure","value","status","n_addresses","n_observed","coverage_status","rank","rank_size")]
+      names(group_data)[names(group_data)=="TYPEQU"]<-"typequ"
+      names(territory_data)[names(territory_data)=="TYPEQU"]<-"typequ"
+      DBI::dbWriteTable(con,"aedar_comparison_group",group_data,append=TRUE,row.names=FALSE)
+      DBI::dbWriteTable(con,"aedar_comparison_territory",territory_data,append=TRUE,row.names=FALSE)
       DBI::dbExecute(con,"INSERT INTO aedar_comparison_publication(singleton,content_version,source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,input_identity,group_row_count,territory_row_count,published_at) VALUES(true,$1,'2026-v1',$2,$3,$4,$5::jsonb,$6,$7,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,source_snapshot_id=EXCLUDED.source_snapshot_id,aedar_content_version=EXCLUDED.aedar_content_version,reference_content_version=EXCLUDED.reference_content_version,input_content_version=EXCLUDED.input_content_version,input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=EXCLUDED.published_at",
         params=list(x$content_version,x$aedar_content_version,x$reference_content_version,x$input_content_version,
           x$input_identity,nrow(x$groups),nrow(x$territories)))
