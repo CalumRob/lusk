@@ -96,6 +96,37 @@ class NetworkBatchAdmissionTests(unittest.TestCase):
                 read_signed_batch_plan(path, key)
         self.assertEqual(build_parser().parse_args(["--approval", "fixture.json"]).workers, 4)
 
+    def test_network_adapter_accepts_only_the_exact_full_mode_and_profile_shard(self):
+        from network import NetworkAdapter
+        from runner import FullBatchShard
+        admission = self.admission()
+        delegation = delegate_full_batch(admission,
+            [[0, 1], [2, 3], [4, 5], [6, 7]], 4)[0]
+        adapter = NetworkAdapter("unused")
+
+        def binding_for(members):
+            features = []
+            for kind, code, modes in members:
+                for mode in modes:
+                    features.append({"geometry": "fixture", "territory": {"kind": kind, "code": code},
+                        "mode": mode})
+            return Binding("network", MapSet({"network-outputs": features}))
+
+        adapter.preflight_scope(None, binding_for(delegation.members), "full",
+            ("inspection", "inline"), delegation=delegation)
+        missing_mode = ((delegation.members[0][0], delegation.members[0][1], ("car", "walk")),)
+        with self.assertRaisesRegex(ValueError, "mode matrix"):
+            adapter.preflight_scope(None, binding_for(missing_mode), "full",
+                ("inspection", "inline"), delegation=delegation)
+        with self.assertRaisesRegex(ValueError, "both canonical profiles"):
+            adapter.preflight_scope(None, binding_for(delegation.members), "full",
+                ("inspection",), delegation=delegation)
+        extra = delegation.members + (("commune", "unexpected", ("car", "walk", "bike")),)
+        with self.assertRaisesRegex(ValueError, "mode matrix"):
+            adapter.preflight_scope(None, binding_for(extra), "full",
+                ("inspection", "inline"), delegation=delegation)
+        self.assertIsInstance(delegation, FullBatchShard)
+
 
 if __name__ == "__main__":
     unittest.main()
