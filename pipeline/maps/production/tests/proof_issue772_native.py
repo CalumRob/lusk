@@ -7,12 +7,18 @@ import sys
 
 PRODUCTION = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(PRODUCTION))
+BASELINE_PRODUCTION = os.environ.get("LUSK_ISSUE772_BASELINE_PRODUCTION")
+if BASELINE_PRODUCTION:
+    sys.path.insert(0, str(Path(BASELINE_PRODUCTION).resolve()))
+RUN_LABEL = os.environ.get("LUSK_ISSUE772_NATIVE_LABEL", "head")
 
 ROOT = PRODUCTION.parents[2]
 TERRITORY = ("commune", "35060")
 RAW = ROOT / "pipeline/data/raw"
 FACTS_PATH = ROOT / "pipeline/data/processed/aedar/maps/bretagne-frame/address-access-metrics.parquet"
-OWNED = PRODUCTION / "output/issue772-native"
+TERRITORY_REGISTRY = ROOT / "public/data/territoires.json"
+OWNED = PRODUCTION / "output" / ("issue772-native" if RUN_LABEL == "head"
+                                   else f"issue772-native-{RUN_LABEL}")
 CONTEXTS = PRODUCTION / "output/parity-inputs"
 
 
@@ -42,7 +48,7 @@ def main():
         OWNED.mkdir(parents=True, exist_ok=True)
         # Source-derived complete territory/mode facts; only the exact reviewed
         # territory/mode is handed to the bounded renderer.
-        full_network = build_full_map_set(RAW)
+        full_network = build_full_map_set(RAW, territory_registry_path=TERRITORY_REGISTRY)
         network_rows = [f for rows in full_network.map_set.layers.values() for f in rows
                         if (f["territory"]["kind"], f["territory"]["code"]) == TERRITORY]
         if {f["mode"] for f in network_rows} != {"car", "walk", "bike"}:
@@ -57,7 +63,8 @@ def main():
         from aedar_map_plan import build_aedar_static_map_set, binding_for, selected_aedar_recipe
         from aedar_static import AddressFacts, AedarStaticAdapter
         afacts = AddressFacts(FACTS_PATH, OWNED / "aedar-cache")
-        full_aedar, _summary = build_aedar_static_map_set(RAW, FACTS_PATH, facts=afacts)
+        full_aedar, _summary = build_aedar_static_map_set(RAW, FACTS_PATH, facts=afacts,
+            territory_registry_path=TERRITORY_REGISTRY)
         all_bases = [f for rows in full_aedar.map_set.layers.values() for f in rows if f["mode"] == "car"]
         bases = [f for f in all_bases if (f["territory"]["kind"], f["territory"]["code"]) == TERRITORY]
         if len(bases) != 1:
