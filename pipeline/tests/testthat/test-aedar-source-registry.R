@@ -117,41 +117,75 @@ test_that("AEDAR TYPEQU metadata joins individual codes and preserves explicit n
   expect_error(validate_aedar_typequ_metadata(registry,hierarchy,bad),"label")
 })
 
-test_that("official-format hierarchy and individual TYPEQU workbook parse in source order", {
-  registry <- read_aedar_typequ_registry()
-  i <- seq_len(nrow(registry))
-  html <- c('<table><thead><tr><th>Code</th><th>Libellé</th><th>Description</th></tr></thead><tbody>')
-  domain_codes <- paste0("D",1:7)
-  subdomain_codes <- paste0("S",1:27)
-  for (domain in seq_len(7)) {
-    html <- c(html,sprintf('<tr><td indentlevel="1">%s</td><td>Domain %d</td><td>Family</td></tr>',domain_codes[domain],domain))
-    subdomains <- which(((seq_len(27)-1L) %% 7L)+1L==domain)
-    for (subdomain in subdomains) {
-      html <- c(html,sprintf('<tr><td indentlevel="2">%s</td><td>Subdomain %d</td><td>Group</td></tr>',subdomain_codes[subdomain],subdomain))
-      entries <- which(((i-1L) %% 27L)+1L==subdomain)
-      for (entry in entries) html <- c(html,sprintf('<tr><td indentlevel="3">%s</td><td>%s</td><td>Description %d</td></tr>',registry$TYPEQU[entry],registry$LIB_TYPEQU[entry],entry))
-    }
+test_that("AEDAR TYPEQU metadata cache and downloads enforce pinned SHA-256 identities", {
+  bytes <- charToRaw("typequ metadata pinned bytes")
+  hash <- paste(as.character(openssl::sha256(bytes)),collapse="")
+  expect_match(AEDAR_TYPEQU_METADATA_RESOURCES$sha256[[1]],"^[0-9a-f]{64}$")
+  expect_match(AEDAR_TYPEQU_METADATA_RESOURCES$sha256[[2]],"^[0-9a-f]{64}$")
+  expect_identical(AEDAR_TYPEQU_METADATA_RESOURCES$sha256,c(
+    "63c3f4708f2098b647ed54f8394ec4924515a5dc10ecb97d92d66fb0402f31c9",
+    "c804a56f7aa43984da80809ad4a028a70f87fe996495b1abeec327dd8c87980e"))
+  path <- tempfile(fileext=".html")
+  writeBin(bytes,path)
+  expect_invisible(verify_aedar_typequ_metadata_hash(path,hash,"fixture"))
+  expect_error(verify_aedar_typequ_metadata_hash(path,paste0("0",substr(hash,2,64)),"fixture"),
+    "SHA-256 mismatch")
+
+  resources <- data.frame(url="https://example.invalid/typequ.html",filename="typequ.html",
+    sha256=hash,stringsAsFactors=FALSE)
+  raw_dir <- tempfile("aedar-metadata-download-")
+  on.exit(unlink(raw_dir,recursive=TRUE),add=TRUE)
+  calls <- 0L
+  downloader <- function(url,destfile,mode,quiet) {
+    calls <<- calls+1L
+    writeBin(bytes,destfile)
+    0L
   }
-  html <- c(html,"</tbody></table>")
-  hierarchy_path <- tempfile(fileext=".html")
-  writeLines(html,hierarchy_path,useBytes=TRUE)
+  installed <- download_aedar_typequ_metadata(raw_dir,downloader,resources)
+  expect_equal(readBin(installed[[1]],"raw",n=100),bytes)
+  expect_equal(download_aedar_typequ_metadata(raw_dir,downloader,resources),installed)
+  expect_equal(calls,1L)
+
+  bad_cache <- tempfile("aedar-metadata-bad-cache-")
+  dir.create(bad_cache)
+  writeBin(charToRaw("corrupt cache"),file.path(bad_cache,"typequ.html"))
+  expect_error(download_aedar_typequ_metadata(bad_cache,
+    function(...) stop("must not replace a corrupt cached source"),resources),"SHA-256 mismatch")
+  expect_equal(readBin(file.path(bad_cache,"typequ.html"),"raw",n=100),charToRaw("corrupt cache"))
+
+  bad_download <- tempfile("aedar-metadata-bad-download-")
+  expect_error(download_aedar_typequ_metadata(bad_download,
+    function(url,destfile,mode,quiet) { writeBin(charToRaw("wrong download"),destfile); 0L },resources),
+    "SHA-256 mismatch")
+  expect_false(file.exists(file.path(bad_download,"typequ.html")))
+  expect_length(list.files(bad_download,all.files=FALSE),0L)
+})
+
+test_that("source-faithful hierarchy fixture and individual TYPEQU workbook parse completely", {
+  registry <- read_aedar_typequ_registry()
+  hierarchy_path <- testthat::test_path("fixtures","aedar-typequ-hierarchy-2025.html")
   workbook <- testthat::test_path("fixtures","aedar-typequ-gamme-2025.xlsx")
   sources <- read_aedar_typequ_metadata_sources(hierarchy_path,workbook)
+  expected <- readr::read_csv(testthat::test_path("fixtures","aedar-typequ-hierarchy-2025.csv"),
+    col_types=readr::cols(.default=readr::col_character()),trim_ws=FALSE,show_col_types=FALSE)
   expect_equal(nrow(sources$hierarchy),235L)
   expect_equal(length(unique(sources$hierarchy$domain_code)),7L)
   expect_equal(length(unique(paste(sources$hierarchy$domain_code,sources$hierarchy$subdomain_code))),27L)
-  expect_setequal(sources$hierarchy$TYPEQU,registry$TYPEQU)
-  expect_equal(normalize_aedar_typequ_label_for_validation(
-    sources$hierarchy$label[match(registry$TYPEQU,sources$hierarchy$TYPEQU)]),
-    normalize_aedar_typequ_label_for_validation(registry$LIB_TYPEQU))
+  fields <- c("TYPEQU","label","domain_code","domain_label","subdomain_code","subdomain_label","source_order")
+  expected$label <- expected$LIB_TYPEQU
+  expected$source_order <- as.integer(expected$source_order)
+  expect_equal(as.data.frame(sources$hierarchy[fields]),as.data.frame(expected[fields]))
+  expect_equal(sources$hierarchy$TYPEQU,registry$TYPEQU[match(sources$hierarchy$TYPEQU,registry$TYPEQU)])
   expect_equal(sources$hierarchy$source_order,seq_len(235L))
-  expect_true(all(sources$hierarchy$domain_label==paste("Domain",sub("^D","",sources$hierarchy$domain_code))))
-  expect_true(all(sources$hierarchy$subdomain_label==paste("Subdomain",sub("^S","",sources$hierarchy$subdomain_code))))
   # Workbook regroupement codes intentionally repeat; individual TYPEQU are unique.
   expect_true(anyDuplicated(sources$gamme$TYPEQU_REGROUPEMENT)>0L)
   expect_equal(sources$gamme$TYPEQU,registry$TYPEQU)
   result <- validate_aedar_typequ_metadata(registry,sources$hierarchy,sources$gamme)
   expect_equal(result$source_order,seq_len(235L))
+  expect_identical(result$LIB_TYPEQU,sources$hierarchy$label)
+  c401 <- match("C401",result$TYPEQU)
+  expect_match(result$LIB_TYPEQU[c401],"GRANDES\\nÉCOLES")
+  expect_identical(result$LIB_TYPEQU[c401],expected$LIB_TYPEQU[match("C401",expected$TYPEQU)])
   expect_equal(result$GAMME[match(sources$gamme$TYPEQU,result$TYPEQU)],sources$gamme$GAMME)
   source_examples <- sources$gamme$TYPEQU[1:3]
   expect_equal(result$gamme_status[match(source_examples,result$TYPEQU)],c("classified","hors_gamme","absent"))

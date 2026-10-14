@@ -96,8 +96,10 @@ test_that("canonical Parquet round trip keeps source columns, null/zero and prov
   inputs <- make_aedar_test_inputs()
   metadata <- make_aedar_test_typequ_metadata()
   a135 <- match("A135",metadata$TYPEQU); d710 <- match("D710",metadata$TYPEQU)
+  c401 <- match("C401",metadata$TYPEQU)
   metadata$LIB_TYPEQU[a135] <- gsub("'","’",metadata$LIB_TYPEQU[a135],fixed=TRUE)
   metadata$LIB_TYPEQU[d710] <- trimws(metadata$LIB_TYPEQU[d710])
+  metadata$LIB_TYPEQU[c401] <- "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES"
   original<-project_aedar_aggregates(inputs,metadata); path<-tempfile("aedar-canonical-")
   write_aedar_canonical(original,path)
   restored<-read_aedar_canonical(path)
@@ -108,6 +110,7 @@ test_that("canonical Parquet round trip keeps source columns, null/zero and prov
   expect_equal(restored$typequ_metadata$gamme_status,original$typequ_metadata$gamme_status)
   expect_identical(restored$typequ_metadata$GAMME[2],"Hors Gamme")
   expect_identical(restored$typequ_metadata$LIB_TYPEQU[a135],"COUR D’ASSISES")
+  expect_identical(restored$typequ_metadata$LIB_TYPEQU[c401],metadata$LIB_TYPEQU[c401])
   expect_equal(restored$source$attribution,"© OpenStreetMap contributors; données AEDAR — licence ODbL")
 })
 
@@ -123,6 +126,14 @@ test_that("canonical aggregate labels compare with approved normalization but re
   bad <- metadata
   bad$LIB_TYPEQU[a135] <- "COUR D’ASSISES MODIFIÉE"
   expect_error(project_aedar_aggregates(inputs,bad),"canonical registry")
+})
+
+test_that("published TYPEQU validator and aggregate projection accept the full 235-row metadata axis", {
+  metadata <- make_aedar_test_typequ_metadata()
+  expect_equal(nrow(validate_aedar_published_typequ_metadata(metadata)),235L)
+  projection <- project_aedar_aggregates(make_aedar_test_inputs(),metadata)
+  expect_equal(nrow(projection$typequ_metadata),235L)
+  expect_equal(nrow(projection$facts),4L*235L)
 })
 
 test_that("AEDAR operator publish reads the validated canonical Parquets", {

@@ -18,9 +18,30 @@ AEDAR_TYPEQU_REGISTRY_SHA256 <- "97e7b10f4cae822d765e594ac74daa54062cd03f52f84c8
 AEDAR_TYPEQU_HIERARCHY_URL <- "https://www.insee.fr/fr/metadonnees/source/fichier/BPE25_liste_hierarchisee_TYPEQU.html"
 AEDAR_TYPEQU_GAMME_URL <- "https://www.insee.fr/fr/statistiques/fichier/8217535/BPE_gammes_equipements_2025.xlsx"
 AEDAR_TYPEQU_GAMME_SHEET <- "Gammes 2025 1 ligne 1 Typequ"
+# SHA-256 pins for the owner-identified raw copies. Both matched their official
+# INSEE URLs byte-for-byte on 2026-10-14 before being pinned here.
+AEDAR_TYPEQU_METADATA_RESOURCES <- data.frame(
+  url=c(AEDAR_TYPEQU_HIERARCHY_URL,AEDAR_TYPEQU_GAMME_URL),
+  filename=c("BPE25_liste_hierarchisee_TYPEQU.html","BPE_gammes_equipements_2025.xlsx"),
+  sha256=c("63c3f4708f2098b647ed54f8394ec4924515a5dc10ecb97d92d66fb0402f31c9",
+    "c804a56f7aa43984da80809ad4a028a70f87fe996495b1abeec327dd8c87980e"),
+  stringsAsFactors=FALSE)
+
+verify_aedar_typequ_metadata_hash <- function(path, expected, source_name=basename(path)) {
+  if (!file.exists(path) || is.na(file.info(path)$size) || file.info(path)$size<1L)
+    stop(paste("AEDAR metadata source is missing or empty:",source_name),call.=FALSE)
+  bytes <- readBin(path,"raw",n=file.info(path)$size)
+  actual <- paste(as.character(openssl::sha256(bytes)),collapse="")
+  if (!identical(tolower(actual),tolower(expected)))
+    stop(paste("Pinned AEDAR metadata SHA-256 mismatch:",source_name),call.=FALSE)
+  invisible(TRUE)
+}
 
 normalize_aedar_typequ_label_for_validation <- function(value) {
   value <- trimws(as.character(value))
+  # The official C401 hierarchy label is line-wrapped inside its HTML cell;
+  # compare that embedded line break as a single separating space only.
+  value <- gsub("\r\n|\r|\n"," ",value,perl=TRUE)
   gsub("'","’",value,fixed=TRUE)
 }
 
@@ -77,11 +98,13 @@ read_aedar_typequ_metadata_sources <- function(hierarchy_path, gamme_path) {
   tr <- gregexpr("(?s)<tr\\b[^>]*>.*?</tr>",html,perl=TRUE,ignore.case=TRUE)
   rows <- regmatches(html,tr)[[1L]]
   text_cell <- function(x) {
-    x <- gsub("<[^>]*>"," ",x,perl=TRUE)
-    x <- gsub("&nbsp;"," ",x,fixed=TRUE)
+    x <- gsub("<[^>]*>","",x,perl=TRUE)
+    x <- gsub("&nbsp;","\u00a0",x,fixed=TRUE)
     x <- gsub("&amp;","&",x,fixed=TRUE)
     x <- gsub("&quot;","\"",x,fixed=TRUE)
     x <- gsub("&#39;|&apos;","'",x,perl=TRUE)
+    x <- gsub("&lt;","<",x,fixed=TRUE)
+    x <- gsub("&gt;",">",x,fixed=TRUE)
     numeric <- gregexpr("&#(x[[:xdigit:]]+|[0-9]+);",x,perl=TRUE)
     tokens <- regmatches(x,numeric)[[1L]]
     for (token in tokens) {
@@ -89,7 +112,7 @@ read_aedar_typequ_metadata_sources <- function(hierarchy_path, gamme_path) {
       value <- if(startsWith(codepoint,"x")) strtoi(sub("^x","",codepoint),16L) else as.integer(codepoint)
       if(!is.na(value)) x <- sub(token,intToUtf8(value),x,fixed=TRUE)
     }
-    trimws(gsub("[[:space:]]+"," ",x,perl=TRUE))
+    x
   }
   current_domain_code <- current_domain_label <- current_subdomain_code <- current_subdomain_label <- NA_character_
   records <- vector("list",length(rows)); n <- 0L
@@ -101,7 +124,7 @@ read_aedar_typequ_metadata_sources <- function(hierarchy_path, gamme_path) {
     level <- as.integer(sub(".*indentlevel=['\"]?([0-9]+)['\"]?.*","\\1",attributes,perl=TRUE))
     if(is.na(level)) next
     cell_value <- function(cell) text_cell(sub("(?s)^<td[^>]*>(.*)</td>$","\\1",cell,perl=TRUE,ignore.case=TRUE))
-    code <- cell_value(cells[[1L]]); label <- cell_value(cells[[2L]])
+    code <- trimws(cell_value(cells[[1L]])); label <- cell_value(cells[[2L]])
     description <- cell_value(cells[[3L]])
     if (level==1L) { current_domain_code <- code; current_domain_label <- label }
     if (level==2L) { current_subdomain_code <- code; current_subdomain_label <- label }
@@ -142,8 +165,10 @@ validate_aedar_published_typequ_metadata <- function(metadata) {
   if (anyNA(metadata$LIB_TYPEQU) || any(normalize_aedar_typequ_label_for_validation(metadata$LIB_TYPEQU)!=
       normalize_aedar_typequ_label_for_validation(expected)))
     stop("AEDAR publication TYPEQU label differs from the canonical registry",call.=FALSE)
-  if (anyNA(metadata[c("domain_code","domain_label","subdomain_code","subdomain_label","gamme_status")]) ||
-      any(!nzchar(trimws(metadata[c("LIB_TYPEQU","domain_code","domain_label","subdomain_code","subdomain_label")]))) ||
+  required_text <- c("LIB_TYPEQU","domain_code","domain_label","subdomain_code","subdomain_label","gamme_status")
+  empty_text <- vapply(metadata[required_text],function(column)
+    is.na(column) | !nzchar(trimws(as.character(column))),logical(nrow(metadata)))
+  if (any(empty_text) ||
       any(!metadata$gamme_status %in% c("classified","hors_gamme","absent")) ||
       any((metadata$gamme_status=="absent") != is.na(metadata$GAMME)) ||
       any((metadata$gamme_status=="hors_gamme") != (!is.na(metadata$GAMME) & trimws(metadata$GAMME)=="Hors Gamme")))
@@ -158,17 +183,23 @@ validate_aedar_published_typequ_metadata <- function(metadata) {
   metadata
 }
 
-download_aedar_typequ_metadata <- function(raw_dir=file.path("data","raw"),download=utils::download.file) {
+download_aedar_typequ_metadata <- function(raw_dir=file.path("data","raw"),download=utils::download.file,
+                                           resources=AEDAR_TYPEQU_METADATA_RESOURCES) {
   dir.create(raw_dir,recursive=TRUE,showWarnings=FALSE)
-  resources <- data.frame(url=c(AEDAR_TYPEQU_HIERARCHY_URL,AEDAR_TYPEQU_GAMME_URL),
-    filename=c("BPE25_liste_hierarchisee_TYPEQU.html","BPE_gammes_equipements_2025.xlsx"),
-    stringsAsFactors=FALSE)
+  required <- c("url","filename","sha256")
+  if (!is.data.frame(resources) || !all(required %in% names(resources)) || anyNA(resources[required]) ||
+      any(!grepl("^[0-9a-fA-F]{64}$",resources$sha256)) || anyDuplicated(resources$filename))
+    stop("AEDAR metadata source registry is malformed",call.=FALSE)
   paths <- file.path(raw_dir,resources$filename)
-  for(i in seq_along(paths)) if(!file.exists(paths[[i]])) {
+  for(i in seq_along(paths)) {
+    if(file.exists(paths[[i]])) {
+      verify_aedar_typequ_metadata_hash(paths[[i]],resources$sha256[[i]],resources$filename[[i]])
+      next
+    }
     temp <- paste0(paths[[i]],".part")
     on.exit(unlink(temp),add=TRUE)
     download(resources$url[[i]],temp,mode="wb",quiet=TRUE)
-    if(!file.exists(temp) || file.info(temp)$size<1L) stop("Downloaded AEDAR metadata source is empty",call.=FALSE)
+    verify_aedar_typequ_metadata_hash(temp,resources$sha256[[i]],resources$filename[[i]])
     if(!file.rename(temp,paths[[i]])) stop("Could not atomically install AEDAR metadata source",call.=FALSE)
   }
   stats::setNames(paths,resources$filename)

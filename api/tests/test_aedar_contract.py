@@ -74,7 +74,8 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
                         "reference_date", "publication_date")]
         def fetchone(self): return ("aedar-v1", 1, "ref-v1", "ref-v1")
         def fetchall(self):
-            return [("id", "commune", "A135", "COUR D'ASSISES","COUR D’ASSISES", "A","Services","A1","Publics",
+            return [("id", "commune", "C401", "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES ÉCOLES",
+                     "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES", "C","Services","C4","Publics",
                      "Hors Gamme","hors_gamme",1,{"code_insee": "id"},
                      10, 8, "covered", {key: (0 if key == "count_5_walk_share" else None)
                        for key in main._AEDAR_MEASURE_KEYS}, "aedar_bretagne",
@@ -93,16 +94,16 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
     monkeypatch.setattr(main, "pool", lambda: FakePool())
     client = TestClient(main.app)
     for level in ("commune", "epci", "departement", "region"):
-        response = client.get(f"/api/aedar/territories/{level}/id/aggregates?limit=1&typequ=A135")
+        response = client.get(f"/api/aedar/territories/{level}/id/aggregates?limit=1&typequ=C401")
         assert response.status_code == 200
         body = response.json()
         assert body["territory"] == {"territory_type": level, "territory_id": "id"}
         assert len(body["facts"]) == 1
         assert body["facts"][0]["licence"] == "ODbL"
         assert body["facts"][0]["measures"]["count_5_walk_share"] == 0
-        assert body["facts"][0]["typequ_domain_code"] == "A"
-        assert body["facts"][0]["typequ_label"] == "COUR D'ASSISES"
-        assert body["facts"][0]["typequ_hierarchy_label"] == "COUR D’ASSISES"
+        assert body["facts"][0]["typequ_domain_code"] == "C"
+        assert body["facts"][0]["typequ_label"] == "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES ÉCOLES"
+        assert body["facts"][0]["typequ_hierarchy_label"] == "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES"
         assert body["facts"][0]["typequ_gamme"] == "Hors Gamme"
         assert body["facts"][0]["typequ_gamme_status"] == "hors_gamme"
         assert body["facts"][0]["typequ_source_order"] == 1
