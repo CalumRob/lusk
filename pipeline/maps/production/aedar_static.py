@@ -100,16 +100,36 @@ class AedarStaticAdapter(AedarCarAdapter):
         self._hex_packs = {}
         self._static_report = []
         self._static_render_identity = None
+        self._car_inspection_refresh = False
 
     def preflight_scope(self, recipe, binding, scope, profiles):
-        if scope != "inspection-refresh" or set(profiles) != {"inspection", "inline"}:
-            raise ValueError("Selected AEDAR generation requires inspection-refresh and both profiles")
+        if scope != "inspection-refresh":
+            raise ValueError("Selected AEDAR generation requires inspection-refresh scope")
+        refresh_layers = {"aedar-static-car-inspection-refresh"}
+        if set(binding.map_set.layers) & refresh_layers and tuple(profiles) != ("inspection",):
+            raise ValueError("AEDAR car inspection refresh requires inspection only")
+        if tuple(profiles) == ("inspection",):
+            from aedar_car_inspection_refresh import select_affected_aedar_car_inspection_binding
+            selected = select_affected_aedar_car_inspection_binding(binding)
+            actual = {(feature["territory"]["kind"], feature["territory"]["code"])
+                      for rows in binding.map_set.layers.values() for feature in rows}
+            selected_actual = {(feature["territory"]["kind"], feature["territory"]["code"])
+                               for rows in selected.map_set.layers.values() for feature in rows}
+            if actual != selected_actual:
+                raise ValueError("AEDAR car inspection refresh may contain only affected territories")
+            if self.expected_territories is None or actual != self.expected_territories:
+                raise ValueError("AEDAR refresh does not match its source-derived territory selection")
+            self._car_inspection_refresh = True
+            return
+        if set(profiles) != {"inspection", "inline"}:
+            raise ValueError("Selected AEDAR generation requires both profiles or car inspection only")
         if len(binding.map_set.layers) != 1:
             raise ValueError("Selected AEDAR binding must have one complete family layer")
         actual = {(feature["territory"]["kind"], feature["territory"]["code"])
                   for rows in binding.map_set.layers.values() for feature in rows}
         if self.expected_territories is None or actual != self.expected_territories:
             raise ValueError("AEDAR shard does not match its source-derived territory selection")
+        self._car_inspection_refresh = False
 
     def preflight(self, recipe, binding):
         features = [feature for rows in binding.map_set.layers.values() for feature in rows]
@@ -128,8 +148,12 @@ class AedarStaticAdapter(AedarCarAdapter):
                     or tuple(feature["palette"]) != PALETTE
                     or (feature["mode"] == "car" and [scale["min"], scale["max"]] != FAMILY_CONFIG["car_bounds"])):
                 raise ValueError("Selected AEDAR feature does not match its typed facts and scale contract")
-        if any(len(modes) != len(FAMILY_CONFIG["modes"]) or set(modes) != set(FAMILY_CONFIG["modes"])
-               for modes in grouped.values()):
+        car_refresh_binding = "aedar-static-car-inspection-refresh" in binding.map_set.layers
+        expected_modes = ({"car"} if self._car_inspection_refresh or car_refresh_binding
+                          else set(FAMILY_CONFIG["modes"]))
+        if any(set(modes) != expected_modes for modes in grouped.values()):
+            if self._car_inspection_refresh or car_refresh_binding:
+                raise ValueError("AEDAR car inspection refresh must contain only the car reading")
             raise ValueError("Every AEDAR territory must contain exactly the five registered readings")
         columns = ["code_insee", "cle_interop_adr", "lon", "lat", *METRIC_FIELDS]
         parquet = pq.ParquetFile(self.facts_path)

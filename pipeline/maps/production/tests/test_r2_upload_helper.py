@@ -28,6 +28,17 @@ class UploadHelperTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "must use its bound QA report"):
                 upload_maps.plan_qa_path(plan, root / "other-approved-qa.json")
 
+    def test_aedar_inspection_refresh_uses_its_run_bound_qa_not_the_full_package_qa(self):
+        with TemporaryDirectory() as directory:
+            qa_path = Path(directory) / "aedar-refresh-qa.json"
+            plan = {"mode": "replace", "family": "aedar", "scope": "inspection-refresh",
+                    "qa_path": str(qa_path)}
+
+            self.assertEqual(upload_maps.plan_qa_path(plan), qa_path.resolve())
+            self.assertEqual(upload_maps.plan_qa_path(plan, qa_path), qa_path.resolve())
+            with self.assertRaisesRegex(ValueError, "bound QA report"):
+                upload_maps.plan_qa_path(plan, Path(directory) / "unrelated.json")
+
     def test_legacy_uploads_keep_their_existing_qa_default_and_override(self):
         with TemporaryDirectory() as directory:
             override = Path(directory) / "full-qa.json"

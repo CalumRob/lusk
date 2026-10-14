@@ -211,6 +211,11 @@ def plan_qa_path(data: dict, override: Path | None = None) -> Path:
             raise ValueError("AEDAR metadata approval is not bound to its source package")
         return declared
     if data.get("family") == "aedar":
+        if data.get("scope") == "inspection-refresh" and data.get("mode") == "replace":
+            declared = Path(data["qa_path"]).resolve()
+            if override is not None and Path(override).resolve() != declared:
+                raise ValueError("AEDAR inspection refresh must use its bound QA report")
+            return declared
         declared = FULL_QA.resolve()
         if override is not None and Path(override).resolve() != declared:
             raise ValueError("AEDAR approval must use the package's bound QA report")

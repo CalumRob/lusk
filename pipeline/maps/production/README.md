@@ -615,3 +615,48 @@ size, and WebP content type. A retry skips an object already matching the new
 hash; missing or conflicting remote objects fail closed. After replacement it
 verifies the new remote size/hash metadata. The helper never discovers or
 widens the selected object set, and this agent does not contact R2.
+
+## Targeted AEDAR car inspection refresh (#731)
+
+`run_aedar_car_inspection_refresh.py` builds the current authoritative full car-diversity
+binding, then selects only territories whose shared inspection frame differs from the
+analytical frame. It renders one 2400×2400 **car-diversity inspection** WebP per affected
+territory. It does not render inline maps or AEDAR loss maps, and does not alter the prior
+full manifest or contact R2. Before rendering, it acquires the exact validated official
+mainland context for the union of the selected inspection frames into the refresh's own
+cache; it does not assume the older car-full cache covers the enlarged frames. Output is
+isolated at `output/aedar-car-inspection-refresh/` by default.
+
+```powershell
+& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+  pipeline/maps/production/run_aedar_car_inspection_refresh.py
+```
+
+The command writes a complete candidate `manifest.json`, `qa.json`, deterministic
+`spot-check-sheet.png`, and an AEDAR-namespace `replacement-plan.json` bound to the previous
+`aedar-car-full/full-manifest.json`. The plan
+contains only changed-frame car inspection keys and verifies both old and new local artifact
+hashes. QA stays pending until a human reviews the generated `qa.json` review-set artifacts:
+
+```powershell
+& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
+  pipeline/maps/production/record_spot_check.py `
+  --qa pipeline/maps/production/output/aedar-car-inspection-refresh/qa.json `
+  --reviewer NAME --outcome approved `
+  --output pipeline/maps/production/output/aedar-car-inspection-refresh/human-spot-check.json
+```
+
+Only after approval, the usual R2 helper can dry-run and then explicitly upload the exact
+replacement plan, using the old car publication manifest as its precondition:
+
+```powershell
+& .\pipeline\maps\production\upload-maps.ps1 `
+  -OutputDir .\pipeline\maps\production\output\aedar-car-full `
+  -Manifest .\pipeline\maps\production\output\aedar-car-inspection-refresh\replacement-plan.json `
+  -Qa .\pipeline\maps\production\output\aedar-car-inspection-refresh\qa.json `
+  -PublicationManifest .\pipeline\maps\production\output\aedar-car-full\upload-manifest.json
+# Add -Upload only after reviewing the dry-run and authorizing the replacement.
+```
+
+The uploader still checks remote prior-object hashes/sizes and confirms replacement hashes
+after upload. The partial renderer never records visual approval or publishes assets.
