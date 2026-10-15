@@ -199,6 +199,7 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   if (is.list(metadata) && length(metadata$scalar_contracts)) {
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme$theme, sortie)
   }
+  materialize_theme_series_artifacts(payload, metadata %||% list(), vintages, theme$theme, sortie)
   # Optional operator-owned desktop connection (usually via SSH tunnel). The
   # pipeline writes canonical Parquet here first; the DB publisher compares
   # per-table markers even when none of those files changed in this run.

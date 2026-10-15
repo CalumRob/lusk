@@ -571,6 +571,7 @@ scalar_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
     expressions <- c(expressions, list(bquote({
       result_[[.(name)]] <- materialize_theme_scalar_artifact(
         .(payload), .(metadata), vintages_, .(name), .(sortie))
+      materialize_theme_series_artifacts(.(payload), .(metadata), vintages_, .(name), .(sortie))
     })))
   }
   expressions <- c(expressions, list(bquote(unlist(result_, use.names=TRUE))))
