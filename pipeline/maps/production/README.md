@@ -128,6 +128,9 @@ For a preserved approved package, run the metadata-only backfill in the QGIS Pyt
 (it reads Parquet metrics only; it does not load geometry, render, or rewrite package evidence):
 
 ```powershell
+$qgis = 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat'
+$maps = (Resolve-Path .\pipeline\maps\production).Path
+$pipeline = (Resolve-Path (Join-Path $maps '..\..')).Path
 & $qgis -B "$maps\backfill_aedar_inline_legends.py" `
   --package-dir "$maps\output\aedar-static-publish" `
   --facts "$pipeline\data\processed\aedar\maps\bretagne-frame\address-access-metrics.parquet" `
@@ -616,14 +619,21 @@ isolated at `output/aedar-car-inspection-refresh/` by default.
 
 ```powershell
 & 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
-  pipeline/maps/production/run_aedar_car_inspection_refresh.py
+  pipeline/maps/production/run_aedar_car_inspection_refresh.py `
+  --previous-manifest "$maps\output\aedar-static-publish\full-manifest.json"
 ```
 
 The command writes a complete candidate `manifest.json`, `qa.json`, deterministic
-`spot-check-sheet.png`, and an AEDAR-namespace `replacement-plan.json` bound to the previous
-`aedar-car-full/full-manifest.json`. The plan
+`spot-check-sheet.png`, and an AEDAR-namespace `replacement-plan.json` bound to the selected
+publisher package's previous `output/aedar-static-publish/full-manifest.json` (the actual
+default for `--previous-manifest`). The historical car-only package is not the default or
+a substitute for this selected-package precondition. The plan
 contains only changed-frame car inspection keys and verifies both old and new local artifact
 hashes. QA stays pending until a human reviews the generated `qa.json` review-set artifacts:
+
+If `--previous-manifest` is overridden, it must be the same prior selected-package manifest
+whose old object hashes the replacement plan verifies; publication's `-PublicationManifest`
+must be that package's corresponding `upload-manifest.json`.
 
 ```powershell
 & 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
@@ -634,14 +644,14 @@ hashes. QA stays pending until a human reviews the generated `qa.json` review-se
 ```
 
 Only after approval, the usual R2 helper can dry-run and then explicitly upload the exact
-replacement plan, using the old car publication manifest as its precondition:
+replacement plan, using the same selected-package manifest bound into the replacement plan:
 
 ```powershell
 & .\pipeline\maps\production\upload-maps.ps1 `
-  -OutputDir .\pipeline\maps\production\output\aedar-car-full `
+  -OutputDir "$maps\output\aedar-static-publish" `
   -Manifest .\pipeline\maps\production\output\aedar-car-inspection-refresh\replacement-plan.json `
   -Qa .\pipeline\maps\production\output\aedar-car-inspection-refresh\qa.json `
-  -PublicationManifest .\pipeline\maps\production\output\aedar-car-full\upload-manifest.json
+  -PublicationManifest "$maps\output\aedar-static-publish\upload-manifest.json"
 # Add -Upload only after reviewing the dry-run and authorizing the replacement.
 ```
 

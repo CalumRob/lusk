@@ -8,6 +8,7 @@ from unittest.mock import Mock, patch
 sys.path.insert(0, str(Path(__file__).parents[1]))  # mirror direct QGIS script import context
 from pipeline.maps.production import run_aedar_static_maps as selected
 from pipeline.maps.production import aedar_map_plan, aedar_static
+from pipeline.maps.production import run_aedar_car_inspection_refresh as car_refresh
 from pipeline.maps.production.tests.qgis_fixture import qgis_application
 
 
@@ -37,6 +38,16 @@ class AedarCliContractTests(unittest.TestCase):
         for option in ("--raw-dir", "--facts-path", "--output-dir", "--workers",
                        "--plan-only", "--check-only", "--acquire-context"):
             self.assertIn(option, help_text)
+
+    def test_car_refresh_default_manifest_matches_selected_publisher_package(self):
+        parser = car_refresh.build_parser()
+        defaults = parser.parse_args([])
+        expected = PRODUCTION / "output/aedar-static-publish/full-manifest.json"
+        self.assertEqual(defaults.previous_manifest, expected)
+        explicit = parser.parse_args(["--previous-manifest", str(expected)])
+        self.assertEqual(explicit.previous_manifest, expected)
+        self.assertIn(r"$maps\output\aedar-static-publish\full-manifest.json",
+                      (PRODUCTION / "README.md").read_text(encoding="utf-8"))
 
     def _main_inputs(self, root):
         raw = root / "raw"
