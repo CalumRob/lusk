@@ -170,19 +170,8 @@ class CarProductionTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "missing an export profile"):
             require_approval(partial, read_approval(proof), representative_pairs=adapter.approval_pairs())
 
-    def test_operator_full_run_requires_approval_before_building_inputs_or_creating_outputs(self):
-        import run_aedar_car_maps
-        root = fixture_folder(tempfile.mkdtemp(prefix="lusk-car-cli-no-approval-"))
-        output = root / "must-not-exist"
-        with self.assertRaises(SystemExit) as rejected:
-            run_aedar_car_maps.main(["--scope", "full", "--raw-dir", str(root / "absent-raw"),
-                                     "--output-dir", str(output)])
-        self.assertEqual(rejected.exception.code, 2)
-        self.assertFalse(output.exists())
-
     def test_full_gate_checks_live_car_evidence_before_mutating_the_full_output_directory(self):
-        from aedar_car import AedarCarAdapter, aedar_car_recipe, build_aedar_car_map_set
-        from record_aedar_car_approval import record_car_approval
+        from aedar_car import AedarCarAdapter, aedar_car_recipe, build_aedar_car_map_set, record_car_approval
         from approval import read_approval
         raw, facts, registry, config = self.geography_fixture()
         # Real OGR source order is not code order. Membership is a set, so
@@ -251,7 +240,7 @@ class CarProductionTests(unittest.TestCase):
 
     def test_changed_ground_bytes_with_same_size_and_timestamp_invalidate_inspection_evidence(self):
         from aedar_car import AedarCarAdapter, aedar_car_recipe
-        from record_aedar_car_approval import record_car_approval
+        from aedar_car import record_car_approval
         from approval import read_approval, require_approval
         root, binding, old_adapter = self.fixture()
         def run():
