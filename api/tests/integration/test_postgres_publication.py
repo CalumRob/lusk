@@ -794,6 +794,49 @@ def test_synthetic_r_scalar_and_profile_lineage_publish_to_api_reader(canonical_
         assert expected_scalar_pairs and actual_scalar_pairs == expected_scalar_pairs
         assert expected_profile_pairs and actual_profile_pairs == expected_profile_pairs
 
+        series = manifest["ordered_series"]
+        with TestClient(main.app) as client:
+            series_response = client.post(
+                f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison",
+                json={"selection": None})
+        assert series_response.status_code == 200, series_response.text
+        series_result = series_response.json()["result"]
+        expected_series_pairs = {(row["source_id"],row["vintage_id"]) for row in series["source_pairs"]
+            if row["axis_value"] == "2025"}
+        actual_series_pairs = {(row["source_id"],row["vintage_id"])
+            for row in series_result["comparison_sources"]}
+        assert expected_series_pairs and actual_series_pairs == expected_series_pairs
+        assert {source for source,_ in actual_series_pairs} == {"fixture_b"}
+        assert {vintage for _,vintage in actual_series_pairs} == {"v1", "v2"}
+        resolved_scope=series_response.json()["scope"]
+        lineage_context=resolved_scope["kind"]
+        if lineage_context=="density_class":
+            lineage_group=resolved_scope["density_class_code"]
+        elif lineage_context=="same_level":
+            with psycopg.connect(publish_dsn) as publisher:
+                lineage_group=publisher.execute("SELECT territory_id FROM territory_reference WHERE territory_type='region'").fetchone()[0]
+        else:
+            raise AssertionError(f"Unexpected fixed ordered-series context: {resolved_scope}")
+
+        with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+            removed = publisher.execute("""DELETE FROM ordered_series_comparison_lineage
+                WHERE dataset_id=%s AND comparison_context=%s AND group_id=%s
+                  AND territory_type=%s AND axis_value='2025'
+                RETURNING provenance_revision_id""", (series["dataset_id"],lineage_context,
+                    lineage_group,series["level"])).fetchall()
+            assert removed
+        with TestClient(main.app) as client:
+            incomplete_series = client.post(
+                f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison",
+                json={"selection": None})
+        assert incomplete_series.status_code == 503
+        with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+            publisher.cursor().executemany("""INSERT INTO ordered_series_comparison_lineage
+                (dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value,provenance_revision_id)
+                VALUES (%s,%s,%s,%s,%s,'2025',%s)""",
+                [(series["dataset_id"],series["indicator_id"],lineage_context,
+                    lineage_group,series["level"],row[0]) for row in removed])
+
         # Both physical families fail closed on truncated/stale lineage and read
         # normally again after restoring the exact row.
         def assert_lineage_guard(family, facet):

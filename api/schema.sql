@@ -685,6 +685,8 @@ CREATE TABLE ordered_series_comparison_publication (
  reference_content_version text NOT NULL,
  group_row_count integer NOT NULL CHECK(group_row_count>=0),
  territory_row_count integer NOT NULL CHECK(territory_row_count>=0),
+ lineage_row_count integer NOT NULL CHECK(lineage_row_count>=0),
+ comparison_axes text[] NOT NULL CHECK(cardinality(comparison_axes)>0),
  published_at timestamptz NOT NULL DEFAULT now(),
  PRIMARY KEY(dataset_id,indicator_id));
 CREATE TABLE ordered_series_comparison_group (
@@ -695,6 +697,7 @@ CREATE TABLE ordered_series_comparison_group (
  axis_value text NOT NULL, statistic text NOT NULL CHECK(statistic IN ('median','mean')),
  group_value double precision, member_count integer NOT NULL CHECK(member_count>0),
  eligible_count integer NOT NULL CHECK(eligible_count>=0), missing_count integer NOT NULL CHECK(missing_count>=0),
+ lineage_source_count integer NOT NULL CHECK(lineage_source_count>=0),
  PRIMARY KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value),
  CHECK(member_count=eligible_count+missing_count),
  CHECK((eligible_count=0 AND group_value IS NULL) OR (eligible_count>0 AND group_value IS NOT NULL AND group_value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))));
@@ -710,8 +713,23 @@ CREATE TABLE ordered_series_comparison_territory (
  REFERENCES ordered_series_comparison_group(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value) ON DELETE CASCADE,
  CHECK((status='measured' AND value IS NOT NULL AND value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8) AND rank>0 AND tie_count>0 AND rank_size>0 AND rank<=rank_size AND tie_count<=rank_size)
  OR (status<>'measured' AND value IS NULL AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)));
-GRANT SELECT ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory TO lusk_publisher;
+CREATE TABLE ordered_series_comparison_lineage (
+ dataset_id text NOT NULL, indicator_id text NOT NULL, comparison_context text NOT NULL,
+ group_id text NOT NULL, territory_type text NOT NULL, axis_value text NOT NULL,
+ provenance_revision_id text NOT NULL,
+ PRIMARY KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value,provenance_revision_id),
+ FOREIGN KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value)
+ REFERENCES ordered_series_comparison_group(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value) ON DELETE CASCADE);
+CREATE TABLE ordered_series_comparison_zero_reason (
+ dataset_id text NOT NULL, indicator_id text NOT NULL, comparison_context text NOT NULL,
+ group_id text NOT NULL, territory_type text NOT NULL, axis_value text NOT NULL,
+ reason text NOT NULL CHECK(length(trim(reason))>0),
+ member_count integer NOT NULL CHECK(member_count>0),
+ PRIMARY KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value,reason),
+ FOREIGN KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value)
+ REFERENCES ordered_series_comparison_group(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value) DEFERRABLE INITIALLY DEFERRED);
+GRANT SELECT ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory,ordered_series_comparison_lineage,ordered_series_comparison_zero_reason TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory,ordered_series_comparison_lineage,ordered_series_comparison_zero_reason TO lusk_publisher;
 
 -- Additive dataset-owned contract (migration 011). Legacy ordered_series
 -- remains available for the ENAF reader during an explicit rollout.
@@ -720,6 +738,8 @@ CREATE TABLE series_provenance_revision (
  source_name text NOT NULL, dataset_name text NOT NULL, source_version text NOT NULL,
  reference_date date NOT NULL, publication_date date NOT NULL, revision_hash text NOT NULL,
  UNIQUE(source_id,vintage_id,revision_hash));
+ALTER TABLE ordered_series_comparison_lineage ADD CONSTRAINT ordered_series_comparison_lineage_revision
+ FOREIGN KEY(provenance_revision_id) REFERENCES series_provenance_revision(provenance_revision_id);
 CREATE FUNCTION reject_series_provenance_revision_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN RAISE EXCEPTION 'series provenance revisions are immutable'; END $$;
 CREATE TRIGGER series_provenance_revision_immutable BEFORE UPDATE OR DELETE ON series_provenance_revision

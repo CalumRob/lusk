@@ -169,6 +169,81 @@ DBI::dbExecute(con, "DROP FUNCTION reject_profile_lineage_refresh()")
 profile_retry <- publish_registered_profile(profile_registry, "structure_age", payload, profile_adapter)
 stopifnot(profile_retry$changed)
 
+# A tiny real owned-series publisher proves per-axis lineage (including mixed
+# vintages) through the same R adapter and transaction used in production.
+series_reference <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type FROM territory_reference
+  WHERE territory_type IN ('commune','epci','departement','region') ORDER BY
+  CASE territory_type WHEN 'commune' THEN 1 WHEN 'epci' THEN 2 WHEN 'departement' THEN 3 ELSE 4 END,
+  territory_id")
+if (!nrow(series_reference)) stop("Synthetic series fixture needs a registered territory",call.=FALSE)
+series_level <- as.character(series_reference$territory_type[[1L]])
+series_members <- head(as.character(series_reference$territory_id[series_reference$territory_type==series_level]),3L)
+series_dataset <- "lineage_series"
+series_indicator <- "lineage_series"
+series_axes <- c("2024","2025")
+series_rows <- expand.grid(territory_id=series_members,axis_value=series_axes,
+  stringsAsFactors=FALSE)
+series_rows$dataset_id <- series_dataset; series_rows$indicator_id <- series_indicator
+series_rows$territory_type <- series_level; series_rows$observation_period <- series_rows$axis_value
+series_rows$value <- seq_len(nrow(series_rows))/10; series_rows$status <- "measured"
+series_rows <- series_rows[c("dataset_id","indicator_id","territory_id","territory_type",
+  "axis_value","observation_period","value","status")]
+series_rows <- series_rows[order(series_rows$territory_id,series_rows$axis_value),]
+revision_specs <- unique(data.frame(source_id=ifelse(series_rows$axis_value=="2024","fixture_a","fixture_b"),
+  vintage_id=ifelse(series_rows$territory_id==series_members[[1L]],"v1","v2"),stringsAsFactors=FALSE))
+revision_specs$source_name <- paste("Fixture",revision_specs$source_id)
+revision_specs$dataset_name <- "Synthetic ordered-series fixture"
+revision_specs$source_version <- revision_specs$vintage_id
+revision_specs$reference_date <- as.Date("2026-01-01")
+revision_specs$publication_date <- as.Date("2026-01-02")
+revision_specs$revision_hash <- vapply(seq_len(nrow(revision_specs)),function(i) series_revision_hash(
+  revision_specs$source_id[[i]],revision_specs$vintage_id[[i]],revision_specs$source_name[[i]],
+  revision_specs$dataset_name[[i]],revision_specs$source_version[[i]],
+  as.character(revision_specs$reference_date[[i]]),as.character(revision_specs$publication_date[[i]])),character(1))
+revision_specs$provenance_revision_id <- paste0(revision_specs$source_id,"-",revision_specs$vintage_id,"-",
+  substr(revision_specs$revision_hash,1L,16L))
+series_links <- data.frame(dataset_id=series_dataset,indicator_id=series_indicator,
+  territory_id=series_rows$territory_id,axis_value=series_rows$axis_value,
+  provenance_revision_id=revision_specs$provenance_revision_id[match(
+    paste(ifelse(series_rows$axis_value=="2024","fixture_a","fixture_b"),
+      ifelse(series_rows$territory_id==series_members[[1L]],"v1","v2")),
+    paste(revision_specs$source_id,revision_specs$vintage_id))],stringsAsFactors=FALSE)
+series_projection <- list(points=series_rows,provenance=revision_specs,point_provenance=series_links,
+  descriptor=list(dataset_id=series_dataset,indicator_id=series_indicator,theme_id="demographie",
+    axis_kind="year",axis_values=series_axes,comparison_axis_values=series_axes,
+    completeness="dense_complete",comparison_point="2025",label="Fixture series",unit="u",
+    direction="high",allowed_levels=series_level,comparison_levels=series_level,
+    comparison_statistic="median",comparison_scope="default_group",descriptor_version="fixture-v1",
+    active_read_route=TRUE))
+validate_owned_series_projection(series_projection)
+series_adapter <- owned_series_postgres_adapter(con)
+series_registry <- list(lineage_series=list(owned=TRUE,project=function(canonical) canonical))
+series_first <- publish_registered_series(series_registry,"lineage_series",series_projection,series_adapter)
+series_noop <- publish_registered_series(series_registry,"lineage_series",series_projection,series_adapter)
+stopifnot(series_first$changed,!series_noop$changed)
+series_comparison <- project_ordered_series_comparisons(series_projection,reference,
+  series_first$content_version,reference_version)
+old_series_marker <- DBI::dbGetQuery(con,"SELECT content_version,ordered_series_content_version,
+  reference_content_version,group_row_count,territory_row_count,comparison_axes
+  FROM ordered_series_comparison_publication WHERE dataset_id=$1",params=list(series_dataset))
+old_series_groups <- DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_group WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value",params=list(series_dataset))
+DBI::dbExecute(con,"CREATE FUNCTION reject_series_lineage_refresh() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected ordered-series lineage failure'; END $$")
+DBI::dbExecute(con,"CREATE TRIGGER reject_series_lineage_refresh BEFORE INSERT ON ordered_series_comparison_lineage FOR EACH ROW EXECUTE FUNCTION reject_series_lineage_refresh()")
+changed_series <- series_projection; changed_series$points$value <- changed_series$points$value+0.25
+changed_registry <- list(lineage_series=list(owned=TRUE,project=function(canonical) changed_series))
+series_failed <- try(publish_registered_series(changed_registry,"lineage_series",NULL,series_adapter),silent=TRUE)
+stopifnot(inherits(series_failed,"try-error"),
+  identical(DBI::dbGetQuery(con,"SELECT content_version,ordered_series_content_version,
+    reference_content_version,group_row_count,territory_row_count,comparison_axes
+    FROM ordered_series_comparison_publication WHERE dataset_id=$1",params=list(series_dataset)),old_series_marker),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_group WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value",params=list(series_dataset)),old_series_groups))
+DBI::dbExecute(con,"DROP TRIGGER reject_series_lineage_refresh ON ordered_series_comparison_lineage")
+DBI::dbExecute(con,"DROP FUNCTION reject_series_lineage_refresh()")
+series_retry <- publish_registered_series(changed_registry,"lineage_series",NULL,series_adapter)
+stopifnot(series_retry$changed)
+series_lineage <- DBI::dbGetQuery(con,"SELECT comparison_context,group_id,territory_type,axis_value,provenance_revision_id FROM ordered_series_comparison_lineage WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,provenance_revision_id",params=list(series_dataset))
+series_sources <- DBI::dbGetQuery(con,"SELECT DISTINCT l.axis_value,p.source_id,p.vintage_id FROM ordered_series_comparison_lineage l JOIN series_provenance_revision p USING(provenance_revision_id) WHERE l.dataset_id=$1 ORDER BY l.axis_value,p.source_id,p.vintage_id",params=list(series_dataset))
+
 manifest <- list(
   schema=config$SCHEMA,
   scalar=list(content_version=DBI::dbGetQuery(con,
@@ -176,7 +251,12 @@ manifest <- list(
     source_pairs=unique(scalar_comparisons$lineage[c("facet_id","source_id","vintage_id")])),
   profile=list(content_version=DBI::dbGetQuery(con,
       "SELECT content_version FROM profile_comparison_publication WHERE singleton")$content_version[[1L]],
-    source_pairs=unique(profile_comparisons$lineage[c("facet_id","source_id","vintage_id")]))
+    source_pairs=unique(profile_comparisons$lineage[c("facet_id","source_id","vintage_id")])),
+  ordered_series=list(dataset_id=series_dataset,indicator_id=series_indicator,
+    content_version=series_retry$content_version,axes=series_axes,
+    level=series_level,territory_id=series_members[[1L]],source_pairs=series_sources,
+    comparison_context=as.character(series_lineage$comparison_context[[1L]]),
+    group_id=as.character(series_lineage$group_id[[1L]]))
 )
 jsonlite::write_json(manifest, config$MANIFEST, auto_unbox=TRUE, pretty=TRUE, dataframe="rows")
 cat("synthetic R scalar/profile comparison publishers passed; schema:", config$SCHEMA, "\n")

@@ -375,3 +375,15 @@ must carry a complete hierarchy and a consistent `classified` / `hors_gamme` /
 `absent` state. Fresh installs enforce the same contract in `schema.sql`.
 Metadata is versioned coherently with the AEDAR aggregate publication; this
 migration does not publish data or imply production rollout.
+# Migration 034: ordered-series comparison provenance
+
+`034_ordered_series_comparison_lineage.sql` publishes ordered-series comparison
+axis metadata and immutable revision associations at resolved group/axis grain,
+plus Raccordement model-zero reason counts. The API fixed-context path reads
+these rows alongside the existing group/focal result; it no longer scans peer
+observations to rediscover declared axes, support or lineage. Existing marker
+rows start with zero lineage rows and remain fail-closed until the registered R
+publisher republishes the owned series. Arbitrary selections and raw series
+observations keep their existing request-time behavior. Fresh installs carry
+the same constrained relations and publication metadata in `schema.sql`.
+This migration is additive and does not publish data or authorize deployment.

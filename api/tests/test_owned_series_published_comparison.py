@@ -74,13 +74,22 @@ class FixedComparisonConnection:
             source="old-series" if self.stale=="series" else "series-v1"
             reference="old-ref" if self.stale=="reference" else "ref-v1"
             group_count=1 if self.incomplete else len(self.axes)
+            comparison_axes=(['M2','M3'] if self.axis_kind=="declared_detail" else self.axes)
             return Cursor(row=("comparison-v1",source,reference,group_count,len(self.axes)*len(self.members),
-                "series-v1","ref-v1"))
+                "series-v1","ref-v1",comparison_axes))
+        if "FROM ordered_series_comparison_lineage" in sql:
+            axes=params[-1]
+            return Cursor(rows=[(axis,f"rev-{tid}-{axis}" if self.axis_kind=="declared_detail" else f"rev-{tid}")
+                for axis in axes for tid in self.members])
+        if "FROM ordered_series_comparison_zero_reason" in sql:
+            if self.conflicting_zero_reason:
+                raise HTTPException(503,"Published mean-curve provenance zero reason conflicts across axes")
+            return Cursor(rows=[(self.zero_reason,len(self.members))] if self.zero_reason else [])
         if "FROM ordered_series_comparison_group" in sql:
             axes=["M2","M3"] if self.axis_kind=="declared_detail" else self.axes
             count=len(self.members)+(1 if self.extra_member else 0)
             eligible=count if self.eligible_count is None else self.eligible_count
-            rows=[(axis,self.stat,7.5,count,eligible,count-eligible) for axis in axes]
+            rows=[(axis,self.stat,7.5,count,eligible,count-eligible,len(self.members)) for axis in axes]
             return Cursor(rows=rows[:1] if self.incomplete else rows)
         if "FROM ordered_series_comparison_territory" in sql:
             member_ids=[params[5]]
@@ -93,8 +102,6 @@ class FixedComparisonConnection:
                 (1 if self.focal_status=="measured" else None),
                 rank_size)
                 for axis in axes for tid in member_ids])
-        if "SELECT DISTINCT state_role" in sql:
-            return Cursor(rows=[("M2",),("M3",)] if self.axis_kind=="declared_detail" else [])
         raise AssertionError(sql)
 
 
@@ -123,8 +130,7 @@ def test_all_canonical_owned_series_contexts_read_published_axis_and_territory_r
     assert any("FROM ordered_series_comparison_group" in sql for sql,_ in conn.sql)
     assert any("FROM ordered_series_comparison_territory" in sql for sql,_ in conn.sql)
     raw_rows=[sql for sql,_ in conn.sql if "LEFT JOIN series_dataset_observation o" in sql]
-    assert len(raw_rows)==1
-    assert "o.value" not in raw_rows[0]
+    assert len(raw_rows)==0
     published_territory=next((sql,params) for sql,params in conn.sql
         if "FROM ordered_series_comparison_territory" in sql)
     assert published_territory[1][5]==territory_id
