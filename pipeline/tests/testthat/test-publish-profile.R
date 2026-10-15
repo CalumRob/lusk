@@ -56,6 +56,40 @@ test_that("declared profile comparison publishes fixed-context median, ranks and
   expect_setequal(unique(result$groups$comparison_context), c("density_class", "epci", "bretagne"))
 })
 
+test_that("profile comparison publication emits exact median and nonfocal ranks/ties from complete facts", {
+  profile <- list(descriptor=list(indicator_id="housing_profile", levels="commune",
+    comparison_detail="old", comparison_sex=NA_character_, comparison_direction="high"),
+    facts=data.frame(territory_id=c("a","b","c","d"), territory_type="commune",
+      detail="old", sex="", value=c(4,4,1,NA_real_),
+      status=c("measured","measured","measured","suppressed")))
+  reference <- data.frame(territory_id=c("a","b","c","d","r"),
+    territory_type=c(rep("commune",4),"region"),
+    epci_id=c(rep("epci-1",4),NA_character_),
+    density_class_code=c(rep("dense",4),NA_character_))
+
+  result <- project_declared_profile_comparisons(list(profile), reference, "profile-v1", "reference-v1")
+  group <- result$groups[result$groups$comparison_context == "bretagne",]
+  rows <- result$territories[result$territories$comparison_context == "bretagne",]
+
+  expect_equal(nrow(rows), 4L)
+  expect_setequal(rows$territory_id, c("a", "b", "c", "d"))
+  expect_equal(group$statistic, "median")
+  expect_equal(group$member_count, 4L)
+  expect_equal(group$eligible_count, 3L)
+  expect_equal(group$missing_count, 1L)
+  expect_equal(group$median, 4)
+  expect_equal(rows$rank[rows$territory_id == "a"], 1L)
+  expect_equal(rows$rank[rows$territory_id == "b"], 1L)
+  expect_equal(rows$rank[rows$territory_id == "c"], 3L)
+  expect_equal(rows$tie_count[rows$territory_id == "a"], 2L)
+  expect_equal(rows$rank_size[rows$territory_id == "a"], 3L)
+  unavailable <- rows[rows$territory_id == "d",]
+  expect_equal(unavailable$status, "suppressed")
+  expect_true(all(is.na(unavailable[c("value", "rank", "tie_count", "rank_size")])) )
+  expect_true(all(rows$profile_content_version == "profile-v1"))
+  expect_true(all(rows$reference_content_version == "reference-v1"))
+})
+
 test_that("profile comparison Parquet generations are immutable and version-keyed", {
   directory <- tempfile("profile-comparison-artifact-"); dir.create(directory)
   old <- list(groups=data.frame(indicator_id="old", profile_content_version="old-v"),
