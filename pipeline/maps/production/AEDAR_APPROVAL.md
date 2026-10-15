@@ -12,12 +12,14 @@ python pipeline/maps/production/record_aedar_package_approval.py `
 
 All three arguments are required. The command refuses incomplete technical QA, changed or
 unbound full/upload manifests, incorrect AEDAR namespace, partial or duplicate mode/profile
-coverage, inconsistent omissions, paths outside the package, and changed/invalid native WebP
-bytes. It records the input QA hash plus both manifest hashes, reviewer, outcome and time. The
-separate approval record is written first; the uploader cannot treat it as approved until the
-matching QA update is complete. A retry repairs that narrow interruption only when original QA
-bytes and both manifests are still exact. A different reviewer/outcome or snapshot is never
-silently substituted. Rejected packages remain non-uploadable.
+coverage against the preserved source plan and worker evidence, inconsistent omissions, paths
+outside the package, and changed/invalid native WebP bytes (including decoded dimensions and
+alpha). It records the original QA hash plus both manifest hashes, reviewer, outcome and time.
+The exact original QA bytes are preserved at
+`evidence/human-approval/full-qa-<sha256>.json`. The record is written before final QA promotion;
+the uploader requires both to bind. Recovery of an interrupted write only proceeds when the
+explicit retry repeats the same reviewer, outcome and snapshot. A different request never
+changes either file. Rejected packages remain non-uploadable.
 
 The original manifests, images and source QA evidence are not rewritten by packaging or approval.
 Do not edit the approval record or QA manually. If a decision must change, prepare a new package

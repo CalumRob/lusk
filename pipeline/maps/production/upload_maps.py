@@ -200,21 +200,58 @@ def upload_is_approved(qa_path: Path | None = None) -> tuple[bool, str]:
     if spot.get("status") != "approved" or qa.get("production_status") != "complete":
         return False, (f"final visual approval is pending (human_spot_check.status={spot.get('status')!r}, "
                        f"production_status={qa.get('production_status')!r})")
-    if qa.get("human_spot_check", {}).get("record"):
-        package = qa_path.parent
-        record_path = package / qa["human_spot_check"]["record"]
-        if not record_path.is_file():
-            return False, "explicit AEDAR package approval record is missing"
-        record = json.loads(record_path.read_text(encoding="utf-8"))
-        full_path, upload_path = package / "full-manifest.json", package / "upload-manifest.json"
-        if (record.get("schema") != "lusk.aedar.package-approval.v1"
-                or record.get("outcome") != "approved"
-                or record.get("full_manifest_sha256") != sha256(full_path)
-                or record.get("upload_manifest_sha256") != sha256(upload_path)
-                or record.get("final_qa_sha256") != sha256(qa_path)
-                or record.get("approval_id") != spot.get("approval_id")
-                or record.get("reviewed_qa_sha256") != qa.get("approval_evidence", {}).get("reviewed_qa_sha256")):
-            return False, "explicit AEDAR approval record is stale or does not bind this package/QA"
+    package = qa_path.parent
+    full_path, upload_path = package / "full-manifest.json", package / "upload-manifest.json"
+    # The static AEDAR package is the selected whole-package approval surface.
+    # Unlike historical network/car/refresh QA, booleans alone can never authorize
+    # it: accept either its current explicit record or a coherent legacy record.
+    full_data = json.loads(full_path.read_text(encoding="utf-8")) if full_path.is_file() else {}
+    upload_data = json.loads(upload_path.read_text(encoding="utf-8")) if upload_path.is_file() else {}
+    aedar_config = json.loads((PRODUCTION / "aedar-static-family.json").read_text(encoding="utf-8"))
+    is_aedar_package = (full_data.get("family") == "aedar" or upload_data.get("family") == "aedar"
+        or upload_data.get("prefix") == aedar_config.get("prefix"))
+    if is_aedar_package:
+        if full_data.get("family") != "aedar" or upload_data.get("family") != "aedar":
+            return False, "AEDAR upload manifest is missing or unrelated"
+        full_hash, upload_hash = sha256(full_path), sha256(upload_path)
+        if qa.get("source_manifest_sha256") != full_hash:
+            return False, "AEDAR package QA is stale or unrelated"
+        new_path = package / "human-approval.json"
+        new_marker = (new_path.exists() or "approval_evidence" in qa or "approval_id" in spot
+            or spot.get("record") == new_path.name)
+        if new_marker:
+            if spot.get("record") != new_path.name or not new_path.is_file():
+                return False, "explicit AEDAR package approval record reference/file is missing or changed"
+            record = json.loads(new_path.read_text(encoding="utf-8"))
+            if (record.get("schema") != "lusk.aedar.package-approval.v1"
+                    or record.get("outcome") != "approved" or record.get("reviewer") != spot.get("reviewer")
+                    or record.get("full_manifest_sha256") != full_hash
+                    or record.get("upload_manifest_sha256") != upload_hash
+                    or record.get("final_qa_sha256") != sha256(qa_path)
+                    or record.get("approval_id") != spot.get("approval_id")
+                    or record.get("reviewed_qa_sha256") != qa.get("approval_evidence", {}).get("reviewed_qa_sha256")):
+                return False, "explicit AEDAR approval record is stale or does not bind this package/QA"
+            history = package / "evidence" / "human-approval" / f"full-qa-{record['reviewed_qa_sha256']}.json"
+            if not history.is_file() or sha256(history) != record["reviewed_qa_sha256"]:
+                return False, "original passed AEDAR QA evidence is missing or changed"
+        else:
+            legacy_name = spot.get("approval_record")
+            if not legacy_name or Path(legacy_name).name != legacy_name:
+                return False, "AEDAR package has no bound human approval record"
+            legacy_path = package / legacy_name
+            if not legacy_path.is_file():
+                return False, "legacy AEDAR human approval record is missing"
+            record = json.loads(legacy_path.read_text(encoding="utf-8"))
+            if (record.get("outcome") != "approved" or not record.get("approved_by")
+                    or not record.get("recorded_at") or record.get("source_manifest_sha256") != full_hash
+                    or record.get("upload_manifest_sha256") != upload_hash
+                    or record.get("bucket") != upload_data.get("bucket")
+                    or record.get("prefix") != upload_data.get("prefix")
+                    or spot.get("source_manifest_sha256") != full_hash
+                    or spot.get("source_upload_manifest_sha256") != upload_hash
+                    or record.get("artifact_count") != qa.get("artifact_count")
+                    or record.get("profile_counts") != qa.get("profile_counts")):
+                return False, "legacy AEDAR approval record is stale or does not bind this package/QA"
     return True, "full QA passed and final visual spot-check is approved"
 
 
