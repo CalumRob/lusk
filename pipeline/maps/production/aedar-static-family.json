@@ -1,6 +1,8 @@
 {
   "version": 1,
   "family": "aedar",
+  "geography_contract": "Admin Express COG 2025",
+  "cartographic_policy": {},
   "horizon_minutes": 15,
   "bucket": "lusk",
   "prefix": "maps/aedar/v1/",
@@ -16,6 +18,10 @@
   "profiles": {
     "inspection": {"size": [2400, 2400], "transparent_outside": false},
     "inline": {"size": [900, 900], "transparent_outside": true}
+  },
+  "cartography": {
+    "inspection": {"style": "aedar-selected-hex-plate", "version": 1},
+    "inline": {"style": "aedar-selected-median-hex-grid", "version": 1, "cell_width_px": 9}
   },
   "palette": ["#716ca2", "#8f85b1", "#ad9ebf", "#b186a3", "#ac5b78"],
   "car_bounds": [0, 218],

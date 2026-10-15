@@ -1,6 +1,7 @@
 {
   "family": "network",
   "version": 1,
+  "cartographic_policy": {},
   "scope": {
     "analytical_departments": ["22", "29", "35", "56"]
   },

@@ -437,7 +437,8 @@ class NetworkPreparationTests(unittest.TestCase):
         )
         self.assertEqual(result[0], QgsVectorFileWriter.NoError, result)
 
-        family_config = {"scope": {"analytical_departments": ["22"]}}
+        family_config = {"scope": {"analytical_departments": ["22"]},
+                         "cartographic_policy": {"frame_margin_ratio": 0.12}}
         binding = build_representative_map_set(raw, project, family_config=family_config)
 
         bound = binding.map_set.layers["network-outputs"]
@@ -447,6 +448,8 @@ class NetworkPreparationTests(unittest.TestCase):
         self.assertAlmostEqual(region["geometry"].boundingBox().xMaximum(), 30)
         self.assertAlmostEqual(epci["analytical_geometry"].boundingBox().xMaximum(), 30)
         self.assertAlmostEqual(epci["geometry"].boundingBox().xMaximum(), 50)
+        self.assertAlmostEqual(region["extent"].width(), 10 * 2 ** 0.5 * 1.12, places=6)
+        self.assertEqual(region["cartographic_policy"]["frame_margin_ratio"], 0.12)
 
     def test_full_inventory_is_derived_from_authoritative_communes_and_pinned_epci_metadata(self):
         from network import NetworkAdapter, build_full_map_set
