@@ -1,3 +1,23 @@
+seed_scalar_artifact_fixture_from_producer_outputs <- function(themes) {
+  # Fixture adapter only: source the committed producer fixtures once, then
+  # exercise the production writer/reader contract. No production code reads
+  # these legacy theme filenames.
+  public <- file.path(pkgload::pkg_path(), "..", "public", "data")
+  destination <- tempfile("scalar-serving-fixture-")
+  dir.create(destination)
+  vintages <- nanoparquet::read_parquet(file.path(public, "vintages.parquet"))
+  territories <- nanoparquet::read_parquet(file.path(public, "territoires.parquet"))
+  for (theme in themes) {
+    payload <- list(
+      indicateurs=nanoparquet::read_parquet(file.path(public, paste0("indicateurs_", theme, ".parquet"))),
+      territoires=territories
+    )
+    metadata <- jsonlite::fromJSON(file.path(public, paste0("theme_", theme, ".json")), simplifyVector=FALSE)
+    materialize_theme_scalar_artifact(payload, metadata, vintages, theme, destination)
+  }
+  destination
+}
+
 test_that("scalar publisher validates registered canonical fixture facts", {
   canonical <- compute_payload(load_fixture())$indicateurs
   fixture_fact <- canonical[canonical$key == "densite" & canonical$territoire == "22001", , drop=FALSE]
@@ -261,8 +281,10 @@ test_that("housing DPE scalar retains producer denominator and suppression", {
   expect_equal(rennes$status, "measured")
   expect_true(any(price$facts$status == "suppressed" & price$facts$support_count < 10L))
   expect_true(all(price$provenance$source_id == metadata$sources$prix_m2))
+  artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(c("economie", "demographie", "mobilite", "habitat"))
+  on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
   inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
-  snapshot <- project_service_scalar_snapshot(inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
+  snapshot <- project_service_scalar_snapshot(inputs, file.path(pkgload::pkg_path(), "..", "public", "data"), artifacts)$projection
   expect_equal(nrow(snapshot$descriptors), 45L)
   expect_true(all(c("effectifs_salaries", "chomage", "densite", "taille_menages", "part_passoires") %in%
     snapshot$descriptors$indicator_id))
@@ -283,10 +305,12 @@ test_that("all producer scalar contracts match their checked-in generated metada
 })
 
 test_that("demography scalars are projected from the canonical producer into full snapshots", {
+  artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(c("economie", "demographie", "mobilite", "habitat"))
+  on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
   canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_demographie.parquet"))
   eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type)))
-  projection <- project_demography_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible)
+  projection <- project_demography_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible, artifacts)
   expect_setequal(projection$descriptors$indicator_id, c("densite", "taille_menages", "evolution_1968"))
   for (id in projection$descriptors$indicator_id) {
     expected <- canonical[canonical$key == id, , drop=FALSE]
@@ -299,7 +323,7 @@ test_that("demography scalars are projected from the canonical producer into ful
   }
   expect_false("structure_age" %in% projection$descriptors$indicator_id)
   service_inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
-  snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))
+  snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"), artifacts)
   expect_gt(nrow(snapshot$comparison$groups), 0L)
   expect_gt(nrow(snapshot$comparison$territories), 0L)
   expect_identical(snapshot$comparison$scalar_content_version,
@@ -333,6 +357,8 @@ test_that("demography scalars are projected from the canonical producer into ful
 })
 
 test_that("mobility scalar cohort preserves all declared ordinary canonical scalar facts in complete snapshots", {
+  artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(c("economie", "demographie", "mobilite", "habitat"))
+  on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
   canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_mobilite.parquet"))
   ids <- c("nb_buildings", "surface_reseaux_routiers", "offre_tc", "bornes_recharge",
     "places_stationnement_velo_1000", "places_stationnement_voiture_1000",
@@ -342,7 +368,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     "bornes_ev_par_station_service", "stationnement_velo_par_voiture")
   eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type)))
-  projection <- project_mobility_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible)
+  projection <- project_mobility_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible, artifacts)
   expect_setequal(projection$descriptors$indicator_id, ids)
   for (id in ids) {
     expected <- canonical[canonical$key == id, , drop=FALSE]
@@ -446,7 +472,7 @@ test_that("mobility scalar cohort preserves all declared ordinary canonical scal
     unique(projection$provenance$source_id[projection$provenance$indicator_id %in% multi_source_ids]))
   expect_true(all(c("region", "commune", "epci", "departement") %in% projection$facts$territory_type))
   service_inputs <- preparer_tables_service(file.path(pkgload::pkg_path(), "..", "public", "data"))
-  snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"))$projection
+  snapshot <- project_service_scalar_snapshot(service_inputs, file.path(pkgload::pkg_path(), "..", "public", "data"), artifacts)$projection
   expect_true(all(c(ids, "effectifs_salaries", "chomage", "densite", "taille_menages",
     "evolution_1968", "part_passoires", "prix_m2") %in% snapshot$descriptors$indicator_id))
   expect_equal(nrow(snapshot$descriptors), 45L)
@@ -634,20 +660,44 @@ test_that("scalar serving artifacts round-trip all typed grains as one coherent 
   on.exit(unlink(root, recursive=TRUE), add=TRUE)
 
   version <- write_scalar_serving_artifact(projection, root)
-  expect_identical(version, scalar_content_version(projection))
+  expect_match(version, "^[a-f0-9]{32}$")
   restored <- read_scalar_serving_artifact(root)
   expect_equal(restored$descriptors, projection$descriptors)
   expect_equal(as.data.frame(restored$facts[c("indicator_id", "territory_id", "territory_type", "status")]),
                as.data.frame(projection$facts[c("indicator_id", "territory_id", "territory_type", "status")]))
   generation <- jsonlite::fromJSON(file.path(root, "scalar-current.json"))$generation
   expect_true(all(file.exists(file.path(root, generation, c("facts.parquet",
-    "descriptors.rds", "provenance.parquet", "datasets.parquet",
+    "descriptors.json", "provenance.parquet", "datasets.parquet",
     "vintages.parquet", "eligible_territories.parquet")))))
 
-  # Re-publishing identical content is a no-op, and a missing new grain fails
-  # closed rather than consulting any legacy theme artifact.
+  # Re-publishing identical content validates and reuses the immutable
+  # generation; a failed replacement leaves the old pointer unchanged.
+  pointer_before <- readLines(file.path(root, "scalar-current.json"), warn=FALSE)
   expect_identical(write_scalar_serving_artifact(projection, root), version)
-  unlink(file.path(root, generation, "facts.parquet"))
+  expect_identical(readLines(file.path(root, "scalar-current.json"), warn=FALSE), pointer_before)
+  changed <- projection
+  changed$facts$value[[1L]] <- changed$facts$value[[1L]] + 0.125
+  changed_version <- write_scalar_serving_artifact(changed, root)
+  expect_false(identical(changed_version, version))
+  expect_equal(read_scalar_serving_artifact(root)$facts$value, changed$facts$value)
+  pointer_before <- readLines(file.path(root, "scalar-current.json"), warn=FALSE)
+  invalid <- changed
+  invalid$facts$value[[1L]] <- Inf
+  expect_error(write_scalar_serving_artifact(invalid, root), "Invalid scalar value")
+  expect_identical(readLines(file.path(root, "scalar-current.json"), warn=FALSE), pointer_before)
+  other_owner <- file.path(root, "other-owner")
+  write_scalar_serving_artifact(projection, other_owner)
+  expect_equal(read_scalar_serving_artifact(other_owner)$facts$value,
+               restored$facts$value)
+  changed_generation <- jsonlite::fromJSON(file.path(root, "scalar-current.json"))$generation
+  facts_path <- file.path(root, changed_generation, "facts.parquet")
+  facts <- nanoparquet::read_parquet(facts_path)
+  facts$value[[1L]] <- facts$value[[1L]] + 1
+  nanoparquet::write_parquet(facts, facts_path)
+  expect_error(write_scalar_serving_artifact(changed, root), "checksum mismatch")
+  expect_identical(readLines(file.path(root, "scalar-current.json"), warn=FALSE), pointer_before)
+  expect_error(read_scalar_serving_artifact(root), "checksum mismatch")
+  unlink(file.path(root, changed_generation, "datasets.parquet"))
   expect_error(read_scalar_serving_artifact(root), "grain is missing")
   expect_error(read_scalar_serving_artifact(tempfile("no-scalar-")), "artifact is missing")
 })

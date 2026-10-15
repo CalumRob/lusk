@@ -196,66 +196,44 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data", con
            finally = DBI::dbDisconnect(conn))
 }
 
-project_theme_scalar_cohort <- function(sortie, eligible_territories, theme) {
-  path <- file.path(sortie, paste0("indicateurs_", theme, ".parquet"))
-  if (!file.exists(path)) stop("Scalar snapshot incomplet : Parquet canonique ", theme, " absent : ", path, call.=FALSE)
-  # A public canonical directory is a producer bundle: use its paired metadata
-  # when present. Falling back to the package registry is safe only for newly
-  # generated directories without a published bundle; raccordement provenance
-  # validation below refuses incompatible old facts either way.
-  metadata_path <- file.path(sortie, paste0("theme_", theme, ".json"))
-  if (!file.exists(metadata_path)) {
-    metadata_path <- file.path("inst", "extdata", "theme-metadata", paste0("theme_", theme, ".json"))
-    if (!file.exists(metadata_path)) metadata_path <- file.path(pkgload::pkg_path(), metadata_path)
-  }
-  if (!file.exists(metadata_path)) stop("Theme indicator metadata is unavailable: ", metadata_path, call.=FALSE)
-  metadata <- jsonlite::fromJSON(metadata_path, simplifyVector=FALSE)
-  canonical_rows <- nanoparquet::read_parquet(path)
-  rows <- canonical_rows
-  ids <- names(metadata$scalar_contracts)
-  if (!length(ids)) stop("Theme producer has no declared scalar serving contracts: ", theme, call.=FALSE)
-  # Scalar observations have no detail coordinate. Select that producer grain
-  # before projecting the canonical rows into the coordinate-free contract.
-  rows <- rows[is.na(rows$detail), , drop=FALSE]
-  rows <- data.frame(territory_id=as.character(rows$territoire),
-    territory_type=as.character(rows$type), indicator_id=as.character(rows$key),
-    value=as.numeric(rows$value), unit=as.character(rows$unit),
-    source_name=as.character(rows$vintage_source), source_version=as.character(rows$vintage_version),
-    reference_date=as.character(rows$vintage_date_reference),
-    publication_date=as.character(rows$vintage_date_publication),
-    support=if ("n" %in% names(rows)) as.integer(rows$n) else NA_integer_, stringsAsFactors=FALSE)
-  vintages_path <- file.path(sortie, "vintages.parquet")
-  source_vintages <- if (file.exists(vintages_path)) nanoparquet::read_parquet(vintages_path) else NULL
-  if (identical(theme, "mobilite") && "raccordement_tc" %in% ids) {
-    validate_raccordement_scalar_bundle(canonical_rows, metadata, source_vintages)
-  }
-  project_scalar_canonical_rows(rows, metadata, ids, eligible_territories,
-    source_vintages=source_vintages)
+project_theme_scalar_cohort <- function(sortie, eligible_territories, theme,
+                                        artifact_directory=sortie) {
+  path <- file.path(artifact_directory, "scalar-serving", theme)
+  projection <- read_scalar_serving_artifact(path)
+  allowed <- unique(unlist(lapply(projection$descriptors$allowed_levels, as.character),
+                           use.names=FALSE))
+  expected <- eligible_territories[eligible_territories$territory_type %in% allowed,
+    c("territory_id", "territory_type"), drop=FALSE]
+  actual <- projection$eligible_territories[c("territory_id", "territory_type")]
+  if (!setequal(paste(expected$territory_type, expected$territory_id),
+                paste(actual$territory_type, actual$territory_id)))
+    stop("Canonical scalar artifact eligibility differs from the current serving universe", call.=FALSE)
+  projection
 }
 
-project_economy_scalar_cohort <- function(sortie, eligible_territories) {
-  project_theme_scalar_cohort(sortie, eligible_territories, "economie")
+project_economy_scalar_cohort <- function(sortie, eligible_territories, artifact_directory=sortie) {
+  project_theme_scalar_cohort(sortie, eligible_territories, "economie", artifact_directory)
 }
 
-project_demography_scalar_cohort <- function(sortie, eligible_territories) {
-  project_theme_scalar_cohort(sortie, eligible_territories, "demographie")
+project_demography_scalar_cohort <- function(sortie, eligible_territories, artifact_directory=sortie) {
+  project_theme_scalar_cohort(sortie, eligible_territories, "demographie", artifact_directory)
 }
 
-project_mobility_scalar_cohort <- function(sortie, eligible_territories) {
-  project_theme_scalar_cohort(sortie, eligible_territories, "mobilite")
+project_mobility_scalar_cohort <- function(sortie, eligible_territories, artifact_directory=sortie) {
+  project_theme_scalar_cohort(sortie, eligible_territories, "mobilite", artifact_directory)
 }
 
-project_housing_scalar_cohort <- function(sortie, eligible_territories) {
-  project_theme_scalar_cohort(sortie, eligible_territories, "habitat")
+project_housing_scalar_cohort <- function(sortie, eligible_territories, artifact_directory=sortie) {
+  project_theme_scalar_cohort(sortie, eligible_territories, "habitat", artifact_directory)
 }
 
-project_service_scalar_snapshot <- function(donnees, sortie) {
+project_service_scalar_snapshot <- function(donnees, sortie, scalar_artifact_directory=sortie) {
   service <- project_service_share_scalars(donnees$scalar_access,
     donnees$scalar_metadata, donnees$scalar_eligible_territories)
-  economy <- project_economy_scalar_cohort(sortie, donnees$scalar_eligible_territories)
-  demography <- project_demography_scalar_cohort(sortie, donnees$scalar_eligible_territories)
-  mobility <- project_mobility_scalar_cohort(sortie, donnees$scalar_eligible_territories)
-  housing <- project_housing_scalar_cohort(sortie, donnees$scalar_eligible_territories)
+  economy <- project_economy_scalar_cohort(sortie, donnees$scalar_eligible_territories, scalar_artifact_directory)
+  demography <- project_demography_scalar_cohort(sortie, donnees$scalar_eligible_territories, scalar_artifact_directory)
+  mobility <- project_mobility_scalar_cohort(sortie, donnees$scalar_eligible_territories, scalar_artifact_directory)
+  housing <- project_housing_scalar_cohort(sortie, donnees$scalar_eligible_territories, scalar_artifact_directory)
   additional <- list(economy, demography, mobility, housing)
   projection <- attach_essential_service_denominators(assemble_scalar_snapshot(service, additional))
   comparison <- project_scalar_comparisons(projection, donnees$tables$territory_reference,

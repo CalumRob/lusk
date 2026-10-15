@@ -144,6 +144,11 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
   payload <- run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
                           noms_epci_geo_api = NULL)
 
+  scalar_artifact <- read_scalar_serving_artifact(file.path(cible, "scalar-serving", "economie"))
+  expect_setequal(scalar_artifact$descriptors$indicator_id,
+                  c("effectifs_salaries", "chomage", "eco_activites"))
+  expect_true(all(scalar_artifact$facts$indicator_id %in% scalar_artifact$descriptors$indicator_id))
+
   # le payload complet du thème : les quatre tables du contrat
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
   expect_true(all(payload$indicateurs$theme == "economie"))
@@ -358,6 +363,7 @@ test_that("vintages : un run Démographie puis un run Économie laissent l'union
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL)
       invisible(NULL),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
     .package = "lusk"
   )
 

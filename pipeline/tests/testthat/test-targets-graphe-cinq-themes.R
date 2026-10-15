@@ -65,6 +65,11 @@ test_that("le graphe câble les cinq thèmes depuis leurs descripteurs — aucun
 
   # les artefacts partagés du run
   expect_true("fusion_vintages" %in% noms)
+  expect_true("scalar_serving_artifacts" %in% noms)
+  scalar_command <- manifeste$command[manifeste$name == "scalar_serving_artifacts"]
+  expect_true(grepl("publie_economie", scalar_command, fixed=TRUE))
+  expect_true(grepl("metadata_economie", scalar_command, fixed=TRUE))
+  expect_true(grepl("fusion_vintages", scalar_command, fixed=TRUE))
   expect_true("geometrie" %in% noms)
 })
 

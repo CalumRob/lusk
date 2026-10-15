@@ -115,6 +115,7 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
       appels$modeles_territoire <- appels$modeles_territoire + 1
       character(0)
     },
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL) {
       appels$rapport_statuts_vus <- statuts
@@ -231,6 +232,7 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
     vintages_demographie = function() faux_vintages,
     compute_payload = function(data, theme = NULL, vintages = NULL) list(),
     publish = function(payload, cible, backend = NULL) invisible(payload),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
     publier_theme_metadata = function(metadata, sortie, vintages = NULL,
                                       theme_attendu = NULL,
                                       directions_module = NULL)
@@ -284,6 +286,7 @@ test_that("run_pipeline porte le diagnostic de couverture du thème dans le rapp
     vintages_demographie = function() faux_vintages,
     compute_payload = function(data, theme = NULL, vintages = NULL) list(),
     publish = function(payload, cible, backend = NULL) invisible(payload),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
     publier_geometrie = function(cible = "public/data", fetch = NULL)
       invisible(NULL),
     publier_theme_metadata = function(metadata, sortie, vintages = NULL,

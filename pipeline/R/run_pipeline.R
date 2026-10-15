@@ -155,6 +155,7 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # le run passe AUSSI les directions du module (theme$directions) — la
   # direction déclarée par chaque page d'indicateur est croisée contre celle
   # qui classe les rangs publiés, la contradiction échoue à l'écriture.
+  metadata <- NULL
   if ("metadata" %in% names(theme)) {
     metadata <- theme$metadata()
     publier_theme_metadata(metadata, sortie,
@@ -191,6 +192,13 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   ecrire_json_si_modifie(vintages, file.path(sortie, "vintages.json"),
                          dataframe = "rows", na = "null",
                          digits = 17, pretty = TRUE)
+  # Canonical scalar facts are materialized only once the current theme payload,
+  # its in-memory descriptors, and the merged source-vintage universe agree.
+  # Each theme owns its own immutable generation; no old theme-Parquet inputs
+  # participate in this serving-grain publication.
+  if (is.list(metadata) && length(metadata$scalar_contracts)) {
+    materialize_theme_scalar_artifact(payload, metadata, vintages, theme$theme, sortie)
+  }
   # Optional operator-owned desktop connection (usually via SSH tunnel). The
   # pipeline writes canonical Parquet here first; the DB publisher compares
   # per-table markers even when none of those files changed in this run.

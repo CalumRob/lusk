@@ -55,6 +55,7 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL)
       invisible(NULL),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
     # issue #60 : la géométrie (ADR-0008) est publiée par le run — jamais de
     # réseau dans la boucle de test (le fetch WFS réel est hors de la boucle).
     publier_geometrie = function(cible = "public/data", fetch = NULL) {
@@ -98,6 +99,8 @@ test_that("run_pipeline(theme = theme_habitat()) : le run Habitat complet, de bo
 
   payload <- run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible,
                           noms_epci_geo_api = NULL)
+  habitat_scalar <- read_scalar_serving_artifact(file.path(cible, "scalar-serving", "habitat"))
+  expect_true(all(c("part_passoires", "prix_m2") %in% habitat_scalar$descriptors$indicator_id))
 
   # le payload complet du thème
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
