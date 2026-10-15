@@ -18,7 +18,10 @@ test_that("scalar comparison projection publishes fixed contexts at both declare
     ),
     eligible_territories = data.frame(territory_id = c("c1", "c2", "c3", "c4", "c5", "e1", "e2", "d1", "d2", "r1"),
       territory_type = c(rep("commune", 5), "epci", "epci", "departement", "departement", "region"),
-      stringsAsFactors = FALSE)
+      stringsAsFactors = FALSE),
+    provenance = data.frame(indicator_id="population",
+      territory_id=c("c1","c2","c3","c4","c5","e1","e2","d1","d2","r1"),
+      source_id="census",vintage_id="2020",stringsAsFactors=FALSE)
   )
   territories <- data.frame(
     territory_id = c("c1", "c2", "c3", "c4", "c5", "e1", "e2", "d1", "d2", "r1"),
@@ -73,6 +76,8 @@ test_that("scalar comparison projection publishes fixed contexts at both declare
   expect_equal(ranked_group$rank_size[ranked_group$territory_id == "c2"], 2L)
 
   expect_equal(result$scalar_content_version, "scalar-v1")
+  expect_true(all(result$lineage$source_id == "census"))
+  expect_true(any(result$lineage$comparison_context == "bretagne"))
   expect_equal(result$reference_content_version, "territories-v1")
   expect_true(nzchar(result$content_version))
 })
@@ -87,7 +92,8 @@ test_that("scalar comparison projection validates fixed-context membership and v
       comparison_facet = "population", allowed_levels = I(list("commune")),
       denominator_semantics = "count", completeness = "sparse", descriptor_version = "descriptor-v1",
       stringsAsFactors = FALSE),
-    eligible_territories = data.frame(territory_id = "c1", territory_type = "commune", stringsAsFactors = FALSE)
+    eligible_territories = data.frame(territory_id = "c1", territory_type = "commune", stringsAsFactors = FALSE),
+    provenance = data.frame(indicator_id="population",territory_id="c1",source_id="census",vintage_id="2020")
   )
   territories <- data.frame(territory_id = c("c1", "e1", "d1", "r1"),
     territory_type = c("commune", "epci", "departement", "region"), epci_id = c("e1", NA, NA, NA),
@@ -115,7 +121,8 @@ test_that("scalar comparison publisher is version-bound, idempotent, and rolls b
       comparison_facet = "population", allowed_levels = I(list("commune")),
       denominator_semantics = "count", completeness = "sparse", descriptor_version = "descriptor-v1",
       stringsAsFactors = FALSE),
-    eligible_territories = data.frame(territory_id = "c1", territory_type = "commune", stringsAsFactors = FALSE)
+    eligible_territories = data.frame(territory_id = "c1", territory_type = "commune", stringsAsFactors = FALSE),
+    provenance = data.frame(indicator_id="population",territory_id="c1",source_id="census",vintage_id="2020")
   )
   territories <- data.frame(territory_id = c("c1", "e1", "d1", "r1"),
     territory_type = c("commune", "epci", "departement", "region"), epci_id = c("e1", NA, NA, NA),
@@ -133,6 +140,7 @@ test_that("scalar comparison publisher is version-bound, idempotent, and rolls b
     replace = function(value) {
       state$groups <<- value$groups
       state$territories <<- value$territories
+      state$lineage <<- value$lineage
       state$marker <<- data.frame(content_version=value$content_version,
         scalar_content_version=value$scalar_content_version,
         reference_content_version=value$reference_content_version)
@@ -169,7 +177,8 @@ test_that("scalar comparison Parquets publish constrained grains with exact inpu
       comparison_facet = "population", allowed_levels = I(list("commune")),
       denominator_semantics = "count", completeness = "sparse", descriptor_version = "descriptor-v1",
       stringsAsFactors = FALSE),
-    eligible_territories = data.frame(territory_id = "c1", territory_type = "commune", stringsAsFactors = FALSE)
+    eligible_territories = data.frame(territory_id = "c1", territory_type = "commune", stringsAsFactors = FALSE),
+    provenance = data.frame(indicator_id="population",territory_id="c1",source_id="census",vintage_id="2020")
   )
   territories <- data.frame(territory_id = c("c1", "e1", "d1", "r1"),
     territory_type = c("commune", "epci", "departement", "region"), epci_id = c("e1", NA, NA, NA),
@@ -180,14 +189,16 @@ test_that("scalar comparison Parquets publish constrained grains with exact inpu
 
   paths <- write_scalar_comparison_parquets(projection, directory)
 
-  expect_length(paths, 2L)
+  expect_length(paths, 3L)
   expect_true(all(file.exists(paths)))
   groups <- nanoparquet::read_parquet(paths[[1L]])
   results <- nanoparquet::read_parquet(paths[[2L]])
+  lineage <- nanoparquet::read_parquet(paths[[3L]])
   expect_true(all(groups$scalar_content_version == "scalar-v1"))
   expect_true(all(groups$reference_content_version == "territories-v1"))
   expect_true(all(groups$content_version == projection$content_version))
   expect_true(all(results$scalar_content_version == "scalar-v1"))
   expect_true(all(results$reference_content_version == "territories-v1"))
   expect_true(all(results$content_version == projection$content_version))
+  expect_true(all(lineage$vintage_id == "2020"))
 })

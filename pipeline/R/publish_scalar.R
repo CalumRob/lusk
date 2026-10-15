@@ -472,22 +472,28 @@ scalar_content_version <- function(projection) {
 
 validate_scalar_comparison_projection <- function(projection) {
   group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
-    "statistic", "median", "member_count", "eligible_count", "missing_count",
+    "statistic", "median", "member_count", "eligible_count", "missing_count", "lineage_source_count",
     "scalar_content_version", "reference_content_version", "content_version")
   territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
     "territory_id", "value", "status", "rank", "tie_count", "rank_size",
     "scalar_content_version", "reference_content_version", "content_version")
-  if (!is.list(projection) || !all(c("groups", "territories", "scalar_content_version",
+  if (!is.list(projection) || !all(c("groups", "territories", "lineage", "scalar_content_version",
       "reference_content_version", "content_version") %in% names(projection)) ||
       !is.data.frame(projection$groups) || !is.data.frame(projection$territories) ||
       !setequal(names(projection$groups), group_fields) ||
-      !setequal(names(projection$territories), territory_fields))
+      !setequal(names(projection$territories), territory_fields) ||
+      !is.data.frame(projection$lineage) ||
+      !setequal(names(projection$lineage), c("comparison_context", "group_id", "territory_type",
+        "facet_id", "source_id", "vintage_id", "comparison_content_version")))
     stop("Scalar comparison projection is missing or contains undeclared fields", call.=FALSE)
   if (anyNA(projection[c("scalar_content_version", "reference_content_version", "content_version")]) ||
       any(!nzchar(unlist(projection[c("scalar_content_version", "reference_content_version", "content_version")]))))
     stop("Scalar comparison publication versions are invalid", call.=FALSE)
   groups <- projection$groups
   territories <- projection$territories
+  lineage <- projection$lineage
+  if (any(as.character(lineage$comparison_content_version) != projection$content_version))
+    stop("Scalar comparison lineage version is stale", call.=FALSE)
   contexts <- c("density_class", "epci", "bretagne", "same_level")
   levels <- c("commune", "epci", "departement")
   if (anyNA(groups[c("comparison_context", "group_id", "territory_type", "indicator_id", "statistic")]) ||
@@ -529,6 +535,22 @@ validate_scalar_comparison_projection <- function(projection) {
         !is.na(territories$rank_size))))
       stop("Scalar comparison ranks or tie counts are invalid", call.=FALSE)
   }
+  if (anyNA(lineage) || any(!lineage$comparison_context %in% contexts) ||
+      any(!lineage$territory_type %in% levels) ||
+      any(!grepl("^[a-z][a-z0-9_]{0,95}$", lineage$facet_id)) ||
+      any(!nzchar(trimws(lineage$group_id)) | !nzchar(trimws(lineage$source_id)) |
+        !nzchar(trimws(lineage$vintage_id))) ||
+      anyDuplicated(lineage) || any(!paste(lineage$comparison_context,lineage$group_id,
+        lineage$territory_type,lineage$facet_id,sep="\r") %in%
+        paste(groups$comparison_context,groups$group_id,groups$territory_type,groups$indicator_id,sep="\r")))
+    stop("Scalar comparison source lineage is invalid or has no published group", call.=FALSE)
+  lineage_key <- paste(lineage$comparison_context, lineage$group_id,
+    lineage$territory_type, lineage$facet_id, sep="\r")
+  group_lineage_key <- paste(groups$comparison_context, groups$group_id,
+    groups$territory_type, groups$indicator_id, sep="\r")
+  actual_lineage_counts <- tabulate(match(lineage_key, group_lineage_key), nbins=nrow(groups))
+  if (any(groups$lineage_source_count != actual_lineage_counts))
+    stop("Scalar comparison lineage counts do not match their groups", call.=FALSE)
   for (field in c("scalar_content_version", "reference_content_version", "content_version")) {
     if (any(as.character(groups[[field]]) != projection[[field]]) ||
         any(as.character(territories[[field]]) != projection[[field]]))
@@ -539,7 +561,8 @@ validate_scalar_comparison_projection <- function(projection) {
     scalar_content_version=projection$scalar_content_version,
     reference_content_version=projection$reference_content_version,
     groups=groups[setdiff(names(groups), dependency_columns)],
-    territories=territories[setdiff(names(territories), dependency_columns)]))
+    territories=territories[setdiff(names(territories), dependency_columns)],
+    lineage=lineage[setdiff(names(lineage), "comparison_content_version")]))
   if (!identical(computed_version, projection$content_version))
     stop("Scalar comparison content version does not match its rows and dependencies", call.=FALSE)
   invisible(projection)
@@ -617,6 +640,7 @@ project_scalar_comparisons <- function(scalar_projection, territory_reference,
 
   group_rows <- list()
   territory_rows <- list()
+  lineage_rows <- list()
   facts <- scalar_projection$facts
   for (descriptor_index in seq_len(nrow(descriptors))) {
     descriptor <- descriptors[descriptor_index, , drop=FALSE]
@@ -634,6 +658,17 @@ project_scalar_comparisons <- function(scalar_projection, territory_reference,
       selected <- indicator_facts[indicator_facts$territory_type == territory_type &
         indicator_facts$territory_id %in% ids, , drop=FALSE]
       selected <- selected[match(ids, selected$territory_id), , drop=FALSE]
+      source_rows <- scalar_projection$provenance[
+        scalar_projection$provenance$indicator_id == indicator_id &
+          scalar_projection$provenance$territory_id %in% ids, , drop=FALSE]
+      if (nrow(source_rows)) {
+        lineage_rows[[length(lineage_rows) + 1L]] <- unique(data.frame(
+          comparison_context=as.character(group$comparison_context[[1L]]),
+          group_id=as.character(group$group_id[[1L]]), territory_type=territory_type,
+          facet_id=indicator_id, source_id=as.character(source_rows$source_id),
+          vintage_id=as.character(source_rows$vintage_id), stringsAsFactors=FALSE))
+      }
+      source_count <- nrow(unique(source_rows[c("source_id", "vintage_id")]))
       status <- as.character(selected$status)
       status[is.na(status)] <- "not_published"
       value <- as.numeric(selected$value)
@@ -654,7 +689,8 @@ project_scalar_comparisons <- function(scalar_projection, territory_reference,
         indicator_id=indicator_id, statistic="median",
         median=if (length(values)) stats::median(values) else NA_real_,
         member_count=as.integer(length(ids)), eligible_count=as.integer(length(values)),
-        missing_count=as.integer(length(ids) - length(values)), stringsAsFactors=FALSE)
+        missing_count=as.integer(length(ids) - length(values)),
+        lineage_source_count=as.integer(source_count), stringsAsFactors=FALSE)
       territory_rows[[length(territory_rows) + 1L]] <- data.frame(
         comparison_context=as.character(group$comparison_context[[1L]]),
         group_id=as.character(group$group_id[[1L]]), territory_type=territory_type,
@@ -674,17 +710,23 @@ project_scalar_comparisons <- function(scalar_projection, territory_reference,
   }
   groups <- order_rows(groups, group_key)
   territories <- order_rows(territories, c(group_key, "territory_id"))
+  lineage <- if (length(lineage_rows)) do.call(rbind,lineage_rows) else data.frame(
+    comparison_context=character(),group_id=character(),territory_type=character(),
+    facet_id=character(),source_id=character(),vintage_id=character(),stringsAsFactors=FALSE)
+  lineage <- order_rows(unique(lineage),c("comparison_context","group_id","territory_type","facet_id","source_id","vintage_id"))
   version <- scalar_content_version(list(scalar_content_version=input_scalar_content_version,
-    reference_content_version=reference_content_version, groups=groups, territories=territories))
+    reference_content_version=reference_content_version, groups=groups, territories=territories,
+    lineage=lineage))
   add_versions <- function(x) {
     x$scalar_content_version <- input_scalar_content_version
     x$reference_content_version <- reference_content_version
     x$content_version <- version
     x
   }
-  result <- list(groups=add_versions(groups), territories=add_versions(territories),
+  result <- list(groups=add_versions(groups), territories=add_versions(territories), lineage=lineage,
     scalar_content_version=input_scalar_content_version,
     reference_content_version=reference_content_version, content_version=version)
+  result$lineage$comparison_content_version <- version
   validate_scalar_comparison_projection(result)
   result
 }
@@ -697,7 +739,7 @@ write_scalar_comparison_parquets <- function(projection, directory) {
     stop("Scalar comparison Parquet directory is invalid", call.=FALSE)
   dir.create(directory, recursive=TRUE, showWarnings=FALSE)
   targets <- file.path(directory, c("scalar_comparison_groups.parquet",
-    "scalar_comparison_territories.parquet"))
+    "scalar_comparison_territories.parquet", "scalar_comparison_lineage.parquet"))
   staged <- vapply(targets, function(path) tempfile(pattern="scalar-comparison-",
     tmpdir=dirname(path), fileext=".parquet"), character(1))
   backups <- vapply(targets, function(path) tempfile(pattern="scalar-comparison-backup-",
@@ -721,6 +763,7 @@ write_scalar_comparison_parquets <- function(projection, directory) {
   }, add=TRUE)
   nanoparquet::write_parquet(projection$groups, staged[[1L]])
   nanoparquet::write_parquet(projection$territories, staged[[2L]])
+  nanoparquet::write_parquet(projection$lineage, staged[[3L]])
   for (i in seq_along(targets)) {
     if (file.exists(targets[[i]])) {
       if (!file.rename(targets[[i]], backups[[i]]))
@@ -777,27 +820,34 @@ scalar_comparison_postgres_adapter <- function(con) {
     marker=function() DBI::dbGetQuery(con, "SELECT content_version, scalar_content_version,
       reference_content_version FROM scalar_comparison_publication WHERE singleton"),
     replace=function(projection) {
+      DBI::dbExecute(con, "DELETE FROM comparison_source_lineage WHERE comparison_family='scalar'")
       DBI::dbExecute(con, "DELETE FROM scalar_comparison_territory")
       DBI::dbExecute(con, "DELETE FROM scalar_comparison_group")
       group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
-        "statistic", "median", "member_count", "eligible_count", "missing_count")
+        "statistic", "median", "member_count", "eligible_count", "missing_count", "lineage_source_count")
       territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
         "territory_id", "value", "status", "rank", "tie_count", "rank_size")
       DBI::dbWriteTable(con, "scalar_comparison_group",
         projection$groups[group_fields], append=TRUE, row.names=FALSE)
       DBI::dbWriteTable(con, "scalar_comparison_territory",
         projection$territories[territory_fields], append=TRUE, row.names=FALSE)
+      lineage <- projection$lineage
+      lineage$comparison_family <- "scalar"
+      lineage$comparison_content_version <- projection$content_version
+      DBI::dbWriteTable(con, "comparison_source_lineage",
+        lineage[c("comparison_family","comparison_context","group_id","territory_type",
+          "facet_id","source_id","vintage_id","comparison_content_version")], append=TRUE, row.names=FALSE)
       DBI::dbExecute(con, paste(
         "INSERT INTO scalar_comparison_publication(singleton, content_version, scalar_content_version,",
-        "reference_content_version, group_row_count, territory_row_count, published_at)",
-        "VALUES (true, $1, $2, $3, $4, $5, now())",
+        "reference_content_version, group_row_count, territory_row_count, lineage_row_count, published_at)",
+        "VALUES (true, $1, $2, $3, $4, $5, $6, now())",
         "ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,",
         "scalar_content_version=EXCLUDED.scalar_content_version,",
         "reference_content_version=EXCLUDED.reference_content_version,",
         "group_row_count=EXCLUDED.group_row_count,",
-        "territory_row_count=EXCLUDED.territory_row_count, published_at=EXCLUDED.published_at"),
+        "territory_row_count=EXCLUDED.territory_row_count, lineage_row_count=EXCLUDED.lineage_row_count, published_at=EXCLUDED.published_at"),
         params=list(projection$content_version, projection$scalar_content_version,
-        projection$reference_content_version, nrow(projection$groups), nrow(projection$territories)))
+        projection$reference_content_version, nrow(projection$groups), nrow(projection$territories), nrow(projection$lineage)))
       invisible(TRUE)
     }
   )
@@ -854,7 +904,9 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
       !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical|it_building_publisher)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
-  tables <- c("observed_collection_comparison_territory", "observed_collection_comparison_group", "observed_collection_comparison_publication",
+  tables <- c("comparison_source_lineage", "aedar_comparison_territory", "aedar_comparison_group",
+    "aedar_comparison_publication",
+    "observed_collection_comparison_territory", "observed_collection_comparison_group", "observed_collection_comparison_publication",
     "profile_comparison_territory", "profile_comparison_group", "profile_comparison_publication",
     "scalar_comparison_territory", "scalar_comparison_group", "scalar_comparison_publication",
     "ordered_series_comparison_territory", "ordered_series_comparison_group", "ordered_series_comparison_publication",
@@ -875,7 +927,7 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
     "building_evidence_descriptor", "essential_service_access", "service_registry",
     "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
     "table_publication")
-  functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_combined_smoke_value()", "reject_smoke_ramp()",
+  functions <- c("check_aedar_comparison_publication()", "reject_profile_insert()", "reject_smoke_value()", "reject_combined_smoke_value()", "reject_smoke_ramp()",
     "reject_series_smoke_insert()",
     "assert_profile_territory_level()", "assert_scalar_observation_has_source()",
     "assert_scalar_descriptor_sources()", "assert_scalar_levels()",

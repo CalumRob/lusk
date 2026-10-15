@@ -338,6 +338,7 @@ CREATE TABLE scalar_comparison_publication (
     reference_content_version text NOT NULL,
     group_row_count integer NOT NULL CHECK (group_row_count >= 0),
     territory_row_count integer NOT NULL CHECK (territory_row_count >= 0),
+    lineage_row_count integer NOT NULL CHECK (lineage_row_count >= 0),
     published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE scalar_comparison_group (
@@ -350,6 +351,7 @@ CREATE TABLE scalar_comparison_group (
     member_count integer NOT NULL CHECK (member_count > 0),
     eligible_count integer NOT NULL CHECK (eligible_count >= 0),
     missing_count integer NOT NULL CHECK (missing_count >= 0),
+    lineage_source_count integer NOT NULL CHECK (lineage_source_count >= 0),
     PRIMARY KEY (comparison_context,group_id,territory_type,indicator_id),
     CHECK (member_count=eligible_count+missing_count),
     CHECK ((eligible_count=0 AND median IS NULL) OR
@@ -375,8 +377,26 @@ CREATE TABLE scalar_comparison_territory (
       OR (status<>'measured' AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)),
     CHECK (status<>'measured' OR (rank<=rank_size AND tie_count<=rank_size))
 );
+-- Shared provenance projection at the resolved comparison group/facet grain.
+-- It stores only the source/vintage union for each published group, not one
+-- copy per focal territory or a read-time scan of peer observations.
+CREATE TABLE comparison_source_lineage (
+    comparison_family text NOT NULL CHECK (comparison_family IN
+      ('scalar','profile','ordered_series','period_detail','aedar')),
+    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level')),
+    group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
+    territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement')),
+    facet_id text NOT NULL CHECK (length(trim(facet_id)) > 0),
+    source_id text NOT NULL,
+    vintage_id text NOT NULL,
+    comparison_content_version text NOT NULL,
+    PRIMARY KEY (comparison_family,comparison_context,group_id,territory_type,facet_id,source_id,vintage_id),
+    FOREIGN KEY (source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
+);
 GRANT SELECT ON scalar_comparison_publication,scalar_comparison_group,scalar_comparison_territory TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON scalar_comparison_publication,scalar_comparison_group,scalar_comparison_territory TO lusk_publisher;
+GRANT SELECT ON comparison_source_lineage TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON comparison_source_lineage TO lusk_publisher;
 
 -- Detail-backed declared profile facets only. Scalar-backed profiles (notably
 -- DPE) continue to reference scalar_comparison and are never copied here.
@@ -401,6 +421,7 @@ CREATE TABLE profile_comparison_group (
     member_count integer NOT NULL CHECK (member_count > 0),
     eligible_count integer NOT NULL CHECK (eligible_count >= 0),
     missing_count integer NOT NULL CHECK (missing_count >= 0),
+    lineage_source_count integer NOT NULL CHECK (lineage_source_count >= 0),
     profile_content_version text NOT NULL,
     reference_content_version text NOT NULL,
     PRIMARY KEY (comparison_context,group_id,territory_type,indicator_id,detail_key,sex_key),

@@ -22,7 +22,7 @@ project_declared_profile_comparisons <- function(profiles, territory_reference,
   if (!is.list(profiles) || !length(profiles) ||
       any(!vapply(profiles, function(p) is.list(p) && !is.null(p$descriptor), logical(1))))
     stop("Declared profile comparison projections are required", call.=FALSE)
-  group_rows <- list(); territory_rows <- list()
+  group_rows <- list(); territory_rows <- list(); lineage_rows <- list()
   for (profile in profiles) {
     d <- profile$descriptor
     id <- d$indicator_id
@@ -53,6 +53,20 @@ project_declared_profile_comparisons <- function(profiles, territory_reference,
       if (anyDuplicated(selected$territory_id) || !setequal(selected$territory_id, ids))
         stop("Profile comparison membership differs from declared territory facts", call.=FALSE)
       selected <- selected[match(ids, selected$territory_id),,drop=FALSE]
+      provenance <- profile$provenance
+      lineage_source_count <- 0L
+      if (is.data.frame(provenance)) {
+        provenance <- provenance[provenance$indicator_id == id & provenance$territory_id %in% ids &
+          provenance$detail_key == detail & provenance$sex_key == ifelse(is.na(sex),"",sex),,drop=FALSE]
+        if (nrow(provenance)) {
+          provenance <- unique(provenance[c("source_id","vintage_id")])
+          lineage_source_count <- nrow(provenance)
+          lineage_rows[[length(lineage_rows)+1L]] <- data.frame(
+          comparison_context=as.character(g$comparison_context),group_id=as.character(g$group_id),
+          territory_type=type,facet_id=id,source_id=as.character(provenance$source_id),
+          vintage_id=as.character(provenance$vintage_id),stringsAsFactors=FALSE)
+        }
+      }
       selected$status[is.na(selected$status)] <- "not_published"
       if (any(!selected$status %in% c("measured", "suppressed", "unsupported", "not_available", "not_published")))
         stop("Invalid profile comparison availability state", call.=FALSE)
@@ -71,6 +85,7 @@ project_declared_profile_comparisons <- function(profiles, territory_reference,
       group_rows[[length(group_rows)+1L]] <- cbind(key,
         statistic="median", median=if(length(vals)) stats::median(vals) else NA_real_,
         member_count=length(ids), eligible_count=length(vals), missing_count=length(ids)-length(vals),
+        lineage_source_count=lineage_source_count,
         profile_content_version=profile_content_version, reference_content_version=reference_content_version)
       territory_rows[[length(territory_rows)+1L]] <- cbind(key,
         territory_id=ids, value=selected$value, status=selected$status, rank=ranks,
@@ -84,7 +99,12 @@ project_declared_profile_comparisons <- function(profiles, territory_reference,
     groups <- groups[order(groups$comparison_context, groups$group_id, groups$territory_type, groups$indicator_id, groups$detail_key, groups$sex_key),,drop=FALSE]
     territories <- territories[order(territories$comparison_context, territories$group_id, territories$territory_type, territories$indicator_id, territories$detail_key, territories$sex_key, territories$territory_id),,drop=FALSE]
   }
-  list(groups=groups, territories=territories,
+  lineage <- if(length(lineage_rows)) do.call(rbind,lineage_rows) else data.frame(
+    comparison_context=character(),group_id=character(),territory_type=character(),facet_id=character(),
+    source_id=character(),vintage_id=character(),stringsAsFactors=FALSE)
+  if(nrow(lineage)) lineage <- unique(lineage[order(lineage$comparison_context,lineage$group_id,
+    lineage$territory_type,lineage$facet_id,lineage$source_id,lineage$vintage_id),,drop=FALSE])
+  list(groups=groups, territories=territories, lineage=lineage,
        profile_content_version=profile_content_version,
        reference_content_version=reference_content_version)
 }
@@ -98,9 +118,12 @@ write_profile_comparison_parquets <- function(projection, directory,
   dir.create(directory, recursive=TRUE, showWarnings=FALSE)
   version <- profile_content_version(projection)
   generation <- file.path(directory, paste0("profile-comparison-", version))
-  targets <- file.path(generation, c("groups.parquet", "territories.parquet"))
+  targets <- file.path(generation, c("groups.parquet", "territories.parquet", "lineage.parquet"))
   dir.create(generation, recursive=TRUE, showWarnings=FALSE)
-  expected <- list(projection$groups, projection$territories)
+  lineage <- projection$lineage
+  if (is.null(lineage)) lineage <- data.frame(comparison_context=character(),group_id=character(),
+    territory_type=character(),facet_id=character(),source_id=character(),vintage_id=character())
+  expected <- list(projection$groups, projection$territories, lineage)
   present <- file.exists(targets)
   for (i in which(present)) {
     existing <- tryCatch(nanoparquet::read_parquet(targets[i]), error=function(e) NULL)
@@ -612,6 +635,7 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
       if (any(!existing %in% ids)) stop("Complete profile snapshot would discard an existing profile", call.=FALSE)
       DBI::dbExecute(con, "DELETE FROM profile_comparison_territory")
       DBI::dbExecute(con, "DELETE FROM profile_comparison_group")
+      DBI::dbExecute(con, "DELETE FROM comparison_source_lineage WHERE comparison_family='profile'")
       DBI::dbExecute(con, "DELETE FROM profile_observation")
       DBI::dbExecute(con, "DELETE FROM profile_descriptor_source")
       DBI::dbExecute(con, "DELETE FROM profile_descriptor")
@@ -653,6 +677,11 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
       }
       DBI::dbWriteTable(con, "profile_comparison_group", comparisons$groups, append=TRUE, row.names=FALSE)
       DBI::dbWriteTable(con, "profile_comparison_territory", comparisons$territories, append=TRUE, row.names=FALSE)
+      lineage <- comparisons$lineage
+      lineage$comparison_family <- "profile"
+      lineage$comparison_content_version <- comparison_version
+      DBI::dbWriteTable(con,"comparison_source_lineage",lineage[c("comparison_family","comparison_context",
+        "group_id","territory_type","facet_id","source_id","vintage_id","comparison_content_version")],append=TRUE,row.names=FALSE)
       DBI::dbExecute(con, "INSERT INTO profile_comparison_publication(singleton,content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count,published_at) VALUES(true,$1,$2,$3,$4,$5,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,profile_content_version=EXCLUDED.profile_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=EXCLUDED.published_at",
         params=list(comparison_version, version, reference_version, nrow(comparisons$groups), nrow(comparisons$territories)))
       reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
