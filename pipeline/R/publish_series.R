@@ -989,7 +989,13 @@ read_owned_series_projections <- function(sortie="../public/data",
   }
   if (!is.null(indicator_id)) {
     expected_name <- unname(result_names[[owner]])
+    # `[` drops non-names attributes, so the reporting-only `excluded` marker
+    # must be carried across the scoped subset explicitly. It stays an
+    # attribute of the projection list, never part of the owned projection
+    # content, so the content version is untouched.
+    excluded <- attr(projections,"excluded")
     projections <- projections[expected_name]
+    if (!is.null(excluded)) attr(projections,"excluded") <- excluded
   }
   projections
 }

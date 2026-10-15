@@ -34,6 +34,26 @@ validate_scalar_artifact_projection <- function(projection) {
   invisible(projection)
 }
 
+decode_scalar_descriptors <- function(rows, list_columns) {
+  list_columns <- as.character(unlist(list_columns, use.names=FALSE))
+  declared <- names(rows[[1L]])
+  if (anyDuplicated(list_columns) ||
+      (length(list_columns) && !all(list_columns %in% declared)))
+    stop("Canonical scalar descriptor list columns disagree with the recorded schema", call.=FALSE)
+  columns <- setdiff(declared, list_columns)
+  frame <- as.data.frame(stats::setNames(lapply(columns, function(column)
+    vapply(rows, function(row) {
+      value <- row[[column]]
+      if (is.list(value))
+        stop("Canonical scalar descriptor column carries an unrecorded list value: ", column, call.=FALSE)
+      if (is.null(value)) NA_character_ else as.character(unlist(value, use.names=FALSE)[[1L]])
+    }, character(1))), columns),
+    stringsAsFactors=FALSE)
+  for (column in list_columns)
+    frame[[column]] <- I(lapply(rows, function(row) as.character(unlist(row[[column]], use.names=FALSE))))
+  frame[declared]
+}
+
 scalar_artifact_read_generation <- function(generation, expected_version=NULL) {
   manifest_path <- file.path(generation, "manifest.json")
   if (!file.exists(manifest_path)) stop("Canonical scalar artifact generation is incomplete", call.=FALSE)
@@ -52,19 +72,14 @@ scalar_artifact_read_generation <- function(generation, expected_version=NULL) {
     stop("Canonical scalar artifact version mismatch", call.=FALSE)
   result <- stats::setNames(lapply(names(scalar_artifact_files), function(grain) {
     path <- file.path(generation, scalar_artifact_files[[grain]])
-    if (grain != "descriptors") return(nanoparquet::read_parquet(path))
+    if (grain != "descriptors") {
+      schema <- manifest$table_schemas[[grain]]
+      validate_typed_value_schema(schema)
+      return(restore_typed_value(
+        as.data.frame(nanoparquet::read_parquet(path), stringsAsFactors=FALSE), schema))
+    }
     rows <- jsonlite::fromJSON(path, simplifyVector=FALSE)
-    list_columns <- c("allowed_sources", "allowed_levels")
-    columns <- setdiff(names(rows[[1L]]), list_columns)
-    frame <- as.data.frame(stats::setNames(lapply(columns, function(column)
-      vapply(rows, function(row) {
-        value <- row[[column]]
-        if (is.null(value)) NA_character_ else as.character(unlist(value, use.names=FALSE)[[1L]])
-      }, character(1))), columns),
-      stringsAsFactors=FALSE)
-    for (column in list_columns)
-      frame[[column]] <- I(lapply(rows, function(row) as.character(unlist(row[[column]], use.names=FALSE))))
-    frame[names(rows[[1L]])]
+    decode_scalar_descriptors(rows, manifest$descriptor_list_columns)
   }), scalar_artifact_grains)
   validate_scalar_artifact_projection(result)
   result
@@ -124,8 +139,22 @@ write_scalar_serving_artifact <- function(projection, directory) {
   generation <- file.path(directory, paste0("scalar-", version))
   hashes <- unname(tools::md5sum(paths))
   names(hashes) <- names(scalar_artifact_files)
+  # The descriptor schema records which columns are list-typed so the reader
+  # never has to hardcode them: a new list column is published and read back
+  # from the manifest, and an unrecorded list value fails closed instead of
+  # being silently coerced.
+  descriptor_list_columns <- names(projection$descriptors)[
+    vapply(projection$descriptors, is.list, logical(1))]
+  # The typed Parquet schema is recorded exactly as the typed transport does so
+  # the reader restores the projector's column types (e.g. a double-backed Date
+  # read back as integer-backed from Parquet) and any missing-double payload.
+  table_grains <- setdiff(scalar_artifact_grains, "descriptors")
+  table_schemas <- stats::setNames(lapply(table_grains, function(grain)
+    typed_value_schema(projection[[grain]])), table_grains)
   jsonlite::write_json(list(grain="scalar", version=version,
-    files=as.list(scalar_artifact_files), hashes=as.list(hashes)),
+    files=as.list(scalar_artifact_files), hashes=as.list(hashes),
+    descriptor_list_columns=as.list(descriptor_list_columns),
+    table_schemas=table_schemas),
     file.path(pending, "manifest.json"), auto_unbox=TRUE, pretty=TRUE)
   # Validate the staged bytes via the same reader before making the generation
   # visible. Reuse is allowed only after validating the existing generation.

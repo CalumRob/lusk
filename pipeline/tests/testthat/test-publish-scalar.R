@@ -650,6 +650,22 @@ test_that("fixture publisher projects the complete canonical scalar slice and ve
     completeness="dense_complete"), "exactly one declared source")
 })
 
+test_that("scalar descriptor decoding fails closed on an unrecorded list column", {
+  rows <- list(
+    list(indicator_id="densite", label="Densité", allowed_sources=list("a", "b"), allowed_levels=list("commune")),
+    list(indicator_id="densite2", label="Densité 2", allowed_sources=list("c"), allowed_levels=list("epci", "region")))
+  expect_error(decode_scalar_descriptors(rows, character()),
+    "unrecorded list value")
+  expect_error(decode_scalar_descriptors(rows, "allowed_levels"),
+    "unrecorded list value")
+  expect_error(decode_scalar_descriptors(rows, "missing_column"),
+    "disagree with the recorded schema")
+  decoded <- decode_scalar_descriptors(rows, c("allowed_sources", "allowed_levels"))
+  expect_identical(decoded$allowed_sources[[1L]], c("a", "b"))
+  expect_identical(decoded$allowed_levels[[2L]], c("epci", "region"))
+  expect_identical(decoded$indicator_id, c("densite", "densite2"))
+})
+
 test_that("scalar serving artifacts round-trip all typed grains as one coherent generation", {
   payload <- compute_payload(load_fixture())
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_demographie.json"),
@@ -665,10 +681,17 @@ test_that("scalar serving artifacts round-trip all typed grains as one coherent 
   expect_equal(restored$descriptors, projection$descriptors)
   expect_equal(as.data.frame(restored$facts[c("indicator_id", "territory_id", "territory_type", "status")]),
                as.data.frame(projection$facts[c("indicator_id", "territory_id", "territory_type", "status")]))
+  # Fidelity anchor: the artifact-read projection must carry exactly the
+  # content version of the independently projected pure output, so a scalar
+  # value payload that the transport fails to preserve cannot slip through.
+  expect_identical(scalar_content_version(restored), scalar_content_version(projection))
   generation <- jsonlite::fromJSON(file.path(root, "scalar-current.json"))$generation
   expect_true(all(file.exists(file.path(root, generation, c("facts.parquet",
     "descriptors.json", "provenance.parquet", "datasets.parquet",
     "vintages.parquet", "eligible_territories.parquet")))))
+  manifest <- jsonlite::fromJSON(file.path(root, generation, "manifest.json"), simplifyVector=FALSE)
+  expect_setequal(as.character(unlist(manifest$descriptor_list_columns, use.names=FALSE)),
+    c("allowed_sources", "allowed_levels"))
 
   # Re-publishing identical content validates and reuses the immutable
   # generation; a failed replacement leaves the old pointer unchanged.

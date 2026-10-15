@@ -30,7 +30,7 @@ typed_value_schema <- function(value) {
   if (typeof(value) == "double" && length(value)) {
     missing <- which(is.na(value))
     if (length(missing)) {
-      bytes <- writeBin(value, raw(), size=8L, endian="big")
+      bytes <- writeBin(as.double(value), raw(), size=8L, endian="big")
       starts <- (missing - 1L) * 8L + 1L
       payload <- vapply(starts, function(start)
         paste(sprintf("%02x", as.integer(bytes[start + 0:7])), collapse=""), character(1))

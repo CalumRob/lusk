@@ -602,6 +602,9 @@ test_that("production owned-series reader and check route project both canonical
     unrelated_mobility_metadata,indicator_id="conso_enaf_annuel")
   expect_identical(names(scoped),"conso_enaf_annuel_owned")
   expect_identical(scoped$conso_enaf_annuel_owned$descriptor$indicator_id,"conso_enaf_annuel")
+  # Scoped subsetting must not drop the reporting-only `excluded` marker.
+  expect_identical(attr(scoped,"excluded"),attr(projections,"excluded"))
+  expect_equal(attr(scoped,"excluded")$conso_enaf_annuel_owned$region$row_count,14L)
   unlink(file.path(sortie,"series-serving","raccordement_courbe","current.json"))
   expect_error(read_owned_series_projections(sortie,metadata_path,habitat_metadata_path,
     mobility_metadata_path),"artifact is missing")

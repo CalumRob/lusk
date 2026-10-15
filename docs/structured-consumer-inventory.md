@@ -83,6 +83,7 @@ Search and direct pointers were checked with code-reference searches; this is no
 2. #590 maps each *active* consumer to constrained shared shape or justified dedicated evidence, with representative contracts and owner catalogue questions resolved.
 3. Migrate one existing scalar/detail/series surface at a time with canonical Parquet parity, provenance, outage state, representative Pi performance and scoped-comparison checks; remove its loader/artifact only once all readers are accounted for.
 4. Audit non-browser R/Parquet readers of each `rang_*` output before upstream deletion; separately prove browser parity. Establish monitoring/recovery/failover before the final static consumer is retired.
+5. **Retention of superseded serving generations — separate owner decision, not in this batch.** Every changed content hash lands a new immutable `scalar-<hash>/` or `generation-<hash>/` directory under the cron-committed `public/data`; nothing prunes the previous generations, so growth is unbounded until an owner sets a retention/GC policy. The scalar and ordered-series cutover only adds generations; it does not decide retention.
 
 ## Traceability
 
