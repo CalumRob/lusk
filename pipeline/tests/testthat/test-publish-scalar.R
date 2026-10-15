@@ -624,6 +624,34 @@ test_that("fixture publisher projects the complete canonical scalar slice and ve
     completeness="dense_complete"), "exactly one declared source")
 })
 
+test_that("scalar serving artifacts round-trip all typed grains as one coherent generation", {
+  payload <- compute_payload(load_fixture())
+  metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_demographie.json"),
+                                 simplifyVector=FALSE)
+  projection <- project_fixture_scalar(payload, metadata, completeness="dense_complete")
+  root <- tempfile("scalar-serving-")
+  dir.create(root)
+  on.exit(unlink(root, recursive=TRUE), add=TRUE)
+
+  version <- write_scalar_serving_artifact(projection, root)
+  expect_identical(version, scalar_content_version(projection))
+  restored <- read_scalar_serving_artifact(root)
+  expect_equal(restored$descriptors, projection$descriptors)
+  expect_equal(as.data.frame(restored$facts[c("indicator_id", "territory_id", "territory_type", "status")]),
+               as.data.frame(projection$facts[c("indicator_id", "territory_id", "territory_type", "status")]))
+  generation <- jsonlite::fromJSON(file.path(root, "scalar-current.json"))$generation
+  expect_true(all(file.exists(file.path(root, generation, c("facts.parquet",
+    "descriptors.rds", "provenance.parquet", "datasets.parquet",
+    "vintages.parquet", "eligible_territories.parquet")))))
+
+  # Re-publishing identical content is a no-op, and a missing new grain fails
+  # closed rather than consulting any legacy theme artifact.
+  expect_identical(write_scalar_serving_artifact(projection, root), version)
+  unlink(file.path(root, generation, "facts.parquet"))
+  expect_error(read_scalar_serving_artifact(root), "grain is missing")
+  expect_error(read_scalar_serving_artifact(tempfile("no-scalar-")), "artifact is missing")
+})
+
 test_that("smoke schema cleanup is explicitly dependency ordered and restricted", {
   sql <- scalar_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "scalar_it_test")
   serving_sql <- serving_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "scalar_it_test")
