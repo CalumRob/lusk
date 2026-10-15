@@ -1,5 +1,6 @@
 """Public runner exercises offline, frame-matched context preflight and reuse."""
 import json
+import gc
 import struct
 import sys
 import tempfile
@@ -110,6 +111,17 @@ class PublicContextRunTests(unittest.TestCase):
         return run_production(recipe, Binding("fixture", MapSet({"frame": [feature]})),
                               "representative", ["inspection"], adapter, output)
 
+    @staticmethod
+    def _owned_epsg4326_communes(path):
+        """Tiny test-owned equivalent of the local EPSG:4326 commune source."""
+        path.write_text(json.dumps({"type": "FeatureCollection",
+            "name": "fixture-communes", "crs": {"type": "name", "properties": {
+                "name": "urn:ogc:def:crs:EPSG::4326"}},
+            "features": [{"type": "Feature", "properties": {"code_insee": "fixture"},
+                "geometry": {"type": "Polygon", "coordinates": [[[-2.4, 48.1],
+                    [-1.9, 48.1], [-1.9, 48.5], [-2.4, 48.5], [-2.4, 48.1]]]}}]}),
+            encoding="utf-8")
+
     def test_public_run_rejects_missing_frame_coverage_without_rendering(self):
         with tempfile.TemporaryDirectory() as temp:
             cache, output = Path(temp) / "context", Path(temp) / "output"
@@ -165,17 +177,24 @@ class PublicContextRunTests(unittest.TestCase):
             self.assertTrue(current_path.is_file())
 
     def test_inline_only_epsg4326_source_keeps_original_transform_without_official_fetch(self):
-        repo = Path(__file__).resolve().parents[4]
-        with tempfile.TemporaryDirectory() as temp:
+        with tempfile.TemporaryDirectory(ignore_cleanup_errors=True) as temp:
+            root = Path(temp)
+            (root / "raw").mkdir()
+            self._owned_epsg4326_communes(root / "raw" / "communes_limites.geojson")
             project = QgsProject.instance()
             project.clear()
-            with patch("mainland_context._http_fetch", side_effect=AssertionError("inline asked for official context")):
-                shared = prepare_shared_ground(project, repo / "pipeline/data/raw",
-                    QgsRectangle(300000, 6780000, 350000, 6830000),
-                    repo / "pipeline/maps/production/assets", include_ocsge=False,
-                    cache_root=Path(temp) / ".stage-cache" / "context-land")
-            self.assertFalse(shared.context_geometry.isEmpty())
-            project.clear()
+            try:
+                with patch("mainland_context._http_fetch", side_effect=AssertionError("inline asked for official context")):
+                    shared = prepare_shared_ground(project, root / "raw",
+                        QgsRectangle(300000, 6780000, 350000, 6830000),
+                        Path(__file__).resolve().parents[1] / "assets", include_ocsge=False,
+                        cache_root=root / ".stage-cache" / "context-land")
+                self.assertFalse(shared.context_geometry.isEmpty())
+            finally:
+                if "shared" in locals():
+                    del shared
+                project.clear()
+                gc.collect()
 
     def test_inspection_shared_ground_fails_offline_when_preacquisition_is_missing(self):
         repo = Path(__file__).resolve().parents[4]

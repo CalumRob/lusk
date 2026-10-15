@@ -17,6 +17,31 @@ def aedar_car_recipe():
     return replace(aedar_loss_recipe(), name="aedar-car-diversity", version=1)
 
 
+def record_car_approval(manifest, qa, reviewer, outcome, path):
+    """Record the historical six-native-WebP car review contract.
+
+    This is not selected AEDAR package approval; it remains with the car source
+    contract rather than an obsolete command-line launcher.
+    """
+    from approval import record_human_approval
+    from runner import PROFILES
+
+    recipe = aedar_car_recipe()
+    if (manifest.get("recipe") != recipe.name or manifest.get("recipe_version") != recipe.version or
+            manifest.get("foundation_version") != recipe.foundation.version):
+        raise ValueError("Car approval requires the current car-diversity recipe")
+    for name, profile in PROFILES.items():
+        if manifest.get("artifact_contracts", {}).get(name) != AedarCarAdapter.output_contract(profile):
+            raise ValueError("Car approval requires native production WebP encoding, not PNG evidence")
+    for row in manifest.get("outputs", []):
+        profile = PROFILES[row["profile"]]
+        if Path(row["path"]).suffix.lower() != ".webp" or row.get("artifact_contract") != AedarCarAdapter.output_contract(profile):
+            raise ValueError("Car approval artifacts must match their native WebP contracts")
+        validate_webp(row["path"], profile)
+    record_human_approval(manifest, qa, reviewer, outcome, path,
+                          representative_pairs=AedarCarAdapter.approval_pairs())
+
+
 def build_aedar_car_map_set(raw_dir, facts_path, *, scope="representative", family_config=None,
                            territory_registry_path=None):
     """Bind only car, without scanning loss fields or deriving loss caps."""

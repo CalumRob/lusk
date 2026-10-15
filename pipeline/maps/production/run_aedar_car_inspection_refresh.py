@@ -142,7 +142,7 @@ def _make_spot_check_sheet(review_set, path):
         raise RuntimeError(f"could not save AEDAR car spot-check sheet: {path}")
 
 
-def main(argv=None):
+def build_parser():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--raw-dir", type=Path, default=ROOT / "pipeline/data/raw")
     parser.add_argument("--facts-path", type=Path,
@@ -153,7 +153,11 @@ def main(argv=None):
     parser.add_argument("--previous-manifest", type=Path,
                         default=PRODUCTION / "output/aedar-static-publish/full-manifest.json")
     parser.add_argument("--source-cache-owner", type=Path)
-    args = parser.parse_args(argv)
+    return parser
+
+
+def main(argv=None):
+    args = build_parser().parse_args(argv)
     qgis_prefix = Path(sys.executable).resolve().parents[1] / "qgis-ltr"
     if qgis_prefix.is_dir():
         QgsApplication.setPrefixPath(str(qgis_prefix), True)
