@@ -4169,3 +4169,54 @@ def aedar_territorial_aggregates(
     return {"territory":{"territory_type":territory_type,"territory_id":territory_id},
       "content_version":marker[0],"reference_content_version":marker[2],"limit":limit,"offset":offset,
       "facts":rows}
+
+
+@app.get("/api/aedar/territories/{territory_type}/{territory_id}/comparisons")
+def aedar_fixed_comparisons(
+    territory_type: Literal["commune", "epci", "departement"],
+    context: Literal["density_class", "epci", "bretagne", "same_level"] = Query(...),
+    territory_id: str = Path(min_length=1, max_length=32),
+    typequ: str = Query(min_length=4, max_length=4),
+    measure: str = Query(min_length=1, max_length=64),
+):
+    """Bounded read of one published AEDAR fixed-context measure."""
+    if measure not in _AEDAR_MEASURE_KEYS:
+        raise HTTPException(422, "Unknown AEDAR measure")
+    with pool().connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            marker = conn.execute("""SELECT p.content_version,p.source_snapshot_id,p.aedar_content_version,
+              p.reference_content_version,p.input_content_version,p.input_identity,p.group_row_count,p.territory_row_count,
+              a.content_version,r.content_version
+              FROM aedar_comparison_publication p
+              JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
+              JOIN table_publication r ON r.table_name='territory_reference'
+              WHERE p.singleton""").fetchone()
+            if not marker or marker[2] != marker[8] or marker[3] != marker[9] or marker[6] < 1 or marker[7] < 1 or marker[1] != "2026-v1":
+                raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
+            territory = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
+                                     (territory_type, territory_id)).fetchone()
+            if not territory:
+                raise HTTPException(404, "Unknown territory type/id")
+            cursor = conn.execute("""SELECT g.comparison_context,g.group_id,g.territory_type,g.typequ,
+              a.typequ_label,a.source_id,a.vintage_id,a.source_url,a.licence,a.attribution,a.reference_date,a.publication_date,
+              g.measure,g.statistic,g.value AS group_value,g.n_addresses AS group_n_addresses,
+              g.n_observed AS group_n_observed,g.coverage_status AS group_coverage_status,
+              g.member_count,g.eligible_count,g.missing_count,
+              t.value,t.status,t.n_addresses,t.n_observed,t.coverage_status,t.rank,t.rank_size
+              FROM aedar_comparison_territory t JOIN aedar_comparison_group g USING
+                (comparison_context,group_id,territory_type,typequ,measure)
+              JOIN aedar_territorial_aggregate a ON (a.territory_type,a.territory_id,a.typequ)=
+                (t.territory_type,t.territory_id,t.typequ)
+              WHERE t.territory_type=%s AND t.territory_id=%s AND t.comparison_context=%s
+                AND t.typequ=%s AND t.measure=%s""",
+                (territory_type,territory_id,context,typequ,measure))
+            row = cursor.fetchone()
+            if not row:
+                raise HTTPException(404, "No published result for this fixed context")
+            names = [column.name for column in cursor.description]
+            result = dict(zip(names,row))
+    return {"territory":{"territory_type":territory_type,"territory_id":territory_id},
+      "content_version":marker[0],"source_snapshot_id":marker[1],
+      "aedar_content_version":marker[2],"reference_content_version":marker[3],
+      "input_content_version":marker[4],"input_identity":marker[5],"comparison":result}
