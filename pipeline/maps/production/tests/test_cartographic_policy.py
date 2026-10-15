@@ -7,7 +7,8 @@ sys.path.insert(0, str(Path(__file__).parents[1]))
 
 class CartographicPolicyTests(unittest.TestCase):
     def test_native_parity_gate_requires_six_unique_exact_references(self):
-        from proof_issue772_native import EXPECTED_NATIVE_REFERENCES, validate_native_parity
+        from pipeline.maps.production.tests.proof_issue772_native import (
+            EXPECTED_NATIVE_REFERENCES, validate_native_parity)
         records = [dict(family=family, profile=profile, file=name, sha256=digest)
                    for (family, profile, name), digest in EXPECTED_NATIVE_REFERENCES.items()]
         records.append(dict(family="other", profile="inspection", file="qa.webp", sha256="x"))
