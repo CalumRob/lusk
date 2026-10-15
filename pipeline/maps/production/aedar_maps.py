@@ -76,39 +76,45 @@ MODE_LABELS = {"car": "en voiture", "transit": "en transports",
                "walk": "à pied"}
 
 
-def aedar_recipe() -> Recipe:
+def aedar_recipe(cartographic_policy=None) -> Recipe:
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
+    policy = cartographic_policy or SHARED_CARTOGRAPHIC_POLICY
     return Recipe(
         name="aedar-address-access-exploration",
         version=19,
         family="aedar",
         foundation=Foundation(
             version="shared-network-map-ground-v2",
-            framing={"shape": "square-circular-frame", "margin_ratio": 0.08},
+            framing=policy.framing(),
             geography={"territory": "Admin Express COG 2025"},
-            ground={"inspection_surface": "ocsge-selected-cs", "water": "sea-colour"},
+            ground=policy.ground(inline=False),
             composition={"inspection": {"style": "aedar-address-dot-map", "version": 20},
                          "inline": {"style": "aedar-median-hex-grid", "version": 1,
-                                    "cell_width_px": 9}},
+                         "cell_width_px": 9}},
+            cartographic_policy=policy,
         ),
         required_fields=("geometry", "territory", "mode", "analytical_geometry",
                          "extent", "facts_path", "value_field", "measure", "horizon", "scale_breaks"),
     )
 
 
-def aedar_loss_recipe() -> Recipe:
+def aedar_loss_recipe(cartographic_policy=None) -> Recipe:
     """Recipe for continuous car-diversity and exact TYPEQU-loss maps."""
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
+    policy = cartographic_policy or SHARED_CARTOGRAPHIC_POLICY
     return Recipe(
         name="aedar-address-equipment-loss-exploration",
         version=1,
         family="aedar",
         foundation=Foundation(
             version="shared-network-map-ground-v2",
-            framing={"shape": "square-circular-frame", "margin_ratio": 0.08},
+            framing=policy.framing(),
             geography={"territory": "Admin Express COG 2025"},
-            ground={"inspection_surface": "ocsge-selected-cs", "water": "sea-colour"},
+            ground=policy.ground(inline=False),
             composition={"inspection": {"style": "aedar-address-equipment-loss", "version": 1},
                          "inline": {"style": "aedar-median-hex-grid", "version": 1,
-                                    "cell_width_px": 9}},
+                                     "cell_width_px": 9}},
+            cartographic_policy=policy,
         ),
         required_fields=("geometry", "territory", "mode", "analytical_geometry",
                          "extent", "facts_path", "value_field", "measure", "horizon", "scale_breaks",
@@ -116,11 +122,13 @@ def aedar_loss_recipe() -> Recipe:
     )
 
 
-def _aedar_representative_bases(raw_dir: str | Path) -> dict[tuple[str, str], dict]:
+def _aedar_representative_bases(raw_dir: str | Path, cartographic_policy=None) -> dict[tuple[str, str], dict]:
     """Reuse standard territory frames and derive the exploratory commune if needed."""
-    from network import _load_network_family_config, _map_extent, _projected, build_representative_map_set
+    from network import _load_network_family_config, _projected, build_representative_map_set
 
-    representative = build_representative_map_set(raw_dir)
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
+    policy = cartographic_policy or SHARED_CARTOGRAPHIC_POLICY
+    representative = build_representative_map_set(raw_dir, resolved_cartographic_policy=policy)
     bases = {(feature["territory"]["kind"], feature["territory"]["code"]): feature
              for features in representative.map_set.layers.values() for feature in features
              if (feature["territory"]["kind"], feature["territory"]["code"]) in TERRITORIES}
@@ -134,13 +142,14 @@ def _aedar_representative_bases(raw_dir: str | Path) -> dict[tuple[str, str], di
     project = QgsProject.instance()
     region = bases[("region", "53")]
     from inspection_frame import InspectionFramePolicy
-    frame_policy = InspectionFramePolicy(_load_network_family_config())
+    from inspection_headings import registered_inspection_headings
+    frame_policy = InspectionFramePolicy(registered_inspection_headings(_load_network_family_config()))
     for source_feature in layer.getFeatures():
         if str(source_feature["code_insee"]) != commune_key[1]:
             continue
         geometry = _projected(source_feature.geometry(), layer.crs(), project)
         name = str(source_feature["nom_officiel"])
-        extent = _map_extent(geometry)
+        extent = _aedar_frame_extent(geometry, policy)
         bases[commune_key] = {
             "territory": {"kind": "commune", "code": commune_key[1],
                           "name": name},
@@ -149,11 +158,19 @@ def _aedar_representative_bases(raw_dir: str | Path) -> dict[tuple[str, str], di
             "region_geometry": region.get("region_geometry", region["geometry"]),
             "extent": extent,
             "inspection_extent": frame_policy.extent_for(geometry, extent, name),
+            "cartographic_policy": policy.contract(),
         }
         break
     if commune_key not in bases:
         raise ValueError(f"Authoritative commune source has no geometry for {commune_key[1]}")
     return bases
+
+
+def _aedar_frame_extent(geometry, policy=None):
+    """Apply the AEDAR family's declared foundation to the common frame math."""
+    from cartographic_policy import SHARED_CARTOGRAPHIC_POLICY
+    from network import _map_extent
+    return _map_extent(geometry, policy or SHARED_CARTOGRAPHIC_POLICY)
 
 
 def build_aedar_map_set(raw_dir: str | Path, facts_dir: str | Path,

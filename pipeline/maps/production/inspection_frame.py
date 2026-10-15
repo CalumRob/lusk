@@ -4,7 +4,6 @@ import json
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
-from qgis.PyQt.QtGui import QColor
 from qgis.core import QgsGeometry, QgsRectangle
 
 OUTPUT_SIZE = 2400
@@ -40,27 +39,19 @@ def shared_ground_extent(features, profiles):
 
 
 @lru_cache(maxsize=8)
-def _measure_heading_bands_for_config(serialized_config):
-    family_config = json.loads(serialized_config)
-    from aedar_map_content import loss_map_content
+def _measure_heading_bands(serialized_headings):
+    from qgis.PyQt.QtGui import QColor
+    templates = json.loads(serialized_headings)
     from inspection_plate import _prepare_title
-    from network import NETWORK_MODES, _title_and_content
     from qgis.PyQt.QtGui import QPainterPath
 
     assets = Path(__file__).with_name("assets")
-    car = loss_map_content("car")
-    templates = {
-        f"network/{mode}": _title_and_content(mode, family_config)[0]
-        for mode in NETWORK_MODES
-    }
-    templates["aedar-car/car"] = (
-        (car["title_prefix"], QColor("#273A37"), 0.55, False),
-        (car["title_mode"], QColor("#57726F"), 1.0, True),
-    )
     bands = []
     with TemporaryDirectory(prefix="lusk-inspection-heading-bands-") as temporary:
         temporary = Path(temporary)
-        for runs in templates.values():
+        for _name, declared_runs in templates:
+            runs = tuple((text, QColor(*rgb), opacity, solid)
+                         for text, rgb, opacity, solid in declared_runs)
             prepared, _, _ = _prepare_title(runs, "AgjpqÅy", assets, temporary)
             title_path = QPainterPath()
             for path, _colour, _opacity, _solid in prepared.runs:
@@ -72,10 +63,9 @@ def _measure_heading_bands_for_config(serialized_config):
 class InspectionFramePolicy:
     """Measure registered headings once, then frame each named geography."""
 
-    def __init__(self, family_config):
-        family_config = self._complete_family_config(family_config)
-        self.heading_bands = _measure_heading_bands_for_config(
-            json.dumps(family_config, sort_keys=True, separators=(",", ":")))
+    def __init__(self, heading_templates):
+        self.heading_bands = _measure_heading_bands(
+            json.dumps(heading_templates, separators=(",", ":")))
         from inspection_plate import SUBTITLE_SIZE, SUBTITLE_WEIGHT, TITLE_LEFT_MARGIN, SUBTITLE_TOP
         from inspection_plate import _load_static_face
 
@@ -84,23 +74,6 @@ class InspectionFramePolicy:
         with TemporaryDirectory(prefix="lusk-inspection-frame-font-") as temporary:
             self._subtitle_family = _load_static_face(
                 "mozilla-headline", SUBTITLE_WEIGHT, assets, Path(temporary))
-
-    @staticmethod
-    def _complete_family_config(family_config):
-        if "inspection" in family_config and "marks" in family_config:
-            return family_config
-        from network import _load_network_family_config
-
-        complete = _load_network_family_config()
-        for key, value in family_config.items():
-            if key == "marks":
-                complete[key].update(value)
-            elif key == "inspection":
-                for mode, spec in value.items():
-                    complete[key][mode] = {**complete[key].get(mode, {}), **spec}
-            else:
-                complete[key] = value
-        return complete
 
     def extent_for(self, geometry: QgsGeometry, base_extent: QgsRectangle,
                    territory_name: str) -> QgsRectangle:

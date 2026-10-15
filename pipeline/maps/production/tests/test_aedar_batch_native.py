@@ -47,9 +47,19 @@ class NativeAedarBatchTests(unittest.TestCase):
         network_config = Path(__file__).parents[1] / "network-family.json"
         family = json.loads(network_config.read_text(encoding="utf-8"))
         family["scope"]["analytical_departments"] = ["22"]
+        aedar_family = json.loads((Path(__file__).parents[1] / "aedar-static-family.json").read_text(encoding="utf-8"))
+        aedar_family["cartographic_policy"] = {"frame_margin_ratio": 0.12}
         family_path = root / "network-family-fixture.json"
         family_path.write_text(json.dumps(family), encoding="utf-8")
         facts = AddressFacts(facts_path, root / "fixture-facts-cache")
+        binding, inventory = build_aedar_static_map_set(raw, facts_path, facts=facts,
+            family_config=family, aedar_family_config=aedar_family,
+            territory_registry_path=registry)
+        bases = inventory["territories"]
+        self.assertTrue(all(row["cartographic_policy"]["frame_margin_ratio"] == 0.12 for row in bases))
+        from aedar_map_plan import selected_aedar_recipe
+        self.assertEqual(selected_aedar_recipe(aedar_family).foundation.framing["margin_ratio"], 0.12)
+        # Keep the worker/render half on the fixture's pre-acquired default frame.
         binding, inventory = build_aedar_static_map_set(raw, facts_path, facts=facts,
             family_config=family, territory_registry_path=registry)
         bases = inventory["territories"]
