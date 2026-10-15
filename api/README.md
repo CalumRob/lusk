@@ -137,15 +137,19 @@ direction, allowed levels and reference compatibility in the same read-only
 REPEATABLE READ transaction. A scalar refresh makes DPE unavailable until the
 complete profile snapshot is refreshed; structure-age has no such scalar pin.
 
-`publier_declared_profiles_postgres(demography, demography_metadata, habitat,
-habitat_metadata, scalar_version, con)` is the explicit complete-snapshot
-publication entrypoint. The version argument must be the verified canonical
-shared scalar token, not a guessed freshness date. It composes both profiles,
-checks dependencies and preserves age cells. An old age-only publish fails
-before committing if it would discard another published profile. No new live
-target, consumer flag, schema application, publication or deployment is enabled
-by this change. Automated DPE refresh wiring, canonical publication parity and
-complete fiche integration remain release gates under #627.
+`publier_declared_profiles_postgres(artifact_directory, owners, con)` is the
+explicit complete-snapshot publication entrypoint. It reads the run directory's
+owner-scoped declared-profile generations rather than an in-memory payload, and
+recomputes the verified canonical shared scalar binding from that directory's
+own scalar inputs; `owners` must include `structure_age`. A stale local DPE
+generation, whose recorded required scalar binding no longer matches the
+recomputed one, fails closed while the generation is read, before any database
+write. It composes the registered profiles, checks dependencies and preserves
+age cells. An old age-only publish fails before committing if it would discard
+another published profile. No new live target, consumer flag, schema
+application, publication or deployment is enabled by this change. Automated DPE
+refresh wiring, canonical publication parity and complete fiche integration
+remain release gates under #627.
 
 Fresh DDL and migration 013 represent an absent second axis with an empty
 physical coordinate key and NULL axis reference, retaining the existing

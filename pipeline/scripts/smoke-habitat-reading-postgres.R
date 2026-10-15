@@ -39,9 +39,23 @@ tryCatch({
   mobility <- list(indicateurs=read_canonical("indicateurs_mobilite"),territoires=territories,source_vintages=vintages)
   scalar_version <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")[["content_version"]][[1L]]
   stopifnot(identical(scalar_publication$content_version, scalar_version))
-  profile <- publier_declared_profiles_postgres(demography,demography_metadata,habitat,habitat_metadata,
-    scalar_version,con=con,mobilite=mobility,mobilite_metadata=mobility_metadata,mobilite_vintages=vintages,
-    scalar_publication=scalar_publication)
+  # The declared-profile publisher consumes the run's owner-scoped serving
+  # generations: the canonical payloads this script already reads are
+  # materialized into the same run directory the pipeline writes them to, and
+  # the DPE facet is bound to the scalar version recomputed from that
+  # directory — the same value the shared scalar publication just committed.
+  if (!profile_scalar_binding_inputs_available(canonical_dir))
+    stop("The declared-profile publisher recomputes the DPE scalar binding from the run's canonical ",
+      "scalar inputs; the canonical data directory is missing a canonical Parquet or ",
+      "scalar-serving/<theme>/scalar-current.json", call.=FALSE)
+  profile_binding <- profile_scalar_binding(canonical_dir)
+  stopifnot(identical(profile_binding, scalar_version))
+  materialize_theme_profile_artifacts(demography,demography_metadata,NULL,"demographie",canonical_dir)
+  materialize_theme_profile_artifacts(habitat,habitat_metadata,NULL,"habitat",canonical_dir,profile_binding)
+  materialize_theme_profile_artifacts(mobility,mobility_metadata,vintages,"mobilite",canonical_dir)
+  owners <- unique(c(profile_serving_owners(demography_metadata),
+    profile_serving_owners(habitat_metadata),profile_serving_owners(mobility_metadata)))
+  profile <- publier_declared_profiles_postgres(canonical_dir,owners,con=con)
   stopifnot(profile$changed,
     DBI::dbGetQuery(con,"SELECT count(*) FROM profile_observation_source WHERE indicator_id='distribution_dpe'")[[1L]][[1L]]>0L)
 

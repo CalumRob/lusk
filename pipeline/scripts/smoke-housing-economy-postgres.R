@@ -205,10 +205,23 @@ tryCatch({
   scalar_version <- DBI::dbGetQuery(con,
     "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]]
   stopifnot(identical(scalar_publication$content_version, scalar_version))
-  profile_result <- publier_declared_profiles_postgres(demography, demography_metadata,
-    habitat, habitat_metadata, scalar_version, con=con, mobilite=mobility,
-    mobilite_metadata=mobility_metadata, mobilite_vintages=canonical_vintages,
-    scalar_publication=scalar_publication)
+  # The declared-profile publisher consumes the run's owner-scoped serving
+  # generations, so the canonical payloads read above are materialized into the
+  # same run directory the pipeline writes them to; the DPE facet is bound to
+  # the scalar version recomputed from that directory, which is the token the
+  # shared scalar publication just committed.
+  if (!profile_scalar_binding_inputs_available(canonical_dir))
+    stop("The declared-profile publisher recomputes the DPE scalar binding from the run's canonical ",
+      "scalar inputs; the canonical data directory is missing a canonical Parquet or ",
+      "scalar-serving/<theme>/scalar-current.json", call.=FALSE)
+  profile_binding <- profile_scalar_binding(canonical_dir)
+  stopifnot(identical(profile_binding, scalar_version))
+  materialize_theme_profile_artifacts(demography, demography_metadata, NULL, "demographie", canonical_dir)
+  materialize_theme_profile_artifacts(habitat, habitat_metadata, NULL, "habitat", canonical_dir, profile_binding)
+  materialize_theme_profile_artifacts(mobility, mobility_metadata, canonical_vintages, "mobilite", canonical_dir)
+  owners <- unique(c(profile_serving_owners(demography_metadata),
+    profile_serving_owners(habitat_metadata), profile_serving_owners(mobility_metadata)))
+  profile_result <- publier_declared_profiles_postgres(canonical_dir, owners, con=con)
   housing_ids <- c("mix_logements", "statut", "type", "age_du_bati")
   expected_profiles <- lapply(housing_ids, function(id)
     project_declared_detail_profile(habitat, habitat_metadata, id, canonical_vintages))
@@ -258,10 +271,7 @@ tryCatch({
   }
   profile_marker_before_noop <- DBI::dbGetQuery(con,
     "SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='declared_profile'")
-  profile_noop <- publier_declared_profiles_postgres(demography, demography_metadata,
-    habitat, habitat_metadata, scalar_version, con=con, mobilite=mobility,
-    mobilite_metadata=mobility_metadata, mobilite_vintages=canonical_vintages,
-    scalar_publication=scalar_publication)
+  profile_noop <- publier_declared_profiles_postgres(canonical_dir, owners, con=con)
   stopifnot(!profile_noop$changed, identical(profile_marker_before_noop,
     DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='declared_profile'")))
   manifest <- lapply(housing_ids, function(id) {
