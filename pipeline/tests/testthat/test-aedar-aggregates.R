@@ -29,6 +29,15 @@ make_aedar_test_inputs <- function() {
   }), AEDAR_AGGREGATE_LEVELS)
 }
 
+set_aedar_density_fixture_content_version <- function(facts) {
+  columns<-c("territory_type","territory_id","density_class_code","density_class_label",
+    "TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status",AEDAR_AGGREGATE_MEASURES,
+    "source_snapshot_id","density_reference_identity","density_reference_sha256",
+    "density_reference_vintage","input_content_version","input_identity")
+  facts$content_version<-paste(as.character(openssl::sha256(serialize(facts[columns],NULL))),collapse="")
+  facts
+}
+
 test_that("AEDAR projection preserves the complete 2025 TYPEQU registry at all four levels", {
   levels <- AEDAR_AGGREGATE_LEVELS
   axis <- read_aedar_region_typequ_fixture()
@@ -112,6 +121,195 @@ test_that("density transit-gain max includes only observed or implicit zeros", {
   sparse_row <- sparse[sparse$TYPEQU=="A104",,drop=FALSE]
   expect_equal(sparse_row$count_5_transit_gain_min,0)
   expect_equal(sparse_row$count_5_transit_gain_max,0)
+})
+
+test_that("materialized density artifact is pinned, complete, and carries its byte identity", {
+  skip_if_not_installed("nanoparquet")
+  registry <- registre_classes_densite()
+  codes <- as.character(registry[["classe_densite_code"]])
+  labels <- as.character(registry[["classe_densite_libelle_public"]])
+  local_reference <- list(crosswalk=data.frame(code_insee=paste0("c",seq_along(codes)),
+      density_class_code=codes,density_class_label=labels,stringsAsFactors=FALSE),
+    identity="classe_densite_communale",sha256=paste(rep("a",64),collapse=""),vintage="fixture vintage")
+  axis <- read_aedar_typequ_registry()
+  grid <- expand.grid(density_class_code=codes,TYPEQU=axis$TYPEQU,stringsAsFactors=FALSE)
+  facts <- data.frame(territory_type="density_class",territory_id=grid$density_class_code,
+    density_class_code=grid$density_class_code,
+    density_class_label=labels[match(grid$density_class_code,codes)],TYPEQU=grid$TYPEQU,
+    LIB_TYPEQU=axis$LIB_TYPEQU[match(grid$TYPEQU,axis$TYPEQU)],n_addresses=1L,n_observed=0L,
+    coverage_status="covered",source_snapshot_id=AEDAR_AGGREGATE_VINTAGE,
+    density_reference_identity=local_reference$identity,density_reference_sha256=local_reference$sha256,
+    density_reference_vintage=local_reference$vintage,input_content_version=rep("",nrow(grid)),input_identity=rep("",nrow(grid)),
+    content_version=paste(rep("b",64),collapse=""),stringsAsFactors=FALSE)
+  for (measure in AEDAR_AGGREGATE_MEASURES) facts[[measure]] <- 0
+  identity <- c(stats::setNames(rep(paste(rep("1",64),collapse=""),length(AEDAR_ADDRESS_SOURCE_MODES)),
+      paste0("mode:",AEDAR_ADDRESS_SOURCE_MODES)),address_origins=paste(rep("2",64),collapse=""),
+    density_reference=local_reference$sha256)
+  facts$input_identity <- as.character(jsonlite::toJSON(as.list(identity),auto_unbox=TRUE))
+  facts$input_content_version <- paste(as.character(openssl::sha256(charToRaw(facts$input_identity[[1L]]))),collapse="")
+  facts <- set_aedar_density_fixture_content_version(facts)
+  path <- tempfile(fileext=".parquet"); on.exit(unlink(path),add=TRUE)
+  nanoparquet::write_parquet(facts,path)
+  loaded <- read_aedar_density_aggregate(path,local_reference)
+  expect_equal(nrow(loaded$facts),7L*AEDAR_TYPEQU_REGISTRY_COUNT)
+  expect_equal(loaded$artifact_sha256,sha256_aedar_file(path))
+  expect_equal(loaded$content_version,unique(facts$content_version))
+  expect_error(read_aedar_density_aggregate(file.path(dirname(path),"missing.parquet"),local_reference),"missing or empty")
+  expect_error(read_aedar_density_aggregate(path,local_reference,paste(rep("c",64),collapse="")),"checksum mismatch")
+  tampered <- facts[-1,,drop=FALSE]
+  tampered_path <- tempfile(fileext=".parquet"); on.exit(unlink(tampered_path),add=TRUE)
+  nanoparquet::write_parquet(tampered,tampered_path)
+  expect_error(read_aedar_density_aggregate(tampered_path,local_reference),"omits a density class")
+  altered <- facts
+  altered$count_5_walk_mean[[1L]] <- 2
+  altered_path <- tempfile(fileext=".parquet"); on.exit(unlink(altered_path),add=TRUE)
+  nanoparquet::write_parquet(altered,altered_path)
+  expect_error(read_aedar_density_aggregate(altered_path,local_reference),"content identity")
+  stale_reference <- local_reference
+  stale_reference$crosswalk$density_class_code[[1L]] <- codes[[2L]]
+  expect_error(read_aedar_density_aggregate(path,stale_reference),"class axis is incomplete|mislabeled")
+})
+
+test_that("AEDAR materialized density membership is checked against the local source", {
+  source <- list(crosswalk=data.frame(code_insee=c("c1","c2"),density_class_code=c("6","5"),
+    density_class_label=c("Dense","Dense"),stringsAsFactors=FALSE))
+  refs <- data.frame(territory_type=c("commune","commune"),territory_id=c("c1","c2"),
+    density_class_code=c("6","5"),stringsAsFactors=FALSE)
+  expect_invisible(validate_aedar_density_membership(source,refs))
+  refs$density_class_code[[2L]] <- "6"
+  expect_error(validate_aedar_density_membership(source,refs),"disagrees with the pinned local")
+})
+
+test_that("comparison publication consumes materialized density facts without recomputing address rows", {
+  axis <- read_aedar_typequ_registry()
+  registry <- registre_classes_densite()
+  codes <- as.character(registry[["classe_densite_code"]])
+  ref <- list(crosswalk=data.frame(code_insee=c("22001",paste0("unused",2:7)),
+      density_class_code=codes,density_class_label=as.character(registry[["classe_densite_libelle_public"]]),
+      stringsAsFactors=FALSE),identity=MANIFEST_CLASSES_DENSITE[["id"]][[1L]],
+    sha256=MANIFEST_CLASSES_DENSITE[["sha256"]][[1L]],vintage=MANIFEST_CLASSES_DENSITE[["vintage"]][[1L]])
+  grid <- expand.grid(density_class_code=codes,TYPEQU=axis$TYPEQU,stringsAsFactors=FALSE)
+  density <- data.frame(territory_type="density_class",territory_id=grid$density_class_code,
+    density_class_code=grid$density_class_code,
+    density_class_label=ref$crosswalk$density_class_label[match(grid$density_class_code,codes)],
+    TYPEQU=grid$TYPEQU,LIB_TYPEQU=axis$LIB_TYPEQU[match(grid$TYPEQU,axis$TYPEQU)],
+    n_addresses=1L,n_observed=1L,coverage_status="covered",source_snapshot_id=AEDAR_AGGREGATE_VINTAGE,
+    density_reference_identity=ref$identity,density_reference_sha256=ref$sha256,
+    density_reference_vintage=ref$vintage,input_content_version="",input_identity="",
+    content_version=paste(rep("b",64),collapse=""),stringsAsFactors=FALSE)
+  for (measure in AEDAR_AGGREGATE_MEASURES) density[[measure]] <- 1
+  hashes <- c(stats::setNames(rep(paste(rep("1",64),collapse=""),length(AEDAR_ADDRESS_SOURCE_MODES)),
+    paste0("mode:",AEDAR_ADDRESS_SOURCE_MODES)),address_origins=paste(rep("2",64),collapse=""),
+    density_reference=ref$sha256)
+  density$input_identity <- as.character(jsonlite::toJSON(as.list(hashes),auto_unbox=TRUE))
+  density$input_content_version <- paste(as.character(openssl::sha256(charToRaw(density$input_identity[[1L]]))),collapse="")
+  density <- set_aedar_density_fixture_content_version(density)
+  source <- list(facts=density,density_reference=ref,input_hashes=hashes,
+    crosswalk=ref$crosswalk,
+    input_content_version=density$input_content_version[[1L]],content_version=density$content_version[[1L]],
+    artifact_sha256=paste(rep("c",64),collapse=""),source_snapshot_id=AEDAR_AGGREGATE_VINTAGE)
+  projection <- project_aedar_aggregates(make_aedar_test_inputs(),make_aedar_test_typequ_metadata())
+  refs <- data.frame(territory_type=c("commune","epci","departement","region"),
+    territory_id=c("22001","200000001","22","53"),epci_id=c("200000001",NA,NA,NA),
+    density_class_code=c("1",NA,NA,NA),stringsAsFactors=FALSE)
+  local_mocked_bindings(project_aedar_density_comparisons=function(...) stop("must consume artifact facts, not recompute"))
+  dir <- tempfile("aedar-streamed-comparison-"); on.exit(unlink(dir,recursive=TRUE),add=TRUE)
+  result <- project_aedar_comparison_publication(projection,source,refs,
+    reference_content_version="published-ref-v1",directory=dir)
+  expect_invisible(validate_aedar_comparison_manifest(result,dir))
+  expect_true("density_artifact"%in%names(jsonlite::fromJSON(result$input_identity)))
+  expect_equal(length(result$parts),AEDAR_TYPEQU_REGISTRY_COUNT)
+  a104 <- result$parts[[match("A104",vapply(result$parts,`[[`,character(1),"TYPEQU"))]]
+  groups <- nanoparquet::read_parquet(file.path(dir,a104$groups))
+  expect_equal(unique(groups$statistic[groups$comparison_context=="density_class"]),"pooled")
+  expect_equal(unique(groups$statistic[groups$comparison_context=="epci"]),"direct")
+  expect_equal(unique(groups$statistic[groups$comparison_context=="same_level"]),"median")
+  expect_identical(result$reference_content_version,"published-ref-v1")
+  expect_true(all(vapply(result$parts,function(p)identical(basename(p$groups),paste0(p$TYPEQU,"-groups.parquet")),logical(1))))
+  stable_version <- result$content_version
+  repeated <- project_aedar_comparison_publication(projection,source,refs,
+    reference_content_version="published-ref-v1",directory=dir)
+  expect_identical(repeated$content_version,stable_version)
+  manifest_path <- file.path(dir,"aedar_comparison_manifest.json")
+  prior_manifest <- readBin(manifest_path,"raw",n=file.info(manifest_path)$size)
+  failing_metadata <- repeated[c("source_snapshot_id","aedar_content_version","reference_content_version",
+    "input_content_version","input_identity","membership","typequ_axis","typequ_axis_sha256")]
+  expect_error(write_aedar_comparison_canonical(function(code) stop("forced partition failure"),dir,
+    failing_metadata),"forced partition failure")
+  expect_identical(readBin(manifest_path,"raw",n=file.info(manifest_path)$size),prior_manifest)
+  existing_part_builder <- function(code) {
+    part<-repeated$parts[[match(code,vapply(repeated$parts,`[[`,character(1),"TYPEQU"))]]
+    list(groups=nanoparquet::read_parquet(file.path(dir,part$groups)),
+      territories=nanoparquet::read_parquet(file.path(dir,part$territories)))
+  }
+  local_mocked_bindings(install_aedar_comparison_manifest=function(staged,target)
+    stop("forced atomic manifest replacement failure"))
+  expect_error(write_aedar_comparison_canonical(existing_part_builder,dir,failing_metadata),
+    "forced atomic manifest replacement failure")
+  expect_identical(readBin(manifest_path,"raw",n=file.info(manifest_path)$size),prior_manifest)
+  stored_part <- repeated$parts[[1L]]$groups
+  stored_path <- file.path(dir,stored_part)
+  saved_part <- readBin(stored_path,"raw",n=file.info(stored_path)$size)
+  writeBin(as.raw(c(1,2,3)),stored_path)
+  expect_error(read_aedar_comparison_canonical(dir))
+  writeBin(saved_part,stored_path)
+  expect_identical(read_aedar_comparison_canonical(dir)$content_version,stable_version)
+})
+
+test_that("density-only Parquet builder pools addresses and publishes the complete domain", {
+  skip_if_not_installed("nanoparquet")
+  axis <- read_aedar_typequ_registry()
+  dir <- tempfile("aedar-density-only-"); dir.create(dir)
+  on.exit(unlink(dir,recursive=TRUE),add=TRUE)
+  origins_path <- file.path(dir,"origins.parquet")
+  nanoparquet::write_parquet(data.frame(address_id=c("a","b","c","d","e","f","g"),
+    code_insee=c("c1","c1","c2","c2","c2","c3","c3"),lon=1:7,lat=1:7),origins_path)
+  mode_paths <- stats::setNames(vapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode) file.path(dir,paste0(mode,".parquet")),character(1)),
+    AEDAR_ADDRESS_SOURCE_MODES)
+  keys <- list(walk=data.frame(code_insee=c("c1","c1","c2"),cle_interop_adr=c("a","b","c"),TYPEQU="A104"),
+    transit=data.frame(code_insee=c("c1","c2"),cle_interop_adr=c("b","e"),TYPEQU="A104"),
+    transit_gain=data.frame(code_insee=c("c1","c1","c3","c3"),cle_interop_adr=c("a","b","f","g"),TYPEQU="A104"))
+  for(mode in AEDAR_ADDRESS_SOURCE_MODES) {
+    x <- keys[[mode]]
+    if(is.null(x)) x <- data.frame(code_insee=character(),cle_interop_adr=character(),TYPEQU=character())
+    for(column in AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]]) x[[column]] <- rep(0,nrow(x))
+    if(mode=="walk"&&nrow(x)) x$count_5_walk <- c(1,3,9)
+    if(mode=="transit_gain"&&nrow(x)) x$count_5_transit_gain_p1 <- c(-4,-2,-4,-2)
+    nanoparquet::write_parquet(x,mode_paths[[mode]])
+  }
+  crosswalk <- data.frame(code_insee=c("c1","c2","c3","c4"),density_class_code=c("pooled","pooled","negative","empty"),
+    density_class_label=c("Pooled","Pooled","Negative","Empty"),stringsAsFactors=FALSE)
+  output_path <- file.path(dir,"density.parquet")
+  local_mocked_bindings(project_aedar_aggregates=function(...) stop("territorial aggregate projection must not run"))
+  result <- build_aedar_density_aggregate(mode_paths,origins_path,crosswalk,
+    "classe_densite_communale",paste(rep("a",64),collapse=""),"test-vintage",output_path,
+    verify_hashes=FALSE)
+  expect_true(file.exists(output_path))
+  expect_equal(nrow(result),3L*nrow(axis))
+  expect_true(all(AEDAR_AGGREGATE_MEASURES%in%names(result)))
+  pooled <- result[result$density_class_code=="pooled"&result$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(pooled$n_addresses,5)
+  expect_equal(pooled$n_observed,4)
+  expect_equal(pooled$count_5_walk_mean,13/5)
+  expect_equal(pooled$count_5_walk_min,0)
+  expect_equal(pooled$count_5_walk_max,9)
+  negative <- result[result$density_class_code=="negative"&result$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(negative$count_5_transit_gain_min,-4)
+  expect_equal(negative$count_5_transit_gain_max,-2)
+  covered_unseen <- result[result$density_class_code=="pooled"&result$TYPEQU=="A105",,drop=FALSE]
+  expect_equal(covered_unseen$count_5_walk_mean,0)
+  uncovered <- result[result$density_class_code=="empty"&result$TYPEQU=="A104",,drop=FALSE]
+  expect_equal(uncovered$coverage_status,"uncovered_no_address_origins")
+  expect_true(is.na(uncovered$count_5_walk_mean))
+  expect_equal(unique(result$density_reference_identity),"classe_densite_communale")
+  expect_equal(unique(result$density_reference_sha256),paste(rep("a",64),collapse=""))
+  expect_equal(unique(result$density_reference_vintage),"test-vintage")
+  expect_true(all(nzchar(result$input_content_version)))
+  identity <- jsonlite::fromJSON(unique(result$input_identity))
+  expect_setequal(names(identity),c("address_origins","density_reference",paste0("mode:",AEDAR_ADDRESS_SOURCE_MODES)))
+  expect_true(all(result$source_snapshot_id==AEDAR_AGGREGATE_VINTAGE))
+  restored <- nanoparquet::read_parquet(output_path)
+  expect_equal(restored$count_5_walk_mean[restored$density_class_code=="pooled"&restored$TYPEQU=="A104"],13/5)
 })
 
 test_that("AEDAR observed key union excludes derived transit_gain rows and deduplicates", {
@@ -218,6 +416,9 @@ test_that("AEDAR fixed ranks use eligible peers, competition ties, and higher-is
   expect_equal(subset(result$groups,comparison_context=="epci"&group_id=="E1"&TYPEQU=="A104"&measure=="count_5_walk_mean")$value,8)
   expect_equal(subset(result$groups,comparison_context=="same_level"&territory_type=="epci"&TYPEQU=="A104"&measure=="count_5_walk_mean")$value,6)
   expect_equal(subset(result$groups,comparison_context=="density_class"&TYPEQU=="A104"&measure=="count_5_walk_mean")$value,7)
+  expect_equal(unique(result$groups$statistic[result$groups$comparison_context=="density_class"]),"pooled")
+  expect_equal(unique(result$groups$statistic[result$groups$comparison_context=="epci"]),"direct")
+  expect_equal(unique(result$groups$statistic[result$groups$comparison_context=="same_level"]),"median")
   expect_equal(subset(result$groups,comparison_context=="bretagne"&TYPEQU=="A104"&measure=="count_5_walk_mean")$value,0)
   expect_false("rank_ties" %in% names(result$territories))
   expect_true(all(c("density_class","epci","bretagne","same_level") %in% result$groups$comparison_context))
@@ -233,18 +434,18 @@ test_that("AEDAR fixed ranks use eligible peers, competition ties, and higher-is
   stale_refs<-refs; stale_refs$density_class_code[stale_refs$territory_id=="1"]<-"changed"
   expect_error(validate_aedar_comparison_membership(result,stale_refs),"contexts/groups differ")
   dir<-tempfile("aedar-comparison-roundtrip-")
-  write_aedar_comparison_canonical(result,dir)
-  restored<-read_aedar_comparison_canonical(dir)
+  write_aedar_comparison_fixture(result,dir)
+  restored<-read_aedar_comparison_fixture(dir)
   expect_equal(restored$groups,result$groups)
   expect_equal(restored$territories,result$territories)
   expect_identical(restored$content_version,result$content_version)
   tampered<-result; tampered$input_identity<-'{"address_origins":"different"}'
   tampered$groups$input_identity<-tampered$input_identity; tampered$territories$input_identity<-tampered$input_identity
   expect_error(validate_aedar_comparison_projection(tampered),"content version|provenance hash")
-  before<-tools::md5sum(file.path(dir,c("aedar_comparison_groups.parquet","aedar_comparison_territories.parquet")))
+  before<-tools::md5sum(file.path(dir,c("fixture-groups.parquet","fixture-territories.parquet")))
   invalid<-result; invalid$territories$rank[1]<-NA_integer_
-  expect_error(write_aedar_comparison_canonical(invalid,dir),"Invalid AEDAR comparison rank contract")
-  expect_identical(unname(tools::md5sum(file.path(dir,c("aedar_comparison_groups.parquet","aedar_comparison_territories.parquet")))),unname(before))
+  expect_error(write_aedar_comparison_fixture(invalid,dir),"Invalid AEDAR comparison rank contract")
+  expect_identical(unname(tools::md5sum(file.path(dir,c("fixture-groups.parquet","fixture-territories.parquet")))),unname(before))
 })
 
 test_that("the pinned TYPEQU registry matches the producer region aggregate", {
@@ -346,21 +547,39 @@ test_that("published TYPEQU validator and aggregate projection accept the full 2
   expect_equal(nrow(projection$facts),4L*235L)
 })
 
-test_that("AEDAR operator publish reads the validated canonical Parquets", {
+test_that("AEDAR operator uses canonical aggregate and bounded comparison manifest", {
   script <- paste(readLines(testthat::test_path("..","..","scripts","publish-aedar-aggregates.R"),warn=FALSE),collapse="\n")
   expect_match(script,"write_aedar_canonical\\(projection,canonical_dir\\)")
   expect_match(script,"projection <- read_aedar_canonical\\(canonical_dir\\)")
   expect_match(script,"publish_aedar_aggregates\\(projection,con\\)")
-  expect_match(script,"read_aedar_comparison_canonical\\(canonical_dir\\)")
-  expect_match(script,"read_aedar_comparison_inputs\\(mode_paths=address_resource_paths")
+  expect_match(script,"read_aedar_comparison_canonical\\(canonical_dir,verify_parts=FALSE\\)")
+  expect_match(script,"read_aedar_density_aggregate\\(density_path,density_reference\\)")
+  expect_match(script,"LUSK_AEDAR_DENSITY_AGGREGATE")
+  expect_false(grepl("read_aedar_comparison_inputs",script,fixed=TRUE))
   expect_match(script,"project_aedar_comparison_publication\\(")
-  expect_match(script,"write_aedar_comparison_canonical\\(comparison_projection,canonical_dir\\)")
+  expect_match(script,"project_aedar_comparison_publication\\(projection,density_source")
+  source <- paste(readLines(testthat::test_path("..","..","R","aedar_aggregates.R"),warn=FALSE),collapse="\n")
+  expect_match(source,"typequ_codes=typequ,calculate_content_version=FALSE")
+  expect_match(source,"aedar_comparison_manifest.json")
   expect_match(script,"publish_aedar_comparisons\\(comparison_projection,con\\)")
   expect_gt(regexpr("write_aedar_canonical\\(projection,canonical_dir\\)",script)[[1]],0)
   expect_gt(regexpr("projection <- read_aedar_canonical\\(canonical_dir\\)",script)[[1]],0)
   expect_match(script,"Canonical AEDAR Parquets are missing; run --check first")
   expect_match(script,"LUSK_PUBLISH_AEDAR")
   expect_match(script,"disabled for cron")
+})
+
+test_that("AEDAR production comparison publication is partition-bounded without legacy fallback", {
+  source <- paste(readLines(testthat::test_path("..","..","R","aedar_aggregates.R"),warn=FALSE),collapse="\n")
+  publisher <- substring(source,regexpr("publish_aedar_comparisons <- function",source),
+    regexpr("serialize_aedar_json_rows <- function",source)-1L)
+  expect_match(publisher,"for\\(part in x\\$parts\\)")
+  expect_match(publisher,"chunk_size<-20000L")
+  expect_false(grepl("x\\$territories",publisher))
+  empty <- tempfile("aedar-no-manifest-"); dir.create(empty)
+  on.exit(unlink(empty,recursive=TRUE),add=TRUE)
+  nanoparquet::write_parquet(data.frame(x=1),file.path(empty,"aedar_comparison_groups.parquet"))
+  expect_error(read_aedar_comparison_canonical(empty),"manifest is missing")
 })
 
 test_that("AEDAR canonical output and database publication require complete TYPEQU metadata", {

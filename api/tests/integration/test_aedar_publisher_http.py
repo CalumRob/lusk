@@ -76,7 +76,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
           ('22001','commune','Fixture commune'),('200000001','epci','Fixture EPCI'),
           ('22','departement','Fixture département'),('53','region','Fixture région'),
           ('mob-1','commune','Mobility unchanged')""")
-        pub.execute("UPDATE territory_reference SET density_class_code='fixture-density',density_class_label='Fixture density',epci_id='200000001' WHERE territory_type='commune'")
+        pub.execute("UPDATE territory_reference SET density_class_code=CASE WHEN territory_id='22001' THEN '1' ELSE '2' END,density_class_label='Fixture density',epci_id='200000001' WHERE territory_type='commune'")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',5)")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('essential_service_access','mobility-access-v1',3,'fixture-ref-v1')")
         pub.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES(true,'communes-bretagne','Fixture communes')")
@@ -156,33 +156,61 @@ DBI::dbExecute(con,"DROP FUNCTION reject_aedar_insert()")
 after <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
 stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_territorial_aggregate")$n[[1]]==5L * nrow(source_axis))
 projection <- read_aedar_canonical(canonical_dir)
-refs <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference WHERE territory_type IN ('commune','epci','departement','region')")
-origins <- data.frame(address_id=c('fixture-a','fixture-b'),commune='22001')
-mode_facts <- stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode) {
-  x <- as.data.frame(as.list(stats::setNames(rep(1,4),AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]])))
-  x$address_id <- 'fixture-a'; x$TYPEQU <- 'A104'; x
-}),AEDAR_ADDRESS_SOURCE_MODES)
-comparison <- project_aedar_comparison_publication(projection,origins,mode_facts,refs,
-  aedar_content_version=before,reference_content_version='fixture-ref-v1',
-  input_hashes=c(address_origins='fixture',address_modes='fixture'))
 canonical_comparison <- Sys.getenv('AEDAR_CANONICAL_COMPARISON_DIR')
-write_aedar_comparison_canonical(comparison,canonical_comparison)
+refs <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference WHERE territory_type IN ('commune','epci','departement','region')")
+make_density_source <- function(walk_value=1) {
+  registry <- registre_classes_densite(); codes <- as.character(registry[['classe_densite_code']])
+  labels <- as.character(registry[['classe_densite_libelle_public']])
+  crosswalk <- data.frame(code_insee=c('22001','mob-1',paste0('unused-',3:7)),density_class_code=codes,
+    density_class_label=labels,stringsAsFactors=FALSE)
+  density_ref <- list(crosswalk=crosswalk,identity=MANIFEST_CLASSES_DENSITE[['id']][[1]],
+    sha256=MANIFEST_CLASSES_DENSITE[['sha256']][[1]],vintage=MANIFEST_CLASSES_DENSITE[['vintage']][[1]])
+  axis <- read_aedar_typequ_registry(); grid <- expand.grid(density_class_code=codes,TYPEQU=axis[['TYPEQU']],stringsAsFactors=FALSE)
+  addresses <- ifelse(grid$density_class_code=='1',2L,0L)
+  facts <- data.frame(territory_type='density_class',territory_id=grid$density_class_code,
+    density_class_code=grid$density_class_code,density_class_label=labels[match(grid$density_class_code,codes)],
+    TYPEQU=grid$TYPEQU,LIB_TYPEQU=axis[['LIB_TYPEQU']][match(grid$TYPEQU,axis[['TYPEQU']])],
+    n_addresses=addresses,n_observed=ifelse(addresses>0,1L,0L),
+    coverage_status=ifelse(addresses>0,'covered','uncovered_no_address_origins'),
+    source_snapshot_id=AEDAR_AGGREGATE_VINTAGE,density_reference_identity=density_ref$identity,
+    density_reference_sha256=density_ref$sha256,density_reference_vintage=density_ref$vintage,
+    input_content_version='',input_identity='',stringsAsFactors=FALSE)
+  for (measure in AEDAR_AGGREGATE_MEASURES) facts[[measure]] <- ifelse(addresses>0,0,NA_real_)
+  facts[['count_5_walk_mean']][addresses>0] <- walk_value
+  input_hashes <- c(stats::setNames(rep(paste(rep('1',64),collapse=''),length(AEDAR_ADDRESS_SOURCE_MODES)),
+    paste0('mode:',AEDAR_ADDRESS_SOURCE_MODES)),address_origins=paste(rep('2',64),collapse=''),
+    density_reference=density_ref$sha256)
+  identity <- as.character(jsonlite::toJSON(as.list(input_hashes),auto_unbox=TRUE))
+  facts$input_identity <- identity
+  facts$input_content_version <- paste(as.character(openssl::sha256(charToRaw(identity))),collapse='')
+  content_columns <- c('territory_type','territory_id','density_class_code','density_class_label','TYPEQU','LIB_TYPEQU',
+    'n_addresses','n_observed','coverage_status',AEDAR_AGGREGATE_MEASURES,'source_snapshot_id',
+    'density_reference_identity','density_reference_sha256','density_reference_vintage','input_content_version','input_identity')
+  facts$content_version <- paste(as.character(openssl::sha256(serialize(facts[content_columns],NULL))),collapse='')
+  list(facts=facts,crosswalk=crosswalk,density_reference=density_ref,input_hashes=input_hashes,
+    input_content_version=facts$input_content_version[[1]],input_identity=identity,
+    content_version=facts$content_version[[1]],artifact_sha256=paste(rep(if(walk_value==1)'c' else 'd',64),collapse=''),
+    source_snapshot_id=AEDAR_AGGREGATE_VINTAGE)
+}
+density_source <- make_density_source()
+saveRDS(density_source,Sys.getenv('AEDAR_DENSITY_FIXTURE'))
+comparison <- project_aedar_comparison_publication(projection,density_source,refs,
+  reference_content_version='fixture-ref-v1',directory=canonical_comparison)
 comparison <- read_aedar_comparison_canonical(canonical_comparison)
 published <- publish_aedar_comparisons(comparison,con)
-stopifnot(published$changed,nrow(comparison$groups)>0,nrow(comparison$territories)>0)
-compare_db_projection <- function(expected,table,columns,order_columns) {
-  expected <- as.data.frame(expected[,columns,drop=FALSE])
-  select_columns <- ifelse(columns=='TYPEQU','typequ AS "TYPEQU"',columns)
-  actual <- DBI::dbGetQuery(con,paste0("SELECT ",paste(select_columns,collapse=',')," FROM ",table))
-  numeric_columns <- intersect(c('value','n_addresses','n_observed'),columns)
-  for (column in numeric_columns) {
-    expected[[column]] <- as.numeric(expected[[column]])
-    actual[[column]] <- as.numeric(actual[[column]])
+stopifnot(published$changed,comparison$group_row_count>0,comparison$territory_row_count>0,length(comparison$parts)==AEDAR_TYPEQU_REGISTRY_COUNT)
+compare_db_projection <- function(part_kind,table,columns,order_columns) {
+  for(part in comparison$parts) {
+    expected_part <- as.data.frame(nanoparquet::read_parquet(file.path(canonical_comparison,part[[part_kind]])))[,columns,drop=FALSE]
+    select_columns <- ifelse(columns=='TYPEQU','typequ AS "TYPEQU"',columns)
+    actual <- DBI::dbGetQuery(con,paste0("SELECT ",paste(select_columns,collapse=',')," FROM ",table,
+      " WHERE typequ=",as.character(DBI::dbQuoteString(con,part$TYPEQU))))
+    numeric_columns <- intersect(c('value','n_addresses','n_observed'),columns)
+    for (column in numeric_columns) {expected_part[[column]]<-as.numeric(expected_part[[column]]);actual[[column]]<-as.numeric(actual[[column]])}
+    sort_frame <- function(x) {x<-x[do.call(order,x[order_columns]),,drop=FALSE];rownames(x)<-NULL;x}
+    same <- all.equal(sort_frame(expected_part),sort_frame(actual),tolerance=0,check.attributes=FALSE)
+    if(!isTRUE(same)) stop(paste("Canonical/DB AEDAR comparison parity failed:",paste(same,collapse="; ")))
   }
-  sort_frame <- function(x) {x<-x[do.call(order,x[order_columns]),,drop=FALSE];rownames(x)<-NULL;x}
-  expected <- sort_frame(expected); actual <- sort_frame(actual)
-  same <- all.equal(expected,actual,tolerance=0,check.attributes=FALSE)
-  if(!isTRUE(same)) stop(paste("Canonical/DB AEDAR comparison parity failed:",paste(same,collapse="; ")))
   invisible(TRUE)
 }
 group_columns <- c('comparison_context','group_id','territory_type','TYPEQU','measure','statistic','value',
@@ -191,29 +219,31 @@ territory_columns <- c('comparison_context','group_id','territory_type','territo
   'status','n_addresses','n_observed','coverage_status','rank','rank_size')
 group_order <- c('comparison_context','group_id','territory_type','TYPEQU','measure')
 territory_order <- c('comparison_context','group_id','territory_type','territory_id','TYPEQU','measure')
-compare_db_projection(comparison$groups,'aedar_comparison_group',group_columns,group_order)
-compare_db_projection(comparison$territories,'aedar_comparison_territory',territory_columns,territory_order)
-focus_group <- comparison$groups[comparison$groups$comparison_context=='epci'&comparison$groups$group_id=='200000001'&comparison$groups$territory_type=='commune'&comparison$groups$TYPEQU=='A104'&comparison$groups$measure=='count_5_walk_mean',,drop=FALSE]
-focus_territory <- comparison$territories[comparison$territories$comparison_context=='epci'&comparison$territories$group_id=='200000001'&comparison$territories$territory_type=='commune'&comparison$territories$territory_id=='22001'&comparison$territories$TYPEQU=='A104'&comparison$territories$measure=='count_5_walk_mean',,drop=FALSE]
+compare_db_projection('groups','aedar_comparison_group',group_columns,group_order)
+compare_db_projection('territories','aedar_comparison_territory',territory_columns,territory_order)
+a104_part <- comparison$parts[[match('A104',vapply(comparison$parts,`[[`,character(1),'TYPEQU'))]]
+part_groups <- as.data.frame(nanoparquet::read_parquet(file.path(canonical_comparison,a104_part$groups)))
+part_territories <- as.data.frame(nanoparquet::read_parquet(file.path(canonical_comparison,a104_part$territories)))
+focus_group <- part_groups[part_groups$comparison_context=='epci'&part_groups$group_id=='200000001'&part_groups$territory_type=='commune'&part_groups$measure=='count_5_walk_mean',,drop=FALSE]
+focus_territory <- part_territories[part_territories$comparison_context=='epci'&part_territories$group_id=='200000001'&part_territories$territory_type=='commune'&part_territories$territory_id=='22001'&part_territories$measure=='count_5_walk_mean',,drop=FALSE]
 stopifnot(nrow(focus_group)==1,nrow(focus_territory)==1)
 jsonlite::write_json(list(group=as.list(focus_group),territory=as.list(focus_territory),
   content_version=comparison$content_version,aedar_content_version=comparison$aedar_content_version,
   reference_content_version=comparison$reference_content_version,input_content_version=comparison$input_content_version,
   input_identity=jsonlite::fromJSON(comparison$input_identity)),Sys.getenv('AEDAR_EXPECTED_COMPARISON_JSON'),auto_unbox=TRUE,na='null',digits=17)
-comparison_before <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
+        comparison_before <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_comparison_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced comparison rollback'; END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_comparison_insert BEFORE INSERT ON aedar_comparison_territory FOR EACH ROW EXECUTE FUNCTION reject_aedar_comparison_insert()")
-replacement_modes <- mode_facts; replacement_modes$walk$count_5_walk[[1L]] <- 2
-replacement <- project_aedar_comparison_publication(projection,origins,replacement_modes,refs,
-  aedar_content_version=before,reference_content_version='fixture-ref-v1',
-  input_hashes=c(address_origins='fixture',address_modes='replacement'))
+replacement_source <- make_density_source(2)
+replacement <- project_aedar_comparison_publication(projection,replacement_source,refs,
+  aedar_content_version=before,reference_content_version='fixture-ref-v1',directory=canonical_comparison)
 comparison_failed <- tryCatch({publish_aedar_comparisons(replacement,con); FALSE},error=function(e) TRUE)
 DBI::dbExecute(con,"DROP TRIGGER reject_aedar_comparison_insert ON aedar_comparison_territory")
 DBI::dbExecute(con,"DROP FUNCTION reject_aedar_comparison_insert()")
 comparison_after <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
 stopifnot(comparison_failed,identical(comparison_before,comparison_after))
-compare_db_projection(comparison$groups,'aedar_comparison_group',group_columns,group_order)
-compare_db_projection(comparison$territories,'aedar_comparison_territory',territory_columns,territory_order)
+compare_db_projection('groups','aedar_comparison_group',group_columns,group_order)
+compare_db_projection('territories','aedar_comparison_territory',territory_columns,territory_order)
 '''
         fixture_tmp = Path(tempfile.mkdtemp(prefix="aedar-it-",dir="E:/Temp/opencode"))
         try:
@@ -227,6 +257,7 @@ compare_db_projection(comparison$territories,'aedar_comparison_territory',territ
             env["AEDAR_EXPECTED_COMPARISON_JSON"] = str(expected_comparison_path)
             env["AEDAR_CANONICAL_AGGREGATE_DIR"] = str(canonical_aggregate_dir)
             env["AEDAR_CANONICAL_COMPARISON_DIR"] = str(canonical_comparison_dir)
+            env["AEDAR_DENSITY_FIXTURE"] = str(Path(tmp) / "density-fixture.rds")
             env["PGHOST"] = parts.hostname or "localhost"; env["PGPORT"] = str(parts.port or 5432)
             env["PGDATABASE"] = parts.path.lstrip("/"); env["PGUSER"] = unquote(parts.username or "")
             env["PGPASSWORD"] = unquote(parts.password or "")
@@ -273,7 +304,8 @@ compare_db_projection(comparison$territories,'aedar_comparison_territory',territ
                 compared=comparison.json()
                 assert compared["source_snapshot_id"]=="2026-v1"
                 assert compared["input_content_version"]
-                assert compared["input_identity"]["address_origins"]=="fixture"
+                assert compared["input_identity"]["address_origins"]=="2"*64
+                assert compared["input_identity"]["density_reference_sha256"]=="8ebf3011743db45ab94c4ffb74d1bcb06929f0076ecd5b8247011bca861ca978"
                 assert compared["content_version"]==expected_comparison["content_version"]
                 assert compared["aedar_content_version"]==expected_comparison["aedar_content_version"]
                 assert compared["reference_content_version"]==expected_comparison["reference_content_version"]
@@ -295,6 +327,18 @@ compare_db_projection(comparison$territories,'aedar_comparison_territory',territ
                 stale=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
                 assert stale.status_code==503
                 pub.execute("UPDATE table_publication SET content_version='fixture-ref-v1' WHERE table_name='territory_reference'")
+                last_complete = pub.execute("SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone()
+                last_group_rows = pub.execute("SELECT count(*) FROM aedar_comparison_group").fetchone()[0]
+                last_territory_rows = pub.execute("SELECT count(*) FROM aedar_comparison_territory").fetchone()[0]
+                # Source publication is a separate transaction: the fact delete must
+                # commit while the previous complete comparison remains available.
+                pub.execute("DELETE FROM aedar_territorial_aggregate")
+                pub.execute("UPDATE table_publication SET content_version='fixture-source-refreshed' WHERE table_name='aedar_territorial_aggregate'")
+                assert pub.execute("SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone() == last_complete
+                assert pub.execute("SELECT count(*) FROM aedar_comparison_group").fetchone()[0] == last_group_rows
+                assert pub.execute("SELECT count(*) FROM aedar_comparison_territory").fetchone()[0] == last_territory_rows
+                stale_after_source_refresh=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+                assert stale_after_source_refresh.status_code==503
                 stale_script = r'''pkgload::load_all('.',quiet=TRUE)
 schema <- Sys.getenv('AEDAR_IT_SCHEMA')
 con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
@@ -311,14 +355,10 @@ changed_source_version <- aedar_aggregate_content_version(changed_projection)
 stopifnot(!identical(changed_source_version,comparison$aedar_content_version))
 DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_name='aedar_territorial_aggregate'",
   params=list(changed_source_version))
-mode_facts <- stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODES,function(mode) {
-  x <- as.data.frame(as.list(stats::setNames(rep(1,4),AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]])))
-  x$address_id <- 'fixture-a'; x$TYPEQU <- 'A104'; x
-}),AEDAR_ADDRESS_SOURCE_MODES)
-stale_replacement <- project_aedar_comparison_publication(changed_projection,
-  data.frame(address_id=c('fixture-a','fixture-b'),commune='22001'),mode_facts,refs,
-  aedar_content_version=changed_source_version,reference_content_version='fixture-ref-v1',
-  input_hashes=c(address_origins='fixture',address_modes='fixture'))
+        density_source <- readRDS(Sys.getenv('AEDAR_DENSITY_FIXTURE'))
+        stale_replacement <- project_aedar_comparison_publication(changed_projection,density_source,refs,
+          aedar_content_version=changed_source_version,reference_content_version='fixture-ref-v1',
+          directory=Sys.getenv('AEDAR_CANONICAL_COMPARISON_DIR'))
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_stale_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced replacement failure'; END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_stale_insert BEFORE INSERT ON aedar_comparison_territory FOR EACH ROW EXECUTE FUNCTION reject_aedar_stale_insert()")
 failed <- tryCatch({publish_aedar_comparisons(stale_replacement,con); FALSE},error=function(e) TRUE)

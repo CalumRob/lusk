@@ -36,6 +36,14 @@ def test_aedar_fixed_comparison_read_is_bounded_and_fails_closed_on_stale_depend
     assert "source_snapshot_id='2026-v1'" in migration
     assert "input_content_version text NOT NULL" in migration
     assert "input_identity jsonb NOT NULL" in migration
+    assert "statistic IN ('median','direct','pooled')" in schema
+    assert "statistic IN ('median','direct','pooled')" in migration
+    assert "statistic='pooled'" in schema and "statistic='pooled'" in migration
+    assert "FOREIGN KEY(comparison_context,group_id,territory_type,typequ,measure)" in migration
+    assert "REFERENCES aedar_comparison_group" in migration
+    assert "FOREIGN KEY(territory_type,territory_id,typequ)" not in migration
+    assert "FOREIGN KEY(territory_type,territory_id,typequ)" not in schema
+    assert "source refresh retains the last complete comparison" in migration
     assert "sql" not in route.endpoint.__annotations__
 
 
@@ -183,7 +191,7 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
     from contextlib import contextmanager
     from fastapi.testclient import TestClient
     import api.main as main
-    state={"stale":False}
+    state={"stale":False,"statistic":"median","context":"epci"}
 
     class Cursor:
         description = [type("Column", (), {"name": n}) for n in
@@ -199,7 +207,7 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
                 return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,8,"old-aedar" if state["stale"] else "aed-v1","ref-v1")})()
             if "FROM territory_reference" in sql:
                 return type("Territory",(),{"fetchone":lambda self:(1,)})()
-            return Cursor(("epci","E1","commune","A104","Fixture","aedar_bretagne","2026-v1","https://example.test","ODbL","AEDAR",None,"2026-09-30","count_5_walk_mean","median",4.0,None,None,None,2,2,0,5.0,"measured",10,8,"covered",1,2))
+            return Cursor((state["context"],"E1","commune","A104","Fixture","aedar_bretagne","2026-v1","https://example.test","ODbL","AEDAR",None,"2026-09-30","count_5_walk_mean",state["statistic"],4.0,None,None,None,2,2,0,5.0,"measured",10,8,"covered",1,2))
         @contextmanager
         def transaction(self): yield self
     class FakePool:
@@ -216,7 +224,13 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
     assert body["input_content_version"]=="inputs-v1"
     assert body["comparison"]["rank"]==1
     assert body["comparison"]["rank_size"]==2
+    assert body["comparison"]["statistic"]=="median"
     assert "rank_ties" not in body["comparison"]
+    state["statistic"]="pooled"
+    state["context"]="density_class"
+    pooled=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=density_class&typequ=A104&measure=count_5_walk_mean")
+    assert pooled.status_code==200
+    assert pooled.json()["comparison"]["statistic"]=="pooled"
     state["stale"]=True
     stale=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
     assert stale.status_code==503

@@ -5,9 +5,7 @@ if (length(args)!=1L || !args[[1]] %in% c("--check","--publish","--full-vintage"
   stop("Usage: Rscript scripts/publish-aedar-aggregates.R --check|--publish|--full-vintage (from pipeline/)",call.=FALSE)
 canonical_dir <- Sys.getenv("LUSK_AEDAR_CANONICAL_DIR",file.path("data","processed","aedar"))
 raw_dir <- Sys.getenv("LUSK_AEDAR_RAW_DIR",file.path("data","raw"))
-# --check requires LUSK_AEDAR_ADDRESS_ORIGINS to name the complete verified
-# address-origin Parquet; its SHA-256 and the six registered source hashes are
-# captured in the comparison projection provenance.
+density_path <- Sys.getenv("LUSK_AEDAR_DENSITY_AGGREGATE",file.path(raw_dir,"aedar_density_aggregate.parquet"))
 # Operator sequence: --check acquires, validates, and atomically materializes the
 # canonical facts, source Parquets, and TYPEQU metadata. --publish reads only
 # those artifacts, so a
@@ -20,15 +18,14 @@ if (args[[1]]=="--publish") {
   if (!canonical_facts)
     stop("Canonical AEDAR Parquets are missing; run --check first. This keeps a DB retry independent of source acquisition.",call.=FALSE)
   projection <- read_aedar_canonical(canonical_dir)
-  comparison_projection <- read_aedar_comparison_canonical(canonical_dir)
+  comparison_projection <- read_aedar_comparison_canonical(canonical_dir,verify_parts=FALSE)
 } else {
   projection <- read_aedar_aggregate_projection(raw_dir)
-  address_resource_paths <- projection$address_resource_paths
   write_aedar_canonical(projection,canonical_dir)
   # Publish always consumes the materialized/validated Parquet representation.
   projection <- read_aedar_canonical(canonical_dir)
-  address_inputs <- read_aedar_comparison_inputs(mode_paths=address_resource_paths,
-    origins_path=Sys.getenv("LUSK_AEDAR_ADDRESS_ORIGINS"),raw_dir=raw_dir)
+  density_reference <- read_aedar_density_reference(file.path(raw_dir,MANIFEST_CLASSES_DENSITE[["fichier"]][[1L]]))
+  density_source <- read_aedar_density_aggregate(density_path,density_reference)
   reference_connection <- do.call(DBI::dbConnect,c(list(drv=RPostgres::Postgres()),configuration_service_postgres()))
   reference <- tryCatch(DBI::dbWithTransaction(reference_connection, {
     DBI::dbExecute(reference_connection,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -37,11 +34,8 @@ if (args[[1]]=="--publish") {
     if(nrow(version)!=1L) stop("AEDAR comparison requires one published territory-reference version",call.=FALSE)
     list(version=version$content_version[[1L]],facts=facts)
   }),finally=DBI::dbDisconnect(reference_connection))
-  comparison_projection <- project_aedar_comparison_publication(projection,
-    address_inputs$address_origins,address_inputs$address_facts,reference$facts,
-    reference_content_version=reference$version,input_content_version=address_inputs$input_content_version,
-    input_hashes=address_inputs$input_hashes,observed_keys=address_inputs$observed_keys)
-  write_aedar_comparison_canonical(comparison_projection,canonical_dir)
+  comparison_projection <- project_aedar_comparison_publication(projection,density_source,
+    reference$facts,reference_content_version=reference$version,directory=canonical_dir)
 }
 if (args[[1]]=="--full-vintage") {
   for (level in AEDAR_AGGREGATE_LEVELS) {

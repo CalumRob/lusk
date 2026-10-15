@@ -258,10 +258,289 @@ AEDAR_ADDRESS_SOURCE_COLUMNS <- stats::setNames(lapply(AEDAR_ADDRESS_SOURCE_MODE
   paste0("count_",c(5,10,15,20),"_",suffix)
 }),AEDAR_ADDRESS_SOURCE_MODES)
 
+# Build the density-class aggregate directly from the address-grain sources.
+build_aedar_density_aggregate <- function(mode_paths,origins_path,crosswalk,
+    density_reference_identity,density_reference_sha256,density_reference_vintage,
+    output_path,verify_hashes=TRUE) {
+  if(!is.character(mode_paths)||is.null(names(mode_paths))||
+     !setequal(names(mode_paths),AEDAR_ADDRESS_SOURCE_MODES)||anyDuplicated(names(mode_paths)))
+    stop("All six registered AEDAR address-mode resources are required",call.=FALSE)
+  mode_paths<-mode_paths[AEDAR_ADDRESS_SOURCE_MODES]
+  if(length(density_reference_identity)!=1L||is.na(density_reference_identity)||!nzchar(density_reference_identity)||
+     length(density_reference_sha256)!=1L||is.na(density_reference_sha256)||!grepl("^[0-9a-fA-F]{64}$",density_reference_sha256)||
+     length(density_reference_vintage)!=1L||is.na(density_reference_vintage)||!nzchar(density_reference_vintage))
+    stop("AEDAR density aggregate requires the pinned local density-reference identity",call.=FALSE)
+  if(tolower(normalizePath(output_path,winslash="/",mustWork=FALSE))%in%
+     tolower(normalizePath(c(unname(mode_paths),origins_path),winslash="/",mustWork=FALSE)))
+    stop("AEDAR density output must not overwrite an address input",call.=FALSE)
+  required_crosswalk<-c("code_insee","density_class_code","density_class_label")
+  if(!is.data.frame(crosswalk)||!all(required_crosswalk%in%names(crosswalk)))
+    stop("Invalid commune-to-density-class reference crosswalk",call.=FALSE)
+  crosswalk<-as.data.frame(crosswalk[required_crosswalk],stringsAsFactors=FALSE)
+  for(column in required_crosswalk) crosswalk[[column]]<-as.character(crosswalk[[column]])
+  if(!nrow(crosswalk)||anyNA(crosswalk)||any(!nzchar(as.matrix(crosswalk)))||
+     anyDuplicated(crosswalk$code_insee))
+    stop("Commune-to-density-class crosswalk must be complete and unique",call.=FALSE)
+  labels_by_class<-split(crosswalk$density_class_label,crosswalk$density_class_code)
+  if(any(vapply(labels_by_class,function(x) length(unique(x))!=1L,logical(1))))
+    stop("Density class codes must each have one authoritative label",call.=FALSE)
+  resources<-AEDAR_SOURCE_RESOURCES[AEDAR_SOURCE_RESOURCES$kind=="address",,drop=FALSE]
+  if(tolower(normalizePath(output_path,winslash="/",mustWork=FALSE)) %in%
+      tolower(normalizePath(c(file.path(dirname(output_path),AEDAR_AGGREGATE_RESOURCES$filename),unname(mode_paths),origins_path),winslash="/",mustWork=FALSE)))
+    stop("AEDAR density output cannot overwrite a registered input aggregate or address source",call.=FALSE)
+  for(i in seq_along(mode_paths)) {
+    if(!file.exists(mode_paths[[i]])) stop(paste("Registered AEDAR address source is missing:",names(mode_paths)[[i]]),call.=FALSE)
+    if(verify_hashes) verify_aedar_source_hash(mode_paths[[i]],resources$sha1[match(names(mode_paths)[[i]],resources$mode)])
+  }
+  if(!file.exists(origins_path)) stop("Configured AEDAR address-origin spine is missing",call.=FALSE)
+  if(!requireNamespace("arrow",quietly=TRUE)) stop("arrow is required for AEDAR density aggregation",call.=FALSE)
+  spine<-as.data.frame(arrow::read_parquet(origins_path, col_select=c("address_id","code_insee")),stringsAsFactors=FALSE)
+  spine$address_id<-as.character(spine$address_id); spine$code_insee<-as.character(spine$code_insee)
+  if(!nrow(spine)||anyNA(spine)||any(!nzchar(spine$address_id))||any(!nzchar(spine$code_insee))||anyDuplicated(spine[c("code_insee","address_id")]))
+    stop("AEDAR address-origin spine violates its complete unique identity contract",call.=FALSE)
+  if(any(!spine$code_insee%in%crosswalk$code_insee)) stop("Address-origin commune is absent from density crosswalk",call.=FALSE)
+  denoms<-as.data.frame(dplyr::count(dplyr::inner_join(spine,crosswalk,by="code_insee"),density_class_code,density_class_label,name="n_addresses"))
+  axis<-read_aedar_typequ_registry()[c("TYPEQU","LIB_TYPEQU")]
+  classes<-unique(crosswalk[c("density_class_code","density_class_label")])
+  out<-merge(classes,axis,by=NULL,sort=FALSE)
+  out<-merge(out,denoms,by=c("density_class_code","density_class_label"),all.x=TRUE,sort=FALSE)
+  out$n_addresses[is.na(out$n_addresses)]<-0L
+  out$territory_type<-"density_class"; out$territory_id<-out$density_class_code
+  out$n_observed<-0L; out$coverage_status<-ifelse(out$n_addresses>0,"covered","uncovered_no_address_origins")
+  probs<-seq(.1,.9,.1); suffixes<-c("share","min","max",paste0("decile",1:9),"mean")
+  input_hashes<-c(stats::setNames(vapply(mode_paths,sha256_aedar_file,character(1)),paste0("mode:",names(mode_paths))),
+    address_origins=sha256_aedar_file(origins_path),density_reference=tolower(density_reference_sha256))
+  input_identity<-as.character(jsonlite::toJSON(as.list(input_hashes),auto_unbox=TRUE))
+  input_version<-paste(as.character(openssl::sha256(charToRaw(input_identity))),collapse="")
+  for(mode in AEDAR_ADDRESS_SOURCE_MODES) {
+    dataset<-arrow::open_dataset(mode_paths[[mode]],format="parquet")
+    cols<-AEDAR_ADDRESS_SOURCE_COLUMNS[[mode]]
+    for(source_column in cols) {
+      stem<-sub("_p1$","",source_column)
+      metric<-sub(paste0("_",mode,"$"),"",stem)
+      measure_stem<-paste0(metric,"_",mode)
+      value_hist<-dataset |>
+        dplyr::select(code_insee,cle_interop_adr,TYPEQU,value=dplyr::all_of(source_column)) |>
+        dplyr::filter(!is.na(.data$value)) |>
+        dplyr::left_join(dplyr::select(crosswalk,code_insee,density_class_code),by="code_insee") |>
+        dplyr::group_by(density_class_code,TYPEQU,value) |>
+        dplyr::summarise(n=dplyr::n(),.groups="drop") |>
+        dplyr::collect()
+      if(anyNA(value_hist$density_class_code)||any(!value_hist$TYPEQU%in%axis$TYPEQU)) stop("Address mode contains unknown density or TYPEQU keys",call.=FALSE)
+      for(key in unique(paste(value_hist$density_class_code,value_hist$TYPEQU,sep="\r"))) {
+        hit<-which(paste(value_hist$density_class_code,value_hist$TYPEQU,sep="\r")==key)
+        row<-match(key,paste(out$density_class_code,out$TYPEQU,sep="\r")); hist<-value_hist[hit,,drop=FALSE]
+        n<-out$n_addresses[[row]]; vals<-as.numeric(hist$value); weights<-as.numeric(hist$n)
+        if(!n) stats<-rep(NA_real_,13L) else {
+          zeros<-n-sum(weights); allv<-c(0,vals); allw<-c(zeros,weights); ord<-order(allv); allv<-allv[ord]; cumulative<-cumsum(allw[ord])
+          at<-function(rank) allv[which(cumulative>=rank)[[1L]]]
+          quant<-vapply(probs,function(p) {h<-1+(n-1)*p; lo<-floor(h); f<-h-lo; a<-at(lo); if(!f||lo==n)a else a+f*(at(lo+1)-a)},numeric(1))
+          stats<-c(if(mode=="transit_gain")sum(weights[vals!=0])/n else sum(weights[vals>0])/n,
+            if(zeros>0)0 else min(vals),if(zeros>0)max(c(0,vals)) else max(vals),quant,sum(vals*weights)/n)
+        }
+        out[row,paste0(measure_stem,"_",suffixes)]<-as.list(stats)
+      }
+    }
+  }
+  # Union observed source keys one TYPEQU at a time. The large car source has
+  # hundreds of millions of address/TYPEQU rows; materializing its full key
+  # table through a partition writer is not bounded on Windows Arrow.
+  source_modes<-setdiff(AEDAR_ADDRESS_SOURCE_MODES,"transit_gain")
+  observed_paths<-unname(mode_paths[source_modes])
+  observed_dataset<-arrow::open_dataset(observed_paths,format="parquet")
+  spine_arrow<-arrow::arrow_table(data.frame(code_insee=spine$code_insee,
+    cle_interop_adr=spine$address_id,.__origin=TRUE,stringsAsFactors=FALSE))
+  for(mode in AEDAR_ADDRESS_SOURCE_MODES) {
+    dataset<-arrow::open_dataset(mode_paths[[mode]],format="parquet")
+    types<-dataset |> dplyr::select(TYPEQU) |> dplyr::distinct() |> dplyr::collect()
+    if(anyNA(types$TYPEQU)||any(!as.character(types$TYPEQU)%in%axis$TYPEQU))
+      stop(paste("AEDAR source mode has TYPEQU outside the pinned registry:",mode),call.=FALSE)
+    duplicates<-dataset |> dplyr::group_by(code_insee,cle_interop_adr,TYPEQU) |>
+      dplyr::summarise(n=dplyr::n(),.groups="drop") |> dplyr::filter(.data$n>1L) |>
+      dplyr::summarise(n=dplyr::n(),.groups="drop") |> dplyr::collect()
+    if(nrow(duplicates)&&duplicates$n[[1L]]>0L) stop(paste("AEDAR source mode has duplicate address/TYPEQU keys:",mode),call.=FALSE)
+  }
+  typequ_batches<-split(axis$TYPEQU,ceiling(seq_along(axis$TYPEQU)/10L))
+  for(batch_index in seq_along(typequ_batches)) {
+    typequ_batch<-typequ_batches[[batch_index]]
+    observed<-observed_dataset |>
+      dplyr::select(code_insee,cle_interop_adr,TYPEQU) |>
+      dplyr::filter(.data$TYPEQU%in%typequ_batch) |>
+      dplyr::distinct(code_insee,cle_interop_adr,TYPEQU) |>
+      dplyr::left_join(spine_arrow,by=c("code_insee","cle_interop_adr")) |>
+      dplyr::left_join(dplyr::select(crosswalk,code_insee,density_class_code),by="code_insee") |>
+      dplyr::group_by(density_class_code,TYPEQU) |>
+      dplyr::summarise(n_observed=dplyr::n(),n_invalid=sum(is.na(.data$.__origin)),.groups="drop") |>
+      dplyr::collect()
+    if(any(observed$n_invalid>0L)||anyNA(observed$density_class_code))
+      stop("AEDAR observed address/TYPEQU union contains keys outside the address-origin spine or density crosswalk",call.=FALSE)
+    for(j in seq_len(nrow(observed))) {
+      r<-match(paste(observed$density_class_code[j],observed$TYPEQU[j],sep="\r"),paste(out$density_class_code,out$TYPEQU,sep="\r"))
+      if(!is.na(r)) out$n_observed[r]<-observed$n_observed[j]
+    }
+    cat("[aedar-density] observed TYPEQU batch",batch_index,"/",length(typequ_batches),"complete\n")
+  }
+  for(m in AEDAR_AGGREGATE_MEASURES) {
+    if(!m%in%names(out)) out[[m]]<-NA_real_
+    covered_missing<-out$coverage_status=="covered" & is.na(out[[m]])
+    out[[m]][covered_missing]<-0
+  }
+  out$source_snapshot_id<-AEDAR_AGGREGATE_VINTAGE; out$density_reference_identity<-density_reference_identity
+  out$density_reference_sha256<-tolower(density_reference_sha256); out$density_reference_vintage<-density_reference_vintage
+  out$input_content_version<-input_version; out$input_identity<-input_identity
+  out<-out[c("territory_type","territory_id","density_class_code","density_class_label","TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status",AEDAR_AGGREGATE_MEASURES,"source_snapshot_id","density_reference_identity","density_reference_sha256","density_reference_vintage","input_content_version","input_identity")]
+  out$content_version<-paste(as.character(openssl::sha256(serialize(out,NULL))),collapse="")
+  dir.create(dirname(output_path),recursive=TRUE,showWarnings=FALSE)
+  tmp<-paste0(output_path,".part"); on.exit(unlink(tmp),add=TRUE)
+  arrow::write_parquet(out,tmp); check<-as.data.frame(arrow::read_parquet(tmp),stringsAsFactors=FALSE)
+  if(nrow(check)!=nrow(classes)*AEDAR_TYPEQU_REGISTRY_COUNT||!all(AEDAR_AGGREGATE_MEASURES%in%names(check))||
+     anyDuplicated(check[c("density_class_code","TYPEQU")])||
+     any(vapply(split(check$TYPEQU,check$density_class_code),function(x)!setequal(x,axis$TYPEQU),logical(1))))
+    stop("Generated AEDAR density artifact failed complete-schema validation",call.=FALSE)
+  if(!file.rename(tmp,output_path)) stop("Could not atomically install AEDAR density artifact",call.=FALSE)
+  out
+}
+
 sha256_aedar_file <- function(path) {
   if(!file.exists(path)||is.na(file.info(path)$size)||file.info(path)$size<1L)
     stop(paste("AEDAR input file is missing or empty:",basename(path)),call.=FALSE)
   paste(as.character(openssl::sha256(readBin(path,"raw",n=file.info(path)$size))),collapse="")
+}
+
+read_aedar_density_reference <- function(path=file.path("data","raw",MANIFEST_CLASSES_DENSITE[["fichier"]][[1L]])) {
+  manifest<-MANIFEST_CLASSES_DENSITE
+  expected_hash<-manifest[["sha256"]][[1L]]
+  actual_hash<-sha256_aedar_file(path)
+  if(!identical(tolower(actual_hash),tolower(expected_hash)))
+    stop("Pinned local commune-density source checksum mismatch",call.=FALSE)
+  classes<-lire_classes_densite(path)
+  registry<-registre_classes_densite()
+  class_index<-match(as.character(classes[["DENS7"]]),registry[["classe_densite_code"]])
+  if(anyNA(class_index)||anyNA(classes[["CODGEO"]])||anyNA(classes[["LIBDENS7"]])||
+     any(as.character(classes[["LIBDENS7"]])!=registry[["classe_densite_libelle_insee"]][class_index])||
+     anyDuplicated(classes[["CODGEO"]]))
+    stop("Local commune-density source disagrees with the authoritative class registry",call.=FALSE)
+  crosswalk<-data.frame(code_insee=as.character(classes[["CODGEO"]]),
+    density_class_code=as.character(classes[["DENS7"]]),
+    density_class_label=as.character(registry[["classe_densite_libelle_public"]][class_index]),
+    stringsAsFactors=FALSE)
+  labels<-split(crosswalk$density_class_label,crosswalk$density_class_code)
+  if(!setequal(unique(crosswalk$density_class_code),registry[["classe_densite_code"]])||
+     any(vapply(labels,function(x)length(unique(x))!=1L,logical(1))))
+    stop("Local commune-density source does not cover the registered classes consistently",call.=FALSE)
+  list(crosswalk=crosswalk,identity=manifest[["id"]][[1L]],sha256=tolower(actual_hash),
+    vintage=manifest[["vintage"]][[1L]],path=normalizePath(path,winslash="/",mustWork=TRUE))
+}
+
+validate_aedar_density_aggregate <- function(facts,density_reference) {
+  measures<-AEDAR_AGGREGATE_MEASURES
+  required<-c("territory_type","territory_id","density_class_code","density_class_label",
+    "TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status",measures,
+    "source_snapshot_id","density_reference_identity","density_reference_sha256",
+    "density_reference_vintage","input_content_version","input_identity","content_version")
+  if(!is.data.frame(facts)||!setequal(names(facts),required)||ncol(facts)!=length(required))
+    stop("AEDAR density aggregate has an unexpected or incomplete schema",call.=FALSE)
+  content_columns<-c("territory_type","territory_id","density_class_code","density_class_label",
+    "TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status",measures,
+    "source_snapshot_id","density_reference_identity","density_reference_sha256",
+    "density_reference_vintage","input_content_version","input_identity")
+  ref_fields<-c("crosswalk","identity","sha256","vintage")
+  if(!is.list(density_reference)||!all(ref_fields%in%names(density_reference))||
+     !is.data.frame(density_reference$crosswalk))
+    stop("AEDAR density aggregate requires its authoritative local reference",call.=FALSE)
+  cw<-density_reference$crosswalk
+  if(!all(c("code_insee","density_class_code","density_class_label")%in%names(cw))||
+     anyDuplicated(cw$code_insee)||anyNA(cw[c("code_insee","density_class_code","density_class_label")]))
+    stop("Authoritative local density crosswalk is incomplete or ambiguous",call.=FALSE)
+  if(!nrow(facts)||anyNA(facts[c("territory_type","territory_id","density_class_code","density_class_label",
+      "TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status","source_snapshot_id",
+      "density_reference_identity","density_reference_sha256","density_reference_vintage",
+      "input_content_version","input_identity","content_version")]))
+    stop("AEDAR density aggregate has missing key/provenance fields",call.=FALSE)
+  if(any(facts$territory_type!="density_class")||any(facts$source_snapshot_id!=AEDAR_AGGREGATE_VINTAGE)||
+     any(facts$density_reference_identity!=density_reference$identity)||
+     any(tolower(facts$density_reference_sha256)!=tolower(density_reference$sha256))||
+     any(facts$density_reference_vintage!=density_reference$vintage))
+    stop("AEDAR density aggregate source/reference provenance is incompatible",call.=FALSE)
+  axis<-read_aedar_typequ_registry()
+  if(anyDuplicated(axis$TYPEQU)||nrow(axis)!=AEDAR_TYPEQU_REGISTRY_COUNT||
+     any(!facts$TYPEQU%in%axis$TYPEQU)||anyNA(axis$LIB_TYPEQU))
+    stop("AEDAR density aggregate TYPEQU axis differs from the pinned registry",call.=FALSE)
+  labels<-axis$LIB_TYPEQU[match(facts$TYPEQU,axis$TYPEQU)]
+  if(any(!compare_aedar_typequ_labels_for_validation(facts$LIB_TYPEQU,labels,facts$TYPEQU)))
+    stop("AEDAR density aggregate TYPEQU labels differ from the pinned registry",call.=FALSE)
+  expected_classes<-unique(cw[c("density_class_code","density_class_label")])
+  actual_classes<-unique(facts[c("density_class_code","density_class_label")])
+  if(!setequal(expected_classes$density_class_code,actual_classes$density_class_code)||
+     anyDuplicated(actual_classes$density_class_code)||anyDuplicated(facts[c("density_class_code","TYPEQU")])||
+     !setequal(paste(expected_classes$density_class_code,expected_classes$density_class_label,sep="\r"),
+       paste(actual_classes$density_class_code,actual_classes$density_class_label,sep="\r"))||
+     any(as.character(facts$territory_id)!=as.character(facts$density_class_code)))
+    stop("AEDAR density aggregate class axis is incomplete, duplicated, or mislabeled",call.=FALSE)
+  groups<-split(facts$TYPEQU,facts$density_class_code)
+  if(any(vapply(groups,function(x)length(x)!=AEDAR_TYPEQU_REGISTRY_COUNT||!setequal(x,axis$TYPEQU),logical(1))))
+    stop("AEDAR density aggregate omits a density class × TYPEQU coordinate",call.=FALSE)
+  denominator_groups<-split(facts$n_addresses,facts$density_class_code)
+  if(any(vapply(denominator_groups,function(x)length(unique(x))!=1L,logical(1))))
+    stop("AEDAR density aggregate has inconsistent class address denominators",call.=FALSE)
+  if(any(!is.finite(facts$n_addresses))||any(!is.finite(facts$n_observed))||
+     any(facts$n_addresses<0|facts$n_observed<0|facts$n_observed>facts$n_addresses)||
+     any(!facts$coverage_status%in%c("covered","uncovered_no_address_origins"))||
+     any((facts$n_addresses>0)!=(facts$coverage_status=="covered")))
+    stop("AEDAR density aggregate denominators/coverage are invalid",call.=FALSE)
+  values<-as.matrix(facts[,measures,drop=FALSE]); storage.mode(values)<-"double"
+  covered<-facts$coverage_status=="covered"
+  if(any(!is.finite(values[covered,,drop=FALSE]))||any(!is.na(values[!covered,,drop=FALSE])))
+    stop("AEDAR density aggregate covered/uncovered measure states are invalid",call.=FALSE)
+  content_version<-unique(as.character(facts$content_version))
+  computed_content_version<-paste(as.character(openssl::sha256(serialize(facts[content_columns],NULL))),collapse="")
+  if(length(content_version)!=1L||!grepl("^[0-9a-fA-F]{64}$",content_version)||
+     !identical(tolower(content_version),tolower(computed_content_version)))
+    stop("AEDAR density aggregate content identity is missing or does not match its facts",call.=FALSE)
+  input_identity<-unique(as.character(facts$input_identity))
+  input_version<-unique(as.character(facts$input_content_version))
+  if(length(input_identity)!=1L||length(input_version)!=1L||!grepl("^[0-9a-fA-F]{64}$",input_version)||
+     !identical(paste(as.character(openssl::sha256(charToRaw(input_identity))),collapse=""),input_version))
+    stop("AEDAR density aggregate input provenance hash is invalid",call.=FALSE)
+  identity<-tryCatch(jsonlite::fromJSON(input_identity,simplifyVector=TRUE),error=function(e) NULL)
+  identity_values<-if(is.list(identity)) unlist(identity,use.names=TRUE) else identity
+  expected_names<-c(paste0("mode:",AEDAR_ADDRESS_SOURCE_MODES),"address_origins","density_reference")
+  if(is.null(identity_values)||!is.atomic(identity_values)||is.null(names(identity_values))||!setequal(names(identity_values),expected_names)||
+     any(!grepl("^[0-9a-fA-F]{64}$",as.character(identity_values)))||
+     !identical(tolower(as.character(identity_values[["density_reference"]])),tolower(density_reference$sha256)))
+    stop("AEDAR density aggregate source input identity is incomplete or incompatible",call.=FALSE)
+  invisible(list(input_hashes=identity_values,input_content_version=input_version[[1L]],
+    content_version=content_version[[1L]],input_identity=input_identity[[1L]]))
+}
+
+read_aedar_density_aggregate <- function(path=file.path("data","raw","aedar_density_aggregate.parquet"),
+    density_reference=read_aedar_density_reference(),expected_sha256=NULL) {
+  artifact_sha256<-sha256_aedar_file(path)
+  if(!is.null(expected_sha256)&&!identical(tolower(artifact_sha256),tolower(expected_sha256)))
+    stop("AEDAR density aggregate artifact checksum mismatch",call.=FALSE)
+  facts<-as.data.frame(nanoparquet::read_parquet(path),stringsAsFactors=FALSE)
+  provenance<-validate_aedar_density_aggregate(facts,density_reference)
+  list(facts=facts,crosswalk=density_reference$crosswalk,
+    density_reference=density_reference,input_hashes=provenance$input_hashes,
+    input_content_version=provenance$input_content_version,input_identity=provenance$input_identity,
+    content_version=provenance$content_version,artifact_sha256=tolower(artifact_sha256),
+    source_snapshot_id=AEDAR_AGGREGATE_VINTAGE)
+}
+
+validate_aedar_density_membership <- function(density_source,territory_reference) {
+  required<-c("territory_type","territory_id","density_class_code")
+  if(!is.list(density_source)||!is.data.frame(density_source$crosswalk)||!all(required%in%names(territory_reference)))
+    stop("AEDAR density/reference membership inputs are incomplete",call.=FALSE)
+  communes<-territory_reference[territory_reference$territory_type=="commune",,drop=FALSE]
+  cw<-density_source$crosswalk
+  idx<-match(as.character(communes$territory_id),as.character(cw$code_insee))
+  if(anyNA(idx)||anyNA(communes$density_class_code)||
+     any(as.character(communes$density_class_code)!=as.character(cw$density_class_code[idx])))
+    stop("Published commune density membership disagrees with the pinned local INSEE source",call.=FALSE)
+  if("density_class_label"%in%names(communes)&&any(!is.na(communes$density_class_label)&
+      as.character(communes$density_class_label)!=as.character(cw$density_class_label[idx])))
+    stop("Published commune density labels disagree with the pinned local INSEE source",call.=FALSE)
+  invisible(TRUE)
 }
 
 aedar_address_identity <- function(code_insee,address_key) paste(as.character(code_insee),as.character(address_key),sep="\r")
@@ -622,7 +901,8 @@ aedar_comparison_content_version <- function(groups,territories) {
 
 project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference,
     aedar_content_version, reference_content_version, density_group_facts,
-    input_content_version=NULL,input_hashes=c(synthetic="fixture")) {
+    input_content_version=NULL,input_hashes=c(synthetic="fixture"),
+    typequ_codes=NULL,calculate_content_version=TRUE) {
   input_identity<-as.character(jsonlite::toJSON(as.list(input_hashes),auto_unbox=TRUE))
   expected_input_version<-paste(as.character(openssl::sha256(charToRaw(input_identity))),collapse="")
   if(is.null(input_content_version)) input_content_version<-expected_input_version
@@ -634,6 +914,11 @@ project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference
   measures <- intersect(AEDAR_AGGREGATE_MEASURES,names(aggregate_facts))
   if (length(measures)!=312L) stop("AEDAR comparisons require the exact 312 published measures",call.=FALSE)
   typequ_axis<-read_aedar_typequ_registry()$TYPEQU
+  if(!is.null(typequ_codes)) {
+    if(!length(typequ_codes)||anyNA(typequ_codes)||anyDuplicated(typequ_codes)||any(!typequ_codes%in%typequ_axis))
+      stop("AEDAR comparison partition TYPEQU selection is invalid",call.=FALSE)
+    typequ_axis<-typequ_axis[typequ_axis%in%typequ_codes]
+  }
   refs <- territory_reference
   refs$territory_id <- as.character(refs$territory_id)
   comm <- refs[refs$territory_type=="commune",,drop=FALSE]
@@ -642,11 +927,12 @@ project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference
   groups <- list(); territory_rows <- list(); ng <- nt <- 0L
   rank_scope <- function(context, group_id, type, ids, statistic_source=NULL) {
     ids<-as.character(ids)
-    rows <- aggregate_facts[aggregate_facts$territory_type==type & aggregate_facts$territory_id %in% ids,,drop=FALSE]
+    rows <- aggregate_facts[aggregate_facts$territory_type==type & aggregate_facts$territory_id %in% ids &
+      aggregate_facts$TYPEQU%in%typequ_axis,,drop=FALSE]
     expected_pairs<-expand.grid(territory_id=ids,TYPEQU=typequ_axis,stringsAsFactors=FALSE)
     expected_keys<-paste(expected_pairs$territory_id,expected_pairs$TYPEQU,sep="\r")
     actual_keys<-paste(as.character(rows$territory_id),as.character(rows$TYPEQU),sep="\r")
-    if(anyDuplicated(rows[c("territory_id","TYPEQU")])||length(actual_keys)!=length(expected_keys)||!setequal(actual_keys,expected_keys))
+     if(anyDuplicated(rows[c("territory_id","TYPEQU")])||length(actual_keys)!=length(expected_keys)||!setequal(actual_keys,expected_keys))
       stop("AEDAR fixed comparison membership is incompatible with territorial facts",call.=FALSE)
     rows<-rows[match(expected_keys,actual_keys),,drop=FALSE]
     for (typequ in typequ_axis) {
@@ -656,7 +942,7 @@ project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference
       values[!eligible]<-NA_real_
       eligible_count<-colSums(eligible); group_value<-rep(NA_real_,length(measures))
       denominator<-observed<-rep(NA_real_,length(measures)); coverage<-rep(NA_character_,length(measures))
-      statistic<-if(context%in%c("epci","bretagne")&&type=="commune") "direct" else "median"
+       statistic<-if(context=="density_class") "pooled" else if(context%in%c("epci","bretagne")&&type=="commune") "direct" else "median"
       picked<-NULL
       if(!is.null(statistic_source)) {
         picked<-statistic_source[statistic_source$TYPEQU==typequ,,drop=FALSE]
@@ -715,16 +1001,16 @@ project_aedar_fixed_comparisons <- function(aggregate_facts, territory_reference
   result_rows$input_content_version<-input_content_version
   group_rows$input_identity<-input_identity
   result_rows$input_identity<-input_identity
-  content_version<-aedar_comparison_content_version(group_rows,result_rows)
-  group_rows$content_version<-content_version; result_rows$content_version<-content_version
+  content_version<-if(isTRUE(calculate_content_version)) aedar_comparison_content_version(group_rows,result_rows) else NULL
+  if(!is.null(content_version)) {group_rows$content_version<-content_version; result_rows$content_version<-content_version}
   list(groups=group_rows,territories=result_rows,aedar_content_version=aedar_content_version,
     reference_content_version=reference_content_version,input_content_version=input_content_version,
     input_identity=input_identity,content_version=content_version)
 }
 
-project_aedar_comparison_publication <- function(aggregate_projection,address_origins,
-    address_facts,territory_reference,aedar_content_version=aedar_aggregate_content_version(aggregate_projection),
-    reference_content_version,input_content_version=NULL,input_hashes=NULL,observed_keys=NULL) {
+project_aedar_comparison_publication_fixture <- function(aggregate_projection,density_source,
+    territory_reference,aedar_content_version=aedar_aggregate_content_version(aggregate_projection),
+    reference_content_version) {
   if(!is.list(aggregate_projection)||!is.data.frame(aggregate_projection$facts))
     stop("AEDAR comparison requires the canonical territorial aggregate projection",call.=FALSE)
   if(is.null(aggregate_projection$source$vintage)||aggregate_projection$source$vintage!=AEDAR_AGGREGATE_VINTAGE||
@@ -734,24 +1020,77 @@ project_aedar_comparison_publication <- function(aggregate_projection,address_or
     stop("AEDAR comparison source version does not match canonical aggregate content",call.=FALSE)
   if(!all(c("territory_type","territory_id","epci_id","density_class_code")%in%names(territory_reference)))
     stop("AEDAR comparison requires versioned territory-reference membership",call.=FALSE)
+  if(!is.list(density_source)||!is.data.frame(density_source$facts)||
+     !is.list(density_source$density_reference)||length(density_source$artifact_sha256)!=1L||
+     !grepl("^[0-9a-fA-F]{64}$",density_source$artifact_sha256))
+    stop("AEDAR comparison requires a validated materialized density aggregate",call.=FALSE)
+  validated_density<-validate_aedar_density_aggregate(density_source$facts,density_source$density_reference)
+  if(!identical(validated_density$content_version,density_source$content_version)||
+     !identical(validated_density$input_content_version,density_source$input_content_version)||
+     !setequal(names(validated_density$input_hashes),names(density_source$input_hashes))||
+     any(validated_density$input_hashes[names(density_source$input_hashes)]!=density_source$input_hashes)||
+     !identical(density_source$source_snapshot_id,AEDAR_AGGREGATE_VINTAGE))
+    stop("AEDAR materialized density source identity is inconsistent",call.=FALSE)
+  validate_aedar_density_membership(density_source,territory_reference)
   communes<-territory_reference[territory_reference$territory_type=="commune",,drop=FALSE]
-  membership<-data.frame(territory_type="commune",territory_id=as.character(communes$density_class_code),
-    member_commune=as.character(communes$territory_id),context="densite",stringsAsFactors=FALSE)
-  membership<-membership[!is.na(membership$territory_id)&nzchar(membership$territory_id),,drop=FALSE]
-  axis<-read_aedar_typequ_registry()
-  if(is.list(address_facts)&&!is.data.frame(address_facts)) {
-    if(is.null(observed_keys)) observed_keys<-aedar_observed_address_type_keys(address_facts)
-    address_facts<-combine_aedar_address_mode_facts(address_facts)
-  }
-  density<-project_aedar_density_comparisons(address_origins,address_facts,membership,axis,observed_keys=observed_keys)
-  if(is.null(input_hashes)) input_hashes<-c(address_origins="synthetic-input",address_modes="synthetic-input")
+  density<-density_source$facts
+  if(!all(c("density_class_code","TYPEQU","LIB_TYPEQU","n_addresses","n_observed","coverage_status",AEDAR_AGGREGATE_MEASURES)%in%names(density)))
+    stop("Materialized AEDAR density aggregate is incomplete",call.=FALSE)
+  input_hashes<-c(density_source$input_hashes,
+    density_artifact=density_source$artifact_sha256,
+    density_aggregate_content_version=density_source$content_version,
+    density_reference_identity=density_source$density_reference$identity,
+    density_reference_sha256=density_source$density_reference$sha256,
+    density_reference_vintage=density_source$density_reference$vintage)
   input_identity<-as.character(jsonlite::toJSON(as.list(input_hashes),auto_unbox=TRUE))
   expected_input_version<-paste(as.character(openssl::sha256(charToRaw(input_identity))),collapse="")
-  if(is.null(input_content_version)) input_content_version<-expected_input_version
-  if(!identical(input_content_version,expected_input_version))
-    stop("AEDAR comparison input identity hash is inconsistent",call.=FALSE)
+  input_content_version<-expected_input_version
   project_aedar_fixed_comparisons(aggregate_projection$facts,territory_reference,
     aedar_content_version,reference_content_version,density,input_content_version,input_hashes)
+}
+
+project_aedar_comparison_publication <- function(aggregate_projection,density_source,
+    territory_reference,reference_content_version,directory=file.path("data","processed","aedar"),
+    aedar_content_version=aedar_aggregate_content_version(aggregate_projection)) {
+  if(!is.list(aggregate_projection)||!is.data.frame(aggregate_projection$facts)||
+     is.null(aggregate_projection$source$vintage)||aggregate_projection$source$vintage!=AEDAR_AGGREGATE_VINTAGE||
+     !identical(aedar_content_version,aedar_aggregate_content_version(aggregate_projection))||
+     length(reference_content_version)!=1L||is.na(reference_content_version)||!nzchar(reference_content_version))
+    stop("AEDAR comparison source/reference version contract is invalid",call.=FALSE)
+  required_ref<-c("territory_type","territory_id","epci_id","density_class_code")
+  if(!all(required_ref%in%names(territory_reference))) stop("AEDAR comparison requires versioned territory-reference membership",call.=FALSE)
+  if(!is.list(density_source)||!is.data.frame(density_source$facts)||
+     !is.list(density_source$density_reference)||length(density_source$artifact_sha256)!=1L||
+     !grepl("^[0-9a-fA-F]{64}$",density_source$artifact_sha256))
+    stop("AEDAR comparison requires a validated materialized density aggregate",call.=FALSE)
+  validated_density<-validate_aedar_density_aggregate(density_source$facts,density_source$density_reference)
+  if(!identical(validated_density$content_version,density_source$content_version)||
+     !identical(validated_density$input_content_version,density_source$input_content_version)||
+     !setequal(names(validated_density$input_hashes),names(density_source$input_hashes))||
+     any(validated_density$input_hashes[names(density_source$input_hashes)]!=density_source$input_hashes)||
+     !identical(density_source$source_snapshot_id,AEDAR_AGGREGATE_VINTAGE))
+    stop("AEDAR materialized density source identity is inconsistent",call.=FALSE)
+  validate_aedar_density_membership(density_source,territory_reference)
+  input_hashes<-c(density_source$input_hashes,density_artifact=density_source$artifact_sha256,
+    density_aggregate_content_version=density_source$content_version,
+    density_reference_identity=density_source$density_reference$identity,
+    density_reference_sha256=density_source$density_reference$sha256,
+    density_reference_vintage=density_source$density_reference$vintage)
+  input_identity<-as.character(jsonlite::toJSON(as.list(input_hashes),auto_unbox=TRUE))
+  input_content_version<-paste(as.character(openssl::sha256(charToRaw(input_identity))),collapse="")
+  membership<-aedar_comparison_membership_rows(territory_reference)
+  axis<-read_aedar_typequ_registry()
+  writer<-function(typequ) {
+    chunk<-project_aedar_fixed_comparisons(aggregate_projection$facts,territory_reference,
+      aedar_content_version,reference_content_version,density_source$facts,input_content_version,
+      input_hashes,typequ_codes=typequ,calculate_content_version=FALSE)
+    chunk
+  }
+  write_aedar_comparison_canonical(writer,directory,list(
+    source_snapshot_id=AEDAR_AGGREGATE_VINTAGE,aedar_content_version=aedar_content_version,
+    reference_content_version=reference_content_version,input_content_version=input_content_version,
+    input_identity=input_identity,membership=membership,typequ_axis=axis$TYPEQU,
+    typequ_axis_sha256=AEDAR_TYPEQU_REGISTRY_SHA256))
 }
 
 validate_aedar_comparison_projection <- function(x) {
@@ -768,6 +1107,8 @@ validate_aedar_comparison_projection <- function(x) {
      anyDuplicated(x$groups[c("comparison_context","group_id","territory_type","TYPEQU","measure")])||
      anyDuplicated(x$territories[c("comparison_context","group_id","territory_type","territory_id","TYPEQU","measure")])||
      any(x$groups$member_count!=x$groups$eligible_count+x$groups$missing_count)||
+     any(x$groups$statistic!=ifelse(x$groups$comparison_context=="density_class","pooled",
+       ifelse(x$groups$comparison_context%in%c("epci","bretagne")&x$groups$territory_type=="commune","direct","median")))||
      any((x$territories$status=="measured")!=is.finite(x$territories$value)))
     stop("Invalid AEDAR fixed comparison keys or eligibility",call.=FALSE)
   if(!setequal(unique(x$groups$comparison_context),c("density_class","epci","bretagne","same_level")))
@@ -853,48 +1194,269 @@ validate_aedar_comparison_membership <- function(x,territory_reference) {
   invisible(TRUE)
 }
 
-write_aedar_comparison_canonical <- function(x,directory=file.path("data","processed","aedar")) {
-  validate_aedar_comparison_projection(x)
-  dir.create(directory,recursive=TRUE,showWarnings=FALSE)
-  targets<-file.path(directory,c("aedar_comparison_groups.parquet","aedar_comparison_territories.parquet"))
-  staged<-vapply(targets,function(p) tempfile("aedar-comparison-",tmpdir=directory,fileext=".parquet"),character(1))
-  backup<-vapply(targets,function(p) tempfile("aedar-comparison-backup-",tmpdir=directory,fileext=".parquet"),character(1))
-  had<-file.exists(targets); installed<-rep(FALSE,2L); completed<-FALSE
-  on.exit({
-    unlink(staged[file.exists(staged)])
-    if(!completed) for(i in seq_along(targets)) {
-      if(installed[[i]]&&file.exists(targets[[i]])) unlink(targets[[i]])
-      if(had[[i]]&&file.exists(backup[[i]])) file.rename(backup[[i]],targets[[i]])
-    } else unlink(backup[file.exists(backup)])
-  },add=TRUE)
-  nanoparquet::write_parquet(x$groups,staged[[1L]])
-  nanoparquet::write_parquet(x$territories,staged[[2L]])
-  for(i in seq_along(targets)) if(had[[i]]&&!file.rename(targets[[i]],backup[[i]]))
-    stop("Could not preserve previous AEDAR comparison artifact",call.=FALSE)
-  for(i in seq_along(targets)) {
-    if(!file.rename(staged[[i]],targets[[i]])) stop("Could not install complete AEDAR comparison artifacts",call.=FALSE)
-    installed[[i]]<-TRUE
+AEDAR_COMPARISON_GROUP_COLUMNS<-c("comparison_context","group_id","territory_type","TYPEQU","measure","statistic","value",
+  "n_addresses","n_observed","coverage_status","member_count","eligible_count","missing_count")
+AEDAR_COMPARISON_TERRITORY_COLUMNS<-c("comparison_context","group_id","territory_type","territory_id","TYPEQU","measure","value",
+  "status","n_addresses","n_observed","coverage_status","rank","rank_size")
+
+aedar_comparison_membership_rows <- function(territory_reference) {
+  refs<-territory_reference; refs$territory_id<-as.character(refs$territory_id)
+  region<-refs$territory_id[refs$territory_type=="region"]
+  if(length(region)!=1L) stop("AEDAR comparison membership requires one region",call.=FALSE)
+  communes<-refs[refs$territory_type=="commune",,drop=FALSE]
+  rows<-list(); add<-function(context,id,type,members) {
+    members<-sort(unique(as.character(members)))
+    if(length(members)) rows[[length(rows)+1L]]<<-data.frame(comparison_context=context,
+      group_id=as.character(id),territory_type=type,territory_id=members,stringsAsFactors=FALSE)
   }
-  completed<-TRUE
+  for(id in sort(unique(communes$density_class_code[!is.na(communes$density_class_code)&nzchar(communes$density_class_code)])))
+    add("density_class",id,"commune",communes$territory_id[communes$density_class_code==id])
+  for(id in sort(unique(communes$epci_id[!is.na(communes$epci_id)&nzchar(communes$epci_id)])))
+    add("epci",id,"commune",communes$territory_id[communes$epci_id==id])
+  add("bretagne",region,"commune",communes$territory_id)
+  for(type in c("epci","departement")) add("same_level",region,type,refs$territory_id[refs$territory_type==type])
+  result<-dplyr::bind_rows(rows)
+  if(anyDuplicated(result[c("comparison_context","group_id","territory_type","territory_id")]))
+    stop("AEDAR published comparison membership contains duplicate members",call.=FALSE)
+  result
+}
+
+aedar_comparison_part_content_hash <- function(groups,territories) {
+  aedar_comparison_content_version(groups,territories)
+}
+
+validate_aedar_comparison_part <- function(groups,territories,typequ,membership) {
+  if(!identical(names(groups),AEDAR_COMPARISON_GROUP_COLUMNS)||
+     !identical(names(territories),AEDAR_COMPARISON_TERRITORY_COLUMNS)||
+     !nrow(groups)||!nrow(territories)||any(groups$TYPEQU!=typequ)||any(territories$TYPEQU!=typequ)||
+     anyNA(groups[c("comparison_context","group_id","territory_type","measure","statistic","member_count","eligible_count","missing_count")])||
+     anyNA(territories[c("comparison_context","group_id","territory_type","territory_id","measure","status")])||
+     anyDuplicated(groups[c("comparison_context","group_id","territory_type","TYPEQU","measure")])||
+     anyDuplicated(territories[c("comparison_context","group_id","territory_type","territory_id","TYPEQU","measure")]))
+    stop("AEDAR comparison partition has an invalid schema or duplicate key",call.=FALSE)
+  expected_statistic<-ifelse(groups$comparison_context=="density_class","pooled",
+    ifelse(groups$comparison_context%in%c("epci","bretagne")&groups$territory_type=="commune","direct","median"))
+  if(any(groups$statistic!=expected_statistic)) stop("AEDAR comparison partition has an invalid fixed-context statistic",call.=FALSE)
+  expected_scopes<-unique(membership[c("comparison_context","group_id","territory_type")])
+  actual_scopes<-unique(groups[c("comparison_context","group_id","territory_type")])
+  key<-function(x) do.call(paste,c(x,sep="\r"))
+  if(!setequal(key(expected_scopes),key(actual_scopes))) stop("AEDAR comparison partition omits fixed contexts or groups",call.=FALSE)
+  for(i in seq_len(nrow(expected_scopes))) {
+    s<-expected_scopes[i,,drop=FALSE]
+    group<-groups[groups$comparison_context==s$comparison_context&groups$group_id==s$group_id&groups$territory_type==s$territory_type,,drop=FALSE]
+    peers<-membership[membership$comparison_context==s$comparison_context&membership$group_id==s$group_id&membership$territory_type==s$territory_type,,drop=FALSE]
+    territory<-territories[territories$comparison_context==s$comparison_context&territories$group_id==s$group_id&territories$territory_type==s$territory_type,,drop=FALSE]
+    if(nrow(group)!=length(AEDAR_AGGREGATE_MEASURES)||!setequal(group$measure,AEDAR_AGGREGATE_MEASURES)||
+       any(group$member_count!=nrow(peers))||any(group$member_count!=group$eligible_count+group$missing_count)||
+       !setequal(unique(territory$territory_id),peers$territory_id)||nrow(territory)!=nrow(peers)*length(AEDAR_AGGREGATE_MEASURES))
+      stop("AEDAR comparison partition has incomplete measure/member coverage",call.=FALSE)
+    member_sizes<-table(territory$territory_id)
+    if(any(member_sizes!=length(AEDAR_AGGREGATE_MEASURES))||
+       anyDuplicated(territory[c("territory_id","measure")])||
+       !setequal(territory$measure,AEDAR_AGGREGATE_MEASURES))
+      stop("AEDAR comparison partition omits a member measure",call.=FALSE)
+    mi<-match(territory$measure,group$measure); measured<-territory$status=="measured"
+    if(any(measured!=is.finite(territory$value))||
+       any(measured&(is.na(territory$rank)|is.na(territory$rank_size)|territory$rank_size!=group$eligible_count[mi]|territory$rank>territory$rank_size))||
+       any(!measured&(!is.na(territory$rank)|!is.na(territory$rank_size))))
+      stop("AEDAR comparison partition violates result/rank contracts",call.=FALSE)
+  }
+  invisible(TRUE)
+}
+
+aedar_comparison_manifest_version <- function(manifest) {
+  persisted_fields<-c("schema_version","source_snapshot_id","aedar_content_version",
+    "reference_content_version","input_content_version","input_identity","typequ_axis",
+    "typequ_axis_sha256","group_columns","territory_columns","membership",
+    "group_row_count","territory_row_count","parts")
+  payload<-manifest[persisted_fields]
+  payload$parts<-lapply(payload$parts,function(p) p[c("TYPEQU","group_rows","territory_rows","content_sha256")])
+  paste(as.character(openssl::sha256(charToRaw(as.character(jsonlite::toJSON(payload,auto_unbox=TRUE,
+    dataframe="rows",null="null",digits=NA,pretty=FALSE))))),collapse="")
+}
+
+install_aedar_comparison_manifest <- function(staged,target) fs::file_move(staged,target)
+
+validate_aedar_comparison_input_identity <- function(identity,input_content_version) {
+  expected_names<-c(paste0("mode:",AEDAR_ADDRESS_SOURCE_MODES),"address_origins","density_reference",
+    "density_artifact","density_aggregate_content_version","density_reference_identity",
+    "density_reference_sha256","density_reference_vintage")
+  values<-tryCatch(jsonlite::fromJSON(identity,simplifyVector=TRUE),error=function(e) NULL)
+  if(is.list(values)) values<-unlist(values,use.names=TRUE)
+  manifest<-MANIFEST_CLASSES_DENSITE
+  if(is.null(values)||!is.atomic(values)||is.null(names(values))||anyDuplicated(names(values))||
+     !setequal(names(values),expected_names)||anyNA(values)||
+     !identical(paste(as.character(openssl::sha256(charToRaw(identity))),collapse=""),input_content_version)||
+     any(!grepl("^[0-9a-fA-F]{64}$",as.character(values[c(paste0("mode:",AEDAR_ADDRESS_SOURCE_MODES),
+        "address_origins","density_reference","density_artifact","density_aggregate_content_version","density_reference_sha256")])) )||
+     !identical(as.character(values[["density_reference_identity"]]),as.character(manifest[["id"]][[1L]]))||
+     !identical(tolower(as.character(values[["density_reference_sha256"]])),tolower(as.character(manifest[["sha256"]][[1L]])))||
+     !identical(as.character(values[["density_reference_vintage"]]),as.character(manifest[["vintage"]][[1L]])))
+    stop("AEDAR comparison input identity omits or changes a pinned source/reference",call.=FALSE)
+  invisible(values)
+}
+
+write_aedar_comparison_canonical <- function(part_builder,directory=file.path("data","processed","aedar"),metadata) {
+  if(!is.function(part_builder)||!is.list(metadata)||!all(c("source_snapshot_id","aedar_content_version",
+      "reference_content_version","input_content_version","input_identity","membership","typequ_axis","typequ_axis_sha256")%in%names(metadata)))
+    stop("AEDAR comparison canonical writer requires a bounded part builder and complete manifest metadata",call.=FALSE)
+  if(!identical(paste(as.character(openssl::sha256(charToRaw(metadata$input_identity))),collapse=""),metadata$input_content_version)||
+     !identical(metadata$source_snapshot_id,AEDAR_AGGREGATE_VINTAGE)||
+     !identical(metadata$typequ_axis_sha256,AEDAR_TYPEQU_REGISTRY_SHA256)||
+     !identical(metadata$typequ_axis,read_aedar_typequ_registry()$TYPEQU))
+    stop("AEDAR comparison manifest provenance or TYPEQU pin is invalid",call.=FALSE)
+  dir.create(directory,recursive=TRUE,showWarnings=FALSE)
+  generations<-file.path(directory,"generations"); dir.create(generations,recursive=TRUE,showWarnings=FALSE)
+  generation<-tempfile("generation-",tmpdir=generations)
+  if(!dir.create(generation)) stop("Could not create private AEDAR comparison generation",call.=FALSE)
+  installed<-FALSE
+  on.exit(if(!installed&&dir.exists(generation)) unlink(generation,recursive=TRUE,force=TRUE),add=TRUE)
+  parts<-vector("list",length(metadata$typequ_axis)); total_groups<-total_territories<-0
+  for(i in seq_along(metadata$typequ_axis)) {
+    code<-metadata$typequ_axis[[i]]
+    projection<-part_builder(code)
+    groups<-as.data.frame(projection$groups[,AEDAR_COMPARISON_GROUP_COLUMNS,drop=FALSE],stringsAsFactors=FALSE)
+    territories<-as.data.frame(projection$territories[,AEDAR_COMPARISON_TERRITORY_COLUMNS,drop=FALSE],stringsAsFactors=FALSE)
+    rownames(groups)<-NULL; rownames(territories)<-NULL
+    validate_aedar_comparison_part(groups,territories,code,metadata$membership)
+    part_hash<-aedar_comparison_part_content_hash(groups,territories)
+    group_path<-file.path(generation,paste0(code,"-groups.parquet"))
+    territory_path<-file.path(generation,paste0(code,"-territories.parquet"))
+    nanoparquet::write_parquet(groups,group_path); nanoparquet::write_parquet(territories,territory_path)
+    check_groups<-as.data.frame(nanoparquet::read_parquet(group_path),stringsAsFactors=FALSE)
+    check_territories<-as.data.frame(nanoparquet::read_parquet(territory_path),stringsAsFactors=FALSE)
+    rownames(check_groups)<-NULL; rownames(check_territories)<-NULL
+    validate_aedar_comparison_part(check_groups,check_territories,code,metadata$membership)
+    if(!identical(aedar_comparison_part_content_hash(check_groups,check_territories),part_hash))
+      stop("AEDAR comparison partition changed during Parquet round-trip",call.=FALSE)
+    parts[[i]]<-list(TYPEQU=code,groups=paste0("generations/",basename(generation),"/",basename(group_path)),
+      territories=paste0("generations/",basename(generation),"/",basename(territory_path)),
+      group_rows=nrow(groups),territory_rows=nrow(territories),content_sha256=part_hash)
+    total_groups<-total_groups+nrow(groups); total_territories<-total_territories+nrow(territories)
+  }
+  manifest<-list(schema_version=1L,source_snapshot_id=metadata$source_snapshot_id,
+    aedar_content_version=metadata$aedar_content_version,reference_content_version=metadata$reference_content_version,
+    input_content_version=metadata$input_content_version,input_identity=metadata$input_identity,
+    typequ_axis=metadata$typequ_axis,typequ_axis_sha256=metadata$typequ_axis_sha256,
+    group_columns=AEDAR_COMPARISON_GROUP_COLUMNS,territory_columns=AEDAR_COMPARISON_TERRITORY_COLUMNS,
+    membership=metadata$membership,group_row_count=total_groups,territory_row_count=total_territories,parts=parts)
+  manifest$content_version<-aedar_comparison_manifest_version(manifest)
+  validate_aedar_comparison_manifest(manifest,directory,verify_parts=FALSE)
+  target<-file.path(directory,"aedar_comparison_manifest.json")
+  staged<-tempfile("aedar-manifest-",tmpdir=directory,fileext=".json")
+  writeLines(as.character(jsonlite::toJSON(manifest,auto_unbox=TRUE,dataframe="rows",null="null",digits=NA,pretty=FALSE)),staged,useBytes=TRUE)
+  validate_aedar_comparison_manifest_file(staged,directory)
+  on.exit(if(file.exists(staged)) unlink(staged),add=TRUE)
+  install_aedar_comparison_manifest(staged,target)
+  installed<-TRUE
+  manifest$manifest_path<-normalizePath(target,winslash="/",mustWork=TRUE)
+  manifest$directory<-normalizePath(directory,winslash="/",mustWork=TRUE)
+  invisible(manifest)
+}
+
+validate_aedar_comparison_manifest <- function(manifest,directory,verify_parts=TRUE) {
+  required<-c("schema_version","source_snapshot_id","aedar_content_version","reference_content_version",
+    "input_content_version","input_identity","typequ_axis","typequ_axis_sha256","group_columns",
+    "territory_columns","membership","group_row_count","territory_row_count","parts","content_version")
+  if(!is.list(manifest)||!all(required%in%names(manifest))||manifest$schema_version!=1L||
+     manifest$source_snapshot_id!=AEDAR_AGGREGATE_VINTAGE||
+     !identical(manifest$typequ_axis,read_aedar_typequ_registry()$TYPEQU)||
+     !identical(manifest$typequ_axis_sha256,AEDAR_TYPEQU_REGISTRY_SHA256)||
+     !identical(manifest$group_columns,AEDAR_COMPARISON_GROUP_COLUMNS)||
+     !identical(manifest$territory_columns,AEDAR_COMPARISON_TERRITORY_COLUMNS)||
+     !is.character(manifest$aedar_content_version)||length(manifest$aedar_content_version)!=1L||!nzchar(manifest$aedar_content_version)||
+     !is.character(manifest$reference_content_version)||length(manifest$reference_content_version)!=1L||!nzchar(manifest$reference_content_version)||
+     !is.character(manifest$input_content_version)||length(manifest$input_content_version)!=1L||
+     !is.character(manifest$input_identity)||length(manifest$input_identity)!=1L||
+     !isTRUE(tryCatch({validate_aedar_comparison_input_identity(manifest$input_identity,manifest$input_content_version);TRUE},error=function(e) FALSE))||
+     !identical(aedar_comparison_manifest_version(manifest),manifest$content_version)||
+     length(manifest$parts)!=length(manifest$typequ_axis))
+    stop("AEDAR comparison manifest schema, axis, or provenance is invalid",call.=FALSE)
+  membership<-as.data.frame(manifest$membership,stringsAsFactors=FALSE)
+  if(!all(c("comparison_context","group_id","territory_type","territory_id")%in%names(membership))||anyDuplicated(membership))
+    stop("AEDAR comparison manifest membership is malformed",call.=FALSE)
+  root<-normalizePath(directory,winslash="/",mustWork=TRUE)
+  count_groups<-count_territories<-0
+  for(i in seq_along(manifest$parts)) {
+    p<-manifest$parts[[i]]; code<-manifest$typequ_axis[[i]]
+    if(!identical(p$TYPEQU,code)||!identical(basename(p$groups),paste0(code,"-groups.parquet"))||
+       !identical(basename(p$territories),paste0(code,"-territories.parquet"))||
+       grepl("(^|[/\\\\])[.][.]([/\\\\]|$)|^[A-Za-z]:",p$groups)||grepl("(^|[/\\\\])[.][.]([/\\\\]|$)|^[A-Za-z]:",p$territories))
+      stop("AEDAR comparison manifest contains an unsafe part path",call.=FALSE)
+    gp<-normalizePath(file.path(directory,p$groups),winslash="/",mustWork=TRUE)
+    tp<-normalizePath(file.path(directory,p$territories),winslash="/",mustWork=TRUE)
+    if(!startsWith(gp,paste0(root,"/generations/"))||!startsWith(tp,paste0(root,"/generations/"))||
+       !file.exists(gp)||!file.exists(tp)) stop("AEDAR comparison manifest references a missing/out-of-root partition",call.=FALSE)
+    count_groups<-count_groups+p$group_rows; count_territories<-count_territories+p$territory_rows
+    if(verify_parts) {
+      groups<-as.data.frame(nanoparquet::read_parquet(gp),stringsAsFactors=FALSE)
+      territories<-as.data.frame(nanoparquet::read_parquet(tp),stringsAsFactors=FALSE)
+      rownames(groups)<-NULL; rownames(territories)<-NULL
+      validate_aedar_comparison_part(groups,territories,code,membership)
+      if(nrow(groups)!=p$group_rows||nrow(territories)!=p$territory_rows||
+         !identical(aedar_comparison_part_content_hash(groups,territories),p$content_sha256))
+        stop("AEDAR comparison partition is missing, tampered, or inconsistent",call.=FALSE)
+    }
+  }
+  if(count_groups!=manifest$group_row_count||count_territories!=manifest$territory_row_count)
+    stop("AEDAR comparison manifest row totals do not match its partitions",call.=FALSE)
+  invisible(manifest)
+}
+
+read_aedar_comparison_canonical <- function(directory=file.path("data","processed","aedar"),verify_parts=TRUE) {
+  path<-file.path(directory,"aedar_comparison_manifest.json")
+  if(!file.exists(path)) stop("Canonical AEDAR comparison manifest is missing",call.=FALSE)
+  manifest<-validate_aedar_comparison_manifest_file(path,directory,verify_parts=verify_parts)
+  manifest$manifest_path<-normalizePath(path,winslash="/",mustWork=TRUE)
+  manifest$directory<-normalizePath(directory,winslash="/",mustWork=TRUE)
+  manifest
+}
+
+validate_aedar_comparison_manifest_file <- function(path,directory,verify_parts=TRUE) {
+  manifest<-jsonlite::fromJSON(path,simplifyVector=FALSE)
+  manifest$typequ_axis<-unlist(manifest$typequ_axis,use.names=FALSE)
+  manifest$group_columns<-unlist(manifest$group_columns,use.names=FALSE)
+  manifest$territory_columns<-unlist(manifest$territory_columns,use.names=FALSE)
+  manifest$membership<-jsonlite::fromJSON(as.character(jsonlite::toJSON(manifest$membership,auto_unbox=TRUE)),simplifyDataFrame=TRUE)
+  validate_aedar_comparison_manifest(manifest,directory,verify_parts=verify_parts)
+  manifest
+}
+
+# Deliberately separate small-fixture round trips; production canonical files
+# are manifest/partition based and never reassemble the full territory table.
+write_aedar_comparison_fixture <- function(x,directory) {
+  validate_aedar_comparison_projection(x); dir.create(directory,recursive=TRUE,showWarnings=FALSE)
+  nanoparquet::write_parquet(x$groups,file.path(directory,"fixture-groups.parquet"))
+  nanoparquet::write_parquet(x$territories,file.path(directory,"fixture-territories.parquet"))
   invisible(directory)
 }
 
-read_aedar_comparison_canonical <- function(directory=file.path("data","processed","aedar")) {
-  gp<-file.path(directory,"aedar_comparison_groups.parquet"); tp<-file.path(directory,"aedar_comparison_territories.parquet")
-  if(!file.exists(gp)||!file.exists(tp)) stop("Canonical AEDAR comparison Parquets are missing",call.=FALSE)
-  groups<-as.data.frame(nanoparquet::read_parquet(gp)); territories<-as.data.frame(nanoparquet::read_parquet(tp))
+read_aedar_comparison_fixture <- function(directory) {
+  x<-list(groups=as.data.frame(nanoparquet::read_parquet(file.path(directory,"fixture-groups.parquet"))),
+    territories=as.data.frame(nanoparquet::read_parquet(file.path(directory,"fixture-territories.parquet"))))
   fields<-c("content_version","aedar_content_version","reference_content_version","input_content_version","input_identity")
-  versions<-lapply(fields,function(f) unique(as.character(c(groups[[f]],territories[[f]]))))
-  if(any(lengths(versions)!=1L)) stop("Canonical AEDAR comparison versions are inconsistent",call.=FALSE)
+  versions<-lapply(fields,function(f) unique(as.character(c(x$groups[[f]],x$territories[[f]]))))
+  if(any(lengths(versions)!=1L)) stop("AEDAR fixture comparison versions are inconsistent",call.=FALSE)
   names(versions)<-fields
-  x<-list(groups=groups,territories=territories,content_version=versions$content_version,
-    aedar_content_version=versions$aedar_content_version,reference_content_version=versions$reference_content_version,
-    input_content_version=versions$input_content_version,input_identity=versions$input_identity)
-  validate_aedar_comparison_projection(x); x
+  x$content_version<-versions$content_version; x$aedar_content_version<-versions$aedar_content_version
+  x$reference_content_version<-versions$reference_content_version; x$input_content_version<-versions$input_content_version
+  x$input_identity<-versions$input_identity; validate_aedar_comparison_projection(x); x
+}
+
+validate_aedar_comparison_manifest_membership <- function(manifest,territory_reference) {
+  actual<-aedar_comparison_membership_rows(territory_reference)
+  expected<-as.data.frame(manifest$membership,stringsAsFactors=FALSE)
+  keycols<-c("comparison_context","group_id","territory_type","territory_id")
+  sort_rows<-function(x) {x<-x[do.call(order,x[keycols]),keycols,drop=FALSE];rownames(x)<-NULL;x}
+  if(!isTRUE(all.equal(sort_rows(actual),sort_rows(expected),check.attributes=FALSE)))
+    stop("AEDAR comparison manifest membership is stale relative to published territory reference",call.=FALSE)
+  invisible(TRUE)
 }
 
 publish_aedar_comparisons <- function(x,con) {
-  validate_aedar_comparison_projection(x)
+  if(!is.list(x)||is.null(x$parts)||is.null(x$manifest_path))
+    stop("AEDAR comparison publication requires the bounded canonical manifest",call.=FALSE)
+  validate_aedar_comparison_manifest(x,x$directory,verify_parts=FALSE)
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock(594, 756)")
@@ -902,26 +1464,37 @@ publish_aedar_comparisons <- function(x,con) {
     if(nrow(deps)!=1L||deps$aedar_content_version[[1]]!=x$aedar_content_version||deps$reference_content_version[[1]]!=x$reference_content_version)
       stop("AEDAR comparison dependencies are stale",call.=FALSE)
     reference<-DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference")
-    validate_aedar_comparison_membership(x,reference)
+    validate_aedar_comparison_manifest_membership(x,reference)
+    validate_aedar_comparison_manifest(x,x$directory,verify_parts=FALSE)
     current<-DBI::dbGetQuery(con,"SELECT content_version,input_content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
-    unchanged<-nrow(current)==1L&&identical(as.character(current$content_version[[1L]]),x$content_version)&&
-       identical(as.character(current$input_content_version[[1L]]),x$input_content_version)&&
-       current$group_row_count[[1L]]==nrow(x$groups)&&current$territory_row_count[[1L]]==nrow(x$territories)
-    if(unchanged) {
-      list(changed=FALSE,content_version=x$content_version,group_row_count=nrow(x$groups),territory_row_count=nrow(x$territories))
+      unchanged<-nrow(current)==1L&&identical(as.character(current$content_version[[1L]]),x$content_version)&&
+        identical(as.character(current$input_content_version[[1L]]),x$input_content_version)&&
+         current$group_row_count[[1L]]==x$group_row_count&&current$territory_row_count[[1L]]==x$territory_row_count
+      if(unchanged) {
+      validate_aedar_comparison_manifest(x,x$directory,verify_parts=TRUE)
+      list(changed=FALSE,content_version=x$content_version,group_row_count=x$group_row_count,territory_row_count=x$territory_row_count)
     } else {
       DBI::dbExecute(con,"DELETE FROM aedar_comparison_territory")
       DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
-      group_data<-x$groups[c("comparison_context","group_id","territory_type","TYPEQU","measure","statistic","value","n_addresses","n_observed","coverage_status","member_count","eligible_count","missing_count")]
-      territory_data<-x$territories[c("comparison_context","group_id","territory_type","territory_id","TYPEQU","measure","value","status","n_addresses","n_observed","coverage_status","rank","rank_size")]
-      names(group_data)[names(group_data)=="TYPEQU"]<-"typequ"
-      names(territory_data)[names(territory_data)=="TYPEQU"]<-"typequ"
-      DBI::dbWriteTable(con,"aedar_comparison_group",group_data,append=TRUE,row.names=FALSE)
-      DBI::dbWriteTable(con,"aedar_comparison_territory",territory_data,append=TRUE,row.names=FALSE)
+      chunk_size<-20000L
+      for(part in x$parts) {
+        groups<-as.data.frame(nanoparquet::read_parquet(file.path(x$directory,part$groups)),stringsAsFactors=FALSE)
+        territories<-as.data.frame(nanoparquet::read_parquet(file.path(x$directory,part$territories)),stringsAsFactors=FALSE)
+        validate_aedar_comparison_part(groups,territories,part$TYPEQU,x$membership)
+        if(nrow(groups)!=part$group_rows||nrow(territories)!=part$territory_rows||
+           !identical(aedar_comparison_part_content_hash(groups,territories),part$content_sha256))
+          stop("AEDAR comparison partition changed before database publication",call.=FALSE)
+        names(groups)[names(groups)=="TYPEQU"]<-"typequ"
+        names(territories)[names(territories)=="TYPEQU"]<-"typequ"
+        for(start in seq.int(1L,nrow(groups),by=chunk_size))
+          DBI::dbWriteTable(con,"aedar_comparison_group",groups[start:min(start+chunk_size-1L,nrow(groups)),,drop=FALSE],append=TRUE,row.names=FALSE)
+        for(start in seq.int(1L,nrow(territories),by=chunk_size))
+          DBI::dbWriteTable(con,"aedar_comparison_territory",territories[start:min(start+chunk_size-1L,nrow(territories)),,drop=FALSE],append=TRUE,row.names=FALSE)
+      }
       DBI::dbExecute(con,"INSERT INTO aedar_comparison_publication(singleton,content_version,source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,input_identity,group_row_count,territory_row_count,published_at) VALUES(true,$1,'2026-v1',$2,$3,$4,$5::jsonb,$6,$7,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,source_snapshot_id=EXCLUDED.source_snapshot_id,aedar_content_version=EXCLUDED.aedar_content_version,reference_content_version=EXCLUDED.reference_content_version,input_content_version=EXCLUDED.input_content_version,input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=EXCLUDED.published_at",
         params=list(x$content_version,x$aedar_content_version,x$reference_content_version,x$input_content_version,
-          x$input_identity,nrow(x$groups),nrow(x$territories)))
-      list(changed=TRUE,content_version=x$content_version,group_row_count=nrow(x$groups),territory_row_count=nrow(x$territories))
+           x$input_identity,x$group_row_count,x$territory_row_count))
+      list(changed=TRUE,content_version=x$content_version,group_row_count=x$group_row_count,territory_row_count=x$territory_row_count)
     }
   })
 }

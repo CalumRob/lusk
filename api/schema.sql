@@ -1485,7 +1485,7 @@ CREATE TABLE aedar_comparison_publication (
 CREATE TABLE aedar_comparison_group (
   comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level')),
   group_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
-  typequ text NOT NULL, measure text NOT NULL, statistic text NOT NULL CHECK(statistic IN ('median','direct')),
+  typequ text NOT NULL, measure text NOT NULL, statistic text NOT NULL CHECK(statistic IN ('median','direct','pooled')),
   value double precision, n_addresses bigint CHECK(n_addresses IS NULL OR n_addresses>=0),
   n_observed bigint CHECK(n_observed IS NULL OR n_observed>=0 AND n_observed<=n_addresses), coverage_status text,
   member_count integer NOT NULL CHECK(member_count>=0),
@@ -1496,7 +1496,8 @@ CREATE TABLE aedar_comparison_group (
   CHECK((comparison_context='same_level' AND territory_type IN ('epci','departement')) OR
         (comparison_context<>'same_level' AND territory_type='commune')),
   CHECK((comparison_context IN ('epci','bretagne') AND territory_type='commune' AND statistic='direct') OR
-        (NOT (comparison_context IN ('epci','bretagne') AND territory_type='commune') AND statistic='median')),
+        (comparison_context='density_class' AND territory_type='commune' AND statistic='pooled') OR
+        (comparison_context='same_level' AND territory_type IN ('epci','departement') AND statistic='median')),
   CHECK(value IS NULL OR value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))
 );
 CREATE TABLE aedar_comparison_territory (
@@ -1509,7 +1510,9 @@ CREATE TABLE aedar_comparison_territory (
   PRIMARY KEY(comparison_context,group_id,territory_type,territory_id,typequ,measure),
   FOREIGN KEY(comparison_context,group_id,territory_type,typequ,measure)
     REFERENCES aedar_comparison_group(comparison_context,group_id,territory_type,typequ,measure) ON DELETE CASCADE,
-  FOREIGN KEY(territory_type,territory_id,typequ) REFERENCES aedar_territorial_aggregate(territory_type,territory_id,typequ),
+  -- Source facts and comparison projections publish in separate transactions.
+  -- A source refresh retains the last complete comparison; API marker checks
+  -- fail closed until its replacement is published against the new versions.
   CHECK(measure ~ '^count_(5|10|15|20)_(walk|transit|transit_gain|bike_lts2|bike_lts4|car)_(share|min|max|decile[1-9]|mean)$'),
   CHECK((status='measured' AND value IS NOT NULL AND rank>0 AND rank_size>0 AND rank<=rank_size) OR
         (status='not_available' AND value IS NULL AND rank IS NULL AND rank_size IS NULL))
