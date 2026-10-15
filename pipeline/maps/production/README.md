@@ -101,8 +101,8 @@ After the usual approval is recorded, add `-Upload` to that same command. No sep
 SDK installation or QGIS launcher is needed for upload.
 The ignored local `output/upload-network-maps.ps1` is not maintained source and is
 not a supported route. Use the tracked `upload-maps.ps1` only. Exact-package AEDAR
-approval is recorded with the dedicated #777 interface (PR #778; integration is
-contingent on its review/merge):
+approval is recorded with the maintained exact-package command (see
+[AEDAR_APPROVAL.md](AEDAR_APPROVAL.md) for its refusal and recovery contract):
 
 ```powershell
 python -B "$maps\record_aedar_package_approval.py" `

@@ -4,11 +4,14 @@ import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
+from contextlib import redirect_stderr, redirect_stdout
+import io
 
 sys.path.insert(0, str(Path(__file__).parents[1]))  # mirror direct QGIS script import context
 from pipeline.maps.production import run_aedar_static_maps as selected
 from pipeline.maps.production import aedar_map_plan, aedar_static
 from pipeline.maps.production import run_aedar_car_inspection_refresh as car_refresh
+from pipeline.maps.production import record_aedar_package_approval as package_approval
 from pipeline.maps.production.tests.qgis_fixture import qgis_application
 
 
@@ -47,6 +50,22 @@ class AedarCliContractTests(unittest.TestCase):
         explicit = parser.parse_args(["--previous-manifest", str(expected)])
         self.assertEqual(explicit.previous_manifest, expected)
         self.assertIn(r"$maps\output\aedar-static-publish\full-manifest.json",
+                      (PRODUCTION / "README.md").read_text(encoding="utf-8"))
+
+    def test_package_approval_help_required_arguments_and_operator_doc_link(self):
+        output = io.StringIO()
+        with redirect_stdout(output), self.assertRaises(SystemExit) as help_exit:
+            package_approval.main(["--help"])
+        self.assertEqual(help_exit.exception.code, 0)
+        for option in ("--package-dir", "--reviewer", "--outcome"):
+            self.assertIn(option, output.getvalue())
+        errors = io.StringIO()
+        with redirect_stderr(errors), self.assertRaises(SystemExit) as missing:
+            package_approval.main([])
+        self.assertEqual(missing.exception.code, 2)
+        self.assertIn("required", errors.getvalue())
+        self.assertTrue((PRODUCTION / "AEDAR_APPROVAL.md").is_file())
+        self.assertIn("[AEDAR_APPROVAL.md](AEDAR_APPROVAL.md)",
                       (PRODUCTION / "README.md").read_text(encoding="utf-8"))
 
     def _main_inputs(self, root):
