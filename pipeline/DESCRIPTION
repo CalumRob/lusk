@@ -13,6 +13,7 @@ RoxygenNote: 7.3.0
 Imports:
     DBI,
     dplyr,
+    fs,
     httr2,
     jsonlite,
     magrittr,

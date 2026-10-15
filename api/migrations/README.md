@@ -351,6 +351,16 @@ publisher. Apply only after the separate restored-database upgrade rehearsal,
 backup, and operator approval. This source change does not apply serving DDL or
 publish production data.
 
+# Migration 031 — fixed-context AEDAR comparisons
+
+`032_aedar_fixed_comparisons.sql` adds source-shaped group and territory result
+tables plus an independently versioned publication marker. The marker pins the
+exact AEDAR aggregate and territory-reference publication versions; its deferred
+constraint validates row counts and eligible/missing membership before commit.
+The API rejects mismatched dependency markers. Fresh installs carry matching
+tables, constraints and grants in `schema.sql`. The migration is additive and
+does not publish production data.
+
 # Migration 031 — AEDAR TYPEQU metadata
 
 `031_aedar_typequ_metadata.sql` adds the official BPE 2025 domain/subdomain
