@@ -729,7 +729,7 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         pool.close()
 
 
-def test_synthetic_r_scalar_and_profile_lineage_publish_to_api_reader(canonical_db_env, tmp_path):
+def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, tmp_path):
     """Exercise actual R registries/adapters through PostgreSQL and the API read route."""
     import psycopg
     from fastapi.testclient import TestClient
@@ -808,6 +808,69 @@ def test_synthetic_r_scalar_and_profile_lineage_publish_to_api_reader(canonical_
         assert expected_series_pairs and actual_series_pairs == expected_series_pairs
         assert {source for source,_ in actual_series_pairs} == {"fixture_b"}
         assert {vintage for _,vintage in actual_series_pairs} == {"v1", "v2"}
+
+        collection = manifest["numeric_collection"]
+        with TestClient(main.app) as client:
+            collection_response = client.post(
+                f"/api/territories/commune/{collection['territory_id']}/themes/{collection['theme_id']}/comparison",
+                json={"theme_id": collection["theme_id"]})
+        assert collection_response.status_code == 200, collection_response.text
+        collection_results = {row["indicator_id"]:row for row in collection_response.json()["results"]}
+        collection_result = collection_results[collection["indicator_id"]]
+        expected_collection_pairs = {(row["source_id"],row["vintage_id"]) for row in collection["source_pairs"]}
+        actual_collection_pairs = {(row["source_id"],row["vintage_id"])
+            for row in collection_result["comparison_sources"]}
+        assert expected_collection_pairs == actual_collection_pairs
+        assert len({vintage for _,vintage in actual_collection_pairs}) == 2
+        assert collection_result["source_facet"] == {"detail":"total","observation_period":"2025"}
+        with TestClient(main.app) as client:
+            empty_collection_response = client.post(
+                f"/api/territories/commune/{collection['empty_territory_id']}/themes/{collection['theme_id']}/comparison",
+                json={"theme_id": collection["theme_id"]})
+        assert empty_collection_response.status_code == 200, empty_collection_response.text
+        empty_collection = next(row for row in empty_collection_response.json()["results"]
+            if row["indicator_id"]==collection["indicator_id"])
+        assert empty_collection["status"] == "unavailable"
+        assert empty_collection["comparison_sources"] == []
+        with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+            publisher.execute("ALTER TABLE observed_collection_comparison_lineage DISABLE TRIGGER observed_collection_comparison_lineage_owned_write")
+            removed_collection_lineage = publisher.execute("""DELETE FROM observed_collection_comparison_lineage
+                WHERE indicator_id=%s AND comparison_context='density_class' AND group_id='D_TEST'
+                  AND territory_type='commune' RETURNING source_id,vintage_id,comparison_content_version""",
+                (collection["indicator_id"],)).fetchall()
+            assert removed_collection_lineage
+        with TestClient(main.app) as client:
+            truncated_collection = client.post(
+                f"/api/territories/commune/{collection['territory_id']}/themes/{collection['theme_id']}/comparison",
+                json={"theme_id": collection["theme_id"]})
+        assert truncated_collection.status_code == 503
+        with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+            publisher.cursor().executemany("""INSERT INTO observed_collection_comparison_lineage
+                (indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period,
+                 source_id,vintage_id,comparison_content_version)
+                VALUES (%s,'density_class','D_TEST','commune','total','2025',%s,%s,%s)""",
+                [(collection["indicator_id"],*row) for row in removed_collection_lineage])
+            publisher.execute("ALTER TABLE observed_collection_comparison_lineage ENABLE TRIGGER observed_collection_comparison_lineage_owned_write")
+        with TestClient(main.app) as client:
+            restored_collection = client.post(
+                f"/api/territories/commune/{collection['territory_id']}/themes/{collection['theme_id']}/comparison",
+                json={"theme_id": collection["theme_id"]})
+        assert restored_collection.status_code == 200, restored_collection.text
+        with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+            publisher.execute("ALTER TABLE observed_collection_comparison_lineage DISABLE TRIGGER observed_collection_comparison_lineage_owned_write")
+            publisher.execute("UPDATE observed_collection_comparison_lineage SET comparison_content_version='stale-fixture' WHERE indicator_id=%s",
+                (collection["indicator_id"],))
+            publisher.execute("ALTER TABLE observed_collection_comparison_lineage ENABLE TRIGGER observed_collection_comparison_lineage_owned_write")
+        with TestClient(main.app) as client:
+            stale_collection = client.post(
+                f"/api/territories/commune/{collection['territory_id']}/themes/{collection['theme_id']}/comparison",
+                json={"theme_id": collection["theme_id"]})
+        assert stale_collection.status_code == 503
+        with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+            publisher.execute("ALTER TABLE observed_collection_comparison_lineage DISABLE TRIGGER observed_collection_comparison_lineage_owned_write")
+            publisher.execute("UPDATE observed_collection_comparison_lineage SET comparison_content_version=%s WHERE indicator_id=%s",
+                (collection["comparison_content_version"],collection["indicator_id"]))
+            publisher.execute("ALTER TABLE observed_collection_comparison_lineage ENABLE TRIGGER observed_collection_comparison_lineage_owned_write")
         resolved_scope=series_response.json()["scope"]
         lineage_context=resolved_scope["kind"]
         if lineage_context=="density_class":
@@ -886,6 +949,43 @@ def test_synthetic_r_scalar_and_profile_lineage_publish_to_api_reader(canonical_
         else:
             main.app.dependency_overrides[main.get_repository] = previous
         pool.close()
+
+
+def test_migration_035_adds_collection_lineage_to_pre_migration_shape():
+    """Rehearse the additive migration only inside its own guarded schema."""
+    import psycopg
+
+    publish_dsn, _ = _configuration()
+    schema = "it_migration_035_" + uuid.uuid4().hex[:16]
+    root = Path(__file__).resolve().parents[2]
+    created = False
+    try:
+        with psycopg.connect(publish_dsn, autocommit=True) as connection:
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+            created = True
+            connection.execute(f'SET search_path TO "{schema}"')
+            connection.execute((root / "schema.sql").read_text(encoding="utf-8"))
+            # Reconstruct the migration-034 table shape from the fresh schema.
+            connection.execute("DROP TRIGGER observed_collection_comparison_lineage_contract ON observed_collection_comparison_publication")
+            connection.execute("DROP FUNCTION validate_observed_collection_comparison_lineage()")
+            connection.execute("DROP TABLE observed_collection_comparison_lineage")
+            connection.execute("ALTER TABLE observed_collection_comparison_group DROP CONSTRAINT observed_collection_lineage_support_shape")
+            connection.execute("ALTER TABLE observed_collection_comparison_group DROP CONSTRAINT IF EXISTS observed_collection_comparison_group_member_count_check")
+            connection.execute("ALTER TABLE observed_collection_comparison_group DROP COLUMN lineage_source_count")
+            connection.execute("ALTER TABLE observed_collection_comparison_publication DROP COLUMN lineage_row_count,DROP COLUMN lineage_complete")
+            connection.execute((root / "migrations/035_numeric_collection_comparison_lineage.sql").read_text(encoding="utf-8"))
+            columns = {row[0] for row in connection.execute("""SELECT column_name FROM information_schema.columns
+                WHERE table_schema=%s AND table_name='observed_collection_comparison_publication'""", (schema,)).fetchall()}
+            assert {"lineage_row_count", "lineage_complete"} <= columns
+            assert connection.execute("SELECT to_regclass(%s)", (f"{schema}.observed_collection_comparison_lineage",)).fetchone()[0]
+            complete_default = connection.execute("""SELECT column_default FROM information_schema.columns
+                WHERE table_schema=%s AND table_name='observed_collection_comparison_publication' AND column_name='lineage_complete'""",
+                (schema,)).fetchone()[0]
+            assert complete_default in ("false", "false::boolean")
+    finally:
+        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
 
 
 def test_ordered_series_bounded_read_comparison_and_rollback():

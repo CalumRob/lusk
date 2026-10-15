@@ -23,32 +23,36 @@ DESCRIPTOR = {"indicator_id": "grant_amount", "theme_id": "programmes",
 
 class PublishedConnection:
     def __init__(self, *, bad=None):
-        self.sql, self.bad = [], bad
+        self.sql, self.calls, self.bad = [], [], bad
 
     def execute(self, sql, params=None):
         self.sql.append(sql)
+        self.calls.append((sql,params))
+        if "to_regclass('observed_collection_comparison_lineage')" in sql:
+            return Cursor((None,False) if self.bad=="storage_missing" else ("observed_collection_comparison_lineage",True))
         if "FROM observed_collection_publication p" in sql:
             return Cursor(("collection-v1", "ref-v1", "ref-v1"))
         if "FROM observed_collection_comparison_publication" in sql:
             if self.bad == "marker_missing": return Cursor()
-            if self.bad == "marker_stale": return Cursor(("comparison-v1", "old", "ref-v1", 1, 2))
-            return Cursor(("comparison-v1", "collection-v1", "ref-v1", 1, 2))
-        if "SELECT count(*) FROM observed_collection_comparison_group" in sql:
-            return Cursor((1, 99) if self.bad == "count" else (1, 2))
+            if self.bad == "marker_stale": return Cursor(("comparison-v1", "old", "ref-v1", 1, 2, 1, True))
+            if self.bad == "lineage_unpublished": return Cursor(("comparison-v1", "collection-v1", "ref-v1", 1, 2, 1, False))
+            return Cursor(("comparison-v1", "collection-v1", "ref-v1", 1, 2, 1, True))
         if "FROM observed_collection_comparison_group" in sql:
-            row = ("median", 15.0, 2, 2, 0, "collection-v1", "ref-v1")
+            row = ("median", 15.0, 2, 2, 0, 1, "collection-v1", "ref-v1")
             return Cursor(row)
         if "FROM observed_collection_comparison_territory" in sql:
-            rows = [("c1", 10., "measured", 2, 1, 2, "collection-v1", "ref-v1"),
-                    ("c2", 20., "measured", 1, 1, 2, "collection-v1", "ref-v1")]
-            if self.bad == "missing": rows.pop()
-            if self.bad == "extra": rows.append(("c3", 30., "measured", 1, 1, 3, "collection-v1", "ref-v1"))
-            if self.bad == "bad_rank": rows[1] = (*rows[1][:3], 3, *rows[1][4:])
-            if self.bad == "bad_tie": rows[1] = (*rows[1][:4], 2, *rows[1][5:])
-            if self.bad == "bad_median": rows[1] = (rows[1][0], 21., *rows[1][2:])
-            if self.bad == "bad_version": rows[1] = (*rows[1][:6], "old", rows[1][7])
+            if "territory_id=%s" not in sql: raise AssertionError("focal-only comparison read expected")
+            row = ("c1", 10., "measured", 2, 1, 2, "collection-v1", "ref-v1")
+            if self.bad == "bad_rank": row = (*row[:3], 3, *row[4:])
+            if self.bad == "bad_tie": row = (*row[:4], 2, *row[5:])
+            if self.bad == "bad_version": row = (*row[:6], "old", row[7])
+            return Cursor() if self.bad == "missing_focal" else Cursor(row)
+        if "FROM observed_collection_comparison_lineage" in sql:
+            rows = [("source", "v1", "comparison-v1")]
+            if self.bad in ("lineage_missing", "empty_lineage"): rows = []
+            if self.bad == "lineage_stale": rows = [("source", "v1", "old")]
             return Cursor(rows=rows)
-        if "SELECT DISTINCT o.source_id" in sql:
+        if "FROM source_dataset sd JOIN source_vintage" in sql:
             return Cursor(rows=[("source", "Dataset", "v1", "2024", None, None)])
         raise AssertionError(sql)
 
@@ -60,10 +64,38 @@ def test_fixed_comparison_uses_published_sparse_facet_without_peer_values():
     assert (result["median"], result["rank"], result["rank_size"]) == (15., 2, 2)
     assert "focal_value" not in result and "rank_ties" not in result
     assert result["source_facet"] == {"detail": "housing", "observation_period": "2024"}
-    assert not any("period_detail_observation" in sql and "o.value" in sql for sql in conn.sql)
+    assert not any("period_detail_observation" in sql for sql in conn.sql)
+    assert not any("SELECT count(*)" in sql for sql in conn.sql)
+    assert not any("FROM observed_collection_comparison_territory" in sql and "territory_id=%s" not in sql for sql in conn.sql)
 
 
-@pytest.mark.parametrize("bad", ["missing", "extra", "bad_rank", "bad_tie", "bad_median", "bad_version", "count", "marker_missing", "marker_stale"])
+def test_fixed_read_work_is_independent_of_selected_cohort_size():
+    class Large(PublishedConnection):
+        def __init__(self, member_count):
+            super().__init__()
+            self.member_count = member_count
+
+        def execute(self, sql, params=None):
+            if "FROM observed_collection_comparison_group" in sql:
+                self.sql.append(sql); self.calls.append((sql,params))
+                return Cursor(("median",15.,self.member_count,2,self.member_count-2,1,"collection-v1","ref-v1"))
+            return super().execute(sql,params)
+
+    sizes=[]
+    for count in (2,20000):
+        conn=Large(count)
+        result=collection_comparison(conn,DESCRIPTOR,"commune","c1","commune",
+            tuple(f"c{i}" for i in range(count)),("density_class","A","commune"))
+        sizes.append((len(conn.calls),result["selected_member_count"],
+            tuple(len(params) if isinstance(params,(tuple,list)) else 0 for _,params in conn.calls)))
+        assert not any("period_detail_observation" in sql for sql in conn.sql)
+        assert not any(isinstance(params,(tuple,list)) and any(isinstance(value,list) and len(value)>10
+            for value in params) for _,params in conn.calls)
+    assert sizes[0][0] == sizes[1][0]
+    assert sizes[0][1:] != sizes[1][1:]
+
+
+@pytest.mark.parametrize("bad", ["storage_missing", "missing_focal", "bad_rank", "bad_version", "lineage_missing", "lineage_stale", "lineage_unpublished", "marker_missing", "marker_stale"])
 def test_fixed_comparison_rejects_incomplete_or_invalid_rows(bad):
     with pytest.raises(HTTPException) as error:
         collection_comparison(PublishedConnection(bad=bad), DESCRIPTOR, "commune", "c1", "commune",
@@ -131,13 +163,12 @@ def test_theme_collection_only_route_passes_exact_fixed_context(monkeypatch):
 def test_fixed_comparison_preserves_sparse_unavailable_result():
     class Sparse(PublishedConnection):
         def execute(self, sql, params=None):
-            if "SELECT count(*) FROM observed_collection_comparison_group" in sql:
-                return Cursor((1, 2))
             if "FROM observed_collection_comparison_group" in sql:
-                return Cursor(("median", 10., 2, 1, 1, "collection-v1", "ref-v1"))
+                return Cursor(("median", 10., 2, 1, 1, 1, "collection-v1", "ref-v1"))
             if "FROM observed_collection_comparison_territory" in sql:
-                return Cursor(rows=[("c1", 10., "measured", 1, 1, 1, "collection-v1", "ref-v1"),
-                    ("c2", None, "not_published", None, None, None, "collection-v1", "ref-v1")])
+                return Cursor(("c1", 10., "measured", 1, 1, 1, "collection-v1", "ref-v1"))
+            if "FROM observed_collection_comparison_lineage" in sql:
+                return Cursor(rows=[("source", "v1", "comparison-v1")])
             return super().execute(sql, params)
     result = collection_comparison(Sparse(), DESCRIPTOR, "commune", "c1", "commune", ("c1", "c2"),
                                    ("density_class", "A", "commune"))

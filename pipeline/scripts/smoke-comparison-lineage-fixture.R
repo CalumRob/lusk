@@ -55,6 +55,8 @@ reference$department_id <- NA_character_
 reference$epci_id <- ifelse(is_commune, "E_TEST", NA_character_)
 reference$density_class_code <- ifelse(is_commune, "D_TEST", NA_character_)
 reference$density_class_label <- ifelse(is_commune, "Test density class", NA_character_)
+empty_collection_territory <- reference$territory_id[is_commune & reference$territory_id!="22001"][[1L]]
+reference$density_class_code[reference$territory_id==empty_collection_territory] <- "D_EMPTY"
 region <- payload$territoires[payload$territoires$type == "region", , drop=FALSE]
 stopifnot(nrow(region) == 1L)
 reference <- rbind(reference, data.frame(territory_id=as.character(region$territoire[[1L]]),
@@ -244,6 +246,72 @@ stopifnot(series_retry$changed)
 series_lineage <- DBI::dbGetQuery(con,"SELECT comparison_context,group_id,territory_type,axis_value,provenance_revision_id FROM ordered_series_comparison_lineage WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,provenance_revision_id",params=list(series_dataset))
 series_sources <- DBI::dbGetQuery(con,"SELECT DISTINCT l.axis_value,p.source_id,p.vintage_id FROM ordered_series_comparison_lineage l JOIN series_provenance_revision p USING(provenance_revision_id) WHERE l.dataset_id=$1 ORDER BY l.axis_value,p.source_id,p.vintage_id",params=list(series_dataset))
 
+# Publish a sparse numeric period/detail collection through the actual owner and
+# DBI transaction. Two source clocks are associated with selected observations;
+# no canonical data directory is involved.
+collection_members <- as.character(reference$territory_id[reference$territory_type=="commune" &
+  reference$territory_id!=empty_collection_territory])
+if (length(collection_members)<2L) stop("Numeric collection fixture needs two communes",call.=FALSE)
+collection_source <- "fixture_collection"
+collection_vintages <- data.frame(source_id=collection_source,vintage_id=c("v1","v2"),
+  version=c("2024-a","2025-b"),reference_date=as.Date(c("2024-12-31","2025-12-31")),
+  publication_date=as.Date(c("2025-02-01","2026-02-01")))
+collection_projection <- list(
+  descriptor=list(indicator_id="lineage_collection",theme_id="demographie",kind="period_detail",
+    label="Fixture collection",unit="u",allowed_levels="commune",comparison_detail="total",
+    comparison_period="2025",direction="high",descriptor_version="fixture-collection-v1"),
+  categories=data.frame(indicator_id="lineage_collection",detail_key="total",label="Total",ordinal=0L,source_id=collection_source),
+  facts=data.frame(indicator_id="lineage_collection",territory_id=collection_members,
+    territory_type="commune",detail_key="total",observation_period="2025",
+    value=seq_along(collection_members),source_id=collection_source,
+    vintage_id=rep(c("v1","v2"),length.out=length(collection_members))),
+  datasets=data.frame(source_id=collection_source,name="Synthetic collection fixture"),vintages=collection_vintages)
+collection_first <- publish_observed_collection(collection_projection,con)
+collection_noop <- publish_observed_collection(collection_projection,con)
+stopifnot(collection_first$changed,!collection_noop$changed)
+collection_marker <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count,lineage_row_count,lineage_complete FROM observed_collection_comparison_publication WHERE indicator_id='lineage_collection'")
+collection_groups <- DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_group WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period")
+collection_territories <- DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_territory WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period,territory_id")
+collection_lineage <- DBI::dbGetQuery(con,"SELECT comparison_context,group_id,territory_type,detail_key,observation_period,source_id,vintage_id,comparison_content_version FROM observed_collection_comparison_lineage WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period,source_id,vintage_id")
+expected_collection_pairs <- unique(collection_projection$facts[c("source_id","vintage_id")])
+actual_collection_pairs <- unique(collection_lineage[c("source_id","vintage_id")])
+rownames(expected_collection_pairs) <- rownames(actual_collection_pairs) <- NULL
+stopifnot(identical(expected_collection_pairs,actual_collection_pairs),
+  collection_marker$lineage_row_count[[1L]]==nrow(collection_lineage),
+  all(collection_groups$lineage_source_count==vapply(seq_len(nrow(collection_groups)),function(i)
+    sum(collection_lineage$comparison_context==collection_groups$comparison_context[[i]] &
+      collection_lineage$group_id==collection_groups$group_id[[i]] &
+      collection_lineage$territory_type==collection_groups$territory_type[[i]]),integer(1))))
+old_collection_facts <- DBI::dbGetQuery(con,"SELECT * FROM period_detail_observation WHERE indicator_id='lineage_collection' ORDER BY territory_id")
+old_collection_marker <- collection_marker
+old_collection_groups <- collection_groups
+old_collection_territories <- collection_territories
+old_collection_lineage <- collection_lineage
+changed_collection <- collection_projection; changed_collection$facts$value[[1L]] <- changed_collection$facts$value[[1L]]+10
+DBI::dbExecute(con,"CREATE FUNCTION reject_collection_lineage() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected collection lineage failure'; END $$")
+DBI::dbExecute(con,"CREATE TRIGGER reject_collection_lineage BEFORE INSERT ON observed_collection_comparison_lineage FOR EACH ROW EXECUTE FUNCTION reject_collection_lineage()")
+failed_collection <- try(publish_observed_collection(changed_collection,con),silent=TRUE)
+stopifnot(inherits(failed_collection,"try-error"),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM period_detail_observation WHERE indicator_id='lineage_collection' ORDER BY territory_id"),old_collection_facts),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_group WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period"),old_collection_groups),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_territory WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period,territory_id"),old_collection_territories),
+  identical(DBI::dbGetQuery(con,"SELECT comparison_context,group_id,territory_type,detail_key,observation_period,source_id,vintage_id,comparison_content_version FROM observed_collection_comparison_lineage WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period,source_id,vintage_id"),old_collection_lineage),
+  identical(DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count,lineage_row_count,lineage_complete FROM observed_collection_comparison_publication WHERE indicator_id='lineage_collection'"),old_collection_marker))
+DBI::dbExecute(con,"DROP TRIGGER reject_collection_lineage ON observed_collection_comparison_lineage")
+DBI::dbExecute(con,"DROP FUNCTION reject_collection_lineage()")
+collection_retry <- publish_observed_collection(changed_collection,con)
+stopifnot(collection_retry$changed)
+collection_reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version[[1L]]
+DBI::dbExecute(con,"UPDATE table_publication SET content_version='lineage-reference-v3' WHERE table_name='territory_reference'")
+collection_rebind <- publish_observed_collection(changed_collection,con)
+stopifnot(collection_rebind$changed,
+  DBI::dbGetQuery(con,"SELECT reference_content_version FROM observed_collection_publication WHERE indicator_id='lineage_collection'")$reference_content_version[[1L]]=="lineage-reference-v3")
+DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_name='territory_reference'",params=list(collection_reference))
+collection_rebind_back <- publish_observed_collection(changed_collection,con)
+stopifnot(collection_rebind_back$changed,
+  DBI::dbGetQuery(con,"SELECT reference_content_version FROM observed_collection_publication WHERE indicator_id='lineage_collection'")$reference_content_version[[1L]]==collection_reference)
+collection_pairs <- unique(collection_lineage[c("source_id","vintage_id")])
+
 manifest <- list(
   schema=config$SCHEMA,
   scalar=list(content_version=DBI::dbGetQuery(con,
@@ -256,7 +324,11 @@ manifest <- list(
     content_version=series_retry$content_version,axes=series_axes,
     level=series_level,territory_id=series_members[[1L]],source_pairs=series_sources,
     comparison_context=as.character(series_lineage$comparison_context[[1L]]),
-    group_id=as.character(series_lineage$group_id[[1L]]))
+     group_id=as.character(series_lineage$group_id[[1L]])),
+  numeric_collection=list(indicator_id="lineage_collection",theme_id="demographie",
+    content_version=collection_rebind_back$content_version,
+    comparison_content_version=DBI::dbGetQuery(con,"SELECT content_version FROM observed_collection_comparison_publication WHERE indicator_id='lineage_collection'")$content_version[[1L]],
+    source_pairs=collection_pairs,territory_id="22001",empty_territory_id=empty_collection_territory)
 )
 jsonlite::write_json(manifest, config$MANIFEST, auto_unbox=TRUE, pretty=TRUE, dataframe="rows")
-cat("synthetic R scalar/profile comparison publishers passed; schema:", config$SCHEMA, "\n")
+cat("synthetic R scalar/profile/series/numeric-collection comparison publishers passed; schema:", config$SCHEMA, "\n")

@@ -1253,18 +1253,22 @@ CREATE TABLE observed_collection_comparison_publication (
   indicator_id text PRIMARY KEY REFERENCES observed_collection_publication(indicator_id) ON DELETE CASCADE,
   content_version text NOT NULL, collection_content_version text NOT NULL,
   reference_content_version text NOT NULL, group_row_count bigint NOT NULL CHECK(group_row_count>=0),
-  territory_row_count bigint NOT NULL CHECK(territory_row_count>=0), published_at timestamptz NOT NULL DEFAULT now());
+  territory_row_count bigint NOT NULL CHECK(territory_row_count>=0), lineage_row_count bigint NOT NULL DEFAULT 0 CHECK(lineage_row_count>=0),
+  lineage_complete boolean NOT NULL DEFAULT false, published_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE observed_collection_comparison_group (
   indicator_id text NOT NULL, comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level')),
   group_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
   detail_key text NOT NULL, observation_period text NOT NULL CHECK(observation_period ~ '^[0-9]{4}$'),
   statistic text NOT NULL CHECK(statistic='median'), median double precision,
-  member_count integer NOT NULL CHECK(member_count>=0), eligible_count integer NOT NULL CHECK(eligible_count>=0),
+  member_count integer NOT NULL CHECK(member_count>0), eligible_count integer NOT NULL CHECK(eligible_count>=0),
   missing_count integer NOT NULL CHECK(missing_count>=0 AND member_count=eligible_count+missing_count),
+  lineage_source_count integer NOT NULL DEFAULT 0 CHECK(lineage_source_count>=0),
   collection_content_version text NOT NULL, reference_content_version text NOT NULL,
   PRIMARY KEY(indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period),
   FOREIGN KEY(indicator_id,detail_key) REFERENCES observed_collection_category(indicator_id,detail_key) ON DELETE CASCADE,
   CHECK((eligible_count=0 AND median IS NULL) OR (eligible_count>0 AND median IS NOT NULL AND median NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))));
+ ALTER TABLE observed_collection_comparison_group ADD CONSTRAINT observed_collection_lineage_support_shape
+   CHECK((eligible_count=0 AND lineage_source_count=0) OR (eligible_count>0 AND lineage_source_count>0));
 CREATE TABLE observed_collection_comparison_territory (
   indicator_id text NOT NULL, comparison_context text NOT NULL, group_id text NOT NULL,
   territory_type text NOT NULL, detail_key text NOT NULL, observation_period text NOT NULL,
@@ -1278,8 +1282,16 @@ CREATE TABLE observed_collection_comparison_territory (
   CHECK((status='measured' AND value IS NOT NULL AND rank>0 AND tie_count>0 AND rank_size>0) OR
         (status='not_published' AND value IS NULL AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)),
   CHECK(status<>'measured' OR (rank<=rank_size AND tie_count<=rank_size)));
-GRANT SELECT ON observed_collection_comparison_publication,observed_collection_comparison_group,observed_collection_comparison_territory TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON observed_collection_comparison_publication,observed_collection_comparison_group,observed_collection_comparison_territory TO lusk_publisher;
+ CREATE TABLE observed_collection_comparison_lineage (
+  indicator_id text NOT NULL, comparison_context text NOT NULL, group_id text NOT NULL,
+  territory_type text NOT NULL, detail_key text NOT NULL, observation_period text NOT NULL,
+  source_id text NOT NULL, vintage_id text NOT NULL, comparison_content_version text NOT NULL,
+  PRIMARY KEY(indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period,source_id,vintage_id),
+  FOREIGN KEY(indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period)
+    REFERENCES observed_collection_comparison_group(indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period) ON DELETE CASCADE,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+ GRANT SELECT ON observed_collection_comparison_publication,observed_collection_comparison_group,observed_collection_comparison_territory,observed_collection_comparison_lineage TO lusk_reader;
+ GRANT SELECT,INSERT,UPDATE,DELETE ON observed_collection_comparison_publication,observed_collection_comparison_group,observed_collection_comparison_territory,observed_collection_comparison_lineage TO lusk_publisher;
 CREATE FUNCTION validate_observed_collection_comparison_write() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE id text; stamp timestamptz; BEGIN
   id:=COALESCE(NEW.indicator_id,OLD.indicator_id);
@@ -1291,15 +1303,23 @@ DECLARE id text; stamp timestamptz; BEGIN
 END $$;
 CREATE TRIGGER observed_collection_comparison_group_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_comparison_group
   FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_write();
-CREATE TRIGGER observed_collection_comparison_territory_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_comparison_territory
-  FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_write();
+ CREATE TRIGGER observed_collection_comparison_territory_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_comparison_territory
+   FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_write();
+ CREATE TRIGGER observed_collection_comparison_lineage_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_comparison_lineage
+   FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_write();
 CREATE FUNCTION validate_observed_collection_comparison_publication() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
-  IF NOT EXISTS(SELECT 1 FROM observed_collection_publication p JOIN observed_collection_descriptor d USING(indicator_id)
+  IF NOT NEW.lineage_complete OR NOT EXISTS(SELECT 1 FROM observed_collection_publication p JOIN observed_collection_descriptor d USING(indicator_id)
     WHERE p.indicator_id=NEW.indicator_id AND d.kind='period_detail'
       AND p.content_version=NEW.collection_content_version AND p.reference_content_version=NEW.reference_content_version)
     OR NOT EXISTS(SELECT 1 FROM table_publication WHERE table_name='territory_reference' AND content_version=NEW.reference_content_version)
-    OR NEW.group_row_count<>(SELECT count(*) FROM observed_collection_comparison_group WHERE indicator_id=NEW.indicator_id)
-    OR NEW.territory_row_count<>(SELECT count(*) FROM observed_collection_comparison_territory WHERE indicator_id=NEW.indicator_id)
+     OR NEW.group_row_count<>(SELECT count(*) FROM observed_collection_comparison_group WHERE indicator_id=NEW.indicator_id)
+     OR NEW.territory_row_count<>(SELECT count(*) FROM observed_collection_comparison_territory WHERE indicator_id=NEW.indicator_id)
+     OR NEW.lineage_row_count<>(SELECT count(*) FROM observed_collection_comparison_lineage WHERE indicator_id=NEW.indicator_id)
+     OR EXISTS(SELECT 1 FROM observed_collection_comparison_lineage WHERE indicator_id=NEW.indicator_id AND comparison_content_version<>NEW.content_version)
+     OR EXISTS(SELECT 1 FROM observed_collection_comparison_group g WHERE g.indicator_id=NEW.indicator_id
+       AND g.lineage_source_count<>(SELECT count(*) FROM observed_collection_comparison_lineage l WHERE
+         (l.indicator_id,l.comparison_context,l.group_id,l.territory_type,l.detail_key,l.observation_period)=
+         (g.indicator_id,g.comparison_context,g.group_id,g.territory_type,g.detail_key,g.observation_period)))
     OR EXISTS(SELECT 1 FROM observed_collection_comparison_group WHERE indicator_id=NEW.indicator_id
       AND (collection_content_version<>NEW.collection_content_version OR reference_content_version<>NEW.reference_content_version))
     OR EXISTS(SELECT 1 FROM observed_collection_comparison_territory WHERE indicator_id=NEW.indicator_id
@@ -1329,6 +1349,18 @@ CREATE FUNCTION validate_observed_collection_comparison_publication() RETURNS tr
 END $$;
 CREATE CONSTRAINT TRIGGER observed_collection_comparison_publication_contract AFTER INSERT OR UPDATE ON observed_collection_comparison_publication
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_publication();
+CREATE FUNCTION validate_observed_collection_comparison_lineage() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+  IF NEW.lineage_row_count<>(SELECT count(*) FROM observed_collection_comparison_lineage WHERE indicator_id=NEW.indicator_id)
+    OR EXISTS(SELECT 1 FROM observed_collection_comparison_lineage WHERE indicator_id=NEW.indicator_id AND comparison_content_version<>NEW.content_version)
+    OR EXISTS(SELECT 1 FROM observed_collection_comparison_group g WHERE g.indicator_id=NEW.indicator_id
+      AND g.lineage_source_count<>(SELECT count(*) FROM observed_collection_comparison_lineage l WHERE
+        (l.indicator_id,l.comparison_context,l.group_id,l.territory_type,l.detail_key,l.observation_period)=
+        (g.indicator_id,g.comparison_context,g.group_id,g.territory_type,g.detail_key,g.observation_period)))
+  THEN RAISE EXCEPTION 'observed collection comparison lineage is incomplete or stale'; END IF;
+  RETURN NEW;
+END $$;
+CREATE CONSTRAINT TRIGGER observed_collection_comparison_lineage_contract AFTER INSERT OR UPDATE ON observed_collection_comparison_publication
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_lineage();
 CREATE FUNCTION validate_observed_collection_write() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE id text; stamp timestamptz; BEGIN
   id:=COALESCE(NEW.indicator_id,OLD.indicator_id);
