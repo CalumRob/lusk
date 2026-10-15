@@ -290,6 +290,25 @@ test_that("owned series publication retries, rebinds and replaces only its datas
   expect_true(rebound$rebound)
   expect_identical(state$units$ocsge, original_state)
   expect_identical(state$units$enaf$timestamp, after_first$timestamp + 1)
+
+  # A migrated comparison has no declared lineage count, unlike a freshly
+  # published sparse comparison whose complete lineage is genuinely empty.
+  projection$descriptor$comparison_levels <- "commune"
+  state$units$enaf$version <- scalar_content_version(projection)
+  state$lineage_count <- NA_integer_
+  db$comparison_marker <- function(dataset, indicator) data.frame(
+    ordered_series_content_version=state$units[[dataset]]$version,
+    reference_content_version=state$reference, lineage_row_count=state$lineage_count)
+  replace <- db$replace_dataset
+  db$replace_dataset <- function(p, version) {
+    replace(p, version)
+    state$lineage_count <- 0L
+  }
+  before_repair <- state$units$enaf$timestamp
+  expect_no_error(publish_owned_series_projection(projection, db))
+  expect_identical(state$units$enaf$timestamp, before_repair + 1)
+  publish_owned_series_projection(projection, db)
+  expect_identical(state$units$enaf$timestamp, before_repair + 1)
 })
 
 test_that("owned series validators reject duplicate axes, undeclared roles and missing provenance", {

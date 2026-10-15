@@ -155,6 +155,18 @@ python -m pytest api/tests/integration/test_postgres_publication.py -k synthetic
 The test creates and cleans up only its own random `it_*` schema. It does not
 modify the retained benchmark schema or publish to the serving database.
 
+The same selector runs both `fresh` and `populated_upgrade` cases. The latter
+reconstructs all twelve comparison result/marker tables and the old collection
+publication contracts from the pinned pre-lineage Git schema at `d5832fca`,
+preserving the real synthetic publisher's numerical rows. It then executes
+033, 034 and 035 in order, checks that the old rows survive but each family
+fails closed until republished, and invokes all four real R adapters with the
+same saved synthetic inputs. Responses must match the fresh publication exactly;
+a second unchanged invocation must preserve publication markers, including their
+timestamps. This is a populated comparison-storage upgrade rehearsal, not a
+restored production-database or deployed-API rehearsal. The pinned Git object
+must be available locally; no network fetch or pipeline data is needed.
+
 The building publisher path has a separate RPostgres smoke so it exercises the
 real `.adapter_postgres` and `publier_tables_postgres` code rather than a fake
 adapter. It uses only synthetic canonical-like rows, accepts only explicit

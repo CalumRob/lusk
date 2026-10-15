@@ -22,6 +22,36 @@ con <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
 DBI::dbExecute(con, paste0("SET search_path TO ", as.character(DBI::dbQuoteIdentifier(con, config$SCHEMA))))
 stopifnot(DBI::dbGetQuery(con, "SELECT current_database() AS db")$db[[1L]] == config$DATABASE)
 
+# Reuse the exact synthetic inputs after a caller-owned populated schema upgrade.
+# No comparison rows or lineage are seeded here: the normal adapters must repair
+# the deliberately incomplete pre-lineage publication, even with unchanged facts.
+republish_bundle <- Sys.getenv("LUSK_LINEAGE_TEST_REPUBLISH", unset="")
+if (nzchar(republish_bundle)) {
+  inputs <- readRDS(republish_bundle)
+  scalar_registry <- register_scalar_publisher(list(), "lineage_fixture",
+    function(canonical) inputs$scalar,
+    function(projection, db, version) db$replace(projection, version))
+  publish_registered_scalar(scalar_registry, "lineage_fixture", inputs$payload,
+    scalar_postgres_adapter(con))
+  reference <- DBI::dbGetQuery(con, "SELECT * FROM territory_reference")
+  reference_version <- DBI::dbGetQuery(con,
+    "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version[[1L]]
+  scalar_version <- DBI::dbGetQuery(con,
+    "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]]
+  publish_registered_scalar_comparison(project_scalar_comparisons(inputs$scalar,
+    reference, scalar_version, reference_version), scalar_comparison_postgres_adapter(con))
+  publish_registered_profile(register_structure_age_profile_publisher(list(), inputs$metadata),
+    "structure_age", inputs$payload, profile_postgres_adapter(con))
+  series_registry <- list(lineage_series=list(owned=TRUE,
+    project=function(canonical) inputs$series))
+  publish_registered_series(series_registry, "lineage_series", inputs$series,
+    owned_series_postgres_adapter(con))
+  publish_observed_collection(inputs$collection, con)
+  DBI::dbDisconnect(con)
+  cat("synthetic comparison inputs republished through all four real adapters\n")
+  quit(save="no", status=0L)
+}
+
 fixture <- readr::read_csv("tests/testthat/fixtures/demographie-fixture.csv",
   col_types=readr::cols(code=readr::col_character(), epci=readr::col_character()),
   show_col_types=FALSE)
@@ -331,4 +361,7 @@ manifest <- list(
     source_pairs=collection_pairs,territory_id="22001",empty_territory_id=empty_collection_territory)
 )
 jsonlite::write_json(manifest, config$MANIFEST, auto_unbox=TRUE, pretty=TRUE, dataframe="rows")
+bundle_path <- Sys.getenv("LUSK_LINEAGE_TEST_BUNDLE", unset="")
+if (nzchar(bundle_path)) saveRDS(list(payload=payload, metadata=metadata,
+  scalar=scalar_projection, series=changed_series, collection=changed_collection), bundle_path)
 cat("synthetic R scalar/profile/series/numeric-collection comparison publishers passed; schema:", config$SCHEMA, "\n")

@@ -796,7 +796,8 @@ publish_registered_scalar_comparison <- function(projection, db) {
     changed <- !(is.data.frame(marker) && nrow(marker) == 1L &&
       identical(as.character(marker$content_version[[1L]]), projection$content_version) &&
       identical(as.character(marker$scalar_content_version[[1L]]), projection$scalar_content_version) &&
-      identical(as.character(marker$reference_content_version[[1L]]), projection$reference_content_version))
+      identical(as.character(marker$reference_content_version[[1L]]), projection$reference_content_version) &&
+      isTRUE(marker$lineage_row_count[[1L]] == nrow(projection$lineage)))
     if (changed) db$replace(projection)
     invisible(list(changed=changed, content_version=projection$content_version,
       scalar_content_version=projection$scalar_content_version,
@@ -817,7 +818,7 @@ scalar_comparison_postgres_adapter <- function(con) {
       "WHERE scalar.table_name='scalar_observation'",
       "AND reference.table_name='territory_reference'",
       "FOR SHARE OF scalar, reference")),
-    marker=function() DBI::dbGetQuery(con, "SELECT content_version, scalar_content_version,
+    marker=function() DBI::dbGetQuery(con, "SELECT content_version, scalar_content_version,lineage_row_count,
       reference_content_version FROM scalar_comparison_publication WHERE singleton"),
     replace=function(projection) {
       DBI::dbExecute(con, "DELETE FROM comparison_source_lineage WHERE comparison_family='scalar'")

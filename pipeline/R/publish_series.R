@@ -896,7 +896,7 @@ publish_owned_series_projection <- function(projection, db) {
       comparison_stale <- !nrow(comparison_marker) ||
         !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]),version) ||
         !identical(as.character(comparison_marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]])) ||
-        comparison_marker$lineage_row_count[[1L]]<1L
+        !isTRUE(comparison_marker$lineage_row_count[[1L]]>=0L)
     }
     if (changed || rebound || comparison_stale) db$replace_dataset(projection,version)
     invisible(list(changed=changed,rebound=rebound,content_version=version,dataset_id=dataset))

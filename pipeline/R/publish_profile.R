@@ -587,13 +587,16 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
     prepare_comparisons = function(profiles, version, reference_version) {
       refs <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
       comparisons <<- project_declared_profile_comparisons(profiles, refs, version, reference_version)
-      marker <- DBI::dbGetQuery(con, "SELECT content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count FROM profile_comparison_publication WHERE singleton=true")
+      marker <- DBI::dbGetQuery(con, "SELECT content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count,
+        EXISTS(SELECT 1 FROM profile_comparison_group WHERE lineage_source_count IS NULL) AS lineage_incomplete
+        FROM profile_comparison_publication WHERE singleton=true")
       comparison_version <- profile_content_version(comparisons)
       expected <- c(nrow(comparisons$groups), nrow(comparisons$territories))
       stale <- !nrow(marker) || !identical(as.character(marker$profile_content_version[[1L]]), as.character(version)) ||
         !identical(as.character(marker$reference_content_version[[1L]]), as.character(reference_version)) ||
         !identical(as.character(marker$content_version[[1L]]), comparison_version) ||
-        !identical(as.integer(c(marker$group_row_count[[1L]], marker$territory_row_count[[1L]])), as.integer(expected))
+        !identical(as.integer(c(marker$group_row_count[[1L]], marker$territory_row_count[[1L]])), as.integer(expected)) ||
+        isTRUE(marker$lineage_incomplete[[1L]])
       # Files are immutable generations. The DB marker is their pointer; a
       # rollback may leave an unreferenced orphan, but cannot invalidate the
       # prior committed generation. Never overwrite a referenced generation.

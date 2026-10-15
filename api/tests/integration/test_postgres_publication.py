@@ -729,7 +729,64 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         pool.close()
 
 
-def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, tmp_path):
+def _restore_populated_pre_lineage_comparisons(connection, root):
+    """Rebuild only comparison storage using the actual pre-033 DDL and facts.
+
+    The initial real R publication supplies valid numerical rows. Recreating
+    these tables from the pinned old schema avoids inventing a legacy shape by
+    subtracting columns from today's schema. Fact/reference tables are unchanged.
+    """
+    baseline = subprocess.run(
+        ["git", "show", "d5832fcac665299156dff05b6ddd55d9c1d2f60a:api/schema.sql"],
+        cwd=root.parent, capture_output=True, text=True, timeout=15, check=True,
+    ).stdout
+    definitions = re.findall(
+        r"CREATE TABLE ((?:scalar|profile|ordered_series|observed_collection)_comparison_"
+        r"(?:publication|group|territory))\s*\(.*?\);", baseline, re.DOTALL)
+    assert len(definitions) == 12, definitions
+    snapshots = {}
+    for table in definitions:
+        cursor = connection.execute(f'SELECT * FROM "{table}"')
+        names = [column.name for column in cursor.description]
+        snapshots[table] = [dict(zip(names, row)) for row in cursor.fetchall()]
+        assert snapshots[table], f"The legacy rehearsal must populate {table}"
+
+    connection.execute("DROP TABLE comparison_source_lineage,ordered_series_comparison_lineage,"
+        "ordered_series_comparison_zero_reason,observed_collection_comparison_lineage")
+    for table in reversed(definitions):
+        connection.execute(f'DROP TABLE "{table}"')
+    connection.execute("DROP FUNCTION validate_observed_collection_comparison_lineage()")
+    # The old publication validator must also be restored: today's validator
+    # references the lineage columns deliberately absent from this old schema.
+    validator = re.search(r"CREATE FUNCTION validate_observed_collection_comparison_publication\(\)"
+        r".*?\$\$;", baseline, re.DOTALL)
+    assert validator is not None
+    connection.execute(validator.group().replace("CREATE FUNCTION", "CREATE OR REPLACE FUNCTION", 1))
+    old_rows = {}
+    for table in definitions:
+        ddl = re.search(r"CREATE TABLE " + re.escape(table) + r"\s*\(.*?\);", baseline, re.DOTALL)
+        assert ddl is not None
+        connection.execute(ddl.group())
+        cursor = connection.execute(f'SELECT * FROM "{table}" LIMIT 0')
+        columns = [column.name for column in cursor.description]
+        values = [tuple(row[column] for column in columns) for row in snapshots[table]]
+        connection.cursor().executemany(
+            f'INSERT INTO "{table}" (' + ','.join(f'"{column}"' for column in columns)
+            + ') VALUES (' + ','.join(['%s'] * len(columns)) + ')', values)
+        old_rows[table] = (columns, sorted(values, key=repr))
+    # Reinstall the genuine old owned-write and deferred publication contracts
+    # after copying the already validated R numerical publication.
+    triggers = re.findall(r"CREATE (?:CONSTRAINT )?TRIGGER\s+.*?;", baseline, re.DOTALL)
+    for trigger in triggers:
+        if any(re.search(r"\bON\s+" + re.escape(table) + r"\b", trigger)
+               for table in definitions):
+            connection.execute(trigger)
+    connection.execute("UPDATE observed_collection_comparison_publication SET published_at=published_at")
+    return old_rows
+
+
+@pytest.mark.parametrize("publication_schema", ["fresh", "populated_upgrade"])
+def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, tmp_path, publication_schema):
     """Exercise actual R registries/adapters through PostgreSQL and the API read route."""
     import psycopg
     from fastapi.testclient import TestClient
@@ -740,6 +797,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
     read_dsn = canonical_db_env["read_dsn"]
     publish = urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
     manifest_path = tmp_path / "lineage-manifest.json"
+    bundle_path = tmp_path / "lineage-inputs.rds"
     env = os.environ.copy()
     env.update({
         "LUSK_LINEAGE_TEST_HOST": publish.hostname or "",
@@ -748,6 +806,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         "LUSK_LINEAGE_TEST_USER": publish.username or "",
         "LUSK_LINEAGE_TEST_SCHEMA": canonical_db_env["schema"],
         "LUSK_LINEAGE_TEST_MANIFEST": str(manifest_path),
+        "LUSK_LINEAGE_TEST_BUNDLE": str(bundle_path),
     })
     pipeline = Path(__file__).resolve().parents[3] / "pipeline"
     completed = subprocess.run(
@@ -763,6 +822,72 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
     previous = main.app.dependency_overrides.get(main.get_repository)
     main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
     try:
+        if publication_schema == "populated_upgrade":
+            root = Path(__file__).resolve().parents[2]
+            series_fixture = manifest["ordered_series"]
+            comparison_requests = [
+                ("/api/territories/commune/22001/themes/demographie/comparison",
+                 {"theme_id": "demographie"}),
+                (f"/api/territories/{series_fixture['level']}/{series_fixture['territory_id']}"
+                 f"/indicators/{series_fixture['indicator_id']}/comparison", {"selection": None}),
+                (f"/api/territories/commune/{manifest['numeric_collection']['empty_territory_id']}"
+                 "/themes/demographie/comparison", {"theme_id": "demographie"}),
+                *[(f"/api/territories/commune/22001/indicators/{indicator}/comparison",
+                   {"selection": None}) for indicator in
+                  ("densite", "structure_age", manifest["numeric_collection"]["indicator_id"])],
+            ]
+
+            def read_comparisons():
+                with TestClient(main.app) as client:
+                    return [client.post(path, json=body) for path, body in comparison_requests]
+
+            expected_responses = read_comparisons()
+            assert all(response.status_code == 200 for response in expected_responses)
+            with psycopg.connect(publish_dsn) as publisher:
+                old_rows = _restore_populated_pre_lineage_comparisons(publisher, root)
+                reader = urlsplit(read_dsn).username
+                assert reader and re.fullmatch(r"[A-Za-z0-9_$-]+", reader)
+                publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{canonical_db_env["schema"]}" TO "{reader}"')
+            # Unapplied storage must be intentionally unavailable, not a 500.
+            assert [response.status_code for response in read_comparisons()] == [503] * len(comparison_requests)
+            with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+                for migration in ("033_comparison_source_lineage.sql",
+                                  "034_ordered_series_comparison_lineage.sql",
+                                  "035_numeric_collection_comparison_lineage.sql"):
+                    publisher.execute((root / "migrations" / migration).read_text(encoding="utf-8"))
+                # Migration must not rewrite or delete any previous result or marker.
+                for table, (columns, expected) in old_rows.items():
+                    projection = ','.join(f'"{column}"' for column in columns)
+                    actual = publisher.execute(f'SELECT {projection} FROM "{table}"').fetchall()
+                    assert sorted(actual, key=repr) == expected, table
+                for table in ("scalar_comparison_group", "profile_comparison_group",
+                              "ordered_series_comparison_group"):
+                    assert publisher.execute(f'SELECT bool_and(lineage_source_count IS NULL) FROM "{table}"').fetchone()[0]
+                assert publisher.execute("SELECT bool_and(NOT lineage_complete) FROM observed_collection_comparison_publication").fetchone()[0]
+                # Newly created lineage tables need the dedicated test reader grant;
+                # migration grants target the production role names, not this test role.
+                publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{canonical_db_env["schema"]}" TO "{reader}"')
+            assert [response.status_code for response in read_comparisons()] == [503] * len(comparison_requests)
+            republish_env = dict(env, LUSK_LINEAGE_TEST_REPUBLISH=str(bundle_path))
+            # Two separate invocations prove the supported unchanged retry/no-op
+            # path, not just the initial repair after an additive upgrade.
+            repaired_markers = None
+            for _ in range(2):
+                repaired = subprocess.run(
+                    ["Rscript", "scripts/smoke-comparison-lineage-fixture.R"],
+                    cwd=pipeline, env=republish_env, capture_output=True, text=True, timeout=120)
+                assert repaired.returncode == 0, repaired.stdout + "\n" + repaired.stderr
+                actual_responses = read_comparisons()
+                assert all(response.status_code == 200 for response in actual_responses), [
+                    response.text for response in actual_responses]
+                assert [response.json() for response in actual_responses] == [
+                    response.json() for response in expected_responses]
+                with psycopg.connect(publish_dsn) as publisher:
+                    markers = {table: sorted(publisher.execute(f'SELECT * FROM "{table}"').fetchall(), key=repr)
+                        for table in old_rows if table.endswith("_publication")}
+                if repaired_markers is not None:
+                    assert markers == repaired_markers, "Unchanged retry must not republish markers"
+                repaired_markers = markers
         with TestClient(main.app) as client:
             response = client.post("/api/territories/commune/22001/themes/demographie/comparison",
                 json={"theme_id": "demographie"})

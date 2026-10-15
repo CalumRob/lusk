@@ -2571,7 +2571,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
             raise HTTPException(503,"Owned series comparison provenance is incomplete")
         axis_index = 6
         if valid and fixed_context is not None:
-            publication=conn.execute("""SELECT p.content_version,p.ordered_series_content_version,
+            publication=_execute_comparison_publication_read(conn, """SELECT p.content_version,p.ordered_series_content_version,
                 p.reference_content_version,p.group_row_count,p.territory_row_count,
                 s.content_version,t.content_version,p.comparison_axes
               FROM ordered_series_comparison_publication p
@@ -2585,7 +2585,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
             context,group_id,fixed_level=fixed_context
             if fixed_level!=cohort_type:
                 raise HTTPException(503,"Owned-series fixed comparison level is incompatible")
-            groups=conn.execute("""SELECT axis_value,statistic,group_value,member_count,eligible_count,missing_count,lineage_source_count
+            groups=_execute_comparison_publication_read(conn, """SELECT axis_value,statistic,group_value,member_count,eligible_count,missing_count,lineage_source_count
                 FROM ordered_series_comparison_group WHERE dataset_id=%s AND indicator_id=%s
                   AND comparison_context=%s AND group_id=%s AND territory_type=%s
                 ORDER BY array_position(%s::text[],axis_value)""",
@@ -2622,7 +2622,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                 ("no_selected_comparable_values" if group[4]==0 else "fewer_than_two_comparable_values"))
             source_axis=None if mean_contract else comparison_axis
             lineage_axes=declared_axes if mean_contract else [comparison_axis]
-            lineage_rows=conn.execute("""SELECT l.axis_value,l.provenance_revision_id
+            lineage_rows=_execute_comparison_publication_read(conn, """SELECT l.axis_value,l.provenance_revision_id
                 FROM ordered_series_comparison_lineage l
                 WHERE l.dataset_id=%s AND l.indicator_id=%s AND l.comparison_context=%s
                   AND l.group_id=%s AND l.territory_type=%s AND l.axis_value=ANY(%s)
@@ -2669,7 +2669,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                 "rank":rank,"rank_size":focal_result[6] if focal_result and rank is not None else None,
                 "comparison_sources":sources,"owned_content_version":content_version}
             if mean_contract:
-                zero_rows=conn.execute("""SELECT reason,member_count FROM ordered_series_comparison_zero_reason
+                zero_rows=_execute_comparison_publication_read(conn, """SELECT reason,member_count FROM ordered_series_comparison_zero_reason
                     WHERE dataset_id=%s AND indicator_id=%s AND comparison_context=%s AND group_id=%s
                       AND territory_type=%s""",(dataset_id,indicator_id,context,group_id,fixed_level)).fetchall()
                 zero_reason_counts={row[0]:row[1] for row in zero_rows}

@@ -143,7 +143,8 @@ test_that("scalar comparison publisher is version-bound, idempotent, and rolls b
       state$lineage <<- value$lineage
       state$marker <<- data.frame(content_version=value$content_version,
         scalar_content_version=value$scalar_content_version,
-        reference_content_version=value$reference_content_version)
+        reference_content_version=value$reference_content_version,
+        lineage_row_count=nrow(value$lineage))
       if (state$fail) stop("injected replacement failure")
     }
   )
@@ -153,6 +154,11 @@ test_that("scalar comparison publisher is version-bound, idempotent, and rolls b
   expect_equal(state$marker$content_version, projection$content_version)
   retry <- publish_registered_scalar_comparison(projection, adapter)
   expect_false(retry$changed)
+
+  state$marker$lineage_row_count <- NA_integer_
+  repaired <- publish_registered_scalar_comparison(projection, adapter)
+  expect_true(repaired$changed)
+  expect_identical(state$marker$lineage_row_count, nrow(projection$lineage))
 
   state$input$scalar_content_version <- "scalar-v2"
   expect_error(publish_registered_scalar_comparison(projection, adapter), "stale or unavailable")
