@@ -350,7 +350,7 @@ and a per-territory shared 95th-percentile cap with a `+` endpoint. Those trial 
 are historical, not selected hex-map treatment or evidence of current output.
 
 The separate historical car-only contract remains source-owned in `aedar_car.py` and its
-focused tests: absolute 15-minute car diversity (0?218), six native WebPs for the
+focused tests: absolute 15-minute car diversity (0–218), six native WebPs for the
 Allineuc/Redon/Bretagne review cohort, exact decoded WebP checks, and human approval bound
 to those six outputs. `record_car_approval()` is retained there as a tested historical
 car-only contract; it is not selected-package approval and does not authorize the selected
