@@ -2631,8 +2631,10 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
             lineage_ids=list(dict.fromkeys(row[1] for row in lineage_rows))
             lineage_counts={axis:sum(1 for item in lineage_rows if item[0]==axis) for axis in lineage_axes}
             expected_lineage_counts={row[0]:row[6] for row in groups}
-            if (not lineage_ids or any(expected_lineage_counts.get(axis)!=count
-                    for axis,count in lineage_counts.items())):
+            if (any(expected_lineage_counts.get(axis)!=count
+                    for axis,count in lineage_counts.items()) or
+                    (not lineage_ids and any(expected_lineage_counts.get(axis,0)>0
+                                              for axis in lineage_axes))):
                 raise HTTPException(503,"Owned-series comparison provenance is incomplete")
             revisions=conn.execute("""SELECT provenance_revision_id,source_id,vintage_id,source_name,dataset_name,
                 source_version,reference_date,publication_date,revision_hash FROM series_provenance_revision
