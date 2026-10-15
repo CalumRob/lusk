@@ -26,24 +26,26 @@ _DEFAULT = object()
 
 class DetailConnection:
     def __init__(self, *, marker=_DEFAULT, members=("c1", "c2"), group=None, territory=None):
-        self.marker = (("pub-v1", "profile-v1", "ref-v1", 1, 2, "profile-v1", "ref-v1")
+        self.marker = (("pub-v1", "profile-v1", "ref-v1", 1, len(members), "profile-v1", "ref-v1")
             if marker is _DEFAULT else marker)
-        self.members, self.sql = members, []
-        self.group = group or [("housing_profile", "old", "", "median", 20.0, len(members), 2, 0, "profile-v1", "ref-v1")]
-        self.territory = territory or [("housing_profile", "old", "", member, value, "measured", rank, 1, 2, "profile-v1", "ref-v1")
-            for member, value, rank in zip(members, (10.0, 30.0), (1, 2))]
+        self.members, self.sql, self.comparison_rows_returned = members, [], 0
+        self.group = ([("housing_profile", "old", "", "median", 20.0, len(members), len(members), 0, "profile-v1", "ref-v1")]
+            if group is None else group)
+        self.territory = ([("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, len(members), "profile-v1", "ref-v1")]
+            if territory is None else territory)
 
     def execute(self, sql, params=None):
-        self.sql.append(sql)
+        self.sql.append((sql, params))
         if "to_regclass('profile_comparison_publication')" in sql:
             return Cursor(("profile_comparison_publication",))
         if "FROM profile_comparison_publication p" in sql:
             return Cursor(self.marker)
-        if "SELECT count(*) FROM profile_comparison_group" in sql:
-            return Cursor((1, 2))
         if "FROM profile_comparison_group" in sql:
+            self.comparison_rows_returned += len(self.group)
             return Cursor(rows=self.group)
         if "FROM profile_comparison_territory" in sql:
+            assert "territory_id=%s" in sql
+            self.comparison_rows_returned += len(self.territory)
             return Cursor(rows=self.territory)
         if "FROM profile_observation_source" in sql:
             return Cursor()
@@ -52,13 +54,36 @@ class DetailConnection:
         raise AssertionError(sql)
 
 
-def test_fixed_detail_uses_published_values_and_complete_member_rows_only():
+def test_fixed_detail_uses_published_statistics_and_only_reads_focal_row():
     conn = DetailConnection()
     result = main._published_profile_comparison_results(conn, [PROFILE],
         ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1")
     assert result["housing_profile"]["median"] == 20.0
     assert result["housing_profile"]["rank_ties"] == 1
-    assert not any("o.value" in sql and "profile_observation o" in sql for sql in conn.sql)
+    assert "missing_count" not in result["housing_profile"]
+    sql = [statement for statement, _ in conn.sql]
+    assert not any("count(" in statement.lower() for statement in sql)
+    assert not any("o.value" in statement and "profile_observation o" in statement for statement in sql)
+    territory_read = next((statement, params) for statement, params in conn.sql
+        if "FROM profile_comparison_territory" in statement)
+    assert "territory_id=%s" in territory_read[0]
+    assert territory_read[1][-1] == "c1"
+
+
+def test_fixed_detail_published_comparison_read_work_is_bounded_as_cohort_grows():
+    returned_rows = []
+    for size in (2, 50, 1_202):
+        members = tuple(f"c{i}" for i in range(size))
+        conn = DetailConnection(members=members)
+        main._published_profile_comparison_results(conn, [PROFILE],
+            ("bretagne", "region", "commune"), "commune", members, "c1")
+        returned_rows.append(conn.comparison_rows_returned)
+        assert not any("count(" in statement.lower() for statement, _ in conn.sql)
+        territory_queries = [(statement, params) for statement, params in conn.sql
+            if "FROM profile_comparison_territory" in statement]
+        assert len(territory_queries) == 1
+        assert territory_queries[0][1][-1] == "c1"
+    assert returned_rows == [2, 2, 2]
 
 
 @pytest.mark.parametrize("marker,group,territory", [
@@ -66,8 +91,6 @@ def test_fixed_detail_uses_published_values_and_complete_member_rows_only():
     (("pub", "profile-v1", "wrong-ref", 1, 2, "profile-v1", "ref-v1"), None, None),
     (None, [], None),
     (("", "profile-v1", "ref-v1", 1, 2, "profile-v1", "ref-v1"), [], None),
-    (("pub", "profile-v1", "ref-v1", 1, 2, "profile-v1", "ref-v1"), None,
-     [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]),
 ])
 def test_fixed_detail_fails_closed_on_stale_or_incomplete_publication(marker, group, territory):
     conn = DetailConnection(marker=marker, group=group, territory=territory)
@@ -77,18 +100,17 @@ def test_fixed_detail_fails_closed_on_stale_or_incomplete_publication(marker, gr
     assert error.value.status_code == 503
 
 
-@pytest.mark.parametrize("corrupt", ["stale_peer", "invalid_peer", "extra_territory"])
-def test_fixed_detail_rejects_corrupt_or_extra_nonfocal_rows(corrupt):
-    rows = [
-        ("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1"),
-        ("housing_profile", "old", "", "c2", 11.0, "measured", 1, 1, 2, "profile-v1", "ref-v1"),
-    ]
-    if corrupt == "stale_peer":
-        rows[1] = (*rows[1][:-2], "old-profile", rows[1][-1])
-    elif corrupt == "invalid_peer":
-        rows[1] = (*rows[1][:6], None, None, None, *rows[1][9:])
-    else:
+@pytest.mark.parametrize("corrupt", ["stale_focal", "invalid_focal", "extra_focal", "wrong_group_key"])
+def test_fixed_detail_rejects_corrupt_or_extra_focal_rows(corrupt):
+    rows = [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]
+    if corrupt == "stale_focal":
+        rows[0] = (*rows[0][:-2], "old-profile", rows[0][-1])
+    elif corrupt == "invalid_focal":
+        rows[0] = (*rows[0][:6], None, None, None, *rows[0][9:])
+    elif corrupt == "extra_focal":
         rows.append(("housing_profile", "old", "", "stray", 11.0, "measured", 1, 1, 2, "profile-v1", "ref-v1"))
+    else:
+        rows[0] = ("housing_profile", "wrong-detail", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")
     conn = DetailConnection(territory=rows)
     with pytest.raises(HTTPException) as error:
         main._published_profile_comparison_results(conn, [PROFILE],
@@ -96,19 +118,37 @@ def test_fixed_detail_rejects_corrupt_or_extra_nonfocal_rows(corrupt):
     assert error.value.status_code == 503
 
 
-@pytest.mark.parametrize("corrupt", ["median", "rank", "ties"])
-def test_fixed_detail_rejects_aggregates_inconsistent_with_measured_peers(corrupt):
+@pytest.mark.parametrize("stale", ["group_profile", "group_reference", "focal_profile", "focal_reference"])
+def test_fixed_detail_fails_closed_on_stale_group_or_focal_versions(stale):
     group = [("housing_profile", "old", "", "median", 20.0, 2, 2, 0, "profile-v1", "ref-v1")]
-    rows = [
-        ("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1"),
-        ("housing_profile", "old", "", "c2", 30.0, "measured", 2, 1, 2, "profile-v1", "ref-v1"),
-    ]
-    if corrupt == "median":
-        group[0] = (*group[0][:4], 25.0, *group[0][5:])
-    elif corrupt == "rank":
-        rows[1] = (*rows[1][:6], 1, *rows[1][7:])
+    territory = [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]
+    if stale == "group_profile":
+        group[0] = (*group[0][:-2], "old-profile", group[0][-1])
+    elif stale == "group_reference":
+        group[0] = (*group[0][:-1], "old-reference")
+    elif stale == "focal_profile":
+        territory[0] = (*territory[0][:-2], "old-profile", territory[0][-1])
     else:
-        rows[0] = (*rows[0][:7], 2, *rows[0][8:])
+        territory[0] = (*territory[0][:-1], "old-reference")
+    conn = DetailConnection(group=group, territory=territory)
+    with pytest.raises(HTTPException) as error:
+        main._published_profile_comparison_results(conn, [PROFILE],
+            ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1")
+    assert error.value.status_code == 503
+
+
+@pytest.mark.parametrize("corrupt", ["missing_group", "missing_focal", "group_member_count", "group_shape"])
+def test_fixed_detail_fails_closed_on_missing_or_invalid_local_publication_rows(corrupt):
+    group = [("housing_profile", "old", "", "median", 20.0, 2, 2, 0, "profile-v1", "ref-v1")]
+    rows = [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]
+    if corrupt == "missing_group":
+        group = []
+    elif corrupt == "missing_focal":
+        rows = []
+    elif corrupt == "group_member_count":
+        group[0] = (*group[0][:5], 3, 2, 1, *group[0][8:])
+    else:
+        group[0] = (*group[0][:4], None, *group[0][5:])
     conn = DetailConnection(group=group, territory=rows)
     with pytest.raises(HTTPException) as error:
         main._published_profile_comparison_results(conn, [PROFILE],
@@ -118,8 +158,7 @@ def test_fixed_detail_rejects_aggregates_inconsistent_with_measured_peers(corrup
 
 def test_profile_detail_preserves_unavailable_contract_below_two_eligible():
     conn = DetailConnection(group=[("housing_profile", "old", "", "median", 10.0, 2, 1, 1, "profile-v1", "ref-v1")],
-        territory=[("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 1, "profile-v1", "ref-v1"),
-                   ("housing_profile", "old", "", "c2", None, "suppressed", None, None, None, "profile-v1", "ref-v1")])
+        territory=[("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 1, "profile-v1", "ref-v1")])
     result = main._published_profile_comparison_results(conn, [PROFILE],
         ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1")["housing_profile"]
     assert result["status"] == "unavailable"
@@ -177,6 +216,7 @@ def test_dpe_profile_adapts_scalar_publication_and_keeps_metadata(monkeypatch):
     assert result["source_facet_label"] == "Part passoires"
     assert result["scalar_descriptor_version"] == "sdv1"
     assert result["rank_ties"] == 1
+    assert "missing_count" not in result
 
 
 def test_profile_selection_resolves_exact_preset_but_custom_cohort_stays_dynamic(monkeypatch):
