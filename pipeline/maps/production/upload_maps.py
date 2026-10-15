@@ -208,10 +208,10 @@ def upload_is_approved(qa_path: Path | None = None) -> tuple[bool, str]:
     full_data = json.loads(full_path.read_text(encoding="utf-8")) if full_path.is_file() else {}
     upload_data = json.loads(upload_path.read_text(encoding="utf-8")) if upload_path.is_file() else {}
     aedar_config = json.loads((PRODUCTION / "aedar-static-family.json").read_text(encoding="utf-8"))
-    is_aedar_package = (full_data.get("family") == "aedar" or upload_data.get("family") == "aedar"
+    is_aedar_package = (full_data.get("family") == aedar_config["family"] or upload_data.get("family") == aedar_config["family"]
         or upload_data.get("prefix") == aedar_config.get("prefix"))
     if is_aedar_package:
-        if full_data.get("family") != "aedar" or upload_data.get("family") != "aedar":
+        if full_data.get("family") != aedar_config["family"] or upload_data.get("family") != aedar_config["family"]:
             return False, "AEDAR upload manifest is missing or unrelated"
         full_hash, upload_hash = sha256(full_path), sha256(upload_path)
         if qa.get("source_manifest_sha256") != full_hash:
@@ -248,7 +248,7 @@ def upload_is_approved(qa_path: Path | None = None) -> tuple[bool, str]:
                     or record.get("bucket") != upload_data.get("bucket")
                     or record.get("prefix") != upload_data.get("prefix")
                     or spot.get("source_manifest_sha256") != full_hash
-                    or spot.get("source_upload_manifest_sha256") != upload_hash
+                    or spot.get("upload_manifest_sha256") != upload_hash
                     or record.get("artifact_count") != qa.get("artifact_count")
                     or record.get("profile_counts") != qa.get("profile_counts")):
                 return False, "legacy AEDAR approval record is stale or does not bind this package/QA"

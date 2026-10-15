@@ -11,7 +11,7 @@ from pathlib import Path
 import re
 from uuid import uuid4
 
-from upload_maps import sha256
+from upload_maps import ENDPOINT, sha256
 from webp_encoding import WEBP_ENCODING_CONTRACT, validate_webp
 
 HERE = Path(__file__).resolve().parent
@@ -40,7 +40,13 @@ def _canonical_bytes(value: dict) -> bytes:
 
 def _validate_artifact(package: Path, row: dict, config: dict) -> Path:
     filename = row.get("filename", "")
-    path = (package / filename).resolve(strict=True)
+    declared = Path(row.get("path", ""))
+    if not declared.is_absolute():
+        declared = package / declared
+    expected_path = (package / filename).resolve(strict=True)
+    path = declared.resolve(strict=True)
+    if path != expected_path:
+        raise ValueError(f"AEDAR declared artifact path is not its exact package member: {filename}")
     if path.parent != package or path.name != filename:
         raise ValueError("AEDAR artifact path escapes selected package")
     if path.stat().st_size != row.get("bytes") or sha256(path) != row.get("output_sha256"):
@@ -183,7 +189,7 @@ def _validate_package(package_dir: Path, reviewer: str, outcome: str):
     if full.get("family") != config["family"] or upload.get("family") != config["family"]:
         raise ValueError("Selected package is not an AEDAR package")
     if (upload.get("prefix") != config["prefix"] or upload.get("bucket") != config["bucket"]
-            or upload.get("endpoint") != config.get("endpoint", upload.get("endpoint"))):
+            or upload.get("endpoint") != ENDPOINT):
         raise ValueError("AEDAR upload namespace/bucket does not match registered contract")
     if full.get("family_config_sha256") != sha256(HERE / "aedar-static-family.json"):
         raise ValueError("AEDAR package uses a different registered family contract")

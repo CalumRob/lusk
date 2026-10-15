@@ -316,7 +316,7 @@ class AedarPackageApprovalTests(unittest.TestCase):
             full_hash, upload_hash = upload_maps.sha256(full_path), upload_maps.sha256(upload_path)
             qa["production_status"] = "complete"
             qa["human_spot_check"] = {"status": "approved", "approval_record": "human-spot-check.json",
-                "source_manifest_sha256": full_hash, "source_upload_manifest_sha256": upload_hash}
+                "source_manifest_sha256": full_hash, "upload_manifest_sha256": upload_hash}
             self.write_json(qa_path, qa)
             legacy = package / "human-spot-check.json"
             self.write_json(legacy, {"outcome": "approved", "approved_by": "Legacy reviewer",
@@ -326,6 +326,45 @@ class AedarPackageApprovalTests(unittest.TestCase):
             before = legacy.read_bytes()
             self.assertTrue(upload_maps.upload_is_approved(qa_path)[0])
             self.assertEqual(legacy.read_bytes(), before)
+
+    def test_legacy_record_with_changed_upload_manifest_binding_is_rejected(self):
+        with TemporaryDirectory() as directory:
+            package = self.make_package(Path(directory))
+            full_path, upload_path, qa_path = (package / name for name in
+                ("full-manifest.json", "upload-manifest.json", "full-qa.json"))
+            upload, qa = json.loads(upload_path.read_text()), json.loads(qa_path.read_text())
+            full_hash, upload_hash = upload_maps.sha256(full_path), upload_maps.sha256(upload_path)
+            qa["production_status"] = "complete"
+            qa["human_spot_check"] = {"status": "approved", "approval_record": "human-spot-check.json",
+                "source_manifest_sha256": full_hash, "upload_manifest_sha256": upload_hash}
+            self.write_json(qa_path, qa)
+            self.write_json(package / "human-spot-check.json", {"outcome": "approved", "approved_by": "Legacy reviewer",
+                "recorded_at": "2026-01-01T00:00:00Z", "source_manifest_sha256": full_hash,
+                "upload_manifest_sha256": "0" * 64, "bucket": upload["bucket"], "prefix": upload["prefix"],
+                "artifact_count": qa["artifact_count"], "profile_counts": qa["profile_counts"]})
+            self.assertFalse(upload_maps.upload_is_approved(qa_path)[0])
+
+    def test_declared_full_and_upload_artifact_paths_must_be_exact_package_members(self):
+        for relative in (False, True):
+            with self.subTest(relative=relative), TemporaryDirectory() as directory:
+                root = Path(directory)
+                package = self.make_package(root)
+                full = json.loads((package / "full-manifest.json").read_text())
+                upload = json.loads((package / "upload-manifest.json").read_text())
+                qa = json.loads((package / "full-qa.json").read_text())
+                row = full["outputs"][0]
+                outside = root / "outside" / row["filename"]
+                outside.parent.mkdir(); outside.write_bytes((package / row["filename"]).read_bytes())
+                declared = str(Path("..") / "outside" / row["filename"]) if relative else str(outside)
+                row["path"] = declared
+                selected = next(item for item in upload["outputs"] if item["filename"] == row["filename"])
+                selected["path"] = declared
+                self.rebind_full_and_upload(package, full, upload, qa)
+                original_qa = (package / "full-qa.json").read_bytes()
+                with self.assertRaisesRegex(ValueError, "package|path"):
+                    record_package_approval(package, "Reviewer", "approved")
+                self.assertEqual((package / "full-qa.json").read_bytes(), original_qa)
+                self.assertFalse((package / "human-approval.json").exists())
 
 
 if __name__ == "__main__":
