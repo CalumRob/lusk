@@ -1,9 +1,11 @@
 -- #787: prepublish actual source/vintage lineage at resolved group/facet grain.
 BEGIN;
 
-ALTER TABLE scalar_comparison_publication ADD COLUMN lineage_row_count integer NOT NULL DEFAULT 0 CHECK(lineage_row_count>=0);
-ALTER TABLE scalar_comparison_group ADD COLUMN lineage_source_count integer NOT NULL DEFAULT 0 CHECK(lineage_source_count>=0);
-ALTER TABLE profile_comparison_group ADD COLUMN lineage_source_count integer NOT NULL DEFAULT 0 CHECK(lineage_source_count>=0);
+-- NULL distinguishes pre-migration publications from a publisher-declared
+-- empty lineage. The API treats NULL expected counts as incomplete (503).
+ALTER TABLE scalar_comparison_publication ADD COLUMN lineage_row_count integer CHECK(lineage_row_count>=0);
+ALTER TABLE scalar_comparison_group ADD COLUMN lineage_source_count integer CHECK(lineage_source_count>=0);
+ALTER TABLE profile_comparison_group ADD COLUMN lineage_source_count integer CHECK(lineage_source_count>=0);
 
 CREATE TABLE comparison_source_lineage (
     comparison_family text NOT NULL CHECK (comparison_family IN

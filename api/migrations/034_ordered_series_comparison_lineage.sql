@@ -1,8 +1,10 @@
 BEGIN;
 
 ALTER TABLE ordered_series_comparison_publication ADD COLUMN comparison_axes text[];
-ALTER TABLE ordered_series_comparison_publication ADD COLUMN lineage_row_count integer NOT NULL DEFAULT 0 CHECK(lineage_row_count>=0);
-ALTER TABLE ordered_series_comparison_group ADD COLUMN lineage_source_count integer NOT NULL DEFAULT 0 CHECK(lineage_source_count>=0);
+-- Preserve a sentinel for old publications: zero is valid only when the new
+-- publisher has explicitly declared that an axis has no lineage.
+ALTER TABLE ordered_series_comparison_publication ADD COLUMN lineage_row_count integer CHECK(lineage_row_count>=0);
+ALTER TABLE ordered_series_comparison_group ADD COLUMN lineage_source_count integer CHECK(lineage_source_count>=0);
 UPDATE ordered_series_comparison_publication p SET comparison_axes=(
   SELECT array_agg(axis ORDER BY ordinality)
   FROM series_dataset_descriptor d

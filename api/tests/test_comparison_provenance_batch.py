@@ -164,7 +164,19 @@ def test_published_lineage_checks_published_count_version_and_legitimate_empty(r
         with pytest.raises(HTTPException, match=message):
             main._published_comparison_sources(Connection(), **kwargs)
     else:
-        assert main._published_comparison_sources(Connection(), **kwargs) == {}
+            assert main._published_comparison_sources(Connection(), **kwargs) == {}
+
+
+def test_pre_lineage_publication_count_is_not_treated_as_a_legitimate_empty_lineage():
+    class Connection:
+        def execute(self, *_args, **_kwargs):
+            return Result([])
+
+    with pytest.raises(HTTPException, match="incomplete"):
+        main._published_comparison_sources(Connection(), family="scalar",
+            context="density_class", group_id="A", cohort_type="commune",
+            facets={"population"}, content_version="comparison-v1",
+            expected_counts={"population": None})
 
 
 def test_missing_lineage_relation_fails_closed_as_unavailable():
