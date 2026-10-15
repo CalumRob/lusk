@@ -5,9 +5,17 @@
 # publisher lusk_it_contract_pub, reader lusk_it_contract_read. This is not a
 # general runner; the exact values are guards against accidental DB drift.
 pkgload::load_all(".", quiet=TRUE)
-canonical_indicators <- nanoparquet::read_parquet(file.path("..","public","data","indicateurs_milieux.parquet"))
-if (!all(c("state_role","source_components","rang_epci","rang_dep","rang_reg") %in% names(canonical_indicators)))
-  stop("Canonical Parquet predates the typed M2/M3 role/source-component producer seam; regenerate the pipeline artifacts before opening a disposable database schema",call.=FALSE)
+# Serving artifacts replace the theme Parquet inputs of this rehearsal. The
+# owned OCS-GE projection only exists once the canonical indicator Parquet
+# carries the typed M2/M3 roles and their source components, so a missing
+# artifact aborts before any disposable schema is opened.
+owned_series_directory <- file.path("..","public","data","series-serving")
+owned_enaf_path <- file.path(owned_series_directory,"conso_enaf_annuel")
+owned_ocsge_path <- file.path(owned_series_directory,"artif_par_habitant")
+if (!all(dir.exists(c(owned_enaf_path,owned_ocsge_path))))
+  stop("Owned-series serving artifacts are missing; the pipeline artifacts predate the typed M2/M3 role/source-component producer seam or were not regenerated",call.=FALSE)
+owned_enaf <- read_owned_series_artifact(owned_enaf_path,"conso_enaf_annuel")
+owned_ocsge <- read_owned_series_artifact(owned_ocsge_path,"artif_par_habitant")
 required <- c("HOST", "PORT", "DATABASE", "USER", "READER")
 config <- setNames(lapply(required, function(key)
   Sys.getenv(paste0("LUSK_SERIES_TEST_", key), unset="")), required)
@@ -237,23 +245,16 @@ tryCatch({
   DBI::dbDisconnect(other_reader)
 
   # Exercise the additive dataset-owned contract alongside the untouched ENAF
-  # legacy reader/storage. Both real canonical units publish independently.
-  metadata <- jsonlite::read_json(file.path("inst","extdata","theme-metadata","theme_milieux.json"),simplifyVector=FALSE)
-  indicators <- canonical_indicators
-  vintages <- nanoparquet::read_parquet(file.path("..","public","data","vintages.parquet"))
-  histories <- nanoparquet::read_parquet(file.path("..","public","data","histoires_milieux.parquet"))
-  owned_canonical <- list(indicateurs=indicators,histoires=histories,vintages=vintages)
-  owned_enaf <- owned_conso_enaf_projection(owned_canonical,metadata)
-  owned_ocsge <- project_artif_m2m3_projection(indicators,histories,vintages,metadata)
-  owned_registry <- register_owned_series_publishers(list(),metadata)
+  # legacy reader/storage. Both real canonical artifacts publish independently,
+  # through the same owned-series artifact reader the pipeline publishes from.
   owned_db <- owned_series_postgres_adapter(connection)
   publish_owned <- function(p) publish_owned_series_projection(p,owned_db)
-  enaf_owned_first <- publish_registered_series(owned_registry,"conso_enaf_annuel_owned",owned_canonical,owned_db)
-  ocsge_owned_first <- publish_registered_series(owned_registry,"artif_par_habitant_owned",owned_canonical,owned_db)
+  enaf_owned_first <- publish_owned(owned_enaf)
+  ocsge_owned_first <- publish_owned(owned_ocsge)
   markers_before_noop <- DBI::dbGetQuery(connection,"SELECT * FROM series_dataset_publication ORDER BY dataset_id")
   stopifnot(enaf_owned_first$changed,ocsge_owned_first$changed,
-    !publish_registered_series(owned_registry,"conso_enaf_annuel_owned",owned_canonical,owned_db)$changed,
-    !publish_registered_series(owned_registry,"artif_par_habitant_owned",owned_canonical,owned_db)$changed,
+    !publish_owned(owned_enaf)$changed,
+    !publish_owned(owned_ocsge)$changed,
     identical(markers_before_noop,DBI::dbGetQuery(connection,"SELECT * FROM series_dataset_publication ORDER BY dataset_id")))
   owned_table_snapshot <- function(dataset) list(
     marker=DBI::dbGetQuery(connection,"SELECT * FROM series_dataset_publication WHERE dataset_id=$1",params=list(dataset)),

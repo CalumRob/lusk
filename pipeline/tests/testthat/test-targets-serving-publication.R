@@ -19,7 +19,24 @@ test_that("le leaf SQL attend les faits, la référence finale et les vintages",
   expect_match(command, "publie_mobilite", fixed = TRUE)
   expect_match(command, "metadata_mobilite", fixed = TRUE)
   expect_match(command, "fusion_vintages", fixed = TRUE)
+  expect_match(command, "scalar_serving_artifacts", fixed = TRUE)
+  expect_match(command, "typed_reading_serving_artifacts", fixed = TRUE)
   expect_match(command, "publier_tables_service_depuis_parquet", fixed = TRUE)
+})
+
+test_that("le grain de lecture typé est bâti par thème depuis le payload en mémoire", {
+  withr::local_dir(pkgload::pkg_path())
+  withr::local_envvar(LUSK_PUBLISH_DB = "", LUSK_THEMES = "", LUSK_MODE = "full")
+  manifest <- targets::tar_manifest()
+  command <- manifest$command[manifest$name == "typed_reading_serving_artifacts"]
+  expect_length(command, 1L)
+  expect_match(command, "materialize_theme_typed_reading_artifacts", fixed = TRUE)
+  expect_match(command, "fusion_vintages", fixed = TRUE)
+  # Une lecture est projetée UNE fois, depuis le payload publié du thème : aucun
+  # Parquet de thème ne participe à cette matérialisation.
+  expect_match(command, "publie_mobilite", fixed = TRUE)
+  expect_match(command, "metadata_mobilite", fixed = TRUE)
+  expect_false(grepl("histoires_", command, fixed = TRUE))
 })
 
 test_that("un graphe sans Démographie ou Habitat ou en mode cron refuse l'opt-in DB", {

@@ -62,6 +62,7 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
     # le payload stubé ci-dessus n'a ni faits scalaires ni séries annuelles :
     # les deux materialisations de projection sont hors boucle, comme le scalar.
     materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     # issue #60 : la géométrie (ADR-0008) est publiée par le run — jamais de
     # réseau dans la boucle de test (le fetch WFS réel est hors de la boucle).
     publier_geometrie = function(cible = "public/data", fetch = NULL) {

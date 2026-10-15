@@ -81,8 +81,10 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
     # ce cache n'a PAS les archives OCS-GE (#237) : les lignes d'état artif
     # sont publiées sans roles typés ni lineage — la materialisation des
     # séries annuelles (qui exige ces colonnes) est hors boucle de ce test,
-    # comme pour le test Habitat stubé.
+    # comme pour le test Habitat stubé, et celle du grain de lecture exige en
+    # plus les faits de lecture sélectionnés.
     materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     publier_geometrie = function(cible = "public/data", fetch = NULL)
       invisible(NULL),
     .package = "lusk"
@@ -171,8 +173,10 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
     download_sources = function(manifest, cache, mode) statuts_milieux(),
     lire_epci = function(chemin) base_epci_milieux,
     # cache sans archives OCS-GE (#237) : pas de materialisation de séries
-    # annuelles ici (les roles typés sont absents du payload rétro-compatible).
+    # annuelles ici (les roles typés sont absents du payload rétro-compatible),
+    # ni de grain de lecture (il exige ces roles et les faits sélectionnés).
     materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     publier_geometrie = function(cible = "public/data", fetch = NULL)
       invisible(NULL),
     .package = "lusk"

@@ -180,13 +180,12 @@ publier_tables_service_depuis_parquet <- function(sortie = "../public/data", con
     scalar_comparison <- publish_registered_scalar_comparison(snapshot$comparison,
       scalar_comparison_postgres_adapter(conn))
     write_scalar_comparison_parquets(snapshot$comparison, sortie)
-    history_path <- file.path(sortie,"histoires_economie.parquet")
-    vintage_path <- file.path(sortie,"vintages.parquet")
-    if (!file.exists(history_path) || !file.exists(vintage_path)) stop("Canonical economy reading inputs are unavailable",call.=FALSE)
-    economy_input <- list(histories=nanoparquet::read_parquet(history_path),vintages=nanoparquet::read_parquet(vintage_path),
-      metadata=lire_theme_metadata("economie"))
-    economy_input$content_version <- economy_reading_content_version(economy_input$histories,economy_input$vintages,economy_input$metadata)
-    economy_reading <- publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_input,conn)
+    # The canonical economy reading is published from its owner-scoped serving
+    # artifact: the theme Parquet history is never re-projected here.
+    economy_publication <- read_typed_reading_publication_from(sortie,"economie")
+    economy_reading <- publish_typed_reading_publication(
+      register_typed_reading_artifact_publisher(list(),"economie",publish_economy_reading_family),
+      "economie",economy_publication,conn)
     mobility_reading <- publish_canonical_mobility_reading(conn,sortie)
     milieux_reading <- publish_canonical_milieux_reading(conn,sortie,conso_source_path=conso_source_path)
     list(access=access, scalar=scalar, scalar_comparison=scalar_comparison,

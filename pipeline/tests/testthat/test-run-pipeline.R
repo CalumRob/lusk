@@ -117,6 +117,9 @@ test_that("run_pipeline compose les étapes dans l'ordre, à étapes mockées (p
     },
     materialize_theme_scalar_artifact = function(...) invisible(NULL),
     materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    # le payload stubé ci-dessus ne porte pas les faits de lecture sélectionnés :
+    # la matérialisation du grain de lecture est hors boucle, comme le scalar.
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL) {
       appels$rapport_statuts_vus <- statuts
@@ -235,6 +238,9 @@ test_that("run_pipeline transmet le mode à l'étape de téléchargement (issue 
     publish = function(payload, cible, backend = NULL) invisible(payload),
     materialize_theme_scalar_artifact = function(...) invisible(NULL),
     materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    # le payload stubé ci-dessus ne porte pas les faits de lecture sélectionnés :
+    # la matérialisation du grain de lecture est hors boucle, comme le scalar.
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     publier_theme_metadata = function(metadata, sortie, vintages = NULL,
                                       theme_attendu = NULL,
                                       directions_module = NULL)
@@ -290,6 +296,9 @@ test_that("run_pipeline porte le diagnostic de couverture du thème dans le rapp
     publish = function(payload, cible, backend = NULL) invisible(payload),
     materialize_theme_scalar_artifact = function(...) invisible(NULL),
     materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    # le payload stubé ci-dessus ne porte pas les faits de lecture sélectionnés :
+    # la matérialisation du grain de lecture est hors boucle, comme le scalar.
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     publier_geometrie = function(cible = "public/data", fetch = NULL)
       invisible(NULL),
     publier_theme_metadata = function(metadata, sortie, vintages = NULL,

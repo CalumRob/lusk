@@ -365,6 +365,9 @@ test_that("vintages : un run Démographie puis un run Économie laissent l'union
       invisible(NULL),
     materialize_theme_scalar_artifact = function(...) invisible(NULL),
     materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    # le payload stubé ci-dessus ne porte pas les faits de lecture sélectionnés :
+    # la matérialisation du grain de lecture est hors boucle, comme le scalar.
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     .package = "lusk"
   )
 

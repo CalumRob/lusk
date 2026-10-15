@@ -200,6 +200,10 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme$theme, sortie)
   }
   materialize_theme_series_artifacts(payload, metadata %||% list(), vintages, theme$theme, sortie)
+  # Typed-reading serving grains share the same in-memory payload, validated
+  # metadata and merged vintages. A theme without a reading materializes
+  # nothing; the publication readers below consume only these artifacts.
+  materialize_theme_typed_reading_artifacts(payload, metadata %||% list(), vintages, theme$theme, sortie)
   # Declared-profile serving grains share the same in-memory payload, validated
   # metadata and merged vintages. The DPE owner is scalar-backed: its binding is
   # computed only when the full scalar universe is locally present, so a partial

@@ -10,24 +10,27 @@ profile_serving_json_fields <- "descriptor"
 profile_serving_family <- "declared-profile"
 
 # A projector can attach R's internal "hashed string" flag (and a materialised
-# row-names form) to a character column — for the declared-profile provenance
-# table, rbind()/unique() do. Those flags are invisible to identical() but are
+# row-names form) to a character column or to the NAME vector of a table — for
+# the declared-profile provenance table rbind()/unique() do, and a subset of a
+# data.frame does to its names. Those flags are invisible to identical() but are
 # written by saveRDS, so two semantically equal projections would otherwise hash
 # to different content versions. The transport's reader rebuilds every column
-# from Parquet, which clears the flags; re-materialising each atomic vector here
-# reproduces exactly that canonical form, so profile_content_version(projected)
-# equals profile_content_version(read back). Values, classes and attributes are
-# unchanged; only volatile allocation flags are normalised.
+# and every name vector from Parquet, which clears the flags; re-materialising
+# each atomic vector here reproduces exactly that canonical form, so
+# profile_content_version(projected) equals profile_content_version(read back).
+# Values, classes and attributes are unchanged; only volatile allocation flags
+# are normalised.
 materialize_profile_value <- function(value) {
   if (is.null(value)) return(NULL)
   if (is.data.frame(value)) {
     out <- value
     for (column in names(value)) out[[column]] <- materialize_profile_value(value[[column]])
+    names(out) <- names(value)[]
     return(out)
   }
   if (is.list(value)) {
     out <- lapply(value, materialize_profile_value)
-    names(out) <- names(value)
+    names(out) <- names(value)[]
     return(out)
   }
   value[]

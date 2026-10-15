@@ -613,6 +613,27 @@ profile_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
     as.call(c(list(as.name("{")), expressions)))
 }
 
+# Typed-reading serving artifacts are built from the same in-memory theme
+# publication results, validated metadata and merged vintages as the scalar,
+# series and declared-profile grains. A reading is projected once, here: the
+# theme Parquet histories are never re-projected by a publication reader.
+typed_reading_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
+  expressions <- list(bquote(vintages_ <- fusion_vintages), bquote(result_ <- list()))
+  for (theme in themes) {
+    if (!"metadata" %in% names(theme)) next
+    name <- theme$theme
+    payload <- as.name(paste0("publie_", name))
+    metadata <- as.name(paste0("metadata_", name))
+    expressions <- c(expressions, list(bquote({
+      result_[[.(name)]] <- materialize_theme_typed_reading_artifacts(
+        .(payload), .(metadata), vintages_, .(name), .(sortie))
+    })))
+  }
+  expressions <- c(expressions, list(bquote(unlist(result_, use.names=TRUE))))
+  tar_target_raw("typed_reading_serving_artifacts",
+    as.call(c(list(as.name("{")), expressions)))
+}
+
 # rapport_theme -----------------------------------------------------------------
 # Le rapport de run d'UN thème : un target INDÉPENDANT des étapes aval
 # (aucune dépendance sur payload/publie/fusion), réestampillé à CHAQUE run
@@ -1284,6 +1305,7 @@ if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
       metadata_mobilite
       fusion_vintages
       scalar_serving_artifacts
+      typed_reading_serving_artifacts
       publier_tables_service_depuis_parquet(.(SORTIE_RUN))
     }),
     cue = tar_cue(mode = "always")
@@ -1327,6 +1349,7 @@ list(
   fusion_themes(themes_fusion),
   scalar_artifacts_themes(),
   profile_artifacts_themes(),
+  typed_reading_artifacts_themes(),
   publication_service,
   publication_profile,
   rapports,
