@@ -45,8 +45,12 @@ tryCatch({
     DBI::dbGetQuery(con, "SELECT row_count FROM table_publication WHERE table_name='building_grid'")$row_count[[1L]] == nrow(inputs$tables$building_grid))
   scalar_publication <- publish_service_share_scalars(con, inputs$scalar_access, inputs$scalar_metadata,
     inputs$scalar_eligible_territories, additional_projections=complete$additional_projections)
-  # The theme Parquet history stays the independent oracle of the stored rows.
-  economy_histories <- nanoparquet::read_parquet(file.path(canonical_dir,"histoires_economie.parquet"))
+  # #757 : le parquet par-thème Économie n'est plus écrit — la projection JSON
+  # du run dir reste l'oracle indépendant des lignes stockées (même repli que
+  # le smoke Habitat).
+  economy_histories_path <- file.path(canonical_dir,"histoires_economie.parquet")
+  economy_histories <- if (file.exists(economy_histories_path)) nanoparquet::read_parquet(economy_histories_path) else
+    jsonlite::fromJSON(file.path(canonical_dir,"histoires_economie.json"))
   economy_vintages <- nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
   economy_metadata <- lire_theme_metadata("economie")
   # The published reading is the owner-scoped serving artifact: the theme Parquet
