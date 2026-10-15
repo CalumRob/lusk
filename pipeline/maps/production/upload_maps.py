@@ -172,6 +172,10 @@ def load_plan(prefix: str | None, manifest_path: Path | None = None, *,
             expected_url = f"{family['public_base_url']}/{item['key']}"
             if filename != expected_name or entry.get("key") != item["key"] or entry.get("public_url") != expected_url:
                 raise ValueError(f"AEDAR filename/key/public URL mismatch: {filename}")
+            # AEDAR's explicit package approval is an exact-byte authorization, not
+            # merely a manifest claim. Verify staged bytes before a dry-run or PUT.
+            if path.stat().st_size != item["bytes"] or sha256(path) != item["sha256"]:
+                raise ValueError(f"AEDAR package artifact changed: {filename}")
         if replacement:
             item["expected_previous_sha256"] = entry["expected_previous_sha256"]
             item["expected_previous_bytes"] = int(entry["expected_previous_bytes"])
@@ -196,6 +200,21 @@ def upload_is_approved(qa_path: Path | None = None) -> tuple[bool, str]:
     if spot.get("status") != "approved" or qa.get("production_status") != "complete":
         return False, (f"final visual approval is pending (human_spot_check.status={spot.get('status')!r}, "
                        f"production_status={qa.get('production_status')!r})")
+    if qa.get("human_spot_check", {}).get("record"):
+        package = qa_path.parent
+        record_path = package / qa["human_spot_check"]["record"]
+        if not record_path.is_file():
+            return False, "explicit AEDAR package approval record is missing"
+        record = json.loads(record_path.read_text(encoding="utf-8"))
+        full_path, upload_path = package / "full-manifest.json", package / "upload-manifest.json"
+        if (record.get("schema") != "lusk.aedar.package-approval.v1"
+                or record.get("outcome") != "approved"
+                or record.get("full_manifest_sha256") != sha256(full_path)
+                or record.get("upload_manifest_sha256") != sha256(upload_path)
+                or record.get("final_qa_sha256") != sha256(qa_path)
+                or record.get("approval_id") != spot.get("approval_id")
+                or record.get("reviewed_qa_sha256") != qa.get("approval_evidence", {}).get("reviewed_qa_sha256")):
+            return False, "explicit AEDAR approval record is stale or does not bind this package/QA"
     return True, "full QA passed and final visual spot-check is approved"
 
 
