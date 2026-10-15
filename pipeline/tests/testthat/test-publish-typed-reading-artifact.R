@@ -34,7 +34,7 @@ fixture_mobility_reading_fixture <- function() {
   metadata <- fixture_mobility_reading_metadata()
   list(histories = histories, vintages = vintages, metadata = metadata,
     reading = project_mobility_reading(histories, vintages, metadata),
-    legacy_version = mobility_reading_content_version(histories, vintages, metadata))
+    projector_version = mobility_reading_content_version(histories, vintages, metadata))
 }
 
 fixture_economy_reading_fixture <- function() {
@@ -278,10 +278,9 @@ test_that("reading pieces keep their selection row names and typed missing value
 test_that("each reading has exactly one content-version rule over its persisted pieces", {
   fixtures <- fixture_typed_readings()
   mobility <- fixtures$mobilite
-  # Mobility reuses the projector's own rule, so the cutover cannot silently
-  # change an existing Mobility reading version.
+  # The artifact rule and the projector rule agree on the same in-memory form.
   expect_identical(typed_reading_content_version(mobility$projection, "mobilite"),
-    mobility$legacy_version)
+    mobility$projector_version)
   economy <- fixtures$economie
   expect_identical(typed_reading_content_version(economy$projection, "economie"),
     scalar_content_version(list(facts = economy$projection$facts, source = economy$projection$source)))
@@ -297,6 +296,50 @@ test_that("each reading has exactly one content-version rule over its persisted 
     scalar_content_version(list(facts = milieux$projection$facts,
       source_bindings = milieux$projection$source_bindings,
       population_revisions = milieux$projection$population_revisions)))
+})
+
+test_that("the mobility version move is exactly the incidental facts class attribute", {
+  # The legacy theme-Parquet publisher hashed the reading projected from
+  # nanoparquet::read_parquet inputs (class c("tbl","data.frame")); the artifact
+  # grain projects from the in-memory payload (a dplyr tibble, class
+  # c("tbl_df","tbl","data.frame")). The published content version therefore
+  # moves once — and for nothing else: the legacy rule over the legacy
+  # projection with only the class vector aligned reproduces the artifact
+  # version byte-for-byte. The DB publisher rebinds the marker once
+  # (publish_mobility_reading republishes on version mismatch).
+  fixture <- fixture_mobility_reading_fixture()
+  legacy_dir <- tempfile("legacy-mobility-inputs-")
+  on.exit(unlink(legacy_dir, recursive = TRUE), add = TRUE)
+  dir.create(legacy_dir)
+  histories_path <- file.path(legacy_dir, "histoires_mobilite.parquet")
+  vintages_path <- file.path(legacy_dir, "vintages.parquet")
+  nanoparquet::write_parquet(fixture$histories, histories_path)
+  nanoparquet::write_parquet(fixture$vintages, vintages_path)
+  pre_cutover_version <- mobility_reading_content_version(
+    nanoparquet::read_parquet(histories_path),
+    nanoparquet::read_parquet(vintages_path), fixture$metadata)
+
+  root <- typed_reading_root("typed-reading-mobility-golden")
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  projection <- typed_reading_projection(fixture$reading, "mobilite",
+    fixture$metadata, fixture$vintages)
+  write_typed_reading_artifact(projection,
+    typed_reading_artifact_directory(root, "mobilite"), "mobilite")
+  publication <- read_typed_reading_publication(
+    typed_reading_artifact_directory(root, "mobilite"), "mobilite")
+
+  # The move is real and deliberate (a one-time marker rebind, like economy).
+  expect_false(identical(publication$content_version, pre_cutover_version))
+  # The legacy rule hashes the legacy projection minus its serving-contract
+  # attribute; rebuild it and align only the class vector.
+  legacy_facts <- project_mobility_reading(nanoparquet::read_parquet(histories_path),
+    nanoparquet::read_parquet(vintages_path), fixture$metadata)
+  legacy_contract <- attr(legacy_facts, "serving_contract")
+  attr(legacy_facts, "serving_contract") <- NULL
+  class_aligned <- legacy_facts
+  class(class_aligned) <- class(publication$projection$facts)
+  expect_identical(scalar_content_version(list(facts = class_aligned,
+    descriptor = legacy_contract)), publication$content_version)
 })
 
 test_that("a missing, tampered, foreign or stale reading generation fails closed", {
