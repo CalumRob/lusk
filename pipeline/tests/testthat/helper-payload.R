@@ -40,3 +40,42 @@ verifier_non_derivee <- function(parquet, json, nom) {
     }
   }
 }
+
+# verifier_projection_sur_table -------------------------------------------------
+# Le contrat de non-dérive (issue #10, ADR-0004) appliqué à la projection JSON
+# SEULE. Depuis #757, la sérialisation parquet par-thème est retirée pour les
+# cinq thèmes non-mobilité : il n'y a plus de parquet par-thème à relire en
+# retour. La projection JSON se compare donc directement à la table EN MÉMOIRE
+# dont elle est issue — même rigueur, colonne pour colonne, valeur pour valeur.
+verifier_projection_sur_table <- function(table, json, nom) {
+  verifier_non_derivee(table, json, nom)
+}
+
+# lire_indicateurs_commis -------------------------------------------------------
+# Les faits canoniques d'un thème depuis le snapshot commis (public/data). #757 :
+# la Mobilité garde son parquet de faits (#619) ; les cinq thèmes non-mobilité
+# ne sont plus servis qu'en JSON — leur projection commise, paritaire (ADR-0004),
+# sert de source de fixture producteur. La bascule est dérivée du prédicat
+# theme_parquet_retire(), jamais d'une liste recopiée.
+lire_indicateurs_commis <- function(theme,
+                                    public = file.path(pkgload::pkg_path(), "..", "public", "data")) {
+  if (theme_parquet_retire(theme)) {
+    jsonlite::fromJSON(file.path(public, paste0("indicateurs_", theme, ".json")),
+                       simplifyVector = TRUE)
+  } else {
+    nanoparquet::read_parquet(file.path(public, paste0("indicateurs_", theme, ".parquet")))
+  }
+}
+
+# lire_histoires_commis ---------------------------------------------------------
+# Même contrat que lire_indicateurs_commis, pour la table des histoires d'un
+# thème (voir #757).
+lire_histoires_commis <- function(theme,
+                                  public = file.path(pkgload::pkg_path(), "..", "public", "data")) {
+  if (theme_parquet_retire(theme)) {
+    jsonlite::fromJSON(file.path(public, paste0("histoires_", theme, ".json")),
+                       simplifyVector = TRUE)
+  } else {
+    nanoparquet::read_parquet(file.path(public, paste0("histoires_", theme, ".parquet")))
+  }
+}

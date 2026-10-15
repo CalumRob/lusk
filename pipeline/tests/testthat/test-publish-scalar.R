@@ -9,7 +9,7 @@ seed_scalar_artifact_fixture_from_producer_outputs <- function(themes) {
   territories <- nanoparquet::read_parquet(file.path(public, "territoires.parquet"))
   for (theme in themes) {
     payload <- list(
-      indicateurs=nanoparquet::read_parquet(file.path(public, paste0("indicateurs_", theme, ".parquet"))),
+      indicateurs=lire_indicateurs_commis(theme, public),
       territoires=territories
     )
     metadata <- jsonlite::fromJSON(file.path(public, paste0("theme_", theme, ".json")), simplifyVector=FALSE)
@@ -210,7 +210,7 @@ test_that("complete scalar snapshots combine service and economy cohorts determi
 test_that("economy scalar projector retains canonical units, levels, and source vintages", {
   metadata <- jsonlite::fromJSON(testthat::test_path("../../inst/extdata/theme-metadata/theme_economie.json"), simplifyVector=FALSE)
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(pkgload::pkg_path(), "..", "public", "data"))
-  canonical <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_economie.parquet"))
+  canonical <- lire_indicateurs_commis("economie", canonical_dir)
   ids <- names(metadata$scalar_contracts)
   eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type)))
@@ -253,7 +253,8 @@ test_that("housing DPE scalar retains producer denominator and suppression", {
   public <- jsonlite::fromJSON(file.path(pkgload::pkg_path(), "..", "public", "data", "theme_habitat.json"), simplifyVector=FALSE)
   expect_identical(names(public$scalar_contracts), names(metadata$scalar_contracts))
   expect_identical(public$scalar_contracts, metadata$scalar_contracts)
-  canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_habitat.parquet"))
+  canonical <- lire_indicateurs_commis("habitat",
+    file.path(pkgload::pkg_path(), "..", "public", "data"))
   rows <- data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type), indicator_id=as.character(canonical$key),
     value=as.numeric(canonical$value), unit=as.character(canonical$unit),
@@ -307,7 +308,8 @@ test_that("all producer scalar contracts match their checked-in generated metada
 test_that("demography scalars are projected from the canonical producer into full snapshots", {
   artifacts <- seed_scalar_artifact_fixture_from_producer_outputs(c("economie", "demographie", "mobilite", "habitat"))
   on.exit(unlink(artifacts, recursive=TRUE), add=TRUE)
-  canonical <- nanoparquet::read_parquet(file.path(pkgload::pkg_path(), "..", "public", "data", "indicateurs_demographie.parquet"))
+  canonical <- lire_indicateurs_commis("demographie",
+    file.path(pkgload::pkg_path(), "..", "public", "data"))
   eligible <- unique(data.frame(territory_id=as.character(canonical$territoire),
     territory_type=as.character(canonical$type)))
   projection <- project_demography_scalar_cohort(file.path(pkgload::pkg_path(), "..", "public", "data"), eligible, artifacts)

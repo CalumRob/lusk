@@ -353,7 +353,7 @@ test_that("owned ENAF projection preserves its canonical facts and immutable pro
   metadata_path <- testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json")
   metadata <- jsonlite::read_json(metadata_path, simplifyVector=FALSE)
   projection <- owned_conso_enaf_projection(list(
-    indicateurs=nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet")),
+    indicateurs=lire_indicateurs_commis("milieux", root),
     vintages=nanoparquet::read_parquet(file.path(root,"vintages.parquet"))), metadata)
   expect_invisible(validate_owned_series_projection(projection))
   expect_identical(projection$descriptor$dataset_id,"conso_enaf_annuel")
@@ -466,7 +466,7 @@ test_that("OCS-GE projection uses typed per-role components and retains comparis
     "supported comparison statistic")
   expect_error(project_ordered_series_comparisons(production_projection,comparison_reference,"","r1"),
     "publication identities")
-  old_artifact <- nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet"))
+  old_artifact <- lire_indicateurs_commis("milieux", root)
   old_artifact <- old_artifact[old_artifact$key=="artif_par_habitant",]
   old_artifact$state_role <- NULL
   old_artifact$source_components <- NULL
@@ -476,7 +476,7 @@ test_that("OCS-GE projection uses typed per-role components and retains comparis
 
 test_that("canonical vintage source label is checked against vintage Parquet identity", {
   root <- testthat::test_path("../../../public/data")
-  indicators <- nanoparquet::read_parquet(file.path(root, "indicateurs_milieux.parquet"))
+  indicators <- lire_indicateurs_commis("milieux", root)
   vintages <- nanoparquet::read_parquet(file.path(root, "vintages.parquet"))
   metadata <- jsonlite::read_json(testthat::test_path("../../inst/extdata/theme-metadata/theme_milieux.json"), simplifyVector=FALSE)
   # Keep version and both dates unchanged: only corrupt the human source label.

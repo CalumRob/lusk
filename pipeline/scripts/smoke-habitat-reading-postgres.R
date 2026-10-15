@@ -29,7 +29,15 @@ tryCatch({
   scalar_publication <- publish_service_share_scalars(con,inputs$scalar_access,inputs$scalar_metadata,
     inputs$scalar_eligible_territories,additional_projections=scalar$additional_projections)
 
-  read_canonical <- function(name) nanoparquet::read_parquet(file.path(canonical_dir,paste0(name,".parquet")))
+  read_canonical <- function(name) {
+    # #757 : les parquets de faits par-thème des cinq thèmes non-mobilité ne
+    # sont plus écrits. La projection JSON du run dir reste servie et devient
+    # l'oracle (les fichiers partagés territoires/vintages et la Mobilité
+    # gardent leur parquet). Le parquet est préféré quand il existe encore.
+    parquet <- file.path(canonical_dir, paste0(name, ".parquet"))
+    if (file.exists(parquet)) return(nanoparquet::read_parquet(parquet))
+    jsonlite::fromJSON(file.path(canonical_dir, paste0(name, ".json")))
+  }
   territories <- read_canonical("territoires"); vintages <- read_canonical("vintages")
   demography_metadata <- lire_theme_metadata("demographie")
   habitat_metadata <- lire_theme_metadata("habitat")
@@ -59,12 +67,13 @@ tryCatch({
   stopifnot(profile$changed,
     DBI::dbGetQuery(con,"SELECT count(*) FROM profile_observation_source WHERE indicator_id='distribution_dpe'")[[1L]][[1L]]>0L)
 
-  # The theme Parquet history stays the independent oracle of the stored rows.
+  # La projection JSON du thème (#757 : plus de parquet par-thème) reste
+  # l'oracle indépendant des lignes stockées.
   histories <- read_canonical("histoires_habitat")
   dpe_source <- vintages[vintages[["id"]]==habitat_metadata$sources$part_passoires,,drop=FALSE]
   stopifnot(nrow(histories)>0L,nrow(dpe_source)==1L)
-  # The published reading is the owner-scoped serving artifact: the theme Parquet
-  # history above is only the independent oracle, never re-projected here.
+  # The published reading is the owner-scoped serving artifact: the theme
+  # projection above is only the independent oracle, never re-projected here.
   publication <- read_typed_reading_publication_from(canonical_dir,"habitat")
   canonical <- list(reading=publication$reading,content_version=publication$content_version)
   registry <- register_typed_reading_artifact_publisher(list(),"habitat",publish_habitat_reading)

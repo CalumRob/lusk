@@ -24,12 +24,12 @@ test_that("une valeur changée est à publier", {
 
   publish(payload, a)
   publish(payload, b)
-  # on change la valeur d'un indicateur dans b, puis on relit le parquet
-  indicateurs <- nanoparquet::read_parquet(
-    file.path(b, "indicateurs_demographie.parquet"))
+  # on change la valeur d'un indicateur dans b, puis on relit la projection JSON
+  # (#757 : les faits Démographie ne partent plus qu'en JSON)
+  indicateurs <- jsonlite::fromJSON(file.path(b, "indicateurs_demographie.json"))
   indicateurs$value[1] <- indicateurs$value[1] + 1
-  nanoparquet::write_parquet(indicateurs,
-                             file.path(b, "indicateurs_demographie.parquet"))
+  jsonlite::write_json(indicateurs, file.path(b, "indicateurs_demographie.json"),
+                       dataframe = "rows", na = "null", digits = 17, pretty = TRUE)
 
   expect_true(detecter_changement(a, b))
 })

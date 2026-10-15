@@ -24,7 +24,7 @@ test_that("ADR-0039 comparison family inventory covers in-scope publisher famili
   expect_length(c("structure_age", details, "distribution_dpe"), 10L)
   root <- pkgload::pkg_path()
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(root, "..", "public", "data"))
-  habitat_rows <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_habitat.parquet"))
+  habitat_rows <- lire_indicateurs_commis("habitat", canonical_dir)
   habitat_canonical <- list(indicateurs=habitat_rows,
     territoires=unique(data.frame(territoire=as.character(habitat_rows$territoire),
       type=as.character(habitat_rows$type))))
@@ -329,7 +329,7 @@ test_that("the four Habitat detail profiles project canonical cells including re
   metadata <- lire_theme_metadata("habitat")
   root <- pkgload::pkg_path()
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(root, "..", "public", "data"))
-  rows <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_habitat.parquet"))
+  rows <- lire_indicateurs_commis("habitat", canonical_dir)
   territories <- unique(data.frame(territoire=as.character(rows$territoire), type=as.character(rows$type)))
   canonical <- list(indicateurs=rows, territoires=territories)
   for (id in c("mix_logements", "statut", "type", "age_du_bati")) {
