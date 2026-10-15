@@ -10,6 +10,7 @@ import json
 import concurrent.futures
 import os
 import re
+import subprocess
 import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
@@ -720,6 +721,122 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
             publisher.execute("DELETE FROM table_publication WHERE table_name='scalar_observation'")
         missing = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
         assert missing.status_code == 503
+    finally:
+        if previous is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous
+        pool.close()
+
+
+def test_synthetic_r_scalar_and_profile_lineage_publish_to_api_reader(canonical_db_env, tmp_path):
+    """Exercise actual R registries/adapters through PostgreSQL and the API read route."""
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    publish_dsn = canonical_db_env["publish_dsn"]
+    read_dsn = canonical_db_env["read_dsn"]
+    publish = urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
+    manifest_path = tmp_path / "lineage-manifest.json"
+    env = os.environ.copy()
+    env.update({
+        "LUSK_LINEAGE_TEST_HOST": publish.hostname or "",
+        "LUSK_LINEAGE_TEST_PORT": str(publish.port or ""),
+        "LUSK_LINEAGE_TEST_DATABASE": os.environ["LUSK_TEST_DATABASE_NAME"],
+        "LUSK_LINEAGE_TEST_USER": publish.username or "",
+        "LUSK_LINEAGE_TEST_SCHEMA": canonical_db_env["schema"],
+        "LUSK_LINEAGE_TEST_MANIFEST": str(manifest_path),
+    })
+    pipeline = Path(__file__).resolve().parents[3] / "pipeline"
+    completed = subprocess.run(
+        ["Rscript", "scripts/smoke-comparison-lineage-fixture.R"],
+        cwd=pipeline, env=env, capture_output=True, text=True, timeout=120,
+    )
+    assert completed.returncode == 0, completed.stdout + "\n" + completed.stderr
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    assert manifest["schema"] == canonical_db_env["schema"]
+
+    pool = ConnectionPool(conninfo=read_dsn, min_size=0, max_size=2, open=True,
+        kwargs={"autocommit": True})
+    previous = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    try:
+        with TestClient(main.app) as client:
+            response = client.post("/api/territories/commune/22001/themes/demographie/comparison",
+                json={"theme_id": "demographie"})
+        assert response.status_code == 200, response.text
+        body = response.json()
+        scalar = {row["indicator_id"]: row for row in body["results"]}
+        profile = {row["indicator"]: row for row in body["profile_comparisons"]}
+        assert body["scalar_content_version"]
+        assert body["profile_content_version"]
+        assert "densite" in scalar and "structure_age" in profile
+        assert "lineage_sparse" in scalar
+        assert scalar["lineage_sparse"]["status"] == "unavailable"
+        assert scalar["lineage_sparse"]["comparison_sources"] == []
+
+        expected_scalar_pairs = {
+            (row["source_id"], row["vintage_id"])
+            for row in manifest["scalar"]["source_pairs"]
+            if row["facet_id"] == "densite"
+        }
+        actual_scalar_pairs = {(row["source_id"], row["vintage_id"])
+            for row in scalar["densite"]["comparison_sources"]}
+        expected_profile_pairs = {
+            (row["source_id"], row["vintage_id"])
+            for row in manifest["profile"]["source_pairs"]
+            if row["facet_id"] == "structure_age"
+        }
+        actual_profile_pairs = {(row["source_id"], row["vintage_id"])
+            for row in profile["structure_age"]["comparison_sources"]}
+        assert expected_scalar_pairs and actual_scalar_pairs == expected_scalar_pairs
+        assert expected_profile_pairs and actual_profile_pairs == expected_profile_pairs
+
+        # Both physical families fail closed on truncated/stale lineage and read
+        # normally again after restoring the exact row.
+        def assert_lineage_guard(family, facet):
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                row = connection.execute("""DELETE FROM comparison_source_lineage
+                    WHERE comparison_family=%s AND comparison_context='density_class'
+                      AND group_id='D_TEST' AND facet_id=%s
+                    RETURNING comparison_context,group_id,territory_type,facet_id,source_id,vintage_id,
+                      comparison_content_version""", (family, facet)).fetchone()
+                assert row is not None
+            with TestClient(main.app) as client:
+                truncated = client.post("/api/territories/commune/22001/themes/demographie/comparison",
+                    json={"theme_id": "demographie"})
+            assert truncated.status_code == 503
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute("""INSERT INTO comparison_source_lineage
+                    (comparison_family,comparison_context,group_id,territory_type,facet_id,source_id,vintage_id,comparison_content_version)
+                    VALUES (%s,%s,%s,%s,%s,%s,%s,%s)""", (family, *row))
+                connection.execute("""UPDATE comparison_source_lineage
+                    SET comparison_content_version='stale-test-version'
+                    WHERE comparison_family=%s AND comparison_context=%s AND group_id=%s
+                      AND territory_type=%s AND facet_id=%s AND source_id=%s AND vintage_id=%s""",
+                    (family, *row[:6]))
+            with TestClient(main.app) as client:
+                stale = client.post("/api/territories/commune/22001/themes/demographie/comparison",
+                    json={"theme_id": "demographie"})
+            assert stale.status_code == 503
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute("""UPDATE comparison_source_lineage SET comparison_content_version=%s
+                    WHERE comparison_family=%s AND comparison_context=%s AND group_id=%s
+                      AND territory_type=%s AND facet_id=%s AND source_id=%s AND vintage_id=%s""",
+                    (row[6], family, *row[:6]))
+                stale_rows = connection.execute("""SELECT comparison_family,group_id,facet_id,
+                    source_id,vintage_id,comparison_content_version FROM comparison_source_lineage
+                    WHERE comparison_content_version='stale-test-version'""").fetchall()
+                assert not stale_rows, stale_rows
+            with TestClient(main.app) as client:
+                restored = client.post("/api/territories/commune/22001/themes/demographie/comparison",
+                    json={"theme_id": "demographie"})
+            assert restored.status_code == 200, restored.text
+
+        assert_lineage_guard("scalar", "densite")
+        assert_lineage_guard("profile", "structure_age")
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)

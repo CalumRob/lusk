@@ -132,6 +132,29 @@ associations (the second is explicitly synthetic smoke lineage), no-op behavior,
 dependency-only marker rebinding, DB-behind-local retry, and transaction rollback
 after an injected insert failure.
 
+The scalar/profile comparison-lineage checkpoint has a separate synthetic
+publisher-to-API-reader test. It reuses the fixture constructors and invokes the
+real R registries and PostgreSQL adapters for scalar and declared-profile
+comparison publication, then reads both through the API using the dedicated
+read role. It checks source/vintage parity, bounded group lineage, empty sparse
+scalar lineage, no-op publication, stale/truncated fail-closed behavior, and
+rollback/retry after injected lineage-write failures. It needs no canonical
+artifact directory or pipeline data:
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
+$env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
+$env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
+$env:PYTHONPATH = '.'
+python -m pytest api/tests/integration/test_postgres_publication.py -k synthetic_r_scalar_and_profile_lineage_publish_to_api_reader -q
+```
+
+The test creates and cleans up only its own random `it_*` schema. It does not
+modify the retained benchmark schema or publish to the serving database.
+
 The building publisher path has a separate RPostgres smoke so it exercises the
 real `.adapter_postgres` and `publier_tables_postgres` code rather than a fake
 adapter. It uses only synthetic canonical-like rows, accepts only explicit
