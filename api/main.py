@@ -2470,8 +2470,16 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
     descriptor_by_route={(row[0],row[1]):row for row in descriptors}
     if len(descriptor_by_route)!=len(routes):
         raise HTTPException(503,"Owned-series active publication route is unavailable")
-    rows=conn.execute("""SELECT d.dataset_id,d.indicator_id,o.territory_id,o.value,o.status,
-        a.provenance_revision_id,o.axis_value,o.missing_reason
+    fixed_projection_read=bool(fixed_context is not None and fixed_context[2]==cohort_type and all(
+        (descriptor:=descriptor_by_route.get((route[0],route[3]))) is not None and
+        descriptor[3] and descriptor[3] in descriptor[9] and descriptor[6] in ("high","low") and
+        ((descriptor[10] or "median")=="mean" and descriptor[11]=="selected_group" or
+         (descriptor[10] or "median")=="median" and descriptor[11]=="default_group") and
+        territory_type in descriptor[7] and territory_type in descriptor[12] and cohort_type in descriptor[12]
+        for route in routes))
+    observation_columns=("o.territory_id,o.status,a.provenance_revision_id,o.axis_value,o.missing_reason"
+        if fixed_projection_read else "o.territory_id,o.value,o.status,a.provenance_revision_id,o.axis_value,o.missing_reason")
+    rows=conn.execute(f"""SELECT d.dataset_id,d.indicator_id,{observation_columns}
         FROM series_dataset_descriptor d
         LEFT JOIN series_dataset_observation o ON o.dataset_id=d.dataset_id AND o.indicator_id=d.indicator_id
           AND (d.comparison_statistic='mean' OR o.axis_value=d.comparison_point OR
@@ -2483,7 +2491,8 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         WHERE d.dataset_id=ANY(%s) AND d.indicator_id=ANY(%s) AND d.active_read_route
          ORDER BY d.dataset_id,d.indicator_id,o.territory_id,o.axis_value,a.provenance_revision_id""",
         (cohort_type,ids,datasets,indicators)).fetchall()
-    revision_ids=list(dict.fromkeys(row[5] for row in rows if row[5] is not None))
+    revision_index=4 if fixed_projection_read else 5
+    revision_ids=list(dict.fromkeys(row[revision_index] for row in rows if row[revision_index] is not None))
     revisions=conn.execute("""SELECT provenance_revision_id,source_id,vintage_id,source_name,dataset_name,
         source_version,reference_date,publication_date,revision_hash
         FROM series_provenance_revision WHERE provenance_revision_id=ANY(%s)
@@ -2514,7 +2523,10 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         valid=bool(point and point in axes and direction in ("high","low") and
             (mean_contract or median_contract) and territory_type in comparison_levels and cohort_type in comparison_levels)
         observations=[r for r in matching if r[2] is not None]
-        if valid and any(r[5] is None or r[5] not in revision_by_id for r in observations):
+        if fixed_projection_read:
+            observations=[(*row[:3],None,*row[3:]) for row in observations]
+        provenance_index=5
+        if valid and any(r[provenance_index] is None or r[provenance_index] not in revision_by_id for r in observations):
             raise HTTPException(503,"Owned series comparison provenance is incomplete")
         axis_index = 6
         if valid and fixed_context is not None:
@@ -2539,9 +2551,9 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                 (dataset_id,indicator_id,context,group_id,fixed_level,list(axes))).fetchall()
             territory_results=conn.execute("""SELECT axis_value,territory_id,value,status,rank,tie_count,rank_size
                 FROM ordered_series_comparison_territory WHERE dataset_id=%s AND indicator_id=%s
-                  AND comparison_context=%s AND group_id=%s AND territory_type=%s AND territory_id=ANY(%s)
+                  AND comparison_context=%s AND group_id=%s AND territory_type=%s AND territory_id=%s
                 ORDER BY array_position(%s::text[],axis_value),territory_id""",
-                (dataset_id,indicator_id,context,group_id,fixed_level,list(members),list(axes))).fetchall()
+                (dataset_id,indicator_id,context,group_id,fixed_level,territory_id,list(axes))).fetchall()
             axis_inventory=conn.execute("""SELECT DISTINCT state_role FROM series_dataset_observation
                 WHERE dataset_id=%s AND indicator_id=%s AND state_role IS NOT NULL
                 ORDER BY state_role""",(dataset_id,indicator_id)).fetchall()
@@ -2550,7 +2562,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                 if declared_roles else list(axes))
             group_axes=[row[0] for row in groups]
             expected_group_axes=[axis for axis in declared_axes if axis in set(axes)]
-            expected_pairs={(axis,member) for axis in group_axes for member in members}
+            expected_pairs={(axis,territory_id) for axis in group_axes}
             actual_pairs={(row[0],row[1]) for row in territory_results}
             if (not group_axes or group_axes!=expected_group_axes or len(groups)!=len(group_axes) or
                 len(territory_results)!=len(expected_pairs) or actual_pairs!=expected_pairs or
@@ -2569,9 +2581,9 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
             focal_result=territory_by_axis_id.get((comparison_axis,territory_id))
             if group is None:
                 raise HTTPException(503,"Owned-series fixed comparison point is unavailable")
-            values=[(row[1],float(row[2])) for row in territory_results
-                if row[0]==comparison_axis and row[3]=="measured" and row[2] is not None]
-            enough=len(values)>=2
+            enough=group[4]>=2
+            comparison_reason=(None if enough else
+                ("no_selected_comparable_values" if group[4]==0 else "fewer_than_two_comparable_values"))
             source_axis=None if mean_contract else comparison_axis
             sources=[];seen=set()
             for row in observations:
@@ -2584,10 +2596,19 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                     "publication_date":source[7],"revision_hash":source[8]})
             focal_value=(focal_result[2] if focal_result and focal_result[3]=="measured" else None)
             rank=focal_result[4] if focal_result else None
+            if focal_result:
+                if focal_result[3]=="measured":
+                    if (focal_result[2] is None or focal_result[4] is None or focal_result[5] is None or
+                            focal_result[6] != group[4] or not 1 <= focal_result[4] <= focal_result[6] or
+                            not 1 <= focal_result[5] <= focal_result[6]):
+                        raise HTTPException(503,"Owned-series focal comparison result is incomplete")
+                elif (focal_result[3] not in ("missing","not_published") or
+                      any(value is not None for value in (focal_result[2],focal_result[4],focal_result[5],focal_result[6]))):
+                    raise HTTPException(503,"Owned-series unavailable focal result contains comparison values")
             result={"indicator_id":indicator_id,"theme_id":theme_id,"label":label,"unit":unit,
                 "direction":direction,"descriptor_version":version,"source_facet":point,"statistic":statistic,
                 "status":"available" if enough else "unavailable",
-                "reason":None if enough else ("fewer_than_two_comparable_values" if values else "no_selected_comparable_values"),
+                "reason":comparison_reason,
                 "selected_member_count":len(members),"eligible_count":group[4],"missing_count":group[5],
                 "focal_value":focal_value,"focal_in_selection":territory_id in members,
                 "rank":rank,"rank_size":focal_result[6] if focal_result and rank is not None else None,
@@ -2605,15 +2626,16 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                 zero_reason_counts={}
                 for member in members:
                     facts=[member_axis.get((member,axis)) for axis in axes]
-                    if any(fact is None or fact[1]!="measured" or fact[0] is None for fact in facts):
+                    if any(fact is None or fact[1]!="measured" for fact in facts):
                         raise HTTPException(503,"Published mean-curve provenance support is incomplete")
                     reasons={fact[2] for fact in facts}
                     if len(reasons)>1:
                         raise HTTPException(503,"Published mean-curve zero reason conflicts across axes")
                     reason=next(iter(reasons))
                     if reason is not None:
-                        if any(fact[0]!=0 for fact in facts):
-                            raise HTTPException(503,"Published mean-curve zero reason conflicts with values")
+                        # The producer checks complete curves are finite and requires every structural
+                        # zero curve to be exactly zero before attaching its zero-reason metadata.
+                        # See calcul_raccordement.R:637-641, 648-651.
                         zero_reason_counts[reason]=zero_reason_counts.get(reason,0)+1
                 result["mean"]=group[2] if enough else None
                 result["mean_curve"]={"statistic":"mean","axis_kind":axis_kind,
