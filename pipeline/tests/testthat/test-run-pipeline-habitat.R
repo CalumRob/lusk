@@ -56,6 +56,9 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
                                   couverture = NULL)
       invisible(NULL),
     materialize_theme_scalar_artifact = function(...) invisible(NULL),
+    # le payload stubé ci-dessus ne porte aucun fait de profil déclaré :
+    # la matérialisation des profils est hors boucle, comme le scalar.
+    materialize_theme_profile_artifacts = function(...) invisible(NULL),
     # le payload stubé ci-dessus n'a ni faits scalaires ni séries annuelles :
     # les deux materialisations de projection sont hors boucle, comme le scalar.
     materialize_theme_series_artifacts = function(...) invisible(NULL),

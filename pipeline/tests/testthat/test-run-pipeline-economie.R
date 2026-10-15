@@ -364,6 +364,7 @@ test_that("vintages : un run Démographie puis un run Économie laissent l'union
                                   couverture = NULL)
       invisible(NULL),
     materialize_theme_scalar_artifact = function(...) invisible(NULL),
+    materialize_theme_profile_artifacts = function(...) invisible(NULL),
     .package = "lusk"
   )
 

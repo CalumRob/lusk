@@ -200,6 +200,21 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme$theme, sortie)
   }
   materialize_theme_series_artifacts(payload, metadata %||% list(), vintages, theme$theme, sortie)
+  # Declared-profile serving grains share the same in-memory payload, validated
+  # metadata and merged vintages. The DPE owner is scalar-backed: its binding is
+  # computed only when the full scalar universe is locally present, so a partial
+  # or cron run materializes the declared detail profiles and skips DPE instead
+  # of failing.
+  if (is.list(metadata) && length(profile_serving_owners(metadata))) {
+    profile_binding <- NULL
+    if (length(profile_serving_scalar_owners(metadata)) &&
+        profile_scalar_binding_inputs_available(sortie)) {
+      profile_binding <- profile_scalar_binding(sortie)
+      cache_profile_scalar_binding(profile_binding, sortie)
+    }
+    materialize_theme_profile_artifacts(payload, metadata, vintages, theme$theme, sortie,
+      profile_binding)
+  }
   # Optional operator-owned desktop connection (usually via SSH tunnel). The
   # pipeline writes canonical Parquet here first; the DB publisher compares
   # per-table markers even when none of those files changed in this run.

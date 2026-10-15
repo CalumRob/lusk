@@ -595,6 +595,25 @@ test_that("registered publication keeps marker-bound immutable Parquet generatio
   expect_true(all(file.exists(partial_paths)))
 })
 
+test_that("declared profile serving artifacts consume the same projection as the database publisher", {
+  metadata <- lire_theme_metadata("habitat")
+  payload <- payload_habitat()
+  root <- tempfile("profile-serving-"); dir.create(root)
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  binding <- strrep("1a", 16L)
+  published <- materialize_theme_profile_artifacts(payload, metadata, NULL, "habitat", root, binding)
+  expect_setequal(names(published), profile_serving_owners(metadata))
+  # The stored content version is exactly the version the database publisher
+  # recomputes from the same restored projection, so the artifact and the live
+  # marker can never diverge.
+  restored <- read_profile_serving_profiles(root, names(published), scalar_binding = binding)
+  for (owner in names(published))
+    expect_identical(published[[owner]], profile_content_version(restored[[owner]]))
+  # The verified scalar binding round-trips through the artifact directory.
+  cache_profile_scalar_binding(binding, root)
+  expect_identical(read_profile_scalar_binding(root), binding)
+})
+
 test_that("profile smoke cleanup removes only its owned schema in dependency order with RESTRICT", {
   sql <- profile_smoke_schema_cleanup_sql(function(parts) paste0('"', parts, '"'), "profile_it_test")
   joined <- paste(sql, collapse="\n")
