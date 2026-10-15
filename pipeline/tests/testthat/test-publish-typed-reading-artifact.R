@@ -423,6 +423,7 @@ test_that("production reading publishers read the artifact and refuse a legacy P
   nanoparquet::write_parquet(fixture$histories, file.path(root, "histoires_mobilite.parquet"))
   expect_error(publish_canonical_mobility_reading(NULL, root), "Typed canonical artifact is missing")
   expect_error(publish_canonical_demographic_reading(NULL, root), "Typed canonical artifact is missing")
+  expect_error(publish_canonical_habitat_reading(NULL, root), "Typed canonical artifact is missing")
   expect_error(read_typed_reading_publication_from(root, "economie"), "Typed canonical artifact is missing")
   expect_error(publish_canonical_milieux_reading(NULL, root),
     "Milieux vintage and territory artifacts are required")

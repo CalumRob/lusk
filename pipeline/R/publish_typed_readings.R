@@ -560,10 +560,16 @@ publish_selected_reading_family <- function(con, facts, canonical, theme) {
   invisible(list(content_version=version,row_count=count,changed=TRUE))
 }
 
+# The Habitat reading is a selected-reading family member: its publisher is
+# named once so the registered publisher and the artifact entry point share it.
+publish_habitat_reading <- function(con, facts, canonical) {
+  publish_selected_reading_family(con, facts, canonical, "habitat")
+}
+
 register_habitat_reading_publisher <- function(registry) {
   register_typed_reading_publisher(registry,"habitat",
     function(input) project_habitat_reading(input$histories,input$vintages,input$metadata),
-    function(db,projection,input) publish_selected_reading_family(db,projection,input,"habitat"))
+    function(db,projection,input) publish_habitat_reading(db,projection,input))
 }
 
 register_economy_reading_publisher <- function(registry) {
@@ -681,6 +687,17 @@ publish_canonical_demographic_reading <- function(con, sortie="../public/data") 
   publish_typed_reading_publication(
     register_typed_reading_artifact_publisher(list(),"demographie",publish_demographic_reading),
     "demographie",publication,con)
+}
+
+# Production entry point for the canonical Habitat reading. The DPE-derived
+# reading is read back from its owner-scoped artifact and published by the
+# registered publisher; the theme Parquet history is never re-projected, so a
+# missing or stale generation fails closed instead of falling back to it.
+publish_canonical_habitat_reading <- function(con, sortie="../public/data") {
+  publication <- read_typed_reading_publication_from(sortie,"habitat")
+  publish_typed_reading_publication(
+    register_typed_reading_artifact_publisher(list(),"habitat",publish_habitat_reading),
+    "habitat",publication,con)
 }
 
 # Production publication path: reuse the registered OCS-GE dataset publisher,

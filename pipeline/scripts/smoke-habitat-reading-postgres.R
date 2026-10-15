@@ -59,17 +59,15 @@ tryCatch({
   stopifnot(profile$changed,
     DBI::dbGetQuery(con,"SELECT count(*) FROM profile_observation_source WHERE indicator_id='distribution_dpe'")[[1L]][[1L]]>0L)
 
+  # The theme Parquet history stays the independent oracle of the stored rows.
   histories <- read_canonical("histoires_habitat")
-  history_path <- file.path(canonical_dir,"histoires_habitat.parquet")
-  indicator_path <- file.path(canonical_dir,"indicateurs_habitat.parquet")
   dpe_source <- vintages[vintages[["id"]]==habitat_metadata$sources$part_passoires,,drop=FALSE]
   stopifnot(nrow(histories)>0L,nrow(dpe_source)==1L)
-  content_version <- paste(unname(tools::md5sum(history_path)),dpe_source[["version"]][[1L]],
-    dpe_source[["date_reference"]][[1L]],dpe_source[["date_publication"]][[1L]],
-    unname(tools::md5sum(indicator_path)),sep="-")
-  canonical <- list(histories=histories,vintages=vintages,metadata=habitat_metadata,
-    content_version=content_version,linked_content_version=unname(tools::md5sum(indicator_path)))
-  registry <- register_habitat_reading_publisher(list())
+  # The published reading is the owner-scoped serving artifact: the theme Parquet
+  # history above is only the independent oracle, never re-projected here.
+  publication <- read_typed_reading_publication_from(canonical_dir,"habitat")
+  canonical <- list(reading=publication$reading,content_version=publication$content_version)
+  registry <- register_typed_reading_artifact_publisher(list(),"habitat",publish_habitat_reading)
   result <- publish_registered_typed_reading(registry,"habitat",canonical,con)
   marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM selected_reading_publication WHERE theme_id='habitat'")
   generic_marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='selected_reading'")
@@ -118,11 +116,10 @@ tryCatch({
     DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM selected_reading_publication WHERE theme_id='habitat'")))
   stopifnot(identical(generic_marker,DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='selected_reading'")))
   failed_input <- canonical
-  measured <- project_habitat_reading(failed_input$histories,vintages,habitat_metadata)
-  measured_index <- which(measured$status=="measured")[[1L]]
-  source_index <- match(paste(measured$territory_id[[measured_index]],measured$territory_type[[measured_index]]),
-    paste(failed_input$histories[["territoire"]],failed_input$histories[["type"]]))
-  failed_input$histories[["part_passoires"]][[source_index]] <- 2
+  # Inject an out-of-range share into one measured row: the publisher must fail
+  # against the registered DPE scalar and roll back rather than store it.
+  measured_index <- which(failed_input$reading$status=="measured")[[1L]]
+  failed_input$reading$part_passoires[[measured_index]] <- 2
   failed_input$content_version <- paste0(canonical$content_version,"-rollback-probe")
   failed_publish <- try(publish_registered_typed_reading(registry,"habitat",failed_input,con),silent=TRUE)
   stopifnot(inherits(failed_publish,"try-error"),identical(marker,

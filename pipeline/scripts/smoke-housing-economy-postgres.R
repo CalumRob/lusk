@@ -45,12 +45,16 @@ tryCatch({
     DBI::dbGetQuery(con, "SELECT row_count FROM table_publication WHERE table_name='building_grid'")$row_count[[1L]] == nrow(inputs$tables$building_grid))
   scalar_publication <- publish_service_share_scalars(con, inputs$scalar_access, inputs$scalar_metadata,
     inputs$scalar_eligible_territories, additional_projections=complete$additional_projections)
+  # The theme Parquet history stays the independent oracle of the stored rows.
   economy_histories <- nanoparquet::read_parquet(file.path(canonical_dir,"histoires_economie.parquet"))
   economy_vintages <- nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
   economy_metadata <- lire_theme_metadata("economie")
-  economy_canonical <- list(histories=economy_histories,vintages=economy_vintages,metadata=economy_metadata,
-    content_version=economy_reading_content_version(economy_histories,economy_vintages,economy_metadata))
-  publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_canonical,con)
+  # The published reading is the owner-scoped serving artifact: the theme Parquet
+  # history above is only the independent oracle, never re-projected here.
+  economy_publication <- read_typed_reading_publication_from(canonical_dir,"economie")
+  economy_canonical <- list(reading=economy_publication$reading,content_version=economy_publication$content_version)
+  economy_registry <- register_typed_reading_artifact_publisher(list(),"economie",publish_economy_reading_family)
+  publish_registered_typed_reading(economy_registry,"economie",economy_canonical,con)
   # Acceptance oracle comes directly from the canonical producer artifact,
   # not from the serving projection being tested.
   expected_reading <- economy_histories[economy_histories$theme == "economie", , drop=FALSE]
@@ -100,14 +104,14 @@ tryCatch({
     DBI::dbGetQuery(con,"SELECT row_count FROM table_publication WHERE table_name='economy_typed_reading'")$row_count[[1L]]==nrow(expected_reading),
     DBI::dbGetQuery(con,"SELECT row_count FROM table_publication WHERE table_name='economy_activity_evidence'")$row_count[[1L]]==nrow(expected_evidence))
   marker_before_noop <- DBI::dbGetQuery(con,"SELECT table_name,content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name IN ('economy_typed_reading','economy_activity_evidence') ORDER BY table_name")
-  publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_canonical,con)
+  publish_registered_typed_reading(economy_registry,"economie",economy_canonical,con)
   stopifnot(isTRUE(all.equal(marker_before_noop,DBI::dbGetQuery(con,"SELECT table_name,content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name IN ('economy_typed_reading','economy_activity_evidence') ORDER BY table_name"),check.attributes=FALSE)))
   DBI::dbExecute(con,"CREATE FUNCTION reject_economy_evidence() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected economy evidence failure'; END $$")
   DBI::dbExecute(con,"CREATE TRIGGER reject_economy_evidence BEFORE INSERT ON economy_activity_evidence FOR EACH ROW EXECUTE FUNCTION reject_economy_evidence()")
   failed_input <- economy_canonical
-  failed_input$histories$salience_reason[[1L]] <- paste0(failed_input$histories$salience_reason[[1L]],"-rollback-test")
-  failed_input$content_version <- economy_reading_content_version(failed_input$histories,failed_input$vintages,failed_input$metadata)
-  failed_publication <- try(publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",failed_input,con),silent=TRUE)
+  failed_input$reading$salience_reason[[1L]] <- paste0(failed_input$reading$salience_reason[[1L]],"-rollback-test")
+  failed_input$content_version <- paste0(economy_canonical$content_version,"-rollback-test")
+  failed_publication <- try(publish_registered_typed_reading(economy_registry,"economie",failed_input,con),silent=TRUE)
   DBI::dbExecute(con,"DROP TRIGGER reject_economy_evidence ON economy_activity_evidence")
   DBI::dbExecute(con,"DROP FUNCTION reject_economy_evidence()")
   stopifnot(inherits(failed_publication,"try-error"),
@@ -430,20 +434,20 @@ tryCatch({
   if (!identical(status, 0L)) stop("Canonical economy publisher-to-HTTP parity failed", call.=FALSE)
   # Prove the canonical artifact oracle detects a valid-but-wrong publisher
   # output, then restore and re-prove the normal HTTP contract.
-  economy_registry <- register_economy_reading_publisher(list())
-  original_project <- economy_registry$economie$project
-  economy_registry$economie$project <- function(input) {
+  mutation_registry <- register_typed_reading_artifact_publisher(list(),"economie",publish_economy_reading_family)
+  original_project <- mutation_registry$economie$project
+  mutation_registry$economie$project <- function(input) {
     projected <- original_project(input)
     target <- which(projected$territory_type=="commune" & projected$territory_id=="35238")[[1L]]
     projected$top1_lq[[target]] <- projected$top1_lq[[target]] + 1
     projected
   }
   faulty_canonical <- economy_canonical
-  faulty_projection <- economy_registry$economie$project(economy_canonical)
+  faulty_projection <- mutation_registry$economie$project(economy_canonical)
   faulty_source <- economy_vintages[economy_vintages$id==economy_metadata$sources$eco_activites,,drop=FALSE]
   faulty_canonical$content_version <- scalar_content_version(list(facts=faulty_projection,
-    source=faulty_source,metadata=economy_metadata))
-  publish_registered_typed_reading(economy_registry,"economie",faulty_canonical,con)
+    source=faulty_source))
+  publish_registered_typed_reading(mutation_registry,"economie",faulty_canonical,con)
   red_log <- tempfile("economy-independent-red-")
   red_status <- system2(Sys.which("python"),c("-m","pytest","-q","-x",
     shQuote(paste0(normalizePath("../api/tests/integration/test_housing_economy_publisher_http.py",winslash="/",mustWork=TRUE),
@@ -451,7 +455,7 @@ tryCatch({
     stdout=red_log,stderr=red_log)
   red_output <- paste(readLines(red_log,warn=FALSE),collapse="\n")
   unlink(red_log)
-  publish_registered_typed_reading(register_economy_reading_publisher(list()),"economie",economy_canonical,con)
+  publish_registered_typed_reading(economy_registry,"economie",economy_canonical,con)
   if (!identical(red_status,1L) || !grepl('assert actual["activities"] == expected_activities',red_output,fixed=TRUE))
     stop("Independent economy HTTP mutation proof did not fail at canonical activity parity: ",red_output,call.=FALSE)
   cat("Independent canonical HTTP mutation proof RED observed; pytest's failed artifact comparison follows:\n",
