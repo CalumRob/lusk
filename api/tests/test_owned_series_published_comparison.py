@@ -44,6 +44,11 @@ class FixedComparisonConnection:
             return Cursor(rows=[descriptor])
         if "LEFT JOIN series_dataset_observation o" in sql:
             ids=params[1]
+            if "o.value" not in sql:
+                return Cursor(rows=[(self.dataset,self.indicator,tid,"measured",
+                    f"rev-{tid}-{axis}" if self.axis_kind=="declared_detail" else f"rev-{tid}",axis,None)
+                    for tid in ids for axis in ( ["M3",self.point] if self.axis_kind=="declared_detail"
+                        else (self.axes if self.stat=="mean" else [self.point]))])
             if self.axis_kind=="declared_detail":
                 axes=["M3",self.point]
                 return Cursor(rows=[(self.dataset,self.indicator,tid,10.0 if tid=="c1" else 5.0,
@@ -67,11 +72,11 @@ class FixedComparisonConnection:
             rows=[(axis,self.stat,7.5,count,count,0) for axis in axes]
             return Cursor(rows=rows[:1] if self.incomplete else rows)
         if "FROM ordered_series_comparison_territory" in sql:
-            member_ids=params[5]
-            if self.extra_member: member_ids=list(member_ids)+["c3"]
+            member_ids=[params[5]]
             axes=["M2","M3"] if self.axis_kind=="declared_detail" else self.axes
             return Cursor(rows=[(axis,tid,10.0 if tid in ("c1","e1") else 5.0,"measured",
-                1 if tid in ("c1","e1") else 2,1,len(member_ids)) for axis in axes for tid in member_ids])
+                (1 if tid in ("c1","e1") and params[4]=="commune" else None),1,
+                len(self.members)) for axis in axes for tid in member_ids])
         if "SELECT DISTINCT state_role" in sql:
             return Cursor(rows=[("M2",),("M3",)] if self.axis_kind=="declared_detail" else [])
         raise AssertionError(sql)
@@ -100,6 +105,12 @@ def test_all_canonical_owned_series_contexts_read_published_axis_and_territory_r
     assert markers[conn.dataset][1]=="series-v1"
     assert any("FROM ordered_series_comparison_group" in sql for sql,_ in conn.sql)
     assert any("FROM ordered_series_comparison_territory" in sql for sql,_ in conn.sql)
+    raw_rows=[sql for sql,_ in conn.sql if "LEFT JOIN series_dataset_observation o" in sql]
+    assert len(raw_rows)==1
+    assert "o.value" not in raw_rows[0]
+    published_territory=next((sql,params) for sql,params in conn.sql
+        if "FROM ordered_series_comparison_territory" in sql)
+    assert published_territory[1][5]=="c1"
 
 
 @pytest.mark.parametrize("stale",["missing","series","reference"])
