@@ -52,11 +52,12 @@ marks, scales and semantic content.
 
 ```powershell
 $qgis = 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat'
-$maps = 'E:\Lusk\pipeline\maps\production'
+$maps = (Resolve-Path .\pipeline\maps\production).Path
+# Inspect the source-derived inventory and validate a completed export; neither renders.
 & $qgis -B "$maps\run_aedar_static_maps.py" --plan-only --workers 4
 & $qgis -B "$maps\run_aedar_static_maps.py" --check-only --workers 4
-# Only when deliberately starting a new batch; context acquisition is explicit:
-& $qgis -B "$maps\run_aedar_static_maps.py" --workers 4 --acquire-context
+# Deliberate new generation only, after inputs/context are ready:
+& $qgis -B "$maps\run_aedar_static_maps.py" --workers 4
 ```
 
 Default local output: `output/aedar-static-full/`; artifacts remain in private
@@ -75,7 +76,7 @@ seed, not mutable concurrent writes. Changed inputs cannot be mixed into complet
 The native runner's candidate `inspection-refresh` scope is not a claim of full production
 approval, and the command has no upload path.
 
-### Stage the existing images; use the usual R2 uploader
+### Package existing bytes; approval and publication
 
 ```powershell
 & $qgis -B "$maps\package_aedar_maps.py" --source-dir '<completed-export-directory>'
@@ -99,7 +100,11 @@ its existing `output/.r2-upload-runtime` (already containing boto3), independent
 `-OutputDir` selects the AEDAR package; omit it to retain the incumbent network selection.
 After the usual approval is recorded, add `-Upload` to that same command. No separate
 SDK installation or QGIS launcher is needed for upload.
-The old `output/upload-network-maps.ps1` path remains a compatibility alias.
+The ignored local `output/upload-network-maps.ps1` is not maintained source and is
+not a supported route. Use the tracked `upload-maps.ps1` only. Exact-package AEDAR
+approval recording is being integrated from #777; until that reviewed interface
+lands, do not substitute the historical car recorder or network approval for it.
+Publication is intentionally not performed by these instructions.
 
 ### AEDAR inline legend metadata
 
@@ -271,6 +276,13 @@ including polygon holes; neither optimization simplifies the geometry or
 changes the approved rendering.
 
 ## AEDAR building-level exploration
+
+> **Historical explorations, not supported production launchers.** The old
+> `run_aedar_maps.py` / `run_aedar_loss_maps.py` outputs used point maps, pink
+> palettes and 95th-percentile caps. Their evidence is retained as historical
+> evidence and does not describe the owner-selected shared hex treatment above.
+> The filenames remain in the tree because current tests/helper imports and
+> historical contracts still call them; they are not the selected generation route.
 
 The AEDAR access-map exploration is an isolated map family. It uses the shared
 production runner, map-ground/context preparation, and exact inspection-plate
