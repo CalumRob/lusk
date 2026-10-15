@@ -1379,10 +1379,12 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
     published_scalar = (_published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
         cohort_type, members, territory_id, include_ties=True) if fixed_context and external else {})
     read_ids = list(dict.fromkeys([*members, territory_id]))
+    # Published adapters already supply complete comparison provenance. Only
+    # dynamic comparisons consume these separate facet source maps.
     external_sources, detail_sources = _selected_profile_comparison_sources(
         conn, external=[p["indicator"] for p in external],
         details=[p["indicator"] for p in details],
-        cohort_type=cohort_type, members=members)
+        cohort_type=cohort_type, members=members) if not fixed_context else ({}, {})
     scalar_rows = []
     if external and not fixed_context:
         scalar_rows = conn.execute(

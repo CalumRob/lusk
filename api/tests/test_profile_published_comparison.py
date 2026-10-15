@@ -70,6 +70,33 @@ def test_fixed_detail_uses_published_statistics_and_only_reads_focal_row():
     assert territory_read[1][-1] == "c1"
 
 
+def test_fixed_detail_caller_reads_required_mixed_vintage_provenance_once():
+    sources = [
+        ("housing_profile", "housing", "2024", "Housing", "2024", None, None),
+        ("housing_profile", "housing", "2025", "Housing", "2025", None, None),
+    ]
+
+    class Connection(DetailConnection):
+        def execute(self, sql, params=None):
+            if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
+                self.sql.append((sql, params))
+                return Cursor(rows=sources)
+            return super().execute(sql, params)
+
+    conn = Connection()
+    result = main._profile_comparison_results(conn, [PROFILE], ("c1", "c2"), "commune", "c1",
+        ("density_class", "A", "commune"))[0]
+    assert result["comparison_sources"] == [
+        {"source_id": "housing", "name": "Housing", "vintage_id": "2024",
+         "version": "2024", "reference_date": None, "publication_date": None},
+        {"source_id": "housing", "name": "Housing", "vintage_id": "2025",
+         "version": "2025", "reference_date": None, "publication_date": None},
+    ]
+    source_queries = [(sql, params) for sql, params in conn.sql if "JOIN profile_observation_source os" in sql]
+    assert len(source_queries) == 1
+    assert source_queries[0][1] == (["housing_profile"], "commune", ["c1", "c2"])
+
+
 def test_fixed_detail_published_comparison_read_work_is_bounded_as_cohort_grows():
     returned_rows = []
     for size in (2, 50, 1_202):
@@ -193,30 +220,42 @@ def test_theme_uses_fixed_context_for_profile_only_filtered_default(monkeypatch)
     assert calls == [("density_class", "A", "commune")]
 
 
-def test_dpe_profile_adapts_scalar_publication_and_keeps_metadata(monkeypatch):
+@pytest.mark.parametrize("with_detail", [False, True])
+def test_dpe_profile_adapts_scalar_publication_without_dynamic_source_reads(monkeypatch, with_detail):
     dpe = {**PROFILE, "indicator": "dpe_profile", "comparison_scalar": "part_passoires",
         "comparison_point": None, "required_scalar_version": "sv1"}
     scalar_rows = [("part_passoires", "Part passoires", "%", "low", "part_passoires", ["commune"], "sdv1")]
-    class Conn:
+    class Conn(DetailConnection):
         def execute(self, sql, params=None):
             if "FROM scalar_descriptor WHERE indicator_id=ANY" in sql:
                 return Cursor(rows=scalar_rows)
-            if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
-                return Cursor()
-            raise AssertionError(sql)
+            if "JOIN scalar_observation_source os" in sql:
+                pytest.fail("fixed DPE must use the scalar publication's provenance, not dynamic profile sources")
+            return super().execute(sql, params)
     scalar_calls = []
-    monkeypatch.setattr(main, "_published_profile_comparison_results", lambda *_a: pytest.fail("profile rows used for DPE"))
+    if not with_detail:
+        monkeypatch.setattr(main, "_published_profile_comparison_results", lambda *_a: pytest.fail("profile rows used for DPE"))
+    sources = [{"source_id": "ademe", "name": "ADEME", "vintage_id": "2025",
+        "version": "2025", "reference_date": None, "publication_date": None}]
     monkeypatch.setattr(main, "_published_scalar_comparison_results", lambda *a, **kw: scalar_calls.append(kw) or {
         "part_passoires": {"status": "available", "reason": None, "selected_member_count": 2,
             "eligible_count": 2, "missing_count": 0, "focal_value": 10, "median": 12,
-            "rank": 2, "rank_size": 2, "rank_ties": 1, "comparison_sources": []}})
-    result = main._profile_comparison_results(Conn(), [dpe], ("c1", "c2"), "commune", "c1",
-        ("density_class", "A", "commune"))[0]
+            "rank": 2, "rank_size": 2, "rank_ties": 1, "comparison_sources": sources}})
+    conn = Conn()
+    results = main._profile_comparison_results(conn, [dpe, PROFILE] if with_detail else [dpe],
+        ("c1", "c2"), "commune", "c1", ("density_class", "A", "commune"))
+    result = results[0]
     assert scalar_calls == [{"include_ties": True}]
     assert result["source_facet_label"] == "Part passoires"
     assert result["scalar_descriptor_version"] == "sdv1"
     assert result["rank_ties"] == 1
+    assert result["comparison_sources"] == sources
     assert "missing_count" not in result
+    assert len(results) == (2 if with_detail else 1)
+    if with_detail:
+        assert results[1]["indicator"] == "housing_profile"
+        assert results[1]["median"] == 20.0
+        assert len([sql for sql, _ in conn.sql if "JOIN profile_observation_source os" in sql]) == 1
 
 
 def test_profile_selection_resolves_exact_preset_but_custom_cohort_stays_dynamic(monkeypatch):
@@ -268,3 +307,55 @@ def test_custom_profile_comparison_reads_peer_facts_without_published_tables():
     assert result["rank"] == 3
     assert any("profile_observation o" in sql and "o.value" in sql for sql in conn.sql)
     assert not any("profile_comparison_" in sql for sql in conn.sql)
+
+
+def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages():
+    dpe = {**PROFILE, "indicator": "dpe_profile", "comparison_scalar": "part_passoires",
+        "comparison_point": None, "required_scalar_version": "scalar-v1"}
+    scalar = ("part_passoires", "Part passoires", "%", "low", "part_passoires", ["commune"], "sdv1")
+    lineage = [("ademe", "2024", "ADEME", "2024", None, None),
+        ("ademe", "2025", "ADEME", "2025", None, None)]
+
+    class Connection(DetailConnection):
+        def execute(self, sql, params=None):
+            self.sql.append((sql, params))
+            if "FROM scalar_descriptor WHERE indicator_id=ANY" in sql:
+                return Cursor(rows=[scalar])
+            if "to_regclass('scalar_comparison_publication')" in sql:
+                return Cursor(("scalar_comparison_publication",))
+            if "FROM scalar_comparison_publication p" in sql:
+                return Cursor(("pub", "scalar-v1", "ref-v1", 1, 2,
+                    "scalar-v1", "ref-v1", "ref-v1"))
+            if "FROM scalar_comparison_group" in sql:
+                return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0)])
+            if "FROM scalar_comparison_territory" in sql:
+                return Cursor(rows=[("part_passoires", 10.0, "measured", 1, 1, 2)])
+            if "FROM scalar_observation_source os" in sql:
+                return Cursor(rows=[("part_passoires", *source) for source in lineage])
+            if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
+                indicator = "dpe_profile" if "JOIN scalar_observation_source os" in sql else "housing_profile"
+                return Cursor(rows=[(indicator, *source) for source in lineage])
+            if "SELECT p.indicator_id,s.label" in sql:
+                return Cursor(rows=[("dpe_profile", *scalar[1:], "c1", 10.0, "measured"),
+                    ("dpe_profile", *scalar[1:], "c2", 14.0, "measured")])
+            if "SELECT d.indicator_id,d.comparison_detail" in sql:
+                return Cursor(rows=[("housing_profile", "old", None, "%", "stock", "pd1", False, "%")])
+            if "SELECT d.indicator_id,o.territory_id,o.value,o.status" in sql:
+                return Cursor(rows=[("housing_profile", "c1", 10.0, "measured"),
+                    ("housing_profile", "c2", 30.0, "measured")])
+            self.sql.pop()
+            return super().execute(sql, params)
+
+    fixed, dynamic = Connection(), Connection()
+    args = ([dpe, PROFILE], ("c1", "c2"), "commune", "c1")
+    published = main._profile_comparison_results(fixed, *args, fixed_context=("density_class", "A", "commune"))
+    custom = main._profile_comparison_results(dynamic, *args)
+    assert published == custom
+    for result in published:
+        assert [source["vintage_id"] for source in result["comparison_sources"]] == ["2024", "2025"]
+    assert len([sql for sql, _ in fixed.sql if "FROM scalar_observation_source os" in sql]) == 1
+    assert not any("JOIN scalar_observation_source os" in sql for sql, _ in fixed.sql)
+    assert len([sql for sql, _ in fixed.sql if "JOIN profile_observation_source os" in sql]) == 1
+    assert len([sql for sql, _ in dynamic.sql if "JOIN scalar_observation_source os" in sql]) == 1
+    assert len([sql for sql, _ in dynamic.sql if "JOIN profile_observation_source os" in sql]) == 1
+    assert not any("comparison_publication" in sql for sql, _ in dynamic.sql)
