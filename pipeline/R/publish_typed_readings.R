@@ -166,11 +166,14 @@ project_mobility_reading <- function(histories, vintages, metadata) {
   facts
 }
 
+mobility_reading_projection_content_version <- function(facts,descriptor)
+  scalar_content_version(list(facts=facts,descriptor=descriptor))
+
 mobility_reading_content_version <- function(histories,vintages,metadata) {
   facts <- project_mobility_reading(histories,vintages,metadata)
   contract <- attr(facts,"serving_contract")
   attr(facts,"serving_contract") <- NULL
-  scalar_content_version(list(facts=facts,descriptor=contract))
+  mobility_reading_projection_content_version(facts,contract)
 }
 
 # The canonical economy history already contains the producer-ranked top five.
@@ -557,10 +560,16 @@ publish_selected_reading_family <- function(con, facts, canonical, theme) {
   invisible(list(content_version=version,row_count=count,changed=TRUE))
 }
 
+# The Habitat reading is a selected-reading family member: its publisher is
+# named once so the registered publisher and the artifact entry point share it.
+publish_habitat_reading <- function(con, facts, canonical) {
+  publish_selected_reading_family(con, facts, canonical, "habitat")
+}
+
 register_habitat_reading_publisher <- function(registry) {
   register_typed_reading_publisher(registry,"habitat",
     function(input) project_habitat_reading(input$histories,input$vintages,input$metadata),
-    function(db,projection,input) publish_selected_reading_family(db,projection,input,"habitat"))
+    function(db,projection,input) publish_habitat_reading(db,projection,input))
 }
 
 register_economy_reading_publisher <- function(registry) {
@@ -661,14 +670,34 @@ publish_mobility_reading <- function(con, facts, canonical) {
 }
 
 publish_canonical_mobility_reading <- function(con, sortie="../public/data") {
-  history_path <- file.path(sortie,"histoires_mobilite.parquet")
-  vintage_path <- file.path(sortie,"vintages.parquet")
-  if(any(!file.exists(c(history_path,vintage_path))))
-    stop("Canonical Mobility history and vintage artifacts are required",call.=FALSE)
-  input <- list(histories=nanoparquet::read_parquet(history_path),
-    vintages=nanoparquet::read_parquet(vintage_path),metadata=lire_theme_metadata("mobilite"))
-  input$content_version <- mobility_reading_content_version(input$histories,input$vintages,input$metadata)
-  publish_registered_typed_reading(register_mobility_reading_publisher(list()),"mobilite",input,con)
+  # The published Mobility reading is the materialized serving grain: the theme
+  # Parquet history is never re-projected here, and a missing or stale artifact
+  # fails closed instead of falling back to it.
+  publication <- read_typed_reading_publication_from(sortie,"mobilite")
+  publish_typed_reading_publication(
+    register_typed_reading_artifact_publisher(list(),"mobilite",publish_mobility_reading),
+    "mobilite",publication,con)
+}
+
+# Production entry point for the canonical demographic reading. Like Mobility,
+# the reading is read back from its owner-scoped artifact and published by the
+# registered publisher; nothing is re-derived from the theme Parquet history.
+publish_canonical_demographic_reading <- function(con, sortie="../public/data") {
+  publication <- read_typed_reading_publication_from(sortie,"demographie")
+  publish_typed_reading_publication(
+    register_typed_reading_artifact_publisher(list(),"demographie",publish_demographic_reading),
+    "demographie",publication,con)
+}
+
+# Production entry point for the canonical Habitat reading. The DPE-derived
+# reading is read back from its owner-scoped artifact and published by the
+# registered publisher; the theme Parquet history is never re-projected, so a
+# missing or stale generation fails closed instead of falling back to it.
+publish_canonical_habitat_reading <- function(con, sortie="../public/data") {
+  publication <- read_typed_reading_publication_from(sortie,"habitat")
+  publish_typed_reading_publication(
+    register_typed_reading_artifact_publisher(list(),"habitat",publish_habitat_reading),
+    "habitat",publication,con)
 }
 
 # Production publication path: reuse the registered OCS-GE dataset publisher,
@@ -706,24 +735,29 @@ milieux_source_absence_declarations <- function(source_path, territories, vintag
 }
 
 publish_canonical_milieux_reading <- function(con, sortie="../public/data", conso_source_path=NULL) {
-  history_path <- file.path(sortie,"histoires_milieux.parquet")
-  indicator_path <- file.path(sortie,"indicateurs_milieux.parquet")
   vintage_path <- file.path(sortie,"vintages.parquet")
-  if(any(!file.exists(c(history_path,indicator_path,vintage_path))))
-    stop("Canonical Milieux history, indicator, and vintage artifacts are required",call.=FALSE)
-  histories <- nanoparquet::read_parquet(history_path)
-  canonical <- list(histories=histories,histoires=histories,
-    indicateurs=nanoparquet::read_parquet(indicator_path),vintages=nanoparquet::read_parquet(vintage_path),
-    territoires=nanoparquet::read_parquet(file.path(sortie,"territoires.parquet")),
-    metadata=lire_theme_metadata("milieux"))
-  if(!is.null(conso_source_path)) canonical$source_absences <- milieux_source_absence_declarations(conso_source_path,canonical$territoires,canonical$vintages,canonical$metadata)
-  population <- canonical$vintages[canonical$vintages$id=="serie_historique",,drop=FALSE]
-  if(nrow(population)!=1L || anyNA(population[c("source","version")]))
-    stop("Canonical Milieux population-history source clock is missing or ambiguous",call.=FALSE)
-  series_registry <- register_artif_m2m3_owned_publisher(list(),canonical$metadata)
-  series_result <- publish_registered_series(series_registry,"artif_par_habitant_owned",canonical,
+  territory_path <- file.path(sortie,"territoires.parquet")
+  if(any(!file.exists(c(vintage_path,territory_path))))
+    stop("Canonical Milieux vintage and territory artifacts are required",call.=FALSE)
+  # The territorial reference and the merged vintages are SHARED grains: the
+  # reading still validates its population clock and coverage against them.
+  vintages <- nanoparquet::read_parquet(vintage_path)
+  territories <- nanoparquet::read_parquet(territory_path)
+  # The OCS-GE state dataset is published from its own serving artifact: the
+  # reading is validated against that exact publication, never against a second
+  # projection of the theme indicator Parquet.
+  series_result <- publish_owned_series_projection(
+    read_owned_series_artifact(file.path(sortie,"series-serving","artif_par_habitant"),"artif_par_habitant"),
     owned_series_postgres_adapter(con))
-  reading_result <- publish_registered_typed_reading(register_milieux_reading_publisher(list()),"milieux",canonical,con)
+  publication <- read_typed_reading_publication_from(sortie,"milieux")
+  # CONSOENAF source absences stay a database-time projection of the source
+  # snapshot: the serving grain stores the selected reading only and the
+  # publisher re-attaches the declarations derived from the source file.
+  if(!is.null(conso_source_path)) attr(publication$reading,"source_absences") <-
+    milieux_source_absence_declarations(conso_source_path,territories,vintages,lire_theme_metadata("milieux"))
+  reading_result <- publish_typed_reading_publication(
+    register_typed_reading_artifact_publisher(list(),"milieux",publish_milieux_reading),
+    "milieux",publication,con)
   list(owned_series=series_result,reading=reading_result)
 }
 

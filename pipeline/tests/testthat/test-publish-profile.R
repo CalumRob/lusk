@@ -24,7 +24,7 @@ test_that("ADR-0039 comparison family inventory covers in-scope publisher famili
   expect_length(c("structure_age", details, "distribution_dpe"), 10L)
   root <- pkgload::pkg_path()
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(root, "..", "public", "data"))
-  habitat_rows <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_habitat.parquet"))
+  habitat_rows <- lire_indicateurs_commis("habitat", canonical_dir)
   habitat_canonical <- list(indicateurs=habitat_rows,
     territoires=unique(data.frame(territoire=as.character(habitat_rows$territoire),
       type=as.character(habitat_rows$type))))
@@ -329,7 +329,7 @@ test_that("the four Habitat detail profiles project canonical cells including re
   metadata <- lire_theme_metadata("habitat")
   root <- pkgload::pkg_path()
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(root, "..", "public", "data"))
-  rows <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_habitat.parquet"))
+  rows <- lire_indicateurs_commis("habitat", canonical_dir)
   territories <- unique(data.frame(territoire=as.character(rows$territoire), type=as.character(rows$type)))
   canonical <- list(indicateurs=rows, territoires=territories)
   for (id in c("mix_logements", "statut", "type", "age_du_bati")) {
@@ -593,6 +593,25 @@ test_that("registered publication keeps marker-bound immutable Parquet generatio
   expect_true(sum(file.exists(partial_paths)) == 1L)
   publish(changed_again)
   expect_true(all(file.exists(partial_paths)))
+})
+
+test_that("declared profile serving artifacts consume the same projection as the database publisher", {
+  metadata <- lire_theme_metadata("habitat")
+  payload <- payload_habitat()
+  root <- tempfile("profile-serving-"); dir.create(root)
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  binding <- strrep("1a", 16L)
+  published <- materialize_theme_profile_artifacts(payload, metadata, NULL, "habitat", root, binding)
+  expect_setequal(names(published), profile_serving_owners(metadata))
+  # The stored content version is exactly the version the database publisher
+  # recomputes from the same restored projection, so the artifact and the live
+  # marker can never diverge.
+  restored <- read_profile_serving_profiles(root, names(published), scalar_binding = binding)
+  for (owner in names(published))
+    expect_identical(published[[owner]], profile_content_version(restored[[owner]]))
+  # The verified scalar binding round-trips through the artifact directory.
+  cache_profile_scalar_binding(binding, root)
+  expect_identical(read_profile_scalar_binding(root), binding)
 })
 
 test_that("profile smoke cleanup removes only its owned schema in dependency order with RESTRICT", {

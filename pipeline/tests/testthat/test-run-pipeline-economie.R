@@ -144,6 +144,11 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
   payload <- run_pipeline(theme = theme_economie(), cache = cache, sortie = cible,
                           noms_epci_geo_api = NULL)
 
+  scalar_artifact <- read_scalar_serving_artifact(file.path(cible, "scalar-serving", "economie"))
+  expect_setequal(scalar_artifact$descriptors$indicator_id,
+                  c("effectifs_salaries", "chomage", "eco_activites"))
+  expect_true(all(scalar_artifact$facts$indicator_id %in% scalar_artifact$descriptors$indicator_id))
+
   # le payload complet du thème : les quatre tables du contrat
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
   expect_true(all(payload$indicateurs$theme == "economie"))
@@ -237,32 +242,43 @@ test_that("run_pipeline(theme = theme_economie()) : le run Économie complet, de
   # partagé apercu n'est NI écrit NI écrasé par un thème sans aperçu (seul
   # Démographie le peuple). Issue #311 : les métadonnées du thème partent
   # avec le run (theme_economie.json).
-  for (f in c("indicateurs_economie.parquet", "indicateurs_economie.json",
-              "histoires_economie.parquet", "histoires_economie.json",
+  for (f in c("indicateurs_economie.json", "histoires_economie.json",
               "territoires.parquet", "territoires.json",
               "vintages.parquet", "run-report.json",
               "theme_economie.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }
+  # #757 : le parquet par-thème est retiré pour les cinq thèmes non-mobilité
+  expect_false(file.exists(file.path(cible, "indicateurs_economie.parquet")))
+  expect_false(file.exists(file.path(cible, "histoires_economie.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.json")))
 
-  # le parquet relit exactement le payload publié
-  ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_economie.parquet"))
+  # #757 : les faits partent en JSON seul — le JSON relit exactement le payload
+  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_economie.json"))
   expect_equal(nrow(ind), nrow(payload$indicateurs))
   expect_equal(ind$value, payload$indicateurs$value)
-  hist <- nanoparquet::read_parquet(file.path(cible, "histoires_economie.parquet"))
+  hist <- jsonlite::fromJSON(file.path(cible, "histoires_economie.json"))
   expect_equal(hist$story_key, payload$histoires$story_key)
 
   # le contrat de non-dérive (ADR-0004, issue #131) : le JSON du payload
-  # Économie se relit colonne pour colonne comme le parquet — les colonnes
-  # entièrement NA (le `detail` d'un bloc de clés scalaires) et les colonnes
-  # multi-lignes des histoires incluses
-  for (nom in c("indicateurs_economie", "histoires_economie", "territoires")) {
-    pq <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
-    js <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
-    verifier_non_derivee(pq, js, nom)
-  }
+  # Économie se relit colonne pour colonne comme la table EN MÉMOIRE dont il
+  # est issu (#757 : plus de parquet par-thème) — les colonnes entièrement NA
+  # (le `detail` d'un bloc de clés scalaires) et les colonnes multi-lignes des
+  # histoires incluses ; la référence partagée reste parquet contre JSON.
+  verifier_projection_sur_table(
+    payload$indicateurs,
+    jsonlite::fromJSON(file.path(cible, "indicateurs_economie.json")),
+    "indicateurs_economie"
+  )
+  verifier_projection_sur_table(
+    payload$histoires,
+    jsonlite::fromJSON(file.path(cible, "histoires_economie.json")),
+    "histoires_economie"
+  )
+  pq <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
+  js <- jsonlite::fromJSON(file.path(cible, "territoires.json"))
+  verifier_non_derivee(pq, js, "territoires")
 
   # vintages.parquet : une ligne par source du manifeste Économie (les 5)
   vint <- nanoparquet::read_parquet(file.path(cible, "vintages.parquet"))
@@ -306,7 +322,8 @@ test_that("un re-run Économie écrase sans dupliquer (upsert, idempotence)", {
 
   # le payload EST l'état complet : relancer écrase, ne duplique jamais —
   # aucune ligne en double, les comptes du premier run sont conservés
-  ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_economie.parquet"))
+  # #757 : les faits Économie partent en JSON seul
+  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_economie.json"))
   ref <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
   # 9 territoires (4 communes + 2 EPCIs + 2 départements + la région) ×
   # 3 clés (effectifs_salaries · chomage · eco_activites) — une ligne chacun
@@ -358,6 +375,11 @@ test_that("vintages : un run Démographie puis un run Économie laissent l'union
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL)
       invisible(NULL),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
+    materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    # le payload stubé ci-dessus ne porte pas les faits de lecture sélectionnés :
+    # la matérialisation du grain de lecture est hors boucle, comme le scalar.
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     .package = "lusk"
   )
 

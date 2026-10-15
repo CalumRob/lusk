@@ -17,9 +17,9 @@ test_that("Milieux source binding validation uses three scoped reads and rejects
   DBI::dbExecute(con, paste0("SET search_path TO ", DBI::dbQuoteIdentifier(con,schema)))
 
   root <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR")
-  histories <- nanoparquet::read_parquet(file.path(root,"histoires_milieux.parquet"))
+  histories <- lire_histoires_commis("milieux", root)
   canonical <- list(histories=histories, histoires=histories,
-    indicateurs=nanoparquet::read_parquet(file.path(root,"indicateurs_milieux.parquet")),
+    indicateurs=lire_indicateurs_commis("milieux", root),
     vintages=nanoparquet::read_parquet(file.path(root,"vintages.parquet")),
     metadata=lire_theme_metadata("milieux"))
   facts <- register_milieux_reading_publisher(list())$milieux$project(canonical)

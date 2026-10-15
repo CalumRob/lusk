@@ -125,15 +125,38 @@ ecrire_parquet_si_modifie <- function(table, fichier) {
   nanoparquet::write_parquet(table, temporaire)
   remplacer_fichier_si_modifie(temporaire, fichier)
 }
+
+# Les thèmes dont les grains de service sont désormais servis par les artefacts
+# dédiés (scalaire `scalar-serving/`, séries `series-serving/`, profils
+# `profile-serving/`, lecture typée `typed-reading-serving/`) : leurs fichiers
+# de faits `indicateurs_<theme>.parquet` / `histoires_<theme>.parquet` ne sont
+# PLUS écrits par publish (#757). La Mobilité est l'EXCEPTION : elle conserve
+# ses parquets de thème (#619). La liste se DÉRIVE du registre canonique des
+# thèmes de données (THEMES_METADATA) plutôt que d'être recopiée : un thème
+# ajouté y entre automatiquement, et le test de complétude de l'inventaire
+# échoue si un thème canonique est oublié. Les projections JSON
+# (indicateurs_<theme>.json / histoires_<theme>.json) restent écrites — seule
+# la sérialisation PARQUET par thème est retirée.
+themes_parquet_retires <- function() {
+  setdiff(THEMES_METADATA, "mobilite")
+}
+
+# Prédicat documenté consommé par publish() : vrai pour un thème dont les
+# parquets de faits par-thème sont retirés (les cinq thèmes non-mobilité).
+theme_parquet_retire <- function(theme) {
+  length(theme) == 1L && !is.na(theme) && theme %in% themes_parquet_retires()
+}
 # publish ---------------------------------------------------------------------
 # Étape 5 : publication. Upsert du payload vers la cible. Deux backends :
 #   - "static" (défaut, issue #10, ADR-0004) : écrit les tables en parquet
 #     (l'artefact canonique téléchargeable) ET leurs projections JSON (ce que
 #     l'app Vue fetch), vers le home public du payload (public/data/ à la
 #     racine du dépôt — là où Pages et l'app lisent). Les deux sérialisations
-#     sortent des MÊMES tables en mémoire : un test lit le JSON en retour et
-#     prouve qu'il égale exactement le parquet (dérive impossible, pas juste
-#     improbable — ADR-0004).
+#     sortent des MÊMES tables en mémoire : le test d'égalité (test-publish.R)
+#     verrouille la non-dérive — pour les thèmes retirés (#757) il compare la
+#     projection JSON à la table en mémoire, pour la Mobilité il compare JSON
+#     et parquet l'un à l'autre (dérive impossible, pas juste improbable —
+#     ADR-0004).
 #   - "parquet" (local, comportement historique inchangé) : parquet seul.
 # Sémantique d'upsert documentée : le payload EST l'état complet des fiches —
 # écrire écrase, donc relancer ne duplique jamais. Le backend Supabase
@@ -148,6 +171,14 @@ ecrire_parquet_si_modifie <- function(table, fichier) {
 # run_pipeline). Le thème se lit sur le payload lui-même (la colonne `theme`
 # des deux tables de faits) : publish ne peut pas écrire un thème différent de
 # celui des données.
+# Issue #757 : la sérialisation PARQUET par thème est RETIRÉE pour les cinq
+# thèmes non-mobilité (theme_parquet_retire) — leurs grains de service sont
+# servis par les artefacts dédiés. Les projections JSON restent écrites pour
+# TOUS les thèmes (l'app Vue les fetch) ; seule la copie parquet par thème
+# disparaît. La Mobilité reste l'exception (#619) : elle écrit toujours
+# indicateurs_mobilite.parquet / histoires_mobilite.parquet. Les fichiers
+# partagés (territoires, apercu, vintages) et les parquets BPE dédiés ne sont
+# pas concernés.
 
 publish <- function(payload, cible = "public/data", backend = "static") {
   if (backend == "supabase") {
@@ -171,10 +202,18 @@ publish <- function(payload, cible = "public/data", backend = "static") {
   }
   theme <- themes[[1L]]
 
-  ecrire_parquet_si_modifie(payload$indicateurs,
-                             file.path(cible, paste0("indicateurs_", theme, ".parquet")))
-  ecrire_parquet_si_modifie(payload$histoires,
-                             file.path(cible, paste0("histoires_", theme, ".parquet")))
+  # Issue #757 : la sérialisation PARQUET par thème est retirée pour les cinq
+  # thèmes non-mobilité ; la Mobilité garde ses parquets de thème (#619).
+  if (!theme_parquet_retire(theme)) {
+    ecrire_parquet_si_modifie(
+      payload$indicateurs,
+      file.path(cible, paste0("indicateurs_", theme, ".parquet"))
+    )
+    ecrire_parquet_si_modifie(
+      payload$histoires,
+      file.path(cible, paste0("histoires_", theme, ".parquet"))
+    )
+  }
   ecrire_parquet_si_modifie(payload$territoires,
                              file.path(cible, "territoires.parquet"))
   # Issue #116 : apercu est un fichier PARTAGÉ (pas par-thème) — seule la

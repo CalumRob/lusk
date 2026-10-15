@@ -177,6 +177,27 @@ validate_declared_profile <- function(facts, descriptor, axes, eligible_territor
   invisible(facts)
 }
 
+# The declared-profile provenance contract is shared by the database publisher
+# and the offline serving artifact: every dense fact coordinate resolves to
+# exactly one declared source/vintage association, no more and no less.
+validate_profile_provenance <- function(profile) {
+  provenance <- profile$provenance
+  provenance_fields <- c("indicator_id", "territory_id", "detail_key", "sex_key", "source_id", "vintage_id")
+  fact_keys <- paste(profile$descriptor$indicator_id, profile$facts$territory_id, profile$facts$detail,
+    profile$facts$sex, sep="\r")
+  provenance_keys <- if (is.data.frame(provenance) && all(provenance_fields %in% names(provenance)))
+    paste(provenance$indicator_id, provenance$territory_id, provenance$detail_key, provenance$sex_key, sep="\r") else character()
+  if (!is.data.frame(provenance) || !setequal(names(provenance), provenance_fields) ||
+      anyNA(provenance[provenance_fields]) || anyDuplicated(provenance[provenance_fields]) ||
+      any(!provenance$source_id %in% profile$descriptor$source) ||
+      !setequal(fact_keys, provenance_keys) ||
+      any(!paste(provenance$source_id, provenance$vintage_id) %in%
+          paste(profile$vintages$source_id, profile$vintages$vintage_id)) ||
+      any(!provenance$source_id %in% profile$datasets$source_id))
+    stop("Invalid or incomplete profile provenance associations", call.=FALSE)
+  invisible(profile)
+}
+
 project_structure_age_profile <- function(indicateurs, metadata, territoires = NULL) {
   if (is.list(indicateurs) && !is.data.frame(indicateurs)) {
     territoires <- indicateurs$territoires
@@ -479,22 +500,9 @@ publish_registered_profile <- function(registry, name, canonical, db, additional
   ids <- vapply(profiles, function(p) p$descriptor$indicator_id, character(1))
   if (anyDuplicated(ids)) stop("Duplicate profile snapshot identity", call.=FALSE)
   for (profile in profiles) {
-  validate_declared_profile(profile$facts, profile$descriptor,
-    profile$axes, profile$eligible_territories)
-  provenance <- profile$provenance
-  provenance_fields <- c("indicator_id", "territory_id", "detail_key", "sex_key", "source_id", "vintage_id")
-  fact_keys <- paste(profile$descriptor$indicator_id, profile$facts$territory_id, profile$facts$detail,
-    profile$facts$sex, sep="\r")
-  provenance_keys <- if (is.data.frame(provenance) && all(provenance_fields %in% names(provenance)))
-    paste(provenance$indicator_id, provenance$territory_id, provenance$detail_key, provenance$sex_key, sep="\r") else character()
-  if (!is.data.frame(provenance) || !setequal(names(provenance), provenance_fields) ||
-      anyNA(provenance[provenance_fields]) || anyDuplicated(provenance[provenance_fields]) ||
-      any(!provenance$source_id %in% profile$descriptor$source) ||
-      !setequal(fact_keys, provenance_keys) ||
-      any(!paste(provenance$source_id, provenance$vintage_id) %in%
-          paste(profile$vintages$source_id, profile$vintages$vintage_id)) ||
-      any(!provenance$source_id %in% profile$datasets$source_id))
-    stop("Invalid or incomplete profile provenance associations", call.=FALSE)
+    validate_declared_profile(profile$facts, profile$descriptor,
+      profile$axes, profile$eligible_territories)
+    validate_profile_provenance(profile)
   }
   if (length(profiles) > 1L) projection <- list(profiles=profiles[order(ids)])
   version <- profile_content_version(projection)
@@ -663,30 +671,32 @@ publier_structure_age_profile_postgres <- function(payload, metadata) {
   }, finally = DBI::dbDisconnect(con))
 }
 
-# Explicit complete snapshot; not wired to a live target until publication is
-# authorised. scalar_version is the verified canonical shared scalar token.
-publier_declared_profiles_postgres <- function(demography, demography_metadata,
-    habitat, habitat_metadata, scalar_version, con = NULL, mobilite = NULL, mobilite_metadata = NULL,
-    mobilite_vintages = NULL, scalar_publication = NULL, output_directory = NULL) {
-  if (is.null(scalar_publication) || !identical(as.character(scalar_publication$content_version), as.character(scalar_version)))
-    stop("Profile publication requires the same-run scalar publication token", call.=FALSE)
+# Explicit complete snapshot from the offline declared-profile serving
+# artifacts. The verified scalar binding is recomputed from the same canonical
+# Parquet the shared scalar publisher consumes, so a stale local DPE generation
+# (its required_scalar_version no longer matching) fails closed here before any
+# database write. The DPE facet is still cross-checked against the live
+# scalar_observation marker inside publish_registered_profile().
+publier_declared_profiles_postgres <- function(artifact_directory, owners, con = NULL) {
+  if (!is.character(owners) || !length(owners) || anyNA(owners) || anyDuplicated(owners))
+    stop("Declared profile owners are required", call.=FALSE)
+  if (!"structure_age" %in% owners)
+    stop("Declared profile publication requires the structure_age owner", call.=FALSE)
+  scalar_binding <- profile_scalar_binding(artifact_directory)
+  profiles <- read_profile_serving_profiles(artifact_directory, owners, scalar_binding = scalar_binding)
   owned <- is.null(con)
   if (owned) con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
   if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
-  registry <- register_structure_age_profile_publisher(list(), demography_metadata)
-  additional <- list(project_dpe_profile(habitat, habitat_metadata, scalar_version))
-  housing_ids <- declared_detail_profile_ids(habitat_metadata)
-  additional <- c(additional, lapply(housing_ids, function(id)
-    project_declared_detail_profile(habitat, habitat_metadata, id)))
-  if (!is.null(mobilite) || !is.null(mobilite_metadata)) {
-    if (is.null(mobilite) || is.null(mobilite_metadata)) stop("Canonical mobility payload and metadata must be supplied together", call.=FALSE)
-    if (is.null(mobilite_vintages)) stop("Canonical Mobility source vintages must be supplied", call.=FALSE)
-    additional <- c(additional, lapply(declared_detail_profile_ids(mobilite_metadata),
-      function(id) project_mobility_profile(mobilite, mobilite_metadata, id, mobilite_vintages)))
-  }
-  adapter <- profile_postgres_adapter(con, output_directory)
-  result <- publish_registered_profile(registry, "structure_age", demography, adapter, additional_projections=additional)
-  result
+  # The artifacts are already projected and validated; the identity publisher
+  # exists only to reuse the shared marker and comparison publication
+  # transaction.
+  registry <- register_profile_publisher(list(), "structure_age",
+    function(projection) projection,
+    function(projection, db, version) db$replace(projection, version))
+  additional <- profiles[setdiff(names(profiles), "structure_age")]
+  adapter <- profile_postgres_adapter(con, artifact_directory)
+  publish_registered_profile(registry, "structure_age", profiles$structure_age, adapter,
+    additional_projections = additional)
 }
 
 declared_detail_profile_ids <- function(metadata) {

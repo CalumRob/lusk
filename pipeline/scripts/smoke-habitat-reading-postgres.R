@@ -29,7 +29,15 @@ tryCatch({
   scalar_publication <- publish_service_share_scalars(con,inputs$scalar_access,inputs$scalar_metadata,
     inputs$scalar_eligible_territories,additional_projections=scalar$additional_projections)
 
-  read_canonical <- function(name) nanoparquet::read_parquet(file.path(canonical_dir,paste0(name,".parquet")))
+  read_canonical <- function(name) {
+    # #757 : les parquets de faits par-thème des cinq thèmes non-mobilité ne
+    # sont plus écrits. La projection JSON du run dir reste servie et devient
+    # l'oracle (les fichiers partagés territoires/vintages et la Mobilité
+    # gardent leur parquet). Le parquet est préféré quand il existe encore.
+    parquet <- file.path(canonical_dir, paste0(name, ".parquet"))
+    if (file.exists(parquet)) return(nanoparquet::read_parquet(parquet))
+    jsonlite::fromJSON(file.path(canonical_dir, paste0(name, ".json")))
+  }
   territories <- read_canonical("territoires"); vintages <- read_canonical("vintages")
   demography_metadata <- lire_theme_metadata("demographie")
   habitat_metadata <- lire_theme_metadata("habitat")
@@ -39,23 +47,36 @@ tryCatch({
   mobility <- list(indicateurs=read_canonical("indicateurs_mobilite"),territoires=territories,source_vintages=vintages)
   scalar_version <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")[["content_version"]][[1L]]
   stopifnot(identical(scalar_publication$content_version, scalar_version))
-  profile <- publier_declared_profiles_postgres(demography,demography_metadata,habitat,habitat_metadata,
-    scalar_version,con=con,mobilite=mobility,mobilite_metadata=mobility_metadata,mobilite_vintages=vintages,
-    scalar_publication=scalar_publication)
+  # The declared-profile publisher consumes the run's owner-scoped serving
+  # generations: the canonical payloads this script already reads are
+  # materialized into the same run directory the pipeline writes them to, and
+  # the DPE facet is bound to the scalar version recomputed from that
+  # directory — the same value the shared scalar publication just committed.
+  if (!profile_scalar_binding_inputs_available(canonical_dir))
+    stop("The declared-profile publisher recomputes the DPE scalar binding from the run's canonical ",
+      "scalar inputs; the canonical data directory is missing a canonical Parquet or ",
+      "scalar-serving/<theme>/scalar-current.json", call.=FALSE)
+  profile_binding <- profile_scalar_binding(canonical_dir)
+  stopifnot(identical(profile_binding, scalar_version))
+  materialize_theme_profile_artifacts(demography,demography_metadata,NULL,"demographie",canonical_dir)
+  materialize_theme_profile_artifacts(habitat,habitat_metadata,NULL,"habitat",canonical_dir,profile_binding)
+  materialize_theme_profile_artifacts(mobility,mobility_metadata,vintages,"mobilite",canonical_dir)
+  owners <- unique(c(profile_serving_owners(demography_metadata),
+    profile_serving_owners(habitat_metadata),profile_serving_owners(mobility_metadata)))
+  profile <- publier_declared_profiles_postgres(canonical_dir,owners,con=con)
   stopifnot(profile$changed,
     DBI::dbGetQuery(con,"SELECT count(*) FROM profile_observation_source WHERE indicator_id='distribution_dpe'")[[1L]][[1L]]>0L)
 
+  # La projection JSON du thème (#757 : plus de parquet par-thème) reste
+  # l'oracle indépendant des lignes stockées.
   histories <- read_canonical("histoires_habitat")
-  history_path <- file.path(canonical_dir,"histoires_habitat.parquet")
-  indicator_path <- file.path(canonical_dir,"indicateurs_habitat.parquet")
   dpe_source <- vintages[vintages[["id"]]==habitat_metadata$sources$part_passoires,,drop=FALSE]
   stopifnot(nrow(histories)>0L,nrow(dpe_source)==1L)
-  content_version <- paste(unname(tools::md5sum(history_path)),dpe_source[["version"]][[1L]],
-    dpe_source[["date_reference"]][[1L]],dpe_source[["date_publication"]][[1L]],
-    unname(tools::md5sum(indicator_path)),sep="-")
-  canonical <- list(histories=histories,vintages=vintages,metadata=habitat_metadata,
-    content_version=content_version,linked_content_version=unname(tools::md5sum(indicator_path)))
-  registry <- register_habitat_reading_publisher(list())
+  # The published reading is the owner-scoped serving artifact: the theme
+  # projection above is only the independent oracle, never re-projected here.
+  publication <- read_typed_reading_publication_from(canonical_dir,"habitat")
+  canonical <- list(reading=publication$reading,content_version=publication$content_version)
+  registry <- register_typed_reading_artifact_publisher(list(),"habitat",publish_habitat_reading)
   result <- publish_registered_typed_reading(registry,"habitat",canonical,con)
   marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM selected_reading_publication WHERE theme_id='habitat'")
   generic_marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='selected_reading'")
@@ -104,11 +125,10 @@ tryCatch({
     DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM selected_reading_publication WHERE theme_id='habitat'")))
   stopifnot(identical(generic_marker,DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='selected_reading'")))
   failed_input <- canonical
-  measured <- project_habitat_reading(failed_input$histories,vintages,habitat_metadata)
-  measured_index <- which(measured$status=="measured")[[1L]]
-  source_index <- match(paste(measured$territory_id[[measured_index]],measured$territory_type[[measured_index]]),
-    paste(failed_input$histories[["territoire"]],failed_input$histories[["type"]]))
-  failed_input$histories[["part_passoires"]][[source_index]] <- 2
+  # Inject an out-of-range share into one measured row: the publisher must fail
+  # against the registered DPE scalar and roll back rather than store it.
+  measured_index <- which(failed_input$reading$status=="measured")[[1L]]
+  failed_input$reading$part_passoires[[measured_index]] <- 2
   failed_input$content_version <- paste0(canonical$content_version,"-rollback-probe")
   failed_publish <- try(publish_registered_typed_reading(registry,"habitat",failed_input,con),silent=TRUE)
   stopifnot(inherits(failed_publish,"try-error"),identical(marker,

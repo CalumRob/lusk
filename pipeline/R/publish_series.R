@@ -604,6 +604,116 @@ validate_owned_series_projection <- function(projection) {
   invisible(projection)
 }
 
+decode_owned_series_json <- function(value, field) {
+  if (field == "descriptor") jsonlite::fromJSON(jsonlite::toJSON(value, auto_unbox=TRUE), simplifyVector=TRUE)
+  else if (field == "excluded") {
+    decoded <- jsonlite::fromJSON(jsonlite::toJSON(value, auto_unbox=TRUE), simplifyVector=TRUE)
+    if (!is.null(decoded$region$keys) && !is.data.frame(decoded$region$keys))
+      decoded$region$keys <- as.data.frame(decoded$region$keys, stringsAsFactors=FALSE)
+    if (!is.null(decoded$not_eligible$rows) && !is.data.frame(decoded$not_eligible$rows)) {
+      rows <- decoded$not_eligible$rows
+      decoded$not_eligible$rows <- if (!length(rows)) data.frame(territoire=character(),
+        type=character(),detail=character(),stringsAsFactors=FALSE) else
+        as.data.frame(rows,stringsAsFactors=FALSE)
+    }
+    decoded
+  } else value
+}
+
+write_owned_series_artifact <- function(projection, directory, owner) {
+  validate_owned_series_projection(projection)
+  contract <- owned_series_artifact_fields(owner)
+  table_fields <- contract$table_fields
+  json_fields <- contract$json_fields
+  if (!identical(sort(names(projection)), sort(c(table_fields, json_fields))))
+    stop("Owned series projection does not match its registered artifact schema", call.=FALSE)
+  write_typed_artifact(projection, directory, "owned-series", owner,
+    table_fields, json_fields, scalar_content_version,
+    validate_owned_series_projection, decode_owned_series_json)
+}
+
+owned_series_artifact_fields <- function(owner) {
+  contracts <- list(
+    conso_enaf_annuel=list(table_fields=c("points","provenance","point_provenance"),
+      json_fields=c("dataset_id","descriptor")),
+    artif_par_habitant=list(table_fields=c("points","provenance","point_provenance"),
+      json_fields=c("dataset_id","descriptor","excluded")),
+    prix_m2=list(table_fields=c("points","provenance","point_provenance"),
+      json_fields=c("dataset_id","descriptor")),
+    raccordement_courbe=list(table_fields=c("points","provenance","point_provenance",
+      "named_reference","named_reference_descriptors","named_reference_provenance","vintage"),
+      json_fields=c("dataset_id","descriptor","dataset_name","excluded")))
+  contract <- contracts[[owner]]
+  if (is.null(contract)) stop("Unknown owned-series artifact family owner: ",owner,call.=FALSE)
+  contract
+}
+
+read_owned_series_artifact <- function(directory, owner) {
+  contract <- owned_series_artifact_fields(owner)
+  read_typed_artifact(directory, "owned-series", owner, contract$table_fields, contract$json_fields,
+    scalar_content_version, validate_owned_series_projection, decode_owned_series_json)
+}
+
+write_conso_enaf_reading_artifact <- function(projection, directory) {
+  validator <- function(value) {
+    validate_series_projection(value$points, value$descriptor)
+    if (!nrow(value$vintage) || !identical(as.character(value$vintage$vintage_id[[1L]]),
+        as.character(value$descriptor$vintage_id)))
+      stop("Annual reading vintage differs from descriptor", call.=FALSE)
+    invisible(value)
+  }
+  decode <- function(value, field) {
+    if (field == "descriptor") jsonlite::fromJSON(jsonlite::toJSON(value, auto_unbox=TRUE), simplifyVector=TRUE)
+    else if (field == "excluded") decode_owned_series_json(value, field)
+    else value
+  }
+  write_typed_artifact(projection, directory, "annual-series-reading", "conso_enaf_annuel",
+    c("points", "vintage"), c("descriptor", "dataset_name", "excluded", "canonical_vintage_source"),
+    scalar_content_version, validator, decode)
+}
+
+read_conso_enaf_reading_artifact <- function(directory) {
+  validator <- function(value) {
+    validate_series_projection(value$points, value$descriptor)
+    if (!nrow(value$vintage) || !identical(as.character(value$vintage$vintage_id[[1L]]),
+        as.character(value$descriptor$vintage_id)))
+      stop("Annual reading vintage differs from descriptor", call.=FALSE)
+    invisible(value)
+  }
+  read_typed_artifact(directory, "annual-series-reading", "conso_enaf_annuel",
+    c("points", "vintage"), c("descriptor", "dataset_name", "excluded", "canonical_vintage_source"),
+    scalar_content_version, validator, function(value, field) {
+      if (field == "descriptor") jsonlite::fromJSON(jsonlite::toJSON(value, auto_unbox=TRUE), simplifyVector=TRUE)
+      else if (field == "excluded") decode_owned_series_json(value, field)
+      else value
+    })
+}
+
+materialize_theme_series_artifacts <- function(payload, metadata, vintages, theme, directory) {
+  if (is.null(metadata$owned_series_routes)) return(invisible(NULL))
+  canonical <- list(indicateurs=payload$indicateurs, histoires=payload$histoires,
+    vintages=vintages, habitat=list(indicateurs=payload$indicateurs),
+    mobilite=list(indicateurs=payload$indicateurs))
+  if (identical(theme, "milieux")) {
+    reading <- project_conso_enaf_series_from_artifacts(payload$indicateurs, vintages, metadata)
+    write_conso_enaf_reading_artifact(reading,
+      file.path(directory, "series-reading", "conso_enaf_annuel"))
+    write_owned_series_artifact(owned_conso_enaf_projection(canonical, metadata),
+      file.path(directory, "series-serving", "conso_enaf_annuel"), "conso_enaf_annuel")
+    write_owned_series_artifact(project_artif_m2m3_projection(payload$indicateurs,
+      payload$histoires, vintages, metadata), file.path(directory, "series-serving", "artif_par_habitant"),
+      "artif_par_habitant")
+  } else if (identical(theme, "habitat")) {
+    write_owned_series_artifact(project_prix_m2_owned_series(payload$indicateurs,
+      vintages, metadata), file.path(directory, "series-serving", "prix_m2"), "prix_m2")
+  } else if (identical(theme, "mobilite") && "raccordement_courbe" %in% names(metadata$owned_series_routes)) {
+    write_owned_series_artifact(project_raccordement_owned_series(payload$indicateurs,
+      vintages, metadata, RECETTE_RACCORDEMENT_NATIONAL),
+      file.path(directory, "series-serving", "raccordement_courbe"), "raccordement_courbe")
+  }
+  invisible(NULL)
+}
+
 register_conso_enaf_owned_publisher <- function(registry, metadata) {
   registry <- register_series_publisher(registry, "conso_enaf_annuel_owned",
     project=function(canonical) owned_conso_enaf_projection(canonical, metadata),
@@ -819,14 +929,7 @@ project_conso_enaf_series_from_artifacts <- function(indicators, vintages, metad
 # Never invoke fixture builders or recompute canonical indicator values here.
 read_conso_enaf_series_projection <- function(sortie = "../public/data",
                                               metadata_path = "inst/extdata/theme-metadata/theme_milieux.json") {
-  paths <- c(indicators=file.path(sortie, "indicateurs_milieux.parquet"),
-    vintages=file.path(sortie, "vintages.parquet"), metadata=metadata_path)
-  read_stable_series_artifacts(paths, function(input) {
-    indicators <- nanoparquet::read_parquet(input[["indicators"]])
-    vintages <- nanoparquet::read_parquet(input[["vintages"]])
-    metadata <- jsonlite::read_json(input[["metadata"]], simplifyVector=FALSE)
-    project_conso_enaf_series_from_artifacts(indicators, vintages, metadata)
-  })
+  read_conso_enaf_reading_artifact(file.path(sortie, "series-reading", "conso_enaf_annuel"))
 }
 
 # Read one fingerprinted snapshot for the registered owned projections across
@@ -862,52 +965,39 @@ read_owned_series_projections <- function(sortie="../public/data",
       if(identical(selected_metadata_path,mobility_metadata_path)) selected_metadata else NULL)
     if (!identical(resolved,owner)) stop("Owned-series selector does not match its metadata owner",call.=FALSE)
   }
-  required <- switch(owner %||% "all",conso_enaf_annuel=c("indicators","vintages","metadata"),
-    artif_par_habitant=c("indicators","histories","vintages","metadata"),
-    prix_m2=c("habitat_indicators","vintages","habitat_metadata"),
-    raccordement_courbe=c("indicators","mobility_indicators","vintages","mobility_metadata"),
-    all=c("indicators","histories","habitat_indicators","vintages","metadata","habitat_metadata"))
-  all_paths <- c(indicators=file.path(sortie,"indicateurs_milieux.parquet"), histories=file.path(sortie,"histoires_milieux.parquet"),
-    habitat_indicators=file.path(sortie,"indicateurs_habitat.parquet"), vintages=file.path(sortie,"vintages.parquet"),
-    metadata=metadata_path, habitat_metadata=habitat_metadata_path,
-    mobility_indicators=file.path(sortie,"indicateurs_mobilite.parquet"),mobility_metadata=mobility_metadata_path)
-  paths <- all_paths[required]
-  mobility_pair <- c(mobility_indicators=all_paths[["mobility_indicators"]],mobility_metadata=mobility_metadata_path)
-  if (is.null(owner) && any(file.exists(mobility_pair))) {
-    if (!all(file.exists(mobility_pair))) stop("Owned-series all-check requires both mobility indicators and mobility metadata",call.=FALSE)
-    paths <- c(paths,mobility_pair)
+  if (is.null(owner)) {
+    owner_metadata <- list(
+      jsonlite::read_json(metadata_path,simplifyVector=FALSE),
+      jsonlite::read_json(habitat_metadata_path,simplifyVector=FALSE),
+      jsonlite::read_json(mobility_metadata_path,simplifyVector=FALSE))
+    declared_routes <- unique(unlist(lapply(owner_metadata, function(x)
+      names(x$owned_series_routes %||% list())), use.names=FALSE))
+    unknown_routes <- setdiff(declared_routes,names(owner_file))
+    if (length(unknown_routes)) stop("No registered owned-series artifact schema for route(s): ",
+      paste(unknown_routes,collapse=", "),call.=FALSE)
+    owners <- names(owner_file)[names(owner_file) %in% declared_routes]
+  } else owners <- owner
+  result_names <- c(conso_enaf_annuel="conso_enaf_annuel_owned",
+    artif_par_habitant="artif_par_habitant_owned", prix_m2="prix_m2_owned",
+    raccordement_courbe="raccordement_courbe_owned")
+  projections <- lapply(owners, function(id)
+    read_owned_series_artifact(file.path(sortie, "series-serving", id), id))
+  names(projections) <- unname(result_names[owners])
+  if ("conso_enaf_annuel" %in% owners) {
+    annual <- read_conso_enaf_reading_artifact(file.path(sortie,"series-reading","conso_enaf_annuel"))
+    attr(projections,"excluded") <- list(conso_enaf_annuel_owned=annual$excluded)
   }
-  read_stable_series_artifacts(paths,function(input) {
-   canonical <- list(indicateurs=if("indicators" %in% names(input)) nanoparquet::read_parquet(input[["indicators"]]) else data.frame(),
-     histoires=if("histories" %in% names(input)) nanoparquet::read_parquet(input[["histories"]]) else data.frame(),
-     habitat=list(indicateurs=if("habitat_indicators" %in% names(input)) nanoparquet::read_parquet(input[["habitat_indicators"]]) else data.frame()),
-     mobilite=list(indicateurs=if("mobility_indicators" %in% names(input)) nanoparquet::read_parquet(input[["mobility_indicators"]]) else data.frame()),
-     vintages=nanoparquet::read_parquet(input[["vintages"]]))
-      metadata <- if("metadata" %in% names(input)) jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE) else if(is.null(owner)) jsonlite::read_json(metadata_path,simplifyVector=FALSE) else selected_metadata
-      habitat_metadata <- if("habitat_metadata" %in% names(input)) jsonlite::read_json(input[["habitat_metadata"]],simplifyVector=FALSE) else if(is.null(owner)) jsonlite::read_json(habitat_metadata_path,simplifyVector=FALSE) else selected_metadata
-       registry <- if(is.null(owner)) register_owned_series_publishers(list(),metadata,habitat_metadata) else switch(owner,
-         conso_enaf_annuel=register_conso_enaf_owned_publisher(list(),selected_metadata),
-         artif_par_habitant=register_artif_m2m3_owned_publisher(list(),selected_metadata),
-         prix_m2=register_prix_m2_owned_publisher(list(),selected_metadata),list())
-       mobility_metadata <- if("mobility_metadata" %in% names(input)) jsonlite::read_json(input[["mobility_metadata"]],simplifyVector=FALSE) else if(identical(owner,"raccordement_courbe")) selected_metadata else NULL
-      if(!is.null(mobility_metadata)) registry <- register_raccordement_owned_publisher(registry,mobility_metadata)
-     if (!is.null(indicator_id)) {
-       selected <- names(registry)[vapply(registry,function(p) identical(p$owner_id,owner),logical(1))]
-       registry <- registry[selected]
-       if (!length(registry)) stop("Unknown owned-series indicator_id: ",indicator_id,call.=FALSE)
-     }
-     projections <- lapply(registry,function(publisher) publisher$project(canonical))
-    lapply(projections,validate_owned_series_projection)
-    # Reporting-only exclusion metadata belongs to the reader result, not the
-    # owned projection whose serialized identity is the publication version.
-     if (is.null(owner) || identical(owner,"conso_enaf_annuel")) {
-       serving_metadata <- metadata
-       serving_metadata$indicator_pages$conso_enaf_annuel$levels <- projections$conso_enaf_annuel_owned$descriptor$allowed_levels
-       enaf <- project_conso_enaf_series_from_artifacts(canonical$indicateurs,canonical$vintages,serving_metadata)
-       attr(projections,"excluded") <- list(conso_enaf_annuel_owned=enaf$excluded)
-     }
-    projections
-  })
+  if (!is.null(indicator_id)) {
+    expected_name <- unname(result_names[[owner]])
+    # `[` drops non-names attributes, so the reporting-only `excluded` marker
+    # must be carried across the scoped subset explicitly. It stays an
+    # attribute of the projection list, never part of the owned projection
+    # content, so the content version is untouched.
+    excluded <- attr(projections,"excluded")
+    projections <- projections[expected_name]
+    if (!is.null(excluded)) attr(projections,"excluded") <- excluded
+  }
+  projections
 }
 
 require_owned_series_publish_opt_in <- function(value=Sys.getenv("LUSK_PUBLISH_OWNED_SERIES",unset="")) {

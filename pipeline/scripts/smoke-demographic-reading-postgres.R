@@ -32,7 +32,7 @@ tryCatch({
     CHECK(table_name NOT IN ('scalar_observation','declared_profile','ordered_series') OR reference_content_version IS NOT NULL)")
   read_canonical <- function(name) nanoparquet::read_parquet(file.path(canonical_dir,paste0(name,".parquet")))
   territories <- read_canonical("territoires"); vintages <- read_canonical("vintages")
-  typed_path <- file.path(canonical_dir,"histoires_demographie.parquet")
+  # The theme Parquet history stays the independent oracle of the stored rows.
   histories <- read_canonical("histoires_demographie")
   stopifnot(nrow(histories)==1268L)
   reference <- preparer_tables_service(canonical_dir)$tables$territory_reference
@@ -48,14 +48,11 @@ tryCatch({
   DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$1,$2,$3,$4)",
     params=list(source$id[[1L]],source$version[[1L]],source$date_reference[[1L]],source$date_publication[[1L]]))
   demographic_metadata <- lire_theme_metadata("demographie")
-  rate_unit <- sub("^.*\\(([^()]*)\\)$","\\1",demographic_metadata$param_labels$taux_solde_naturel)
-  canonical <- list(histories=histories,territories=territories,vintages=vintages,
-    metadata=demographic_metadata,content_version=paste(unname(tools::md5sum(typed_path)),
-      source$source[[1L]],source$version[[1L]],source$date_reference[[1L]],
-      source$date_publication[[1L]],rate_unit,sep="-"))
-  registry <- register_typed_reading_publisher(list(),"demographie",
-    function(input) project_demographic_reading(input$histories,input$territories,input$vintages,input$metadata),
-    function(db,projection,input) publish_demographic_reading(db,projection,input))
+  # The published reading is the owner-scoped serving artifact: the theme Parquet
+  # history above is only the independent oracle, never re-projected here.
+  publication <- read_typed_reading_publication_from(canonical_dir,"demographie")
+  canonical <- list(reading=publication$reading,content_version=publication$content_version)
+  registry <- register_typed_reading_artifact_publisher(list(),"demographie",publish_demographic_reading)
   result <- publish_registered_typed_reading(registry,"demographie",canonical,con)
   marker_before_retry <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='demographic_typed_reading'")
   retry <- publish_registered_typed_reading(registry,"demographie",canonical,con)
@@ -64,7 +61,7 @@ tryCatch({
   actual <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,story_key,salience_reason,periode,
     solde_naturel,solde_migratoire,taux_solde_naturel,taux_solde_migratoire,classification,status
     FROM demographic_typed_reading ORDER BY territory_type,territory_id,groupe")
-  expected <- project_demographic_reading(histories,territories,vintages,canonical$metadata)
+  expected <- project_demographic_reading(histories,territories,vintages,demographic_metadata)
   expected <- expected[order(expected$territory_type,expected$territory_id,expected$groupe),
     names(actual),drop=FALSE]; rownames(actual)<-rownames(expected)<-NULL
   stopifnot(isTRUE(all.equal(actual,expected,check.attributes=FALSE)),result$row_count==1268L)

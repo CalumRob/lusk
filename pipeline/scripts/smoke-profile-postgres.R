@@ -7,11 +7,36 @@ stopifnot(all(vapply(config, nzchar, logical(1))), grepl("^lusk_it_[A-Za-z0-9_]+
   grepl("^[A-Za-z0-9_.:-]+$", config$HOST), grepl("^[0-9]+$", config$PORT))
 if (!requireNamespace("DBI", quietly=TRUE) || !requireNamespace("RPostgres", quietly=TRUE))
   stop("DBI and RPostgres are required")
+# The published declared-profile snapshot is an explicit complete snapshot of
+# the owner-scoped serving generations, not an in-memory payload: the publisher
+# reads profile-serving/<owner>/ generations from an artifact directory and
+# recomputes the verified DPE scalar binding from the canonical scalar inputs
+# that directory carries. This script's profiles are in-memory fixtures, so the
+# directories the binding is recomputed from are copied out of the local run
+# into a private directory, where the fixture generations are then materialized.
+# The published tree is never written to.
+scalar_themes <- c("economie","demographie","mobilite","habitat")
+canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path("..","public","data"))
+canonical_parquets <- file.path(canonical_dir, paste0(c("territoires","indicateurs_mobilite",
+  "vintages","rampe_acces_batiments","distribution_acces_batiments"), ".parquet"))
+canonical_scalars <- file.path(canonical_dir, "scalar-serving", scalar_themes)
+missing <- c(canonical_parquets, canonical_scalars)[!file.exists(c(canonical_parquets, canonical_scalars))]
+if (length(missing))
+  stop("The declared-profile publisher recomputes the DPE scalar binding from the canonical ",
+    "scalar inputs of a local run directory; set LUSK_TEST_CANONICAL_DATA_DIR to such a ",
+    "directory (missing: ", paste(basename(missing), collapse=", "), ")", call.=FALSE)
 con <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST, port=as.integer(config$PORT),
   dbname=config$DATABASE, user=config$USER)
 schema <- paste0("profile_it_", Sys.getpid())
 created <- FALSE
+artifact_directory <- NULL
 tryCatch({
+  artifact_directory <- tempfile("profile-artifacts-")
+  dir.create(file.path(artifact_directory, "scalar-serving"), recursive=TRUE)
+  file.copy(canonical_parquets, artifact_directory)
+  file.copy(canonical_scalars, file.path(artifact_directory, "scalar-serving"), recursive=TRUE)
+  if (!profile_scalar_binding_inputs_available(artifact_directory))
+    stop("Declared profile scalar inputs are incomplete under ", artifact_directory, call.=FALSE)
   DBI::dbExecute(con,paste0("CREATE SCHEMA ",DBI::dbQuoteIdentifier(con,schema)))
   created <- TRUE
   cat("Profile smoke schema created:", schema, "\n")
@@ -41,9 +66,16 @@ tryCatch({
   reference_version <- "profile-reference-fixture-v1"
   DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference',$1,$2)",
     params=list(reference_version,nrow(reference)))
-  registry <- register_structure_age_profile_publisher(list(),metadata)
-  adapter <- profile_postgres_adapter(con)
-  first <- publish_registered_profile(registry,"structure_age",payload,adapter)
+  # The verified scalar binding the DPE generation is pinned to is recomputed
+  # from the artifact directory's canonical scalar inputs, exactly as the
+  # publisher recomputes it.
+  scalar_binding <- profile_scalar_binding(artifact_directory)
+  stopifnot(grepl("^[a-f0-9]{32}$", scalar_binding))
+  publish_structure_age <- function(canonical) {
+    materialize_theme_profile_artifacts(canonical,metadata,NULL,"demographie",artifact_directory)
+    publier_declared_profiles_postgres(artifact_directory,"structure_age",con=con)
+  }
+  first <- publish_structure_age(payload)
   facts_before <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,detail_key,sex_key,value,status FROM profile_observation ORDER BY territory_type,territory_id,detail_key,sex_key")
   marker_before <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='declared_profile'")
   stopifnot(first$changed, marker_before$row_count[[1L]]==nrow(projection$facts),
@@ -54,12 +86,15 @@ tryCatch({
   changed <- payload
   changed$indicateurs$value[which(changed$indicateurs$key=="structure_age")[[1L]]] <-
     changed$indicateurs$value[which(changed$indicateurs$key=="structure_age")[[1L]]] + 0.001
-  failed <- try(publish_registered_profile(registry,"structure_age",changed,adapter),silent=TRUE)
+  failed <- try(publish_structure_age(changed),silent=TRUE)
   stopifnot(inherits(failed,"try-error"),
     identical(marker_before,DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='declared_profile'")),
     identical(facts_before,DBI::dbGetQuery(con,"SELECT territory_id,territory_type,detail_key,sex_key,value,status FROM profile_observation ORDER BY territory_type,territory_id,detail_key,sex_key")))
   cat("Profile PostgreSQL publication, lineage, independent marker, and rollback: PASS\n")
   DBI::dbExecute(con, "DROP TRIGGER reject_profile ON profile_observation")
+  # The failed generation is outside the database transaction; republish the
+  # unchanged one so the combined snapshot below starts from the prior facts.
+  publish_structure_age(payload)
   habitat_metadata <- lire_theme_metadata("habitat")
   input <- data.frame(code=territories$territory_id, dpe_n=100,
     dpe_share_A=.1, dpe_share_B=.1, dpe_share_C=.1, dpe_share_D=.1,
@@ -89,7 +124,6 @@ tryCatch({
       stringsAsFactors=FALSE)))
   }))
   habitat <- list(indicateurs=rbind(dpe_rows, housing_rows), territoires=payload$territoires)
-  scalar_version <- "dpe-scalar-fixture-v1"
   DBI::dbWithTransaction(con, {
     DBI::dbExecute(con, "INSERT INTO source_dataset VALUES ('dpe_22','DPE fixture')")
     DBI::dbExecute(con, "INSERT INTO source_vintage VALUES ('dpe_22','2024/2024-01-01','2024','2024-01-01','2026-08-06')")
@@ -99,11 +133,14 @@ tryCatch({
       DBI::dbExecute(con, "INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('part_passoires',$1,$2,.5,'measured')", params=unname(as.list(territories[i,])))
       DBI::dbExecute(con, "INSERT INTO scalar_observation_source VALUES ('part_passoires',$1,'dpe_22','2024/2024-01-01')", params=list(territories$territory_id[[i]]))
     }
-    DBI::dbExecute(con, "INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation',$1,$2,$3)", params=list(scalar_version,nrow(territories),reference_version))
+    DBI::dbExecute(con, "INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation',$1,$2,$3)", params=list(scalar_binding,nrow(territories),reference_version))
   })
+  # The live scalar marker the DPE facet is cross-checked against carries the
+  # binding recomputed from the artifact directory's canonical scalar inputs,
+  # exactly as the pipeline's own scalar publication commits it.
   scalar_publication <- DBI::dbGetQuery(con,
     "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")
-  stopifnot(identical(scalar_publication$content_version[[1L]], scalar_version))
+  stopifnot(identical(scalar_publication$content_version[[1L]], scalar_binding))
   mobility_metadata <- lire_theme_metadata("mobilite")
   mobility_territories <- data.frame(territoire=payload$territoires$territoire,
     type=payload$territoires$type, stringsAsFactors=FALSE)
@@ -127,9 +164,15 @@ tryCatch({
       data.frame(id=source, source=mobility_metadata$source_records[[source]]$dataset, version=v$version,
         date_reference=v$dateReference, date_publication=v$datePublication, stringsAsFactors=FALSE)
     }))
-  combined <- publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages,
-    scalar_publication=scalar_publication)
+  # Materialize the complete owner-scoped serving snapshot the publisher reads
+  # back: the DPE generation under the verified binding, the Habitat detail
+  # families, and the Mobility profiles against their merged vintage universe.
+  materialize_theme_profile_artifacts(habitat,habitat_metadata,NULL,"habitat",artifact_directory,scalar_binding)
+  materialize_theme_profile_artifacts(mobility_payload,mobility_metadata,mobility_vintages,"mobilite",
+    artifact_directory)
+  owners <- unique(c(profile_serving_owners(metadata),profile_serving_owners(habitat_metadata),
+    profile_serving_owners(mobility_metadata)))
+  combined <- publier_declared_profiles_postgres(artifact_directory, owners, con=con)
   read_user <- Sys.getenv("LUSK_TEST_READ_USER", unset="")
   read_dsn <- Sys.getenv("LUSK_TEST_READ_DSN", unset="")
   if (nzchar(read_user) || nzchar(read_dsn)) {
@@ -181,9 +224,7 @@ tryCatch({
     assert_http_parity()
   } else cat("Publisher-to-HTTP TestClient parity: SKIPPED (explicit read-only test DSN/role not configured)\n")
   age_after <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,detail_key,sex_key,value,status FROM profile_observation WHERE indicator_id='structure_age' ORDER BY territory_type,territory_id,detail_key,sex_key")
-  no_op <- publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages,
-    scalar_publication=scalar_publication)
+  no_op <- publier_declared_profiles_postgres(artifact_directory, owners, con=con)
   stopifnot(combined$changed, identical(age_after,facts_before),
     DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_axis WHERE indicator_id='distribution_dpe' AND axis_name='sex'")$n[[1L]]==0,
      DBI::dbGetQuery(con, "SELECT count(*) AS n FROM profile_observation WHERE indicator_id='distribution_dpe'")$n[[1L]]==nrow(dpe_rows),
@@ -203,23 +244,39 @@ tryCatch({
   DBI::dbExecute(con, "CREATE TRIGGER reject_combined_profile BEFORE INSERT ON profile_observation FOR EACH ROW EXECUTE FUNCTION reject_combined_profile_insert()")
   changed_mobility <- mobility_payload
   changed_mobility$indicateurs$value[[1L]] <- changed_mobility$indicateurs$value[[1L]] + 1
-  failed_combined <- try(publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=changed_mobility, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages,
-    scalar_publication=scalar_publication), silent=TRUE)
+  materialize_theme_profile_artifacts(changed_mobility,mobility_metadata,mobility_vintages,"mobilite",
+    artifact_directory)
+  failed_combined <- try(publier_declared_profiles_postgres(artifact_directory, owners, con=con), silent=TRUE)
   DBI::dbExecute(con, "DROP TRIGGER reject_combined_profile ON profile_observation")
   DBI::dbExecute(con, "DROP FUNCTION reject_combined_profile_insert()")
   stopifnot(inherits(failed_combined, "try-error"),
     identical(combined_marker, DBI::dbGetQuery(con, "SELECT * FROM table_publication WHERE table_name='declared_profile'")),
     identical(combined_facts, DBI::dbGetQuery(con, "SELECT indicator_id,territory_id,territory_type,detail_key,sex_key,value,status FROM profile_observation ORDER BY indicator_id,territory_type,territory_id,detail_key,sex_key")))
+  # The failed Mobility generation is outside the database transaction; restore
+  # the committed one so the retry below republishes the prior facts.
+  materialize_theme_profile_artifacts(mobility_payload,mobility_metadata,mobility_vintages,"mobilite",
+    artifact_directory)
   if (exists("assert_http_parity")) assert_http_parity()
-  age_only <- try(publish_registered_profile(registry,"structure_age",payload,adapter),silent=TRUE)
+  # A structure_age-only snapshot cannot be published over a complete one: the
+  # replacement would discard the DPE, Habitat and Mobility profiles.
+  age_only <- try(publier_declared_profiles_postgres(artifact_directory, "structure_age", con=con), silent=TRUE)
   stopifnot(inherits(age_only,"try-error"),
+    grepl("discard an existing profile", conditionMessage(attr(age_only,"condition"))),
     identical(combined_marker,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='declared_profile'")))
   DBI::dbExecute(con, "UPDATE table_publication SET content_version='stale-scalar' WHERE table_name='scalar_observation'")
-  stale <- try(publier_declared_profiles_postgres(payload, metadata, habitat, habitat_metadata, scalar_version,
-    con=con, mobilite=mobility_payload, mobilite_metadata=mobility_metadata, mobilite_vintages=mobility_vintages,
-    scalar_publication=scalar_publication),silent=TRUE)
+  stale <- try(publier_declared_profiles_postgres(artifact_directory, owners, con=con),silent=TRUE)
   stopifnot(inherits(stale,"try-error"),
+    identical(combined_marker,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='declared_profile'")))
+  DBI::dbExecute(con, "UPDATE table_publication SET content_version=$1 WHERE table_name='scalar_observation'",
+    params=list(scalar_binding))
+  # A stale local DPE generation — materialized under a binding the canonical
+  # scalar inputs no longer recompute — fails closed while reading the
+  # generation, before any database write.
+  materialize_theme_profile_artifacts(habitat,habitat_metadata,NULL,"habitat",artifact_directory,strrep("ff",16L))
+  stale_generation <- try(publier_declared_profiles_postgres(artifact_directory, owners, con=con),silent=TRUE)
+  stopifnot(inherits(stale_generation,"try-error"),
+    grepl("scalar binding is missing, stale or incompatible",
+      conditionMessage(attr(stale_generation,"condition"))),
     identical(combined_marker,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='declared_profile'")))
   cat("DPE complete-snapshot entrypoint, structure-age preservation, no fake axis, retry and scalar pin: PASS\n")
 },finally={
@@ -234,4 +291,5 @@ tryCatch({
   }
   tryCatch(DBI::dbDisconnect(con), error=function(e)
     warning("Could not disconnect profile smoke DB connection: ", conditionMessage(e), call.=FALSE))
+  if (!is.null(artifact_directory)) unlink(artifact_directory, recursive=TRUE)
 })

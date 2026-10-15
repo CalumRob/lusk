@@ -82,14 +82,17 @@ identity. Selected-theme scalar reads exclude legacy NULL identities. Fresh
 `schema.sql` requires a valid theme key. This additive migration does not activate
 a fiche consumer or authorize any live database application.
 
-The OCS-GE publisher requires canonical `indicateurs_milieux.parquet` to carry
-producer-emitted `state_role` and `source_components` columns. A stale artifact
-is rejected before the smoke script opens its disposable schema; do not
-reconstruct lineage by parsing `periode_artif`. Regenerate artifacts through the
-normal pipeline using its own data copy, then run focused fixtures and the
-documented slow byte-identical targets parity audit before treating the producer
-change as campaign-ready. A worktree without `pipeline/data/raw` cannot perform
-the final real-artifact/API rehearsal.
+The OCS-GE publisher requires the canonical Milieux series artifact
+(`series-serving/artif_par_habitant/`, materialized from the theme payload)
+to carry producer-emitted `state_role` and `source_components` lineage. A
+stale artifact is rejected before the smoke script opens its disposable
+schema; do not reconstruct lineage by parsing `periode_artif`. Regenerate
+artifacts through the normal pipeline using its own data copy, then run
+focused fixtures and the documented slow byte-identical targets parity audit
+before treating the producer change as campaign-ready. A worktree without
+`pipeline/data/raw` cannot perform the final real-artifact/API rehearsal.
+(#757 retired the theme-grouped `indicateurs_milieux.parquet`; the typed
+serving artifacts under `public/data/` are the canonical inputs now.)
 
 # Migration 009 operator procedure
 

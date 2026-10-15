@@ -67,9 +67,11 @@ tryCatch({
   expected$vintage_id <- vintage_id
   expected <- expected[order(expected$territory_id,expected$territory_type,expected$groupe),,drop=FALSE]
 
-  canonical <- list(histories=histories,vintages=vintages,metadata=metadata)
-  canonical$content_version <- mobility_reading_content_version(histories,vintages,metadata)
-  publisher <- register_mobility_reading_publisher(list())
+  # The published reading is the owner-scoped serving artifact: the theme Parquet
+  # history above is only the independent oracle, never re-projected here.
+  publication <- read_typed_reading_publication_from(data_dir,"mobilite")
+  canonical <- list(reading=publication$reading,content_version=publication$content_version)
+  publisher <- register_typed_reading_artifact_publisher(list(),"mobilite",publish_mobility_reading)
   published <- publish_registered_typed_reading(publisher,"mobilite",canonical,con)
   marker_before <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at
     FROM table_publication WHERE table_name='mobility_typed_reading'")

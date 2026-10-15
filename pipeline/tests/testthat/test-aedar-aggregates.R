@@ -258,6 +258,7 @@ test_that("comparison publication consumes materialized density facts without re
 
 test_that("density-only Parquet builder pools addresses and publishes the complete domain", {
   skip_if_not_installed("nanoparquet")
+  skip_if_not_installed("arrow")
   axis <- read_aedar_typequ_registry()
   dir <- tempfile("aedar-density-only-"); dir.create(dir)
   on.exit(unlink(dir,recursive=TRUE),add=TRUE)

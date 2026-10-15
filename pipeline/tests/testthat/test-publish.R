@@ -1,14 +1,20 @@
-test_that("publish(backend = 'parquet') écrit le payload en parquet, lisible en retour", {
+test_that("publish(backend = 'parquet') écrit les faits Mobilité en parquet, lisible en retour", {
+  # #757 : la Mobilité est le SEUL thème qui conserve ses parquets de faits
+  # (indicateurs_<theme> / histoires_<theme>) — l'exception #619. Les cinq
+  # autres thèmes passent par les artefacts de service ; leur parquet par-thème
+  # est retiré (voir le test dédié plus bas et le contrat de non-dérive).
   payload <- compute_payload(load_fixture())
+  payload$indicateurs$theme <- "mobilite"
+  payload$histoires$theme <- "mobilite"
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
   publish(payload, cible, backend = "parquet")
 
   indicateurs <- nanoparquet::read_parquet(
-    file.path(cible, "indicateurs_demographie.parquet"))
+    file.path(cible, "indicateurs_mobilite.parquet"))
   histoires <- nanoparquet::read_parquet(
-    file.path(cible, "histoires_demographie.parquet"))
+    file.path(cible, "histoires_mobilite.parquet"))
   territoires <- nanoparquet::read_parquet(
     file.path(cible, "territoires.parquet"))
   expect_equal(nrow(indicateurs), nrow(payload$indicateurs))
@@ -19,7 +25,36 @@ test_that("publish(backend = 'parquet') écrit le payload en parquet, lisible en
   # la référence porte les noms — c'est elle que l'app joint
   expect_equal(territoires$nom, payload$territoires$nom)
   # le backend local historique : parquet seul, pas de projection JSON
-  expect_false(file.exists(file.path(cible, "indicateurs_demographie.json")))
+  expect_false(file.exists(file.path(cible, "indicateurs_mobilite.json")))
+})
+
+test_that("publish(backend = 'parquet') n'écrit PAS les parquets de faits d'un thème retiré (#757)", {
+  payload <- compute_payload(load_fixture()) # Démographie : thème retiré
+  cible <- tempfile("pub-")
+  on.exit(unlink(cible, recursive = TRUE))
+
+  publish(payload, cible, backend = "parquet")
+
+  expect_false(file.exists(file.path(cible, "indicateurs_demographie.parquet")))
+  expect_false(file.exists(file.path(cible, "histoires_demographie.parquet")))
+  # la référence partagée des territoires est toujours écrite
+  expect_true(file.exists(file.path(cible, "territoires.parquet")))
+})
+
+test_that("theme_parquet_retire marque les cinq thèmes non-mobilité (#757)", {
+  # le prédicat consommé par publish : vrai pour les cinq thèmes dont les
+  # parquets de faits par-thème sont retirés, faux pour la Mobilité (#619).
+  expect_false(theme_parquet_retire("mobilite"))
+  for (theme in c("demographie", "habitat", "economie", "milieux", "programmes")) {
+    expect_true(theme_parquet_retire(theme), info = theme)
+  }
+  # la liste se DÉRIVE du registre canonique des thèmes (THEMES_METADATA) —
+  # jamais recopiée : ce contrat échoue si un thème canonique est oublié.
+  expect_identical(themes_parquet_retires(), setdiff(THEMES_METADATA, "mobilite"))
+  expect_setequal(
+    themes_parquet_retires(),
+    c("demographie", "habitat", "economie", "milieux", "programmes")
+  )
 })
 
 test_that("le backend par défaut est 'static' vers le home public du payload", {
@@ -29,15 +64,20 @@ test_that("le backend par défaut est 'static' vers le home public du payload", 
   expect_equal(formals(publish)$backend, "static")
 })
 
-test_that("publish(backend = 'static') écrit parquet + JSON des quatre tables", {
+test_that("publish(backend = 'static') écrit le JSON des faits de tous les thèmes + le parquet partagé", {
+  # #757 : les faits des thèmes retirés ne partent plus qu'en JSON ; les tables
+  # partagées (territoires, apercu) gardent parquet + JSON.
   payload <- compute_payload(load_fixture())
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
   publish(payload, cible)
 
-  for (nom in c("indicateurs_demographie", "histoires_demographie",
-                "territoires", "apercu")) {
+  for (nom in c("indicateurs_demographie", "histoires_demographie")) {
+    expect_false(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
+    expect_true(file.exists(file.path(cible, paste0(nom, ".json"))), info = nom)
+  }
+  for (nom in c("territoires", "apercu")) {
     expect_true(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
     expect_true(file.exists(file.path(cible, paste0(nom, ".json"))), info = nom)
   }
@@ -68,24 +108,33 @@ test_that("publish écrit la projection BPE bornée quand le payload la porte", 
 # test-run-pipeline-economie.R, issue #131) : le contrat de non-dérive
 # (issue #10, ADR-0004).
 
-test_that("le JSON se relit exactement comme les tables parquet — dérive impossible", {
+test_that("le JSON se relit exactement comme les tables en mémoire / parquet — dérive impossible", {
   # issue #10, ADR-0004 : les deux sérialisations sortent des mêmes tables en
-  # mémoire ; ce test lit chacune en retour et verrouille l'égalité colonne
-  # pour colonne, valeur pour valeur (bit à bit). Si l'une des deux dérive,
-  # le test casse — c'est le contrat de non-dérive. Issue #13 : le contrat
-  # couvre le nouveau layout — faits par thème + référence partagée.
+  # mémoire. #757 : les faits des thèmes retirés n'écrivent plus de parquet —
+  # la projection JSON se compare donc à la table EN MÉMOIRE dont elle est
+  # issue (même contrat, même rigueur). Les tables partagées, encore écrites
+  # dans les deux formats, se comparent parquet contre JSON.
   payload <- compute_payload(load_fixture())
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
   publish(payload, cible)
 
-  for (nom in c("indicateurs_demographie", "histoires_demographie",
-                "territoires", "apercu")) {
+  for (nom in c("territoires", "apercu")) {
     parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
     json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
     verifier_non_derivee(parquet, json, nom)
   }
+  verifier_projection_sur_table(
+    payload$indicateurs,
+    jsonlite::fromJSON(file.path(cible, "indicateurs_demographie.json")),
+    "indicateurs_demographie"
+  )
+  verifier_projection_sur_table(
+    payload$histoires,
+    jsonlite::fromJSON(file.path(cible, "histoires_demographie.json")),
+    "histoires_demographie"
+  )
 })
 
 test_that("la publication est par thème : le thème du payload nomme les fichiers", {
@@ -98,20 +147,23 @@ test_that("la publication est par thème : le thème du payload nomme les fichie
 
   publish(payload, cible)
 
-  expect_true(file.exists(file.path(cible, "indicateurs_demographie.parquet")))
-  expect_true(file.exists(file.path(cible, "histoires_demographie.parquet")))
-  expect_true(file.exists(file.path(cible, "territoires.parquet")))
-  expect_true(file.exists(file.path(cible, "apercu.parquet")))
-  expect_false(file.exists(file.path(cible, "indicateurs.parquet")))
-  expect_false(file.exists(file.path(cible, "histoires.parquet")))
+  expect_true(file.exists(file.path(cible, "indicateurs_demographie.json")))
+  expect_true(file.exists(file.path(cible, "histoires_demographie.json")))
+  expect_true(file.exists(file.path(cible, "territoires.json")))
+  expect_true(file.exists(file.path(cible, "apercu.json")))
+  # #757 : le parquet par-thème est retiré pour un thème non-mobilité
+  expect_false(file.exists(file.path(cible, "indicateurs_demographie.parquet")))
+  expect_false(file.exists(file.path(cible, "histoires_demographie.parquet")))
+  expect_false(file.exists(file.path(cible, "indicateurs.json")))
+  expect_false(file.exists(file.path(cible, "histoires.json")))
   # l'Aperçu est partagé entre les thèmes, comme la référence — pas par thème
   expect_false(file.exists(file.path(cible, "apercu_demographie.parquet")))
 })
 
-test_that("un payload d'un autre thème écrit les fichiers de CE thème", {
+test_that("un payload d'un autre thème écrit les fichiers JSON de CE thème (parquet retiré, #757)", {
   # le thème se lit sur le payload (la colonne `theme` des faits) : le même
   # publish sert Habitat sans changer de code — les thèmes ne se marchent
-  # jamais dessus.
+  # jamais dessus. Habitat étant retiré, seuls ses JSON sont écrits.
   payload <- compute_payload(load_fixture())
   payload$indicateurs$theme <- "habitat"
   payload$histoires$theme <- "habitat"
@@ -120,9 +172,11 @@ test_that("un payload d'un autre thème écrit les fichiers de CE thème", {
 
   publish(payload, cible)
 
-  expect_true(file.exists(file.path(cible, "indicateurs_habitat.parquet")))
-  expect_true(file.exists(file.path(cible, "histoires_habitat.parquet")))
-  expect_false(file.exists(file.path(cible, "indicateurs_demographie.parquet")))
+  expect_true(file.exists(file.path(cible, "indicateurs_habitat.json")))
+  expect_true(file.exists(file.path(cible, "histoires_habitat.json")))
+  expect_false(file.exists(file.path(cible, "indicateurs_habitat.parquet")))
+  expect_false(file.exists(file.path(cible, "histoires_habitat.parquet")))
+  expect_false(file.exists(file.path(cible, "indicateurs_demographie.json")))
 })
 
 test_that("publish est un upsert : relancer écrase sans dupliquer", {
@@ -133,8 +187,7 @@ test_that("publish est un upsert : relancer écrase sans dupliquer", {
   publish(payload, cible)
   publish(payload, cible) # idempotent
 
-  indicateurs <- nanoparquet::read_parquet(
-    file.path(cible, "indicateurs_demographie.parquet"))
+  indicateurs <- jsonlite::fromJSON(file.path(cible, "indicateurs_demographie.json"))
   expect_equal(nrow(indicateurs), nrow(payload$indicateurs))
 })
 
@@ -150,11 +203,11 @@ test_that("publish conserve un parquet canonique inchangé", {
   expect_identical(file.info(fichier)$mtime, avant)
 })
 
-# issue #19 : le layout par thème s'étend à Habitat — les faits partent en
-# indicateurs_habitat / histoires_habitat, la référence reste partagée, le
-# contrat JSON-égale-parquet couvre les nouveaux fichiers.
+# issue #19 : le layout par thème s'étend à Habitat ; #757 retire sa
+# sérialisation parquet par-thème — les faits partent en JSON seul, la
+# référence reste partagée, le contrat de non-dérive couvre les nouveaux JSON.
 
-test_that("le payload Habitat publie les fichiers par thème + la référence partagée, sans l'aperçu", {
+test_that("le payload Habitat publie les JSON par thème + la référence partagée, sans l'aperçu", {
   # issue #116 : l'Aperçu d'Habitat est vide par design — la table partagée
   # apercu n'est NI écrite NI écrasée par un thème sans aperçu (seul
   # Démographie la peuple ; le test de la sentinelle plus bas verrouille la
@@ -165,10 +218,13 @@ test_that("le payload Habitat publie les fichiers par thème + la référence pa
 
   publish(payload, cible)
 
-  for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires")) {
-    expect_true(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
+  # #757 : Habitat est un thème retiré — les faits ne partent qu'en JSON
+  for (nom in c("indicateurs_habitat", "histoires_habitat")) {
+    expect_false(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
     expect_true(file.exists(file.path(cible, paste0(nom, ".json"))), info = nom)
   }
+  expect_true(file.exists(file.path(cible, "territoires.parquet")))
+  expect_true(file.exists(file.path(cible, "territoires.json")))
   # aucun fichier Démographie écrit par un run Habitat
   expect_false(file.exists(file.path(cible, "indicateurs_demographie.parquet")))
   expect_false(file.exists(file.path(cible, "histoires_demographie.parquet")))
@@ -177,24 +233,33 @@ test_that("le payload Habitat publie les fichiers par thème + la référence pa
   expect_false(file.exists(file.path(cible, "apercu.json")))
 })
 
-test_that("le JSON Habitat se relit exactement comme les tables parquet — dérive impossible", {
+test_that("le JSON Habitat se relit exactement comme les tables en mémoire — dérive impossible", {
   # le contrat de non-dérive (issue #10, ADR-0004) appliqué au payload Habitat :
-  # la colonne nullable `n` (NA pour les stocks, entiers pour DVF/DPE) et les
-  # valeurs supprimées (NA) doivent survivre bit à bit aux deux sérialisations.
-  # Issue #116 : l'Aperçu d'Habitat est vide par design — publish ne sérialise
-  # la table partagée que si elle porte des lignes ; le contrat de non-dérive
-  # couvre donc les tables que le thème écrit réellement.
+  # #757 retire le parquet par-thème, la projection JSON se compare donc à la
+  # table EN MÉMOIRE dont elle est issue. La colonne nullable `n` (NA pour les
+  # stocks, entiers pour DVF/DPE) et les valeurs supprimées (NA) doivent
+  # survivre bit à bit à la sérialisation. Issue #116 : l'Aperçu d'Habitat est
+  # vide par design — publish ne sérialise la table partagée que si elle porte
+  # des lignes.
   payload <- payload_habitat()
   cible <- tempfile("pub-")
   on.exit(unlink(cible, recursive = TRUE))
 
   publish(payload, cible)
 
-  for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires")) {
-    parquet <- nanoparquet::read_parquet(file.path(cible, paste0(nom, ".parquet")))
-    json <- jsonlite::fromJSON(file.path(cible, paste0(nom, ".json")))
-    verifier_non_derivee(parquet, json, nom)
-  }
+  verifier_projection_sur_table(
+    payload$indicateurs,
+    jsonlite::fromJSON(file.path(cible, "indicateurs_habitat.json")),
+    "indicateurs_habitat"
+  )
+  verifier_projection_sur_table(
+    payload$histoires,
+    jsonlite::fromJSON(file.path(cible, "histoires_habitat.json")),
+    "histoires_habitat"
+  )
+  parquet <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
+  json <- jsonlite::fromJSON(file.path(cible, "territoires.json"))
+  verifier_non_derivee(parquet, json, "territoires")
 })
 
 test_that("publish est un upsert pour le payload Habitat : relancer ne duplique pas", {
@@ -205,11 +270,9 @@ test_that("publish est un upsert pour le payload Habitat : relancer ne duplique 
   publish(payload, cible)
   publish(payload, cible) # idempotent
 
-  indicateurs <- nanoparquet::read_parquet(
-    file.path(cible, "indicateurs_habitat.parquet"))
+  indicateurs <- jsonlite::fromJSON(file.path(cible, "indicateurs_habitat.json"))
   expect_equal(nrow(indicateurs), nrow(payload$indicateurs))
-  histoires <- nanoparquet::read_parquet(
-    file.path(cible, "histoires_habitat.parquet"))
+  histoires <- jsonlite::fromJSON(file.path(cible, "histoires_habitat.json"))
   expect_equal(nrow(histoires), nrow(payload$histoires))
 })
 
@@ -252,11 +315,12 @@ test_that("un thème sans aperçu ne crée jamais les fichiers partagés apercu 
 
   publish(payload, cible)
 
-  # les faits du thème + la référence partagée des territoires sont écrits
-  for (nom in c("indicateurs_habitat", "histoires_habitat", "territoires")) {
-    expect_true(file.exists(file.path(cible, paste0(nom, ".parquet"))), info = nom)
+  # les faits du thème (JSON seul, #757) + la référence partagée sont écrits
+  for (nom in c("indicateurs_habitat", "histoires_habitat")) {
     expect_true(file.exists(file.path(cible, paste0(nom, ".json"))), info = nom)
   }
+  expect_true(file.exists(file.path(cible, "territoires.parquet")))
+  expect_true(file.exists(file.path(cible, "territoires.json")))
   # mais JAMAIS apercu : le fichier partagé ne naît pas d'un thème sans aperçu
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.json")))
