@@ -207,6 +207,25 @@ def test_fresh_schema_contains_retained_model_and_excludes_legacy_access_objects
         f"excluded legacy validation functions remain: {sorted(excluded_functions & functions)}")
 
 
+def test_r_retained_reference_publisher_uses_fresh_schema_and_noops(canonical_db_env):
+    """Exercise the production DBI adapter where legacy relations do not exist."""
+    publish = urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
+    env = os.environ.copy()
+    env.update({
+        "LUSK_REFERENCE_TEST_HOST": publish.hostname or "",
+        "LUSK_REFERENCE_TEST_PORT": str(publish.port or ""),
+        "LUSK_REFERENCE_TEST_DATABASE": os.environ["LUSK_TEST_DATABASE_NAME"],
+        "LUSK_REFERENCE_TEST_USER": publish.username or "",
+        "LUSK_REFERENCE_TEST_SCHEMA": canonical_db_env["schema"],
+    })
+    pipeline = Path(__file__).resolve().parents[3] / "pipeline"
+    completed = subprocess.run(
+        ["Rscript", "scripts/smoke-retained-territory-reference.R"],
+        cwd=pipeline, env=env, capture_output=True, text=True, timeout=120,
+    )
+    assert completed.returncode == 0, completed.stdout + "\n" + completed.stderr
+
+
 def test_migration_036_drops_legacy_access_objects_and_preserves_published_scalar():
     """Apply the additive retirement to populated pinned pre-change schema data."""
     import psycopg

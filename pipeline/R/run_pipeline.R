@@ -35,12 +35,8 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
                           sortie = "public/data",
                           mode = c("full", "cron"),
                           noms_epci_geo_api = lire_noms_epci_geo_api(),
-                          connexion_service = NULL,
-                          publier_bpe = FALSE) {
+                          connexion_service = NULL) {
   mode <- match.arg(mode)
-  if (isTRUE(publier_bpe) && is.null(connexion_service)) {
-    stop("Explicit BPE publication requires the service connection.", call.=FALSE)
-  }
   if (!is.null(connexion_service) && !identical(theme$theme, "mobilite")) {
     stop("La publication SQL de service exige le thème Mobilité.", call. = FALSE)
   }
@@ -223,16 +219,7 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # pipeline writes canonical Parquet here first; the DB publisher compares
   # per-table markers even when none of those files changed in this run.
   if (!is.null(connexion_service)) {
-    service <- preparer_tables_service(sortie)
-    publier_tables_postgres(connexion_service, service$tables, service$versions,
-                            access_scope = service$access_scope,
-                            building_contract = service$building_contract,
-                            building_sources = service$building_sources)
-    # BPE is independently opt-in; connecting the unrelated service publisher
-    # must not imply publication of this separately owned evidence family.
-    if (isTRUE(publier_bpe)) {
-      publier_bpe_si_optin(publier_bpe, sortie, connexion_service)
-    }
+    publish_retained_backend_snapshot(connexion_service, sortie)
   }
   # Le rapport du run réussi, écrit après la publication — il décrit un run
   # complet. Le diagnostic de couverture (issue #233) y voyage quand le thème

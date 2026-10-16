@@ -148,7 +148,12 @@ profile_serving_owners <- function(metadata) {
     identical(contract$completeness, "dense_complete") &&
     (!is.null(contract$detail_units) || !is.null(contract$support_count_field)),
     contracts))
-  unique(c(sort(pyramids), sort(dense)))
+  owners <- unique(c(sort(pyramids), sort(dense)))
+  owners[!vapply(owners, function(owner) {
+    source_id <- (metadata$sources %||% list())[[owner]]
+    source <- (metadata$source_records %||% list())[[source_id]]
+    identical(source$serving_disposition, "excluded_legacy_accessibility")
+  }, logical(1))]
 }
 
 profile_serving_scalar_owners <- function(metadata) {
@@ -203,18 +208,15 @@ materialize_theme_profile_artifacts <- function(payload, metadata, vintages, the
   invisible(published)
 }
 
-# The DPE facet binds to the validated shared scalar publication, recomputed
-# from the same canonical Parquet the scalar publisher consumes. The residual
-# coupling is deliberate: preparer_tables_service() still reads
-# indicateurs_mobilite.parquet for the service-share base only.
+# The DPE facet binds to the validated retained scalar snapshot, assembled from
+# the same owner-scoped scalar artifacts used by its publisher.
 profile_scalar_binding <- function(sortie = "../public/data") {
-  snapshot <- project_service_scalar_snapshot(preparer_tables_service(sortie), sortie)
-  scalar_content_version(snapshot$projection)
+  snapshot <- project_retained_scalar_snapshot(sortie)
+  scalar_content_version(snapshot$scalar)
 }
 
 profile_scalar_binding_inputs_available <- function(sortie = "../public/data") {
-  required <- c("territoires.parquet", "indicateurs_mobilite.parquet", "vintages.parquet",
-    "rampe_acces_batiments.parquet", "distribution_acces_batiments.parquet",
+  required <- c("territoires.parquet",
     file.path("scalar-serving", "economie", "scalar-current.json"),
     file.path("scalar-serving", "demographie", "scalar-current.json"),
     file.path("scalar-serving", "mobilite", "scalar-current.json"),

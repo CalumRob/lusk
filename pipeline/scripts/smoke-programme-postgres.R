@@ -26,11 +26,7 @@ run_smoke <- function() tryCatch({
       all(file.exists(comparison$comparison_artifacts)))
     return(invisible(TRUE))
   }
-  reference <- preparer_tables_service(canonical_dir)$tables$territory_reference
-  DBI::dbWriteTable(con, "territory_reference", reference, append=TRUE, row.names=FALSE)
-  DBI::dbExecute(con,
-    "INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference',$1,$2)",
-    params=list(scalar_content_version(reference), nrow(reference)))
+  publish_canonical_territory_reference(con, canonical_dir)
   inputs <- read_programme_serving_inputs(canonical_dir)
   registry <- register_programme_series_publishers(list(), inputs$metadata)
   adapter <- owned_series_postgres_adapter(con)

@@ -20,28 +20,12 @@ tryCatch({
   DBI::dbExecute(con,paste0("SET search_path TO ",DBI::dbQuoteIdentifier(con,schema)))
   ddl <- paste(readLines("../api/schema.sql",warn=FALSE),collapse="\n")
   for (statement in split_postgres_sql(ddl)) DBI::dbExecute(con,statement)
-  # Rehearse the additive 020 migration over an already-populated reference marker.
-  DBI::dbExecute(con,"DROP TABLE habitat_typed_reading,selected_reading_publication,selected_reading_descriptor")
-  DBI::dbExecute(con,"DROP TABLE demographic_typed_reading,demographic_reading_descriptor")
-  DBI::dbExecute(con,"DROP INDEX territory_reference_id_type_unique")
-  DBI::dbExecute(con,"ALTER TABLE table_publication DROP CONSTRAINT table_publication_table_name_check")
-  DBI::dbExecute(con,"ALTER TABLE table_publication DROP CONSTRAINT shared_fact_publication_requires_reference")
-  DBI::dbExecute(con,"ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check CHECK(table_name IN
-    ('territory_reference','service_registry','essential_service_access','building_ramp','building_grid','scalar_observation','declared_profile','ordered_series'))")
-  DBI::dbExecute(con,"ALTER TABLE table_publication ADD CONSTRAINT shared_fact_publication_requires_reference
-    CHECK(table_name NOT IN ('scalar_observation','declared_profile','ordered_series') OR reference_content_version IS NOT NULL)")
   read_canonical <- function(name) nanoparquet::read_parquet(file.path(canonical_dir,paste0(name,".parquet")))
   territories <- read_canonical("territoires"); vintages <- read_canonical("vintages")
   # The theme Parquet history stays the independent oracle of the stored rows.
   histories <- read_canonical("histoires_demographie")
   stopifnot(nrow(histories)==1268L)
-  reference <- preparer_tables_service(canonical_dir)$tables$territory_reference
-  DBI::dbWriteTable(con,"territory_reference",reference,append=TRUE,row.names=FALSE)
-  reference_version <- unname(tools::md5sum(file.path(canonical_dir,"territoires.parquet")))
-  DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference',$1,$2)",
-    params=list(reference_version,nrow(reference)))
-  migration <- paste(readLines("../api/migrations/020_demographic_typed_reading.sql",warn=FALSE),collapse="\n")
-  for (statement in split_postgres_sql(migration)) DBI::dbExecute(con,statement)
+  publish_canonical_territory_reference(con, canonical_dir)
   source <- vintages[vintages$id=="serie_historique",,drop=FALSE]
   stopifnot(nrow(source)==1L)
   DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2)",params=list(source$id[[1L]],source$source[[1L]]))

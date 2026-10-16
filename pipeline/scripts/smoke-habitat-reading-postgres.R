@@ -21,13 +21,17 @@ tryCatch({
   ddl <- paste(readLines("../api/schema.sql",warn=FALSE),collapse="\n")
   for(statement in split_postgres_sql(ddl)) DBI::dbExecute(con,statement)
 
-  inputs <- preparer_tables_service(canonical_dir)
-  published <- publier_tables_postgres(con,inputs$tables,inputs$versions,inputs$access_scope,
-    inputs$building_contract,inputs$building_sources)
-  stopifnot(all(c("territory_reference","essential_service_access") %in% published))
-  scalar <- project_service_scalar_snapshot(inputs,canonical_dir)
-  scalar_publication <- publish_service_share_scalars(con,inputs$scalar_access,inputs$scalar_metadata,
-    inputs$scalar_eligible_territories,additional_projections=scalar$additional_projections)
+  territories <- nanoparquet::read_parquet(file.path(canonical_dir,"territoires.parquet"))
+  vintages <- nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
+  for (owner in retained_scalar_artifact_owners()) {
+    payload <- list(indicateurs=lire_indicateurs_commis(owner,canonical_dir),territoires=territories)
+    owner_metadata <- jsonlite::fromJSON(file.path(canonical_dir,paste0("theme_",owner,".json")),
+      simplifyVector=FALSE)
+    materialize_theme_scalar_artifact(payload,owner_metadata,vintages,owner,canonical_dir)
+  }
+  reference <- publish_canonical_territory_reference(con,canonical_dir)$projection
+  scalar <- project_retained_scalar_snapshot(canonical_dir,reference)
+  scalar_publication <- publish_retained_scalar_snapshot(con,scalar,canonical_dir)$scalar
 
   read_canonical <- function(name) {
     # #757 : les parquets de faits par-thème des cinq thèmes non-mobilité ne

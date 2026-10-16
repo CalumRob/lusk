@@ -18,7 +18,6 @@
 # projection, never the attribute envelope.
 typed_reading_artifact_contracts <- function() {
   list(
-    mobilite=list(table_fields=c("facts","stories","clocks"), json_fields="descriptor"),
     economie=list(table_fields=c("facts","source"), json_fields=character()),
     demographie=list(table_fields="facts", json_fields="descriptor"),
     habitat=list(table_fields=c("facts","vintage"), json_fields=character()),
@@ -309,7 +308,6 @@ project_theme_typed_reading_artifact <- function(payload, metadata, vintages, th
     stop("Current theme reading inputs are incomplete",call.=FALSE)
   histories <- payload$histoires
   reading <- switch(theme,
-    mobilite=project_mobility_reading(histories,vintages,metadata),
     economie=project_economy_reading(histories,vintages,metadata),
     demographie=project_demographic_reading(histories,payload$territoires,vintages,metadata),
     habitat=project_habitat_reading(histories,vintages,metadata),
