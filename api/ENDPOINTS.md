@@ -29,7 +29,7 @@ single-read request and each batch item have the same fields; only a batch item
 adds its correlation `id`. `POST /api/resources/read-batch` validates all items
 before returning results and returns no partial result if any item fails. Both
 execute on one `READ ONLY REPEATABLE READ` snapshot. The batch is limited to 12
-items, 200,000 declared work units, and 8 MB serialized output. Supported intents
+items, 200,000 preflight work units, and 8 MB serialized output. Supported intents
 are `facts`, `fixed_comparison` with the closed `default` context, and bounded
 `selected_comparison` with at most 1,500 unique typed territory members. Facts
 coordinates and optional fields are producer-declared; status, availability,

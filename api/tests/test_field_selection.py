@@ -43,7 +43,7 @@ def test_aedar_projection_happens_inside_sql_and_scalar_uses_only_contract_colum
     aedar = next(route.endpoint for route in main.app.routes if getattr(route, "path", "") ==
         "/api/aedar/territories/{territory_type}/{territory_id}/aggregates")
     scalar = next(route.endpoint for route in main.app.routes if getattr(route, "path", "") ==
-        "/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
+        "/api/resources/read")
     import inspect
     aedar_source = inspect.getsource(main._aedar_territorial_aggregate_snapshot)
     scalar_source = inspect.getsource(main._indicator_facts_snapshot)
@@ -54,3 +54,4 @@ def test_aedar_projection_happens_inside_sql_and_scalar_uses_only_contract_colum
     assert '"denominator_count": "o.denominator_count"' in scalar_source
     assert "o.value, o.status" not in scalar_source
     assert 'selected_scalar_columns' in scalar_source
+    assert "bpe_profile_evidence" not in scalar_source

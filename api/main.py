@@ -3883,24 +3883,9 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
                               preflight_only=False, snapshot_state=None):
     if snapshot_state is None:
         shape_rows = []
-        bpe = conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone() \
-            if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0] else None
     else:
         resource = _batch_indicator_resource(conn, indicator_id, snapshot_state)
         shape_rows = list(resource.shape_rows)
-        bpe = (resource.bpe_indicator,) if resource.bpe_indicator else None
-    if bpe and bpe[0] == indicator_id:
-        if fields is not None:
-            raise HTTPException(422, "Field selection is not declared for this indicator resource")
-        if preflight_only:
-            marker = _bpe_profile_publication(conn, validate_row_count=False)
-            territory = conn.execute("SELECT 1 FROM territory_reference WHERE territory_id=%s AND territory_type=%s",
-                                     (territory_id, territory_type)).fetchone()
-            if not territory:
-                raise HTTPException(404, "Territory not found")
-            return {"content_version": marker[0], "reference_content_version": marker[2],
-                    "supported_fields": set()}
-        return _bpe_profile_snapshot(conn, territory_type, territory_id, default_comparison=True)
     if snapshot_state is None:
         for table, shape in (("scalar_descriptor", "scalar"),
                              ("profile_descriptor", "profile"),
@@ -5021,16 +5006,6 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
         raise HTTPException(422, "Focal territory type does not match route")
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
-    bpe = ((resource.bpe_indicator,) if resource.bpe_indicator else None) if resource else (
-        conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone()
-        if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0] else None)
-    if bpe and bpe[0] == indicator_id:
-        _validate_comparison_fields(selected_fields,{"selected_member_count","eligible_count","missing_count",
-            "mean","rank","rank_size","rank_ties"})
-        _bpe_profile_publication(conn,validate_row_count=False)
-        _comparison_cohort_in_snapshot(conn,territory_type,territory_id,selection,
-                                       snapshot_state)
-        return
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
     if active_owned:
         if active_owned[2]:
@@ -5104,23 +5079,6 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
                                    selected_fields, *, snapshot_state=None):
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
-    if resource is not None:
-        bpe_descriptor = ((resource.bpe_indicator,) if resource.bpe_indicator else None)
-    elif conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]:
-        bpe_descriptor = conn.execute(
-            "SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone()
-    else:
-        bpe_descriptor = None
-    if bpe_descriptor and bpe_descriptor[0] == indicator_id:
-            _validate_comparison_fields(selected_fields,{"selected_member_count","eligible_count",
-                "missing_count","mean","rank","rank_size","rank_ties"})
-            result=_bpe_profile_comparison(conn,territory_type,territory_id,selection)
-            return _project_comparison_payload_fields({"contract":"indicator-comparison-v1","complete_theme":False,
-                "indicator_id":indicator_id,"shape":"bpe_profile_evidence",
-                "content_version":result["content_version"],
-                "reference_content_version":result["reference_content_version"],
-                "selection":result["selection"],"scope":result["scope"],
-                "results":result["results"]},selected_fields)
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
     if active_owned:
         if active_owned[2]:
