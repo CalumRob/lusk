@@ -1,0 +1,111 @@
+from contextlib import contextmanager
+
+from fastapi.testclient import TestClient
+
+from api import main
+from api.resource_catalogue import default_resource_catalogue
+
+
+class Connection:
+    def __init__(self):
+        self.statements = []
+        self.transaction_count = 0
+
+    @contextmanager
+    def transaction(self):
+        self.transaction_count += 1
+        yield
+
+    def execute(self, sql, params=None):
+        self.statements.append(sql)
+
+
+class Pool:
+    def __init__(self):
+        self.value = Connection()
+        self.opens = 0
+
+    @contextmanager
+    def connection(self):
+        self.opens += 1
+        yield self.value
+
+
+class Repository:
+    def __init__(self):
+        self.connections = Pool()
+
+
+def setup(monkeypatch, repository, reader, preflight):
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
+    monkeypatch.setattr(main, "_semantic_resource_read", reader, raising=False)
+    monkeypatch.setattr(main, "_semantic_resource_preflight", preflight, raising=False)
+
+
+def test_single_and_one_item_batch_share_typed_reader_and_result(monkeypatch):
+    repository = Repository()
+    calls = []
+
+    def reader(conn, item):
+        calls.append(("read", conn, item.resource))
+        return {"resource": item.resource, "value": 0, "status": "measured"}
+
+    def preflight(conn, item):
+        calls.append(("preflight", conn, item.resource))
+        return 1
+
+    setup(monkeypatch, repository, reader, preflight)
+    request = {
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["value"], "intent": {"kind": "facts"},
+    }
+    try:
+        client = TestClient(main.app)
+        single = client.post("/api/resources/read", json=request)
+        batch = client.post("/api/resources/read-batch", json={"items": [{"id": "density", **request}]})
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert single.status_code == batch.status_code == 200
+    assert batch.json()["results"][0]["data"] == single.json()
+    assert [kind for kind, _, _ in calls] == ["preflight", "read", "preflight", "read"]
+    assert calls[0][1] is calls[1][1]
+    assert calls[2][1] is calls[3][1]
+    assert repository.connections.opens == 2
+    assert repository.connections.value.transaction_count == 2
+    assert all("REPEATABLE READ, READ ONLY" in sql for sql in repository.connections.value.statements)
+
+
+def test_batch_preflights_every_item_before_reading_and_aborts_as_a_unit(monkeypatch):
+    repository = Repository()
+    calls = []
+
+    def reader(conn, item):
+        calls.append(("read", item.resource))
+        return {"resource": item.resource}
+
+    def preflight(conn, item):
+        calls.append(("preflight", item.resource))
+        if item.resource == "structure_age":
+            from fastapi import HTTPException
+            raise HTTPException(503, "stale descriptor")
+        return 1
+
+    setup(monkeypatch, repository, reader, preflight)
+    common = {"target": {"kind": "territory", "type": "commune", "id": "22001"},
+              "intent": {"kind": "facts"}}
+    try:
+        response = TestClient(main.app).post("/api/resources/read-batch", json={"items": [
+            {"id": "a", "resource": "densite", **common},
+            {"id": "b", "resource": "structure_age", **common},
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert response.status_code == 503
+    assert "results" not in response.json()
+    assert calls == [("preflight", "densite"), ("preflight", "structure_age")]
+    assert repository.connections.opens == 1
+    assert repository.connections.value.transaction_count == 1

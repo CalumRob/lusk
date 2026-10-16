@@ -236,6 +236,10 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
                         scalar_rows.append((indicator, territory_id, territory_type,
                             share, "not_available" if missing else "measured"))
                         source_rows.append((indicator, territory_id, "fixture", "v2026"))
+        descriptors.append(("densite", "demographie", "Densité", "hab./km²", "high",
+                            "densite", ["commune"], "population/surface", "sparse", "desc-densite-v1"))
+        scalar_rows.append(("densite", "29001", "commune", 123.0, "measured"))
+        source_rows.append(("densite", "29001", "fixture", "v2026"))
         executemany("INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", legacy_rows)
         connection.execute("UPDATE table_publication SET row_count=%s WHERE table_name='essential_service_access'", (len(legacy_rows),))
         executemany("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES (%s,%s,%s,%s,%s,%s,%s,%s,%s,%s)", descriptors)
@@ -279,6 +283,25 @@ def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matr
                 assert scalar["territory"] == old["territory"]
                 assert scalar["scope"] == old["scope"]
                 assert scalar["services"] == old["services"]
+
+            semantic_item = {
+                "resource": "densite",
+                "target": {"kind": "territory", "type": "commune", "id": "29001"},
+                "fields": ["value"],
+                "intent": {"kind": "facts"},
+            }
+            semantic_single = client.post("/api/resources/read", json=semantic_item)
+            semantic_batch = client.post("/api/resources/read-batch", json={"items": [
+                {"id": "density", **semantic_item},
+            ]})
+            assert semantic_single.status_code == semantic_batch.status_code == 200
+            semantic_data = semantic_batch.json()["results"][0]["data"]
+            assert semantic_data == semantic_single.json()
+            assert semantic_data["resource"] == "densite"
+            assert semantic_data["target"] == semantic_item["target"]
+            assert semantic_data["value"] == 123.0
+            assert semantic_data["status"] == "measured"
+            assert semantic_data["sources"][0]["source_id"] == "fixture"
 
             # Exercise the selected-member SQL branch of each reader directly
             # against this same owned snapshot (the HTTP POST consumer lands later).

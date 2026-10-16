@@ -20,6 +20,9 @@ from api.observed_collections import (collection_descriptors, collection_snapsho
                                       collection_comparison, collection_marker,
                                       collection_comparison_preflight)
 from api.field_selection import normalize_field_selection
+from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
+from api.resource_execution import execute_batch as execute_resource_batch, execute_single as execute_resource_single
+from api.resource_requests import ResourceBatchRequest, ResourceReadItem
 
 
 _COMPARISON_RESULT_FIELDS = {
@@ -1360,6 +1363,11 @@ def get_repository() -> ReadRepository:
     return ReadRepository(pool())
 
 
+def get_resource_catalogue() -> ResourceCatalogue:
+    """Return validated discovery metadata derived from pipeline declarations."""
+    return default_resource_catalogue()
+
+
 @app.get("/api/building-access/territories")
 def building_access_territories(repository: ReadRepository = Depends(get_repository)) -> dict:
     return repository.read_building_catalog()
@@ -2563,6 +2571,116 @@ def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.get("/api/resources")
+def discover_resources(
+    catalogue: ResourceCatalogue = Depends(get_resource_catalogue),
+) -> dict:
+    """List retained semantic resources from authoritative producer metadata."""
+    return catalogue.discovery_payload()
+
+
+def _semantic_resource_preflight(conn, item):
+    if item.intent.kind != "facts":
+        raise HTTPException(422, "This resource currently declares facts intent only")
+    requested_fields = _semantic_legacy_fields(item)
+    if item.target.kind == "named_reference":
+        route = _owned_series_route(conn, item.resource)
+        if not route or not route[2]:
+            raise HTTPException(404, "Named reference descriptor is unavailable")
+        _owned_named_reference_snapshot(conn, route, None, None, item.resource,
+            fields=requested_fields, preflight_only=True, reference_target_id=item.target.id)
+        return max(1, len(default_resource_catalogue().resources_by_id[item.resource].axis_values[0][1]))
+    estimate = _indicator_facts_snapshot(
+        conn, item.target.type, item.target.id, item.resource,
+        requested_fields, preflight_only=True)
+    if not isinstance(estimate, dict):
+        return 1
+    resource = default_resource_catalogue().resources_by_id[item.resource]
+    return estimate.get("work_units", max(1, sum(len(values) for _, values in resource.axis_values)))
+
+
+def _semantic_legacy_fields(item):
+    """Translate the common optional-value projection to a shape reader."""
+    if item.fields is None:
+        return None
+    resource = default_resource_catalogue().resources_by_id[item.resource]
+    shape = resource.shapes[0]
+    if "ordered_series" in resource.shapes:
+        shape = "ordered_series"
+    selected = set(item.fields)
+    if shape == "scalar":
+        return [field for field in selected
+                if field in {"value", "support_count", "denominator_count", "status"}] or None
+    if shape == "declared_profile":
+        return ["value"] if "value" in selected else ["status"]
+    if shape == "ordered_series":
+        # The legacy series reader has no optional-column projection; its
+        # mandatory axis/status/provenance contract is retained intact.
+        return None
+    if shape == "period_detail":
+        return ["value"] if "value" in selected else ["status"]
+    if shape == "anchored_membership":
+        return [field for field in selected if field in {"detail", "label", "rider", "anchor_count", "availability"}] or None
+    return None
+
+
+def _semantic_resource_read(conn, item):
+    if item.intent.kind != "facts":
+        raise HTTPException(422, "This resource currently declares facts intent only")
+    requested_fields = _semantic_legacy_fields(item)
+    if item.target.kind == "named_reference":
+        route = _owned_series_route(conn, item.resource)
+        if not route or not route[2]:
+            raise HTTPException(404, "Named reference descriptor is unavailable")
+        data = _owned_named_reference_snapshot(conn, route, None, None, item.resource,
+            fields=requested_fields, reference_target_id=item.target.id)
+        return {"resource": item.resource, "target": item.target.model_dump(), **data}
+    data = _indicator_facts_snapshot(
+        conn, item.target.type, item.target.id, item.resource, requested_fields)
+    if item.coordinates:
+        selectors = item.coordinates
+        # Shape adapters retain descriptor ordering; selection filters cells only
+        # after the underlying reader has validated publication completeness.
+        for key in ("cells", "points", "observations", "facts", "entries"):
+            rows = data.get(key) if isinstance(data, dict) else None
+            if not isinstance(rows, list):
+                continue
+            dimensions = {"detail": "detail", "sex": "sex", "typequ": "typequ",
+                          "year": "axis", "duration_minute": "axis", "axis": "axis",
+                          "period": "observation_period", "state_role": "state_role"}
+            data[key] = [row for row in rows if all(
+                axis in dimensions and row.get(dimensions[axis]) in values
+                for axis, values in selectors.items())]
+            break
+        for key in ("relationships", "summaries"):
+            rows = data.get(key) if isinstance(data, dict) else None
+            if isinstance(rows, list) and "detail" in selectors:
+                data[key] = [row for row in rows if row.get("detail") in selectors["detail"]]
+    return {"resource": item.resource,
+            "target": item.target.model_dump(),
+            **(data if isinstance(data, dict) else {"result": data})}
+
+
+@app.post("/api/resources/read")
+def read_resource(
+    item: ResourceReadItem,
+    repository: ReadRepository = Depends(get_repository),
+    catalogue: ResourceCatalogue = Depends(get_resource_catalogue),
+) -> dict:
+    return execute_resource_single(repository.connections, item, catalogue,
+                                   _semantic_resource_preflight, _semantic_resource_read)
+
+
+@app.post("/api/resources/read-batch")
+def read_resource_batch(
+    request: ResourceBatchRequest,
+    repository: ReadRepository = Depends(get_repository),
+    catalogue: ResourceCatalogue = Depends(get_resource_catalogue),
+) -> dict:
+    return execute_resource_batch(repository.connections, request, catalogue,
+                                  _semantic_resource_preflight, _semantic_resource_read)
+
+
 @app.post("/api/read-batch")
 def read_batch(request: BatchReadRequest,
                repository: ReadRepository = Depends(get_repository)) -> dict:
@@ -3130,7 +3248,7 @@ def _theme_owned_series_indicator(series, point):
 
 
 def _owned_named_reference_snapshot(conn, route, territory_type, territory_id, indicator_id, *, fields=None,
-                                    preflight_only=False):
+                                    preflight_only=False, reference_target_id=None):
     dataset_id, theme_id, _is_reference, owner_indicator, reference_id = route
     selection=normalize_field_selection(fields,{"value","status"})
     project_value=selection is None or "value" in selection
@@ -3139,12 +3257,15 @@ def _owned_named_reference_snapshot(conn, route, territory_type, territory_id, i
         ON t.table_name='territory_reference' WHERE p.dataset_id=%s""",(dataset_id,)).fetchone()
     if not marker or not marker[0] or marker[1]!=marker[3]:
         raise HTTPException(503,"Owned named-reference publication is unavailable or stale")
-    territory=conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
-                           (territory_id,)).fetchone()
-    if not territory:
-        raise HTTPException(404,"Territory context not found")
-    if territory[0]!=territory_type:
-        raise HTTPException(422,"Territory context type does not match route")
+    if reference_target_id is None:
+        territory=conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
+                               (territory_id,)).fetchone()
+        if not territory:
+            raise HTTPException(404,"Territory context not found")
+        if territory[0]!=territory_type:
+            raise HTTPException(422,"Territory context type does not match route")
+    elif reference_target_id != reference_id:
+        raise HTTPException(404,"Named reference not found")
     descriptor=conn.execute("""SELECT s.axis_kind,s.axis_values,s.unit,d.reference_label,d.reference_role,
         d.reference_statistic,d.required,d.reference_indicator_id,s.observation_period_kind
         FROM series_dataset_descriptor s JOIN series_named_reference_descriptor d

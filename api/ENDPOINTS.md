@@ -16,6 +16,23 @@ normally returns `422`; an unknown territory/resource/indicator is generally
 `404`; an absent, stale or incompatible publication dependency fails closed
 with `503`. Individual operations may have additional documented errors.
 
+`GET /api/resources` is the producer-derived retained-resource catalogue. It
+does not connect to PostgreSQL; its inventory and logical shape declarations
+come from the pipeline's checked-in theme producer descriptors. Excluded
+legacy accessibility declarations are validated for accounting but are not
+returned. This contract describes declared resources, not whether every
+resource currently has a successful publication.
+
+`POST /api/resources/read` accepts the shared semantic item (`resource`, typed
+`target`, optional closed `coordinates`, `fields`, and typed `intent`). The
+single-read request and each batch item have the same fields; only a batch item
+adds its correlation `id`. `POST /api/resources/read-batch` validates all items
+before reading facts and returns no partial result if any item fails. Both
+execute on one `READ ONLY REPEATABLE READ` snapshot. The batch is limited to 12
+items, 200,000 declared work units, and 8 MB serialized output. The semantic
+read routes currently accept `facts` intent; other declared operations are
+rejected until their connection-taking readers are wired.
+
 <!-- BEGIN GENERATED API REQUEST INVENTORY -->
 ## Generated route and request-schema inventory
 
@@ -33,6 +50,9 @@ the linked resource contracts and the operation notes below.
 | `GET` | `/api/territories/{territory_type}/{territory_id}/building-access` | Initial Building Access | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string)<br>`comparison` (query, optional: string; one of `bretagne`, `densite`, `epci`; default: `densite`) | — |
 | `POST` | `/api/territories/{territory_type}/{territory_id}/building-access-comparison` | Custom Building Comparison | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string) | required request body: `BuildingSelection` |
 | `GET` | `/api/health` | Health | — | — |
+| `GET` | `/api/resources` | Discover Resources | — | — |
+| `POST` | `/api/resources/read` | Read Resource | — | required request body: `ResourceReadItem` |
+| `POST` | `/api/resources/read-batch` | Read Resource Batch | — | required request body: `ResourceBatchRequest` |
 | `POST` | `/api/read-batch` | Read Batch | — | required request body: `BatchReadRequest` |
 | `GET` | `/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}` | Declared Profile | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`comparison_scope` (query, optional: string; one of `bretagne`, `departement`, `epci`; default: `bretagne`)<br>`comparison_scope_id` (query, optional: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
 | `GET` | `/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}` | Scalar Observation | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
@@ -58,12 +78,34 @@ These are the model fields reachable from request bodies, including nested and d
 | Model | Property | Required? | Schema |
 | --- | --- | --- | --- |
 | `BuildingSelection` | `selected` | yes | array of SelectedTerritory; min items: `1`; max items: `1500` |
+| `ResourceReadItem` | `resource` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
+| `ResourceReadItem` | `target` | yes | one of TerritoryTarget / NamedReferenceTarget |
+| `ResourceReadItem` | `coordinates` | no | object |
+| `ResourceReadItem` | `fields` | no | array of string; max items: `32` |
+| `ResourceReadItem` | `intent` | yes | one of FactsIntent / FixedComparisonIntent / SelectedComparisonIntent |
+| `ResourceBatchRequest` | `items` | yes | array of ResourceBatchItem; min items: `1`; max items: `12` |
 | `BatchReadRequest` | `items` | yes | array of one of ThemeFactsBatchItem / ThemeComparisonBatchItem / AEDARTerritorialBatchItem / AEDARComparisonBatchItem / IndicatorFactsBatchItem / IndicatorComparisonBatchItem / DirectProfileBatchItem / DirectSeriesBatchItem / OwnedDatasetBatchItem; min items: `1`; max items: `12` |
 | `ThemeComparisonRequest` | `theme_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,63}$` |
 | `ThemeComparisonRequest` | `selection` | no | array of ThemeTerritorySelection; max items: `1500` |
 | `IndicatorComparisonRequest` | `selection` | no | array of ThemeTerritorySelection; max items: `1500` |
 | `SelectedTerritory` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `SelectedTerritory` | `id` | yes | string; min chars: `1`; max chars: `32` |
+| `TerritoryTarget` | `kind` | yes | string; const: `territory` |
+| `TerritoryTarget` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `TerritoryTarget` | `id` | yes | string; min chars: `1`; max chars: `32` |
+| `NamedReferenceTarget` | `kind` | yes | string; const: `named_reference` |
+| `NamedReferenceTarget` | `id` | yes | string; min chars: `1`; max chars: `128` |
+| `FactsIntent` | `kind` | yes | string; const: `facts` |
+| `FixedComparisonIntent` | `kind` | yes | string; const: `fixed_comparison` |
+| `FixedComparisonIntent` | `context` | yes | string; min chars: `1`; max chars: `64` |
+| `SelectedComparisonIntent` | `kind` | yes | string; const: `selected_comparison` |
+| `SelectedComparisonIntent` | `members` | yes | array of TerritoryMember; max items: `1500` |
+| `ResourceBatchItem` | `resource` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
+| `ResourceBatchItem` | `target` | yes | one of TerritoryTarget / NamedReferenceTarget |
+| `ResourceBatchItem` | `coordinates` | no | object |
+| `ResourceBatchItem` | `fields` | no | array of string; max items: `32` |
+| `ResourceBatchItem` | `intent` | yes | one of FactsIntent / FixedComparisonIntent / SelectedComparisonIntent |
+| `ResourceBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
 | `ThemeFactsBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
 | `ThemeFactsBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `ThemeFactsBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
@@ -137,6 +179,8 @@ These are the model fields reachable from request bodies, including nested and d
 | `OwnedDatasetBatchItem` | `fields` | no | array of string; max items: `32` |
 | `ThemeTerritorySelection` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `ThemeTerritorySelection` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `TerritoryMember` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `TerritoryMember` | `id` | yes | string; min chars: `1`; max chars: `32` |
 | `BatchTerritorySelection` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `BatchTerritorySelection` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
 
