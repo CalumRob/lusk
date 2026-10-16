@@ -1052,32 +1052,30 @@ publish_registered_scalar <- function(registry, name, canonical, db) {
           paste(vintages$source_id, vintages$vintage_id)))
     stop("Scalar provenance refers to an undeclared dataset or vintage", call. = FALSE)
   version <- scalar_content_version(projection)
-  db$transaction({
-    if (is.function(db$lock)) db$lock()
-    reference <- db$reference_marker()
+  result <- publish_owner_snapshot(
+    db = db, owner = "scalar_observation", content_version = version,
+    dependency_name = "territory_reference",
+    read_dependency = db$reference_marker,
+    validate_dependency = function(reference) {
     if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
         !nzchar(reference$content_version[[1L]]) ||
         (all(c("row_count", "actual_rows") %in% names(reference)) &&
          reference$row_count[[1L]] != reference$actual_rows[[1L]]))
       stop("Territory reference has no committed publication marker", call. = FALSE)
     db$validate_territories(projection$eligible_territories, projection$descriptors)
-    marker <- db$marker("scalar_observation")
-    changed <- !(nrow(marker) && identical(as.character(marker$content_version[[1L]]), version))
-    reference_changed <- nrow(marker) && !identical(
-      as.character(marker$reference_content_version[[1L]]),
-      as.character(reference$content_version[[1L]]))
-    if (changed) publisher$publish(projection, db, version)
-    else if (reference_changed) db$set_reference_version(reference$content_version[[1L]])
-    invisible(list(changed = changed, compatibility_updated = reference_changed,
-                   content_version = version))
-  })
+    },
+    publish_content = function(version_arg, dependency_arg) publisher$publish(projection, db, version),
+    rebind_dependency = db$set_reference_version)
+  invisible(list(changed = result$changed,
+                 compatibility_updated = result$rebound,
+                 content_version = result$content_version))
 }
 
 scalar_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly = TRUE)) stop("DBI is required")
   list(
     transaction = function(expr) DBI::dbWithTransaction(con, expr),
-    lock = function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
+    lock = function(owner_arg) DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version, reference_content_version FROM table_publication WHERE table_name = $1", params = list(name)),
     reference_marker = function() DBI::dbGetQuery(con,

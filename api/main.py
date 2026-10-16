@@ -2614,9 +2614,7 @@ def _semantic_legacy_fields(item):
     if shape == "declared_profile":
         return ["value"] if "value" in selected else ["status"]
     if shape == "ordered_series":
-        # The legacy series reader has no optional-column projection; its
-        # mandatory axis/status/provenance contract is retained intact.
-        return None
+        return ["value"] if "value" in selected else ["status"]
     if shape == "period_detail":
         return ["value"] if "value" in selected else ["status"]
     if shape == "anchored_membership":
@@ -2635,6 +2633,21 @@ def _semantic_resource_read(conn, item):
         data = _owned_named_reference_snapshot(conn, route, None, None, item.resource,
             fields=requested_fields, reference_target_id=item.target.id)
         return {"resource": item.resource, "target": item.target.model_dump(), **data}
+    resource = default_resource_catalogue().resources_by_id[item.resource]
+    if "declared_profile" in resource.shapes:
+        profiles, version = focal_profiles(
+            conn, item.target.type, item.target.id, indicator_id=item.resource,
+            fields=requested_fields)
+        if len(profiles) != 1:
+            raise HTTPException(404, "Declared profile is unavailable")
+        profile = profiles[0]
+        observations = profile.pop("cells")
+        if item.coordinates:
+            observations = [observation for observation in observations if all(
+                observation.get(axis) in values for axis, values in item.coordinates.items())]
+        return {"resource": item.resource, "target": item.target.model_dump(),
+                "content_version": version, "descriptor": profile,
+                "observations": observations}
     data = _indicator_facts_snapshot(
         conn, item.target.type, item.target.id, item.resource, requested_fields)
     if item.coordinates:
@@ -3880,8 +3893,7 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
                 raise HTTPException(422, "Profile is not declared for this territory level")
             return {"content_version": version, "supported_fields": {"value", "status"}}
         if shape == "series":
-            if fields is not None:
-                raise HTTPException(422, "Field selection is not declared for this indicator resource")
+            normalize_field_selection(fields, {"value", "status"})
             marker = conn.execute("""SELECT s.content_version,s.reference_content_version,t.content_version
                 FROM table_publication s LEFT JOIN table_publication t
                   ON t.table_name='territory_reference' WHERE s.table_name='ordered_series'""").fetchone()
@@ -3927,9 +3939,7 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
             "scope": scope, "results": profile_comparison_results}
         return profile
     if shape == "series":
-        if fields is not None:
-            raise HTTPException(422, "Field selection is not declared for this indicator resource")
-        return _focal_series_snapshot(conn, territory_type, territory_id, indicator_id)
+        return _focal_series_snapshot(conn, territory_type, territory_id, indicator_id, fields=fields)
     # Scalar route: focal observation only. Comparison reads use the
     # dedicated bounded theme comparison endpoint.
     marker = conn.execute(
