@@ -156,27 +156,23 @@ def test_custom_cohort_reads_peer_facts_not_comparison_tables():
 
 
 def test_theme_collection_only_route_passes_exact_fixed_context(monkeypatch):
-    from api import main
-
-    class ThemeConn:
-        def execute(self, sql, params=None):
-            if "SELECT indicator_id,label,unit,direction,comparison_facet" in sql: return Cursor(rows=[])
-            if "to_regclass('bpe_profile_evidence_descriptor')" in sql: return Cursor((None,))
-            if "to_regclass('series_dataset_descriptor')" in sql: return Cursor((None,))
-            if "table_name='territory_reference'" in sql: return Cursor(("ref",))
-            return Cursor()
-
+    from types import SimpleNamespace
+    from api import snapshot_reads
     observed = []
-    monkeypatch.setattr(main, "collection_descriptors", lambda *_a, **_kw: [DESCRIPTOR])
-    monkeypatch.setattr(main, "_comparison_cohort", lambda *_a: ("commune", ("c1", "c2"), {"kind":"density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a, **_kw: ("density_class", "A", "commune"))
-    monkeypatch.setattr(main, "collection_comparison", lambda *a: observed.append(a[-1]) or {
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort_in_snapshot",
+        lambda *_a, **_kw: ("commune", ("c1", "c2"), {"kind":"density_class"}))
+    monkeypatch.setattr(snapshot_reads, "_fixed_scalar_comparison_context",
+        lambda *_a, **_kw: ("density_class", "A", "commune"))
+    monkeypatch.setattr(snapshot_reads, "collection_comparison", lambda *a, **_kw: observed.append(a[-1]) or {
         "content_version":"cv", "reference_content_version":"ref", "indicator_id":"grant_amount"})
-    monkeypatch.setattr(main, "_profile_comparison_results", lambda *_a: [])
-    monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_a, **_kw: ([], {}, None, None, None))
-    monkeypatch.setattr(main, "_demographic_reading_marker", lambda _c: None)
-    monkeypatch.setattr(main, "_milieux_reading_marker", lambda _c: None)
-    main._theme_comparison_snapshot(ThemeConn(), "commune", "c1", "programmes", None)
+    resource = snapshot_reads._ResolvedIndicatorResource(
+        None, (), None, (DESCRIPTOR,), None, None)
+    state = snapshot_reads._BatchReadSnapshotState()
+    state.indicator_resources["grant_amount"] = resource
+    class Connection:
+        def execute(self, sql, params=None): return Cursor(("commune",))
+    snapshot_reads._indicator_comparison_snapshot(
+        Connection(), "commune", "c1", "grant_amount", None, None, snapshot_state=state)
     assert observed == [("density_class", "A", "commune")]
 
 

@@ -130,13 +130,10 @@ fixture_milieux_reading_fixture <- function() {
 
 # Every reading owner, projected from its own producer contract.
 fixture_typed_readings <- function() {
-  fixtures <- list(mobilite = fixture_mobility_reading_fixture(),
-    economie = fixture_economy_reading_fixture(),
+  fixtures <- list(economie = fixture_economy_reading_fixture(),
     demographie = fixture_demographic_reading_fixture(),
     habitat = fixture_habitat_reading_fixture(),
     milieux = fixture_milieux_reading_fixture())
-  fixtures$mobilite$projection <- typed_reading_projection(fixtures$mobilite$reading, "mobilite",
-    fixtures$mobilite$metadata, fixtures$mobilite$vintages)
   fixtures$economie$projection <- typed_reading_projection(fixtures$economie$reading, "economie",
     fixtures$economie$metadata, fixtures$economie$vintages)
   fixtures$demographie$projection <- typed_reading_projection(fixtures$demographie$reading, "demographie",
@@ -154,9 +151,8 @@ typed_reading_root <- function(label) {
 
 test_that("typed reading serving owners and their persisted fields derive from the reading family", {
   contracts <- typed_reading_artifact_contracts()
-  expect_setequal(names(contracts), c("mobilite", "economie", "demographie", "habitat", "milieux"))
-  expect_identical(typed_reading_artifact_fields("mobilite")$table_fields, c("facts", "stories", "clocks"))
-  expect_identical(typed_reading_artifact_fields("mobilite")$json_fields, "descriptor")
+  expect_setequal(names(contracts), c("economie", "demographie", "habitat", "milieux"))
+  expect_error(typed_reading_artifact_fields("mobilite"), "Unknown typed-reading artifact owner")
   expect_identical(typed_reading_artifact_fields("economie")$table_fields, c("facts", "source"))
   expect_length(typed_reading_artifact_fields("economie")$json_fields, 0L)
   expect_identical(typed_reading_artifact_fields("demographie")$table_fields, "facts")
@@ -218,21 +214,6 @@ test_that("reading pieces keep their selection row names and typed missing value
   for (owner in names(fixtures)) write_typed_reading_artifact(fixtures[[owner]]$projection,
     typed_reading_artifact_directory(root, owner), owner)
 
-  mobility <- read_typed_reading_publication(
-    typed_reading_artifact_directory(root, "mobilite"), "mobilite")
-  expect_identical(row.names(mobility$projection$facts), c("1", "3"))
-  expect_identical(mobility$projection$facts$status, c("measured", "measured"))
-  # The serving descriptor is stored without its story/clock tables and without
-  # descriptor_version: both are rebuilt on assembly.
-  mobility_directory <- typed_reading_artifact_directory(root, "mobilite")
-  expect_false(is.null(fixtures$mobilite$projection$descriptor$descriptor_version))
-  expect_true(all(c("stories", "clocks") %in% names(attr(mobility$reading, "serving_contract"))))
-  contract <- attr(mobility$reading, "serving_contract")
-  expect_identical(contract$descriptor_version,
-    scalar_content_version(contract[setdiff(names(contract), "descriptor_version")]))
-  expect_identical(contract$story_count, nrow(contract$stories))
-  expect_identical(contract$clock_count, nrow(contract$clocks))
-
   habitat <- read_typed_reading_publication(
     typed_reading_artifact_directory(root, "habitat"), "habitat")
   expect_identical(habitat$reading$status,
@@ -241,25 +222,6 @@ test_that("reading pieces keep their selection row names and typed missing value
   expect_true(is.na(habitat$projection$vintage$date_reference[[1L]]))
   expect_true(is.na(attr(habitat$reading, "vintage")$date_reference[[1L]]))
   expect_identical(attr(habitat$reading, "vintage"), habitat$projection$vintage)
-
-  # A declared source clock with no reference date is written as JSON null in the
-  # serving descriptor; it must decode back to a length-one typed NA, never to a
-  # dropped element.
-  null_root <- typed_reading_root("typed-reading-null-clock")
-  on.exit(unlink(null_root, recursive = TRUE), add = TRUE)
-  null_fixture <- fixture_mobility_reading_fixture()
-  null_metadata <- fixture_mobility_reading_metadata(NULL)
-  null_vintages <- null_fixture$vintages
-  null_vintages$date_reference <- NA_character_
-  null_reading <- project_mobility_reading(null_fixture$histories, null_vintages, null_metadata)
-  null_projection <- typed_reading_projection(null_reading, "mobilite", null_metadata, null_vintages)
-  write_typed_reading_artifact(null_projection,
-    typed_reading_artifact_directory(null_root, "mobilite"), "mobilite")
-  null_publication <- read_typed_reading_publication(
-    typed_reading_artifact_directory(null_root, "mobilite"), "mobilite")
-  expect_identical(attr(null_publication$reading, "serving_contract")$reference_date, NA_character_)
-  expect_identical(attr(null_publication$reading, "serving_contract")$vintage_id, "v1/NA")
-  expect_identical(null_publication$reading, null_reading)
 
   milieux <- read_typed_reading_publication(
     typed_reading_artifact_directory(root, "milieux"), "milieux")
@@ -277,10 +239,6 @@ test_that("reading pieces keep their selection row names and typed missing value
 
 test_that("each reading has exactly one content-version rule over its persisted pieces", {
   fixtures <- fixture_typed_readings()
-  mobility <- fixtures$mobilite
-  # The artifact rule and the projector rule agree on the same in-memory form.
-  expect_identical(typed_reading_content_version(mobility$projection, "mobilite"),
-    mobility$projector_version)
   economy <- fixtures$economie
   expect_identical(typed_reading_content_version(economy$projection, "economie"),
     scalar_content_version(list(facts = economy$projection$facts, source = economy$projection$source)))
@@ -298,79 +256,35 @@ test_that("each reading has exactly one content-version rule over its persisted 
       population_revisions = milieux$projection$population_revisions)))
 })
 
-test_that("the mobility version move is exactly the incidental facts class attribute", {
-  # The legacy theme-Parquet publisher hashed the reading projected from
-  # nanoparquet::read_parquet inputs (class c("tbl","data.frame")); the artifact
-  # grain projects from the in-memory payload (a dplyr tibble, class
-  # c("tbl_df","tbl","data.frame")). The published content version therefore
-  # moves once — and for nothing else: the legacy rule over the legacy
-  # projection with only the class vector aligned reproduces the artifact
-  # version byte-for-byte. The DB publisher rebinds the marker once
-  # (publish_mobility_reading republishes on version mismatch).
-  fixture <- fixture_mobility_reading_fixture()
-  legacy_dir <- tempfile("legacy-mobility-inputs-")
-  on.exit(unlink(legacy_dir, recursive = TRUE), add = TRUE)
-  dir.create(legacy_dir)
-  histories_path <- file.path(legacy_dir, "histoires_mobilite.parquet")
-  vintages_path <- file.path(legacy_dir, "vintages.parquet")
-  nanoparquet::write_parquet(fixture$histories, histories_path)
-  nanoparquet::write_parquet(fixture$vintages, vintages_path)
-  pre_cutover_version <- mobility_reading_content_version(
-    nanoparquet::read_parquet(histories_path),
-    nanoparquet::read_parquet(vintages_path), fixture$metadata)
-
-  root <- typed_reading_root("typed-reading-mobility-golden")
-  on.exit(unlink(root, recursive = TRUE), add = TRUE)
-  projection <- typed_reading_projection(fixture$reading, "mobilite",
-    fixture$metadata, fixture$vintages)
-  write_typed_reading_artifact(projection,
-    typed_reading_artifact_directory(root, "mobilite"), "mobilite")
-  publication <- read_typed_reading_publication(
-    typed_reading_artifact_directory(root, "mobilite"), "mobilite")
-
-  # The move is real and deliberate (a one-time marker rebind, like economy).
-  expect_false(identical(publication$content_version, pre_cutover_version))
-  # The legacy rule hashes the legacy projection minus its serving-contract
-  # attribute; rebuild it and align only the class vector.
-  legacy_facts <- project_mobility_reading(nanoparquet::read_parquet(histories_path),
-    nanoparquet::read_parquet(vintages_path), fixture$metadata)
-  legacy_contract <- attr(legacy_facts, "serving_contract")
-  attr(legacy_facts, "serving_contract") <- NULL
-  class_aligned <- legacy_facts
-  class(class_aligned) <- class(publication$projection$facts)
-  expect_identical(scalar_content_version(list(facts = class_aligned,
-    descriptor = legacy_contract)), publication$content_version)
-})
-
 test_that("a missing, tampered, foreign or stale reading generation fails closed", {
   root <- typed_reading_root("typed-reading-guards")
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
-  fixture <- fixture_typed_readings()$mobilite
-  directory <- typed_reading_artifact_directory(root, "mobilite")
-  expect_error(read_typed_reading_publication(tempfile("absent-"), "mobilite"),
+  fixture <- fixture_typed_readings()$habitat
+  directory <- typed_reading_artifact_directory(root, "habitat")
+  expect_error(read_typed_reading_publication(tempfile("absent-"), "habitat"),
     "Typed canonical artifact is missing")
 
-  write_typed_reading_artifact(fixture$projection, directory, "mobilite")
-  expect_error(read_typed_reading_publication(directory, "habitat"),
+  write_typed_reading_artifact(fixture$projection, directory, "habitat")
+  expect_error(read_typed_reading_publication(directory, "economie"),
     "Typed artifact pointer is invalid")
 
   generation <- jsonlite::fromJSON(file.path(directory, "current.json"))$generation
   # Content tamper: a rewritten table no longer matches its recorded checksum.
   nanoparquet::write_parquet(transform(fixture$projection$facts, status = "unavailable"),
     file.path(directory, generation, "facts.parquet"))
-  expect_error(read_typed_reading_publication(directory, "mobilite"), "checksum mismatch")
+  expect_error(read_typed_reading_publication(directory, "habitat"), "checksum mismatch")
   unlink(directory, recursive = TRUE)
 
-  write_typed_reading_artifact(fixture$projection, directory, "mobilite")
+  write_typed_reading_artifact(fixture$projection, directory, "habitat")
   generation <- jsonlite::fromJSON(file.path(directory, "current.json"))$generation
   # Stale pointer: the generation was published for another content version.
   pointer <- jsonlite::fromJSON(file.path(directory, "current.json"), simplifyVector = FALSE)
   pointer$semantic_version <- strrep("0", 32L)
   jsonlite::write_json(pointer, file.path(directory, "current.json"), auto_unbox = TRUE)
-  expect_error(read_typed_reading_publication(directory, "mobilite"), "Typed artifact version mismatch")
+  expect_error(read_typed_reading_publication(directory, "habitat"), "Typed artifact version mismatch")
   unlink(directory, recursive = TRUE)
 
-  write_typed_reading_artifact(fixture$projection, directory, "mobilite")
+  write_typed_reading_artifact(fixture$projection, directory, "habitat")
   generation <- jsonlite::fromJSON(file.path(directory, "current.json"))$generation
   # Stale manifest: the recorded content version no longer describes the pieces.
   manifest <- jsonlite::fromJSON(file.path(directory, generation, "manifest.json"), simplifyVector = FALSE)
@@ -379,28 +293,29 @@ test_that("a missing, tampered, foreign or stale reading generation fails closed
   pointer <- jsonlite::fromJSON(file.path(directory, "current.json"), simplifyVector = FALSE)
   pointer$semantic_version <- strrep("0", 32L)
   jsonlite::write_json(pointer, file.path(directory, "current.json"), auto_unbox = TRUE)
-  expect_error(read_typed_reading_publication(directory, "mobilite"),
+  expect_error(read_typed_reading_publication(directory, "habitat"),
     "Typed artifact semantic content version mismatch")
-
-  # A reading that no longer satisfies its own contract is refused on write.
-  broken <- fixture$projection
-  broken$stories <- transform(broken$stories, story_key = "unknown-story")
-  expect_error(write_typed_reading_artifact(broken, tempfile("broken-"), "mobilite"),
-    "does not match its serving contract")
 })
 
 test_that("the theme reading materializer is owner-scoped and silent without a reading", {
   root <- typed_reading_root("typed-reading-materialize")
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
-  fixture <- fixture_mobility_reading_fixture()
+  fixture <- fixture_economy_reading_fixture()
   payload <- list(histoires = fixture$histories, territoires = NULL, indicateurs = NULL)
 
   published <- materialize_theme_typed_reading_artifacts(payload, fixture$metadata, fixture$vintages,
-    "mobilite", root)
+    "economie", root)
   expect_identical(published, typed_reading_content_version(
-    read_typed_reading_artifact(typed_reading_artifact_directory(root, "mobilite"), "mobilite"),
-    "mobilite"))
-  expect_true(file.exists(file.path(root, "typed-reading-serving", "mobilite", "current.json")))
+    read_typed_reading_artifact(typed_reading_artifact_directory(root, "economie"), "economie"),
+    "economie"))
+  expect_true(file.exists(file.path(root, "typed-reading-serving", "economie", "current.json")))
+
+  # Mobility is intentionally not a serving-artifact owner in the retained
+  # snapshot architecture; it neither writes an artifact nor accepts the retired
+  # snapshot-derived reading path.
+  expect_null(materialize_theme_typed_reading_artifacts(payload, fixture$metadata, fixture$vintages,
+    "mobilite", root))
+  expect_false(dir.exists(file.path(root, "typed-reading-serving", "mobilite")))
 
   # Themes outside the reading family materialize nothing at all.
   expect_null(materialize_theme_typed_reading_artifacts(payload, fixture$metadata, fixture$vintages,
@@ -415,13 +330,12 @@ test_that("the theme reading materializer is owner-scoped and silent without a r
 test_that("production reading publishers read the artifact and refuse a legacy Parquet fallback", {
   root <- typed_reading_root("typed-reading-production")
   on.exit(unlink(root, recursive = TRUE), add = TRUE)
-  fixture <- fixture_typed_readings()$mobilite
+  fixture <- fixture_typed_readings()$economie
 
   # Only the legacy theme Parquet history is present: the production readers must
   # fail closed rather than re-project it. No database connection is opened,
   # because the artifact is required before any publication.
-  nanoparquet::write_parquet(fixture$histories, file.path(root, "histoires_mobilite.parquet"))
-  expect_error(publish_canonical_mobility_reading(NULL, root), "Typed canonical artifact is missing")
+  nanoparquet::write_parquet(fixture$histories, file.path(root, "histoires_economie.parquet"))
   expect_error(publish_canonical_demographic_reading(NULL, root), "Typed canonical artifact is missing")
   expect_error(publish_canonical_habitat_reading(NULL, root), "Typed canonical artifact is missing")
   expect_error(read_typed_reading_publication_from(root, "economie"), "Typed canonical artifact is missing")
@@ -437,7 +351,7 @@ test_that("production reading publishers read the artifact and refuse a legacy P
 
   # Every production entry point publishes the artifact's reading through the
   # registered publisher: the identity projector is the whole projection step.
-  registry <- register_typed_reading_artifact_publisher(list(), "mobilite", publish_mobility_reading)
-  expect_identical(registry$mobilite$project(list(reading = fixture$reading)), fixture$reading)
-  expect_identical(registry$mobilite$publish, publish_mobility_reading)
+  registry <- register_typed_reading_artifact_publisher(list(), "economie", publish_economy_reading_family)
+  expect_identical(registry$economie$project(list(reading = fixture$reading)), fixture$reading)
+  expect_identical(registry$economie$publish, publish_economy_reading_family)
 })

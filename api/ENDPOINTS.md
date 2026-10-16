@@ -99,273 +99,66 @@ These are the model fields reachable from request bodies, including nested and d
 
 ## Shared inputs and response rules
 
-- Use the generated inventory above for allowed territory types, identifier
-  constraints and all parameter/body bounds. `fields` is resource-owned:
-  omission returns the full legacy shape; unsupported/duplicate/empty
-  selections are rejected as specified in the
-  [field-selection contract](field-selection-contract.md). Identity,
-  availability/status, units/axes/order where declared, provenance and
-  publication/dependency metadata remain mandatory.
-- Comparison selections are caller-chosen lists of typed territory identities,
-  subject to the bounds in the generated inventory. Omitted and explicit-empty
-  selections remain distinct. This does not provide a configurable SQL,
-  predicate, group-query language or persisted group definition.
-- Producer metadata owns indicator/theme membership, labels, units, source
-  lineage, vintage and publication versions. Independent source clocks and
-  publication markers may differ; no shared release version is inferred.
-  Missing values are not zero. A route's existence does not mean a required
-  publication is available.
+### `GET /api/health`
 
-## Operations
+Reports process health only; it does not certify publication readiness.
 
-### Health and bounded discovery
+### `GET /api/resources`
 
-#### `GET /api/health`
+Returns the producer-derived catalogue without opening a database connection.
 
-Basic process health response; it does not prove that any data publication is
-ready. No parameters or request body. Returns a small JSON status object.
+### `POST /api/resources/read`
 
-#### `GET /api/territories/search`
+Reads one producer-declared resource item. The request grammar is shared with
+each item in the batch contract below.
 
-Search the published territory reference. See the generated inventory for its
-required query inputs, bounds and defaults.
+### `POST /api/resources/read-batch`
 
-Returns matching published territory identities and labels. Example:
-`GET /api/territories/search?q=Rennes&limit=5`.
+Executes bounded semantic resource items on one read-only repeatable-read
+snapshot; failures reject the request without partial results.
 
-#### `GET /api/building-access/territories`
+### `GET /api/territories/search`
 
-Returns the bounded published territory choice catalog for building-access
-comparisons. No inputs. Its successful body is an object; detailed building
-resource shape and availability are described by the building-access routes
-and their current producer publication.
+Searches the retained published territory reference with bounded query inputs.
 
-### Building access
+### `GET /api/aedar/territories/{territory_type}/{territory_id}/aggregates`
 
-#### `GET /api/territories/{territory_type}/{territory_id}/building-access`
+Returns bounded AEDAR source-grain aggregates with explicit TYPEQU and measure
+field projection.
 
-Initial building-access view for one territory, including its declared default
-comparison. Exact allowed types, query values and defaults are in the generated
-inventory; non-commune reads use their same-level scope.
+### `GET /api/aedar/territories/{territory_type}/{territory_id}/comparisons`
 
-Example: `GET /api/territories/commune/22001/building-access?comparison=epci`.
-Requires compatible reference, ramp and grid publications. The published shape,
-metric and completeness rules belong to the building-access read contract in
-the API source/tests; no missing mode/cell should be interpreted as zero.
+Returns one published AEDAR comparison for the requested context, TYPEQU and
+registered measure.
 
-#### `POST /api/territories/{territory_type}/{territory_id}/building-access-comparison`
+- The generated inventory above is authoritative for paths, request schemas and
+  bounds. `GET /api/resources` returns the producer-derived retained catalogue;
+  it does not connect to PostgreSQL.
+- `POST /api/resources/read` and `/api/resources/read-batch` use the same typed
+  item grammar. Resource identity, target, coordinates, fields and intent are
+  validated against producer declarations. Comparisons preflight the complete
+  request before any data read. Batch reads share one read-only repeatable-read
+  snapshot and return no partial results.
+- Producer metadata owns membership, labels, units, axes, source lineage,
+  vintages and publication versions. Missing values are not zero; absent, stale
+  or incompatible publication dependencies fail closed.
+- Separate AEDAR aggregate and fixed-comparison endpoints remain because they
+  expose source-grain, measure-keyed producer facts. Their exact query contracts
+  are in the generated inventory and OpenAPI schema.
 
-Compare an explicit set of published territories for a focal territory. JSON body is a
-`BuildingSelection` with `selected`, a non-empty typed list of `{ "type": ...,
-"id": ... }` members; exact bounds are in the generated request-model
-inventory. Example:
+## Retired route families
 
-```json
-{"selected":[{"type":"commune","id":"22001"},{"type":"commune","id":"22002"}]}
-```
+Theme/family-specific facts and comparisons, direct indicator/profile/series
+reads, owned-dataset reads, scalar cohorts, building-access, essential-services,
+and the legacy `/api/read-batch` request grammar have been retired. Use the
+producer-derived catalogue and semantic single/batch read routes for retained
+resources. Legacy building/service accessibility and Mobility snapshot-derived
+read models are excluded, not aliases for AEDAR resources. This backend change
+records the contract boundary; it does not include frontend migration.
 
-Members resolve to distinct communes; overlaps are deduplicated and the server
-does not implicitly add or remove the focal territory. The response carries
-the selected member set and publication identity. Unknown/unbounded selections
-fail closed; fewer than two available members produce a null comparison.
+## Resource contracts
 
-### Theme reads and comparisons
-
-#### `GET /api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts`
-
-Returns compact published focal facts/profiles for one theme; it is explicitly
-not necessarily a complete theme model.
-
-Parameters and constraints are in the generated inventory. Example:
-`GET /api/territories/commune/22001/themes/habitat/facts?fields=value`.
-See the [theme-read contract](theme-read-contract.md) and
-[field-selection contract](field-selection-contract.md) for shapes and
-availability. Unsupported/unpublished theme reads do not become empty facts.
-
-#### `POST /api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts`
-
-Acquires focal theme facts and the selected comparison in one snapshot. The
-JSON body is `ThemeComparisonRequest`: required `theme_id` (pattern above),
-optional typed `selection` of `{territory_type, territory_id}` objects;
-omission selects the published default and `[]` selects nobody). See the
-generated inventory for exact query/body constraints. Example:
-
-```json
-{"theme_id":"habitat","selection":[]}
-```
-
-See the [theme-read contract](theme-read-contract.md). It is a bounded subset,
-not an assertion of complete six-theme coverage or consumer activation.
-
-#### `POST /api/territories/{territory_type}/{territory_id}/themes/comparison`
-
-Returns request-scoped theme comparison results. Body is the same
-`ThemeComparisonRequest` (required theme ID; omitted selection differs from
-`[]`). Exact request schema and bounds are in the generated inventory. Example:
-
-```json
-{"theme_id":"mobilite","selection":[{"territory_type":"commune","territory_id":"22001"}]}
-```
-
-Response is comparison-only; supported result statistics and status/provenance
-are owned by theme comparison resources. Unsupported facets or stale markers
-fail closed.
-
-#### `POST /api/territories/{territory_type}/{territory_id}/themes/{theme_id}/comparison`
-
-Comparison-only variant for a path-owned theme ID. JSON body is
-`ThemeComparisonRequest`; its body `theme_id` identifies the comparison
-resource. Typed selection and omitted-versus-empty semantics are as above; exact
-request schema and bounds are in the generated inventory. The response does not include
-focal fact payloads; consult the [theme-read contract](theme-read-contract.md).
-
-### Indicator reads and comparisons
-
-#### `GET /api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}`
-
-Stable named-indicator read. The producer descriptor chooses the published
-shape; callers do not choose a storage shape or rely on an API-maintained
-indicator list. Request schema and bounds are in the generated inventory. Example:
-`GET /api/territories/commune/22001/indicators/subventions_annuelles`.
-For a profile-shaped indicator, the response can contain the descriptor-owned
-profile and default comparison. See field-selection rules and publication
-availability in the OpenAPI response and resource contracts.
-
-#### `POST /api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}/comparison`
-
-Compares one indicator identity independent of its theme or shape. Optional
-body is `IndicatorComparisonRequest` with optional typed `selection`; omitted
-body/selection means the published default, while `[]` means an empty selection.
-See the generated inventory for exact request schemas and bounds. Example:
-
-```json
-{"selection":[{"territory_type":"commune","territory_id":"22001"}]}
-```
-
-Response contains comparison results, not focal facts. See the relevant
-resource-specific response and field-selection contracts.
-
-#### `GET /api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}`
-
-Direct declared-profile read for commune, EPCI or département (region is not
-accepted). Query schemas, defaults and constraints are in the generated inventory.
-
-Example: `GET /api/territories/commune/22001/profiles/structure_age?comparison_scope=bretagne&fields=value`.
-The descriptor owns axes/order, units, source lineage and profile completeness;
-the route fails closed on absent/stale/incomplete publication.
-
-#### `GET /api/territories/{territory_type}/{territory_id}/indicator-cohorts/{indicator_id}`
-
-Returns a focal scalar and bounded, versioned peer cohort. Query parameters,
-defaults and constraints are in the generated inventory.
-
-No `fields` projection is declared for this endpoint. The cohort is a declared
-bounded serving resource, not an arbitrary group query. Use the OpenAPI schema
-and scalar resource contract for response details and publication errors.
-
-### Series reads
-
-#### `GET /api/territories/{territory_type}/{territory_id}/series/{indicator_id}`
-
-Read a directly declared annual series. Query parameters, defaults and
-constraints are in the generated inventory.
-Example: `GET /api/territories/commune/22001/series/demographic_change?scope_level=departement&department_id=22&fields=value`.
-The declared axis/order, missingness, provenance and publication contract are
-preserved; see field selection and the response contract.
-
-#### `GET /api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}`
-
-Read an owned dataset series. The generated inventory specifies path identifier
-patterns, query parameters/defaults and constraints. Example:
-`GET /api/series-datasets/ocs_ge/territories/commune/22001/artif_m2?fields=value`.
-Only registered datasets/descriptors are readable; producer lineage and
-publication bounds remain mandatory.
-
-### Typed batch reads
-
-#### `POST /api/read-batch`
-
-Composes bounded typed reads in one read-only repeatable-read database snapshot;
-the generated inventory gives the request-model item-count bounds.
-The body is `BatchReadRequest` with an `items` array. Each item has a unique
-request-local `id`, a declared `resource` discriminator and only that resource's
-typed parameters. The result envelope is `{"contract":"typed-read-batch-v1",
-"results":[{"id":"...","resource":"...","data":{...}}]}`; `data`
-retains its single-read shape. Example:
-
-```json
-{"items":[
-  {"id":"facts","resource":"theme_facts","territory_type":"commune","territory_id":"22001","theme_id":"habitat","fields":["value"]},
-  {"id":"peers","resource":"theme_comparison","territory_type":"commune","territory_id":"22001","theme_id":"mobilite","selection":[]}
-]}
-```
-
-Supported discriminators, detailed per-resource fields, and aggregate limits
-are authoritative in the [batch-read contract](batch-read-contract.md). Unknown
-resources, duplicate IDs, irrelevant parameters and invalid fields/scopes fail
-explicitly; any item failure aborts the entire batch, with no partial result.
-The route returns `413` when the combined estimated work or serialized response
-exceeds its declared bound. It does not promise lower latency or share one
-publication version across different resources.
-
-### AEDAR reads
-
-#### `GET /api/aedar/territories/{territory_type}/{territory_id}/aggregates`
-
-Bounded source-grain AEDAR aggregate read. Query values/defaults and constraints
-are in the generated inventory.
-
-Example: `GET /api/aedar/territories/commune/22001/aggregates?typequ=A104&limit=20&fields=measures.count_5_walk_mean`.
-The response model is `AEDARTerritorialAggregateResponse`; see
-[field-selection contract](field-selection-contract.md) for mandatory
-denominators, coverage, source clock and publication metadata.
-
-#### `GET /api/aedar/territories/{territory_type}/{territory_id}/comparisons`
-
-Read one published AEDAR fixed-context comparison. Required query parameters,
-allowed values and constraints are in the generated inventory.
-
-Example: `GET /api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean&fields=value&fields=rank`.
-The route returns the declared fixed comparison, preserving address/coverage
-denominators, status, units, source vintage and publication metadata. Unsupported
-context/measure combinations or missing/incompatible publication fail closed.
-
-### Compatibility routes
-
-The following four `essential-services` paths are retained compatibility reads
-(including the legacy compatibility surface tracked around #619). They are
-documented, not deprecated or retired by this change. New field-selection
-vocabulary is not added to them; the [field-selection contract](field-selection-contract.md)
-records their compatibility status.
-
-#### `GET /api/territories/commune/{territory_id}/essential-services`
-
-The generated inventory specifies the optional comparison query schema.
-Returns the existing comparison response for the commune's published
-essential-service observations. Peer scope, ranking direction, null handling
-and counts follow the existing contract; the scope-member count is distinct
-from each metric's comparable count.
-
-#### `GET /api/territories/epci/{territory_id}/essential-services`
-
-No query or body. Compares the EPCI against Breton EPCIs using the retained
-compatibility response shape.
-
-#### `GET /api/territories/departement/{territory_id}/essential-services`
-
-No query or body. Compares the département against the four Breton
-départements using the retained compatibility response shape.
-
-#### `GET /api/territories/region/{territory_id}/essential-services`
-
-No query or body. Returns the region's own shares; scope, medians and ranks are
-null because there is no peer universe. All four paths require the compatible
-published access dataset and return the existing typed `ComparisonResponse`.
-
-## Interactive documentation and schema
-
-The public Swagger UI is `/api/docs`; it fetches the same-origin schema from
-`/api/openapi.json`. The schema lists registered code contracts, not a guarantee
-that a live environment has matching routes or ready publications. No OAuth
-flow, database credential or private connection detail is part of this
-documentation surface.
+`api/batch-read-contract.md` documents semantic resource intent and batch
+semantics. `api/field-selection-contract.md` documents projection rules, and
+`api/resource_catalogue.py` plus generated OpenAPI define the accepted request
+shapes. AEDAR contracts remain documented in the route schemas and tests.

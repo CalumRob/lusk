@@ -10,7 +10,7 @@ from typing import NamedTuple
 
 from fastapi import HTTPException
 
-from api.building_comparison import ComparisonInputError, resolve_commune_members
+from api.comparison_members import ComparisonInputError, resolve_commune_members
 from api.field_selection import normalize_field_selection
 from api.observed_collections import (collection_comparison, collection_comparison_preflight,
     collection_descriptors, collection_marker, collection_snapshot)
@@ -2166,7 +2166,6 @@ def _focal_series_snapshot(conn, territory_type, territory_id, indicator_id, *, 
         "unit": descriptor[5], "direction": descriptor[6], "descriptor_version": descriptor[9],
         "comparison_point": descriptor[3], "points": points,
         "availability": "complete" if all(p["status"] == "measured" for p in points) else "incomplete"}
-
 
 
 

@@ -1,6 +1,6 @@
 # Unified retained-resource serving and publication model
 
-**Status: ACCEPTED target direction; integrated backend implementation in progress.**
+**Status: ACCEPTED target direction; integrated backend implemented, acceptance verification and independent review pending.**
 This is the documentation deliverable for [#795](https://github.com/CalumRob/lusk/issues/795),
 child of [#794](https://github.com/CalumRob/lusk/issues/794). The owner-approved
 direction is one public resource/read contract, shared publication machinery,

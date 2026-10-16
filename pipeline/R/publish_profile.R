@@ -293,7 +293,8 @@ project_dpe_profile <- function(canonical, metadata, scalar_version) {
   if (!setequal(names(labels), details) || length(source_ids) != 1L)
     stop("DPE axes or source identity is not declared", call.=FALSE)
   rows <- rows[rows$key == page$indicator & rows$type %in% unlist(page$levels), , drop=FALSE]
-  if (!nrow(rows) || any(!is.na(rows$sex)) || any(rows$unit != page$unit) ||
+  has_sex_values <- "sex" %in% names(rows) && any(!is.na(rows$sex))
+  if (!nrow(rows) || has_sex_values || any(rows$unit != page$unit) ||
       !all(c("vintage_source","vintage_version","vintage_date_reference","vintage_date_publication") %in% names(rows)))
     stop("Canonical DPE facts do not match declared one-axis profile", call.=FALSE)
   if (!policy$support_count_field %in% names(rows)) stop("DPE support field is missing", call.=FALSE)
@@ -344,7 +345,8 @@ project_declared_detail_profile <- function(canonical, metadata, indicator, sour
     stop("Mobility profile axes, units or source are undeclared", call.=FALSE)
   levels <- if (!is.null(contract$allowed_levels)) unlist(contract$allowed_levels, use.names=FALSE) else unlist(page$levels, use.names=FALSE)
   rows <- rows[rows$key == indicator & rows$type %in% levels,,drop=FALSE]
-  if (!nrow(rows) || any(!rows$detail %in% details) || any(!is.na(rows$sex)) ||
+  has_sex_values <- "sex" %in% names(rows) && any(!is.na(rows$sex))
+  if (!nrow(rows) || any(!rows$detail %in% details) || has_sex_values ||
       !all(c("vintage_source","vintage_version","vintage_date_reference","vintage_date_publication") %in% names(rows)))
     stop("Canonical mobility profile rows do not match declared axes or provenance", call.=FALSE)
   if (!"unit" %in% names(rows) || anyNA(rows$unit) || any(!nzchar(as.character(rows$unit))) ||
