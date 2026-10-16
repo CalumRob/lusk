@@ -1,13 +1,15 @@
-# Draft design: unified retained-resource serving and publication model
+# Unified retained-resource serving and publication model
 
-**Status: PROPOSED — owner acceptance required before backend schema, publication or API implementation.**
+**Status: ACCEPTED target direction; integrated backend implementation in progress.**
 This is the documentation deliverable for [#795](https://github.com/CalumRob/lusk/issues/795),
 child of [#794](https://github.com/CalumRob/lusk/issues/794). The owner-approved
 direction is one public resource/read contract, shared publication machinery,
 and a few constrained storage shapes—not one universal fact table. Shared typed
-single/batch reads are already decided. This document proposes specifics; it
-does not amend accepted ADRs, decide catalogue membership, authorize DDL,
-production work, or declare any current object safe to drop.
+single/batch reads are already decided. The owner accepted this integrated
+backend direction after merge `09364831a5ea1a1abf75688d0e7645e752bcbe8d`.
+Engineering details below are implementation constraints and recommendations;
+they do not authorize production operations or make any current object safe to
+drop without migration and dependency proof.
 
 The owner has superseded the former per-theme/service-first execution proposal.
 This initiative is **backend only**: pipeline publication, PostgreSQL and the
@@ -20,8 +22,18 @@ code here. The current AEDAR prototype is intended for future production
 Mobility after the database is settled; leave its UI, acquisition and data/map
 contracts untouched. Earlier conflation of that prototype with retired Variant
 E is superseded. AEDAR's INSEE BPE TYPEQU registry remains valid nomenclature.
-The design gate remains open for the integrated backend target, not frontend
-survival or all proposed candidate approvals.
+The design gate is closed for the integrated backend target. Catalogue membership
+is now enforced by the implementation inventory and its producer-derived
+coverage tests; details below remain the rationale and migration record.
+
+### Implementation checkpoint — 2026-10-16
+
+Producer-derived discovery, the shared typed single/batch grammar, one-snapshot
+execution, named-reference facts, focal profile facts, comparison intents, and
+initial shared scalar/profile/owned-series publication decisions have landed.
+They are an implementation slice, not completion of this design: retained shape
+coverage, common physical schema/publication ownership, populated upgrade proof,
+and removal of excluded legacy backend routes and objects remain outstanding.
 
 ## 1. Resource identity and discovery
 
