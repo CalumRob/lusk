@@ -220,3 +220,39 @@ def test_period_detail_field_selection_projects_value_and_keeps_sparse_provenanc
 
     full = collection_snapshot(SnapshotConnection(), DESCRIPTOR, "commune", "c1")
     assert full["entries"][0]["value"] is None
+
+
+def test_period_detail_preflight_counts_actual_focal_rows():
+    class CountConnection:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "to_regclass('observed_collection_descriptor')" in sql: return Cursor(("observed_collection_descriptor",))
+            if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
+            if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            if "SELECT count(*) FROM period_detail_observation" in sql: return Cursor((37,))
+            raise AssertionError(sql)
+
+    conn = CountConnection()
+    estimate = collection_snapshot(conn, DESCRIPTOR, "commune", "c1", preflight_only=True)
+    assert estimate["work_units"] == 37
+    assert not any("SELECT o.detail_key" in sql for sql, _ in conn.calls)
+
+
+def test_anchored_membership_preflight_counts_resolved_anchor_rows():
+    descriptor = {**DESCRIPTOR, "kind": "anchored_membership"}
+
+    class CountConnection:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "SELECT count(*) FROM anchored_membership" in sql: return Cursor((241,))
+            if "to_regclass('observed_collection_descriptor')" in sql: return Cursor(("observed_collection_descriptor",))
+            if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
+            if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            raise AssertionError(sql)
+
+    conn = CountConnection()
+    estimate = collection_snapshot(conn, descriptor, "commune", "c1", preflight_only=True)
+    assert estimate["work_units"] == 241
+    assert not any("SELECT t.territory_id" in sql for sql, _ in conn.calls)

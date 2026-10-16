@@ -51,6 +51,7 @@
 /docs/*
 !/docs/adr/
 !/docs/design/
+/docs/design/*
 !/docs/design/serving-model-simplification.md
 !/docs/design/serving-resource-catalogue-snapshot.md
 # Le prototype #499 (jetable) : son dossier de revue — README + captures —
