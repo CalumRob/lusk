@@ -115,11 +115,10 @@ def test_aedar_metadata_complete_check_fails_closed_for_partial_gamme_states():
         connection.execute(f"INSERT INTO metadata ({names}) VALUES ({placeholders})", hors_gamme_null)
 
 
-def test_aedar_typed_response_rejects_incomplete_measure_maps():
+def test_aedar_typed_response_accepts_registered_projection_but_rejects_unknown_measure():
     from api.main import AEDARFactResponse
     import pytest
-    with pytest.raises(Exception, match="312"):
-        AEDARFactResponse(territory_id="x", territory_type="commune", typequ="A104",
+    payload = dict(territory_id="x", territory_type="commune", typequ="A104",
             typequ_label="GENDARMERIE",typequ_hierarchy_label="GENDARMERIE",typequ_description="Description",
             typequ_domain_code="A",typequ_domain_label="Services",
             typequ_subdomain_code="A1",typequ_subdomain_label="Publics",typequ_gamme=None,
@@ -128,6 +127,9 @@ def test_aedar_typed_response_rejects_incomplete_measure_maps():
             n_observed=1, coverage_status="covered", measures={"count_5_walk_share":0},
             source_id="aedar_bretagne", vintage_id="2026-v1", source_url="https://example.test",
             licence="ODbL", attribution="AEDAR", reference_date=None, publication_date="2026-09-30")
+    assert AEDARFactResponse(**payload).measures == {"count_5_walk_share": 0}
+    with pytest.raises(Exception, match="unregistered"):
+        AEDARFactResponse(**{**payload, "measures": {"not_registered": 0}})
 
 
 def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
@@ -191,7 +193,7 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
     from contextlib import contextmanager
     from fastapi.testclient import TestClient
     import api.main as main
-    state={"stale":False,"statistic":"median","context":"epci"}
+    state={"stale":False,"statistic":"median","context":"epci","queries":[]}
 
     class Cursor:
         description = [type("Column", (), {"name": n}) for n in
@@ -203,6 +205,7 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
         def fetchone(self): return self.row
     class Connection:
         def execute(self, sql, *_args, **_kwargs):
+            state["queries"].append((sql,_args[0] if _args else None))
             if "aedar_comparison_publication" in sql:
                 return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,8,"old-aedar" if state["stale"] else "aed-v1","ref-v1")})()
             if "FROM territory_reference" in sql:
@@ -226,6 +229,19 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
     assert body["comparison"]["rank_size"]==2
     assert body["comparison"]["statistic"]=="median"
     assert "rank_ties" not in body["comparison"]
+    value_only=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean&fields=value")
+    rank_only=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean&fields=rank")
+    assert value_only.status_code==rank_only.status_code==200
+    assert value_only.json()["comparison"]["value"]==5.0
+    assert "group_value" not in value_only.json()["comparison"] and "rank" not in value_only.json()["comparison"]
+    assert rank_only.json()["comparison"]["rank"]==1
+    assert "value" not in rank_only.json()["comparison"] and "rank_size" not in rank_only.json()["comparison"]
+    projection_queries=[(sql,params) for sql,params in state["queries"] if "FROM aedar_comparison_territory" in sql]
+    assert "CASE WHEN %s THEN t.value" in projection_queries[-2][0] and projection_queries[-2][1][4] is True
+    assert projection_queries[-1][1][4] is False and projection_queries[-1][1][5] is True
+    before=len(state["queries"])
+    invalid=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean&fields=not_a_field")
+    assert invalid.status_code==422 and len(state["queries"])==before
     state["statistic"]="pooled"
     state["context"]="density_class"
     pooled=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=density_class&typequ=A104&measure=count_5_walk_mean")

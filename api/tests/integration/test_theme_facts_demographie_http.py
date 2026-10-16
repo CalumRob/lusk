@@ -29,5 +29,31 @@ def test_demographie_selected_facts_http_snapshot():
         assert result.status_code==200,result.text
         row=result.json()['readings'][0]
         assert all(k in row for k in ('periode','solde_naturel','solde_migratoire','taux_solde_naturel','taux_solde_migratoire','classification','status','provenance','rate_unit'))
+        full_get=client.get(route)
+        value_get=client.get(route+'?fields=value')
+        status_get=client.get(route+'?fields=status')
+        invalid=client.get(route+'?fields=raw_sql')
+        assert full_get.status_code==200 and value_get.status_code==200 and status_get.status_code==200
+        assert full_get.json()['readings']==result.json()['readings']
+        for selected in (value_get.json(), status_get.json()):
+            selected_reading=selected['readings'][0]
+            assert selected_reading['status']=='measured'
+            assert selected_reading['provenance']==row['provenance']
+            assert selected_reading['periode']==row['periode']
+        assert {'solde_naturel','solde_migratoire','taux_solde_naturel','taux_solde_migratoire'} <= set(value_get.json()['readings'][0])
+        assert not {'solde_naturel','solde_migratoire','taux_solde_naturel','taux_solde_migratoire'} & set(status_get.json()['readings'][0])
+        post_status=client.post(route+'?fields=status',json={'theme_id':'demographie'})
+        assert post_status.status_code==200,post_status.text
+        assert post_status.json()['readings'][0]['status']=='measured'
+        assert not {'solde_naturel','solde_migratoire','taux_solde_naturel','taux_solde_migratoire'} & set(post_status.json()['readings'][0])
+        assert invalid.status_code==422
+        assert any("CASE WHEN %s THEN solde_naturel" in sql and params[:4]==(False,False,False,False)
+                   for sql,params in checked[-1].queries if "FROM demographic_typed_reading" in sql)
+        checked.clear()
+        invalid=client.get(route+'?fields=raw_sql')
+        assert invalid.status_code==422
+        assert checked==[]
+        assert client.get(route+'?fields=').status_code==422
+        assert client.get(route+'?fields=value&fields=value').status_code==422
         db.execute("DELETE FROM demographic_typed_reading WHERE territory_id='35238'")
         assert client.post(route,json={'theme_id':'demographie'}).status_code==404

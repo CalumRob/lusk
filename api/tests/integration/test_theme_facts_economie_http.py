@@ -16,5 +16,14 @@ def test_economie_selected_facts_http_snapshot():
         assert result.status_code==200,result.text
         row=result.json()['readings'][0]
         assert row['activities'][0]['activity_code']=='A'
+        selected=client.get(route+'?fields=status')
+        assert selected.status_code==200,selected.text
+        projected=selected.json()['readings'][0]
+        assert projected['status']=='measured' and projected['provenance']==row['provenance']
+        assert projected['activities'][0]['activity_code']=='A'
+        assert not {'lq','n','part_parc'} & set(projected['activities'][0])
+        evidence_query=next((sql,params) for sql,params in checked[-1].queries
+                            if 'FROM economy_activity_evidence' in sql)
+        assert 'CASE WHEN %s THEN lq' in evidence_query[0] and evidence_query[1][:3]==(False,False,False)
         # This fixture isolates typed activity evidence; canonical eco_activites scalar coverage
         # is exercised through the guarded registered-publisher HTTP test.

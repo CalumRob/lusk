@@ -294,11 +294,18 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                     assert fact["measures"]["count_5_walk_share"] is None
                     assert fact["measures"]["count_5_walk_min"] == 0
                     assert fact["measures"]["count_5_walk_max"] == pytest.approx(0.12345678901234566, rel=1e-15)
+                    projected = client.get(f"/api/aedar/territories/{level}/{territory_id}/aggregates?typequ=A135&limit=1&fields=measures.count_5_walk_max")
+                    assert projected.status_code == 200, projected.text
+                    assert projected.json()["facts"][0]["measures"] == {"count_5_walk_max": pytest.approx(0.12345678901234566, rel=1e-15)}
+                    assert projected.json()["facts"][0]["source_id"] == "aedar_bretagne"
+                    assert projected.json()["facts"][0]["typequ"] == "A135"
                     assert fact["licence"] == "ODbL" and fact["publication_date"] == "2026-09-30"
                     assert fact["attribution"] == "© OpenStreetMap contributors; données AEDAR — licence ODbL"
                     assert resp.json()["content_version"]
                     assert resp.json()["reference_content_version"] == "fixture-ref-v1"
                 assert client.get("/api/aedar/territories/region/53/aggregates?limit=101").status_code == 422
+                assert client.get("/api/aedar/territories/region/53/aggregates?fields=").status_code == 422
+                assert client.get("/api/aedar/territories/region/53/aggregates?fields=measures.not_registered").status_code == 422
                 comparison=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
                 assert comparison.status_code==200,comparison.text
                 compared=comparison.json()

@@ -82,7 +82,11 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
         pub.execute("INSERT INTO scalar_descriptor_source VALUES('fixture_scalar','scalar-fixture')")
         pub.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES('fixture_scalar','35238','commune',42,'measured')")
         pub.execute("INSERT INTO scalar_observation_source VALUES('fixture_scalar','35238','scalar-fixture','v1')")
-        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('scalar_observation','scalar-v1',1,'ref-v1')")
+        pub.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES
+            ('fixture_scalar','35001','commune',40,'measured'),('fixture_scalar','35002','commune',50,'measured')""")
+        pub.execute("""INSERT INTO scalar_observation_source VALUES
+            ('fixture_scalar','35001','scalar-fixture','v1'),('fixture_scalar','35002','scalar-fixture','v1')""")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('scalar_observation','scalar-v1',3,'ref-v1')")
         pub.execute("COMMIT")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('milieux_typed_reading','reading-v1',4,'ref-v1')")
         pub.execute("INSERT INTO source_dataset VALUES('conso-fixture','CONSO fixture')")
@@ -144,12 +148,54 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
         pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{reader}"')
         pub.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO "{reader}"')
 
+        # Publish this fixture's fixed scalar comparison through the actual R
+        # projector/adapter, deriving both values and lineage from these rows.
+        rscript=shutil.which("Rscript")
+        assert rscript, "Rscript is required for the registered scalar comparison fixture"
+        script=tmp_path/"publish_milieux_scalar_comparison.R"
+        script.write_text(r'''args <- commandArgs(TRUE)
+root <- args[[1]]
+schema <- args[[2]]
+source(file.path(root,"pipeline","R","publish_scalar.R"),local=FALSE)
+con <- DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_R_DBNAME"),
+  host=Sys.getenv("LUSK_TEST_R_HOST"),port=as.integer(Sys.getenv("LUSK_TEST_R_PORT")),
+  user=Sys.getenv("LUSK_TEST_R_USER"),options=paste0("-csearch_path=",schema))
+descriptor <- DBI::dbGetQuery(con,"SELECT indicator_id,theme_id,label,unit,direction,comparison_facet,
+  denominator_semantics,completeness,descriptor_version FROM scalar_descriptor WHERE indicator_id='fixture_scalar'")
+descriptor$allowed_sources <- I(list(DBI::dbGetQuery(con,"SELECT source_id FROM scalar_descriptor_source WHERE indicator_id='fixture_scalar' ORDER BY source_id")$source_id))
+descriptor$allowed_levels <- I(list("commune"))
+descriptor <- descriptor[c("indicator_id","theme_id","allowed_sources","label","unit","direction",
+  "comparison_facet","allowed_levels","denominator_semantics","completeness","descriptor_version")]
+facts <- DBI::dbGetQuery(con,"SELECT indicator_id,territory_id,territory_type,value,status,support_count,denominator_count
+  FROM scalar_observation WHERE indicator_id='fixture_scalar' ORDER BY territory_id")
+eligible <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
+provenance <- DBI::dbGetQuery(con,"SELECT indicator_id,territory_id,source_id,vintage_id FROM scalar_observation_source
+  WHERE indicator_id='fixture_scalar' ORDER BY territory_id,source_id,vintage_id")
+input <- list(facts=facts,descriptors=descriptor,eligible_territories=eligible,provenance=provenance)
+projection <- project_scalar_comparisons(input,eligible,"scalar-v1","ref-v1")
+published <- publish_registered_scalar_comparison(projection,scalar_comparison_postgres_adapter(con))
+stopifnot(published$group_row_count>0,published$territory_row_count>0)
+cat("MILIEUX_SCALAR_COMPARISON_PUBLISHED=TRUE\n")
+DBI::dbDisconnect(con)
+''',encoding="utf-8")
+        writer=urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
+        env=os.environ.copy()
+        env.update({"LUSK_TEST_R_DBNAME":writer.path.lstrip("/"),
+            "LUSK_TEST_R_HOST":writer.hostname or "localhost",
+            "LUSK_TEST_R_PORT":str(writer.port or 5432),
+            "LUSK_TEST_R_USER":writer.username or ""})
+        published=subprocess.run([rscript,"--vanilla",str(script),str(root),schema],cwd=root/"pipeline",
+            env=env,check=False,timeout=120,capture_output=True,text=True)
+        assert published.returncode==0,published.stdout+"\n"+published.stderr
+        assert "MILIEUX_SCALAR_COMPARISON_PUBLISHED=TRUE" in published.stdout
+
         query_counts=[]
         checked_out=[]
         class RecordingConnection:
-            def __init__(self,conn): self.conn=conn; self.count=0; self.transaction_commands=[]
+            def __init__(self,conn): self.conn=conn; self.count=0; self.transaction_commands=[]; self.queries=[]
             def execute(self,*args,**kwargs):
                 self.count+=1
+                if args and isinstance(args[0],str): self.queries.append(args[0])
                 if args and isinstance(args[0],str) and args[0].upper().startswith("SET TRANSACTION"):
                     self.transaction_commands.append(args[0])
                 return self.conn.execute(*args,**kwargs)
@@ -170,9 +216,24 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
             route=f"/api/territories/commune/35238/themes/milieux/facts"
             default=client.post("/api/territories/commune/35238/themes/comparison",json={"theme_id":"milieux"})
             assert default.status_code==200,default.text
+            scalar_default=next(row for row in default.json()["results"] if row["indicator_id"]=="fixture_scalar")
+            assert scalar_default["status"]=="available"
+            assert scalar_default["median"]==42 and scalar_default["rank"]==2 and scalar_default["rank_size"]==3
             default_query_count=query_counts[-1]
             payload=client.get("/api/territories/commune/35238/themes/milieux/facts")
             assert payload.status_code==200,payload.text
+            default_facts_queries=checked_out[-1].queries
+            active_route_reads=lambda queries:[sql for sql in queries if "FROM series_dataset_descriptor" in sql
+                and "WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels)" in sql]
+            assert not any("SELECT indicator_id FROM profile_descriptor WHERE theme_id=%s" in sql
+                for sql in default_facts_queries)
+            assert not any("FROM selected_reading_descriptor" in sql for sql in default_facts_queries)
+            default_series_queries=active_route_reads(default_facts_queries)
+            assert len(default_series_queries)==2
+            assert sum("AND (%s::text IS NULL OR indicator_id=%s)" in sql
+                for sql in default_series_queries)==1
+            assert sum("AND (%s::text IS NULL OR indicator_id=%s)" not in sql
+                for sql in default_series_queries)==1
             facts=payload.json()
             assert [item["indicator_id"] for item in facts["indicators"]]==["fixture_scalar"]
             assert facts["indicators"][0]["value"]==42
@@ -181,6 +242,37 @@ def test_milieux_comparison_cloud_reads_bounded_source_bound_points_over_http(tm
             assert len(facts["readings"])==1
             assert facts["readings"][0]["groupe"]=="land"
             assert facts["readings"][0]["artif_m2_par_habitant"]==8
+            status_facts=client.get(route+"?fields=status")
+            value_facts=client.get(route+"?fields=value")
+            assert status_facts.status_code==value_facts.status_code==200
+            selected_value_queries=checked_out[-1].queries
+            selected_series_queries=active_route_reads(selected_value_queries)
+            assert len(selected_series_queries)==2
+            assert sum("AND (%s::text IS NULL OR indicator_id=%s)" in sql
+                for sql in selected_series_queries)==1
+            assert sum("AND (%s::text IS NULL OR indicator_id=%s)" not in sql
+                for sql in selected_series_queries)==1
+            status_body,value_body=status_facts.json(),value_facts.json()
+            assert "value" not in status_body["indicators"][0]
+            assert status_body["indicators"][0]["status"]==facts["indicators"][0]["status"]
+            assert not {"delta_population","taux_variation_population","artif_m2_par_habitant",
+                "artif_m3_par_habitant","trajectoire_artif_par_habitant"} & set(status_body["readings"][0])
+            assert value_body["indicators"][0]["value"]==facts["indicators"][0]["value"]==42
+            assert value_body["readings"][0]["artif_m2_par_habitant"]==facts["readings"][0]["artif_m2_par_habitant"]==8
+            assert status_body["reading_content_version"]==value_body["reading_content_version"]==facts["reading_content_version"]
+            assert status_body["readings"][0]["provenance"]==value_body["readings"][0]["provenance"]==facts["readings"][0]["provenance"]
+            cloud_selection=[{"territory_type":"commune","territory_id":territory_id}
+                for territory_id in ("35238","35001","35002")]
+            cloud_full=client.post(route,json={"theme_id":"milieux","selection":cloud_selection})
+            cloud_status=client.post(route+"?fields=status",json={"theme_id":"milieux","selection":cloud_selection})
+            cloud_value=client.post(route+"?fields=value",json={"theme_id":"milieux","selection":cloud_selection})
+            assert cloud_full.status_code==cloud_status.status_code==cloud_value.status_code==200
+            full_points=cloud_full.json()["comparison"]["reading_cloud"]["points"]
+            assert {point["territory"]["territory_id"]:point["artif_m2_par_habitant"] for point in full_points}=={
+                "35238":8,"35001":7,"35002":6}
+            assert cloud_status.json()["comparison"]["reading_cloud"]["points"]==full_points
+            assert cloud_value.json()["comparison"]["reading_cloud"]["points"]==full_points
+            assert cloud_full.json()["comparison"]["results"][0]["median"]==42
             pub.execute("DELETE FROM milieux_typed_reading WHERE territory_id='35238'")
             typed_reading_absent=client.get("/api/territories/commune/35238/themes/milieux/facts")
             assert typed_reading_absent.status_code==404,typed_reading_absent.text

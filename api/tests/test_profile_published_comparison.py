@@ -33,6 +33,13 @@ class DetailConnection:
             if group is None else group)
         self.territory = ([("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, len(members), "profile-v1", "ref-v1")]
             if territory is None else territory)
+        self.group = [row if len(row) > 11 else (*row,
+            (row[6] == 0 and row[4] is None) or (row[6] > 0 and row[4] is not None))
+            for row in self.group]
+        self.territory = [row if len(row) > 11 else (*row,
+            ((row[5] == "measured" and all(value is not None for value in (row[4],row[6],row[7],row[8]))) or
+             (row[5] != "measured" and all(value is None for value in (row[4],row[6],row[7],row[8])))))
+            for row in self.territory]
 
     def execute(self, sql, params=None):
         self.sql.append((sql, params))
@@ -72,6 +79,55 @@ def test_fixed_detail_uses_published_statistics_and_only_reads_focal_row():
     assert territory_read[1][-1] == "c1"
 
 
+def test_fixed_detail_selection_projects_result_columns_in_published_sql():
+    conn=DetailConnection()
+    result=main._published_profile_comparison_results(conn,[PROFILE],
+        ("density_class","A","commune"),"commune",("c1","c2"),"c1",
+        selected_fields=("median",))["housing_profile"]
+    assert result["median"]==20.0 and result["status"]=="available"
+    assert not {"focal_value","rank","rank_size","rank_ties","eligible_count"} & set(result)
+    group_sql,group_params=next((sql,params) for sql,params in conn.sql if "FROM profile_comparison_group" in sql)
+    focal_sql,focal_params=next((sql,params) for sql,params in conn.sql if "FROM profile_comparison_territory" in sql)
+    assert "CASE WHEN %s THEN median" in group_sql and group_params[0] is True
+    assert all(value is False for value in focal_params[:4])
+
+
+def test_profile_comparison_rejects_scalar_only_field_before_publication_reads():
+    conn=DetailConnection()
+    with pytest.raises(HTTPException) as error:
+        main._published_profile_comparison_results(conn,[PROFILE],
+            ("density_class","A","commune"),"commune",("c1","c2"),"c1",
+            selected_fields=("mean",))
+    assert error.value.status_code==422
+    assert not any("FROM profile_comparison_group" in sql for sql,_ in conn.sql)
+
+
+def test_selected_external_profile_keeps_support_count_internal_only(monkeypatch):
+    profile={"indicator":"housing_external","label":"Housing","unit":"%",
+        "descriptor_version":"pd1","comparison_scalar":"employment",
+        "required_scalar_version":"scalar-v1","denominator_semantics":"stock",
+        "comparison_point":{"direction":"high"}}
+    class Connection:
+        def execute(self,sql,params=None):
+            assert "FROM scalar_descriptor" in sql
+            return Cursor(rows=[("employment","Employment","count","high","employment",
+                ["commune"],"sd1")])
+    received={}
+    def published(_conn,_descriptors,_context,_cohort_type,_members,_territory_id,
+                  *,include_ties=False,selected_fields=None):
+        received["fields"]=selected_fields
+        result={"status":"unavailable","reason":"no_selected_comparable_values",
+            "comparison_sources":[]}
+        if "eligible_count" in selected_fields: result["eligible_count"]=0
+        return {"employment":result}
+    monkeypatch.setattr(main,"_published_scalar_comparison_results",published)
+    result=main._profile_comparison_results(Connection(),[profile],("c1","c2"),"commune","c1",
+        ("density_class","D1","commune"),selected_fields=("status",))[0]
+    assert "eligible_count" in received["fields"]
+    assert result["status"]=="unavailable"
+    assert not {"eligible_count","median","rank","rank_size","rank_ties"} & set(result)
+
+
 def test_fixed_detail_caller_reads_required_mixed_vintage_provenance_once():
     sources = [
         ("housing_profile", "housing", "2024", "Housing", "2024", None, None, "pub-v1"),
@@ -82,7 +138,7 @@ def test_fixed_detail_caller_reads_required_mixed_vintage_provenance_once():
         def execute(self, sql, params=None):
             if "FROM profile_comparison_group" in sql:
                 self.sql.append((sql, params))
-                return Cursor(rows=[("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 2, "profile-v1", "ref-v1")])
+                return Cursor(rows=[("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 2, "profile-v1", "ref-v1",True)])
             if "FROM comparison_source_lineage l" in sql:
                 self.sql.append((sql, params))
                 return Cursor(rows=sources)
@@ -325,7 +381,7 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
         def execute(self, sql, params=None):
             self.sql.append((sql, params))
             if "FROM profile_comparison_group" in sql:
-                return Cursor(rows=[("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 2, "profile-v1", "ref-v1")])
+                return Cursor(rows=[("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 2, "profile-v1", "ref-v1", True)])
             if "FROM scalar_descriptor WHERE indicator_id=ANY" in sql:
                 return Cursor(rows=[scalar])
             if "to_regclass('scalar_comparison_publication')" in sql:
@@ -334,9 +390,9 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
                 return Cursor(("pub", "scalar-v1", "ref-v1", 1, 2,
                     "scalar-v1", "ref-v1", "ref-v1"))
             if "FROM scalar_comparison_group" in sql:
-                return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0, 2)])
+                return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0, 2, True)])
             if "FROM scalar_comparison_territory" in sql:
-                return Cursor(rows=[("part_passoires", 10.0, "measured", 1, 1, 2)])
+                return Cursor(rows=[("part_passoires", 10.0, "measured", 1, 1, 2, True)])
             if "FROM comparison_source_lineage l" in sql:
                 if params and params[0] == "profile":
                     return Cursor(rows=[("housing_profile", *source, "pub-v1") for source in lineage])
