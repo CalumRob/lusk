@@ -417,10 +417,14 @@ current marker's owner, dependencies and retry behavior; none is deleted here.
 
 This is the integrated work order inventory, not approval to drop anything now.
 Rows describe source-backed checked-in paths; production traffic/runtime are
-unknown. **Legacy BPE is excluded from discovery and the target**; its current
-code/readers are mapped separately below. AEDAR's TYPEQU nomenclature is not
-legacy-serving code and remains. Resource membership is determined by retained
-producer/domain declarations, not guessed from themes or grep substrings.
+unknown. **Legacy BPE accessibility-serving resources**—access profiles,
+snapshot service shares and derived accessibility read models—are excluded from
+discovery and the target; their current code/readers are mapped separately
+below. The owner-retained BPE25 B316 fuel-station input for
+`bornes_ev_par_station_service` is distinct and explicitly retained. AEDAR's
+TYPEQU nomenclature is not legacy-serving code and remains. Resource membership
+is determined by producer/domain declarations and owner scope, not guessed from
+themes or grep substrings.
 
 ### Retained-resource coverage matrix
 
@@ -428,7 +432,7 @@ The grouped matrix below is navigational, not finite proof of completeness. The
 source-pinned, member-by-member inventory in
 [`serving-resource-catalogue-snapshot.md`](serving-resource-catalogue-snapshot.md)
 enumerates every declared theme indicator, its contract class/source,
-proposed-retained/excluded/unresolved classification, and the finite selected-
+owner-retained/proposed/excluded/unresolved classification, and the finite selected-
 reading/AEDAR measure groups. It records **proposed** survivors only; the owner
 gate remains open. The snapshot uses producer metadata maps plus the explicitly
 named special publishers, not a second registry. Whole-catalogue acceptance
@@ -490,6 +494,11 @@ listed above, not candidates to retain in a generic semantic resource. Exact
 reader field references must be rechecked in code/tests during the integrated
 implementation before any column is removed.
 
+These field-level source/parity and deduplication checks are engineering
+unknowns, not unresolved product/catalogue membership decisions. They do not
+reopen any owner's explicit retain/exclude decisions or individually approve
+the other proposed catalogue candidates.
+
 ### Excluded legacy surfaces and unresolved product dependencies
 
 | Legacy object/field path (excluded from target) | Checked-in publisher/DB/API/reader evidence | Current consumer/dependency | Disposition and exact unresolved product question |
@@ -498,7 +507,6 @@ implementation before any column is removed.
 | Legacy Mobility snapshot shares: `share_*`, `iso_*`, `service_share_scalar`, `service_registry`, `essential_service_access`, service source/peer scope | `theme_mobilite.json`, `analytics_mobilite.R`, `publish_scalar.R::project_service_share_scalars()` and `serving_tables.R`; `publier_tables_postgres.R`; service tables/markers and comparison/route adapters in `api/main.py` | `TerritoireView.vue` + `accessApiFacts.ts`, `themeContent.ts`, method indicators/fiche and legacy static JSON/map layers; `modeles_lecture.R` may consume snapshot-derived material | Exclude the share resource and do not preserve/re-publish these IDs as target facts. AEDAR does not declare the same 5-service×3-mode snapshot, 20-minute building threshold, coverage cutoff or peer-gap reading. Owner decides removal of the affected blocks/fields or names a specifically evidenced, already-authoritative contract for their exact semantics; AEDAR's distinct address-grain product is not a presumed substitution. |
 | Legacy BPE/OSM/BDNB equipment ramp/grid and access-distribution read models | `distribution_acces_batiments.R` explicitly takes the legacy BPE TYPEQU snapshot plus OSM/BDNB; `serving_tables.R`, `publish_mobility_distribution.R`, building-comparison producer; DB `building_ramp/grid`, descriptors and `mobility_density_distribution*`; `api/main.py` legacy readers | Legacy payload IDs are loaded/validated by `app/src/payload/loader.ts`, `usePayload.ts`, and `territoryReadModel.ts`; API building presentation is adapted in `app/src/fiche/content/mobilityThemeApiFacts.ts`. `CartographicBreakoutPrototype.vue` is **not** evidence of this lineage: `VarianteCahierLibre.vue` calls it with `SharingNetworksEvidence` and `CyclingOfferEvidence` for an exploratory cartographic breakout. Variant E's separate AEDAR-backed UI/acquisition wiring is inventoried as an excluded retirement dependency above; it is not a current required consumer of these legacy products. | Exclude the legacy BPE/OSM/BDNB ramp/grid/distribution products and their old consumer fields. The unresolved product disposition is whether each checked legacy consumer is removed or has a specifically evidenced authoritative contract with the same semantics. Valid AEDAR data/map contracts are separately retained and are not an inferred substitute. Do not relabel legacy values or silently delete a consumer. |
 | Mobility typed-reading/story fields derived from legacy access snapshot (`div_loss_*`, `pct_iso_full_t`, density/decile distribution, access story/salience and `iso_*` mirrors) | `publish_typed_readings.R`, `publish_mobility_distribution.R`, `theme_mobilite.R`; DB `mobility_typed_reading`, story, clock and distribution tables; API theme-facts assembly | `ThemeContent`, `OngletTheme.vue`, `themeFactsAdapter.ts`, `modeles_lecture.R`, static map/read-model generation | Exclude those legacy-derived semantic read models from target; field-level retirement inventory must identify all copy/figures/content. AEDAR separately declares address-grain diversity/loss ramps and map readings, but not the same legacy building-level snapshot, thresholds, story classification or peer-gap narrative; do not conflate or reconstruct either product. Owner disposition is removal or a specifically evidenced contract for the exact legacy semantics. |
-| Fuel-station count dependency, `stations_service` / official BPE B316, feeding `bornes_ev_par_station_service` | `manifest_mobilite.R::MANIFEST_MOBILITE_BPE_B316` declares official `BPE25.parquet`, vintage 2025, reference date 2025-01-01; `normaliser_mobilite.R::calculer_fuel_communes()` counts valid communal B316 rows; `analytics_mobilite.R::calculer_ratios_mobilite()` derives the ratio; `theme_mobilite.json` registers source `bpe_b316` and scalar ID | `app/src/views/IndicateurPage.vue` / theme acquisition and Mobility indicator/fiche consumers; this is an official input fact and distinct from the excluded access-profile/snapshot products | **UNRESOLVED product disposition only:** retire the ratio/product or approve a specifically evidenced replacement source for that ratio. The BPE25 source fact is already traced and readable; do not ask whether its filename contains BPE, delete it by substring, or silently substitute AEDAR. No AEDAR equivalent for B316 counts/ratio is declared. |
 
 These dependencies are **not** owner questions about whether legacy BPE serving
 or Variant E remains: both are explicitly excluded. They are precise product
@@ -510,6 +518,39 @@ separate; none implies that its old prototype UI/acquisition survives. The
 implementation must not carry old resources or UI forward just to pass parity
 tests; prototype-only tests should be removed, while independent data/map
 contract tests remain as applicable. Do not invent a replacement UI.
+
+### Resolved retained B316 dependency
+
+The owner decided to **retain** `bornes_ev_par_station_service` and its official
+fuel-station input, distinct from the excluded accessibility snapshot. Its
+numerator is Etalab/data.bretagne.bzh's IRVE v2.2.0 `bornes-recharges.csv`
+(`https://data.bretagne.bzh/api/explore/v2.1/catalog/datasets/bornes-recharges/exports/csv`), vintage 2026-07, reference 2026-07-28, publication
+2026-08-04; it counts distinct `id_station_itinerance` per valid commune, and
+rows without a commune code do not enter a communal count. Its denominator is
+pinned by
+`MANIFEST_MOBILITE_BPE_B316` to the INSEE geolocated detail file
+`BPE25.parquet` (`https://www.insee.fr/fr/statistiques/fichier/8217525/BPE25.parquet`, `bpe_b316`), BPE vintage 2025, reference date 2025-01-01,
+publication date 2026-08-04, Licence Ouverte 2.0. `lire_bpe_b316()` rejects
+another filename; `selectionner_bpe_b316_2025()` uses valid Breton `DEPCOM`
+rows to establish coverage before filtering `TYPEQU == B316`, inserts an
+explicit zero for a covered commune with no B316 row, and leaves an uncovered
+commune without a fuel count. `normaliser_bpe_b316()` sums B316 `NB_EQUIP`
+counts per commune; `calculer_ratios_mobilite()` emits `bornes / fuel` only
+when the numerator is available and fuel is present and greater than zero.
+Thus measured zero fuel is distinct from unavailable source coverage, while
+the ratio is unavailable when either input is missing or the denominator is
+zero (never coerced to zero). `theme_mobilite.json` binds the ratio to both
+`bpe_b316` and `bornes-recharges`.
+
+There are checked-in provenance metadata conflicts to reconcile in the
+integrated implementation: `theme_mobilite.json::source_records.bpe_b316`
+still declares vintage 2024 / reference date 2024-01-01 / publication date
+2026-06-30, while the source manifest and reader pin BPE25 / 2025 / 2025-01-01
+/ 2026-08-04. Its `bornes-recharges` source record also declares dates
+2026-07-01 / 2026-07-01, while the source manifest pins reference 2026-07-28 /
+publication 2026-08-04. These are source-descriptor consistency corrections,
+not unresolved product decisions. Preserve actual source provenance and
+missingness; do not substitute AEDAR or retire the ratio.
 
 ## 5. One integrated implementation brief (PROPOSED; after owner gate)
 
@@ -544,8 +585,9 @@ the same workstream and PR.
    metadata contracts. Cover all rows in the retained matrix, including unique
    semantic evidence, per-observation source revisions, named references and
    AEDAR registered measures. No legacy BPE profiles/shares/read models are
-   republished. Resolve the B316 fuel dependency by recorded owner disposition;
-   do not substitute silently.
+   republished. Preserve the owner-retained B316 ratio with the exact source,
+   version, coverage/missingness and zero semantics recorded above; do not
+   substitute AEDAR.
 4. **Complete read and consumer migration:** route all retained single reads and
    batch items through one dispatcher/snapshot executor and migrate all retained
    consumers coherently. Preserve theme acquisition priority, independent
@@ -554,14 +596,17 @@ the same workstream and PR.
    only data/map reads independently justified by their own contracts. Remove
    obsolete aliases/adapters only where the matrix names their consumers and
    removal condition; no permanent compatibility façade.
-5. **Legacy retirement / product resolution:** retire excluded legacy BPE API,
-   publisher, DB/table, artifacts, fields and obsolete read models only after
+5. **Legacy retirement / product resolution:** retire excluded legacy BPE
+   accessibility-serving API, publisher, DB/table, artifacts, fields and
+   obsolete read models only after
    the exact consumer list has a recorded product disposition (remove or a
    specifically evidenced authoritative contract for the same semantics; do
    not presume the distinct AEDAR product is a replacement). Also retire the
    Variant E prototype/acquisition path and prototype-only tests; keep the AEDAR
    dataset, nomenclature and independently approved data/map contracts
-   separately. Update tests to the approved product result and prove retained
+   separately. This retirement scope does not include the owner-retained BPE25
+   B316 fuel input or `bornes_ev_par_station_service`; preserve its actual source
+   clock, provenance and missingness. Update tests to the approved product result and prove retained
    dependencies independent. No raw-data deletion or live destructive cleanup
    in this brief.
 6. **Integrated acceptance and merge review:** run the complete guarded test
@@ -585,7 +630,7 @@ the same workstream and PR.
 | AEDAR data and independent contracts | Pinned TYPEQU registry and registered-measure validation; identity/count/coverage parity and any retained fixed result dependencies preserve address-grain semantics. Independently approved data/map contracts remain under their own validation; no prototype UI/acquisition preservation requirement and no commune-average substitution. |
 | Shared request/publication | Same item and payload for single/batch; batch uses one read-only repeatable-read snapshot; all request/item/row-work/response bounds count true work; stale dependency fails closed; no-op, rebind, retry, injected rollback and last-good proofs. |
 | Acquisition and active callers | All retained consumer inventory rows migrated; active-theme-first, cancellation/warming and static opt-out tests remain; no API static fallback. Variant E and its `aedar-proto` acquisition path are absent from target/preservation gates. UI work meets detector/accessibility/design review gates. |
-| Excluded legacy surfaces | No legacy profiles, shares, ramp/grid snapshot, distribution, derived Mobility semantic read model, or Variant E prototype/acquisition path appears in target discovery/schema/publisher or acceptance requirements. Every named legacy consumer is removed or mapped only to a specifically evidenced authoritative contract with the same semantics. AEDAR data/nomenclature and independent contracts remain distinct; B316 ratio disposition is explicit. |
+| Excluded legacy surfaces and retained B316 | No legacy profiles, shares, ramp/grid snapshot, distribution, derived Mobility semantic read model, or Variant E prototype/acquisition path appears in target discovery/schema/publisher or acceptance requirements. Every named legacy consumer is removed or mapped only to a specifically evidenced authoritative contract with the same semantics. AEDAR data/nomenclature and independent contracts remain distinct. The B316 ratio is retained with its true BPE25 provenance, coverage/missingness, and zero semantics. |
 | #689 module boundaries | `main.py` becomes a small composition root; justified deep modules own resource validation/discovery, snapshot execution, publication dependency checks and constrained storage access; pass-throughs/obsolete orchestration are removed. Complete imports/deployment package inventory and semantic tests pass in the integrated change. |
 
 The implementation gate itself authorizes no work now: this PR remains
@@ -599,10 +644,12 @@ acceptance of the corrected proposal and closure of the product questions below.
 Already decided and **not reopened**: shared typed read item for single and
 batch; one public resource/read contract; shared publication machinery; a few
 constrained storage shapes rather than a universal fact table; legacy BPE
-exclusion in favour of AEDAR; Variant E prototype and acquisition-path exclusion;
-one accountable integrated implementation; #689 belongs inside it; production
-pause. No per-theme resource/workstream decision or legacy-retention question
-is reopened.
+accessibility-serving exclusion in favour of AEDAR; Variant E prototype and
+acquisition-path exclusion; retain `bornes_ev_par_station_service` with its
+official BPE25 B316 input, distinct from retired accessibility snapshots; one
+accountable integrated implementation;
+#689 belongs inside it; production pause. No per-theme resource/workstream
+decision or already-resolved B316/Variant E/legacy-BPE scope is reopened.
 
 The following are the only owner-level tradeoffs this draft asks to resolve;
 the rest of the publication/discovery details below are engineering
@@ -626,9 +673,10 @@ recommendations, not interview questions:
    semantics. Do not infer survival from existing AEDAR prototype wiring.
    Preserve AEDAR data/nomenclature and independently approved data/map
    contracts without preserving their former UI path or inventing a replacement
-   UI. Separately decide only the unresolved B316 ratio product: retire the
-   ratio or approve a traced replacement source. No old semantics or invented
-   AEDAR measure may be carried forward.
+   UI. B316 ratio retention is already decided and is not an open question; its
+   source-metadata discrepancy is an implementation-time provenance correction,
+   not a product decision. No old accessibility semantics or invented AEDAR
+   measure may be carried forward.
 
 Engineering recommendations (not reopened choices): resource discovery
 projects existing producer/domain descriptors; no second registry or duplicated
