@@ -149,7 +149,9 @@ descriptors<-data.frame(indicator_id="fixture_scalar",theme_id="mobilite",label=
 provenance<-data.frame(indicator_id=rep("fixture_scalar",5),territory_id=facts$territory_id,source_id=rep("fixture_scalar_source",5),vintage_id=rep("v1",5)); projection<-list(facts=facts,descriptors=descriptors,eligible_territories=facts[c("territory_id","territory_type")],provenance=provenance);
 reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference"); comparison<-project_scalar_comparisons(projection,reference,"fixture-scalar-v1","fixture-ref-v1"); publish_registered_scalar_comparison(comparison,scalar_comparison_postgres_adapter(con)); DBI::dbDisconnect(con)\n''',encoding="utf-8")
             env=os.environ.copy(); env["PGPASSFILE"]=str(Path(os.environ["APPDATA"])/"PostgreSQL/pgpass.conf")
-            env["R_LIBS_USER"]=str(Path(os.environ["LOCALAPPDATA"])/"R/cache/R/renv/library/pipeline-d149995d/windows/R-4.4/x86_64-w64-mingw32")
+            library=subprocess.run(["Rscript","-e","cat(.libPaths()[1])"],cwd=root/"pipeline",
+                env=env,capture_output=True,text=True,check=True).stdout
+            env["R_LIBS_USER"]=library
             completed=subprocess.run(["Rscript",str(script),str(root),str(payload_path),str(metadata_path),schema],cwd=root/"pipeline",env=env,capture_output=True,text=True)
             assert completed.returncode==0,completed.stdout+completed.stderr
         counts=pub.execute("SELECT row_count FROM series_dataset_publication WHERE dataset_id='raccordement_curve'").fetchone()
@@ -395,7 +397,9 @@ reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,densi
             canonical_script=Path(directory)/"publish_canonical.R"
             canonical_script.write_text('''args<-commandArgs(TRUE); root<-args[[1]]; data_dir<-args[[2]]; metadata_path<-args[[3]]; schema<-args[[4]];\nsource(file.path(root,"pipeline/R/artefact_raccordement.R")); source(file.path(root,"pipeline/R/artefact_raccordement_national.R")); source(file.path(root,"pipeline/R/publish_scalar.R")); source(file.path(root,"pipeline/R/publish_series.R"));\nmetadata<-jsonlite::read_json(metadata_path,simplifyVector=FALSE); indicators<-nanoparquet::read_parquet(file.path(data_dir,"indicateurs_mobilite.parquet")); if(!"observation_period" %in% names(indicators)) indicators$observation_period[!is.na(indicators$key) & indicators$key %in% c("raccordement_courbe","raccordement_reference")]<-RECETTE_MATRICE_TEMPS_MAIRIES$date_mesure; canonical<-list(mobilite=list(indicateurs=indicators),vintages=nanoparquet::read_parquet(file.path(data_dir,"vintages.parquet")));\ncon<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub"); DBI::dbExecute(con,sprintf("SET search_path TO \\\"%s\\\"",schema));\nregistry<-register_raccordement_owned_publisher(list(),metadata,RECETTE_MATRICE_TEMPS_MAIRIES); result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,owned_series_postgres_adapter(con)); stopifnot(result$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
             env=os.environ.copy(); env["PGPASSFILE"]=str(Path(os.environ["APPDATA"])/"PostgreSQL/pgpass.conf")
-            env["R_LIBS_USER"]=str(Path(os.environ["LOCALAPPDATA"])/"R/cache/R/renv/library/pipeline-d149995d/windows/R-4.4/x86_64-w64-mingw32")
+            library=subprocess.run(["Rscript","-e","cat(.libPaths()[1])"],cwd=root/"pipeline",
+                env=env,capture_output=True,text=True,check=True).stdout
+            env["R_LIBS_USER"]=library
             completed=subprocess.run(["Rscript",str(canonical_script),str(root),str(canonical_dir),str(metadata_file),schema],
                 cwd=root/"pipeline",env=env,capture_output=True,text=True)
             assert completed.returncode==0,completed.stdout+completed.stderr

@@ -1,3 +1,13 @@
+# Load the shared publication protocol when sourced directly by a guarded
+# smoke script rather than through package load_all().
+if (!exists("publish_owner_snapshot", mode = "function", inherits = TRUE)) {
+  .publish_scalar_source <- tryCatch(sys.frame(1L)$ofile, error = function(e) NULL)
+  if (is.null(.publish_scalar_source)) stop("Cannot locate publication_protocol.R", call.=FALSE)
+  sys.source(file.path(dirname(normalizePath(.publish_scalar_source)), "publication_protocol.R"),
+             envir = environment())
+  rm(.publish_scalar_source)
+}
+
 # Contract validator for registered scalar projections. DBI adapters may
 # register a named projection; arbitrary SQL and inferred descriptors are not
 # part of this interface.

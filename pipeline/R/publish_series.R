@@ -1,3 +1,13 @@
+# Load the shared owner protocol for guarded scripts that source this file
+# directly without first loading the package.
+if (!exists("publish_owner_snapshot", mode = "function", inherits = TRUE)) {
+  .publish_series_source <- tryCatch(sys.frame(1L)$ofile, error = function(e) NULL)
+  if (is.null(.publish_series_source)) stop("Cannot locate publication_protocol.R", call.=FALSE)
+  sys.source(file.path(dirname(normalizePath(.publish_series_source)), "publication_protocol.R"),
+             envir = environment())
+  rm(.publish_series_source)
+}
+
 # Validate the metadata-owned annual-series projection without filling gaps.
 `%||%` <- function(x, y) if (is.null(x)) y else x
 validate_series_projection <- function(points, descriptor) {
