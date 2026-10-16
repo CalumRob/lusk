@@ -1,4 +1,4 @@
-# Typed batch reads (issue #788 implementation checkpoint)
+# Typed batch reads (issue #788)
 
 `POST /api/read-batch` composes declared serving reads under one caller-owned
 PostgreSQL `READ ONLY REPEATABLE READ` transaction. A successful response is
@@ -95,9 +95,9 @@ There is one acquired connection and one outer transaction. Existing
 connection-taking readers reuse that connection; no route/HTTP fan-out,
 per-item connection, or nested transaction is used.
 
-## Dependency-preflight and snapshot checkpoint
+## Dependency preflight and snapshot guarantees
 
-This checkpoint is not a rollout authorization. The inventory above now covers
+This contract is not a rollout authorization. The inventory above covers
 the named focal/comparison resources, the direct profile response, the direct
 annual-series response, and owned dataset series (including actual bounded
 cohort rows), plus named-reference indicator aliases. These are explicit logical contracts, not a
@@ -128,9 +128,37 @@ proves one connection and one outer `READ ONLY REPEATABLE READ` transaction see
 the old facts/clock together; a subsequent single read sees the new clock/value.
 An explicit write attempt in a
 read-only transaction is rejected. The independent profile clock in that batch
-also remains unchanged. The source-pinned paired batch-vs-single rehearsal and
-broader review/rollout authorization remain outside this checkpoint.
+also remains unchanged.
+
+Resolved cohorts, typed indicator resource metadata, and immutable reference
+rows are reused only within that batch's snapshot. Omitted and explicit-empty
+selections remain distinct. No resolved state survives into a later request;
+the next request sees newly committed publications normally. There is no
+cross-request response or SQL cache.
 
 Resource-local bounds, the 12-item cap, the 200,000-unit aggregate
 profile/series estimate and serialized envelope limit continue to bound
 supported work; they do not imply a publisher performance benchmark.
+
+## Verified performance limits
+
+The source-pinned rehearsal at `16c5d3bd` compared two sequential single HTTP
+reads with one batch, using three warmups and 30 alternating samples per mode
+in each of nine cases. Every response matched its corresponding single-read
+payload; publication markers and input counts stayed unchanged. These were
+Windows FastAPI TestClient reads against guarded test PostgreSQL, not deployed
+HTTP/TLS or production p95 measurements.
+
+Demographie/Habitat theme-facts plus comparison batches had 2.1–5.9% higher
+median time, despite fetching substantially fewer rows. Published Economy
+named-scalar `chomage` facts plus comparison batches had 10.2–18.0% lower median
+time. The Economy fixture did not contain a whole-theme reading publication,
+so those workloads are not cross-theme equivalents. Sample p95 was mixed.
+Batching reduces HTTP request count and guarantees one snapshot; it is not an
+unconditional latency or SQL-query reduction. Independent requests remain
+appropriate for independent loading and active-theme priority.
+
+Detailed source identities, raw samples, query traces, integrity status and
+limits are recorded in the #788 change's review evidence. No app consumer
+rollout, serving-database operation or production performance sign-off follows
+from these tests.
