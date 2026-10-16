@@ -1473,7 +1473,22 @@ def compare(data: dict) -> ComparisonResponse:
     )
 
 
-def _comparison_cohort(conn, territory_type, territory_id, selection):
+class _BatchReadSnapshotState:
+    """Typed resolutions reusable only inside one batch MVCC snapshot."""
+
+    def __init__(self):
+        self.cohorts: dict[
+            tuple[str, str, tuple[tuple[str, str], ...] | None],
+            tuple[str, tuple[str, ...], dict | None],
+        ] = {}
+
+
+def _comparison_cohort(conn, territory_type, territory_id, selection, *, snapshot_state=None):
+    if snapshot_state is not None:
+        key = (territory_type, territory_id,
+               None if selection is None else tuple(selection))
+        if key in snapshot_state.cohorts:
+            return snapshot_state.cohorts[key]
     target = conn.execute(
         "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id=%s",
         (territory_id,),
@@ -1493,19 +1508,39 @@ def _comparison_cohort(conn, territory_type, territory_id, selection):
                 raise HTTPException(503, "Published default density class is unavailable")
             members = tuple(sorted(r["territoire"] for r in refs
                                    if r["type"] == "commune" and r["densite"] == density))
-            return "commune", members, {"kind": "density_class", "density_class_code": density,
-                                         "territory_type": "commune"}
+            result = ("commune", members, {"kind": "density_class", "density_class_code": density,
+                                           "territory_type": "commune"})
+            if snapshot_state is not None:
+                snapshot_state.cohorts[key] = result
+            return result
         if territory_type in ("epci", "departement"):
             members = tuple(sorted(r["territoire"] for r in refs if r["type"] == territory_type))
-            return territory_type, members, {"kind": "same_level", "territory_type": territory_type}
-        return territory_type, (), None
+            result = (territory_type, members, {"kind": "same_level", "territory_type": territory_type})
+        else:
+            result = (territory_type, (), None)
+        if snapshot_state is not None:
+            snapshot_state.cohorts[key] = result
+        return result
     if not selection:
-        return "commune", (), {"kind": "explicit_selection"}
+        result = ("commune", (), {"kind": "explicit_selection"})
+        if snapshot_state is not None:
+            snapshot_state.cohorts[key] = result
+        return result
     try:
         members = resolve_commune_members(refs, selection, max_members=len(refs))
     except ComparisonInputError as exc:
         raise HTTPException(422, str(exc)) from exc
-    return "commune", members, {"kind": "explicit_selection"}
+    result = ("commune", members, {"kind": "explicit_selection"})
+    if snapshot_state is not None:
+        snapshot_state.cohorts[key] = result
+    return result
+
+
+def _comparison_cohort_in_snapshot(conn, territory_type, territory_id, selection, snapshot_state):
+    if snapshot_state is None:
+        return _comparison_cohort(conn, territory_type, territory_id, selection)
+    return _comparison_cohort(conn, territory_type, territory_id, selection,
+                              snapshot_state=snapshot_state)
 
 
 def _fixed_scalar_comparison_context(conn, territory_type, territory_id, selection,
@@ -2076,7 +2111,7 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
 
 def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
                                *, indicator_id=None, profiles=None, profile_version=None, has_readings=False,
-                               result_fields=None, preflight_only=False):
+                               result_fields=None, preflight_only=False, snapshot_state=None):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
     scalar_descriptors = conn.execute(
         """SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
@@ -2152,7 +2187,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         ).fetchone()
         if not scalar_marker or not scalar_marker[0] or scalar_marker[1] != reference[0]:
             raise HTTPException(503, "Scalar publication is unavailable or incompatible")
-    cohort_type, members, scope = _comparison_cohort(conn, territory_type, territory_id, selection)
+    cohort_type, members, scope = _comparison_cohort_in_snapshot(
+        conn, territory_type, territory_id, selection, snapshot_state)
     if preflight_only:
         fixed_context = _fixed_scalar_comparison_context(conn,territory_type,territory_id,
             selection,cohort_type,members,scope)
@@ -2536,6 +2572,7 @@ def read_batch(request: BatchReadRequest,
         raise HTTPException(413, "Batch AEDAR aggregate rows exceed the 300-row limit")
     results = []
     response_bytes = len('{"contract":"typed-read-batch-v1","results":[]}'.encode("utf-8"))
+    snapshot_state = _BatchReadSnapshotState()
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
@@ -2551,11 +2588,11 @@ def read_batch(request: BatchReadRequest,
                     _theme_comparison_snapshot(
                         conn, item.territory_type, item.territory_id,
                         item.theme_id, selection, result_fields=fields,
-                        preflight_only=True)
+                        preflight_only=True, snapshot_state=snapshot_state)
                 elif item.resource == "indicator_comparison":
                     _indicator_comparison_preflight(
                         conn, item.territory_type, item.territory_id,
-                        item.indicator_id, selection, fields)
+                        item.indicator_id, selection, fields, snapshot_state=snapshot_state)
                 elif item.resource == "aedar_aggregate":
                     _aedar_territorial_aggregate_snapshot(
                         conn, item.territory_type, item.territory_id,
@@ -2589,11 +2626,11 @@ def read_batch(request: BatchReadRequest,
                 elif item.resource == "theme_comparison":
                     payload = _theme_comparison_contract_snapshot(
                         conn, item.territory_type, item.territory_id,
-                        item.theme_id, selection, repository, fields)
+                        item.theme_id, selection, repository, fields, snapshot_state=snapshot_state)
                 elif item.resource == "indicator_comparison":
                     payload = _indicator_comparison_snapshot(
                         conn, item.territory_type, item.territory_id,
-                        item.indicator_id, selection, fields)
+                        item.indicator_id, selection, fields, snapshot_state=snapshot_state)
                 elif item.resource == "aedar_aggregate":
                     payload = _aedar_territorial_aggregate_snapshot(
                         conn, item.territory_type, item.territory_id,
@@ -4492,10 +4529,11 @@ def theme_comparison_only(
 
 
 def _theme_comparison_contract_snapshot(conn, territory_type, territory_id, theme_id,
-                                        selected, repository, fields=None) -> dict:
+                                        selected, repository, fields=None, *, snapshot_state=None) -> dict:
     """Build the exact theme-comparison route payload in a caller-owned snapshot."""
     result = _theme_comparison_snapshot(
-        conn, territory_type, territory_id, theme_id, selected, result_fields=fields)
+        conn, territory_type, territory_id, theme_id, selected, result_fields=fields,
+        snapshot_state=snapshot_state)
     response = {key: result[key] for key in (
         "contract", "complete_theme", "theme_id", "content_version",
         "reference_content_version", "selection", "scope", "results",
@@ -4525,8 +4563,8 @@ def _theme_comparison_contract_snapshot(conn, territory_type, territory_id, them
                                     "reference_date", "source_publication_date"):
                     facts.pop(focal_field, None)
         service = _comparison_result_without_focal_value(service)
-        _cohort_type, peer_member_ids, _scope = _comparison_cohort(
-            conn, territory_type, territory_id, selected)
+        _cohort_type, peer_member_ids, _scope = _comparison_cohort_in_snapshot(
+            conn, territory_type, territory_id, selected, snapshot_state)
         cohort_sources = {}
         for row in service_snapshot.get("rows", []):
             if row.get("territory_id") not in peer_member_ids:
@@ -4706,7 +4744,7 @@ def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id
 
 
 def _indicator_comparison_preflight(conn, territory_type, territory_id, indicator_id,
-                                    selection, selected_fields):
+                                    selection, selected_fields, *, snapshot_state=None):
     _validate_comparison_fields(selected_fields,
         _COMPARISON_RESULT_FIELDS - {"mean", "mean_curve", "focal_value"})
     focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
@@ -4721,7 +4759,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
         _validate_comparison_fields(selected_fields,{"selected_member_count","eligible_count","missing_count",
             "mean","rank","rank_size","rank_ties"})
         _bpe_profile_publication(conn,validate_row_count=False)
-        _comparison_cohort(conn,territory_type,territory_id,selection)
+        _comparison_cohort_in_snapshot(conn,territory_type,territory_id,selection,
+                                       snapshot_state)
         return
     active_owned = _owned_series_route(conn,indicator_id)
     if active_owned:
@@ -4732,7 +4771,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             _owned_reference_comparison_result(conn,active_owned,territory_type,territory_id,
                                                 indicator_id,selection)
             return
-        cohort = _comparison_cohort(conn,territory_type,territory_id,selection)
+        cohort = _comparison_cohort_in_snapshot(conn,territory_type,territory_id,selection,
+                                                snapshot_state)
         _owned_series_comparison_results(conn,[active_owned],territory_type,territory_id,
             selection,cohort=cohort,selected_fields=selected_fields,strict_fields=True,
             preflight_only=True)
@@ -4746,7 +4786,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             raise HTTPException(404,"Focal territory not found")
         if focal_row[0] != territory_type:
             raise HTTPException(422,"Focal territory type does not match route")
-        cohort_type,members,scope = _comparison_cohort(conn,territory_type,territory_id,selection)
+        cohort_type,members,scope = _comparison_cohort_in_snapshot(
+            conn,territory_type,territory_id,selection,snapshot_state)
         fixed_context = _fixed_scalar_comparison_context(conn,territory_type,territory_id,
             selection,cohort_type,members,scope)
         marker = collection_marker(conn,descriptor)
@@ -4775,16 +4816,19 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             raise HTTPException(503, "Indicator theme metadata is unavailable")
         _theme_comparison_snapshot(conn, territory_type, territory_id, descriptor[0],
                                    selection, indicator_id=indicator_id,
-                                   result_fields=selected_fields, preflight_only=True)
+                                   result_fields=selected_fields, preflight_only=True,
+                                   snapshot_state=snapshot_state)
     elif shapes[0][1] == "series":
         _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id,
                                    preflight_only=True)
     # Validate every explicit scope against the published reference before any
     # result query, including collection/owned dynamic readers.
-    _comparison_cohort(conn, territory_type, territory_id, selection)
+    _comparison_cohort_in_snapshot(conn, territory_type, territory_id, selection,
+                                   snapshot_state)
 
 
-def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator_id, selection, selected_fields):
+def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator_id, selection,
+                                   selected_fields, *, snapshot_state=None):
     if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]:
         bpe_descriptor=conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone()
         if bpe_descriptor and bpe_descriptor[0] == indicator_id:
@@ -4875,7 +4919,8 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
     if not descriptor[0]:
         raise HTTPException(503, "Indicator theme metadata is unavailable")
     comparison = _theme_comparison_snapshot(conn, territory_type, territory_id,
-        descriptor[0], selection, indicator_id=indicator_id,result_fields=selected_fields)
+        descriptor[0], selection, indicator_id=indicator_id,result_fields=selected_fields,
+        snapshot_state=snapshot_state)
     result_rows = comparison["results"] if shape == "scalar" else comparison["profile_comparisons"]
     if len(result_rows) != 1:
         raise HTTPException(503, "Indicator comparison facet is unavailable or ambiguous")

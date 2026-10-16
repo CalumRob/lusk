@@ -62,6 +62,40 @@ def test_batch_reuses_one_snapshot_for_different_typed_resources(monkeypatch):
     assert all(call[1] is repository.connections.connection_value for call in calls)
 
 
+def test_batch_snapshot_scope_reuse_preserves_selection_identity():
+    class Result:
+        def __init__(self, rows):
+            self.rows = rows
+
+        def fetchone(self):
+            return self.rows[0] if self.rows else None
+
+        def fetchall(self):
+            return self.rows
+
+    class Connection:
+        def __init__(self):
+            self.reference_scans = 0
+
+        def execute(self, sql, params=None):
+            if "WHERE territory_id=%s" in sql:
+                return Result([("22001", "commune", "dense")])
+            self.reference_scans += 1
+            return Result([("22001", "commune", None, None, "dense")])
+
+    conn = Connection()
+    state = main._BatchReadSnapshotState()
+    default = main._comparison_cohort(
+        conn, "commune", "22001", None, snapshot_state=state)
+    assert main._comparison_cohort(
+        conn, "commune", "22001", None, snapshot_state=state) is default
+    empty = main._comparison_cohort(
+        conn, "commune", "22001", [], snapshot_state=state)
+    assert empty == ("commune", (), {"kind": "explicit_selection"})
+    assert default[1] == ("22001",)
+    assert conn.reference_scans == 2
+
+
 def test_batch_rejects_duplicate_ids_before_connecting():
     repository = BatchRepository()
     main.app.dependency_overrides[main.get_repository] = lambda: repository
@@ -288,12 +322,12 @@ def test_named_indicator_comparison_batch_and_single_share_snapshot_reader(monke
     main.app.dependency_overrides[main.get_repository] = lambda: repository
     calls = []
 
-    def reader(conn, territory_type, territory_id, indicator_id, selection, fields):
+    def reader(conn, territory_type, territory_id, indicator_id, selection, fields, **kwargs):
         calls.append((conn, selection, fields))
         return {"contract": "indicator-comparison-v1", "indicator_id": indicator_id,
                 "selection": None, "result": {"status": "unavailable", "median": None}}
 
-    monkeypatch.setattr(main, "_indicator_comparison_preflight", lambda *args: None)
+    monkeypatch.setattr(main, "_indicator_comparison_preflight", lambda *args, **kwargs: None)
     monkeypatch.setattr(main, "_indicator_comparison_snapshot", reader)
     try:
         single = TestClient(main.app).post(
@@ -315,7 +349,7 @@ def test_theme_comparison_route_and_batch_share_public_contract_reader(monkeypat
     main.app.dependency_overrides[main.get_repository] = lambda: repository
     seen = []
 
-    def reader(conn, territory_type, territory_id, theme_id, selected, repository, fields):
+    def reader(conn, territory_type, territory_id, theme_id, selected, repository, fields, **kwargs):
         seen.append((conn, territory_type, territory_id, theme_id, selected, fields))
         return {"contract": "expected-public-shape", "results": []}
 
