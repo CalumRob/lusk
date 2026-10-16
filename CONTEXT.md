@@ -544,6 +544,18 @@ _Avoid_: Commune dortoir (only the deep-dormitory half — misses pôle-emploi),
 
 ## Data freshness
 
+**Ressource sémantique de service** (#797):
+An indicator or non-indicator data object exposed through the producer-derived
+backend catalogue. Its identity, typed target, declared coordinates and facts or
+comparison intent determine the read; storage shape and SQL are not caller
+choices. Single and batch reads share that grammar and one repeatable-read
+snapshot. An absent sparse relation is absence, not a zero or `false`; a missing
+indicator value remains missing. AEDAR address-grain measures are a distinct
+source-grain contract, not a replacement for the retired building/service
+accessibility snapshots or their derived narratives.
+_Avoid_: Resource type selected by a caller (physical storage is not domain
+identity), AEDAR as a synonym for the former BPE accessibility score.
+
 **Vintage**:
 The source identity + version + date shown with every indicator ("BPE 2024 · RP 2021"). What makes the "alive" claim honest.
 _Avoid_: Date de mise à jour (only part of it), last_updated
