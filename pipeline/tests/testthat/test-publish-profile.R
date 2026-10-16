@@ -605,7 +605,7 @@ test_that("registered publication keeps marker-bound immutable Parquet generatio
     profile_content_version(project_structure_age_profile(changed,metadata)), "ref-v1")
   orphan_version <- profile_content_version(expected_changed)
   orphan_paths <- file.path(state$artifact_dir,paste0("profile-comparison-",orphan_version),
-    c("groups.parquet","territories.parquet"))
+    c("groups.parquet","territories.parquet","lineage.parquet"))
   expect_identical(state$marker,old_marker); expect_identical(state$facts,old_facts)
   expect_identical(state$artifact_version,old_artifact); expect_true(all(file.exists(old_paths)))
   expect_true(all(file.exists(orphan_paths))); expect_false(identical(orphan_version,state$artifact_version))

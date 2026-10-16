@@ -53,6 +53,32 @@ synthetic_raccordement_projection_fixture <- function() {
   list(metadata=metadata,canonical=canonical,vintages=vintages,projection=projection)
 }
 
+test_that("ordered fixed-series projector pins exact provenance to each declared comparison axis", {
+  fixture <- synthetic_raccordement_projection_fixture()
+  points <- fixture$projection$points
+  communes <- unique(points[points$territory_type=="commune",c("territory_id","territory_type")])
+  reference <- data.frame(territory_id=communes$territory_id,territory_type="commune",
+    epci_id="E_TEST",density_class_code="D_TEST",stringsAsFactors=FALSE)
+  regions <- unique(points[points$territory_type=="region",c("territory_id","territory_type")])
+  region_reference <- data.frame(territory_id=regions$territory_id,territory_type="region",
+    epci_id=NA_character_,density_class_code=NA_character_,stringsAsFactors=FALSE)
+  reference <- rbind(reference,region_reference)
+  projected <- project_ordered_series_comparisons(fixture$projection,reference,
+    "series-v1","reference-v1")
+  expect_setequal(projected$lineage$axis_value,projected$axis_values)
+  for (axis in unique(projected$lineage$axis_value)) {
+    selected_points <- if ("state_role" %in% names(points) && axis %in% points$state_role)
+      points$axis_value[points$state_role==axis] else points$axis_value[points$axis_value==axis]
+    actual <- unique(fixture$projection$point_provenance$provenance_revision_id[
+      fixture$projection$point_provenance$territory_id %in% communes$territory_id &
+      fixture$projection$point_provenance$axis_value %in% selected_points])
+    expect_setequal(projected$lineage$provenance_revision_id[
+      projected$lineage$axis_value==axis],actual)
+  }
+  expect_setequal(unique(projected$lineage$group_id),c("D_TEST","E_TEST","53"))
+  expect_true(all(c("lineage","zero_reasons") %in% names(projected)))
+})
+
 test_that("typed artifact codecs preserve dataframe row-name forms and Date storage", {
   cases <- list(
     automatic=data.frame(value=1:3),
@@ -264,6 +290,25 @@ test_that("owned series publication retries, rebinds and replaces only its datas
   expect_true(rebound$rebound)
   expect_identical(state$units$ocsge, original_state)
   expect_identical(state$units$enaf$timestamp, after_first$timestamp + 1)
+
+  # A migrated comparison has no declared lineage count, unlike a freshly
+  # published sparse comparison whose complete lineage is genuinely empty.
+  projection$descriptor$comparison_levels <- "commune"
+  state$units$enaf$version <- scalar_content_version(projection)
+  state$lineage_count <- NA_integer_
+  db$comparison_marker <- function(dataset, indicator) data.frame(
+    ordered_series_content_version=state$units[[dataset]]$version,
+    reference_content_version=state$reference, lineage_row_count=state$lineage_count)
+  replace <- db$replace_dataset
+  db$replace_dataset <- function(p, version) {
+    replace(p, version)
+    state$lineage_count <- 0L
+  }
+  before_repair <- state$units$enaf$timestamp
+  expect_no_error(publish_owned_series_projection(projection, db))
+  expect_identical(state$units$enaf$timestamp, before_repair + 1)
+  publish_owned_series_projection(projection, db)
+  expect_identical(state$units$enaf$timestamp, before_repair + 1)
 })
 
 test_that("owned series validators reject duplicate axes, undeclared roles and missing provenance", {

@@ -55,11 +55,11 @@ def test_published_scalar_comparison_reads_group_and_focal_result_without_peer_f
                 return Cursor(("comparison-v1", "scalar-v1", "reference-v1", 1, 2,
                     "scalar-v1", "reference-v1", "reference-v1"))
             if "FROM scalar_comparison_group" in sql:
-                return Cursor(rows=[("population", "median", 7.5, 3, 2, 1)])
+                return Cursor(rows=[("population", "median", 7.5, 3, 2, 1, 1)])
             if "FROM scalar_comparison_territory" in sql:
                 return Cursor(rows=[("population", 10.0, "measured", 1, 1, 2)])
-            if "FROM scalar_observation_source os" in sql:
-                return Cursor(rows=[("population", "census", "2020", "Census", "2020", None, None)])
+            if "FROM comparison_source_lineage l" in sql:
+                return Cursor(rows=[("population", "census", "2020", "Census", "2020", None, None, "comparison-v1")])
             raise AssertionError(sql)
 
     conn = Connection()
@@ -91,7 +91,7 @@ def test_published_scalar_comparison_fails_closed_on_stale_inputs_or_missing_res
                 return Cursor(("comparison-v1", "old-scalar" if self.stale else "scalar-v1",
                     "reference-v1", 1, 1, "scalar-v1", "reference-v1", "reference-v1"))
             if "FROM scalar_comparison_group" in sql:
-                return Cursor(rows=[] if self.missing else [("population", "median", 1.0, 1, 1, 0)])
+                return Cursor(rows=[] if self.missing else [("population", "median", 1.0, 1, 1, 0, 1)])
             if "FROM scalar_comparison_territory" in sql:
                 rank = 2 if self.invalid else 1
                 return Cursor(rows=[] if self.missing else [("population", 1.0, "measured", rank, 1, 1)])

@@ -375,3 +375,36 @@ must carry a complete hierarchy and a consistent `classified` / `hors_gamme` /
 `absent` state. Fresh installs enforce the same contract in `schema.sql`.
 Metadata is versioned coherently with the AEDAR aggregate publication; this
 migration does not publish data or imply production rollout.
+# Migration 034: ordered-series comparison provenance
+
+`034_ordered_series_comparison_lineage.sql` publishes ordered-series comparison
+axis metadata and immutable revision associations at resolved group/axis grain,
+plus Raccordement model-zero reason counts. The API fixed-context path reads
+these rows alongside the existing group/focal result; it no longer scans peer
+observations to rediscover declared axes, support or lineage. Existing marker
+rows retain NULL lineage counts, distinguishing an unrepublished legacy
+snapshot from a publisher-declared zero-lineage axis; fixed reads fail closed
+until the registered R publisher republishes the owned series. Arbitrary selections and raw series
+observations keep their existing request-time behavior. Fresh installs carry
+the same constrained relations and publication metadata in `schema.sql`.
+This migration is additive and does not publish data or authorize deployment.
+
+# Migration 033 — scalar/profile comparison provenance
+
+`033_comparison_source_lineage.sql` adds group/facet source-vintage associations
+for scalar and profile comparisons. Existing rows deliberately receive NULL
+lineage counts (rather than zero), so an old publication cannot be mistaken for
+a newly published, legitimately empty lineage. Fixed comparison reads fail
+closed until the normal R publisher replaces those comparison projections.
+Fresh installs carry the constrained lineage relation and non-null count
+contracts in `schema.sql`.
+
+# Migration 035 — numeric collection comparison provenance
+
+`035_numeric_collection_comparison_lineage.sql` adds collection source-vintage
+associations, support-shape checks, and deferred completeness validation.
+Existing publication rows start `lineage_complete=false`, so they remain
+unavailable until normal publisher replacement. A genuinely empty new
+comparison remains valid when the publisher declares zero eligible support and
+zero lineage. The migration is additive and does not publish data or authorize
+deployment.

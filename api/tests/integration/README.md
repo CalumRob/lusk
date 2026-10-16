@@ -132,6 +132,41 @@ associations (the second is explicitly synthetic smoke lineage), no-op behavior,
 dependency-only marker rebinding, DB-behind-local retry, and transaction rollback
 after an injected insert failure.
 
+The comparison-lineage checkpoint has a synthetic publisher-to-API-reader
+test. It invokes the real R publishers and PostgreSQL adapters for scalar,
+declared-profile, ordered-series, and numeric period/detail collection
+comparisons, then reads them through the API using the dedicated read role.
+It checks source/vintage parity (including mixed collection vintages), no-op
+publication, stale/truncated fail-closed behavior, and rollback/retry after an
+injected collection-lineage write failure. It needs no canonical artifact
+directory or pipeline data:
+
+```powershell
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
+$env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
+$env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
+$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
+$env:PYTHONPATH = '.'
+python -m pytest api/tests/integration/test_postgres_publication.py -k synthetic_r_comparison_lineage_publish_to_api_reader -q
+```
+
+The test creates and cleans up only its own random `it_*` schema. It does not
+modify the retained benchmark schema or publish to the serving database.
+
+The same selector runs both `fresh` and `populated_upgrade` cases. The latter
+reconstructs all twelve comparison result/marker tables and the old collection
+publication contracts from the pinned pre-lineage Git schema at `d5832fca`,
+preserving the real synthetic publisher's numerical rows. It then executes
+033, 034 and 035 in order, checks that the old rows survive but each family
+fails closed until republished, and invokes all four real R adapters with the
+same saved synthetic inputs. Responses must match the fresh publication exactly;
+a second unchanged invocation must preserve publication markers, including their
+timestamps. This is a populated comparison-storage upgrade rehearsal, not a
+restored production-database or deployed-API rehearsal. The pinned Git object
+must be available locally; no network fetch or pipeline data is needed.
+
 The building publisher path has a separate RPostgres smoke so it exercises the
 real `.adapter_postgres` and `publier_tables_postgres` code rather than a fake
 adapter. It uses only synthetic canonical-like rows, accepts only explicit

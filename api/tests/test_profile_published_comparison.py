@@ -29,7 +29,7 @@ class DetailConnection:
         self.marker = (("pub-v1", "profile-v1", "ref-v1", 1, len(members), "profile-v1", "ref-v1")
             if marker is _DEFAULT else marker)
         self.members, self.sql, self.comparison_rows_returned = members, [], 0
-        self.group = ([("housing_profile", "old", "", "median", 20.0, len(members), len(members), 0, "profile-v1", "ref-v1")]
+        self.group = ([("housing_profile", "old", "", "median", 20.0, len(members), len(members), 0, 1, "profile-v1", "ref-v1")]
             if group is None else group)
         self.territory = ([("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, len(members), "profile-v1", "ref-v1")]
             if territory is None else territory)
@@ -47,6 +47,8 @@ class DetailConnection:
             assert "territory_id=%s" in sql
             self.comparison_rows_returned += len(self.territory)
             return Cursor(rows=self.territory)
+        if "FROM comparison_source_lineage l" in sql:
+            return Cursor(rows=[("housing_profile", "housing", "2024", "Housing", "2024", None, None, "pub-v1")])
         if "FROM profile_observation_source" in sql:
             return Cursor()
         if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
@@ -72,13 +74,16 @@ def test_fixed_detail_uses_published_statistics_and_only_reads_focal_row():
 
 def test_fixed_detail_caller_reads_required_mixed_vintage_provenance_once():
     sources = [
-        ("housing_profile", "housing", "2024", "Housing", "2024", None, None),
-        ("housing_profile", "housing", "2025", "Housing", "2025", None, None),
+        ("housing_profile", "housing", "2024", "Housing", "2024", None, None, "pub-v1"),
+        ("housing_profile", "housing", "2025", "Housing", "2025", None, None, "pub-v1"),
     ]
 
     class Connection(DetailConnection):
         def execute(self, sql, params=None):
-            if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
+            if "FROM profile_comparison_group" in sql:
+                self.sql.append((sql, params))
+                return Cursor(rows=[("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 2, "profile-v1", "ref-v1")])
+            if "FROM comparison_source_lineage l" in sql:
                 self.sql.append((sql, params))
                 return Cursor(rows=sources)
             return super().execute(sql, params)
@@ -92,9 +97,9 @@ def test_fixed_detail_caller_reads_required_mixed_vintage_provenance_once():
         {"source_id": "housing", "name": "Housing", "vintage_id": "2025",
          "version": "2025", "reference_date": None, "publication_date": None},
     ]
-    source_queries = [(sql, params) for sql, params in conn.sql if "JOIN profile_observation_source os" in sql]
+    source_queries = [(sql, params) for sql, params in conn.sql if "FROM comparison_source_lineage l" in sql]
     assert len(source_queries) == 1
-    assert source_queries[0][1] == (["housing_profile"], "commune", ["c1", "c2"])
+    assert source_queries[0][1] == ("profile", "density_class", "A", "commune", ["housing_profile"])
 
 
 def test_fixed_detail_published_comparison_read_work_is_bounded_as_cohort_grows():
@@ -147,7 +152,7 @@ def test_fixed_detail_rejects_corrupt_or_extra_focal_rows(corrupt):
 
 @pytest.mark.parametrize("stale", ["group_profile", "group_reference", "focal_profile", "focal_reference"])
 def test_fixed_detail_fails_closed_on_stale_group_or_focal_versions(stale):
-    group = [("housing_profile", "old", "", "median", 20.0, 2, 2, 0, "profile-v1", "ref-v1")]
+    group = [("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 1, "profile-v1", "ref-v1")]
     territory = [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]
     if stale == "group_profile":
         group[0] = (*group[0][:-2], "old-profile", group[0][-1])
@@ -166,7 +171,7 @@ def test_fixed_detail_fails_closed_on_stale_group_or_focal_versions(stale):
 
 @pytest.mark.parametrize("corrupt", ["missing_group", "missing_focal", "group_member_count", "group_shape"])
 def test_fixed_detail_fails_closed_on_missing_or_invalid_local_publication_rows(corrupt):
-    group = [("housing_profile", "old", "", "median", 20.0, 2, 2, 0, "profile-v1", "ref-v1")]
+    group = [("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 1, "profile-v1", "ref-v1")]
     rows = [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]
     if corrupt == "missing_group":
         group = []
@@ -184,7 +189,7 @@ def test_fixed_detail_fails_closed_on_missing_or_invalid_local_publication_rows(
 
 
 def test_profile_detail_preserves_unavailable_contract_below_two_eligible():
-    conn = DetailConnection(group=[("housing_profile", "old", "", "median", 10.0, 2, 1, 1, "profile-v1", "ref-v1")],
+    conn = DetailConnection(group=[("housing_profile", "old", "", "median", 10.0, 2, 1, 1, 1, "profile-v1", "ref-v1")],
         territory=[("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 1, "profile-v1", "ref-v1")])
     result = main._published_profile_comparison_results(conn, [PROFILE],
         ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1")["housing_profile"]
@@ -255,7 +260,7 @@ def test_dpe_profile_adapts_scalar_publication_without_dynamic_source_reads(monk
     if with_detail:
         assert results[1]["indicator"] == "housing_profile"
         assert results[1]["median"] == 20.0
-        assert len([sql for sql, _ in conn.sql if "JOIN profile_observation_source os" in sql]) == 1
+        assert len([sql for sql, _ in conn.sql if "FROM comparison_source_lineage l" in sql]) == 1
 
 
 def test_profile_selection_resolves_exact_preset_but_custom_cohort_stays_dynamic(monkeypatch):
@@ -319,6 +324,8 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
     class Connection(DetailConnection):
         def execute(self, sql, params=None):
             self.sql.append((sql, params))
+            if "FROM profile_comparison_group" in sql:
+                return Cursor(rows=[("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 2, "profile-v1", "ref-v1")])
             if "FROM scalar_descriptor WHERE indicator_id=ANY" in sql:
                 return Cursor(rows=[scalar])
             if "to_regclass('scalar_comparison_publication')" in sql:
@@ -327,11 +334,13 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
                 return Cursor(("pub", "scalar-v1", "ref-v1", 1, 2,
                     "scalar-v1", "ref-v1", "ref-v1"))
             if "FROM scalar_comparison_group" in sql:
-                return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0)])
+                return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0, 2)])
             if "FROM scalar_comparison_territory" in sql:
                 return Cursor(rows=[("part_passoires", 10.0, "measured", 1, 1, 2)])
-            if "FROM scalar_observation_source os" in sql:
-                return Cursor(rows=[("part_passoires", *source) for source in lineage])
+            if "FROM comparison_source_lineage l" in sql:
+                if params and params[0] == "profile":
+                    return Cursor(rows=[("housing_profile", *source, "pub-v1") for source in lineage])
+                return Cursor(rows=[("part_passoires", *source, "pub") for source in lineage])
             if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
                 indicator = "dpe_profile" if "JOIN scalar_observation_source os" in sql else "housing_profile"
                 return Cursor(rows=[(indicator, *source) for source in lineage])
@@ -353,9 +362,9 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
     assert published == custom
     for result in published:
         assert [source["vintage_id"] for source in result["comparison_sources"]] == ["2024", "2025"]
-    assert len([sql for sql, _ in fixed.sql if "FROM scalar_observation_source os" in sql]) == 1
+    assert len([sql for sql, _ in fixed.sql if "FROM comparison_source_lineage l" in sql]) == 2
     assert not any("JOIN scalar_observation_source os" in sql for sql, _ in fixed.sql)
-    assert len([sql for sql, _ in fixed.sql if "JOIN profile_observation_source os" in sql]) == 1
+    assert not any("JOIN profile_observation_source os" in sql for sql, _ in fixed.sql)
     assert len([sql for sql, _ in dynamic.sql if "JOIN scalar_observation_source os" in sql]) == 1
     assert len([sql for sql, _ in dynamic.sql if "JOIN profile_observation_source os" in sql]) == 1
     assert not any("comparison_publication" in sql for sql, _ in dynamic.sql)

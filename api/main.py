@@ -1253,6 +1253,52 @@ def _comparison_sources_by_indicator(rows):
     return sources
 
 
+def _published_comparison_sources(conn, *, family, context, group_id, cohort_type, facets,
+                                  content_version, expected_counts):
+    """Read source/vintage metadata published for one resolved comparison group.
+
+    Fixed-context reads deliberately address the group/facet lineage projection;
+    they must not rediscover provenance by joining the cohort's observations.
+    """
+    if not facets:
+        return {}
+    try:
+        rows = _execute_comparison_publication_read(conn,
+        """SELECT l.facet_id,l.source_id,l.vintage_id,sd.name,sv.version,
+                  sv.reference_date,sv.publication_date,l.comparison_content_version
+           FROM comparison_source_lineage l
+           JOIN source_dataset sd USING(source_id)
+           JOIN source_vintage sv USING(source_id,vintage_id)
+           WHERE l.comparison_family=%s AND l.comparison_context=%s
+             AND l.group_id=%s AND l.territory_type=%s AND l.facet_id=ANY(%s)
+           ORDER BY l.facet_id,l.source_id,l.vintage_id""",
+         (family, context, group_id, cohort_type, sorted(facets)),
+        ).fetchall()
+    except Exception as error:
+        if getattr(error, "sqlstate", None) in ("42P01", "42703"):
+            raise HTTPException(503, "Published comparison provenance is unavailable") from error
+        raise
+    result = _comparison_sources_by_indicator(rows)
+    counts = {facet: 0 for facet in facets}
+    for row in rows:
+        if row[7] != content_version:
+            raise HTTPException(503, "Published comparison provenance is stale")
+        counts[row[0]] += 1
+    if counts != expected_counts or any(counts[k] and k not in result for k in facets):
+        raise HTTPException(503, "Published comparison provenance is incomplete")
+    return result
+
+
+def _execute_comparison_publication_read(conn, query, params=None):
+    """Fail closed when an older serving schema lacks comparison columns/tables."""
+    try:
+        return conn.execute(query, params)
+    except Exception as error:
+        if getattr(error, "sqlstate", None) in ("42P01", "42703"):
+            raise HTTPException(503, "Published comparison schema is unavailable") from error
+        raise
+
+
 def _selected_profile_comparison_sources(conn, *, external, details, cohort_type, members):
     """Fetch distinct provenance for profile comparison facets, not every cell."""
     external_sources = []
@@ -1309,7 +1355,7 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
     installed = conn.execute("SELECT to_regclass('profile_comparison_publication')").fetchone()
     if not installed or not installed[0]:
         raise HTTPException(503, "Published profile comparison is unavailable")
-    marker = conn.execute("""SELECT p.content_version,p.profile_content_version,p.reference_content_version,
+    marker = _execute_comparison_publication_read(conn, """SELECT p.content_version,p.profile_content_version,p.reference_content_version,
             p.group_row_count,p.territory_row_count,d.content_version,t.content_version
         FROM profile_comparison_publication p
         JOIN table_publication d ON d.table_name='declared_profile'
@@ -1322,11 +1368,11 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
     for profile in details:
         point = profile.get("comparison_point") or {}
         expected_keys.add((profile["indicator"], point.get("detail"), point.get("sex") or ""))
-    groups = conn.execute("""SELECT indicator_id,detail_key,sex_key,statistic,median,member_count,
-        eligible_count,missing_count,profile_content_version,reference_content_version
+    groups = _execute_comparison_publication_read(conn, """SELECT indicator_id,detail_key,sex_key,statistic,median,member_count,
+        eligible_count,missing_count,lineage_source_count,profile_content_version,reference_content_version
         FROM profile_comparison_group WHERE comparison_context=%s AND group_id=%s
         AND territory_type=%s AND indicator_id=ANY(%s)""", (context, group_id, territory_type, ids)).fetchall()
-    territories = conn.execute("""SELECT indicator_id,detail_key,sex_key,territory_id,value,status,rank,tie_count,
+    territories = _execute_comparison_publication_read(conn, """SELECT indicator_id,detail_key,sex_key,territory_id,value,status,rank,tie_count,
         rank_size,profile_content_version,reference_content_version FROM profile_comparison_territory
         WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
           AND indicator_id=ANY(%s) AND territory_id=%s""", (context, group_id, territory_type, ids, territory_id)).fetchall()
@@ -1335,8 +1381,11 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
     if (len(group_map) != len(groups) or len(territory_map) != len(territories)
             or set(group_map) != expected_keys or set(territory_map) != expected_keys):
         raise HTTPException(503, "Published profile comparison has missing or duplicate results")
-    source_map = _selected_profile_comparison_sources(conn, external=[], details=ids,
-        cohort_type=cohort_type, members=members)[1]
+    source_map = _published_comparison_sources(conn, family="profile", context=context,
+        group_id=group_id, cohort_type=cohort_type,
+        facets={profile["indicator"] for profile in details}, content_version=marker[0],
+        expected_counts={profile["indicator"]: next((r[8] for r in groups if r[0] == profile["indicator"]), 0)
+                         for profile in details})
     output = {}
     for profile in details:
         point = profile.get("comparison_point") or {}
@@ -1344,7 +1393,7 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
         group, row = group_map.get(key), territory_map.get(key)
         if not group or not row or row[3] != territory_id:
             raise HTTPException(503, "Published profile comparison is incomplete")
-        _, _, _, stat, med, member_count, eligible, missing, pv, rv = group
+        _, _, _, stat, med, member_count, eligible, missing, lineage_count, pv, rv = group
         _, _, _, _, value, status, rank, ties, rank_size, tpv, trv = row
         if (stat != "median" or member_count != len(members) or eligible < 0 or missing < 0
                 or eligible + missing != member_count or pv != marker[1] or rv != marker[2]
@@ -1599,7 +1648,7 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
     installed = conn.execute("SELECT to_regclass('scalar_comparison_publication')").fetchone()
     if not installed or not installed[0]:
         raise HTTPException(503, "Published scalar comparison is unavailable")
-    marker = conn.execute("""SELECT p.content_version,p.scalar_content_version,p.reference_content_version,
+    marker = _execute_comparison_publication_read(conn, """SELECT p.content_version,p.scalar_content_version,p.reference_content_version,
             p.group_row_count,p.territory_row_count,s.content_version,s.reference_content_version,
             t.content_version
         FROM scalar_comparison_publication p
@@ -1610,11 +1659,11 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
             or marker[6] != marker[7] or marker[3] < 1 or marker[4] < 1):
         raise HTTPException(503, "Published scalar comparison is stale or incompatible")
     indicator_ids = [row[0] for row in comparable]
-    groups = conn.execute("""SELECT indicator_id,statistic,median,member_count,eligible_count,missing_count
+    groups = _execute_comparison_publication_read(conn, """SELECT indicator_id,statistic,median,member_count,eligible_count,missing_count,lineage_source_count
         FROM scalar_comparison_group
         WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
           AND indicator_id=ANY(%s)""", (context, group_id, territory_type, indicator_ids)).fetchall()
-    territories = conn.execute("""SELECT indicator_id,value,status,rank,tie_count,rank_size
+    territories = _execute_comparison_publication_read(conn, """SELECT indicator_id,value,status,rank,tie_count,rank_size
         FROM scalar_comparison_territory
         WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
           AND territory_id=%s AND indicator_id=ANY(%s)""",
@@ -1628,7 +1677,7 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
         territory = territory_by_indicator.get(indicator_id)
         if not group or not territory:
             raise HTTPException(503, "Published scalar comparison is incomplete")
-        statistic, median_value, member_count, eligible_count, missing_count = group
+        statistic, median_value, member_count, eligible_count, missing_count, lineage_count = group
         value, status, rank, tie_count, rank_size = territory
         if (statistic != "median" or member_count != len(members) or
                 eligible_count + missing_count != member_count or
@@ -1639,11 +1688,13 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
                 (status != "measured" and (value is not None or rank is not None or
                     tie_count is not None or rank_size is not None))):
             raise HTTPException(503, "Published scalar comparison result is invalid")
-    sources = _selected_scalar_comparison_sources(conn, indicator_ids=indicator_ids,
-        cohort_type=cohort_type, members=members)
+    sources = _published_comparison_sources(conn, family="scalar", context=context,
+        group_id=group_id, cohort_type=cohort_type, facets=set(indicator_ids),
+        content_version=marker[0], expected_counts={indicator: group_by_indicator[indicator][5]
+            for indicator in indicator_ids})
     results = {}
     for indicator_id in indicator_ids:
-        _statistic, median_value, member_count, eligible_count, missing_count = group_by_indicator[indicator_id]
+        _statistic, median_value, member_count, eligible_count, missing_count, _lineage_count = group_by_indicator[indicator_id]
         value, status, rank, tie_count, rank_size = territory_by_indicator[indicator_id]
         results[indicator_id] = {
             "status": "available" if eligible_count else "unavailable",
@@ -2469,7 +2520,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         for route in routes))
     observation_columns=("o.territory_id,o.status,a.provenance_revision_id,o.axis_value,o.missing_reason"
         if fixed_projection_read else "o.territory_id,o.value,o.status,a.provenance_revision_id,o.axis_value,o.missing_reason")
-    rows=conn.execute(f"""SELECT d.dataset_id,d.indicator_id,{observation_columns}
+    rows=([(route[0],route[3]) for route in routes] if fixed_projection_read else conn.execute(f"""SELECT d.dataset_id,d.indicator_id,{observation_columns}
         FROM series_dataset_descriptor d
         LEFT JOIN series_dataset_observation o ON o.dataset_id=d.dataset_id AND o.indicator_id=d.indicator_id
           AND (d.comparison_statistic='mean' OR o.axis_value=d.comparison_point OR
@@ -2480,9 +2531,9 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
           AND a.axis_value=o.axis_value
         WHERE d.dataset_id=ANY(%s) AND d.indicator_id=ANY(%s) AND d.active_read_route
          ORDER BY d.dataset_id,d.indicator_id,o.territory_id,o.axis_value,a.provenance_revision_id""",
-        (cohort_type,ids,datasets,indicators)).fetchall()
+        (cohort_type,ids,datasets,indicators)).fetchall())
     revision_index=4 if fixed_projection_read else 5
-    revision_ids=list(dict.fromkeys(row[revision_index] for row in rows if row[revision_index] is not None))
+    revision_ids=[] if fixed_projection_read else list(dict.fromkeys(row[revision_index] for row in rows if row[revision_index] is not None))
     revisions=conn.execute("""SELECT provenance_revision_id,source_id,vintage_id,source_name,dataset_name,
         source_version,reference_date,publication_date,revision_hash
         FROM series_provenance_revision WHERE provenance_revision_id=ANY(%s)
@@ -2512,7 +2563,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         median_contract = statistic=="median" and comparison_scope=="default_group"
         valid=bool(point and point in axes and direction in ("high","low") and
             (mean_contract or median_contract) and territory_type in comparison_levels and cohort_type in comparison_levels)
-        observations=[r for r in matching if r[2] is not None]
+        observations=[] if fixed_projection_read else [r for r in matching if r[2] is not None]
         if fixed_projection_read:
             observations=[(*row[:3],None,*row[3:]) for row in observations]
         provenance_index=5
@@ -2520,9 +2571,9 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
             raise HTTPException(503,"Owned series comparison provenance is incomplete")
         axis_index = 6
         if valid and fixed_context is not None:
-            publication=conn.execute("""SELECT p.content_version,p.ordered_series_content_version,
+            publication=_execute_comparison_publication_read(conn, """SELECT p.content_version,p.ordered_series_content_version,
                 p.reference_content_version,p.group_row_count,p.territory_row_count,
-                s.content_version,t.content_version
+                s.content_version,t.content_version,p.comparison_axes
               FROM ordered_series_comparison_publication p
               JOIN series_dataset_publication s ON s.dataset_id=p.dataset_id
               JOIN table_publication t ON t.table_name='territory_reference'
@@ -2534,7 +2585,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
             context,group_id,fixed_level=fixed_context
             if fixed_level!=cohort_type:
                 raise HTTPException(503,"Owned-series fixed comparison level is incompatible")
-            groups=conn.execute("""SELECT axis_value,statistic,group_value,member_count,eligible_count,missing_count
+            groups=_execute_comparison_publication_read(conn, """SELECT axis_value,statistic,group_value,member_count,eligible_count,missing_count,lineage_source_count
                 FROM ordered_series_comparison_group WHERE dataset_id=%s AND indicator_id=%s
                   AND comparison_context=%s AND group_id=%s AND territory_type=%s
                 ORDER BY array_position(%s::text[],axis_value)""",
@@ -2544,12 +2595,7 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                   AND comparison_context=%s AND group_id=%s AND territory_type=%s AND territory_id=%s
                 ORDER BY array_position(%s::text[],axis_value),territory_id""",
                 (dataset_id,indicator_id,context,group_id,fixed_level,territory_id,list(axes))).fetchall()
-            axis_inventory=conn.execute("""SELECT DISTINCT state_role FROM series_dataset_observation
-                WHERE dataset_id=%s AND indicator_id=%s AND state_role IS NOT NULL
-                ORDER BY state_role""",(dataset_id,indicator_id)).fetchall()
-            declared_roles={row[0] for row in axis_inventory}
-            declared_axes=([axis for axis in axes if axis in declared_roles]
-                if declared_roles else list(axes))
+            declared_axes=list(publication[7] or [])
             group_axes=[row[0] for row in groups]
             expected_group_axes=[axis for axis in declared_axes if axis in set(axes)]
             expected_pairs={(axis,territory_id) for axis in group_axes}
@@ -2575,11 +2621,30 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
             comparison_reason=(None if enough else
                 ("no_selected_comparable_values" if group[4]==0 else "fewer_than_two_comparable_values"))
             source_axis=None if mean_contract else comparison_axis
-            sources=[];seen=set()
-            for row in observations:
-                if source_axis is not None and row[6]!=source_axis: continue
-                if row[2] not in members or row[5] is None or row[5] in seen: continue
-                seen.add(row[5]); source=revision_by_id.get(row[5])
+            lineage_axes=declared_axes if mean_contract else [comparison_axis]
+            lineage_rows=_execute_comparison_publication_read(conn, """SELECT l.axis_value,l.provenance_revision_id
+                FROM ordered_series_comparison_lineage l
+                WHERE l.dataset_id=%s AND l.indicator_id=%s AND l.comparison_context=%s
+                  AND l.group_id=%s AND l.territory_type=%s AND l.axis_value=ANY(%s)
+                ORDER BY l.axis_value,l.provenance_revision_id""",
+                (dataset_id,indicator_id,context,group_id,fixed_level,lineage_axes)).fetchall()
+            lineage_ids=list(dict.fromkeys(row[1] for row in lineage_rows))
+            lineage_counts={axis:sum(1 for item in lineage_rows if item[0]==axis) for axis in lineage_axes}
+            expected_lineage_counts={row[0]:row[6] for row in groups}
+            if (any(expected_lineage_counts.get(axis)!=count
+                    for axis,count in lineage_counts.items()) or
+                    (not lineage_ids and any(expected_lineage_counts.get(axis,0)>0
+                                              for axis in lineage_axes))):
+                raise HTTPException(503,"Owned-series comparison provenance is incomplete")
+            revisions=conn.execute("""SELECT provenance_revision_id,source_id,vintage_id,source_name,dataset_name,
+                source_version,reference_date,publication_date,revision_hash FROM series_provenance_revision
+                WHERE provenance_revision_id=ANY(%s) ORDER BY provenance_revision_id""",(lineage_ids,)).fetchall()
+            revision_by_id={row[0]:row for row in revisions}
+            if set(revision_by_id)!=set(lineage_ids):
+                raise HTTPException(503,"Owned-series comparison provenance revision is unavailable")
+            sources=[]
+            for revision_id in lineage_ids:
+                source=revision_by_id.get(revision_id)
                 if source is None: raise HTTPException(503,"Owned-series comparison provenance revision is unavailable")
                 sources.append({"source_id":source[1],"vintage_id":source[2],"source_name":source[3],
                     "dataset_name":source[4],"version":source[5],"reference_date":source[6],
@@ -2604,29 +2669,10 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
                 "rank":rank,"rank_size":focal_result[6] if focal_result and rank is not None else None,
                 "comparison_sources":sources,"owned_content_version":content_version}
             if mean_contract:
-                member_axis={}
-                for row in observations:
-                    if row[2] not in members or row[6] not in axes:
-                        continue
-                    key=(row[2],row[6]); fact=(row[3],row[4],row[7])
-                    previous=member_axis.get(key)
-                    if previous is not None and previous!=fact:
-                        raise HTTPException(503,"Published mean-curve provenance rows conflict")
-                    member_axis[key]=fact
-                zero_reason_counts={}
-                for member in members:
-                    facts=[member_axis.get((member,axis)) for axis in axes]
-                    if any(fact is None or fact[1]!="measured" for fact in facts):
-                        raise HTTPException(503,"Published mean-curve provenance support is incomplete")
-                    reasons={fact[2] for fact in facts}
-                    if len(reasons)>1:
-                        raise HTTPException(503,"Published mean-curve zero reason conflicts across axes")
-                    reason=next(iter(reasons))
-                    if reason is not None:
-                        # The producer checks complete curves are finite and requires every structural
-                        # zero curve to be exactly zero before attaching its zero-reason metadata.
-                        # See calcul_raccordement.R:637-641, 648-651.
-                        zero_reason_counts[reason]=zero_reason_counts.get(reason,0)+1
+                zero_rows=_execute_comparison_publication_read(conn, """SELECT reason,member_count FROM ordered_series_comparison_zero_reason
+                    WHERE dataset_id=%s AND indicator_id=%s AND comparison_context=%s AND group_id=%s
+                      AND territory_type=%s""",(dataset_id,indicator_id,context,group_id,fixed_level)).fetchall()
+                zero_reason_counts={row[0]:row[1] for row in zero_rows}
                 result["mean"]=group[2] if enough else None
                 result["mean_curve"]={"statistic":"mean","axis_kind":axis_kind,
                     "points":[{"axis":row[0],"value":row[2],"status":"measured" if row[4]==row[3] else "unavailable"}
@@ -3679,6 +3725,9 @@ def _comparison_result_without_focal_value(result):
 
 
 def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id, selection):
+    # Compatibility fallback for the legacy series_descriptor store only.
+    # Current owned-series routes use _owned_series_comparison_results; do not
+    # move this retired request-time path without naming a live legacy consumer.
     marker = conn.execute(
         """SELECT s.content_version,s.reference_content_version,t.content_version
            FROM table_publication s LEFT JOIN table_publication t

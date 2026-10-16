@@ -769,7 +769,7 @@ owned_series_postgres_adapter <- function(con) {
       "SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=$1",
       params=list(dataset_id)),
     comparison_marker=function(dataset_id,indicator_id) DBI::dbGetQuery(con,
-      "SELECT ordered_series_content_version,reference_content_version FROM ordered_series_comparison_publication WHERE dataset_id=$1 AND indicator_id=$2",
+      "SELECT ordered_series_content_version,reference_content_version,lineage_row_count FROM ordered_series_comparison_publication WHERE dataset_id=$1 AND indicator_id=$2",
       params=list(dataset_id,indicator_id)),
     reference_marker=function() DBI::dbGetQuery(con,
       "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"),
@@ -852,14 +852,28 @@ owned_series_postgres_adapter <- function(con) {
         groups <- comparison$groups; groups$dataset_id <- dataset_id; groups$indicator_id <- d$indicator_id
         DBI::dbWriteTable(con,"ordered_series_comparison_group",groups[c("dataset_id","indicator_id",
           "comparison_context","group_id","territory_type","axis_value","statistic","group_value",
-          "member_count","eligible_count","missing_count")],append=TRUE,row.names=FALSE)
+          "member_count","eligible_count","missing_count","lineage_source_count")],append=TRUE,row.names=FALSE)
+        lineage <- comparison$lineage
+        if (nrow(lineage)) {
+          lineage$dataset_id <- dataset_id; lineage$indicator_id <- d$indicator_id
+          DBI::dbWriteTable(con,"ordered_series_comparison_lineage",lineage[
+            c("dataset_id","indicator_id","comparison_context","group_id","territory_type","axis_value","provenance_revision_id")],append=TRUE,row.names=FALSE)
+        }
+        zero_reasons <- comparison$zero_reasons
+        if (nrow(zero_reasons)) {
+          zero_reasons$dataset_id <- dataset_id; zero_reasons$indicator_id <- d$indicator_id
+          zero_reasons$axis_value <- comparison$axis_values[[1L]]
+          DBI::dbWriteTable(con,"ordered_series_comparison_zero_reason",zero_reasons[
+            c("dataset_id","indicator_id","comparison_context","group_id","territory_type","axis_value","reason","member_count")],append=TRUE,row.names=FALSE)
+        }
         territories <- comparison$territories; territories$dataset_id <- dataset_id; territories$indicator_id <- d$indicator_id
         DBI::dbWriteTable(con,"ordered_series_comparison_territory",territories[c("dataset_id","indicator_id",
           "comparison_context","group_id","territory_type","axis_value","territory_id","value","status",
           "rank","tie_count","rank_size")],append=TRUE,row.names=FALSE)
-        DBI::dbExecute(con,"INSERT INTO ordered_series_comparison_publication(dataset_id,indicator_id,content_version,ordered_series_content_version,reference_content_version,group_row_count,territory_row_count) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(dataset_id,indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,ordered_series_content_version=EXCLUDED.ordered_series_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=now()",
+        DBI::dbExecute(con,"INSERT INTO ordered_series_comparison_publication(dataset_id,indicator_id,content_version,ordered_series_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count,comparison_axes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[]) ON CONFLICT(dataset_id,indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,ordered_series_content_version=EXCLUDED.ordered_series_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,lineage_row_count=EXCLUDED.lineage_row_count,comparison_axes=EXCLUDED.comparison_axes,published_at=now()",
           params=list(dataset_id,d$indicator_id,comparison$content_version,version,
-            reference$content_version[[1L]],nrow(comparison$groups),nrow(comparison$territories)))
+            reference$content_version[[1L]],nrow(comparison$groups),nrow(comparison$territories),
+            nrow(comparison$lineage),array_literal(comparison$axis_values)))
       }
     })
 }
@@ -881,7 +895,8 @@ publish_owned_series_projection <- function(projection, db) {
       comparison_marker <- db$comparison_marker(dataset,projection$descriptor$indicator_id)
       comparison_stale <- !nrow(comparison_marker) ||
         !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]),version) ||
-        !identical(as.character(comparison_marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]]))
+        !identical(as.character(comparison_marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]])) ||
+        !isTRUE(comparison_marker$lineage_row_count[[1L]]>=0L)
     }
     if (changed || rebound || comparison_stale) db$replace_dataset(projection,version)
     invisible(list(changed=changed,rebound=rebound,content_version=version,dataset_id=dataset))
@@ -1181,6 +1196,7 @@ project_ordered_series_comparisons <- function(series, territory_reference,
   group_rows <- list(); territory_rows <- list()
   for (g in groups) {
     if (!g$level %in% d$comparison_levels || !g$level %in% d$allowed_levels) next
+    if (!length(g$ids)) next
     obs <- point_rows[point_rows$territory_type==g$level & point_rows$territory_id %in% g$ids,,drop=FALSE]
     for (axis in comparison_axes) {
       p <- obs[as.character(obs[[axis_field]])==axis,,drop=FALSE]
@@ -1203,7 +1219,49 @@ project_ordered_series_comparisons <- function(series, territory_reference,
     }
   }
   if (!length(group_rows)) stop("No declared ordered-series comparison contexts",call.=FALSE)
-  out <- list(groups=do.call(rbind,group_rows),territories=do.call(rbind,territory_rows),
+  lineage_rows <- list(); zero_reason_rows <- list()
+  for (g in groups) {
+    if (!g$level %in% d$comparison_levels || !g$level %in% d$allowed_levels) next
+    if (!length(g$ids)) next
+    obs <- point_rows[point_rows$territory_type==g$level & point_rows$territory_id %in% g$ids,,drop=FALSE]
+    for (axis in comparison_axes) {
+      p <- obs[as.character(obs[[axis_field]])==axis,,drop=FALSE]
+      links <- series$point_provenance[series$point_provenance$territory_id %in% g$ids &
+        series$point_provenance$axis_value %in% as.character(p$axis_value),,drop=FALSE]
+      if (nrow(links)) for (revision in unique(links$provenance_revision_id))
+        lineage_rows[[length(lineage_rows)+1L]] <- data.frame(comparison_context=g$context,
+          group_id=g$group,territory_type=g$level,axis_value=axis,
+          provenance_revision_id=revision,stringsAsFactors=FALSE)
+    }
+    if (identical(d$comparison_scope,"selected_group") && statistic=="mean" &&
+        "missing_reason" %in% names(obs)) {
+      selected <- !is.na(obs$missing_reason) & nzchar(as.character(obs$missing_reason))
+      if (any(selected)) {
+        per_member <- tapply(as.character(obs$missing_reason[selected]),obs$territory_id[selected],
+          function(x) unique(x)[[1L]])
+        counts <- table(per_member)
+        for (reason in names(counts)) zero_reason_rows[[length(zero_reason_rows)+1L]] <-
+          data.frame(comparison_context=g$context,group_id=g$group,territory_type=g$level,
+            reason=reason,member_count=as.integer(counts[[reason]]),stringsAsFactors=FALSE)
+      }
+    }
+  }
+  lineage <- if(length(lineage_rows)) unique(do.call(rbind,lineage_rows)) else data.frame(
+    comparison_context=character(),group_id=character(),territory_type=character(),axis_value=character(),
+    provenance_revision_id=character(),stringsAsFactors=FALSE)
+  lineage_counts <- if(nrow(lineage)) aggregate(provenance_revision_id~comparison_context+group_id+
+    territory_type+axis_value,lineage,function(x) length(unique(x))) else data.frame(
+      comparison_context=character(),group_id=character(),territory_type=character(),axis_value=character(),
+      provenance_revision_id=integer(),stringsAsFactors=FALSE)
+  names(lineage_counts)[[5L]] <- "lineage_source_count"
+  out_groups <- merge(do.call(rbind,group_rows),lineage_counts,
+    by=c("comparison_context","group_id","territory_type","axis_value"),all.x=TRUE,sort=FALSE)
+  out_groups$lineage_source_count[is.na(out_groups$lineage_source_count)] <- 0L
+  zero_reasons <- if(length(zero_reason_rows)) unique(do.call(rbind,zero_reason_rows)) else data.frame(
+    comparison_context=character(),group_id=character(),territory_type=character(),reason=character(),
+    member_count=integer(),stringsAsFactors=FALSE)
+  out <- list(groups=out_groups,territories=do.call(rbind,territory_rows),
+    lineage=lineage,zero_reasons=zero_reasons,
     input_content_version=input_content_version,reference_content_version=reference_content_version,
     axis_values=comparison_axes,statistic=statistic,direction=d$direction,
     provenance=series$provenance,point_provenance=series$point_provenance)

@@ -14,7 +14,7 @@ class FixedComparisonConnection:
     def __init__(self, *, context="density_class", stale=None, incomplete=False,
                  stat="median", scope="default_group", custom=False, axis_kind=None, extra_member=False,
                  eligible_count=None, focal_status="measured", bad_focal_rank=False,
-                 unsupported_comparison_level=False):
+                 unsupported_comparison_level=False, empty_lineage=False):
         self.context=context; self.stale=stale; self.incomplete=incomplete
         self.stat=stat; self.scope=scope; self.custom=custom; self.sql=[]
         self.members=["c1","c2"] if context != "bretagne" else ["c1","c2","c3"]
@@ -22,6 +22,7 @@ class FixedComparisonConnection:
         self.eligible_count=eligible_count; self.focal_status=focal_status
         self.bad_focal_rank=bad_focal_rank
         self.unsupported_comparison_level=unsupported_comparison_level
+        self.empty_lineage=empty_lineage
         self.zero_reason=None; self.conflicting_zero_reason=False
         self.dataset="owned-v1"; self.indicator="series_x"
         self.axes=["2020","2021"] if stat!="mean" else ["t0000","t0005"]
@@ -74,13 +75,24 @@ class FixedComparisonConnection:
             source="old-series" if self.stale=="series" else "series-v1"
             reference="old-ref" if self.stale=="reference" else "ref-v1"
             group_count=1 if self.incomplete else len(self.axes)
+            comparison_axes=(['M2','M3'] if self.axis_kind=="declared_detail" else self.axes)
             return Cursor(row=("comparison-v1",source,reference,group_count,len(self.axes)*len(self.members),
-                "series-v1","ref-v1"))
+                "series-v1","ref-v1",comparison_axes))
+        if "FROM ordered_series_comparison_lineage" in sql:
+            if self.empty_lineage: return Cursor()
+            axes=params[-1]
+            return Cursor(rows=[(axis,f"rev-{tid}-{axis}" if self.axis_kind=="declared_detail" else f"rev-{tid}")
+                for axis in axes for tid in self.members])
+        if "FROM ordered_series_comparison_zero_reason" in sql:
+            if self.conflicting_zero_reason:
+                raise HTTPException(503,"Published mean-curve provenance zero reason conflicts across axes")
+            return Cursor(rows=[(self.zero_reason,len(self.members))] if self.zero_reason else [])
         if "FROM ordered_series_comparison_group" in sql:
             axes=["M2","M3"] if self.axis_kind=="declared_detail" else self.axes
             count=len(self.members)+(1 if self.extra_member else 0)
             eligible=count if self.eligible_count is None else self.eligible_count
-            rows=[(axis,self.stat,7.5,count,eligible,count-eligible) for axis in axes]
+            lineage_count=0 if self.empty_lineage else len(self.members)
+            rows=[(axis,self.stat,None if eligible==0 else 7.5,count,eligible,count-eligible,lineage_count) for axis in axes]
             return Cursor(rows=rows[:1] if self.incomplete else rows)
         if "FROM ordered_series_comparison_territory" in sql:
             member_ids=[params[5]]
@@ -93,8 +105,6 @@ class FixedComparisonConnection:
                 (1 if self.focal_status=="measured" else None),
                 rank_size)
                 for axis in axes for tid in member_ids])
-        if "SELECT DISTINCT state_role" in sql:
-            return Cursor(rows=[("M2",),("M3",)] if self.axis_kind=="declared_detail" else [])
         raise AssertionError(sql)
 
 
@@ -123,8 +133,7 @@ def test_all_canonical_owned_series_contexts_read_published_axis_and_territory_r
     assert any("FROM ordered_series_comparison_group" in sql for sql,_ in conn.sql)
     assert any("FROM ordered_series_comparison_territory" in sql for sql,_ in conn.sql)
     raw_rows=[sql for sql,_ in conn.sql if "LEFT JOIN series_dataset_observation o" in sql]
-    assert len(raw_rows)==1
-    assert "o.value" not in raw_rows[0]
+    assert len(raw_rows)==0
     published_territory=next((sql,params) for sql,params in conn.sql
         if "FROM ordered_series_comparison_territory" in sql)
     assert published_territory[1][5]==territory_id
@@ -175,6 +184,16 @@ def test_fixed_comparison_missing_focal_uses_published_eligible_count(eligible,e
     assert result["eligible_count"]==eligible
     assert result["status"]==expected_status and result["reason"]==expected_reason
     assert result["focal_value"] is None and result["rank"] is None
+
+
+def test_fixed_comparison_accepts_empty_lineage_for_a_legitimately_empty_comparison():
+    conn=FixedComparisonConnection(eligible_count=0,focal_status="missing",empty_lineage=True)
+    result=main._owned_series_comparison_results(conn,[(conn.dataset,"milieux",False,conn.indicator)],
+        "commune","c1",None,cohort=("commune",tuple(conn.members),
+            {"kind":"density_class","density_class_code":"d1"}))[0][0]
+    assert result["status"]=="unavailable"
+    assert result["reason"]=="no_selected_comparable_values"
+    assert result["comparison_sources"]==[]
 
 
 @pytest.mark.parametrize("eligible,expected_status,expected_reason",[

@@ -97,81 +97,77 @@ def _published_collection_comparison(conn, descriptor, territory_type, territory
     context, group_id, group_type = fixed_context
     indicator = descriptor["indicator_id"]
     facet = (descriptor["comparison_detail"], str(descriptor["comparison_period"]))
+    storage = conn.execute("""SELECT to_regclass('observed_collection_comparison_lineage'),
+        EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+          AND table_name='observed_collection_comparison_publication' AND column_name='lineage_complete')""").fetchone()
+    if not storage or not storage[0] or not storage[1]:
+        raise HTTPException(503,"Observed collection comparison lineage storage is unavailable")
     publication = conn.execute("""SELECT content_version,collection_content_version,
-        reference_content_version,group_row_count,territory_row_count
+        reference_content_version,group_row_count,territory_row_count,lineage_row_count,lineage_complete
         FROM observed_collection_comparison_publication WHERE indicator_id=%s""", (indicator,)).fetchone()
     if (not publication or not publication[0] or publication[1] != marker["content_version"]
         or publication[2] != marker["reference_content_version"]):
         raise HTTPException(503, "Observed collection comparison publication is missing or incompatible")
-    physical_counts = conn.execute("""SELECT
-        (SELECT count(*) FROM observed_collection_comparison_group WHERE indicator_id=%s),
-        (SELECT count(*) FROM observed_collection_comparison_territory WHERE indicator_id=%s)""",
-        (indicator,indicator)).fetchone()
-    if not physical_counts or tuple(physical_counts) != tuple(publication[3:5]):
-        raise HTTPException(503, "Observed collection comparison row counts are inconsistent")
+    if publication[6] is not True:
+        raise HTTPException(503,"Observed collection comparison lineage is not complete")
     group = conn.execute("""SELECT statistic,median,member_count,eligible_count,missing_count,
-        collection_content_version,reference_content_version FROM observed_collection_comparison_group
+        lineage_source_count,collection_content_version,reference_content_version FROM observed_collection_comparison_group
         WHERE indicator_id=%s AND comparison_context=%s AND group_id=%s AND territory_type=%s
         AND detail_key=%s AND observation_period=%s""",
         (indicator,context,group_id,group_type,*facet)).fetchone()
-    rows = conn.execute("""SELECT territory_id,value,status,rank,tie_count,rank_size,
+    focal = conn.execute("""SELECT territory_id,value,status,rank,tie_count,rank_size,
         collection_content_version,reference_content_version FROM observed_collection_comparison_territory
         WHERE indicator_id=%s AND comparison_context=%s AND group_id=%s AND territory_type=%s
-        AND detail_key=%s AND observation_period=%s""",
-        (indicator,context,group_id,group_type,*facet)).fetchall()
+        AND detail_key=%s AND observation_period=%s AND territory_id=%s""",
+        (indicator,context,group_id,group_type,*facet,territory_id)).fetchone()
     expected = set(members)
     if (not group or group[0] != "median" or group[1] is None and group[3] > 0
         or group[1] is not None and not isfinite(group[1])
         or group[2] != len(expected) or group[3] + group[4] != group[2]
-        or publication[4] < len(rows) or publication[3] < 1
-        or group[5:] != (marker["content_version"], marker["reference_content_version"])
-        or any(r[0] not in expected for r in rows) or {r[0] for r in rows} != expected
-        or len(rows) != len(expected)):
+        or publication[3] < 1 or publication[4] < 1
+        or group[6:] != (marker["content_version"], marker["reference_content_version"])):
         raise HTTPException(503, "Observed collection comparison publication is incomplete")
-    for row in rows:
-        if row[6:] != (marker["content_version"], marker["reference_content_version"]):
+    if territory_id in expected:
+        if not focal or focal[0] != territory_id or focal[6:] != (marker["content_version"], marker["reference_content_version"]):
             raise HTTPException(503, "Observed collection comparison publication is stale")
-        if row[2] == "not_published":
-            valid = row[1] is None and row[3:6] == (None,None,None)
+        if focal[2] == "not_published":
+            valid = focal[1] is None and focal[3:6] == (None,None,None)
         else:
-            valid = (row[2] == "measured" and isinstance(row[1], (int,float)) and isfinite(row[1])
-                     and all(isinstance(v, int) for v in row[3:6])
-                     and 1 <= row[3] <= row[5] and 1 <= row[4] <= row[5])
+            valid = (focal[2] == "measured" and isinstance(focal[1], (int,float)) and isfinite(focal[1])
+                     and all(isinstance(v, int) for v in focal[3:6])
+                     and descriptor["direction"] in ("high","low")
+                     and 1 <= focal[3] <= focal[5] and 1 <= focal[4] <= focal[5]
+                     and focal[5] == group[3])
         if not valid:
             raise HTTPException(503, "Observed collection comparison row is invalid")
-    eligible = [r for r in rows if r[2] == "measured"]
-    if len(eligible) != group[3] or group[4] != len(expected)-len(eligible):
-        raise HTTPException(503, "Observed collection comparison counts are inconsistent")
-    values = [r[1] for r in eligible]
-    expected_median = median(values) if values else None
-    if group[1] != expected_median:
-        raise HTTPException(503, "Observed collection comparison median is inconsistent")
-    for row in eligible:
-        better = sum(v > row[1] if descriptor["direction"] == "high" else v < row[1] for v in values)
-        ties = sum(v == row[1] for v in values)
-        if descriptor["direction"] not in ("high", "low") or row[3] != 1 + better or row[4] != ties or row[5] != len(values):
-            raise HTTPException(503, "Observed collection comparison rank is inconsistent")
-    focal = next((r for r in rows if r[0] == territory_id), None)
-    rank = focal[3] if focal and focal[2] == "measured" else None
-    sources = []
-    if eligible:
-        provenance = conn.execute("""SELECT DISTINCT o.source_id,sd.name,o.vintage_id,v.version,
-            v.reference_date,v.publication_date FROM period_detail_observation o
-            JOIN source_dataset sd ON sd.source_id=o.source_id JOIN source_vintage v
-            ON v.source_id=o.source_id AND v.vintage_id=o.vintage_id
-            WHERE o.indicator_id=%s AND o.detail_key=%s AND o.observation_period=%s
-            AND o.territory_id=ANY(%s)""", (indicator,*facet,[r[0] for r in eligible])).fetchall()
-        sources = [{"source_id":r[0],"name":r[1],"vintage_id":r[2],"version":r[3],
-                    "reference_date":r[4],"publication_date":r[5]} for r in provenance]
-        if not sources or any(not source["source_id"] or not source["name"] or not source["vintage_id"] or not source["version"] for source in sources):
-            raise HTTPException(503, "Observed collection comparison provenance is incomplete")
-    enough = len(eligible) >= 2
+    lineage = conn.execute("""SELECT source_id,vintage_id,comparison_content_version
+        FROM observed_collection_comparison_lineage WHERE indicator_id=%s AND comparison_context=%s
+          AND group_id=%s AND territory_type=%s AND detail_key=%s AND observation_period=%s""",
+        (indicator,context,group_id,group_type,*facet)).fetchall()
+    if (len(lineage)!=group[5] or len(lineage)>publication[5] or
+        any(row[2]!=publication[0] for row in lineage) or
+        len({(row[0],row[1]) for row in lineage})!=len(lineage) or (group[3]>0 and not lineage)):
+        raise HTTPException(503,"Observed collection comparison provenance is incomplete")
+    sources=[]
+    if lineage:
+        metadata=conn.execute("""SELECT sd.source_id,sd.name,v.vintage_id,v.version,v.reference_date,v.publication_date
+            FROM source_dataset sd JOIN source_vintage v ON v.source_id=sd.source_id
+            WHERE (sd.source_id,v.vintage_id) IN
+              (SELECT * FROM unnest(%s::text[],%s::text[])) ORDER BY sd.source_id,v.vintage_id""",
+            ([row[0] for row in lineage],[row[1] for row in lineage])).fetchall()
+        if (len(metadata)!=len(lineage) or
+            any(not r[0] or not r[1] or not r[2] or not r[3] for r in metadata)):
+            raise HTTPException(503,"Observed collection comparison source metadata is incomplete")
+        sources=[{"source_id":r[0],"name":r[1],"vintage_id":r[2],"version":r[3],
+                  "reference_date":r[4],"publication_date":r[5]} for r in metadata]
+    enough = group[3] >= 2
+    rank = focal[3] if focal and focal[2]=="measured" else None
     return {"indicator_id":indicator,"theme_id":descriptor["theme_id"],"label":descriptor["label"],
         "unit":descriptor["unit"],"descriptor_version":descriptor["descriptor_version"],
         "source_facet":{"detail":facet[0],"observation_period":descriptor["comparison_period"]},
         "direction":descriptor["direction"],"statistic":"median","status":"available" if enough else "unavailable",
         "reason":None if enough else "fewer_than_two_comparable_values","selected_member_count":len(expected),
-        "eligible_count":len(eligible),"missing_count":len(expected)-len(eligible),
+        "eligible_count":group[3],"missing_count":group[4],
         "median":group[1] if enough else None,
         "rank":rank if enough else None,"rank_size":focal[5] if rank and enough else None,
         "comparison_sources":sources,**marker}
