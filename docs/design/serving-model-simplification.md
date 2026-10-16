@@ -29,7 +29,8 @@ Keep these concepts separate in metadata:
 
 | Concept | Meaning / owner | Caller-visible? |
 |---|---|---|
-| Resource identity | Stable semantic subject; pipeline descriptor or domain-owned canonical metadata | Yes |
+| Resource identity | Stable semantic read unit; producer descriptor declares one or more measure IDs | Yes |
+| Measure identity | Stable fact key (`indicator_id` today), with its own value/descriptor/provenance; may be a member of a multi-measure resource | Returned with each observation |
 | Target identity | Typed territory `{type,id}` **or** a declared non-territory identity such as a named reference | Yes; never overloaded |
 | Coordinates | Closed, ordered descriptor axes (detail/sex, period, state role, TYPEQU) | Returned as typed facts, not free-form filters |
 | Physical shape | One of a small set of typed storage contracts | No |
@@ -46,17 +47,22 @@ membership and active acquisition registration remain product-owned metadata;
 this proposal does not redefine the six canonical themes or acquisition
 priority/background warming/static opt-out in [`CONTEXT.md`](../../CONTEXT.md).
 
-**Granularity recommendation:** one resource per semantic fact/result contract,
-not one per screen, theme response, table, or operation. A scalar indicator and
-each of the fifteen service/mode `share_*` facts remain distinct resource IDs;
-the current service response can compose them. A series dataset's owner clock
-is publication metadata, not a caller-selected `owned_dataset` resource kind.
-A named reference has its own non-territory target identity. A fixed comparison
-is a declared result capability of the resource (or a separately identified
-published comparison resource where it has a different grain), not a second
-storage-family choice. AEDAR aggregate and AEDAR comparison remain distinct
-semantic resources because one is source-grain data and the other a published
-derived result; their namespace alone does not establish physical separation.
+**Granularity recommendation:** one resource per coherent semantic read
+contract, not mechanically one per scalar key, screen, theme, table, or
+operation. Expose the fifteen essential-service shares as one
+`mobilite.service_access` resource with a closed service×mode measure set;
+preserve each underlying `share_*` `indicator_id` as the measure identity and
+its own descriptor, provenance, status and comparison semantics. Do not turn
+those measures into fifteen batch items or collapse them into one anonymous
+value. `densite` and `structure_age` remain separate semantic resources. A
+series dataset's owner clock is publication metadata, not a caller-selected
+`owned_dataset` resource kind. A named reference has its own non-territory
+target identity. A fixed comparison is a declared result capability of the
+resource (or a separately identified published result when it has a different
+grain), not a second storage-family choice. AEDAR aggregate and AEDAR comparison
+remain distinct semantic resources because one is source-grain data and the
+other a published derived result; their namespace alone does not establish
+physical separation.
 
 ### Evidence and consequences
 
@@ -68,7 +74,19 @@ batch preserves single-read payloads and uses one read-only repeatable-read
 transaction. `app/src/payload/themeAcquisition.ts`,
 `app/src/payload/structureAgeProfile.ts`, `app/src/views/IndicateurPage.vue`,
 and `app/src/fiche/content/aedarApiClient.ts` show actual consumers currently
-selecting those shapes/routes. The static inventory is in
+selecting those shapes/routes. For service access,
+`pipeline/inst/extdata/theme-metadata/theme_mobilite.json` declares the fifteen
+`share_*` member IDs in the Mobilité subgroup, plus labels, sources, directions,
+`service_share_scalar` completeness and denominator semantics. The R projector
+`project_service_share_scalars()` derives the set from those declared subgroup
+indicators, checks a complete 5×3 set and publishes the original IDs as scalar
+facts; `service_registry` is a derived projection of that same declaration, not
+a second source of truth. `api/main.py` currently reads the 15 values and their
+peer facts in one transaction and adapts them into the current
+`essential_service_access` response member;
+`app/src/views/TerritoireView.vue` applies that complete result via
+`applyAccessApiFacts()`. This is evidence for one multi-measure resource item;
+no new key list or metadata registry is proposed. The static inventory is in
 [`structured-consumer-inventory.md`](../structured-consumer-inventory.md), and
 the route/caller map is external audit evidence, not traffic telemetry.
 
@@ -77,6 +95,20 @@ dispatch) without claiming that every route is unused. Theme facts may remain a
 product aggregation/read model; health, territory search, and bounded building
 catalogue operations are not fact-resource aliases. No resource inventory or
 active-catalogue survivor list is approved by this proposal.
+
+For the live Mobility theme consumer, the service block is one member-bearing
+resource read, not fifteen independent items and not a permanent
+`theme_facts`/`essential-services` façade. Other required Mobilité resources
+compose with that item in the same shared batch snapshot (or the same single
+resource read when no composition is needed); the existing active-theme
+acquisition priority, background warming/cancellation and no-fallback behavior
+remain unchanged. The 12-item request ceiling is not raised to accommodate the
+15 measures. Discovery expands the producer-owned declaration into the closed
+member set at read time; it does not copy that set into a route model or app
+list. `mobilite.service_access` is a proposed semantic resource ID, to be
+declared once in the existing `service_share_scalar` descriptor block; the
+member set itself continues to derive from declared subgroup indicators and
+their existing per-key metadata. No second resource registry is introduced.
 
 ## 2. Typed request/result contract
 
@@ -133,6 +165,125 @@ predicates or grouping expressions:
            "members":[{"type":"commune","id":"22002"},
                       {"type":"commune","id":"22003"}]}}
 ```
+
+### Worked multi-measure service read (PROPOSED)
+
+The exact canonical member IDs are expanded here to make the resource boundary
+auditable. This matrix is an example, not a new metadata list; the source of
+truth remains `theme_mobilite.json` and its existing validation/projector. The
+suffixes map `t→walk_transit`, `b→bike`, and `c→car` as the current R projector
+and API adapter do.
+
+| Service coordinate | `t` | `b` | `c` |
+|---|---|---|---|
+| food | `share_food_t` | `share_food_b` | `share_food_c` |
+| health | `share_health_t` | `share_health_b` | `share_health_c` |
+| admin | `share_admin_t` | `share_admin_b` | `share_admin_c` |
+| school | `share_school_t` | `share_school_b` | `share_school_c` |
+| bank | `share_bank_t` | `share_bank_b` | `share_bank_c` |
+
+One conceptual single read (not a proposed URL) requests all five triplets;
+`fields` applies the same logical-field selection to every member, never names
+physical columns or selects a different storage owner. `value`, `median`, and
+`rank` are selectable where declared; measure ID, service/mode coordinates,
+status, public `%` unit (stored values remain fractions 0–1), labels,
+source/vintage, denominator semantics and publication/dependency tokens remain
+mandatory. Default comparison follows current product rules: commune density
+class, same-level EPCI/département, no regional peer comparison. An explicit
+bounded typed member selection can replace that default without changing the
+measure set.
+
+```json
+{
+  "resource": "mobilite.service_access",
+  "target": {"kind": "territory", "type": "commune", "id": "22001"},
+  "fields": ["value", "median", "rank"],
+  "intent": {"kind": "facts", "comparison": {"kind": "default"}}
+}
+```
+
+The identical item, with only its batch-local correlation ID added, is a
+single batch item:
+
+```json
+{
+  "items": [
+    {"id": "service-access", "resource": "mobilite.service_access",
+     "target": {"kind": "territory", "type": "commune", "id": "22001"},
+     "fields": ["value", "median", "rank"],
+     "intent": {"kind": "facts", "comparison": {"kind": "default"}}}
+  ]
+}
+```
+
+Both forms return the same complete `data`. Shape-level result sketch (one
+observation and one per-measure comparison for each listed ID; placeholders are
+not fixture values):
+
+```json
+{
+  "resource": "mobilite.service_access",
+  "target": {"kind": "territory", "type": "commune", "id": "22001"},
+  "scope": {"kind": "density_class", "member_count": "<resolved count>"},
+  "observations": [
+    {"measure_id":"share_food_t", "service":"food", "mode":"walk_transit", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_food_b", "service":"food", "mode":"bike", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_food_c", "service":"food", "mode":"car", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_health_t", "service":"health", "mode":"walk_transit", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_health_b", "service":"health", "mode":"bike", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_health_c", "service":"health", "mode":"car", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_admin_t", "service":"admin", "mode":"walk_transit", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_admin_b", "service":"admin", "mode":"bike", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_admin_c", "service":"admin", "mode":"car", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_school_t", "service":"school", "mode":"walk_transit", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_school_b", "service":"school", "mode":"bike", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_school_c", "service":"school", "mode":"car", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_bank_t", "service":"bank", "mode":"walk_transit", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_bank_b", "service":"bank", "mode":"bike", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"},
+    {"measure_id":"share_bank_c", "service":"bank", "mode":"car", "fact":"<typed value/status/unit/source>", "comparison":"<median/rank/count>"}
+  ],
+  "service_comparisons": [
+    {"service":"food", "peer_median_car_gap":"<median of peer car−walk_transit differences>", "peer_median_bike_gain":"<median of peer bike−walk_transit differences>"},
+    {"service":"health", "peer_median_car_gap":"<...>", "peer_median_bike_gain":"<...>"},
+    {"service":"admin", "peer_median_car_gap":"<...>", "peer_median_bike_gain":"<...>"},
+    {"service":"school", "peer_median_car_gap":"<...>", "peer_median_bike_gain":"<...>"},
+    {"service":"bank", "peer_median_car_gap":"<...>", "peer_median_bike_gain":"<...>"}
+  ],
+  "publications": "<scalar owner and exact territory-reference dependency tokens>"
+}
+```
+
+The production shape uses typed values and metadata rather than descriptive
+placeholders. Single and batch use the same resource reader and snapshot; batch
+returns this whole payload or an error. Unsupported resource/field/intent is
+422; stale or incomplete required publication/member set fails closed (503);
+request/work or serialized-response bounds reject (413), with no truncation or
+partial result. No legacy item kind or bespoke route is needed.
+
+All fifteen comparisons use the same resolved member set and scope token.
+For each measure, median and direction-aware rank use that measure's measured
+values only; unavailable values are excluded, never converted to zero, and a
+rank is absent when the focal value is unavailable or the focal territory is
+not in the selected comparison. `scope.member_count` counts resolved members;
+per-measure comparable count is distinct and remains visible with the result.
+Each service's car-gap and bike-gain reference is the median of member-level
+paired differences among members with both measured values, **not** the
+difference between the two mode medians. This preserves the existing
+`compare()` semantics in `api/main.py`.
+
+**Bound the real work, not just the item count.** This is one logical item, but
+preflight charges every member row: for `M` resolved comparison members, at
+least `15 × (1 + M)` scalar observation work units, plus descriptor/reference
+work. Explicit `M` retains the existing 1,500-member cap; the default set is
+counted from the published territory reference in the same snapshot. Also
+charge the five car-gap and five bike-gain median calculations across `M`
+members (10×M paired-difference operations); those calculations may reuse the
+already-counted observations and must not be mistaken for ten more row fetches
+per member. Field projection may reduce serialized bytes but never discounts
+required input work.
+Include the estimate in the existing aggregate batch-work budget without
+increasing the 12-item ceiling. Return all 15 measures or fail closed; never
+truncate a service/mode triplet.
 
 Context names, permitted member territory kinds, and bounds come from the
 resource's published contract. Omitted selection means the declared default;
@@ -191,12 +342,12 @@ The names below are logical shape proposals, not DDL or approved table names.
 
 | Proposed shape | Candidate key and typed columns | Earned constraint / enforcement seam |
 |---|---|---|
-| `scalar_fact` | `(resource_id, territory_type, territory_id)`; nullable numeric value paired with constrained status/reason; support and denominator; descriptor/source associations | One fact per territory; level/facet/unit/direction, status/value and source checks; zero distinct from null/omission. |
-| `coordinate_fact` | `(resource_id, territory_type, territory_id, axis_key[, secondary_axis_key])`; typed numeric/categorical value, status/support/denominator, optional declared observation period | Closed descriptor-owned axes, order and dense/sparse policy. Age/DPE's detail×sex matrix can be dense; grant/top-activity evidence can be sparse. Axis FK/unique key plus publication-time completeness validation. |
-| `ordered_fact` | `(publication_owner, resource_id, target_kind, target_id, axis_key)`; typed axis value/role/order, value/status, observation period; observation→one-or-more immutable source revisions | Ordered points and independently refreshed owners. Preserve absent points and multiple clocks/source revisions per point; named references use a distinct target discriminator and cannot be ranked as territories. |
-| `relation_fact` | `(resource_id, territory_type, territory_id, category_or_anchor_id)`; explicit anchor identity, typed relation attributes, source association | Sparse relation semantics, anchor/source FKs, and absence ≠ false. Keep separate unless actual constrained coordinate shape proves equivalent without weakening relation integrity. |
+| `scalar_fact` | `(measure_id, territory_type, territory_id)`; nullable numeric value paired with constrained status/reason; support and denominator; descriptor/source associations | One fact per measure and territory; level/facet/unit/direction, status/value and source checks; zero distinct from null/omission. A single-measure resource can use its measure ID directly; a composed resource maps to multiple measure IDs through producer metadata. |
+| `coordinate_fact` | `(measure_id, territory_type, territory_id, axis_key[, secondary_axis_key])`; typed numeric/categorical value, status/support/denominator, optional declared observation period | Closed descriptor-owned axes, order and dense/sparse policy. Age/DPE's detail×sex matrix can be dense; grant/top-activity evidence can be sparse. Axis FK/unique key plus publication-time completeness validation. |
+| `ordered_fact` | `(publication_owner, measure_id, target_kind, target_id, axis_key)`; typed axis value/role/order, value/status, observation period; observation→one-or-more immutable source revisions | Ordered points and independently refreshed owners. Preserve absent points and multiple clocks/source revisions per point; named references use a distinct target discriminator and cannot be ranked as territories. |
+| `relation_fact` | `(measure_id, territory_type, territory_id, category_or_anchor_id)`; explicit anchor identity, typed relation attributes, source association | Sparse relation semantics, anchor/source FKs, and absence ≠ false. Keep separate unless actual constrained coordinate shape proves equivalent without weakening relation integrity. |
 | AEDAR source-grain projection | Existing territory×TYPEQU row, counts/coverage/snapshot and source identity; retain the registered measure-key allowlist and source identity metadata | Avoids the illustrative 312× row expansion and preserves address-grain facts. **PROPOSED V1:** keep the current constrained measure map, validated against the 312-key producer registry; no unrestricted JSON and no SQL/browser calculations. DB cannot type-check each inner value, so publisher parity/schema tests remain mandatory. |
-| Comparison result projection | Shared publication/dependency protocol; result keys include resource, declared context/group, facet/axis and target; typed status, statistic, value, rank/ties/counts/denominators and lineage | Share result storage only where grain and statistic fit. AEDAR density-class comparison stays address-grain pooled, never an average of commune aggregates. Unsupported statistic/shape combinations fail validation. |
+| Comparison result projection | Shared publication/dependency protocol; result keys include measure ID, declared context/group, facet/axis and target; typed status, statistic, value, rank/ties/counts/denominators and lineage | Share result storage only where grain and statistic fit. AEDAR density-class comparison stays address-grain pooled, never an average of commune aggregates. Unsupported statistic/shape combinations fail validation. |
 
 Do not promote table-per-indicator/theme. Do not add nullable `coord1..N`,
 unrestricted JSON, EAV, client-defined joins, or physical table/column selectors.
@@ -240,7 +391,7 @@ current marker's owner, dependencies and retry behavior; none is deleted here.
 
 | Evidence case | Proposed target mapping and invariants |
 |---|---|
-| Scalar | `densite` → `scalar_fact`, one territory key, descriptor unit/direction, null+status/support, source link. Fifteen service/mode shares remain fifteen scalar resource identities; API composition may preserve the existing `essential_service_access` response. |
+| Scalar and service multi-measure resource | `densite` → `scalar_fact`, one territory key, descriptor unit/direction, null+status/support, source link. `mobilite.service_access` returns all 15 scalar observations in one item; each original `share_*` `indicator_id` remains a measure ID, not a separate resource ID, with its own descriptor/source/status. The set is generated from existing metadata, not a new list. |
 | Age and DPE axes | `structure_age` → `coordinate_fact`, closed age×sex axes with declared order and dense completeness; DPE signature uses its registered category axis and exact `part_passoires` scalar dependency for comparison. Do not compare bin profiles or fabricate missing cells. |
 | Ordered/mixed clocks | Annual `conso_enaf_annuel` uses ordered year points; OCS-GE `artif_par_habitant` uses named M2/M3 state roles and per-observation department-specific source revisions/periods; population and annual consumption clocks remain distinct. Missing year stays missing. |
 | Sparse grants/membership | Grant facts can use sparse period/detail coordinates with amount/year/programme/source; no row is not zero. Programme membership is a relation with `sigle`, explicit ORT attribute and source; no row is not false. Merge those only if anchor/category and source-clock constraints remain enforceable. |
@@ -258,6 +409,7 @@ later evidence changes the decision.
 | Current object / seam | Proposed disposition | What can actually disappear; exact condition |
 |---|---|---|
 | `scalar_descriptor`, `scalar_observation`, scalar source links; `publish_scalar.R`; scalar routes | Retain or evolve into `scalar_fact`; route adapters resolve resource metadata | Remove duplicate routes/response normalization only after all scalar/theme/service callers use the same item and parity proves values, status, source, unit, support and scope. No blanket scalar-table deletion. |
+| `share_*` scalar measure IDs, `service_share_scalar` descriptor, `service_registry`, `essential_service_access`, `publish_service_share_scalars()` and service read adapters | Keep the 15 `share_*` IDs as per-measure facts; expose the closed set as one `mobilite.service_access` resource derived from the existing Mobilité metadata | Move the actual Mobility service/theme consumer to the shared resource item and prove all 15 members, per-measure metadata, comparisons and atomic snapshot. Then remove the dedicated adapter/route and any service-only registry projection only when no remaining reader/publisher needs it; do not remove canonical measure identities or duplicate the member list. |
 | `profile_descriptor/axis/observation`, profile publisher and `/profiles/{id}` | Merge/evolve into `coordinate_fact`; preserve closed axes and completeness | Remove direct-profile adapter after `structureAgeProfile.ts` and other identified callers migrate; only retire old axis/fact tables after canonical parity and all active readers, tests and publication dependencies move. |
 | `ordered_series`, `series_dataset_*`, provenance revisions, named references and both series routes | Evolve to `ordered_fact` owner publications; preserve independent owner/revision clocks and reference identity | `direct_series`/`owned_dataset` batch discriminators and route path ownership can disappear after caller selection is descriptor-resolved. Delete legacy series descriptor/fallback or owner tables only after all readers and active publications are inventoried, including ENAF and raccordement; no same-vintage shortcut. |
 | `period_detail_observation`, `anchored_membership`, observed collection descriptors/markers/comparison | Candidate merge numeric period/detail into `coordinate_fact`; retain relation shape for membership pending proof | Delete collection-specific tables/reader only after grants and membership have correct sparse absence, anchors, source vintages, result parity, and no consumer depends on old response. No merge on naming alone. |
@@ -281,38 +433,66 @@ static grep found no app fetch.
 
 ## 5. Smallest useful proof and dependency-ordered follow-ons
 
-### First vertical proof (PROPOSED)
+### First vertical proof after the design gate (PROPOSED)
 
-Choose one **active scalar resource** with canonical projection, required
-provenance and a real app consumer—recommend `densite` after verifying the
-current fixture/canonical metadata and consumer path. It minimizes shape
-variables while proving resource identity, shared publication and typed read;
-selection is evidence-driven, not an implementation commitment. Prove in one
-vertical slice:
+Use **`mobilite.service_access`**, not a convenient single scalar. It is an
+active consumer-backed, canonical multi-measure resource and directly tests
+whether the proposed granularity solves the 15-measure/12-item mismatch. Take
+only the minimum contract/discovery, shared item dispatch and publication
+helper needed to complete this one vertical proof; there is no preliminary
+framework or platform phase.
 
-1. canonical R/Parquet projection + pipeline-owned descriptor/discovery metadata;
-2. guarded PostgreSQL publication with validated grain/source/token and
-   transactional changed/no-op, DB-behind retry, injected failure/last-good;
-3. identical one-item and batch-item fact payloads in one read-only
-   repeatable-read snapshot, bounded fields and fail-closed stale dependency;
-4. migrate one actual consumer behind an explicit reversible seam, preserving
-   active-theme priority/cache/cancellation and no static fallback; and
-5. parity for value, zero/null/status, unit/direction, provenance and relevant
-   publication versions, with before/after caller coverage.
+1. Derive the exact 15 measure IDs and their service/mode coordinates from
+   `theme_mobilite.json` using the existing R projection rule. Preserve the
+   IDs, independent per-measure descriptors and source/vintage metadata, dense
+   5×3 completeness, fraction 0–1 values/public `%` unit, denominator,
+   availability, comparison and gap semantics.
+2. Publish the canonical facts through the minimum shared publisher seam to
+   **guarded PostgreSQL**. Prove changed commit, unchanged no-op, DB-behind
+   retry, injected failure/last-good, reference and publication dependencies.
+3. Read all 15 measures with one typed item in the single-read form and the
+   identical item in batch. Both return the full result or fail; the active
+   theme batch includes all required resource items under one read-only
+   repeatable-read snapshot and is contract-tested to fit within 12 items.
+   Account at least `15 × (1 + M)` observation work units for `M` resolved
+   peers plus the 10×M derived paired-difference operations in the existing
+   work budget. Keep the 12-item ceiling; service access is one item, not
+   fifteen.
+4. Migrate the actual Mobility service/theme consumer to that result in a
+   reversible, named transition. The acceptance fixture composes the complete
+   set of resources the active consumer needs in one batch, derived from
+   producer-owned metadata, and proves that set stays within 12 items; if it
+   does not, revise the resource grouping before implementation rather than
+   raising the cap or fanning out requests. Preserve active-theme priority,
+   background warming/cancellation, retry/no-static-fallback, and the five
+   service triplets, their per-measure metadata, peer medians/ranks, car-gap
+   and bike-gain median semantics in the same coherent snapshot.
+5. Acceptance is observable: descriptor-derived member-set parity for all 15 IDs;
+   complete row set/no duplicates; value/status/unit/denominator/provenance
+   parity; target and peer comparison parity; single-vs-batch payload parity;
+   snapshot and stale/failure proofs; exact estimate and response-byte bounds;
+   migrated caller coverage. Unsupported field/intent is rejected, partial
+   service triplets never return, and the old adapter has a named removal
+   condition.
 
-No first DDL should begin until owner accepts the shape/contract. No production
-database, deployment or test-only DB action is authorized in this design task.
+Implement only the justified deep-module seams needed by this vertical slice
+alongside it under #689; do not split out reusable framework work merely because
+the slice reveals a seam. Extract further helpers alongside a later vertical
+slice when another real shape proves the need. No parallel whole-codebase or
+family-based refactor. No first schema or business-reader change before owner
+acceptance. This design task itself
+authorizes no PostgreSQL test, production database, deployment, R startup, or
+runtime operation.
 
-### Follow-on sequence (PROPOSED; issues only after gate)
+### Follow-on sequence (PROPOSED; detailed issues only after gate)
 
 | Order | Vertical slice and observable acceptance | Required test evidence / retirement condition |
 |---|---|---|
-| 0 | **Contract foundation:** discovery from authoritative metadata; shared typed item parser/read dispatcher; common publication/dependency helper. | Contract tests reject unknown resource/field/axes/intent, physical selectors and over-bounds; transaction tests prove no-op/retry/rollback, fail-closed dependencies and same item result in single/batch. Only redundant dispatcher/publication wrappers retire after their callers use the helper. |
-| 1 | **Scalar proof** (`densite` or evidence-selected active scalar) through real consumer. | Canonical value/status/unit/source parity; zero/null/suppressed fixtures; snapshot and stale marker tests. Retire only the migrated caller's adapter. |
-| 2 | **Coordinate and semantic evidence** (`structure_age`, DPE + scalar binding; then typed-reading field audit). | Dense axis/order/completeness and unavailable-cell proofs; exact DPE dependency; field-level semantic evidence parity. Remove only duplicate columns with no active reader/dependency. |
+| 1 | **Scalar resource** (`densite` or evidence-selected active scalar) through a real consumer; reuse only the first slice's justified shared seams. | Canonical value/status/unit/source parity; zero/null/suppressed fixtures; snapshot and stale marker tests. Retire only the migrated caller's adapter. |
+| 2 | **Coordinate and semantic evidence** (`structure_age`, DPE + scalar binding; then typed-reading field audit). Add module seams with the implementation. | Dense axis/order/completeness and unavailable-cell proofs; exact DPE dependency; field-level semantic evidence parity. Remove only duplicate columns with no active reader/dependency. |
 | 3 | **Ordered clocks and named references** (ENAF, OCS M2/M3, raccordement; DVF as applicable). | Order, absent points, multi-source revision lineage, independent owner clocks, named reference identity, selected comparison semantics; remove legacy fallback/route only after all readers are accounted for. |
 | 4 | **Sparse relation/collection and AEDAR** (grants/membership; AEDAR aggregate then comparison). | Absence≠zero/false; anchor/source; AEDAR registered measure set, 312× cost guard and address-grain density-class parity. Retire old adapters only after app and non-app consumers migrate. |
-| 5 | **Building evidence and remaining actual resources**; #689 deep-module boundaries implemented alongside these vertical slices. | Preserve ramp weighted mean, grid pooling, declared axes and prototype consumers. Remove obsolete monolith/adapter responsibilities only after parity and caller search. No preparatory family-based file split. |
+| 5 | **Building evidence and remaining actual resources**; implement justified #689 deep-module seams alongside these vertical slices, not as a parallel refactor. | Preserve ramp weighted mean, grid pooling, declared axes and prototype consumers. Remove obsolete monolith/adapter responsibilities only after parity and caller search. No preparatory family-based file split. |
 | 6 | **Release readiness** (separate authorization): full parity, mechanically synchronized docs, representative honest timings, backup/recovery and serial production plan. | No merge of operational plan implies deployment approval; production remains paused until separately owner-authorized. |
 
 At every slice, keep semantic regression coverage while replacing tests that
@@ -328,36 +508,40 @@ constrained storage shapes rather than a universal fact table; production pause;
 #689 follows this gate and is implemented alongside vertical slices. #689 is a
 native child blocked by #795, not a preliminary family-based refactor.
 
-The following choices are genuinely consequential and remain **PROPOSED**:
+The following are the only owner-level tradeoffs this draft asks to resolve;
+the rest of the publication/discovery details below are engineering
+recommendations, not interview questions:
 
-1. **Physical core boundary:** accept the small typed-core recommendation
-   (`scalar`, closed `coordinate`, owner-scoped `ordered`, sparse `relation`,
-   AEDAR source-grain exception, plus comparison results), or require a
-   different evidence-backed boundary? In particular, is membership a
-   permanent relation shape or can its current anchor/source contract be
-   expressed in a closed coordinate shape without weakening constraints?
-2. **AEDAR V1 typedness:** accept the registered 312-key measure map, validated
+1. **Service resource granularity:** accept one `mobilite.service_access`
+   resource item with a closed 15-measure set derived from existing
+   `theme_mobilite.json` metadata, preserving each `share_*` measure identity,
+   or is there a concrete independent consumer/semantic boundary requiring a
+   different resource split? This determines whether the active theme consumer
+   fits the unchanged 12-item batch limit without a permanent legacy façade.
+2. **Sparse membership shape:** accept a dedicated constrained relation shape
+   for programme membership, or prefer the coordinate shape only if its key,
+   anchor, source-clock and absence constraints can be enforced just as
+   strongly. The recommendation is to retain the relation shape; the question
+   is whether its extra physical shape is worth its native integrity boundary.
+3. **AEDAR V1 typedness:** accept the registered 312-key measure map, validated
    by R/publisher and contract tests, to preserve source grain and avoid the
    illustrative 312× row expansion; or require a typed-column/typed-child
    design before the first AEDAR slice? The current database cannot enforce
    each inner JSON value's type. No storage/latency benchmark is available.
-3. **Shared publication ownership:** accept one reusable marker/dependency
-   protocol with separate tokens per coherent owner, consolidating marker
-   storage only after proof of identical ownership/failure boundaries; or
-   retain the current marker tables as distinct typed projections while
-   sharing only publisher logic? Either choice preserves no-op, retry,
-   last-good, snapshot and fail-closed behavior.
-4. **Resource discovery owner:** accept projection from current pipeline/domain
-   descriptors without a second registry, including product-owned theme
-   grouping and availability/comparison metadata; or identify a specific
-   metadata field that lacks an authoritative owner and needs an explicit
-   owner decision. Do not duplicate a per-screen list.
+
+Engineering recommendation (not an owner tradeoff): resource discovery
+projects the existing pipeline/domain descriptors and product-owned theme
+metadata; no second registry or app-maintained member/field list is added.
+Use one shared publication protocol with separate tokens for coherent owners;
+retain owner-specific marker constraints where needed and consolidate marker
+storage only after source/dependency evidence proves identical boundaries.
+Implement only the minimum of that seam in the first vertical slice.
 
 Catalogue survivors, exact table/column names and constraints, named target
 encoding, individual typed-reading fields, old route/table retirement order,
-migration DDL and operational rollback remain implementation-level proposals
-after these choices and field/caller evidence are reviewed. They are not implied
-by accepting the direction above. No ADR or domain definition is changed here;
+migration DDL and operational rollback remain engineering proposals after these
+choices and field/caller evidence are reviewed. They are not implied by
+accepting the direction above. No ADR or domain definition is changed here;
 after approval, draft edits to ADR-0035/0038/0039, ADR-0037 if publication
 wording changes, and `CONTEXT.md` can be proposed and reviewed deliberately.
 
