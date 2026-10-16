@@ -496,46 +496,117 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as conn:
         with conn.transaction():
             with conn.cursor() as cur:
-                cur.executemany("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES (%s,'commune',%s)",
-                                [(row["territory_id"], row["territory_id"]) for row in selected] +
-                                [("outside-selection", "Outside explicit selection")])
+                cur.executemany("INSERT INTO territory_reference(territory_id,territory_type,name,density_class_code) VALUES (%s,'commune',%s,%s)",
+                                [(row["territory_id"], row["territory_id"],
+                                  "fixture-density" if row["territory_id"] == "large0000" else None)
+                                 for row in selected] +
+                                [("outside-selection", "Outside explicit selection", "fixture-density")])
+                cur.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('large-region','region','Large region')")
             conn.execute("INSERT INTO source_dataset VALUES ('large_fixture_a','Large fixture A'),('large_fixture_b','Large fixture B')")
             conn.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('large_fixture_a','v1','2026-A'),('large_fixture_b','v2','2026-B')")
             conn.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,
                 allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES
                 ('large_scalar','demographie','Large scalar','count','high','large_scalar',
-                 ARRAY['commune'],'fixture count','sparse','large-v1')""")
+                 ARRAY['commune','region'],'fixture count','sparse','large-v1')""")
             conn.execute("INSERT INTO scalar_descriptor_source VALUES ('large_scalar','large_fixture_a'),('large_scalar','large_fixture_b')")
             conn.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES
                 ('large_scalar','large0000','commune',7,'measured'),
                 ('large_scalar','large0001','commune',10,'measured'),
-                ('large_scalar','large0002','commune',4,'measured')""")
+                ('large_scalar','large0002','commune',4,'measured'),
+                ('large_scalar','large-region','region',12,'measured')""")
             conn.execute("""INSERT INTO scalar_observation_source VALUES
-                ('large_scalar','large0000','large_fixture_a','v1'),
-                ('large_scalar','large0001','large_fixture_b','v2'),
-                ('large_scalar','large0002','large_fixture_a','v1'),
-                ('large_scalar','large0002','large_fixture_b','v2')""")
-            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',1203)")
+                    ('large_scalar','large0000','large_fixture_a','v1'),
+                    ('large_scalar','large0001','large_fixture_b','v2'),
+                    ('large_scalar','large0002','large_fixture_a','v1'),
+                    ('large_scalar','large0002','large_fixture_b','v2'),
+                    ('large_scalar','large-region','large_fixture_a','v1')""")
+            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',1204)")
             conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','large-v1',3,'large-ref-v1')")
-    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1, open=True,
-                          kwargs={"autocommit": True})
+    read_parts = urlsplit(canonical_db_env["read_dsn"])
+    read_query = parse_qs(read_parts.query, keep_blank_values=True)
+    read_query["connect_timeout"] = ["8"]
+    bounded_read_dsn = urlunsplit((read_parts.scheme, read_parts.netloc, read_parts.path,
+                                   urlencode(read_query, doseq=True), read_parts.fragment))
+
+    def configure_read_connection(connection):
+        connection.execute("SET statement_timeout = '60000ms'")
+        connection.execute("SET lock_timeout = '5000ms'")
+
+    pool = ConnectionPool(conninfo=bounded_read_dsn, min_size=0, max_size=1, open=True,
+                          kwargs={"autocommit": True}, configure=configure_read_connection)
+    class TrackingConnection:
+        def __init__(self, connection, counters):
+            self.connection = connection
+            self.counters = counters
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+        def execute(self, sql, *args, **kwargs):
+            self.counters["statements"].append(sql)
+            return self.connection.execute(sql, *args, **kwargs)
+
+        @contextmanager
+        def transaction(self):
+            self.counters["transactions"] += 1
+            with self.connection.transaction():
+                yield self
+
+    class TrackingPool:
+        def __init__(self, wrapped):
+            self.wrapped = wrapped
+            self.counters = {"connections": 0, "transactions": 0, "statements": []}
+
+        @contextmanager
+        def connection(self):
+            self.counters["connections"] += 1
+            with self.wrapped.connection() as connection:
+                yield TrackingConnection(connection, self.counters)
+
+    tracked_pool = TrackingPool(pool)
     previous = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(tracked_pool)
     try:
         with TestClient(main.app) as client:
             response = client.post("/api/territories/commune/large0000/themes/comparison",
                                    json={"theme_id": "demographie", "selection": selected})
             median_only = client.post("/api/territories/commune/large0000/themes/comparison?fields=median",
                                       json={"theme_id": "demographie", "selection": selected})
+            typed_comparison_single = client.post(
+                "/api/territories/commune/large0000/themes/demographie/comparison?fields=median",
+                json={"theme_id": "demographie", "selection": selected})
             rank_only = client.post("/api/territories/commune/large0000/themes/comparison?fields=rank",
                                     json={"theme_id": "demographie", "selection": selected})
             status_only = client.post("/api/territories/commune/large0000/themes/comparison?fields=status",
                                       json={"theme_id": "demographie", "selection": selected})
+            focal_single = client.get(
+                "/api/territories/region/large-region/themes/demographie/facts?fields=value")
+            tracked_pool.counters.update(connections=0, transactions=0, statements=[])
+            mixed_batch = client.post("/api/read-batch", json={"items": [
+                {"id": "focal", "resource": "theme_facts", "territory_type": "region",
+                 "territory_id": "large-region", "theme_id": "demographie", "fields": ["value"]},
+                {"id": "peers", "resource": "theme_comparison", "territory_type": "commune",
+                 "territory_id": "large0000", "theme_id": "demographie",
+                 "selection": selected, "fields": ["median"]},
+            ]})
+            batch_connection_counts = dict(tracked_pool.counters)
             invalid_fields = client.post("/api/territories/commune/large0000/themes/comparison?fields=raw_sql",
                                          json={"theme_id": "demographie", "selection": selected})
             excessive = client.post("/api/territories/commune/large0000/themes/comparison",
                                     json={"theme_id": "demographie", "selection": [selected[0]] * 1501})
         assert response.status_code == 200, response.text
+        assert focal_single.status_code == mixed_batch.status_code == 200, mixed_batch.text
+        batched = {item["id"]: item["data"] for item in mixed_batch.json()["results"]}
+        assert batched["focal"] == focal_single.json()
+        assert typed_comparison_single.status_code == 200, typed_comparison_single.text
+        assert batched["peers"] == typed_comparison_single.json()
+        batch_lineage = batched["peers"]["results"][0]["comparison_sources"]
+        assert {(source["source_id"], source["vintage_id"]) for source in batch_lineage} == {
+            ("large_fixture_a", "v1"), ("large_fixture_b", "v2")}
+        assert batch_connection_counts["connections"] == 1
+        assert batch_connection_counts["transactions"] == 1
+        assert sum("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY" in sql
+                   for sql in batch_connection_counts["statements"]) == 1
         body = response.json()
         result = body["results"][0]
         assert result["selected_member_count"] == 1202

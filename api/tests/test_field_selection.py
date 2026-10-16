@@ -45,7 +45,7 @@ def test_aedar_projection_happens_inside_sql_and_scalar_uses_only_contract_colum
     scalar = next(route.endpoint for route in main.app.routes if getattr(route, "path", "") ==
         "/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
     import inspect
-    aedar_source = inspect.getsource(aedar)
+    aedar_source = inspect.getsource(main._aedar_territorial_aggregate_snapshot)
     scalar_source = inspect.getsource(scalar)
     assert "jsonb_object_agg" in aedar_source and "jsonb_each" in aedar_source
     assert "selected_measure_keys" in aedar_source

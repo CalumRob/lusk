@@ -43,6 +43,8 @@ def test_batch_reuses_one_snapshot_for_different_typed_resources(monkeypatch):
         calls.append(("facts", conn, args, kwargs)) or {"theme_id": args[2], "facts": []}))
     monkeypatch.setattr(main, "_theme_comparison_snapshot", lambda conn, *args, **kwargs: (
         calls.append(("comparison", conn, args, kwargs)) or {"theme_id": args[2], "results": []}))
+    monkeypatch.setattr(main, "_theme_comparison_contract_snapshot",
+                        lambda *args, **kwargs: {"theme_id": "mobilite", "results": []})
     try:
         response = TestClient(main.app).post("/api/read-batch", json={"items": [
             {"id": "a", "resource": "theme_facts", "territory_type": "commune",
@@ -57,7 +59,7 @@ def test_batch_reuses_one_snapshot_for_different_typed_resources(monkeypatch):
     assert repository.connections.connections == 1
     assert repository.connections.connection_value.transactions == 1
     assert "REPEATABLE READ, READ ONLY" in repository.connections.connection_value.set_statements[0]
-    assert calls[0][1] is calls[1][1]
+    assert all(call[1] is repository.connections.connection_value for call in calls)
 
 
 def test_batch_rejects_duplicate_ids_before_connecting():
@@ -76,6 +78,176 @@ def test_batch_rejects_duplicate_ids_before_connecting():
     assert repository.connections.connections == 0
 
 
+def test_batch_rejects_extra_resource_parameters_before_connecting():
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    try:
+        response = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": "x", "resource": "theme_facts", "territory_type": "commune",
+             "territory_id": "22001", "theme_id": "habitat", "selection": []},
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert repository.connections.connections == 0
+
+
+def test_batch_rejects_extra_nested_selection_keys_before_connecting():
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    try:
+        response = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": "x", "resource": "theme_comparison", "territory_type": "commune",
+             "territory_id": "22001", "theme_id": "mobilite", "selection": [
+                 {"territory_type": "commune", "territory_id": "22002", "extra": "ignored?"}]},
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert repository.connections.connections == 0
+
+
+def test_batch_preflights_late_resource_field_before_any_item_fact_read(monkeypatch):
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    facts = []
+    preflights = []
+
+    def theme_reader(conn, territory_type, territory_id, theme_id, *args, **kwargs):
+        if kwargs.get("preflight_only"):
+            preflights.append(theme_id)
+            if theme_id == "mobilite":
+                from fastapi import HTTPException
+                raise HTTPException(422, "unsupported declared field")
+            return {"supported_fields": {"value", "status"}}
+        facts.append(theme_id)
+        return {"theme_id": theme_id}
+
+    monkeypatch.setattr(main, "_theme_facts_snapshot", theme_reader)
+    try:
+        response = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": "first", "resource": "theme_facts", "territory_type": "commune",
+             "territory_id": "22001", "theme_id": "habitat", "fields": ["value"]},
+            {"id": "last", "resource": "theme_facts", "territory_type": "commune",
+             "territory_id": "22001", "theme_id": "mobilite", "fields": ["value"]},
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 422
+    assert preflights == ["habitat", "mobilite"]
+    assert facts == []
+
+
+def test_batch_composes_aedar_aggregate_and_fixed_comparison_on_same_connection(monkeypatch):
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    calls = []
+
+    def aggregate(conn, *args, **kwargs):
+        calls.append(("aggregate", conn, kwargs.get("preflight_only")))
+        return {"content_version": "aggregate-v1"} if kwargs.get("preflight_only") else {
+            "contract": "aedar-aggregate-v1", "facts": []}
+
+    def comparison(conn, *args, **kwargs):
+        calls.append(("comparison", conn, kwargs.get("preflight_only")))
+        return {"content_version": "comparison-v1"} if kwargs.get("preflight_only") else {
+            "contract": "aedar-comparison-v1", "comparison": {"status": "measured"}}
+
+    monkeypatch.setattr(main, "_aedar_territorial_aggregate_snapshot", aggregate)
+    monkeypatch.setattr(main, "_aedar_comparison_snapshot", comparison)
+    try:
+        response = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": "aggregate", "resource": "aedar_aggregate", "territory_type": "commune",
+             "territory_id": "22001", "typequ": ["A104"], "limit": 10},
+            {"id": "fixed", "resource": "aedar_comparison", "territory_type": "commune",
+             "territory_id": "22001", "context": "epci", "typequ": "A104",
+             "measure": "count_5_walk_mean", "fields": ["value"]},
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 200
+    assert [item["data"]["contract"] for item in response.json()["results"]] == [
+        "aedar-aggregate-v1", "aedar-comparison-v1"]
+    assert repository.connections.connections == 1
+    assert repository.connections.connection_value.transactions == 1
+    assert {call[1] for call in calls} == {repository.connections.connection_value}
+    assert [bool(call[2]) for call in calls] == [True, True, False, False]
+
+
+def test_batch_aggregate_rows_are_bounded_across_items_before_connecting():
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    try:
+        response = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": f"a{i}", "resource": "aedar_aggregate", "territory_type": "commune",
+             "territory_id": "22001", "limit": 100} for i in range(4)
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 413
+    assert repository.connections.connections == 0
+
+
+def test_aedar_fixed_single_route_and_batch_share_the_same_connection_reader(monkeypatch):
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    monkeypatch.setattr(main, "pool", lambda: repository.connections)
+    calls = []
+
+    def reader(conn, *args, **kwargs):
+        calls.append((conn, kwargs.get("preflight_only")))
+        if kwargs.get("preflight_only"):
+            return {"content_version": "aedar-cmp-v1"}
+        return {"territory": {"territory_type": "commune", "territory_id": "22001"},
+                "content_version": "aedar-cmp-v1", "comparison": {"status": "measured"}}
+
+    monkeypatch.setattr(main, "_aedar_comparison_snapshot", reader)
+    try:
+        single = TestClient(main.app).get(
+            "/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+        batch = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": "aedar", "resource": "aedar_comparison", "territory_type": "commune",
+             "territory_id": "22001", "context": "epci", "typequ": "A104",
+             "measure": "count_5_walk_mean"},
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert single.status_code == batch.status_code == 200
+    assert batch.json()["results"][0]["data"] == single.json()
+    assert repository.connections.connections == 2
+    assert repository.connections.connection_value.transactions == 2
+    assert len({call[0] for call in calls}) == 1
+
+
+def test_theme_comparison_route_and_batch_share_public_contract_reader(monkeypatch):
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    seen = []
+
+    def reader(conn, territory_type, territory_id, theme_id, selected, repository, fields):
+        seen.append((conn, territory_type, territory_id, theme_id, selected, fields))
+        return {"contract": "expected-public-shape", "results": []}
+
+    monkeypatch.setattr(main, "_theme_comparison_contract_snapshot", reader, raising=False)
+    monkeypatch.setattr(main, "_theme_comparison_snapshot", lambda *args, **kwargs: {
+        "supported_fields": main._COMPARISON_RESULT_FIELDS | main._COMPARISON_MANDATORY_FIELDS
+    } if kwargs.get("preflight_only") else {"unused": True})
+    try:
+        batch_response = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": "cmp", "resource": "theme_comparison", "territory_type": "commune",
+             "territory_id": "22001", "theme_id": "mobilite", "selection": []},
+        ]})
+        single_response = TestClient(main.app).post(
+            "/api/territories/commune/22001/themes/mobilite/comparison",
+            json={"theme_id": "mobilite", "selection": []})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert batch_response.status_code == 200
+    assert single_response.status_code == 200
+    assert batch_response.json()["results"][0]["data"] == single_response.json()
+    assert seen[0][0] is seen[1][0]
+
+
 def test_batch_allows_repeated_resource_with_distinct_parameters(monkeypatch):
     repository = BatchRepository()
     main.app.dependency_overrides[main.get_repository] = lambda: repository
@@ -92,7 +264,7 @@ def test_batch_allows_repeated_resource_with_distinct_parameters(monkeypatch):
     finally:
         main.app.dependency_overrides.clear()
     assert response.status_code == 200
-    assert calls == ["habitat", "mobilite"]
+    assert calls == ["habitat", "mobilite", "habitat", "mobilite"]
 
 
 def test_batch_rolls_back_envelope_when_last_reader_fails(monkeypatch):
@@ -102,7 +274,7 @@ def test_batch_rolls_back_envelope_when_last_reader_fails(monkeypatch):
 
     def reader(conn, *args, **kwargs):
         calls.append(args[2])
-        if args[2] == "mobilite":
+        if args[2] == "mobilite" and not kwargs.get("preflight_only"):
             from fastapi import HTTPException
             raise HTTPException(503, "unavailable")
         return {"theme_id": args[2]}
@@ -119,4 +291,4 @@ def test_batch_rolls_back_envelope_when_last_reader_fails(monkeypatch):
         main.app.dependency_overrides.clear()
     assert response.status_code == 503
     assert "results" not in response.json()
-    assert calls == ["habitat", "mobilite"]
+    assert calls == ["habitat", "mobilite", "habitat", "mobilite"]

@@ -60,6 +60,11 @@ database layout only and must not be replayed to restore that writer.
 
 ## API contract
 
+The in-progress atomic typed batch contract for #788 is documented in
+[`batch-read-contract.md`](batch-read-contract.md). Its current declared
+resources and exclusions are explicit there; it is not a general SQL/read
+language and has not authorized consumer rollout.
+
 The initial Variant E figures use `GET /api/territories/{type}/{id}/building-access`,
 returning focal ramp/grid values and the mean comparison for the existing default
 scope in one committed publication. The commune's comparison mode is resolved

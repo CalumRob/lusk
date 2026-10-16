@@ -9,10 +9,10 @@ import os
 from contextlib import nullcontext
 import unicodedata
 from statistics import median
-from typing import Annotated, Literal
+from typing import Annotated, Literal, Union
 
 from fastapi import Depends, FastAPI, HTTPException, Path, Query
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date
 from psycopg_pool import ConnectionPool
 from api.profile_reads import focal_profiles
@@ -30,10 +30,24 @@ _THEME_FACT_FIELDS = _COMPARISON_RESULT_FIELDS | _COMPARISON_MANDATORY_FIELDS | 
     "value", "support_count", "denominator_count", "rider", "anchor_count",
     "detail", "label", "availability",
 }
+_AEDAR_COMPARISON_OPTIONAL_FIELDS = {
+    "group_value", "value", "rank", "rank_size", "member_count", "eligible_count", "missing_count",
+}
+_AEDAR_COMPARISON_MANDATORY_FIELDS = {
+    "comparison_context", "group_id", "territory_type", "typequ", "typequ_label",
+    "source_id", "vintage_id", "source_url", "licence", "attribution", "reference_date",
+    "publication_date", "measure", "statistic", "group_n_addresses", "group_n_observed",
+    "group_coverage_status", "n_addresses", "n_observed", "coverage_status", "status",
+}
 
 
 def _comparison_field_selection(fields):
     return normalize_field_selection(fields, _COMPARISON_RESULT_FIELDS | _COMPARISON_MANDATORY_FIELDS)
+
+
+def _aedar_comparison_field_selection(fields):
+    return normalize_field_selection(
+        fields, _AEDAR_COMPARISON_OPTIONAL_FIELDS | _AEDAR_COMPARISON_MANDATORY_FIELDS)
 
 
 def _validate_comparison_fields(fields, supported):
@@ -128,18 +142,62 @@ class IndicatorComparisonRequest(BaseModel):
     selection: list[ThemeTerritorySelection] | None = Field(default=None, max_length=1500)
 
 
-class BatchReadItem(BaseModel):
-    """One declared typed read in a caller-owned batch snapshot."""
+class BatchReadItemBase(BaseModel):
+    """Shared correlation and focal identity for declared batch resources."""
+    model_config = ConfigDict(extra="forbid")
     id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
-    resource: Literal["theme_facts", "theme_comparison"]
     territory_type: Literal["commune", "epci", "departement", "region"]
     territory_id: str = Field(min_length=1, max_length=32)
+
+
+class ThemeFactsBatchItem(BatchReadItemBase):
+    resource: Literal["theme_facts"]
     theme_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
-    selection: list[ThemeTerritorySelection] | None = Field(default=None, max_length=1500)
+    comparison: Literal["densite", "epci", "bretagne"] | None = None
     fields: list[str] | None = Field(default=None, max_length=32)
 
 
+class BatchTerritorySelection(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    territory_type: Literal["commune", "epci", "departement", "region"]
+    territory_id: str = Field(min_length=1, max_length=32)
+
+
+class ThemeComparisonBatchItem(BatchReadItemBase):
+    resource: Literal["theme_comparison"]
+    theme_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    selection: list[BatchTerritorySelection] | None = Field(default=None, max_length=1500)
+    fields: list[str] | None = Field(default=None, max_length=32)
+
+
+class AEDARTerritorialBatchItem(BatchReadItemBase):
+    resource: Literal["aedar_aggregate"]
+    typequ: list[str] | None = Field(default=None, max_length=100)
+    fields: list[str] | None = Field(default=None, max_length=313)
+    limit: int = Field(default=50, ge=1, le=100)
+    offset: int = Field(default=0, ge=0, le=10000)
+
+
+class AEDARComparisonBatchItem(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    resource: Literal["aedar_comparison"]
+    territory_type: Literal["commune", "epci", "departement"]
+    territory_id: str = Field(min_length=1, max_length=32)
+    context: Literal["density_class", "epci", "bretagne", "same_level"]
+    typequ: str = Field(min_length=4, max_length=4)
+    measure: str = Field(min_length=1, max_length=64)
+    fields: list[str] | None = Field(default=None, max_length=32)
+
+
+BatchReadItem = Annotated[
+    Union[ThemeFactsBatchItem, ThemeComparisonBatchItem, AEDARTerritorialBatchItem,
+          AEDARComparisonBatchItem], Field(discriminator="resource")
+]
+
+
 class BatchReadRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
     items: list[BatchReadItem] = Field(min_length=1, max_length=12)
 
     @field_validator("items")
@@ -1884,14 +1942,18 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
 
 def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
                                *, indicator_id=None, profiles=None, profile_version=None, has_readings=False,
-                               result_fields=None):
+                               result_fields=None, preflight_only=False):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
     scalar_descriptors = conn.execute(
         """SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
            FROM scalar_descriptor WHERE theme_id=%s AND (%s::text IS NULL OR indicator_id=%s)
            ORDER BY indicator_id""", (theme_id, indicator_id, indicator_id)
     ).fetchall()
-    if profiles is None:
+    if preflight_only and profiles is None:
+        profiles = conn.execute("""SELECT indicator_id FROM profile_descriptor
+            WHERE theme_id=%s AND %s=ANY(allowed_levels) ORDER BY indicator_id""",
+            (theme_id, territory_type)).fetchall()
+    elif profiles is None:
         profiles, profile_version = focal_profiles(conn, territory_type, territory_id,
             theme_id=theme_id, indicator_id=indicator_id)
     bpe_available = (theme_id == "mobilite" and
@@ -1953,6 +2015,9 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         if not scalar_marker or not scalar_marker[0] or scalar_marker[1] != reference[0]:
             raise HTTPException(503, "Scalar publication is unavailable or incompatible")
     cohort_type, members, scope = _comparison_cohort(conn, territory_type, territory_id, selection)
+    if preflight_only:
+        return {"supported_fields": available_comparison_fields,
+                "cohort_type": cohort_type, "members": members, "scope": scope}
     fixed_context = (_fixed_scalar_comparison_context(conn, territory_type, territory_id,
         selection, cohort_type, members, scope) if scalar_descriptors or profiles or collections else None)
     if fixed_context and territory_id not in members:
@@ -2280,38 +2345,85 @@ def read_batch(request: BatchReadRequest,
     """
     normalized = []
     expanded_territories = 0
+    aggregate_rows = 0
     for item in request.items:
-        fields = (normalize_field_selection(item.fields, _THEME_FACT_FIELDS)
-                  if item.resource == "theme_facts" else
-                  _comparison_field_selection(item.fields))
-        if item.resource == "theme_facts" and item.selection is not None:
-            raise HTTPException(422, "theme_facts does not accept a territory selection")
-        selection = None if item.selection is None else [
-            (member.territory_type, member.territory_id) for member in item.selection]
+        if item.resource == "theme_facts":
+            fields = normalize_field_selection(item.fields, _THEME_FACT_FIELDS)
+            if item.comparison is not None and item.territory_type != "commune":
+                raise HTTPException(422, "Explicit service comparison modes apply only to communes")
+        elif item.resource == "theme_comparison":
+            fields = _comparison_field_selection(item.fields)
+        elif item.resource == "aedar_comparison":
+            fields = _aedar_comparison_field_selection(item.fields)
+        else:
+            fields = normalize_field_selection(
+                item.fields, {"measures." + key for key in _AEDAR_MEASURE_KEYS})
+        item_selection = getattr(item, "selection", None)
+        selection = None if item_selection is None else [
+            (member.territory_type, member.territory_id) for member in item_selection]
         expanded_territories += len(selection or [])
+        if item.resource == "aedar_aggregate":
+            aggregate_rows += item.limit
         normalized.append((item, fields, selection))
     if expanded_territories > 1500:
         raise HTTPException(413, "Batch territory selections exceed the 1500-territory limit")
+    if aggregate_rows > 300:
+        raise HTTPException(413, "Batch AEDAR aggregate rows exceed the 300-row limit")
 
     results = []
+    response_bytes = len('{"contract":"typed-read-batch-v1","results":[]}'.encode("utf-8"))
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            # Resolve every item's resource vocabulary, territory and declared
+            # selection shape before the first item reader can touch facts.
+            for item, fields, selection in normalized:
+                if item.resource == "theme_facts":
+                    _theme_facts_snapshot(
+                        conn, item.territory_type, item.territory_id,
+                        item.theme_id, item.comparison, repository, fields=fields,
+                        preflight_only=True)
+                elif item.resource == "theme_comparison":
+                    _theme_comparison_snapshot(
+                        conn, item.territory_type, item.territory_id,
+                        item.theme_id, selection, result_fields=fields,
+                        preflight_only=True)
+                elif item.resource == "aedar_aggregate":
+                    _aedar_territorial_aggregate_snapshot(
+                        conn, item.territory_type, item.territory_id,
+                        item.typequ, item.fields, item.limit, item.offset,
+                        preflight_only=True)
+                else:
+                    _aedar_comparison_snapshot(
+                        conn, item.territory_type, item.territory_id,
+                        item.context, item.typequ, item.measure, item.fields,
+                        preflight_only=True)
             for item, fields, selection in normalized:
                 if item.resource == "theme_facts":
                     payload = _theme_facts_snapshot(
                         conn, item.territory_type, item.territory_id,
-                        item.theme_id, None, repository, fields=fields)
-                else:
-                    payload = _theme_comparison_snapshot(
+                        item.theme_id, item.comparison, repository, fields=fields)
+                elif item.resource == "theme_comparison":
+                    payload = _theme_comparison_contract_snapshot(
                         conn, item.territory_type, item.territory_id,
-                        item.theme_id, selection, result_fields=fields)
-                    payload = _project_comparison_payload_fields(payload, fields)
+                        item.theme_id, selection, repository, fields)
+                elif item.resource == "aedar_aggregate":
+                    payload = _aedar_territorial_aggregate_snapshot(
+                        conn, item.territory_type, item.territory_id,
+                        item.typequ, item.fields, item.limit, item.offset)
+                else:
+                    payload = _aedar_comparison_snapshot(
+                        conn, item.territory_type, item.territory_id,
+                        item.context, item.typequ, item.measure, item.fields)
+                encoded_item = json.dumps(
+                    {"id": item.id, "resource": item.resource, "data": payload},
+                    separators=(",", ":"), default=str).encode("utf-8")
+                response_bytes += len(encoded_item) + (1 if results else 0)
+                if response_bytes > 8_000_000:
+                    raise HTTPException(413, "Batch response exceeds the 8 MB limit")
                 results.append({"id": item.id, "resource": item.resource,
                                 "data": payload})
             response = {"contract": "typed-read-batch-v1", "results": results}
-            if len(json.dumps(response, separators=(",", ":"), default=str).encode("utf-8")) > 8_000_000:
-                raise HTTPException(413, "Batch response exceeds the 8 MB limit")
             return response
 
 
@@ -3488,7 +3600,7 @@ def selected_theme_facts(
 
 def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_comparison,
                            repository, selection=None, *, include_selected_comparison=False,
-                           fields=None) -> dict:
+                           fields=None, preflight_only=False) -> dict:
     """Build the public theme-facts response from one caller-owned snapshot."""
     territory = conn.execute("""SELECT territory_id,name,territory_type FROM territory_reference
         WHERE territory_id=%s AND territory_type=%s""", (territory_id, territory_type)).fetchone()
@@ -3499,8 +3611,8 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
         (theme_id,)).fetchall()
     collection_resource_descriptors = collection_descriptors(conn,theme_id=theme_id)
     selected_fields = normalize_field_selection(fields, _THEME_FACT_FIELDS)
-    needs_numeric_vocabulary = (selected_fields is not None and
-        bool(set(selected_fields) & (_COMPARISON_RESULT_FIELDS | {"value"})))
+    needs_numeric_vocabulary = (preflight_only or (selected_fields is not None and
+        bool(set(selected_fields) & (_COMPARISON_RESULT_FIELDS | {"value"}))))
     profiles = []
     series_resources = None
     typed_reading = False
@@ -3518,7 +3630,7 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
                 series_resources = conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
                     WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels) ORDER BY indicator_id""",
                     (theme_id,territory_type)).fetchall()
-        if "value" in selected_fields:
+        if preflight_only or (selected_fields is not None and "value" in selected_fields):
             typed_reading = conn.execute("""SELECT EXISTS(SELECT 1 FROM selected_reading_descriptor
                 WHERE theme_id=%s)""",(theme_id,)).fetchone()[0]
             # Mobility's registered singleton descriptor is the resource
@@ -3537,6 +3649,8 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
         typed_reading=typed_reading)
     if selected_fields is not None and set(selected_fields)-supported_fields:
         raise HTTPException(422,"Field selection is unsupported by this theme's participating resources")
+    if preflight_only:
+        return {"supported_fields": supported_fields}
     project_value = selected_fields is None or "value" in selected_fields
     project_support_count = selected_fields is None or "support_count" in selected_fields
     project_denominator_count = selected_fields is None or "denominator_count" in selected_fields
@@ -4060,111 +4174,116 @@ def theme_comparison_only(
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            result = _theme_comparison_snapshot(
-                conn, territory_type, territory_id, theme_id, selected,result_fields=selected_fields)
-            response = {key: result[key] for key in (
-                "contract", "complete_theme", "theme_id", "content_version",
-                "reference_content_version", "selection", "scope", "results",
-                "collection_content_versions", "scalar_content_version",
-                "profile_content_version", "profile_comparisons",
-                "reading_content_version", "reading_cloud", "owned_series_content_versions",
-                "bpe_content_version", "bpe_reference_content_version",
-                "service_publication_id", "building_publication_id")}
-            response["results"] = [_comparison_result_without_focal_value(row)
-                                   for row in response["results"]]
-            response["profile_comparisons"] = [
-                _comparison_result_without_focal_value(row)
-                for row in response["profile_comparisons"]]
-            if theme_id == "mobilite":
-                if selected is None:
-                    service_snapshot = (repository.read(territory_id, "densite", connection=conn)
-                        if territory_type == "commune" else
-                        repository.read_level(territory_type, territory_id, connection=conn))
-                else:
-                    service_snapshot = repository.read_selected(
-                        territory_type, territory_id, selected, connection=conn)
-                service = compare(service_snapshot).model_dump(mode="json")
-                # The comparison-only contract carries cohort measurements, never the
-                # focal observations included by the shared service comparison model.
-                for service_item in service.get("services", []):
-                    for facts in service_item.get("modes", {}).values():
-                        facts.pop("value", None)
-                        for focal_field in ("source_id", "source_name", "source_version",
-                                            "reference_date", "source_publication_date"):
-                            facts.pop(focal_field, None)
-                service = _comparison_result_without_focal_value(service)
-                _cohort_type, peer_member_ids, _scope = _comparison_cohort(
-                    conn, territory_type, territory_id, selected)
-                cohort_sources = {}
-                for row in service_snapshot.get("rows", []):
-                    if row.get("territory_id") not in peer_member_ids:
-                        continue
-                    key = (row["service"], row["mode"])
-                    source = {field: row.get(field) for field in (
-                        "source_id", "source_name", "source_version", "reference_date",
-                        "source_publication_date")}
-                    bucket = cohort_sources.setdefault(key, [])
-                    if source not in bucket:
-                        bucket.append(source)
-                for item in service.get("services", []):
-                    for mode, facts in item.get("modes", {}).items():
-                        facts["comparison_sources"] = cohort_sources.get((item["id"], mode), [])
-                response["essential_service_access"] = service
-                response["service_publication_id"] = service_snapshot["publication_id"]
-                building_publication_id = None
-                building_markers = conn.execute(
-                    "SELECT table_name,content_version FROM table_publication "
-                    "WHERE table_name IN ('territory_reference','building_ramp','building_grid')"
-                ).fetchall()
-                try:
-                    building_publication_id = _building_publication(building_markers)
-                except HTTPException as exc:
-                    if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
-                        raise
-                if building_publication_id is not None:
-                    response["building_publication_id"] = building_publication_id
-                if selected is None:
-                    try:
-                        building = repository.read_building_initial(
-                            territory_type, territory_id,
-                            "densite" if territory_type == "commune" else None,
-                            connection=conn)
-                    except HTTPException as exc:
-                        if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
-                            raise
-                    else:
-                        response["building_publication_id"] = building["publication_id"]
-                        response["building_access"] = {
-                            "scope": building["scope"],
-                            "ramp": building["peer_ramp"],
-                            "distribution": building["peer_distribution"],
-                        }
-                elif not selected:
-                    response["building_access"] = {
-                        "scope": {"kind": "custom", "member_count": 0},
-                        "ramp": None, "distribution": None,
-                    }
-                else:
-                    building = repository.read_building(
-                        territory_type, territory_id, tuple(selected), connection=conn)
-                    response["building_publication_id"] = building["publication_id"]
-                    try:
-                        member_ids = resolve_commune_members(
-                            building["reference"], tuple(selected),
-                            max_members=len(building["reference"]))
-                        ramp = weighted_peer_ramp(
-                            building["ramp_rows"], member_ids,
-                            max_members=len(building["reference"]))
-                        distribution = pooled_peer_distribution(
-                            building["grid_rows"], member_ids,
-                            max_members=len(building["reference"]))
-                    except ComparisonInputError as exc:
-                        raise HTTPException(503, "Incomplete building-access publication") from exc
-                    response["building_access"] = {
-                        "scope": {"kind": "custom", "member_count": len(member_ids)},
-                        "ramp": ramp, "distribution": distribution,
-                    }
-            return _project_comparison_payload_fields(response, selected_fields)
+            return _theme_comparison_contract_snapshot(
+                conn, territory_type, territory_id, theme_id, selected,
+                repository, selected_fields)
+
+
+def _theme_comparison_contract_snapshot(conn, territory_type, territory_id, theme_id,
+                                        selected, repository, fields=None) -> dict:
+    """Build the exact theme-comparison route payload in a caller-owned snapshot."""
+    result = _theme_comparison_snapshot(
+        conn, territory_type, territory_id, theme_id, selected, result_fields=fields)
+    response = {key: result[key] for key in (
+        "contract", "complete_theme", "theme_id", "content_version",
+        "reference_content_version", "selection", "scope", "results",
+        "collection_content_versions", "scalar_content_version",
+        "profile_content_version", "profile_comparisons",
+        "reading_content_version", "reading_cloud", "owned_series_content_versions",
+        "bpe_content_version", "bpe_reference_content_version",
+        "service_publication_id", "building_publication_id")}
+    response["results"] = [_comparison_result_without_focal_value(row)
+                           for row in response["results"]]
+    response["profile_comparisons"] = [
+        _comparison_result_without_focal_value(row)
+        for row in response["profile_comparisons"]]
+    if theme_id == "mobilite":
+        if selected is None:
+            service_snapshot = (repository.read(territory_id, "densite", connection=conn)
+                if territory_type == "commune" else
+                repository.read_level(territory_type, territory_id, connection=conn))
+        else:
+            service_snapshot = repository.read_selected(
+                territory_type, territory_id, selected, connection=conn)
+        service = compare(service_snapshot).model_dump(mode="json")
+        for service_item in service.get("services", []):
+            for facts in service_item.get("modes", {}).values():
+                facts.pop("value", None)
+                for focal_field in ("source_id", "source_name", "source_version",
+                                    "reference_date", "source_publication_date"):
+                    facts.pop(focal_field, None)
+        service = _comparison_result_without_focal_value(service)
+        _cohort_type, peer_member_ids, _scope = _comparison_cohort(
+            conn, territory_type, territory_id, selected)
+        cohort_sources = {}
+        for row in service_snapshot.get("rows", []):
+            if row.get("territory_id") not in peer_member_ids:
+                continue
+            key = (row["service"], row["mode"])
+            source = {field: row.get(field) for field in (
+                "source_id", "source_name", "source_version", "reference_date",
+                "source_publication_date")}
+            bucket = cohort_sources.setdefault(key, [])
+            if source not in bucket:
+                bucket.append(source)
+        for item in service.get("services", []):
+            for mode, facts in item.get("modes", {}).items():
+                facts["comparison_sources"] = cohort_sources.get((item["id"], mode), [])
+        response["essential_service_access"] = service
+        response["service_publication_id"] = service_snapshot["publication_id"]
+        building_publication_id = None
+        building_markers = conn.execute(
+            "SELECT table_name,content_version FROM table_publication "
+            "WHERE table_name IN ('territory_reference','building_ramp','building_grid')"
+        ).fetchall()
+        try:
+            building_publication_id = _building_publication(building_markers)
+        except HTTPException as exc:
+            if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
+                raise
+        if building_publication_id is not None:
+            response["building_publication_id"] = building_publication_id
+        if selected is None:
+            try:
+                building = repository.read_building_initial(
+                    territory_type, territory_id,
+                    "densite" if territory_type == "commune" else None,
+                    connection=conn)
+            except HTTPException as exc:
+                if exc.status_code != 503 or exc.detail != "No building-access dataset has been published":
+                    raise
+            else:
+                response["building_publication_id"] = building["publication_id"]
+                response["building_access"] = {
+                    "scope": building["scope"], "ramp": building["peer_ramp"],
+                    "distribution": building["peer_distribution"],
+                }
+        elif not selected:
+            response["building_access"] = {
+                "scope": {"kind": "custom", "member_count": 0},
+                "ramp": None, "distribution": None,
+            }
+        else:
+            building = repository.read_building(
+                territory_type, territory_id, tuple(selected), connection=conn)
+            response["building_publication_id"] = building["publication_id"]
+            try:
+                member_ids = resolve_commune_members(
+                    building["reference"], tuple(selected),
+                    max_members=len(building["reference"]))
+                ramp = weighted_peer_ramp(
+                    building["ramp_rows"], member_ids,
+                    max_members=len(building["reference"]))
+                distribution = pooled_peer_distribution(
+                    building["grid_rows"], member_ids,
+                    max_members=len(building["reference"]))
+            except ComparisonInputError as exc:
+                raise HTTPException(503, "Incomplete building-access publication") from exc
+            response["building_access"] = {
+                "scope": {"kind": "custom", "member_count": len(member_ids)},
+                "ramp": ramp, "distribution": distribution,
+            }
+    return _project_comparison_payload_fields(response, fields)
 
 
 def _comparison_result_without_focal_value(result):
@@ -4668,25 +4787,38 @@ def aedar_territorial_aggregates(
     """Bounded source-grain AEDAR read; no SQL or unbounded territory dump."""
     if typequ is not None and (not typequ or any(not item or len(item)>32 for item in typequ)):
         raise HTTPException(422, "typequ must contain non-empty source codes")
+    normalize_field_selection(fields, {"measures." + key for key in _AEDAR_MEASURE_KEYS})
+    with pool().connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+            return _aedar_territorial_aggregate_snapshot(
+                conn, territory_type, territory_id, typequ, fields, limit, offset)
+
+
+def _aedar_territorial_aggregate_snapshot(conn, territory_type, territory_id,
+                                         typequ=None, fields=None, limit=50, offset=0,
+                                         *, preflight_only=False):
+    """Build the published AEDAR aggregate response in a caller-owned snapshot."""
+    if typequ is not None and (not typequ or any(not item or len(item)>32 for item in typequ)):
+        raise HTTPException(422, "typequ must contain non-empty source codes")
     optional_fields = {"measures." + key for key in _AEDAR_MEASURE_KEYS}
     selected_fields = normalize_field_selection(fields, optional_fields)
     selected_measure_keys = ({field.removeprefix("measures.") for field in selected_fields
                               if field.startswith("measures.")} if selected_fields is not None else None)
-    with pool().connection() as conn:
-        with conn.transaction():
-            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
+    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
               FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
               WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
-            if not marker or not marker[0] or marker[1] < 1 or marker[2] != marker[3]:
-                raise HTTPException(503,"AEDAR territorial publication is unavailable or incompatible")
-            supported = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
-                                     (territory_type,territory_id)).fetchone()
-            if not supported:
-                raise HTTPException(404,"Unknown territory type/id")
-            measure_projection = ("measures" if selected_measure_keys is None else
-                "COALESCE((SELECT jsonb_object_agg(k, v) FROM jsonb_each(aedar_territorial_aggregate.measures) AS m(k,v) WHERE k = ANY(%s::text[])), '{}'::jsonb) AS measures")
-            base_projection = """SELECT territory_id,territory_type,typequ,typequ_label,typequ_hierarchy_label,typequ_description,
+    if not marker or not marker[0] or marker[1] < 1 or marker[2] != marker[3]:
+        raise HTTPException(503,"AEDAR territorial publication is unavailable or incompatible")
+    supported = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
+                             (territory_type,territory_id)).fetchone()
+    if not supported:
+        raise HTTPException(404,"Unknown territory type/id")
+    if preflight_only:
+        return {"content_version": marker[0], "reference_content_version": marker[2]}
+    measure_projection = ("measures" if selected_measure_keys is None else
+        "COALESCE((SELECT jsonb_object_agg(k, v) FROM jsonb_each(aedar_territorial_aggregate.measures) AS m(k,v) WHERE k = ANY(%s::text[])), '{}'::jsonb) AS measures")
+    base_projection = """SELECT territory_id,territory_type,typequ,typequ_label,typequ_hierarchy_label,typequ_description,
               typequ_domain_code,typequ_domain_label,typequ_subdomain_code,typequ_subdomain_label,
               typequ_gamme,typequ_gamme_status,typequ_source_order,identity,
               n_addresses,n_observed,coverage_status,""" + measure_projection + """,source_id,vintage_id,source_url,licence,attribution,
@@ -4694,19 +4826,19 @@ def aedar_territorial_aggregates(
               FROM aedar_territorial_aggregate
               WHERE territory_type=%s AND territory_id=%s AND (%s::text[] IS NULL OR typequ=ANY(%s))
               ORDER BY typequ LIMIT %s OFFSET %s"""
-            params = ((sorted(selected_measure_keys), territory_type,territory_id,typequ,typequ,limit,offset)
-                      if selected_measure_keys is not None else
-                      (territory_type,territory_id,typequ,typequ,limit,offset))
-            cursor = conn.execute(base_projection, params)
-            names = [d.name for d in cursor.description]
-            rows = [dict(zip(names,row)) for row in cursor.fetchall()]
-            expected_measures = _AEDAR_MEASURE_KEYS if selected_measure_keys is None else selected_measure_keys
-            if any(set(row["measures"] or {}) != expected_measures for row in rows):
-                raise HTTPException(503, "AEDAR measure publication is incomplete for the requested projection")
-            required_typequ_metadata = ("typequ_hierarchy_label","typequ_description","typequ_domain_code","typequ_domain_label",
-                "typequ_subdomain_code","typequ_subdomain_label","typequ_gamme_status","typequ_source_order")
-            if any(any(row[key] is None for key in required_typequ_metadata) for row in rows):
-                raise HTTPException(503,"AEDAR TYPEQU metadata publication is incomplete")
+    params = ((sorted(selected_measure_keys), territory_type,territory_id,typequ,typequ,limit,offset)
+              if selected_measure_keys is not None else
+              (territory_type,territory_id,typequ,typequ,limit,offset))
+    cursor = conn.execute(base_projection, params)
+    names = [d.name for d in cursor.description]
+    rows = [dict(zip(names,row)) for row in cursor.fetchall()]
+    expected_measures = _AEDAR_MEASURE_KEYS if selected_measure_keys is None else selected_measure_keys
+    if any(set(row["measures"] or {}) != expected_measures for row in rows):
+        raise HTTPException(503, "AEDAR measure publication is incomplete for the requested projection")
+    required_typequ_metadata = ("typequ_hierarchy_label","typequ_description","typequ_domain_code","typequ_domain_label",
+        "typequ_subdomain_code","typequ_subdomain_label","typequ_gamme_status","typequ_source_order")
+    if any(any(row[key] is None for key in required_typequ_metadata) for row in rows):
+        raise HTTPException(503,"AEDAR TYPEQU metadata publication is incomplete")
     return {"territory":{"territory_type":territory_type,"territory_id":territory_id},
       "content_version":marker[0],"reference_content_version":marker[2],"limit":limit,"offset":offset,
       "facts":rows}
@@ -4724,30 +4856,37 @@ def aedar_fixed_comparisons(
     """Bounded read of one published AEDAR fixed-context measure."""
     if measure not in _AEDAR_MEASURE_KEYS:
         raise HTTPException(422, "Unknown AEDAR measure")
-    aedar_optional={"group_value","value","rank","rank_size","member_count","eligible_count","missing_count"}
-    aedar_mandatory={"comparison_context","group_id","territory_type","typequ","typequ_label",
-        "source_id","vintage_id","source_url","licence","attribution","reference_date",
-        "publication_date","measure","statistic","group_n_addresses","group_n_observed",
-        "group_coverage_status","n_addresses","n_observed","coverage_status","status"}
-    selected_fields=normalize_field_selection(fields,aedar_optional|aedar_mandatory)
-    selected=set(aedar_optional) if selected_fields is None else set(selected_fields)
+    _aedar_comparison_field_selection(fields)
     with pool().connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
-            marker = conn.execute("""SELECT p.content_version,p.source_snapshot_id,p.aedar_content_version,
+            return _aedar_comparison_snapshot(
+                conn, territory_type, territory_id, context, typequ, measure, fields)
+
+
+def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
+                               typequ, measure, fields=None, *, preflight_only=False):
+    """Build one fixed AEDAR result inside a caller-owned snapshot."""
+    if measure not in _AEDAR_MEASURE_KEYS:
+        raise HTTPException(422, "Unknown AEDAR measure")
+    selected_fields = _aedar_comparison_field_selection(fields)
+    selected = set(_AEDAR_COMPARISON_OPTIONAL_FIELDS) if selected_fields is None else set(selected_fields)
+    marker = conn.execute("""SELECT p.content_version,p.source_snapshot_id,p.aedar_content_version,
               p.reference_content_version,p.input_content_version,p.input_identity,p.group_row_count,p.territory_row_count,
               a.content_version,r.content_version
               FROM aedar_comparison_publication p
               JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
               JOIN table_publication r ON r.table_name='territory_reference'
               WHERE p.singleton""").fetchone()
-            if not marker or marker[2] != marker[8] or marker[3] != marker[9] or marker[6] < 1 or marker[7] < 1 or marker[1] != "2026-v1":
-                raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
-            territory = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
-                                     (territory_type, territory_id)).fetchone()
-            if not territory:
-                raise HTTPException(404, "Unknown territory type/id")
-            cursor = conn.execute("""SELECT g.comparison_context,g.group_id,g.territory_type,g.typequ,
+    if not marker or marker[2] != marker[8] or marker[3] != marker[9] or marker[6] < 1 or marker[7] < 1 or marker[1] != "2026-v1":
+        raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
+    territory = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
+                             (territory_type, territory_id)).fetchone()
+    if not territory:
+        raise HTTPException(404, "Unknown territory type/id")
+    if preflight_only:
+        return {"content_version": marker[0], "reference_content_version": marker[3]}
+    cursor = conn.execute("""SELECT g.comparison_context,g.group_id,g.territory_type,g.typequ,
               a.typequ_label,a.source_id,a.vintage_id,a.source_url,a.licence,a.attribution,a.reference_date,a.publication_date,
               g.measure,g.statistic,
               CASE WHEN %s THEN g.value ELSE NULL::double precision END AS group_value,g.n_addresses AS group_n_addresses,
@@ -4765,16 +4904,16 @@ def aedar_fixed_comparisons(
                 (t.territory_type,t.territory_id,t.typequ)
               WHERE t.territory_type=%s AND t.territory_id=%s AND t.comparison_context=%s
                 AND t.typequ=%s AND t.measure=%s""",
-                ("group_value" in selected,"member_count" in selected,"eligible_count" in selected,
+                 ("group_value" in selected,"member_count" in selected,"eligible_count" in selected,
                  "missing_count" in selected,"value" in selected,"rank" in selected,"rank_size" in selected,
-                 territory_type,territory_id,context,typequ,measure))
-            row = cursor.fetchone()
-            if not row:
-                raise HTTPException(404, "No published result for this fixed context")
-            names = [column.name for column in cursor.description]
-            result = dict(zip(names,row))
-            for key in aedar_optional-selected:
-                result.pop(key,None)
+                  territory_type,territory_id,context,typequ,measure))
+    row = cursor.fetchone()
+    if not row:
+        raise HTTPException(404, "No published result for this fixed context")
+    names = [column.name for column in cursor.description]
+    result = dict(zip(names,row))
+    for key in _AEDAR_COMPARISON_OPTIONAL_FIELDS-selected:
+        result.pop(key,None)
     return {"territory":{"territory_type":territory_type,"territory_id":territory_id},
       "content_version":marker[0],"source_snapshot_id":marker[1],
       "aedar_content_version":marker[2],"reference_content_version":marker[3],
