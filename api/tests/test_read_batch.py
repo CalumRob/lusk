@@ -93,7 +93,8 @@ def test_batch_snapshot_scope_reuse_preserves_selection_identity():
         conn, "commune", "22001", [], snapshot_state=state)
     assert empty == ("commune", (), {"kind": "explicit_selection"})
     assert default[1] == ("22001",)
-    assert conn.reference_scans == 2
+    assert conn.reference_scans == 1
+    assert len(state.cohorts) == 2
 
 
 def test_batch_rejects_duplicate_ids_before_connecting():
@@ -296,7 +297,8 @@ def test_named_indicator_focal_read_is_a_batch_resource_with_exact_reader_payloa
     main.app.dependency_overrides[main.get_repository] = lambda: repository
     calls = []
 
-    def reader(conn, territory_type, territory_id, indicator_id, fields=None, *, preflight_only=False):
+    def reader(conn, territory_type, territory_id, indicator_id, fields=None, *,
+               preflight_only=False, **kwargs):
         calls.append((conn, indicator_id, fields, preflight_only))
         return {"supported_fields": {"value", "status"}} if preflight_only else {
             "indicator_id": indicator_id, "value": None, "status": "suppressed",
@@ -342,6 +344,42 @@ def test_named_indicator_comparison_batch_and_single_share_snapshot_reader(monke
     assert batch.json()["results"][0]["data"] == single.json()
     assert calls[0][0] is calls[1][0]
     assert repository.connections.connections == 2
+
+
+def test_named_series_comparison_preflight_reuses_batch_resource_state(monkeypatch):
+    class Result:
+        def __init__(self, row):
+            self.row = row
+
+        def fetchone(self):
+            return self.row
+
+        def fetchall(self):
+            return [self.row] if self.row is not None else []
+
+    class Connection:
+        def execute(self, sql, params=None):
+            if "SELECT territory_type FROM territory_reference" in sql:
+                return Result(("commune",))
+            if "SELECT territory_id,territory_type,density_class_code" in sql:
+                return Result(("c1", "commune", "dense"))
+            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code" in sql:
+                return Result(("c1", "commune", None, None, "dense"))
+            raise AssertionError(sql)
+
+    state = main._BatchReadSnapshotState()
+    resource = main._ResolvedIndicatorResource(
+        None, (("series_descriptor", "series"),), None, (), None, None)
+    observed = []
+    monkeypatch.setattr(main, "_batch_indicator_resource", lambda *_args: resource)
+    monkeypatch.setattr(main, "_indicator_facts_snapshot", lambda *args, **kwargs:
+        observed.append(kwargs.get("snapshot_state")))
+
+    main._indicator_comparison_preflight(
+        Connection(), "commune", "c1", "series_indicator", [], None,
+        snapshot_state=state)
+
+    assert observed == [state]
 
 
 def test_theme_comparison_route_and_batch_share_public_contract_reader(monkeypatch):

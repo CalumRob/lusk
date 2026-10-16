@@ -169,7 +169,7 @@ def test_theme_collection_only_route_passes_exact_fixed_context(monkeypatch):
     observed = []
     monkeypatch.setattr(main, "collection_descriptors", lambda *_a, **_kw: [DESCRIPTOR])
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_a: ("commune", ("c1", "c2"), {"kind":"density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a: ("density_class", "A", "commune"))
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a, **_kw: ("density_class", "A", "commune"))
     monkeypatch.setattr(main, "collection_comparison", lambda *a: observed.append(a[-1]) or {
         "content_version":"cv", "reference_content_version":"ref", "indicator_id":"grant_amount"})
     monkeypatch.setattr(main, "_profile_comparison_results", lambda *_a: [])

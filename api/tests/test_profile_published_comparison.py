@@ -272,7 +272,7 @@ def test_theme_uses_fixed_context_for_profile_only_filtered_default(monkeypatch)
     monkeypatch.setattr(main, "focal_profiles", lambda *_a, **_kw: ([PROFILE], "profile-v1"))
     monkeypatch.setattr(main, "collection_descriptors", lambda *_a, **_kw: [])
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_a: ("commune", ("c1", "c2"), {"kind": "density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a: ("density_class", "A", "commune"))
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a, **_kw: ("density_class", "A", "commune"))
     monkeypatch.setattr(main, "_profile_comparison_results", lambda *a: calls.append(a[-1]) or [])
     monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_a, **_kw: ([], {}, None, None, None))
     monkeypatch.setattr(main, "_demographic_reading_marker", lambda _c: None)
@@ -336,7 +336,7 @@ def test_profile_selection_resolves_exact_preset_but_custom_cohort_stays_dynamic
     monkeypatch.setattr(main, "collection_descriptors", lambda *_a, **_kw: [])
     monkeypatch.setattr(main, "_comparison_cohort", lambda _c, _tt, _tid, selection:
         ("commune", tuple(selection or ("c1", "c2")), {"kind": "explicit_selection" if selection else "density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda _c, _tt, _tid, selection, *_rest:
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda _c, _tt, _tid, selection, *_rest, **_kw:
         ("density_class", "A", "commune") if selection == ["c1", "c2"] else None)
     monkeypatch.setattr(main, "_profile_comparison_results", lambda *a: observed.append(a[-1]) or [])
     monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_a, **_kw: ([], {}, None, None, None))
