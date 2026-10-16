@@ -128,6 +128,29 @@ class IndicatorComparisonRequest(BaseModel):
     selection: list[ThemeTerritorySelection] | None = Field(default=None, max_length=1500)
 
 
+class BatchReadItem(BaseModel):
+    """One declared typed read in a caller-owned batch snapshot."""
+    id: str = Field(min_length=1, max_length=64, pattern=r"^[A-Za-z0-9_-]+$")
+    resource: Literal["theme_facts", "theme_comparison"]
+    territory_type: Literal["commune", "epci", "departement", "region"]
+    territory_id: str = Field(min_length=1, max_length=32)
+    theme_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,63}$")
+    selection: list[ThemeTerritorySelection] | None = Field(default=None, max_length=1500)
+    fields: list[str] | None = Field(default=None, max_length=32)
+
+
+class BatchReadRequest(BaseModel):
+    items: list[BatchReadItem] = Field(min_length=1, max_length=12)
+
+    @field_validator("items")
+    @classmethod
+    def unique_item_ids(cls, items):
+        ids = [item.id for item in items]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Batch item ids must be unique")
+        return items
+
+
 class ModeComparison(BaseModel):
     value: float | None
     median: float | None
@@ -2245,6 +2268,51 @@ def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_ty
 @app.get("/api/health")
 def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/api/read-batch")
+def read_batch(request: BatchReadRequest,
+               repository: ReadRepository = Depends(get_repository)) -> dict:
+    """Compose bounded theme reads in one read-only repeatable-read snapshot.
+
+    Item ids are request-local correlation labels; item payloads retain their
+    single-read shape and only the outer envelope is new.
+    """
+    normalized = []
+    expanded_territories = 0
+    for item in request.items:
+        fields = (normalize_field_selection(item.fields, _THEME_FACT_FIELDS)
+                  if item.resource == "theme_facts" else
+                  _comparison_field_selection(item.fields))
+        if item.resource == "theme_facts" and item.selection is not None:
+            raise HTTPException(422, "theme_facts does not accept a territory selection")
+        selection = None if item.selection is None else [
+            (member.territory_type, member.territory_id) for member in item.selection]
+        expanded_territories += len(selection or [])
+        normalized.append((item, fields, selection))
+    if expanded_territories > 1500:
+        raise HTTPException(413, "Batch territory selections exceed the 1500-territory limit")
+
+    results = []
+    with repository.connections.connection() as conn:
+        with conn.transaction():
+            conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+            for item, fields, selection in normalized:
+                if item.resource == "theme_facts":
+                    payload = _theme_facts_snapshot(
+                        conn, item.territory_type, item.territory_id,
+                        item.theme_id, None, repository, fields=fields)
+                else:
+                    payload = _theme_comparison_snapshot(
+                        conn, item.territory_type, item.territory_id,
+                        item.theme_id, selection, result_fields=fields)
+                    payload = _project_comparison_payload_fields(payload, fields)
+                results.append({"id": item.id, "resource": item.resource,
+                                "data": payload})
+            response = {"contract": "typed-read-batch-v1", "results": results}
+            if len(json.dumps(response, separators=(",", ":"), default=str).encode("utf-8")) > 8_000_000:
+                raise HTTPException(413, "Batch response exceeds the 8 MB limit")
+            return response
 
 
 @app.get("/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}")
