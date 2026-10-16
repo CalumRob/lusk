@@ -495,6 +495,38 @@ def test_declared_profile_postgres_api_contract(installation):
             assert len(semantic_data["observations"]) == 4
             assert all("value" in observation and "status" in observation
                        for observation in semantic_data["observations"])
+            original_preflight = main._semantic_resource_preflight
+            changed_during_preflight = False
+
+            def concurrent_update_preflight(connection, item):
+                nonlocal changed_during_preflight
+                estimate = original_preflight(connection, item)
+                if not changed_during_preflight:
+                    with psycopg.connect(publisher_dsn) as writer:
+                        writer.execute(f'SET search_path TO "{schema}"')
+                        writer.execute("UPDATE profile_observation SET value=.9 WHERE territory_id=%s",
+                                       (territory,))
+                    changed_during_preflight = True
+                return estimate
+
+            main._semantic_resource_preflight = concurrent_update_preflight
+            try:
+                snapshot_batch = client.post("/api/resources/read-batch", json={"items": [
+                    {"id": "snapshot-a", **semantic_item},
+                    {"id": "snapshot-b", **semantic_item},
+                ]})
+            finally:
+                main._semantic_resource_preflight = original_preflight
+                with psycopg.connect(publisher_dsn) as writer:
+                    writer.execute(f'SET search_path TO "{schema}"')
+                    writer.execute("UPDATE profile_observation SET value=.2 WHERE territory_id=%s",
+                                   (territory,))
+            assert snapshot_batch.status_code == 200, snapshot_batch.text
+            snapshot_values = [observation["value"]
+                for result in snapshot_batch.json()["results"]
+                for observation in result["data"]["observations"]]
+            initial_profile_values = [observation["value"] for observation in semantic_data["observations"]]
+            assert snapshot_values == initial_profile_values * 2
             assert [(c["detail"], c["sex"]) for c in body["cells"]] == [
                 ("15-29", "F"), ("15-29", "M"), ("0-14", "F"), ("0-14", "M")]
             assert body["cells"][0]["value"] == pytest.approx(.2)
