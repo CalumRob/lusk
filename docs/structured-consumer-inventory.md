@@ -36,7 +36,7 @@ Live API evidence comprises shared territory reference plus service registry, se
 | Indicator comparison renderer (`app/src/fiche` and payload read-model selectors; ADR-0015 contract) | Browser consumer | Shows rank in context and group size; confirm exact renderer via references when its API slice is planned. |
 | `pipeline/R/verification_donnees_reelles.R` and tests | Producer tests/assertions, not product consumers | Validate rank domain, nulls and group sizes. Tests must be updated with a deliberate contract migration, but are not a reason to serve ranks forever. |
 
-`modeles_lecture.R` is an actual non-browser consumer of static structured inputs, but this search found no direct `rang_*` read in its source. No proven direct non-browser downstream consumer of rank fields was located in `pipeline/R` or `pipeline/scripts` in this pass; rank producers, contract/validation and tests were found, but these are not consumers. Whether generated read models project ranks remains an open inspection item. Repeat searches across pipeline scripts/export workflows before deleting columns. API scoped comparisons calculate the declared requested scope from facts, never consume fixed ranks. No rank-output deletion is authorized here.
+`modeles_lecture.R` is an actual non-browser consumer of static structured inputs, but this search found no direct `rang_*` read in its source. No proven direct non-browser downstream consumer of rank fields was located in `pipeline/R` or `pipeline/scripts` in this pass; rank producers, contract/validation and tests were found, but these are not consumers. Whether generated read models project ranks remains an open inspection item. Repeat searches across pipeline scripts/export workflows before deleting columns. API arbitrary-selection comparisons calculate the requested scope from facts; current fixed contexts use dedicated published comparison projections below, not historical static `rang_*` outputs. No rank-output deletion is authorized here.
 
 ## Concrete static artifact consumers (representative contracts)
 
@@ -73,6 +73,38 @@ Four serving grains are migrated to owner-scoped, immutable, checksummed artifac
 **Kept intentionally.** `write_profile_comparison_parquets()` (comparisons are DB-only, already serving-grain, no production Parquet reader); the BPE dedicated artifacts (`profils_acces_bpe*`, `distribution/rampe_acces_batiments*`, `*_comparaisons`) — #619 scope; `modeles_lecture.R`, `app/src/payload/loader.ts`, `app/src/carte/coucheModel.ts` static-JSON consumers.
 
 **Open owner decision.** Generation retention: immutable generations under the cron-committed `public/data` are never pruned; a retention/GC policy is required before this is fully operable (see follow-ups below).
+
+## Fixed-comparison provenance serving — #787
+
+The current-context contract is ADR-0039, under #727/#751. A fixed read selects
+published group/focal results and actual group/facet source lineage, with cheap
+scope, shape and input-version checks. Publication validates cohort mathematics;
+the API does not reconstruct lineage or audit medians/ranks across peer facts.
+
+| Current family | API reader / routes | Publication-owned lineage |
+|---|---|---|
+| Scalar, including scalar-backed DPE | `_published_scalar_comparison_results`; theme and individual-indicator comparison routes | `publish_scalar.R` projects scalar observation/source associations into group/facet `comparison_source_lineage`, bound to comparison content version |
+| Declared detail profile | `_published_profile_comparison_results`; theme and individual-indicator comparisons | `publish_profile.R` projects actual profile observation sources into group/facet lineage; scalar-backed facets reuse scalar results rather than copying them |
+| Active owned ordered series | `_owned_series_comparison_results`; theme and individual-indicator comparisons, routed by `series_dataset_descriptor.active_read_route` | `publish_series.R` publishes group/axis revision links, declared comparison axes and support/zero-reason metadata; revisions retain actual territory windows and source clocks |
+| Numeric period/detail collection | `_published_collection_comparison` in `observed_collections.py`; theme and individual-indicator comparisons | `publish_observed_collections.R` publishes typed group/detail/period source-vintage links and explicit completeness metadata |
+| AEDAR fixed comparisons | `/api/aedar/territories/{type}/{id}/comparisons` | Existing `aedar_comparison_publication` and aggregate-owned source metadata already identify the declared fixed `2026-v1` snapshot; no second lineage store is added |
+
+Arbitrary selections and raw visualization observations remain fact reads.
+Categorical `anchored_membership` is explicitly non-comparable. Legacy non-AEDAR
+BPE remains outside this cutover under #619. The `series_descriptor` fallback
+reader is retained compatibility, not the active owned-series route: current
+annual ENAF publication registers the owned descriptor first. The old writer
+and fallback must not be deleted without separate compatibility-reader proof.
+
+Migrations 033–035 preserve existing numeric results but leave old lineage
+unknown/incomplete, so upgraded readers fail closed until normal R republication.
+Freshly published empty lineage is distinct from an unpublished lineage set.
+The guarded synthetic publisher-to-API tests cover both fresh installation and
+the populated comparison-storage upgrade, including exact source/vintage
+response parity, unchanged retries and injected-refresh rollback. See
+`api/tests/integration/README.md` and `api/migrations/README.md` for guarded test
+commands and operator sequencing. This does not authorize production migration,
+publication or deployment, and does not establish deployed API latency/p95.
 
 ## Shape candidates and unknowns for #590
 
