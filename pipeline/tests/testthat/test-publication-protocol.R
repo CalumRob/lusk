@@ -47,3 +47,21 @@ test_that("owner publication validation failure leaves the stored token untouche
     function(...) stop("must not rebind")), "dependency rejected")
   expect_identical(current$content_version, "v1")
 })
+
+test_that("owner protocol can republish a coherent dependent projection on lineage staleness", {
+  current <- data.frame(content_version = "v1", reference_content_version = "r1")
+  db <- list(
+    transaction = function(expr) force(expr),
+    marker = function(owner) current,
+    lock = function(owner) invisible(NULL)
+  )
+  published <- FALSE
+  result <- publish_owner_snapshot(
+    db, "series:dvf", "v1", "territory_reference",
+    function() data.frame(content_version = "r1"), function(dep) invisible(TRUE),
+    function(version, dep) published <<- TRUE, function(version) invisible(NULL),
+    requires_republish = function(marker, dep) TRUE)
+
+  expect_true(result$republished_for_dependency)
+  expect_true(published)
+})

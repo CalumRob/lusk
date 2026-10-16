@@ -3,11 +3,13 @@
 # this function owns only the common token/no-op/dependency-rebind decision.
 publish_owner_snapshot <- function(db, owner, content_version, dependency_name,
                                    read_dependency, validate_dependency,
-                                   publish_content, rebind_dependency) {
+                                   publish_content, rebind_dependency,
+                                   requires_republish = function(marker, dependency) FALSE) {
   required <- c("transaction", "marker")
   if (!is.list(db) || !all(vapply(required, function(name) is.function(db[[name]]), logical(1))) ||
       !is.function(read_dependency) || !is.function(validate_dependency) ||
       !is.function(publish_content) || !is.function(rebind_dependency) ||
+      !is.function(requires_republish) ||
       length(owner) != 1L || is.na(owner) || !nzchar(owner) ||
       length(dependency_name) != 1L || is.na(dependency_name) || !nzchar(dependency_name) ||
       length(content_version) != 1L || is.na(content_version) || !nzchar(content_version))
@@ -25,13 +27,15 @@ publish_owner_snapshot <- function(db, owner, content_version, dependency_name,
     dependency_version <- as.character(dependency$content_version[[1L]])
     rebound <- has_current && !identical(as.character(current$reference_content_version[[1L]]),
                                          dependency_version)
-    if (changed) {
+    republish <- has_current && isTRUE(requires_republish(current, dependency))
+    if (changed || republish) {
       publish_content(content_version, dependency)
     } else if (rebound) {
       rebind_dependency(dependency_version)
     }
     invisible(list(owner = owner, dependency = dependency_name,
                    changed = changed, rebound = rebound,
+                   republished_for_dependency = republish,
                    content_version = content_version,
                    dependency_version = dependency_version))
   })

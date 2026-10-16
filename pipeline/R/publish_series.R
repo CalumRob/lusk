@@ -884,23 +884,34 @@ publish_owned_series_projection <- function(projection, db) {
       !is.function(db$dataset_marker) || !is.function(db$reference_marker) || !is.function(db$replace_dataset))
     stop("Invalid owned series database adapter",call.=FALSE)
   version <- scalar_content_version(projection); dataset <- projection$descriptor$dataset_id
-  db$transaction({
-    db$lock(dataset)
-    marker <- db$dataset_marker(dataset); ref <- db$reference_marker()
-    if (!nrow(ref)) stop("Territory reference publication is unavailable",call.=FALSE)
-    changed <- !nrow(marker) || !identical(as.character(marker$content_version[[1L]]),version)
-    rebound <- nrow(marker) && !identical(as.character(marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]]))
-    comparison_stale <- FALSE
-    if (!is.null(projection$descriptor$comparison_levels) && is.function(db$comparison_marker)) {
-      comparison_marker <- db$comparison_marker(dataset,projection$descriptor$indicator_id)
-      comparison_stale <- !nrow(comparison_marker) ||
-        !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]),version) ||
-        !identical(as.character(comparison_marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]])) ||
-        !isTRUE(comparison_marker$lineage_row_count[[1L]]>=0L)
-    }
-    if (changed || rebound || comparison_stale) db$replace_dataset(projection,version)
-    invisible(list(changed=changed,rebound=rebound,content_version=version,dataset_id=dataset))
-  })
+  protocol_db <- list(transaction = db$transaction, lock = db$lock,
+                      marker = function(owner) db$dataset_marker(owner))
+  result <- publish_owner_snapshot(
+    db = protocol_db, owner = dataset, content_version = version,
+    dependency_name = "territory_reference",
+    read_dependency = db$reference_marker,
+    validate_dependency = function(ref) {
+      if (!nrow(ref) || is.na(ref$content_version[[1L]]) ||
+          !nzchar(as.character(ref$content_version[[1L]])))
+        stop("Territory reference publication is unavailable", call.=FALSE)
+    },
+    publish_content = function(version_arg, dependency_arg) db$replace_dataset(projection, version),
+    rebind_dependency = function(reference_version) db$replace_dataset(projection, version),
+    requires_republish = function(marker, ref) {
+      if (!identical(as.character(marker$reference_content_version[[1L]]),
+                     as.character(ref$content_version[[1L]]))) return(TRUE)
+      if (is.null(projection$descriptor$comparison_levels) || !is.function(db$comparison_marker))
+        return(FALSE)
+      comparison_marker <- db$comparison_marker(dataset, projection$descriptor$indicator_id)
+      !nrow(comparison_marker) ||
+        !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]), version) ||
+        !identical(as.character(comparison_marker$reference_content_version[[1L]]),
+                   as.character(ref$content_version[[1L]])) ||
+        !isTRUE(comparison_marker$lineage_row_count[[1L]] >= 0L)
+    })
+  invisible(list(changed=result$changed, rebound=result$rebound,
+    republished_for_dependency=result$republished_for_dependency,
+    content_version=result$content_version, dataset_id=dataset))
 }
 
 # Fingerprint all authoritative inputs on both sides of one read window. This
