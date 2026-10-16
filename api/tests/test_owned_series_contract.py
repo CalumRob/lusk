@@ -4,7 +4,9 @@ import re
 import pytest
 from fastapi import HTTPException
 
-from api.main import ReadRepository, _complete_owned_mean_curve, _theme_owned_series_indicator, app
+from api.repository import ReadRepository
+from api.snapshot_reads import _complete_owned_mean_curve
+from api.main import app
 
 
 def test_theme_owned_series_indicator_preserves_nullable_axis_metadata_and_point_coordinates():

@@ -56,13 +56,13 @@ the linked resource contracts and the operation notes below.
 
 | Method | Path | Operation | Parameters | Request body |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/territories/search` | Search Territories | `q` (query, required: string; min chars: `1`; max chars: `64`)<br>`limit` (query, optional: integer; min: `1`; max: `50`; default: `8`) | — |
-| `GET` | `/api/health` | Health | — | — |
 | `GET` | `/api/resources` | Discover Resources | — | — |
 | `POST` | `/api/resources/read` | Read Resource | — | required request body: `ResourceReadItem` |
 | `POST` | `/api/resources/read-batch` | Read Resource Batch | — | required request body: `ResourceBatchRequest` |
 | `GET` | `/api/aedar/territories/{territory_type}/{territory_id}/aggregates` | Aedar Territorial Aggregates | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`typequ` (query, optional: array of string; max items: `100`)<br>`fields` (query, optional: array of string; max items: `313`)<br>`limit` (query, optional: integer; min: `1`; max: `100`; default: `50`)<br>`offset` (query, optional: integer; min: `0`; max: `10000`; default: `0`) | — |
 | `GET` | `/api/aedar/territories/{territory_type}/{territory_id}/comparisons` | Aedar Fixed Comparisons | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`context` (query, required: string; one of `density_class`, `epci`, `bretagne`, `same_level`)<br>`typequ` (query, required: string; min chars: `4`; max chars: `4`)<br>`measure` (query, required: string; min chars: `1`; max chars: `64`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
+| `GET` | `/api/territories/search` | Search Territories | `q` (query, required: string; min chars: `1`; max chars: `64`)<br>`limit` (query, optional: integer; min: `1`; max: `50`; default: `8`) | — |
+| `GET` | `/api/health` | Health | — | — |
 
 ### Request-model properties
 

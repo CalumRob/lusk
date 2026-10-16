@@ -23,7 +23,7 @@ def test_fresh_schema_excludes_retired_accessibility_relations_and_upgrade_drops
 def test_retired_building_and_bpe_routes_are_not_registered():
     import api.main as main
 
-    paths = {route.path for route in main.app.routes if hasattr(route, "path")}
+    paths = set(main.app.openapi()["paths"])
     assert not any("building-access" in path or "essential-services" in path for path in paths)
     assert "/api/resources/read" in paths
     assert "/api/resources/read-batch" in paths

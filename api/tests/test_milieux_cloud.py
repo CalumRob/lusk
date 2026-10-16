@@ -2,7 +2,7 @@
 import pytest
 from fastapi import HTTPException
 
-from api.main import _milieux_reading_cloud
+from api.typed_reading_snapshots import _milieux_reading_cloud
 
 
 class Result:

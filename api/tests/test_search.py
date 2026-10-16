@@ -6,7 +6,8 @@ from fastapi.testclient import TestClient
 
 import pytest
 
-from api.main import ReadRepository, app, get_repository, search_territory_rows
+from api.main import ReadRepository, app, get_repository
+from api.territory_search import search_territory_rows
 
 
 def test_search_preserves_one_character_name_queries_and_accent_hyphen_matching():

@@ -39,8 +39,9 @@ class Repository:
 def setup(monkeypatch, repository, reader, preflight):
     main.app.dependency_overrides[main.get_repository] = lambda: repository
     main.app.dependency_overrides[main.get_resource_catalogue] = default_resource_catalogue
-    monkeypatch.setattr(main, "_semantic_resource_read", reader, raising=False)
-    monkeypatch.setattr(main, "_semantic_resource_preflight", preflight, raising=False)
+    main.app.dependency_overrides[main.get_semantic_resource_reader] = lambda: type(
+        "FakeSemanticResourceReader", (), {"read": staticmethod(reader),
+                                           "preflight": staticmethod(preflight)})()
 
 
 def test_single_and_one_item_batch_share_typed_reader_and_result(monkeypatch):
