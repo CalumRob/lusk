@@ -2165,9 +2165,6 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     elif profiles is None:
         profiles, profile_version = focal_profiles(conn, territory_type, territory_id,
             theme_id=theme_id, indicator_id=indicator_id)
-    bpe_available = (theme_id == "mobilite" and
-        conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0] and
-        conn.execute("SELECT 1 FROM bpe_profile_evidence_descriptor WHERE singleton AND indicator_id='bpe_access_profile'").fetchone())
     owned_descriptors=[]
     if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
         has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
@@ -2199,16 +2196,13 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 "median","rank","rank_size"})
         else:
             available_comparison_fields.add("selected_member_count")
-    if bpe_available:
-        available_comparison_fields.update({"selected_member_count","eligible_count","missing_count",
-            "mean","rank","rank_size","rank_ties"})
     if result_fields is not None:
         unsupported=set(result_fields)-available_comparison_fields-_COMPARISON_MANDATORY_FIELDS
         if unsupported:
             raise HTTPException(422,"Field selection is not declared by any participating comparison resource")
     reading_marker = _demographic_reading_marker(conn) if theme_id == "demographie" else None
     milieux_marker = _milieux_reading_marker(conn) if theme_id == "milieux" else None
-    if not scalar_descriptors and not profiles and not owned_descriptors and not collections and not has_readings and not reading_marker and not milieux_marker and not bpe_available:
+    if not scalar_descriptors and not profiles and not owned_descriptors and not collections and not has_readings and not reading_marker and not milieux_marker:
         raise HTTPException(404, "No published facts for this theme")
     reference = conn.execute(
         "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
@@ -2237,8 +2231,6 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
         if fixed_context and (comparable_scalars or scalar_backed_profiles):
             _scalar_comparison_publication_marker(conn)
-        if bpe_available:
-            _bpe_profile_publication(conn,validate_row_count=False)
         if owned_descriptors:
             routes = [(dataset_id,theme_id,False,indicator,None)
                       for dataset_id,indicator in owned_descriptors]
@@ -2310,16 +2302,12 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     profile_fixed_context = fixed_context if profiles else None
     profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id,
         profile_fixed_context, **({} if result_fields is None else {"selected_fields":result_fields}))
-    bpe_comparison = (_bpe_profile_comparison(conn, territory_type, territory_id, selection)
-                      if bpe_available else None)
-    bpe_results = bpe_comparison["results"] if bpe_comparison else []
     owned_results,owned_markers,_,_,_=_owned_series_comparison_results(conn,
         [(dataset_id,theme_id,False,owned_indicator,None)
           for dataset_id,owned_indicator in owned_descriptors],
         territory_type,territory_id,selection,cohort=(cohort_type,members,scope),
         selected_fields=result_fields)
     results.extend(owned_results)
-    results.extend(bpe_results)
     collection_results = []
     for descriptor in collections:
         collection_supported=({"status","reason","selected_member_count"}
@@ -2346,7 +2334,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             collection_results[0]["content_version"] if collection_results else
             reading_marker[0] if reading_marker else
             milieux_marker[0] if milieux_marker else
-            bpe_comparison["content_version"] if bpe_comparison else None),
+            None),
         "reading_content_version": reading_marker[0] if reading_marker else milieux_marker[0] if milieux_marker else None,
         "reading_cloud": reading_cloud,
         "collection_content_versions":{result["indicator_id"]:result["content_version"] for result in collection_results},
@@ -2354,8 +2342,6 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         "owned_series_content_versions": {
             dataset_id: {"content_version": marker[1], "reference_content_version": marker[2]}
             for dataset_id, marker in owned_markers.items()},
-        "bpe_content_version": bpe_comparison["content_version"] if bpe_comparison else None,
-        "bpe_reference_content_version": bpe_comparison["reference_content_version"] if bpe_comparison else None,
         "service_publication_id": None,
         "building_publication_id": None,
         "reference_content_version": reference[0],
@@ -3113,38 +3099,31 @@ def _batch_indicator_resource(conn, indicator_id, snapshot_state):
     cached = snapshot_state.indicator_resources.get(indicator_id)
     if cached is not None:
         return cached
-    bpe_table = conn.execute(
-        "SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]
-    bpe = (conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton")
-           .fetchone() if bpe_table else None)
-    if bpe and bpe[0] == indicator_id:
-        resolved = _ResolvedIndicatorResource(bpe[0], (), None, (), None, None)
-    else:
-        shape_rows = []
-        scalar_descriptor = None
-        profile_descriptor = None
-        scalar_exists = conn.execute("SELECT to_regclass('scalar_descriptor')").fetchone()[0]
-        scalar_row = (conn.execute(
-            "SELECT theme_id,allowed_levels FROM scalar_descriptor WHERE indicator_id=%s",
-            (indicator_id,)).fetchone() if scalar_exists else None)
-        if scalar_row:
-            scalar_descriptor = (scalar_row[0], tuple(scalar_row[1]))
-            shape_rows.append(("scalar_descriptor", "scalar"))
-        profile_exists = conn.execute("SELECT to_regclass('profile_descriptor')").fetchone()[0]
-        profile_row = (conn.execute(
-            "SELECT theme_id,allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
-            (indicator_id,)).fetchone() if profile_exists else None)
-        if profile_row:
-            profile_descriptor = (profile_row[0], tuple(profile_row[1]))
-            shape_rows.append(("profile_descriptor", "profile"))
-        series_exists = conn.execute("SELECT to_regclass('series_descriptor')").fetchone()[0]
-        if series_exists and conn.execute(
-                "SELECT 1 FROM series_descriptor WHERE indicator_id=%s", (indicator_id,)).fetchone():
-            shape_rows.append(("series_descriptor", "series"))
-        owned = _owned_series_route(conn, indicator_id)
-        collections = tuple(collection_descriptors(conn, indicator_id=indicator_id))
-        resolved = _ResolvedIndicatorResource(None, tuple(shape_rows), owned, collections,
-                                              scalar_descriptor, profile_descriptor)
+    shape_rows = []
+    scalar_descriptor = None
+    profile_descriptor = None
+    scalar_exists = conn.execute("SELECT to_regclass('scalar_descriptor')").fetchone()[0]
+    scalar_row = (conn.execute(
+        "SELECT theme_id,allowed_levels FROM scalar_descriptor WHERE indicator_id=%s",
+        (indicator_id,)).fetchone() if scalar_exists else None)
+    if scalar_row:
+        scalar_descriptor = (scalar_row[0], tuple(scalar_row[1]))
+        shape_rows.append(("scalar_descriptor", "scalar"))
+    profile_exists = conn.execute("SELECT to_regclass('profile_descriptor')").fetchone()[0]
+    profile_row = (conn.execute(
+        "SELECT theme_id,allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
+        (indicator_id,)).fetchone() if profile_exists else None)
+    if profile_row:
+        profile_descriptor = (profile_row[0], tuple(profile_row[1]))
+        shape_rows.append(("profile_descriptor", "profile"))
+    series_exists = conn.execute("SELECT to_regclass('series_descriptor')").fetchone()[0]
+    if series_exists and conn.execute(
+            "SELECT 1 FROM series_descriptor WHERE indicator_id=%s", (indicator_id,)).fetchone():
+        shape_rows.append(("series_descriptor", "series"))
+    owned = _owned_series_route(conn, indicator_id)
+    collections = tuple(collection_descriptors(conn, indicator_id=indicator_id))
+    resolved = _ResolvedIndicatorResource(None, tuple(shape_rows), owned, collections,
+                                          scalar_descriptor, profile_descriptor)
     snapshot_state.indicator_resources[indicator_id] = resolved
     return resolved
 
