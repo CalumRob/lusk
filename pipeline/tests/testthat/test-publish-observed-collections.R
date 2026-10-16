@@ -184,11 +184,12 @@ test_that("observed collection publication repairs comparison state and rebuilds
     epci_id=c("E_TEST","E_TEST","E_TEST",NA,NA,NA),density_class_code=c("d","d","d",NA,NA,NA))
   state <- new.env(parent=emptyenv()); state$reference_version <- "r1"; state$territory_reference <- refs
   state$collection_version <- NULL; state$collection_reference_version <- NULL; state$comparison <- NULL
+  writes <- 0L
   adapter <- list(
     transaction=function(fn) { before <- as.list.environment(state); tryCatch(fn(),error=function(e) {rm(list=ls(state),envir=state);list2env(before,state);stop(e)}) },
     state=function(id) as.list.environment(state),
-    replace_base=function(x,v,r) {state$collection_version <- v;state$collection_reference_version <- r},
-    replace_comparisons=function(x,v,c,r) {state$comparison <- list(content_version=v,collection_content_version=c,
+    replace_base=function(x,v,r) {writes <<- writes+1L;state$collection_version <- v;state$collection_reference_version <- r},
+    replace_comparisons=function(x,v,c,r) {writes <<- writes+1L;state$comparison <- list(content_version=v,collection_content_version=c,
       reference_content_version=r,group_row_count=nrow(x$groups),territory_row_count=nrow(x$territories),
       lineage_row_count=nrow(x$lineage),lineage_complete=TRUE,
       actual_group_rows=nrow(x$groups),actual_territory_rows=nrow(x$territories),
@@ -196,7 +197,9 @@ test_that("observed collection publication repairs comparison state and rebuilds
   )
   first <- publish_observed_collection_with_adapter(p,adapter)
   expect_true(first$changed)
+  expect_equal(writes,2L)
   expect_false(publish_observed_collection_with_adapter(p,adapter)$changed)
+  expect_equal(writes,2L)
   state$comparison$actual_group_rows <- 0L
   expect_true(publish_observed_collection_with_adapter(p,adapter)$changed)
   state$mismatched_group_versions <- 1L

@@ -319,25 +319,59 @@ publish_observed_collection <- function(projection,con,artifact_directory=NULL) 
 # directly through DBI inside dbWithTransaction().
 publish_observed_collection_with_adapter <- function(projection, adapter) {
   d <- projection$descriptor; version <- scalar_content_version(projection)
-  adapter$transaction(function() {
-    state <- adapter$state(d$indicator_id)
-    if (is.null(state$reference_version) || !nzchar(state$reference_version)) stop("Observed collection reference is unavailable",call.=FALSE)
-    comparisons <- project_observed_collection_comparisons(projection,state$territory_reference,version,state$reference_version)
+  protocol_db <- list(
+    transaction = function(expr) adapter$transaction(function() force(expr)),
+    lock = if (is.function(adapter$lock)) function(owner) adapter$lock(owner) else NULL,
+    marker = function(owner) {
+      state <- adapter$state(owner)
+      data.frame(content_version = state$collection_version %||% NA_character_,
+        reference_content_version = state$collection_reference_version %||% NA_character_)
+    })
+  publish_snapshot <- function(state, reference_version) {
+    comparisons <- project_observed_collection_comparisons(
+      projection, state$territory_reference, version, reference_version)
     comparison_version <- scalar_content_version(comparisons)
-    changed <- is.null(state$collection_version) || state$collection_version!=version || state$collection_reference_version!=state$reference_version
-    expected_groups <- nrow(comparisons$groups); expected_territories <- nrow(comparisons$territories)
-    stale <- identical(d$kind,"period_detail") && observed_collection_comparison_stale(
-      state$comparison,comparison_version,version,state$reference_version,expected_groups,expected_territories,
-      state$actual_group_rows %||% state$comparison$actual_group_rows %||% NA_integer_,
-      state$actual_territory_rows %||% state$comparison$actual_territory_rows %||% NA_integer_,
-      state$mismatched_group_versions %||% 0L,state$mismatched_territory_versions %||% 0L,
-      nrow(comparisons$lineage),state$actual_lineage_rows %||% state$comparison$actual_lineage_rows %||% NA_integer_,
-      state$mismatched_lineage_versions %||% 0L)
-    if (changed) adapter$replace_base(projection,version,state$reference_version)
-    if (identical(d$kind,"period_detail") && (changed || stale))
-      adapter$replace_comparisons(comparisons,comparison_version,version,state$reference_version)
-    invisible(list(changed=changed||stale,content_version=version,indicator_id=d$indicator_id))
-  })
+    adapter$replace_base(projection, version, reference_version)
+    if (identical(d$kind,"period_detail"))
+      adapter$replace_comparisons(comparisons,comparison_version,version,reference_version)
+  }
+  result <- publish_owner_snapshot(
+    db = protocol_db, owner = d$indicator_id, content_version = version,
+    dependency_name = "territory_reference",
+    read_dependency = function() {
+      state <- adapter$state(d$indicator_id)
+      data.frame(content_version = state$reference_version %||% NA_character_)
+    },
+    validate_dependency = function(dependency) {
+      if (!nrow(dependency) || is.na(dependency$content_version[[1L]]) ||
+          !nzchar(dependency$content_version[[1L]]))
+        stop("Observed collection reference is unavailable",call.=FALSE)
+    },
+    publish_content = function(version_arg, dependency) {
+      publish_snapshot(adapter$state(d$indicator_id), dependency$content_version[[1L]])
+    },
+    rebind_dependency = function(reference_version) {
+      publish_snapshot(adapter$state(d$indicator_id), reference_version)
+    },
+    requires_republish = function(marker, dependency) {
+      if (!identical(d$kind,"period_detail")) return(FALSE)
+      state <- adapter$state(d$indicator_id)
+      comparisons <- project_observed_collection_comparisons(
+        projection, state$territory_reference, version, dependency$content_version[[1L]])
+      comparison_version <- scalar_content_version(comparisons)
+      comparison <- state$comparison
+      observed_collection_comparison_stale(
+        comparison, comparison_version, version, dependency$content_version[[1L]],
+        nrow(comparisons$groups),nrow(comparisons$territories),
+        state$actual_group_rows %||% (comparison$actual_group_rows %||% NA_integer_),
+        state$actual_territory_rows %||% (comparison$actual_territory_rows %||% NA_integer_),
+        state$mismatched_group_versions %||% 0L,state$mismatched_territory_versions %||% 0L,
+        nrow(comparisons$lineage),
+        state$actual_lineage_rows %||% (comparison$actual_lineage_rows %||% NA_integer_),
+        state$mismatched_lineage_versions %||% 0L)
+    })
+  invisible(list(changed = result$changed || result$rebound || result$republished_for_dependency,
+    content_version = version, indicator_id = d$indicator_id))
 }
 
 publish_registered_observed_collections <- function(canonical,metadata,con,artifact_directory=NULL) {
