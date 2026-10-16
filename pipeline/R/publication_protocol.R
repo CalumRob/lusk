@@ -27,7 +27,8 @@ publish_owner_snapshot <- function(db, owner, content_version, dependency_name,
     dependency_version <- as.character(dependency$content_version[[1L]])
     rebound <- has_current && !identical(as.character(current$reference_content_version[[1L]]),
                                          dependency_version)
-    republish <- has_current && isTRUE(requires_republish(current, dependency))
+    dependency_stale <- isTRUE(requires_republish(current, dependency))
+    republish <- has_current && dependency_stale
     if (changed || republish) {
       publish_content(content_version, dependency)
     } else if (rebound) {

@@ -908,6 +908,8 @@ publish_owned_series_projection <- function(projection, db) {
     publish_content = function(version_arg, dependency_arg) db$replace_dataset(projection, version),
     rebind_dependency = function(reference_version) db$replace_dataset(projection, version),
     requires_republish = function(marker, ref) {
+      if (!is.data.frame(marker) || !nrow(marker) ||
+          !"reference_content_version" %in% names(marker)) return(TRUE)
       if (!identical(as.character(marker$reference_content_version[[1L]]),
                      as.character(ref$content_version[[1L]]))) return(TRUE)
       if (is.null(projection$descriptor$comparison_levels) || !is.function(db$comparison_marker))

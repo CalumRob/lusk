@@ -529,9 +529,15 @@ publish_registered_profile <- function(registry, name, canonical, db, additional
   }
   if (length(profiles) > 1L) projection <- list(profiles=profiles[order(ids)])
   version <- profile_content_version(projection)
-  result <- db$transaction({
-    if (is.function(db$lock)) db$lock()
-    reference <- db$reference_marker()
+  protocol_db <- list(
+    transaction = db$transaction,
+    lock = if (is.function(db$lock)) function(owner) db$lock() else NULL,
+    marker = function(owner) db$marker(owner))
+  result <- publish_owner_snapshot(
+    db = protocol_db, owner = "declared_profile", content_version = version,
+    dependency_name = "territory_reference",
+    read_dependency = db$reference_marker,
+    validate_dependency = function(reference) {
     if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
         !nzchar(reference$content_version[[1L]]) ||
         (all(c("row_count", "actual_rows") %in% names(reference)) &&
@@ -547,20 +553,21 @@ publish_registered_profile <- function(registry, name, canonical, db, additional
         db$validate_scalar_facet(profile$descriptor)
       }
     }
-    marker <- db$marker("declared_profile")
-    changed <- !(nrow(marker) && identical(as.character(marker$content_version[[1L]]), version))
-    reference_changed <- !changed && "reference_content_version" %in% names(marker) &&
-      !identical(as.character(marker$reference_content_version[[1L]]), as.character(reference$content_version[[1L]]))
-    comparison_stale <- FALSE
-    if (is.function(db$prepare_comparisons)) {
+    },
+    publish_content = function(version_arg, reference_arg) publisher$publish(projection, db, version),
+    rebind_dependency = function(reference_version) publisher$publish(projection, db, version),
+    requires_republish = function(marker, reference) {
+      same_reference <- is.data.frame(marker) && nrow(marker) > 0L &&
+        "reference_content_version" %in% names(marker) &&
+        identical(as.character(marker$reference_content_version[[1L]]),
+                  as.character(reference$content_version[[1L]]))
+      if (!is.function(db$prepare_comparisons))
+        return(!same_reference)
       comparison_state <- db$prepare_comparisons(profiles, version, reference$content_version[[1L]])
-      comparison_stale <- isTRUE(comparison_state$stale)
-    }
-    if (changed || reference_changed || comparison_stale) publisher$publish(projection, db, version)
-    invisible(list(changed=changed || reference_changed || comparison_stale,
-      compatibility_updated=reference_changed, content_version=version))
-  })
-  result
+      !same_reference || isTRUE(comparison_state$stale)
+    })
+  invisible(list(changed = result$changed || result$rebound || result$republished_for_dependency,
+    compatibility_updated = result$rebound, content_version = version))
 }
 
 register_structure_age_profile_publisher <- function(registry, metadata) {
@@ -581,7 +588,7 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
       }
     },
     transaction = function(expr) DBI::dbWithTransaction(con, expr),
-    lock = function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(596, 1)"),
+    lock = function(owner) DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(596, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),
     prepare_comparisons = function(profiles, version, reference_version) {
