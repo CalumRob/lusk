@@ -30,10 +30,16 @@ coverage tests; details below remain the rationale and migration record.
 
 Producer-derived discovery, the shared typed single/batch grammar, one-snapshot
 execution, named-reference facts, focal profile facts, comparison intents, and
-initial shared scalar/profile/owned-series publication decisions have landed.
-They are an implementation slice, not completion of this design: retained shape
-coverage, common physical schema/publication ownership, populated upgrade proof,
-and removal of excluded legacy backend routes and objects remain outstanding.
+one-snapshot profile parity, and shared scalar/profile/owned-series publication
+decisions have landed. Legacy theme/profile/series/building/service HTTP aliases
+are no longer registered, and generic indicator reads no longer probe the
+excluded BPE evidence tables. Sparse collection preflight now counts resolved
+rows. The collection publication decision adapter also uses the shared owner
+protocol, while its production DBI path still needs migration to that protocol.
+This is an implementation slice, not completion of this design: full retained
+shape and AEDAR catalogue coverage, production publisher/schema consolidation,
+populated upgrade proof, and removal of excluded legacy schema objects and
+publishers remain outstanding.
 
 ## 1. Resource identity and discovery
 
