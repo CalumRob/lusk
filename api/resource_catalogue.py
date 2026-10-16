@@ -125,13 +125,15 @@ def _axis_values(metadata, indicator_id, page, shapes, parent_indicator=None):
 
 
 _FIELDS_BY_SHAPE = {
-    "scalar": ("value", "status", "support_count", "denominator_count", "sources", "descriptor"),
-    "declared_profile": ("value", "status", "sources", "descriptor"),
-    "ordered_series": ("value", "status", "sources", "descriptor"),
-    "period_detail": ("value", "status", "sources", "descriptor"),
-    "anchored_membership": ("detail", "label", "rider", "anchor_count", "availability", "sources", "descriptor"),
-    "named_reference": ("value", "status", "sources", "descriptor"),
-    "distribution": ("value", "status", "sources", "descriptor"),
+    # Provenance, status/availability, units, axes and descriptors are always
+    # returned where the shape declares them; they are not projection fields.
+    "scalar": ("value", "support_count", "denominator_count"),
+    "declared_profile": ("value",),
+    "ordered_series": ("value",),
+    "period_detail": ("value",),
+    "anchored_membership": ("detail", "label", "rider", "anchor_count"),
+    "named_reference": ("value",),
+    "distribution": ("value",),
 }
 
 

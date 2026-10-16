@@ -114,3 +114,24 @@ def test_mandatory_field_projection_does_not_accidentally_restore_optional_value
         "intent": {"kind": "facts"},
     })
     assert _semantic_legacy_fields(membership) == ["availability"]
+
+
+def test_provenance_and_status_are_mandatory_not_selectable_fields():
+    catalogue = default_resource_catalogue()
+    scalar = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["sources"],
+        "intent": {"kind": "facts"},
+    })
+    with pytest.raises(ValueError, match="field"):
+        validate_resource_item(scalar, catalogue)
+
+    series = ResourceReadItem.model_validate({
+        "resource": "conso_enaf_annuel",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["status"],
+        "intent": {"kind": "facts"},
+    })
+    with pytest.raises(ValueError, match="field"):
+        validate_resource_item(series, catalogue)
