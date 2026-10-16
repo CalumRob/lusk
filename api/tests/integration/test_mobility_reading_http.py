@@ -198,9 +198,19 @@ def test_canonical_mobility_reading_publication_matches_artifacts_and_four_focal
         pub.execute(f'SET search_path TO "{schema}"')
         pub.execute((root / "api/schema.sql").read_text(encoding="utf-8"))
 
+        publication_env = os.environ.copy()
+        publish_url = urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
+        publication_env.update({
+            "PGPASSFILE": str(Path(os.environ["APPDATA"]) / "PostgreSQL/pgpass.conf"),
+            "LUSK_PROFILE_TEST_HOST": publish_url.hostname or "",
+            "LUSK_PROFILE_TEST_PORT": str(publish_url.port or 5432),
+            "LUSK_PROFILE_TEST_DATABASE": publish_url.path.lstrip("/"),
+            "LUSK_PROFILE_TEST_USER": publish_url.username or "",
+        })
         publication = subprocess.run(
             ["Rscript", "scripts/smoke-canonical-mobility-reading-postgres.R", schema, "E:/Lusk/public/data"],
-            cwd=root / "pipeline", check=False, timeout=120, capture_output=True, text=True, encoding="utf-8")
+            cwd=root / "pipeline", env=publication_env, check=False, timeout=120,
+            capture_output=True, text=True, encoding="utf-8")
         assert publication.returncode == 0, publication.stdout + publication.stderr
         assert "CANONICAL_SQL_PARITY=1266 REFERENCE_ROWS=1268 NOOP_RETRY=TRUE" in publication.stdout
         expected_line = next(line for line in publication.stdout.splitlines()

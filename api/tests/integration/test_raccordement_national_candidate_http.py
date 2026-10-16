@@ -70,7 +70,7 @@ jsonlite::write_json(list(membership=a$membership,indicators=rows,vintages=v,ora
         library = subprocess.run(["Rscript", "-e", "cat(.libPaths()[1])"], cwd=root / "pipeline",
                                  capture_output=True, text=True, check=True).stdout
         env["R_LIBS_USER"] = library
-        prepared_run = subprocess.run(["Rscript", str(prepare), str(root), str(prepared)], cwd=root,
+        prepared_run = subprocess.run(["Rscript", str(prepare), str(root), str(prepared)], cwd=root / "pipeline",
                                       env=env, capture_output=True, text=True)
         assert prepared_run.returncode == 0, prepared_run.stdout + prepared_run.stderr
         data = json.loads(prepared.read_text(encoding="utf-8"))
@@ -135,7 +135,7 @@ DBI::dbDisconnect(con)
 ''', encoding="utf-8")
         env.update({"LUSK_TEST_DATABASE_NAME": "lusk_it_contract"})
         published = subprocess.run(["Rscript", str(publish), str(root), str(payload_path), str(metadata_path), schema],
-                                   cwd=root, env=env, capture_output=True, text=True)
+                                   cwd=root / "pipeline", env=env, capture_output=True, text=True)
         assert published.returncode == 0, published.stdout + published.stderr
         assert upgrade.execute("SELECT row_count FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'").fetchone() == (92637,)
         assert upgrade.execute("SELECT count(*) FROM series_dataset_observation WHERE indicator_id='raccordement_courbe'").fetchone() == (92564,)
@@ -200,7 +200,7 @@ jsonlite::write_json(list(schema=schema,bundle=bundle,content_version=published$
 DBI::dbDisconnect(con)
 ''', encoding="utf-8")
         scalar_run = subprocess.run(["Rscript", str(scalar_publish), str(root), str(bundle), schema],
-                                    cwd=root, env=env, capture_output=True, text=True)
+                                    cwd=root / "pipeline", env=env, capture_output=True, text=True)
         assert scalar_run.returncode == 0, scalar_run.stdout + scalar_run.stderr
         scalar_receipt = json.loads((bundle / "publisher-receipt.json").read_text(encoding="utf-8"))
         assert set(scalar_receipt["rejected_refreshes"]) == {"value", "vintage_source", "vintage_date_reference"}
