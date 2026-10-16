@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import concurrent.futures
+from contextlib import contextmanager
 import os
 import re
 import subprocess
@@ -614,11 +615,25 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
 
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=2, open=True,
                           kwargs={"autocommit": True})
+    scalar_sql_reads=[]
+    class RecordingConnection:
+        def __init__(self, connection): self._connection=connection
+        def execute(self, sql, params=None):
+            if "SELECT o.indicator_id, o.territory_id, o.territory_type" in sql:
+                scalar_sql_reads.append(sql)
+            return self._connection.execute(sql,params)
+        def __getattr__(self,name): return getattr(self._connection,name)
+    class RecordingConnections:
+        @contextmanager
+        def connection(self):
+            with pool.connection() as connection:
+                yield RecordingConnection(connection)
     previous = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(RecordingConnections())
     try:
         with TestClient(main.app) as client:
             response = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
+            status_only = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=status")
             selected_fields = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=support_count")
             selected_value = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=value")
             invalid_fields = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=raw_sql")
@@ -641,11 +656,16 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
             unknown_selection = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"99999"}]})
             unknown_theme = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"unknown_theme","selection":[]})
         assert response.status_code == 200, response.text
+        assert status_only.status_code == 200, status_only.text
+        assert status_only.json()["status"] == response.json()["status"]
+        assert "value" not in status_only.json() and "support_count" not in status_only.json()
         assert selected_fields.status_code == 200, selected_fields.text
         assert selected_fields.json()["support_count"] == response.json()["support_count"]
         assert "denominator_count" not in selected_fields.json()
+        assert "value" not in selected_fields.json()
         assert {key: value for key, value in selected_fields.json().items() if key != "support_count"} == {
-            key: value for key, value in response.json().items() if key not in ("support_count", "denominator_count")}
+            key: value for key, value in response.json().items()
+            if key not in ("value", "support_count", "denominator_count")}
         assert invalid_fields.status_code == 422
         assert comparison_full.status_code == 200, comparison_full.text
         assert comparison_median.status_code == 200, comparison_median.text
@@ -667,6 +687,15 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert selected_value.status_code == 200, selected_value.text
         assert selected_value.json()["value"] == response.json()["value"]
         assert "support_count" not in selected_value.json() and "denominator_count" not in selected_value.json()
+        assert len(scalar_sql_reads) >= 3
+        support_sql=next(sql for sql in scalar_sql_reads if "o.support_count" in sql and "o.value" not in sql.split("FROM scalar_observation o")[0])
+        value_sql=next(sql for sql in scalar_sql_reads if "o.value" in sql.split("FROM scalar_observation o")[0]
+                       and "o.support_count" not in sql.split("FROM scalar_observation o")[0])
+        assert "o.value" not in support_sql.split("FROM scalar_observation o")[0]
+        assert "o.value" in value_sql.split("FROM scalar_observation o")[0]
+        status_sql=next(sql for sql in scalar_sql_reads if "o.status" in sql and "o.value" not in sql.split("FROM scalar_observation o")[0]
+                        and "o.support_count" not in sql.split("FROM scalar_observation o")[0])
+        assert "o.value" not in status_sql.split("FROM scalar_observation o")[0]
         assert selected_value.json()["status"] == response.json()["status"]
         body = response.json()
         assert body["value"] == 0

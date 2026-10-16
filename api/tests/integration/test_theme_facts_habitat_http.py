@@ -29,6 +29,12 @@ def test_habitat_selected_facts_http_snapshot():
         db.execute("INSERT INTO series_observation_provenance VALUES('dvf','prix_m2','35238','2024','dvf-r1'),('dvf','prix_m2','35238','2025','dvf-r1')")
     with fixture('habitat',insert) as (db,client,checked):
         route=common(client,checked,'habitat')
+        invalid_rider=client.post(route+'?fields=status&fields=rider',json={'theme_id':'habitat'})
+        assert invalid_rider.status_code==422
+        invalid_queries=checked[-1].queries
+        assert not any("FROM scalar_observation o" in sql or "FROM profile_observation o" in sql or
+                       "FROM habitat_typed_reading" in sql or "FROM series_dataset_observation" in sql
+                       for sql,_ in invalid_queries)
         response=client.post(route,json={'theme_id':'habitat'})
         assert response.status_code==200,response.text
         status_only=client.post(route+'?fields=status',json={'theme_id':'habitat'})
@@ -39,6 +45,19 @@ def test_habitat_selected_facts_http_snapshot():
         assert projected['readings'][0]['provenance']==response.json()['readings'][0]['provenance']
         assert all('value' not in point for series_row in projected['owned_series'] for point in series_row['points'])
         assert all('value' not in indicator for indicator in projected['indicators'])
+        nested_profiles=projected['comparison']['profile_comparisons']
+        assert nested_profiles
+        assert all(row['status']==response.json()['comparison']['profile_comparisons'][index]['status']
+                   and row['comparison_sources']==response.json()['comparison']['profile_comparisons'][index]['comparison_sources']
+                   and not {'median','rank','rank_size','rank_ties','eligible_count','missing_count'} & set(row)
+                   for index,row in enumerate(nested_profiles))
+        median_only=client.post(route+'?fields=median',json={'theme_id':'habitat'})
+        rank_only=client.post(route+'?fields=rank',json={'theme_id':'habitat'})
+        assert median_only.status_code==rank_only.status_code==200
+        assert all('median' in row and 'rank' not in row
+                   for row in median_only.json()['comparison']['profile_comparisons'])
+        assert all('rank' in row and 'median' not in row
+                   for row in rank_only.json()['comparison']['profile_comparisons'])
         series=response.json()['owned_series']
         assert len(series)==1
         assert {key:series[0][key] for key in ('indicator_id','unit','axis_kind','axis_values')} == {'indicator_id':'prix_m2','unit':'€/m²','axis_kind':'year','axis_values':['2024','2025']}

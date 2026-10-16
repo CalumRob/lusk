@@ -102,6 +102,32 @@ def test_profile_comparison_rejects_scalar_only_field_before_publication_reads()
     assert not any("FROM profile_comparison_group" in sql for sql,_ in conn.sql)
 
 
+def test_selected_external_profile_keeps_support_count_internal_only(monkeypatch):
+    profile={"indicator":"housing_external","label":"Housing","unit":"%",
+        "descriptor_version":"pd1","comparison_scalar":"employment",
+        "required_scalar_version":"scalar-v1","denominator_semantics":"stock",
+        "comparison_point":{"direction":"high"}}
+    class Connection:
+        def execute(self,sql,params=None):
+            assert "FROM scalar_descriptor" in sql
+            return Cursor(rows=[("employment","Employment","count","high","employment",
+                ["commune"],"sd1")])
+    received={}
+    def published(_conn,_descriptors,_context,_cohort_type,_members,_territory_id,
+                  *,include_ties=False,selected_fields=None):
+        received["fields"]=selected_fields
+        result={"status":"unavailable","reason":"no_selected_comparable_values",
+            "comparison_sources":[]}
+        if "eligible_count" in selected_fields: result["eligible_count"]=0
+        return {"employment":result}
+    monkeypatch.setattr(main,"_published_scalar_comparison_results",published)
+    result=main._profile_comparison_results(Connection(),[profile],("c1","c2"),"commune","c1",
+        ("density_class","D1","commune"),selected_fields=("status",))[0]
+    assert "eligible_count" in received["fields"]
+    assert result["status"]=="unavailable"
+    assert not {"eligible_count","median","rank","rank_size","rank_ties"} & set(result)
+
+
 def test_fixed_detail_caller_reads_required_mixed_vintage_provenance_once():
     sources = [
         ("housing_profile", "housing", "2024", "Housing", "2024", None, None, "pub-v1"),

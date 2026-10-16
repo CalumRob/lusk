@@ -69,6 +69,24 @@ def _project_comparison_result_fields(result, selection):
     return projected
 
 
+def _theme_fact_supported_fields(*, scalar_resources, profile_resources, series_resources,
+                                 numeric_collections, membership_resources, typed_reading):
+    """Return the union of fields declared by resources participating in a theme snapshot."""
+    supported = set(_COMPARISON_MANDATORY_FIELDS)
+    has_numeric = bool(scalar_resources or profile_resources or series_resources or numeric_collections)
+    if has_numeric or typed_reading:
+        supported.add("value")
+    if scalar_resources:
+        supported.update(("support_count", "denominator_count"))
+    if membership_resources:
+        supported.update(("detail", "label", "rider", "anchor_count", "availability"))
+    if has_numeric:
+        supported.update(_COMPARISON_RESULT_FIELDS - {"mean", "mean_curve"})
+    if series_resources:
+        supported.update(("mean", "mean_curve"))
+    return supported
+
+
 def _project_comparison_payload_fields(payload, selection):
     if selection is None:
         return payload
@@ -1525,15 +1543,17 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
     details = [p for p in profiles if not p.get("comparison_scalar")]
     profile_fields = (None if selected_fields is None else
         tuple(field for field in selected_fields if field not in {"mean", "mean_curve"}))
+    internal_profile_fields = (None if profile_fields is None else
+        tuple(dict.fromkeys((*profile_fields,"eligible_count"))))
     published_detail = (_published_profile_comparison_results(conn, details, fixed_context,
-        cohort_type, members, territory_id, **({} if profile_fields is None else {"selected_fields":profile_fields}))
+        cohort_type, members, territory_id, **({} if internal_profile_fields is None else {"selected_fields":internal_profile_fields}))
         if fixed_context and details else {})
     scalar_descriptors = (conn.execute("""SELECT indicator_id,label,unit,direction,comparison_facet,
         allowed_levels,descriptor_version FROM scalar_descriptor WHERE indicator_id=ANY(%s)""",
         ([p["comparison_scalar"] for p in external],)).fetchall() if fixed_context and external else [])
     published_scalar = (_published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
         cohort_type, members, territory_id, include_ties=True,
-        **({} if profile_fields is None else {"selected_fields":profile_fields})) if fixed_context and external else {})
+        **({} if internal_profile_fields is None else {"selected_fields":internal_profile_fields})) if fixed_context and external else {})
     read_ids = list(dict.fromkeys([*members, territory_id]))
     # Published adapters already supply complete comparison provenance. Only
     # dynamic comparisons consume these separate facet source maps.
@@ -1618,7 +1638,7 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
             enough = published["eligible_count"] >= 2
             profile_result_fields = {field: value for field, value in published.items()
                 if field != "missing_count"}
-            output.append({"indicator": profile["indicator"], "facet": profile["comparison_scalar"],
+            profile_result={"indicator": profile["indicator"], "facet": profile["comparison_scalar"],
                 "label": profile["label"], "unit": scalar_descriptor[2] if scalar_descriptor else profile.get("unit"),
                 "direction": scalar_descriptor[3] if scalar_descriptor else point.get("direction"),
                 "statistic": "median", "profile_descriptor_version": profile.get("descriptor_version"),
@@ -1627,11 +1647,17 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
                 "source_facet_label": scalar_descriptor[1] if scalar_descriptor else None,
                 "denominator_semantics": profile.get("denominator_semantics"), "focal_in_selection": territory_id in members,
                 **profile_result_fields, "status": "available" if enough else "unavailable",
-                "reason": None if enough else "fewer_than_two_comparable_values",
-                "median": published["median"] if enough else None,
-                "rank": published["rank"] if enough else None,
-                "rank_size": published["rank_size"] if enough else None,
-                "rank_ties": published["rank_ties"] if enough else None})
+                "reason": None if enough else "fewer_than_two_comparable_values"}
+            requested_profile_fields=None if selected_fields is None else set(selected_fields)
+            for field in ("median","focal_value","rank","rank_size","rank_ties",
+                          "eligible_count","selected_member_count"):
+                if field in published and (requested_profile_fields is None or field in requested_profile_fields):
+                    profile_result[field]=(published[field] if field in ("eligible_count","selected_member_count")
+                                           or field not in {"median","rank","rank_size","rank_ties","focal_value"}
+                                           else published[field] if enough else None)
+            if selected_fields is not None:
+                profile_result=_project_comparison_result_fields(profile_result,selected_fields)
+            output.append(profile_result)
             continue
         rows = scalar_by_profile.get(profile["indicator"], [])
         if not rows:
@@ -1655,13 +1681,16 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
                 raise HTTPException(503, "Published profile comparison is incomplete")
             point = profile["comparison_point"]
             cell = next(c for c in profile["cells"] if c["detail"] == point["detail"] and c.get("sex") == point.get("sex"))
-            output.append({"indicator": profile["indicator"], "facet": {"detail": point["detail"], "sex": point.get("sex")},
+            profile_result={"indicator": profile["indicator"], "facet": {"detail": point["detail"], "sex": point.get("sex")},
                 "label": profile["label"], "unit": cell["unit"], "direction": point["direction"], "statistic": "median",
                 "profile_descriptor_version": profile.get("descriptor_version"), "required_scalar_version": profile.get("required_scalar_version"),
                 "scalar_descriptor_version": profile.get("scalar_descriptor_version"),
                 "source_facet_label": profile.get("source_facet_label"),
                 "denominator_semantics": profile.get("denominator_semantics"), "focal_in_selection": territory_id in members,
-                **published})
+                **published}
+            if selected_fields is not None:
+                profile_result=_project_comparison_result_fields(profile_result,selected_fields)
+            output.append(profile_result)
             continue
         point = profile.get("comparison_point")
         if not point or point.get("direction") not in ("high", "low"):
@@ -3204,10 +3233,14 @@ def scalar_observation(
             scalar_selection = normalize_field_selection(fields, set(scalar_columns) | {"status"})
             selected_scalar_columns = (tuple(scalar_columns) if scalar_selection is None else
                                        tuple(name for name in scalar_selection if name in scalar_columns))
-            optional_sql = "".join(f", {scalar_columns[column]}" for column in selected_scalar_columns)
+            scalar_projection = ["o.indicator_id", "o.territory_id", "o.territory_type"]
+            if "value" in selected_scalar_columns:
+                scalar_projection.append(scalar_columns["value"])
+            scalar_projection.append("o.status")
+            scalar_projection.extend(scalar_columns[column] for column in selected_scalar_columns
+                                     if column != "value")
             cursor = conn.execute(
-                """SELECT o.indicator_id, o.territory_id, o.territory_type,
-                          o.value, o.status""" + optional_sql + """,
+                """SELECT """ + ", ".join(scalar_projection) + """,
                           d.label, d.unit, d.direction, d.comparison_facet,
                           p.content_version,
                           (SELECT json_agg(json_build_object('source_id', os.source_id,
@@ -3395,10 +3428,33 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
     descriptors = conn.execute(
         "SELECT indicator_id FROM scalar_descriptor WHERE theme_id=%s ORDER BY indicator_id",
         (theme_id,)).fetchall()
+    collection_resource_descriptors = collection_descriptors(conn,theme_id=theme_id)
+    profiles = conn.execute("""SELECT indicator_id FROM profile_descriptor
+        WHERE theme_id=%s AND %s=ANY(allowed_levels) ORDER BY indicator_id""",
+        (theme_id,territory_type)).fetchall()
+    series_resources = []
+    if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
+        has_theme = conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
+        has_route = conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
+        if has_theme and has_route:
+            series_resources = conn.execute("""SELECT dataset_id FROM series_dataset_descriptor
+                WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels) ORDER BY dataset_id""",
+                (theme_id,territory_type)).fetchall()
+    typed_reading = conn.execute("""SELECT EXISTS(SELECT 1 FROM selected_reading_descriptor
+        WHERE theme_id=%s)""",(theme_id,)).fetchone()[0]
     selected_fields = normalize_field_selection(fields, _THEME_FACT_FIELDS)
-    if selected_fields is not None and not descriptors and any(
-            field in selected_fields for field in ("support_count", "denominator_count")):
-        raise HTTPException(422, "Count fields are not declared for this theme")
+    membership_resources=[descriptor for descriptor in collection_resource_descriptors
+        if descriptor["kind"]=="anchored_membership" and territory_type in descriptor["allowed_levels"]]
+    numeric_collections=[descriptor for descriptor in collection_resource_descriptors
+        if descriptor["kind"]=="period_detail" and territory_type in descriptor["allowed_levels"]]
+    supported_fields = _theme_fact_supported_fields(scalar_resources=descriptors,
+        profile_resources=profiles,series_resources=series_resources,
+        numeric_collections=numeric_collections,membership_resources=membership_resources,
+        typed_reading=typed_reading)
+    if selected_fields is not None and set(selected_fields)-supported_fields:
+        raise HTTPException(422,"Field selection is unsupported by this theme's participating resources")
     project_value = selected_fields is None or "value" in selected_fields
     project_support_count = selected_fields is None or "support_count" in selected_fields
     project_denominator_count = selected_fields is None or "denominator_count" in selected_fields
@@ -3449,7 +3505,7 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
         and conn.execute("SELECT 1 FROM bpe_profile_evidence_descriptor WHERE singleton AND indicator_id='bpe_access_profile'").fetchone()
         else None)
     collections = []
-    for descriptor in collection_descriptors(conn,theme_id=theme_id):
+    for descriptor in collection_resource_descriptors:
         if territory_type not in descriptor["allowed_levels"]:
             continue
         if selected_fields is None:
