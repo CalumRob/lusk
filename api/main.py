@@ -17,6 +17,7 @@ from datetime import date
 from psycopg_pool import ConnectionPool
 from api.profile_reads import focal_profiles
 from api.observed_collections import collection_descriptors, collection_snapshot, collection_comparison
+from api.field_selection import normalize_field_selection
 
 from api.building_comparison import (
     ComparisonInputError, pooled_peer_distribution, resolve_commune_members,
@@ -123,8 +124,8 @@ class AEDARFactResponse(BaseModel):
     @field_validator("measures")
     @classmethod
     def exact_aedar_measure_schema(cls, value):
-        if set(value) != _AEDAR_MEASURE_KEYS:
-            raise ValueError("AEDAR fact must contain the complete 312-measure map")
+        if not set(value) <= _AEDAR_MEASURE_KEYS:
+            raise ValueError("AEDAR fact contains an unregistered measure")
         return value
 
 
@@ -2900,6 +2901,7 @@ def scalar_observation(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str = Path(min_length=1, max_length=32),
     indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
+    fields: list[str] | None = Query(default=None, max_length=2),
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Read a named indicator using its declared published storage shape.
@@ -2918,11 +2920,15 @@ def scalar_observation(
                 bpe_descriptor = conn.execute(
                     "SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone()
                 if bpe_descriptor and bpe_descriptor[0] == indicator_id:
+                    if fields is not None:
+                        raise HTTPException(422, "Field selection is not declared for this indicator resource")
                     return _bpe_profile_snapshot(conn, territory_type, territory_id,
                                                  default_comparison=True)
             bpe = conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone() \
                 if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0] else None
             if bpe and bpe[0] == indicator_id:
+                if fields is not None:
+                    raise HTTPException(422, "Field selection is not declared for this indicator resource")
                 return _bpe_profile_snapshot(conn, territory_type, territory_id, default_comparison=True)
             for table, shape in (("scalar_descriptor", "scalar"),
                                  ("profile_descriptor", "profile"),
@@ -2932,11 +2938,15 @@ def scalar_observation(
                     shape_rows.append((table, shape))
             owned = _owned_series_route(conn,indicator_id)
             if owned:
+                if fields is not None:
+                    raise HTTPException(422, "Field selection is not declared for this indicator resource")
                 if owned[2]:
                     return _owned_named_reference_snapshot(conn,owned,territory_type,territory_id,indicator_id)
                 return _owned_series_snapshot(conn,owned[0],territory_type,territory_id,indicator_id)
             collections = collection_descriptors(conn,indicator_id=indicator_id)
             if collections:
+                if fields is not None:
+                    raise HTTPException(422, "Field selection is not declared for this indicator resource")
                 if shape_rows:
                     raise HTTPException(503,"Indicator has ambiguous collection/storage declarations")
                 return collection_snapshot(conn,collections[0],territory_type,territory_id)
@@ -2946,6 +2956,8 @@ def scalar_observation(
             if shape is None:
                 raise HTTPException(404, "Indicator descriptor is unavailable")
             if shape == "profile":
+                if fields is not None:
+                    raise HTTPException(422, "Field selection is not declared for this indicator resource")
                 descriptor = conn.execute(
                     "SELECT theme_id FROM profile_descriptor WHERE indicator_id=%s", (indicator_id,)
                 ).fetchone()
@@ -2965,6 +2977,8 @@ def scalar_observation(
                     "scope": scope, "results": profile_comparison_results}
                 return profile
             if shape == "series":
+                if fields is not None:
+                    raise HTTPException(422, "Field selection is not declared for this indicator resource")
                 return _focal_series_snapshot(conn, territory_type, territory_id, indicator_id)
             # Scalar route: focal observation only. Comparison reads use the
             # dedicated bounded theme comparison endpoint.
@@ -2982,9 +2996,12 @@ def scalar_observation(
             if (not marker[0] or not marker[0].strip() or marker[1] is None
                     or marker[2] is None or marker[1] != marker[2]):
                 raise HTTPException(503, "Scalar publication is stale or incompatible")
+            scalar_selection = normalize_field_selection(fields, {"support_count", "denominator_count"})
+            optional_sql = (", o.support_count, o.denominator_count" if scalar_selection is None else
+                "".join(f", o.{column}" for column in scalar_selection))
             cursor = conn.execute(
                 """SELECT o.indicator_id, o.territory_id, o.territory_type,
-                          o.value, o.status, o.support_count, o.denominator_count,
+                          o.value, o.status""" + optional_sql + """,
                           d.label, d.unit, d.direction, d.comparison_facet,
                           p.content_version,
                           (SELECT json_agg(json_build_object('source_id', os.source_id,
@@ -4194,12 +4211,17 @@ def aedar_territorial_aggregates(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str = Path(min_length=1, max_length=32),
     typequ: list[str] | None = Query(default=None, max_length=100),
+    fields: list[str] | None = Query(default=None, max_length=313),
     limit: int = Query(default=50, ge=1, le=100),
     offset: int = Query(default=0, ge=0, le=10000),
 ):
     """Bounded source-grain AEDAR read; no SQL or unbounded territory dump."""
     if typequ is not None and (not typequ or any(not item or len(item)>32 for item in typequ)):
         raise HTTPException(422, "typequ must contain non-empty source codes")
+    optional_fields = {"measures." + key for key in _AEDAR_MEASURE_KEYS}
+    selected_fields = normalize_field_selection(fields, optional_fields)
+    selected_measure_keys = ({field.removeprefix("measures.") for field in selected_fields
+                              if field.startswith("measures.")} if selected_fields is not None else None)
     with pool().connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
@@ -4212,17 +4234,25 @@ def aedar_territorial_aggregates(
                                      (territory_type,territory_id)).fetchone()
             if not supported:
                 raise HTTPException(404,"Unknown territory type/id")
-            cursor = conn.execute("""SELECT territory_id,territory_type,typequ,typequ_label,typequ_hierarchy_label,typequ_description,
+            measure_projection = ("measures" if selected_measure_keys is None else
+                "COALESCE((SELECT jsonb_object_agg(k, v) FROM jsonb_each(aedar_territorial_aggregate.measures) AS m(k,v) WHERE k = ANY(%s::text[])), '{}'::jsonb) AS measures")
+            base_projection = """SELECT territory_id,territory_type,typequ,typequ_label,typequ_hierarchy_label,typequ_description,
               typequ_domain_code,typequ_domain_label,typequ_subdomain_code,typequ_subdomain_label,
               typequ_gamme,typequ_gamme_status,typequ_source_order,identity,
-              n_addresses,n_observed,coverage_status,measures,source_id,vintage_id,source_url,licence,attribution,
+              n_addresses,n_observed,coverage_status,""" + measure_projection + """,source_id,vintage_id,source_url,licence,attribution,
               reference_date,publication_date
               FROM aedar_territorial_aggregate
               WHERE territory_type=%s AND territory_id=%s AND (%s::text[] IS NULL OR typequ=ANY(%s))
-              ORDER BY typequ LIMIT %s OFFSET %s""",
-              (territory_type,territory_id,typequ,typequ,limit,offset))
+              ORDER BY typequ LIMIT %s OFFSET %s"""
+            params = ((sorted(selected_measure_keys), territory_type,territory_id,typequ,typequ,limit,offset)
+                      if selected_measure_keys is not None else
+                      (territory_type,territory_id,typequ,typequ,limit,offset))
+            cursor = conn.execute(base_projection, params)
             names = [d.name for d in cursor.description]
             rows = [dict(zip(names,row)) for row in cursor.fetchall()]
+            expected_measures = _AEDAR_MEASURE_KEYS if selected_measure_keys is None else selected_measure_keys
+            if any(set(row["measures"] or {}) != expected_measures for row in rows):
+                raise HTTPException(503, "AEDAR measure publication is incomplete for the requested projection")
             required_typequ_metadata = ("typequ_hierarchy_label","typequ_description","typequ_domain_code","typequ_domain_label",
                 "typequ_subdomain_code","typequ_subdomain_label","typequ_gamme_status","typequ_source_order")
             if any(any(row[key] is None for key in required_typequ_metadata) for row in rows):

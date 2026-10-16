@@ -619,6 +619,8 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
     try:
         with TestClient(main.app) as client:
             response = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
+            selected_fields = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=support_count")
+            invalid_fields = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=value")
             cohort = client.get("/api/territories/commune/29001/indicator-cohorts/fixture_scalar?scope_level=commune")
             unavailable = client.get("/api/territories/epci/29001/indicators/fixture_scalar")
             focal = client.get("/api/territories/commune/29001/themes/demographie/facts")
@@ -633,6 +635,12 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
             unknown_selection = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"99999"}]})
             unknown_theme = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"unknown_theme","selection":[]})
         assert response.status_code == 200, response.text
+        assert selected_fields.status_code == 200, selected_fields.text
+        assert selected_fields.json()["support_count"] == response.json()["support_count"]
+        assert "denominator_count" not in selected_fields.json()
+        assert {key: value for key, value in selected_fields.json().items() if key != "support_count"} == {
+            key: value for key, value in response.json().items() if key not in ("support_count", "denominator_count")}
+        assert invalid_fields.status_code == 422
         body = response.json()
         assert body["value"] == 0
         assert body["status"] == "measured"

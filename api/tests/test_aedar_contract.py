@@ -115,11 +115,10 @@ def test_aedar_metadata_complete_check_fails_closed_for_partial_gamme_states():
         connection.execute(f"INSERT INTO metadata ({names}) VALUES ({placeholders})", hors_gamme_null)
 
 
-def test_aedar_typed_response_rejects_incomplete_measure_maps():
+def test_aedar_typed_response_accepts_registered_projection_but_rejects_unknown_measure():
     from api.main import AEDARFactResponse
     import pytest
-    with pytest.raises(Exception, match="312"):
-        AEDARFactResponse(territory_id="x", territory_type="commune", typequ="A104",
+    payload = dict(territory_id="x", territory_type="commune", typequ="A104",
             typequ_label="GENDARMERIE",typequ_hierarchy_label="GENDARMERIE",typequ_description="Description",
             typequ_domain_code="A",typequ_domain_label="Services",
             typequ_subdomain_code="A1",typequ_subdomain_label="Publics",typequ_gamme=None,
@@ -128,6 +127,9 @@ def test_aedar_typed_response_rejects_incomplete_measure_maps():
             n_observed=1, coverage_status="covered", measures={"count_5_walk_share":0},
             source_id="aedar_bretagne", vintage_id="2026-v1", source_url="https://example.test",
             licence="ODbL", attribution="AEDAR", reference_date=None, publication_date="2026-09-30")
+    assert AEDARFactResponse(**payload).measures == {"count_5_walk_share": 0}
+    with pytest.raises(Exception, match="unregistered"):
+        AEDARFactResponse(**{**payload, "measures": {"not_registered": 0}})
 
 
 def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
