@@ -2609,16 +2609,24 @@ def _semantic_resource_preflight(conn, item):
     if item.target.kind == "named_reference":
         route = _owned_series_route(conn, item.resource)
         if not route or not route[2]:
-            raise HTTPException(404, "Named reference descriptor is unavailable")
+            raise HTTPException(503, "Named reference publication is unavailable")
         _owned_named_reference_snapshot(conn, route, None, None, item.resource,
             fields=requested_fields, preflight_only=True, reference_target_id=item.target.id)
         return max(1, len(default_resource_catalogue().resources_by_id[item.resource].axis_values[0][1]))
+    resource = default_resource_catalogue().resources_by_id[item.resource]
+    if "declared_profile" in resource.shapes:
+        descriptor = conn.execute(
+            "SELECT allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
+            (item.resource,)).fetchone()
+        if not descriptor:
+            raise HTTPException(503, "Declared profile publication is unavailable")
+        if item.target.type not in descriptor[0]:
+            raise HTTPException(422, "Profile is not declared for this territory level")
     estimate = _indicator_facts_snapshot(
         conn, item.target.type, item.target.id, item.resource,
-        requested_fields, preflight_only=True)
+        requested_fields, preflight_only=True, require_declared_resource=True)
     if not isinstance(estimate, dict):
         return 1
-    resource = default_resource_catalogue().resources_by_id[item.resource]
     declared_cells = 1
     for _axis, values in resource.axis_values:
         declared_cells *= max(1, len(values))
@@ -2678,17 +2686,24 @@ def _semantic_resource_read(conn, item):
     if item.target.kind == "named_reference":
         route = _owned_series_route(conn, item.resource)
         if not route or not route[2]:
-            raise HTTPException(404, "Named reference descriptor is unavailable")
+            raise HTTPException(503, "Named reference publication is unavailable")
         data = _owned_named_reference_snapshot(conn, route, None, None, item.resource,
             fields=requested_fields, reference_target_id=item.target.id)
         return {"resource": item.resource, "target": item.target.model_dump(), **data}
     resource = default_resource_catalogue().resources_by_id[item.resource]
     if "declared_profile" in resource.shapes:
+        descriptor = conn.execute(
+            "SELECT allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
+            (item.resource,)).fetchone()
+        if not descriptor:
+            raise HTTPException(503, "Declared profile publication is unavailable")
+        if item.target.type not in descriptor[0]:
+            raise HTTPException(422, "Profile is not declared for this territory level")
         profiles, version = focal_profiles(
             conn, item.target.type, item.target.id, indicator_id=item.resource,
             fields=requested_fields)
         if len(profiles) != 1:
-            raise HTTPException(404, "Declared profile is unavailable")
+            raise HTTPException(503, "Declared profile publication is unavailable")
         profile = profiles[0]
         observations = profile.pop("cells")
         if item.coordinates:
@@ -2698,7 +2713,8 @@ def _semantic_resource_read(conn, item):
                 "content_version": version, "descriptor": profile,
                 "observations": observations}
     data = _indicator_facts_snapshot(
-        conn, item.target.type, item.target.id, item.resource, requested_fields)
+        conn, item.target.type, item.target.id, item.resource, requested_fields,
+        require_declared_resource=True)
     if item.coordinates:
         selectors = item.coordinates
         # Shape adapters retain descriptor ordering; selection filters cells only
@@ -3880,7 +3896,8 @@ def _bpe_profile_snapshot(conn, territory_type, territory_id, *, default_compari
 
 
 def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, fields=None, *,
-                              preflight_only=False, snapshot_state=None):
+                              preflight_only=False, snapshot_state=None,
+                              require_declared_resource=False):
     if snapshot_state is None:
         shape_rows = []
     else:
@@ -3913,6 +3930,8 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
         raise HTTPException(503, "Indicator has ambiguous published storage shapes")
     shape = shape_rows[0][1] if shape_rows else None
     if shape is None:
+        if require_declared_resource:
+            raise HTTPException(503, "Declared resource publication is unavailable")
         raise HTTPException(404, "Indicator descriptor is unavailable")
     if preflight_only:
         territory = conn.execute(

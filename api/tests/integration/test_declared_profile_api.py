@@ -24,7 +24,11 @@ def test_dpe_profile_without_publication_is_unavailable_not_an_unknown_route(can
     main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
     try:
         with TestClient(main.app) as client:
-            response = client.get('/api/territories/commune/29001/profiles/distribution_dpe')
+            response = client.post('/api/resources/read', json={
+                "resource": "distribution_dpe",
+                "target": {"kind": "territory", "type": "commune", "id": "29001"},
+                "intent": {"kind": "facts"},
+            })
         assert response.status_code == 503
     finally:
         if previous is None:
