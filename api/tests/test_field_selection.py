@@ -30,5 +30,6 @@ def test_aedar_projection_happens_inside_sql_and_scalar_uses_only_contract_colum
     scalar_source = inspect.getsource(scalar)
     assert "jsonb_object_agg" in aedar_source and "jsonb_each" in aedar_source
     assert "selected_measure_keys" in aedar_source
-    assert "normalize_field_selection(fields, {\"support_count\", \"denominator_count\"})" in scalar_source
-    assert 'f", o.{column}"' in scalar_source
+    assert '"value": "o.value"' in scalar_source
+    assert '"support_count": "o.support_count"' in scalar_source
+    assert '"denominator_count": "o.denominator_count"' in scalar_source

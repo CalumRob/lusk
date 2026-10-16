@@ -62,6 +62,7 @@ def test_raccordement_mean_rejects_member_reason_that_changes_across_curve_axes(
             territory_index=15,value_index=16,status_index=17,source_index=18,axis_index=27,reason_index=28)
 
 def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
+    calls = []
     class Cursor:
         def __init__(self, rows): self.rows = rows
         def fetchone(self): return self.rows[0] if self.rows else None
@@ -72,6 +73,7 @@ def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
     class Connection:
         def transaction(self): return Transaction()
         def execute(self, sql, params=()):
+            calls.append((sql, params))
             if sql.startswith("SET TRANSACTION"): return Cursor([])
             if "FROM series_dataset_publication" in sql: return Cursor([("prix-v1", "ref-v1", 2, "2026-10-01T00:00:00Z")])
             if "FROM table_publication" in sql: return Cursor([("ref-v1",)])
@@ -110,6 +112,16 @@ def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
     assert all(point["observation_period"] == point["axis"] for point in read["points"])
     assert all(point["provenance"][0]["version"] == "2025" for point in read["points"])
     assert read["comparison"]["point"] == "2025"
+    projected = ReadRepository(Connections()).read_owned_series(
+        "dvf_prix_m2", "commune", "22001", "prix_m2", "commune", "22", None, fields=["status"])
+    assert [(point["axis"], point["status"]) for point in projected["points"]] == [
+        ("2024", "missing"), ("2025", "measured")]
+    assert all("value" not in point for point in projected["points"])
+    assert projected["comparison"] == read["comparison"]
+    fact_sql, fact_params = next((sql, params) for sql, params in calls
+        if "FROM series_dataset_observation o" in sql and params[0] is False)
+    assert "CASE WHEN %s OR o.axis_value=%s THEN o.value" in fact_sql
+    assert fact_params[:2] == (False, "2025")
 
 
 def test_owned_series_reader_rejects_consistent_published_superset(monkeypatch):
@@ -274,7 +286,7 @@ def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
                     "243500139" if i in ("35238","35239") else "other","d1")
                     for i in ("35238","35239","35240","22001","35241")])
             if "FROM series_dataset_observation" in sql:
-                ids=params[2]
+                ids=params[4]
                 values={"35238":50.0,"35239":50.0,"35240":70.0,"22001":10.0,"35241":None}
                 result=[]
                 for territory in ids:

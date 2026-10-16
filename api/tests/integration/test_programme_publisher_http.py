@@ -109,7 +109,16 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
             pool.cache_clear()
             with TestClient(app) as client:
                 response = client.get("/api/territories/commune/35238/indicators/subventions_annuelles")
+                status_only_series = client.get("/api/territories/commune/35238/indicators/subventions_annuelles?fields=status")
+                value_series = client.get("/api/territories/commune/35238/indicators/subventions_annuelles?fields=value")
             assert response.status_code == 200, response.text
+            assert status_only_series.status_code == 200, status_only_series.text
+            assert all("value" not in point and point["status"] for point in status_only_series.json()["points"])
+            assert all("value" not in point for point in status_only_series.json()["context"]["points"])
+            assert value_series.status_code == 200, value_series.text
+            assert [point["value"] for point in value_series.json()["points"]] == [
+                point["value"] for point in response.json()["points"]]
+            assert all("status" in point for point in value_series.json()["points"])
             body = response.json()
             assert body["indicator_id"] == expected["key"]
             assert body["theme_id"] == "programmes"
@@ -136,7 +145,13 @@ def test_canonical_annual_grants_survive_registered_publication(tmp_path):
                        and row["territoire"] == expected["territoire"]]
             with TestClient(app) as client:
                 domain_response = client.get("/api/territories/commune/35238/indicators/subventions_par_domaine")
+                domain_status_only = client.get("/api/territories/commune/35238/indicators/subventions_par_domaine?fields=status")
             assert domain_response.status_code == 200, domain_response.text
+            assert domain_status_only.status_code == 200, domain_status_only.text
+            assert all("value" not in entry and entry["status"] == "measured"
+                       for entry in domain_status_only.json()["entries"])
+            assert [entry["sources"] for entry in domain_status_only.json()["entries"]] == [
+                entry["sources"] for entry in domain_response.json()["entries"]]
             entries = domain_response.json()["entries"]
             assert len(entries) == len(domains)
             for domain in domains:

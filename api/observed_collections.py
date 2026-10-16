@@ -2,6 +2,7 @@
 from fastapi import HTTPException
 from statistics import median
 from math import isfinite
+from api.field_selection import normalize_field_selection
 
 
 def collection_descriptors(conn, *, indicator_id=None, theme_id=None):
@@ -30,7 +31,7 @@ def collection_marker(conn, descriptor):
     return {"content_version":marker[0],"reference_content_version":marker[1]}
 
 
-def collection_snapshot(conn, descriptor, territory_type, territory_id):
+def collection_snapshot(conn, descriptor, territory_type, territory_id, *, fields=None):
     if territory_type not in descriptor["allowed_levels"]:
         raise HTTPException(422,"Collection is not declared for this territory level")
     focal = conn.execute("SELECT name,territory_type FROM territory_reference WHERE territory_id=%s", (territory_id,)).fetchone()
@@ -40,17 +41,23 @@ def collection_snapshot(conn, descriptor, territory_type, territory_id):
         raise HTTPException(422,"Territory does not match its declared level")
     marker = collection_marker(conn,descriptor)
     if descriptor["kind"] == "anchored_membership":
+        if fields is not None:
+            raise HTTPException(422,"Field selection is not declared for categorical membership")
         return membership_snapshot(conn,descriptor,territory_type,territory_id,focal[0],marker)
-    rows = conn.execute("""SELECT o.detail_key,c.label,o.observation_period,o.value,o.source_id,
+    selection = normalize_field_selection(fields, {"value", "status"})
+    project_value = selection is None or "value" in selection
+    rows = conn.execute("""SELECT o.detail_key,c.label,o.observation_period,
+        CASE WHEN %s THEN o.value ELSE NULL::double precision END AS value,o.source_id,
         sd.name,o.vintage_id,v.version,v.reference_date,v.publication_date
         FROM period_detail_observation o JOIN observed_collection_category c USING(indicator_id,detail_key)
         JOIN source_dataset sd ON sd.source_id=o.source_id
         JOIN source_vintage v ON v.source_id=o.source_id AND v.vintage_id=o.vintage_id
         WHERE o.indicator_id=%s AND o.territory_id=%s AND o.territory_type=%s
-        ORDER BY o.observation_period,c.ordinal""", (descriptor["indicator_id"],territory_id,territory_type)).fetchall()
-    entries = [{"detail":key,"label":label,"observation_period":period,"value":value,"status":"measured",
+        ORDER BY o.observation_period,c.ordinal""", (project_value,descriptor["indicator_id"],territory_id,territory_type)).fetchall()
+    entries = [{"detail":key,"label":label,"observation_period":period,
+        **({"value":value} if project_value else {}),"status":"measured",
         "sources":[{"source_id":source_id,"name":source_name,"vintage_id":vintage_id,"version":version,
-                    "reference_date":reference_date,"publication_date":publication_date}]}
+                     "reference_date":reference_date,"publication_date":publication_date}]}
         for key,label,period,value,source_id,source_name,vintage_id,version,reference_date,publication_date in rows]
     return {**descriptor,**marker,"territory":{"id":territory_id,"type":territory_type,"name":focal[0]},
             "completeness":"observed_sparse","availability":"observed" if entries else "no_record","entries":entries}

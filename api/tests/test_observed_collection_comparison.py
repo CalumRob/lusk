@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from api.observed_collections import collection_comparison
+from api.observed_collections import collection_comparison, collection_snapshot
 
 
 class Cursor:
@@ -175,3 +175,28 @@ def test_fixed_comparison_preserves_sparse_unavailable_result():
     assert result["status"] == "unavailable"
     assert result["reason"] == "fewer_than_two_comparable_values"
     assert result["median"] is None and result["rank"] is None
+
+
+def test_period_detail_field_selection_projects_value_and_keeps_sparse_provenance():
+    class SnapshotConnection:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "to_regclass('observed_collection_descriptor')" in sql: return Cursor(("observed_collection_descriptor",))
+            if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
+            if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            if "FROM period_detail_observation o" in sql:
+                return Cursor(rows=[("housing", "Housing", "2024", None, "source", "Dataset", "v1", "2024", None, None)])
+            raise AssertionError(sql)
+
+    conn = SnapshotConnection()
+    projected = collection_snapshot(conn, DESCRIPTOR, "commune", "c1", fields=["status"])
+    entry = projected["entries"][0]
+    assert "value" not in entry and entry["status"] == "measured"
+    assert entry["detail"] == "housing" and entry["observation_period"] == "2024"
+    assert entry["sources"][0]["vintage_id"] == "v1"
+    select_sql, params = next((sql, params) for sql, params in conn.calls if "FROM period_detail_observation o" in sql)
+    assert "CASE WHEN %s THEN o.value" in select_sql and params[0] is False
+
+    full = collection_snapshot(SnapshotConnection(), DESCRIPTOR, "commune", "c1")
+    assert full["entries"][0]["value"] is None

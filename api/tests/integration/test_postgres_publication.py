@@ -620,7 +620,8 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         with TestClient(main.app) as client:
             response = client.get("/api/territories/commune/29001/indicators/fixture_scalar")
             selected_fields = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=support_count")
-            invalid_fields = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=value")
+            selected_value = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=value")
+            invalid_fields = client.get("/api/territories/commune/29001/indicators/fixture_scalar?fields=raw_sql")
             cohort = client.get("/api/territories/commune/29001/indicator-cohorts/fixture_scalar?scope_level=commune")
             unavailable = client.get("/api/territories/epci/29001/indicators/fixture_scalar")
             focal = client.get("/api/territories/commune/29001/themes/demographie/facts")
@@ -641,6 +642,10 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert {key: value for key, value in selected_fields.json().items() if key != "support_count"} == {
             key: value for key, value in response.json().items() if key not in ("support_count", "denominator_count")}
         assert invalid_fields.status_code == 422
+        assert selected_value.status_code == 200, selected_value.text
+        assert selected_value.json()["value"] == response.json()["value"]
+        assert "support_count" not in selected_value.json() and "denominator_count" not in selected_value.json()
+        assert selected_value.json()["status"] == response.json()["status"]
         body = response.json()
         assert body["value"] == 0
         assert body["status"] == "measured"
@@ -1160,6 +1165,56 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
                 VALUES ('territory_reference','territory-series-v1',4)
                 ON CONFLICT (table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count""")
             publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('ordered_series','series-v1',5,'territory-series-v1')")
+            publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('collection_fixture','Collection fixture')")
+            publisher.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES ('collection_fixture','v1','2026-01','2025-01-01','2026-02-01')")
+            with publisher.transaction():
+                publisher.execute("INSERT INTO observed_collection_publication(indicator_id,content_version,reference_content_version,row_count) VALUES ('fixture_period','collection-v1','territory-series-v1',1)")
+                publisher.execute("INSERT INTO observed_collection_descriptor(indicator_id,theme_id,kind,label,unit,descriptor_version,allowed_levels,direction) VALUES ('fixture_period','test','period_detail','Fixture period','units','d1',ARRAY['commune'],'none')")
+                publisher.execute("INSERT INTO observed_collection_category(indicator_id,detail_key,label,ordinal,source_id) VALUES ('fixture_period','detail-a','Detail A',0,'collection_fixture')")
+                publisher.execute("INSERT INTO period_detail_observation(indicator_id,territory_id,territory_type,detail_key,observation_period,value,source_id,vintage_id) VALUES ('fixture_period','59701','commune','detail-a','2024',0,'collection_fixture','v1')")
+            with publisher.transaction():
+                publisher.execute("INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count) VALUES ('owned_fixture','owned-v1','territory-series-v1',4)")
+                publisher.execute("""INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,
+                    completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route)
+                    VALUES ('owned_fixture','fixture_owned','year',ARRAY['2022','2024'],'dense_complete',NULL,
+                    'Owned fixture','units','none',ARRAY['commune'],'owned-d1',true)""")
+                publisher.execute("""INSERT INTO series_named_reference_descriptor(dataset_id,indicator_id,reference_id,
+                    reference_label,reference_role,reference_statistic,required,reference_indicator_id,active_read_route)
+                    VALUES ('owned_fixture','fixture_owned','reference-a','Reference A','analytical_reference',
+                    'declared baseline',true,'fixture_named_reference',true)""")
+                publisher.execute("""INSERT INTO series_provenance_revision(provenance_revision_id,source_id,vintage_id,
+                    source_name,dataset_name,source_version,reference_date,publication_date,revision_hash)
+                    VALUES ('owned-revision','series_fixture','v1','Series fixture','Fixture dataset','2026-01',
+                    '2025-01-01','2026-02-01','owned-hash')""")
+                for axis, value in (("2022", 0.0), ("2024", 2.0)):
+                    publisher.execute("""INSERT INTO series_dataset_observation(dataset_id,indicator_id,territory_id,
+                        territory_type,axis_value,observation_period,value,status) VALUES
+                        ('owned_fixture','fixture_owned','59701','commune',%s,%s,%s,'measured')""",
+                        (axis, axis, value))
+                    publisher.execute("""INSERT INTO series_observation_provenance(dataset_id,indicator_id,territory_id,
+                        axis_value,provenance_revision_id) VALUES ('owned_fixture','fixture_owned','59701',%s,'owned-revision')""", (axis,))
+                    publisher.execute("""INSERT INTO series_named_reference(dataset_id,indicator_id,reference_id,
+                        axis_value,observation_period,value,status) VALUES
+                        ('owned_fixture','fixture_owned','reference-a',%s,%s,%s,'measured')""", (axis, axis, value))
+                    publisher.execute("""INSERT INTO series_named_reference_provenance(dataset_id,indicator_id,
+                        reference_id,axis_value,provenance_revision_id) VALUES
+                        ('owned_fixture','fixture_owned','reference-a',%s,'owned-revision')""", (axis,))
+            publisher.execute("""INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,
+                descriptor_version,comparison_detail,comparison_sex,comparison_direction,theme_id)
+                VALUES ('fixture_profile','Fixture profile','units',ARRAY['commune'],'dense_complete',
+                'profile-d1','detail-a','F','low','test')""")
+            publisher.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal) VALUES
+                ('fixture_profile','detail','detail-a','Detail A',0),('fixture_profile','detail','detail-b','Detail B',1),
+                ('fixture_profile','sex','F','Female',0),('fixture_profile','sex','M','Male',1)""")
+            publisher.execute("INSERT INTO profile_descriptor_source VALUES ('fixture_profile','series_fixture')")
+            for detail, sex, value in (("detail-a", "F", .2), ("detail-a", "M", .3),
+                                       ("detail-b", "F", .4), ("detail-b", "M", .5)):
+                publisher.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,
+                    detail_key,sex_key,value,status) VALUES ('fixture_profile','59701','commune',%s,%s,%s,'measured')""",
+                    (detail, sex, value))
+                publisher.execute("INSERT INTO profile_observation_source VALUES ('fixture_profile','59701',%s,%s,'series_fixture','v1')",
+                                  (detail, sex))
+            publisher.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profile-fixture-v1',4,'territory-series-v1')")
             publisher.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
                 VALUES ('fixture_sparse','year',ARRAY['2024'],'may_be_missing','2024',ARRAY['commune'],'Fixture sparse','ha','low','series_fixture','v1','d1')""")
             publisher.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,axis_value,observation_period,value,status,source_id,vintage_id) VALUES
@@ -1181,6 +1236,20 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
         try:
             with TestClient(main.app) as client:
                 response = client.get('/api/territories/commune/59701/series/fixture_annual')
+                status_only_series = client.get('/api/territories/commune/59701/series/fixture_annual?fields=status')
+                value_only_series = client.get('/api/territories/commune/59701/series/fixture_annual?fields=value')
+                collection = client.get('/api/territories/commune/59701/indicators/fixture_period')
+                collection_status = client.get('/api/territories/commune/59701/indicators/fixture_period?fields=status')
+                collection_value = client.get('/api/territories/commune/59701/indicators/fixture_period?fields=value')
+                collection_invalid = client.get('/api/territories/commune/59701/indicators/fixture_period?fields=raw_sql')
+                owned_default = client.get('/api/territories/commune/59701/indicators/fixture_owned')
+                owned_status = client.get('/api/territories/commune/59701/indicators/fixture_owned?fields=status')
+                reference_status = client.get('/api/territories/commune/59701/indicators/fixture_named_reference?fields=status')
+                owned_route_status = client.get('/api/series-datasets/owned_fixture/territories/commune/59701/fixture_owned?fields=status')
+                profile_default = client.get('/api/territories/commune/59701/profiles/fixture_profile')
+                profile_status = client.get('/api/territories/commune/59701/profiles/fixture_profile?fields=status')
+                profile_value = client.get('/api/territories/commune/59701/profiles/fixture_profile?fields=value')
+                profile_invalid = client.get('/api/territories/commune/59701/profiles/fixture_profile?fields=sql')
                 department_response = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&department_id=22')
                 epci_response = client.get('/api/territories/commune/59701/series/fixture_annual?scope_level=commune&epci_id=e1')
                 region_response = client.get('/api/territories/region/53/series/fixture_annual?scope_level=region')
@@ -1197,6 +1266,46 @@ def test_ordered_series_bounded_read_comparison_and_rollback():
                 sparse_singleton = client.post('/api/territories/commune/59701/indicators/fixture_sparse/comparison',
                     json={'selection': [{'territory_type': 'commune', 'territory_id': '59701'}]})
             assert response.status_code == 200, response.text
+            assert status_only_series.status_code == 200, status_only_series.text
+            assert all("value" not in point and point["status"] for point in status_only_series.json()["points"])
+            assert [point["status"] for point in status_only_series.json()["points"]] == [
+                point["status"] for point in response.json()["points"]]
+            assert status_only_series.json()["comparison"] == response.json()["comparison"]
+            assert value_only_series.status_code == 200, value_only_series.text
+            assert [point["value"] for point in value_only_series.json()["points"]] == [
+                point["value"] for point in response.json()["points"]]
+            assert [[point["value"] for point in group["points"]]
+                    for group in value_only_series.json()["scope_series"]] == [
+                        [point["value"] for point in group["points"]]
+                        for group in response.json()["scope_series"]]
+            assert collection.status_code == 200, collection.text
+            assert collection_status.status_code == 200, collection_status.text
+            assert collection_status.json()["entries"][0]["status"] == "measured"
+            assert "value" not in collection_status.json()["entries"][0]
+            assert collection_status.json()["entries"][0]["sources"] == collection.json()["entries"][0]["sources"]
+            assert collection_value.status_code == 200 and collection_value.json()["entries"][0]["value"] == 0
+            assert collection_invalid.status_code == 422
+            assert owned_default.status_code == 200, owned_default.text
+            assert owned_status.status_code == 200, owned_status.text
+            assert all("value" not in point and point["status"] == "measured"
+                       for point in owned_status.json()["points"])
+            assert [point["axis"] for point in owned_status.json()["points"]] == ["2022", "2024"]
+            assert owned_status.json()["publication_id"] == owned_default.json()["publication_id"]
+            assert owned_status.json()["points"][0]["provenance"] == owned_default.json()["points"][0]["provenance"]
+            assert reference_status.status_code == 200, reference_status.text
+            assert all("value" not in point and point["status"] == "measured"
+                       for point in reference_status.json()["points"])
+            assert owned_route_status.status_code == 200, owned_route_status.text
+            assert all("value" not in point and point["status"] == "measured"
+                       for point in owned_route_status.json()["points"])
+            assert profile_default.status_code == 200, profile_default.text
+            assert profile_status.status_code == 200, profile_status.text
+            assert all("value" not in cell and cell["status"] == "measured"
+                       for cell in profile_status.json()["cells"])
+            assert profile_status.json()["axes"] == profile_default.json()["axes"]
+            assert profile_status.json()["sources"] == profile_default.json()["sources"]
+            assert [cell["value"] for cell in profile_value.json()["cells"]] == [.2, .3, .4, .5]
+            assert profile_invalid.status_code == 422
             body = response.json()
             assert [point['axis'] for point in body['points']] == ['2022', '2023', '2024']
             assert body['points'][0]['value'] == 0

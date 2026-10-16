@@ -305,6 +305,15 @@ def test_profile_reader_returns_descriptor_order_and_fails_on_incomplete_snapsho
     assert result["comparison"]["detail"] == "<15"
     assert result["comparison"]["sex"] == "F"
     assert [row["value"] for row in result["comparison"]["values"]] == [.2, .1]
+    selected = declared_profile("commune", "22001", "structure_age", fields=["status"],
+                                repository=SimpleNamespace(connections=Connections()))
+    assert all("value" not in cell and cell["status"] == "measured" for cell in selected["cells"])
+    assert all("value" not in row and row["status"] == "measured"
+               for row in selected["comparison"]["values"])
+    with __import__("pytest").raises(HTTPException) as error:
+        declared_profile("commune", "22001", "structure_age", fields=["sql"],
+                         repository=SimpleNamespace(connections=Connections()))
+    assert error.value.status_code == 422
     for scope, scope_id, membership in (("departement", "22", "29"), ("epci", "E2", "E1")):
         with __import__("pytest").raises(HTTPException) as error:
             declared_profile("commune", "22001", "structure_age", comparison_scope=scope,
