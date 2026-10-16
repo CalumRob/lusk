@@ -2596,7 +2596,21 @@ def _semantic_resource_preflight(conn, item):
     if not isinstance(estimate, dict):
         return 1
     resource = default_resource_catalogue().resources_by_id[item.resource]
-    return estimate.get("work_units", max(1, sum(len(values) for _, values in resource.axis_values)))
+    declared_cells = 1
+    for _axis, values in resource.axis_values:
+        declared_cells *= max(1, len(values))
+    if "ordered_series" in resource.shapes and resource.dynamic_axes:
+        route = _owned_series_route(conn, item.resource)
+        if route:
+            descriptor = conn.execute("""SELECT axis_values FROM series_dataset_descriptor
+                WHERE dataset_id=%s AND indicator_id=%s AND active_read_route""",
+                (route[0], route[3])).fetchone()
+        else:
+            descriptor = conn.execute("SELECT axis_values FROM series_descriptor WHERE indicator_id=%s",
+                                      (item.resource,)).fetchone()
+        if descriptor and descriptor[0]:
+            declared_cells = max(declared_cells, len(descriptor[0]))
+    return estimate.get("work_units", declared_cells)
 
 
 def _semantic_legacy_fields(item):
@@ -2659,8 +2673,14 @@ def _semantic_resource_read(conn, item):
             if not isinstance(rows, list):
                 continue
             dimensions = {"detail": "detail", "sex": "sex", "typequ": "typequ",
-                          "year": "axis", "duration_minute": "axis", "axis": "axis",
+                          "year": "axis", "duration_minute": "axis", "declared_detail": "axis", "axis": "axis",
                           "period": "observation_period", "state_role": "state_role"}
+            for axis, values in selectors.items():
+                if axis in resource.dynamic_axes:
+                    axis_field = dimensions.get(axis, "axis")
+                    available = {row.get(axis_field) for row in rows}
+                    if not set(values) <= available:
+                        raise HTTPException(422, "Coordinate value is not present in the published descriptor")
             data[key] = [row for row in rows if all(
                 axis in dimensions and row.get(dimensions[axis]) in values
                 for axis, values in selectors.items())]

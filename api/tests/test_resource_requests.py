@@ -77,3 +77,17 @@ def test_named_reference_uses_its_producer_declared_non_territory_identity():
     })
     with pytest.raises(ValueError, match="identity"):
         validate_resource_item(wrong, catalogue)
+
+
+def test_dynamic_series_coordinates_defer_value_membership_to_published_descriptor():
+    catalogue = default_resource_catalogue()
+    resource = catalogue.resources_by_id["subventions_annuelles"]
+    assert resource.axes == ("year",)
+    assert resource.dynamic_axes == ("year",)
+    item = ResourceReadItem.model_validate({
+        "resource": "subventions_annuelles",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "coordinates": {"year": ["2024"]},
+        "intent": {"kind": "facts"},
+    })
+    assert validate_resource_item(item, catalogue) == resource

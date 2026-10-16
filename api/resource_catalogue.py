@@ -35,6 +35,7 @@ class IndicatorResource:
     axis_values: tuple[tuple[str, tuple[str, ...]], ...]
     target_kinds: tuple[str, ...]
     target_ids: tuple[str, ...]
+    dynamic_axes: tuple[str, ...]
     fields: tuple[str, ...]
     intents: tuple[str, ...]
 
@@ -112,8 +113,10 @@ def _axis_values(metadata, indicator_id, page, shapes, parent_indicator=None):
             result.append(("sex", tuple(str(value) for value in sexes)))
     if "ordered_series" in shapes:
         route = (metadata.get("owned_series_routes") or {}).get(indicator_id, {})
-        if route.get("axis_values"):
-            result.append((route.get("axis_kind", "axis"), tuple(str(v) for v in route["axis_values"])))
+        kind = page.get("axis_kind", route.get("axis_kind"))
+        values = route.get("axis_values") or page.get("axis_values") or comparison.get("details")
+        if kind:
+            result.append((kind, tuple(str(v) for v in values or ())))
     collection = (metadata.get("observed_collection_contracts") or {}).get(indicator_id, {})
     categories = collection.get("categories")
     if categories:
@@ -148,9 +151,11 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
             raise ValueError("field is not declared for this resource")
     if item.coordinates is not None:
         axes = dict(resource.axis_values)
-        if set(item.coordinates) - set(axes):
+        allowed_axes = set(axes) | set(resource.dynamic_axes)
+        if set(item.coordinates) - allowed_axes:
             raise ValueError("coordinate axis is not declared for this resource")
-        if any(not set(values) <= set(axes[axis]) for axis, values in item.coordinates.items()):
+        if any(axis in axes and axes[axis] and not set(values) <= set(axes[axis])
+               for axis, values in item.coordinates.items()):
             raise ValueError("coordinate value is not declared for this resource")
     if item.intent.kind not in resource.intents:
         raise ValueError("intent is not declared for this resource")
@@ -214,6 +219,11 @@ def discover_indicator_resources(metadata_directory: str | Path) -> ResourceCata
             if parent_indicator is not None:
                 route = (metadata.get("owned_series_routes") or {}).get(parent_indicator, {})
                 axes = (route["axis_kind"],) if route.get("axis_kind") else ()
+            elif "ordered_series" in shapes:
+                route = (metadata.get("owned_series_routes") or {}).get(indicator_id, {})
+                axis_kind = page_descriptor.get("axis_kind", route.get("axis_kind"))
+                if axis_kind:
+                    axes = (axis_kind,)
             if collection.get("kind") == "period_detail":
                 axes = ("period", "detail")
             elif collection.get("kind") == "anchored_membership":
@@ -236,6 +246,8 @@ def discover_indicator_resources(metadata_directory: str | Path) -> ResourceCata
                 target_ids=((str((metadata.get("owned_series_routes") or {})
                                  .get(parent_indicator, {}).get("reference_id")),)
                             if parent_indicator is not None else ()),
+                dynamic_axes=tuple(axis for axis, values in _axis_values(
+                    metadata, indicator_id, page_descriptor, shapes, parent_indicator) if not values),
                 fields=tuple(dict.fromkeys(
                     field for shape in shapes for field in _FIELDS_BY_SHAPE.get(shape, ()))),
                 intents=("facts",),
