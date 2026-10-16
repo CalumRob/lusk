@@ -408,3 +408,17 @@ unavailable until normal publisher replacement. A genuinely empty new
 comparison remains valid when the publisher declares zero eligible support and
 zero lineage. The migration is additive and does not publish data or authorize
 deployment.
+
+# Migration 036 — retire legacy accessibility serving objects
+
+`036_retire_legacy_accessibility_serving.sql` removes the BPE evidence, building
+access, service-access, and mobility-density distribution serving tables and
+their owned validation functions. It removes their obsolete publication tokens
+and narrows the shared publication-token constraints to retained owners. It
+does not use `CASCADE`: an unexpected dependent object aborts the transaction
+for explicit operator review. Retained canonical source records, scalar/profile/
+series/collection/AEDAR facts, provenance, and publication versions are preserved.
+The guarded integration proof applies this migration to a populated schema
+created from the pinned pre-retirement schema, verifies retained values and
+tokens, and checks that excluded tables/functions are absent. This migration
+only changes the serving schema; it does not authorize deployment.

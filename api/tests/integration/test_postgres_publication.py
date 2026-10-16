@@ -171,6 +171,205 @@ def test_reader_role_cannot_insert_or_create(db_env):
             connection.execute("CREATE SCHEMA forbidden_reader_schema")
 
 
+def test_fresh_schema_contains_retained_model_and_excludes_legacy_access_objects(canonical_db_env):
+    """Pin the actual fresh-install object boundary, not only the API inventory."""
+    import psycopg
+
+    excluded = {
+        "access_publication_metadata", "service_registry", "essential_service_access",
+        "building_evidence_descriptor", "building_evidence_descriptor_source",
+        "building_ramp", "building_grid", "bpe_profile_evidence_descriptor",
+        "bpe_profile_class_axis", "bpe_profile_evidence", "bpe_profile_evidence_source",
+        "mobility_density_distribution_descriptor", "mobility_density_distribution_range",
+        "mobility_density_distribution_point",
+    }
+    retained = {
+        "territory_reference", "source_dataset", "source_vintage", "scalar_descriptor",
+        "scalar_observation", "profile_descriptor", "ordered_series",
+        "observed_collection_descriptor", "period_detail_observation", "anchored_membership",
+        "aedar_territorial_aggregate", "aedar_comparison_publication",
+    }
+    with psycopg.connect(canonical_db_env["read_dsn"]) as connection:
+        tables = {row[0] for row in connection.execute("""SELECT table_name
+            FROM information_schema.tables WHERE table_schema=current_schema()
+              AND table_type='BASE TABLE'""")}
+        functions = {row[0] for row in connection.execute("""SELECT p.proname FROM pg_proc p
+            JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname=current_schema()""")}
+    assert excluded.isdisjoint(tables), f"excluded legacy serving tables remain: {sorted(excluded & tables)}"
+    assert retained <= tables, f"retained serving tables missing: {sorted(retained - tables)}"
+    excluded_functions = {
+        "assert_building_fact_source", "assert_building_dataset_complete",
+        "assert_building_descriptor_publication", "assert_current_dataset_complete",
+        "assert_bpe_profile_evidence_complete", "validate_mobility_density_distribution_territory",
+        "assert_mobility_density_distribution_complete",
+    }
+    assert excluded_functions.isdisjoint(functions), (
+        f"excluded legacy validation functions remain: {sorted(excluded_functions & functions)}")
+
+
+def test_migration_036_drops_legacy_access_objects_and_preserves_published_scalar():
+    """Apply the additive retirement to populated pinned pre-change schema data."""
+    import psycopg
+
+    publish_dsn, _ = _configuration()
+    schema = "it_m036_" + uuid.uuid4().hex[:16]
+    created = False
+    root = Path(__file__).resolve().parents[2]
+    old_schema = subprocess.check_output(
+        ["git", "show", "09364831:api/schema.sql"], cwd=root,
+        text=True, encoding="utf-8")
+    migration = (root / "migrations" / "036_retire_legacy_accessibility_serving.sql").read_text(
+        encoding="utf-8")
+    try:
+        with psycopg.connect(publish_dsn, autocommit=True) as connection:
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+            created = True
+            connection.execute(f'SET search_path TO "{schema}"')
+            connection.execute(old_schema)
+            connection.execute("BEGIN")
+            connection.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,
+                department_id,epci_id,density_class_code,density_class_label)
+                VALUES ('MIG-1','commune','Migration fixture','29','E1','D1','Dense')""")
+            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
+                VALUES ('territory_reference','ref-m036-v1',1)""")
+            connection.execute("INSERT INTO source_dataset VALUES ('migration-fixture','Migration fixture')")
+            connection.execute("""INSERT INTO source_vintage(source_id,vintage_id,version)
+                VALUES ('migration-fixture','v1','fixture-v1')""")
+            connection.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,
+                comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version)
+                VALUES ('migration_scalar','habitat','Migration scalar','units','high','migration_scalar',
+                ARRAY['commune'],'fixture denominator','sparse','descriptor-m036-v1')""")
+            connection.execute("""INSERT INTO scalar_descriptor_source
+                VALUES ('migration_scalar','migration-fixture')""")
+            connection.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,
+                value,status,support_count,denominator_count)
+                VALUES ('migration_scalar','MIG-1','commune',0,'measured',0,1)""")
+            connection.execute("""INSERT INTO scalar_observation_source
+                VALUES ('migration_scalar','MIG-1','migration-fixture','v1')""")
+            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
+                reference_content_version)
+                VALUES ('scalar_observation','scalar-m036-v7',1,'ref-m036-v1')""")
+            connection.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES(true,'fixture','Fixture')")
+            connection.execute("INSERT INTO service_registry VALUES ('fixture-service')")
+            connection.execute("""INSERT INTO essential_service_access(territory_id,service,mode,share,
+                indicator_label,effective_direction,source_id,source_name,source_version)
+                VALUES ('MIG-1','fixture-service','car',0.25,'Fixture','high',
+                'migration-fixture','Migration fixture','fixture-v1')""")
+            levels = ["commune", "epci", "departement", "region"]
+            ramp_contract = {
+                "shape": "building_ramp", "peer_statistic": "building_count_weighted_mean",
+                "territory_levels": levels, "direction": "high",
+                "axes": {"mode": ["c", "b", "t"],
+                         "quantile": [0, .1, .2, .3, .4, .5, .6, .7, .8, .9, 1]},
+            }
+            grid_contract = {
+                "shape": "building_grid", "peer_statistic": "pooled_building_counts",
+                "territory_levels": levels,
+                "axes": {"mode": "t", "breadth": ["b1", "b2", "b3", "b4", "b5"],
+                         "depth": ["d1", "d2", "d3", "d4", "d5", "d6"]},
+            }
+            for table_name, version, contract in (
+                ("building_ramp", "ramp-m036-v1", ramp_contract),
+                ("building_grid", "grid-m036-v1", grid_contract),
+            ):
+                connection.execute("""INSERT INTO building_evidence_descriptor
+                    VALUES (%s,%s,%s::jsonb)""", (table_name,version,json.dumps(contract)))
+                connection.execute("""INSERT INTO building_evidence_descriptor_source
+                    VALUES (%s,'migration-fixture')""", (table_name,))
+            connection.execute("""INSERT INTO building_ramp(territory_id,territory_type,availability,mode,
+                quantile_index,quantile,accessible_types,total_buildings,source_id,source_version,effective_direction)
+                VALUES ('MIG-1','commune','absent','c',-1,NULL,NULL,0,'migration-fixture','v1','high')""")
+            connection.execute("""INSERT INTO building_grid(territory_id,territory_type,availability,mode,
+                cell_index,breadth_bucket,depth_bucket,building_count,total_buildings,source_id,source_version)
+                VALUES ('MIG-1','commune','absent','t',-1,NULL,NULL,NULL,0,'migration-fixture','v1')""")
+            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
+                reference_content_version) VALUES ('building_ramp','ramp-m036-v1',1,'ref-m036-v1'),
+                ('building_grid','grid-m036-v1',1,'ref-m036-v1')""")
+
+            # Seed the BPE legacy family as a coherent four-class partition. Its
+            # deferred trigger is exercised at commit before migration removes it.
+            connection.execute("""INSERT INTO bpe_profile_evidence_descriptor(singleton,indicator_id,
+                descriptor_version,allowed_levels,completeness,classification_id,universe_count,
+                universe_sha256,registry_filename,registry_semantic_effect,membership_sha256,source_id,vintage_id)
+                VALUES(true,'bpe_access_profile','bpe-m036-v1',ARRAY['commune','epci','departement','region'],
+                'dense_complete','fixture-classification',1,repeat('a',64),'fixture.csv','fixture effect',
+                repeat('b',64),'migration-fixture','v1')""")
+            for ordinal, (class_key, label, count) in enumerate((
+                ('class-a','Class A',1),('class-b','Class B',0),
+                ('class-c','Class C',0),('class-d','Class D',0),
+            )):
+                connection.execute("""INSERT INTO bpe_profile_class_axis
+                    VALUES (%s,%s,%s,%s)""", (class_key,label,ordinal,'none'))
+                exemplar = ('A123','Fixture TYPEQU',0.1,0.2,0.3) if count else (None,None,None,None,None)
+                connection.execute("""INSERT INTO bpe_profile_evidence(territory_id,territory_type,class_key,
+                    class_label,class_count,universe_count,exemplar_typequ,exemplar_label,exemplar_c,exemplar_b,exemplar_t)
+                    VALUES ('MIG-1','commune',%s,%s,%s,1,%s,%s,%s,%s,%s)""",
+                    (class_key,label,count,*exemplar))
+                connection.execute("""INSERT INTO bpe_profile_evidence_source
+                    VALUES ('commune','MIG-1',%s,'migration-fixture','v1')""", (class_key,))
+            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
+                reference_content_version) VALUES ('bpe_profile_evidence','bpe-m036-v1',4,'ref-m036-v1')""")
+
+            # Exercise the legacy mobility distribution's own dense-axis trigger.
+            connection.execute("INSERT INTO source_dataset VALUES ('mobilite_snapshot','Mobility fixture')")
+            connection.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('mobilite_snapshot','v1','fixture-v1')")
+            connection.execute("""INSERT INTO mobility_density_distribution_descriptor
+                VALUES(true,'density-m036-v1','mobilite_snapshot','v1',1,
+                ARRAY['commune','epci','departement','region'],'km','%')""")
+            connection.execute("""INSERT INTO mobility_density_distribution_range
+                VALUES('MIG-1','commune',1,3,'measured','mobilite_snapshot','v1')""")
+            connection.execute("""INSERT INTO mobility_density_distribution_point
+                VALUES('MIG-1','commune',0,2,'measured',50,'measured','mobilite_snapshot','v1')""")
+            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
+                reference_content_version) VALUES ('mobility_density_distribution','density-m036-v1',2,'ref-m036-v1')""")
+            connection.execute("COMMIT")
+
+            before_scalar = connection.execute("""SELECT o.value,o.status,o.support_count,
+                o.denominator_count,s.source_id,s.vintage_id,p.content_version,p.reference_content_version
+                FROM scalar_observation o JOIN scalar_observation_source s USING(indicator_id,territory_id)
+                JOIN table_publication p ON p.table_name='scalar_observation'
+                WHERE o.indicator_id='migration_scalar'""").fetchone()
+            connection.execute(migration)
+            objects = {row[0] for row in connection.execute("""SELECT table_name
+                FROM information_schema.tables WHERE table_schema=current_schema()
+                  AND table_type='BASE TABLE'""")}
+            legacy = {
+                "access_publication_metadata", "service_registry", "essential_service_access",
+                "building_evidence_descriptor", "building_evidence_descriptor_source",
+                "building_ramp", "building_grid", "bpe_profile_evidence_descriptor",
+                "bpe_profile_class_axis", "bpe_profile_evidence", "bpe_profile_evidence_source",
+                "mobility_density_distribution_descriptor", "mobility_density_distribution_range",
+                "mobility_density_distribution_point",
+            }
+            assert legacy.isdisjoint(objects), sorted(legacy & objects)
+            after_scalar = connection.execute("""SELECT o.value,o.status,o.support_count,
+                o.denominator_count,s.source_id,s.vintage_id,p.content_version,p.reference_content_version
+                FROM scalar_observation o JOIN scalar_observation_source s USING(indicator_id,territory_id)
+                JOIN table_publication p ON p.table_name='scalar_observation'
+                WHERE o.indicator_id='migration_scalar'""").fetchone()
+            assert after_scalar == before_scalar
+            assert connection.execute("""SELECT content_version FROM table_publication
+                WHERE table_name='territory_reference'""").fetchone()[0] == 'ref-m036-v1'
+            assert connection.execute("""SELECT count(*) FROM scalar_descriptor_source
+                WHERE indicator_id='migration_scalar' AND source_id='migration-fixture'""").fetchone()[0] == 1
+            functions = {row[0] for row in connection.execute("""SELECT proname FROM pg_proc p
+                JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname=current_schema()""")}
+            assert not functions.intersection({
+                "assert_building_fact_source", "assert_building_dataset_complete",
+                "assert_building_descriptor_publication", "assert_current_dataset_complete",
+                "assert_bpe_profile_evidence_complete", "validate_mobility_density_distribution_territory",
+                "assert_mobility_density_distribution_complete",
+            })
+            triggers = {row[0] for row in connection.execute("""SELECT tgname FROM pg_trigger t
+                JOIN pg_class c ON c.oid=t.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace
+                WHERE n.nspname=current_schema() AND NOT tgisinternal""")}
+            assert {"scalar_observation_levels", "scalar_observation_source_required"} <= triggers
+    finally:
+        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
 def test_scalar_services_database_reader_matches_legacy_for_level_and_scope_matrix(db_env, monkeypatch):
     """Exercise both SQL readers against the same disposable PostgreSQL snapshot.
 
@@ -1123,7 +1322,8 @@ def _restore_populated_pre_lineage_comparisons(connection, root):
 
 @pytest.mark.parametrize("publication_schema", ["fresh", "populated_upgrade"])
 def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, tmp_path, publication_schema):
-    """Exercise actual R registries/adapters through PostgreSQL and the API read route."""
+    """Exercise R publishers through the semantic single/batch API against PostgreSQL."""
+    from dataclasses import replace
     import psycopg
     from fastapi.testclient import TestClient
     from psycopg_pool import ConnectionPool
@@ -1153,6 +1353,21 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
     manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert manifest["schema"] == canonical_db_env["schema"]
 
+    catalogue = main.default_resource_catalogue()
+    resources = list(catalogue.resources)
+
+    def fixture_resource(resource_id, shape):
+        template = next(resource for resource in catalogue.resources if shape in resource.shapes)
+        resources.append(replace(template, resource_id=resource_id, indicator_id=resource_id))
+
+    # These fixture-only identities mirror real producer shapes while keeping
+    # discovery's production catalogue unchanged. The guarded test opts into
+    # them explicitly so the actual typed readers can verify R's publications.
+    fixture_resource("lineage_sparse", "scalar")
+    fixture_resource(manifest["ordered_series"]["indicator_id"], "ordered_series")
+    fixture_resource(manifest["numeric_collection"]["indicator_id"], "period_detail")
+    test_catalogue = replace(catalogue, resources=tuple(resources))
+
     pool = ConnectionPool(conninfo=read_dsn, min_size=0, max_size=2, open=True,
         kwargs={"autocommit": True})
     query_trace = []
@@ -1173,36 +1388,70 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
             return acquire()
     trace_pool = TracePool()
     previous = main.app.dependency_overrides.get(main.get_repository)
+    previous_catalogue = main.app.dependency_overrides.get(main.get_resource_catalogue)
     main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(trace_pool)
+    main.app.dependency_overrides[main.get_resource_catalogue] = lambda: test_catalogue
+
+    def semantic_item(resource, territory_type, territory_id, *, fields=None,
+                      intent=None, members=None):
+        target = {"kind": "territory", "type": territory_type, "id": territory_id}
+        if intent == "facts":
+            intent_value = {"kind": "facts"}
+        elif members is not None:
+            intent_value = {"kind": "selected_comparison", "members": [
+                {"type": level, "id": code} for level, code in members]}
+        else:
+            intent_value = {"kind": "fixed_comparison", "context": "default"}
+        item = {"resource": resource, "target": target, "intent": intent_value}
+        if fields is not None:
+            item["fields"] = fields
+        return item
+
+    def post_semantic(client, item):
+        return client.post("/api/resources/read", json=item)
+
+    def post_semantic_batch(client, items):
+        return client.post("/api/resources/read-batch", json={"items": items})
     try:
+        series_fixture = manifest["ordered_series"]
+        collection_fixture = manifest["numeric_collection"]
+        comparison_items = [
+            semantic_item("densite", "commune", "22001"),
+            semantic_item("structure_age", "commune", "22001"),
+            semantic_item("lineage_sparse", "commune", "22001"),
+            semantic_item(series_fixture["indicator_id"], series_fixture["level"],
+                          series_fixture["territory_id"]),
+            semantic_item(collection_fixture["indicator_id"], "commune",
+                          collection_fixture["territory_id"]),
+            semantic_item(collection_fixture["indicator_id"], "commune",
+                          collection_fixture["empty_territory_id"]),
+        ]
+
+        def read_comparisons():
+            with TestClient(main.app) as client:
+                singles = [post_semantic(client, item) for item in comparison_items]
+                batch = post_semantic_batch(client, [
+                    {"id": f"comparison-{index}", **item}
+                    for index, item in enumerate(comparison_items)])
+                return singles, batch
+
+        expected_responses, expected_batch = read_comparisons()
+        assert all(response.status_code == 200 for response in expected_responses), [
+            response.text for response in expected_responses]
+        assert expected_batch.status_code == 200, expected_batch.text
+        assert [row["data"] for row in expected_batch.json()["results"]] == [
+            response.json() for response in expected_responses]
         if publication_schema == "populated_upgrade":
             root = Path(__file__).resolve().parents[2]
-            series_fixture = manifest["ordered_series"]
-            comparison_requests = [
-                ("/api/territories/commune/22001/themes/demographie/comparison",
-                 {"theme_id": "demographie"}),
-                (f"/api/territories/{series_fixture['level']}/{series_fixture['territory_id']}"
-                 f"/indicators/{series_fixture['indicator_id']}/comparison", {"selection": None}),
-                (f"/api/territories/commune/{manifest['numeric_collection']['empty_territory_id']}"
-                 "/themes/demographie/comparison", {"theme_id": "demographie"}),
-                *[(f"/api/territories/commune/22001/indicators/{indicator}/comparison",
-                   {"selection": None}) for indicator in
-                  ("densite", "structure_age", manifest["numeric_collection"]["indicator_id"])],
-            ]
-
-            def read_comparisons():
-                with TestClient(main.app) as client:
-                    return [client.post(path, json=body) for path, body in comparison_requests]
-
-            expected_responses = read_comparisons()
-            assert all(response.status_code == 200 for response in expected_responses)
             with psycopg.connect(publish_dsn) as publisher:
                 old_rows = _restore_populated_pre_lineage_comparisons(publisher, root)
                 reader = urlsplit(read_dsn).username
                 assert reader and re.fullmatch(r"[A-Za-z0-9_$-]+", reader)
                 publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{canonical_db_env["schema"]}" TO "{reader}"')
             # Unapplied storage must be intentionally unavailable, not a 500.
-            assert [response.status_code for response in read_comparisons()] == [503] * len(comparison_requests)
+            unavailable_singles, unavailable_batch = read_comparisons()
+            assert [response.status_code for response in unavailable_singles] == [503] * len(comparison_items)
+            assert unavailable_batch.status_code == 503
             with psycopg.connect(publish_dsn, autocommit=True) as publisher:
                 for migration in ("033_comparison_source_lineage.sql",
                                   "034_ordered_series_comparison_lineage.sql",
@@ -1220,7 +1469,9 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                 # Newly created lineage tables need the dedicated test reader grant;
                 # migration grants target the production role names, not this test role.
                 publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{canonical_db_env["schema"]}" TO "{reader}"')
-            assert [response.status_code for response in read_comparisons()] == [503] * len(comparison_requests)
+            unavailable_singles, unavailable_batch = read_comparisons()
+            assert [response.status_code for response in unavailable_singles] == [503] * len(comparison_items)
+            assert unavailable_batch.status_code == 503
             republish_env = dict(env, LUSK_LINEAGE_TEST_REPUBLISH=str(bundle_path))
             # Two separate invocations prove the supported unchanged retry/no-op
             # path, not just the initial repair after an additive upgrade.
@@ -1230,10 +1481,13 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                     ["Rscript", "scripts/smoke-comparison-lineage-fixture.R"],
                     cwd=pipeline, env=republish_env, capture_output=True, text=True, timeout=120)
                 assert repaired.returncode == 0, repaired.stdout + "\n" + repaired.stderr
-                actual_responses = read_comparisons()
+                actual_responses, actual_batch = read_comparisons()
                 assert all(response.status_code == 200 for response in actual_responses), [
                     response.text for response in actual_responses]
                 assert [response.json() for response in actual_responses] == [
+                    response.json() for response in expected_responses]
+                assert actual_batch.status_code == 200, actual_batch.text
+                assert [row["data"] for row in actual_batch.json()["results"]] == [
                     response.json() for response in expected_responses]
                 with psycopg.connect(publish_dsn) as publisher:
                     markers = {table: sorted(publisher.execute(f'SELECT * FROM "{table}"').fetchall(), key=repr)
@@ -1241,19 +1495,16 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                 if repaired_markers is not None:
                     assert markers == repaired_markers, "Unchanged retry must not republish markers"
                 repaired_markers = markers
-        with TestClient(main.app) as client:
-            response = client.post("/api/territories/commune/22001/themes/demographie/comparison",
-                json={"theme_id": "demographie"})
-        assert response.status_code == 200, response.text
-        body = response.json()
-        scalar = {row["indicator_id"]: row for row in body["results"]}
-        profile = {row["indicator"]: row for row in body["profile_comparisons"]}
-        assert body["scalar_content_version"]
-        assert body["profile_content_version"]
-        assert "densite" in scalar and "structure_age" in profile
-        assert "lineage_sparse" in scalar
-        assert scalar["lineage_sparse"]["status"] == "unavailable"
-        assert scalar["lineage_sparse"]["comparison_sources"] == []
+        scalar = expected_responses[0].json()["result"]
+        profile = expected_responses[1].json()["result"]
+        sparse = expected_responses[2].json()["result"]
+        assert expected_responses[0].json()["content_version"]
+        assert expected_responses[1].json()["profile_content_version"]
+        assert scalar["indicator_id"] == "densite"
+        assert profile["indicator_id"] == "structure_age"
+        assert sparse["indicator_id"] == "lineage_sparse"
+        assert sparse["status"] == "unavailable"
+        assert sparse["comparison_sources"] == []
 
         expected_scalar_pairs = {
             (row["source_id"], row["vintage_id"])
@@ -1261,32 +1512,29 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
             if row["facet_id"] == "densite"
         }
         actual_scalar_pairs = {(row["source_id"], row["vintage_id"])
-            for row in scalar["densite"]["comparison_sources"]}
+            for row in scalar["comparison_sources"]}
         expected_profile_pairs = {
             (row["source_id"], row["vintage_id"])
             for row in manifest["profile"]["source_pairs"]
             if row["facet_id"] == "structure_age"
         }
         actual_profile_pairs = {(row["source_id"], row["vintage_id"])
-            for row in profile["structure_age"]["comparison_sources"]}
+            for row in profile["comparison_sources"]}
         assert expected_scalar_pairs and actual_scalar_pairs == expected_scalar_pairs
         assert expected_profile_pairs and actual_profile_pairs == expected_profile_pairs
 
-        # Compose a genuine focal read with this R-published theme comparison.
-        # Its declared detail profile makes metadata preflight distinguish
-        # detail comparison profiles from scalar-backed profiles.
+        # Compose focal facts and comparison through the semantic single and
+        # batch contract, retaining the same resource and optional field set.
+        facts_item = semantic_item("densite", "commune", "22001",
+                                   fields=["value"], intent="facts")
+        comparison_item = semantic_item("densite", "commune", "22001", fields=["median"])
         with TestClient(main.app) as client:
-            single_facts = client.get(
-                "/api/territories/commune/22001/themes/demographie/facts?fields=value")
-            single_comparison = client.post(
-                "/api/territories/commune/22001/themes/demographie/comparison?fields=median",
-                json={"theme_id": "demographie"})
-            combined = client.post("/api/read-batch", json={"items": [
-                {"id": "facts", "resource": "theme_facts", "territory_type": "commune",
-                 "territory_id": "22001", "theme_id": "demographie", "fields": ["value"]},
-                {"id": "comparison", "resource": "theme_comparison", "territory_type": "commune",
-                 "territory_id": "22001", "theme_id": "demographie", "fields": ["median"]},
-            ]})
+            single_facts = post_semantic(client, facts_item)
+            single_comparison = post_semantic(client, comparison_item)
+            combined = post_semantic_batch(client, [
+                {"id": "facts", **facts_item},
+                {"id": "comparison", **comparison_item},
+            ])
         assert single_facts.status_code == single_comparison.status_code == 200
         assert combined.status_code == 200, combined.text
         batch_data = {item["id"]: item["data"] for item in combined.json()["results"]}
@@ -1294,21 +1542,22 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
 
         # An unknown later named comparison must be rejected during metadata
         # preflight, before a preceding valid fact item reads observations.
-        fact_item = {"id": "facts", "resource": "theme_facts", "territory_type": "commune",
-            "territory_id": "22001", "theme_id": "demographie", "fields": ["value"]}
-        unknown_item = {"id": "unknown", "resource": "indicator_comparison",
-            "territory_type": "commune", "territory_id": "22001",
-            "indicator_id": "not_registered_fixture_indicator"}
+        fact_item = {"id": "facts", **facts_item}
+        unknown_item = {"id": "unknown", **semantic_item(
+            "not_registered_fixture_indicator", "commune", "22001")}
         with TestClient(main.app) as client:
-            single_unknown = client.post(
+            retired_route = client.post(
                 "/api/territories/commune/22001/indicators/not_registered_fixture_indicator/comparison")
+            single_unknown = post_semantic(client, {key: value for key, value in unknown_item.items()
+                                                      if key != "id"})
             unknown_batches = []
             for items in ([fact_item, unknown_item], [unknown_item, fact_item]):
                 query_trace.clear()
-                failed = client.post("/api/read-batch", json={"items": items})
+                failed = post_semantic_batch(client, items)
                 unknown_batches.append((failed.status_code, failed.json(), list(query_trace)))
-        assert single_unknown.status_code == 404
-        assert all(status == 404 and "results" not in body and "data" not in body
+        assert retired_route.status_code == 404
+        assert single_unknown.status_code == 422
+        assert all(status == 422 and "results" not in body and "data" not in body
                    for status, body, _ in unknown_batches)
         forbidden_read_tokens = ("scalar_observation", "profile_observation", "series_observation",
             "comparison_group", "comparison_territory", "comparison_result")
@@ -1324,16 +1573,13 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                 reference_content_version FROM scalar_comparison_publication WHERE singleton""").fetchone()
             publisher.execute("UPDATE scalar_comparison_publication SET scalar_content_version='stale-scalar-fixture'")
         stale_comparison_batches = []
+        stale_comparison_item = {"id": "comparison", **semantic_item("densite", "commune", "22001")}
         try:
             with TestClient(main.app) as client:
-                for items in ([fact_item, {"id": "comparison", "resource": "theme_comparison",
-                                  "territory_type": "commune", "territory_id": "22001",
-                                  "theme_id": "demographie"}],
-                              [{"id": "comparison", "resource": "theme_comparison",
-                                "territory_type": "commune", "territory_id": "22001",
-                                "theme_id": "demographie"}, fact_item]):
+                for items in ([fact_item, stale_comparison_item],
+                              [stale_comparison_item, fact_item]):
                     query_trace.clear()
-                    failed = client.post("/api/read-batch", json={"items": items})
+                    failed = post_semantic_batch(client, items)
                     stale_comparison_batches.append((failed.status_code, failed.json(), list(query_trace)))
         finally:
             with psycopg.connect(publish_dsn, autocommit=True) as publisher:
@@ -1349,62 +1595,56 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                            for sql in trace)
                    for _, _, trace in stale_comparison_batches), stale_comparison_batches
 
-        alias_path="/api/territories/commune/22001/indicators/structure_age"
+        profile_full_item = semantic_item("structure_age", "commune", "22001", intent="facts")
+        profile_status_item = profile_full_item
+        profile_value_item = semantic_item("structure_age", "commune", "22001",
+                                           fields=["value"], intent="facts")
+        profile_invalid_item = semantic_item("structure_age", "commune", "22001",
+                                             fields=["mean"], intent="facts")
         with TestClient(main.app) as client:
-            alias_full=client.get(alias_path)
-            alias_status=client.get(alias_path+"?fields=status")
-            alias_value=client.get(alias_path+"?fields=value")
-            alias_invalid=client.get(alias_path+"?fields=mean")
-            profile_status=client.get("/api/territories/commune/22001/profiles/structure_age?fields=status")
-            profile_value=client.get("/api/territories/commune/22001/profiles/structure_age?fields=value")
+            alias_full=post_semantic(client, profile_full_item)
+            alias_status=post_semantic(client, profile_status_item)
+            alias_value=post_semantic(client, profile_value_item)
+            alias_invalid=post_semantic(client, profile_invalid_item)
+            profile_status=post_semantic(client, profile_status_item)
+            profile_value=post_semantic(client, profile_value_item)
         assert alias_full.status_code==alias_status.status_code==alias_value.status_code==200
         assert alias_invalid.status_code==422
         assert profile_status.status_code==profile_value.status_code==200
         full_profile=alias_full.json()
         selected_status,selected_value=alias_status.json(),alias_value.json()
-        assert selected_value["cells"]==full_profile["cells"]
+        assert selected_value["observations"]==full_profile["observations"]
         assert all("value" in cell and cell["status"] in ("measured","suppressed","unsupported","not_available")
-            and cell["sources"] for cell in full_profile["cells"])
-        assert full_profile["axes"] and full_profile["descriptor_version"] and full_profile["content_version"]
-        assert any("median" in row and "rank" in row
-            for row in full_profile["default_comparison"]["results"])
-        assert all("value" not in cell for cell in selected_status["cells"])
+            and cell["sources"] for cell in full_profile["observations"])
+        assert full_profile["descriptor"]["axes"] and full_profile["descriptor"]["descriptor_version"] and full_profile["content_version"]
+        assert all("status" in cell for cell in selected_status["observations"])
         def profile_axis_status_values(cells, *, include_value):
             keys=("detail","sex","status","value") if include_value else ("detail","sex","status")
             return [{key:cell.get(key) for key in keys} for cell in cells]
-        assert profile_axis_status_values(full_profile["cells"],include_value=True)==profile_axis_status_values(
-            profile_value.json()["cells"],include_value=True)
-        assert profile_axis_status_values(selected_status["cells"],include_value=False)==profile_axis_status_values(
-            profile_status.json()["cells"],include_value=False)
-        assert all(cell["status"]==full_profile["cells"][index]["status"]
-            and cell["sources"]==full_profile["cells"][index]["sources"]
-            and cell["detail"]==full_profile["cells"][index]["detail"]
-            and cell.get("sex")==full_profile["cells"][index].get("sex")
-            for index,cell in enumerate(selected_status["cells"]))
-        assert {key:selected_status[key] for key in
-            ("indicator","label","unit","axes","descriptor_version","content_version")} == {
-                key:full_profile[key] for key in
-                ("indicator","label","unit","axes","descriptor_version","content_version")}
-        comparison_optional={"focal_value","median","rank","rank_size","rank_ties",
-            "selected_member_count","eligible_count","missing_count","mean","mean_curve"}
-        assert all(not comparison_optional & set(row)
-            for row in selected_status["default_comparison"]["results"])
-        assert all(not comparison_optional & set(row)
-            for row in selected_value["default_comparison"]["results"])
-        assert all(row["status"]==full_profile["default_comparison"]["results"][index]["status"]
-            and row["comparison_sources"]==full_profile["default_comparison"]["results"][index]["comparison_sources"]
-            for index,row in enumerate(selected_status["default_comparison"]["results"]))
+        assert profile_axis_status_values(full_profile["observations"],include_value=True)==profile_axis_status_values(
+            profile_value.json()["observations"],include_value=True)
+        assert profile_axis_status_values(selected_status["observations"],include_value=True)==profile_axis_status_values(
+            profile_status.json()["observations"],include_value=True)
+        assert all(cell["status"]==full_profile["observations"][index]["status"]
+            and cell["sources"]==full_profile["observations"][index]["sources"]
+            and cell["detail"]==full_profile["observations"][index]["detail"]
+            and cell.get("sex")==full_profile["observations"][index].get("sex")
+            for index,cell in enumerate(selected_status["observations"]))
+        assert {key:selected_status["descriptor"][key] for key in
+            ("indicator","label","unit","axes","descriptor_version")} == {
+                key:full_profile["descriptor"][key] for key in
+                ("indicator","label","unit","axes","descriptor_version")}
 
-        profile_only = client.post(
-            "/api/territories/commune/22001/indicators/structure_age/comparison?fields=median")
-        profile_invalid_field=client.post(
-            "/api/territories/commune/22001/indicators/structure_age/comparison?fields=mean")
+        profile_only = post_semantic(client, semantic_item(
+            "structure_age", "commune", "22001", fields=["median"]))
+        profile_invalid_field=post_semantic(client, semantic_item(
+            "structure_age", "commune", "22001", fields=["mean"]))
         assert profile_only.status_code == 200, profile_only.text
         assert profile_invalid_field.status_code == 422
         profile_result = profile_only.json()["result"]
-        assert profile_result["median"] == profile["structure_age"]["median"]
-        assert profile_result["status"] == profile["structure_age"]["status"]
-        assert profile_result["comparison_sources"] == profile["structure_age"]["comparison_sources"]
+        assert profile_result["median"] == profile["median"]
+        assert profile_result["status"] == profile["status"]
+        assert profile_result["comparison_sources"] == profile["comparison_sources"]
         assert not {"focal_value","rank","rank_size","rank_ties","eligible_count"} & set(profile_result)
 
         series = manifest["ordered_series"]
@@ -1415,37 +1655,32 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                 captured_publication_reads.append((sql,params))
             return original_publication_read(connection,sql,params)
         main._execute_comparison_publication_read=capture_publication_read
+        series_item = semantic_item(series["indicator_id"], series["level"],
+                                    series["territory_id"])
+        owned_item_data = semantic_item(series["indicator_id"], series["level"],
+                                        series["territory_id"], intent="facts")
         with TestClient(main.app) as client:
-            series_response = client.post(
-                f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison",
-                json={"selection": None})
-            owned_single = client.get(
-                f"/api/series-datasets/{series['dataset_id']}/territories/{series['level']}/"
-                f"{series['territory_id']}/{series['indicator_id']}?scope_level={series['level']}")
-            owned_batch = client.post("/api/read-batch", json={"items": [{
-                "id": "owned-series", "resource": "owned_dataset",
-                "dataset_id": series["dataset_id"], "territory_type": series["level"],
-                "territory_id": series["territory_id"], "indicator_id": series["indicator_id"],
-                "scope_level": series["level"]}]})
+            series_response = post_semantic(client, series_item)
+            owned_single = post_semantic(client, owned_item_data)
+            owned_batch = post_semantic_batch(client, [{"id": "owned-series", **owned_item_data}])
         assert series_response.status_code == 200, series_response.text
         assert owned_single.status_code == owned_batch.status_code == 200, (
             owned_single.text, owned_batch.text)
         owned = owned_single.json()
         assert owned_batch.json()["results"][0]["data"] == owned
-        assert owned["scope_series"], "owned-series response must include published cohort rows"
+        assert owned.get("observations") or owned.get("points"), "owned-series read must expose published focal rows"
         owned_pairs = {(source["source_id"], source["vintage_id"])
-            for group in owned["scope_series"] for point in group["points"]
-            for source in point["provenance"]}
-        assert owned_pairs == {("fixture_a", "v1"), ("fixture_a", "v2"),
-                               ("fixture_b", "v1"), ("fixture_b", "v2")}
+            for row in owned.get("observations", owned.get("points", []))
+            for source in row.get("sources", row.get("provenance", []))}
+        # Focal facts retain the focal territory's two axis vintages; the
+        # comparison-lineage assertion below separately checks cohort-wide
+        # vintages across all eligible territories.
+        assert owned_pairs == {("fixture_a", "v1"), ("fixture_b", "v1")}
         # Stale owned dataset markers reject either item position in metadata
         # preflight; query_trace records the actual connection statements.
-        owned_item = {"id":"owned","resource":"owned_dataset",
-            "dataset_id":series["dataset_id"],"territory_type":series["level"],
-            "territory_id":series["territory_id"],"indicator_id":series["indicator_id"],
-            "scope_level":series["level"]}
-        profile_item = {"id":"profile","resource":"direct_profile","territory_type":"commune",
-            "territory_id":"22001","indicator_id":"structure_age"}
+        owned_item = {"id":"owned", **series_item}
+        profile_item = {"id":"profile", **semantic_item(
+            "structure_age", "commune", "22001", intent="facts")}
         with psycopg.connect(publish_dsn,autocommit=True) as publisher:
             owned_reference_version=publisher.execute("SELECT reference_content_version FROM series_dataset_publication WHERE dataset_id=%s",
                 (series["dataset_id"],)).fetchone()[0]
@@ -1456,7 +1691,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         owned_preflight_failures=[]
         for items in ([owned_item,profile_item],[profile_item,owned_item]):
             query_trace.clear()
-            failed=client.post("/api/read-batch",json={"items":items})
+            failed=post_semantic_batch(client,items)
             owned_preflight_failures.append((failed.status_code,failed.json(),list(query_trace)))
         with psycopg.connect(publish_dsn,autocommit=True) as publisher:
             publisher.execute("ALTER TABLE series_dataset_publication DISABLE TRIGGER series_dataset_publication_complete")
@@ -1476,12 +1711,10 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert {source for source,_ in actual_series_pairs} == {"fixture_b"}
         assert {vintage for _,vintage in actual_series_pairs} == {"v1", "v2"}
         with TestClient(main.app) as client:
-            series_rank_only = client.post(
-                f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison?fields=rank",
-                json={"selection":None})
-            series_invalid_field=client.post(
-                f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison?fields=mean",
-                json={"selection":None})
+            series_rank_only = post_semantic(client, semantic_item(
+                series["indicator_id"], series["level"], series["territory_id"], fields=["rank"]))
+            series_invalid_field=post_semantic(client, semantic_item(
+                series["indicator_id"], series["level"], series["territory_id"], fields=["mean"]))
         main._execute_comparison_publication_read=original_publication_read
         assert series_rank_only.status_code == 200, series_rank_only.text
         assert series_invalid_field.status_code == 422
@@ -1500,13 +1733,11 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert not {"focal_value","median","rank_size","rank_ties","eligible_count"} & set(rank_result)
 
         collection = manifest["numeric_collection"]
-        with TestClient(main.app) as client:
-            collection_response = client.post(
-                f"/api/territories/commune/{collection['territory_id']}/themes/{collection['theme_id']}/comparison",
-                json={"theme_id": collection["theme_id"]})
+        collection_item = semantic_item(collection["indicator_id"], "commune",
+                                        collection["territory_id"])
+        collection_response = expected_responses[4]
         assert collection_response.status_code == 200, collection_response.text
-        collection_results = {row["indicator_id"]:row for row in collection_response.json()["results"]}
-        collection_result = collection_results[collection["indicator_id"]]
+        collection_result = collection_response.json()["result"]
         expected_collection_pairs = {(row["source_id"],row["vintage_id"]) for row in collection["source_pairs"]}
         actual_collection_pairs = {(row["source_id"],row["vintage_id"])
             for row in collection_result["comparison_sources"]}
@@ -1520,13 +1751,11 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
             publisher.execute("UPDATE observed_collection_publication SET reference_content_version='stale-collection-ref' WHERE indicator_id=%s",
                               (collection["indicator_id"],))
             publisher.execute("ALTER TABLE observed_collection_publication ENABLE TRIGGER observed_collection_publication_contract")
-        collection_item={"id":"collection","resource":"indicator_comparison",
-            "territory_type":"commune","territory_id":collection["territory_id"],
-            "indicator_id":collection["indicator_id"],"selection":None}
+        collection_batch_item={"id":"collection", **collection_item}
         collection_preflight_failures=[]
-        for items in ([collection_item,profile_item],[profile_item,collection_item]):
+        for items in ([collection_batch_item,profile_item],[profile_item,collection_batch_item]):
             query_trace.clear()
-            failed=client.post("/api/read-batch",json={"items":items})
+            failed=post_semantic_batch(client,items)
             collection_preflight_failures.append((failed.status_code,failed.json(),list(query_trace)))
         with psycopg.connect(publish_dsn,autocommit=True) as publisher:
             publisher.execute("ALTER TABLE observed_collection_publication DISABLE TRIGGER observed_collection_publication_contract")
@@ -1538,10 +1767,10 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert all(not any("period_detail_observation" in sql or "profile_observation" in sql
                            for sql in trace) for _,_,trace in collection_preflight_failures)
         with TestClient(main.app) as client:
-            collection_median = client.post(
-                f"/api/territories/commune/{collection['territory_id']}/indicators/{collection['indicator_id']}/comparison?fields=median")
-            collection_invalid_field=client.post(
-                f"/api/territories/commune/{collection['territory_id']}/indicators/{collection['indicator_id']}/comparison?fields=rank_ties")
+            collection_median = post_semantic(client, semantic_item(
+                collection["indicator_id"], "commune", collection["territory_id"], fields=["median"]))
+            collection_invalid_field=post_semantic(client, semantic_item(
+                collection["indicator_id"], "commune", collection["territory_id"], fields=["mean"]))
         assert collection_median.status_code == 200, collection_median.text
         assert collection_invalid_field.status_code == 422
         selected_collection=collection_median.json()["result"]
@@ -1550,12 +1779,10 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert selected_collection["comparison_sources"] == collection_result["comparison_sources"]
         assert not {"rank","rank_size","eligible_count","missing_count"} & set(selected_collection)
         with TestClient(main.app) as client:
-            empty_collection_response = client.post(
-                f"/api/territories/commune/{collection['empty_territory_id']}/themes/{collection['theme_id']}/comparison",
-                json={"theme_id": collection["theme_id"]})
+            empty_collection_response = post_semantic(client, semantic_item(
+                collection["indicator_id"], "commune", collection["empty_territory_id"]))
         assert empty_collection_response.status_code == 200, empty_collection_response.text
-        empty_collection = next(row for row in empty_collection_response.json()["results"]
-            if row["indicator_id"]==collection["indicator_id"])
+        empty_collection = empty_collection_response.json()["result"]
         assert empty_collection["status"] == "unavailable"
         assert empty_collection["comparison_sources"] == []
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
@@ -1566,9 +1793,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                 (collection["indicator_id"],)).fetchall()
             assert removed_collection_lineage
         with TestClient(main.app) as client:
-            truncated_collection = client.post(
-                f"/api/territories/commune/{collection['territory_id']}/themes/{collection['theme_id']}/comparison",
-                json={"theme_id": collection["theme_id"]})
+            truncated_collection = post_semantic(client, collection_item)
         assert truncated_collection.status_code == 503
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
             publisher.cursor().executemany("""INSERT INTO observed_collection_comparison_lineage
@@ -1578,9 +1803,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                 [(collection["indicator_id"],*row) for row in removed_collection_lineage])
             publisher.execute("ALTER TABLE observed_collection_comparison_lineage ENABLE TRIGGER observed_collection_comparison_lineage_owned_write")
         with TestClient(main.app) as client:
-            restored_collection = client.post(
-                f"/api/territories/commune/{collection['territory_id']}/themes/{collection['theme_id']}/comparison",
-                json={"theme_id": collection["theme_id"]})
+            restored_collection = post_semantic(client, collection_item)
         assert restored_collection.status_code == 200, restored_collection.text
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
             publisher.execute("ALTER TABLE observed_collection_comparison_lineage DISABLE TRIGGER observed_collection_comparison_lineage_owned_write")
@@ -1588,9 +1811,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                 (collection["indicator_id"],))
             publisher.execute("ALTER TABLE observed_collection_comparison_lineage ENABLE TRIGGER observed_collection_comparison_lineage_owned_write")
         with TestClient(main.app) as client:
-            stale_collection = client.post(
-                f"/api/territories/commune/{collection['territory_id']}/themes/{collection['theme_id']}/comparison",
-                json={"theme_id": collection["theme_id"]})
+            stale_collection = post_semantic(client, collection_item)
         assert stale_collection.status_code == 503
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
             publisher.execute("ALTER TABLE observed_collection_comparison_lineage DISABLE TRIGGER observed_collection_comparison_lineage_owned_write")
@@ -1615,9 +1836,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                     lineage_group,series["level"])).fetchall()
             assert removed
         with TestClient(main.app) as client:
-            incomplete_series = client.post(
-                f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison",
-                json={"selection": None})
+            incomplete_series = post_semantic(client, series_item)
         assert incomplete_series.status_code == 503
         with psycopg.connect(publish_dsn, autocommit=True) as publisher:
             publisher.cursor().executemany("""INSERT INTO ordered_series_comparison_lineage
@@ -1637,8 +1856,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                       comparison_content_version""", (family, facet)).fetchone()
                 assert row is not None
             with TestClient(main.app) as client:
-                truncated = client.post("/api/territories/commune/22001/themes/demographie/comparison",
-                    json={"theme_id": "demographie"})
+                truncated = post_semantic(client, semantic_item(facet, "commune", "22001"))
             assert truncated.status_code == 503
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute("""INSERT INTO comparison_source_lineage
@@ -1650,8 +1868,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                       AND territory_type=%s AND facet_id=%s AND source_id=%s AND vintage_id=%s""",
                     (family, *row[:6]))
             with TestClient(main.app) as client:
-                stale = client.post("/api/territories/commune/22001/themes/demographie/comparison",
-                    json={"theme_id": "demographie"})
+                stale = post_semantic(client, semantic_item(facet, "commune", "22001"))
             assert stale.status_code == 503
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute("""UPDATE comparison_source_lineage SET comparison_content_version=%s
@@ -1663,8 +1880,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                     WHERE comparison_content_version='stale-test-version'""").fetchall()
                 assert not stale_rows, stale_rows
             with TestClient(main.app) as client:
-                restored = client.post("/api/territories/commune/22001/themes/demographie/comparison",
-                    json={"theme_id": "demographie"})
+                restored = post_semantic(client, semantic_item(facet, "commune", "22001"))
             assert restored.status_code == 200, restored.text
 
         assert_lineage_guard("scalar", "densite")

@@ -136,6 +136,10 @@ _FIELDS_BY_SHAPE = {
     "distribution": ("value",),
 }
 
+_COMPARABLE_SHAPES = frozenset({
+    "scalar", "declared_profile", "ordered_series", "period_detail", "distribution",
+})
+
 
 def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResource:
     """Apply producer-declared resource, target, field, axis and intent rules."""
@@ -238,6 +242,15 @@ def discover_indicator_resources(metadata_directory: str | Path) -> ResourceCata
                 axes = ("period", "detail")
             elif collection.get("kind") == "anchored_membership":
                 axes = ("membership",)
+            comparison_declared = (
+                bool(page_descriptor.get("comparison"))
+                or bool((metadata.get("scalar_contracts") or {}).get(indicator_id, {}).get(
+                    "comparison_facet"))
+            )
+            intents = ("facts",)
+            if (parent_indicator is None and comparison_declared
+                    and _COMPARABLE_SHAPES.intersection(shapes)):
+                intents += ("fixed_comparison", "selected_comparison")
             resources.append(IndicatorResource(
                 resource_id=indicator_id,
                 theme_id=theme_id,
@@ -260,8 +273,7 @@ def discover_indicator_resources(metadata_directory: str | Path) -> ResourceCata
                     metadata, indicator_id, page_descriptor, shapes, parent_indicator) if not values),
                 fields=tuple(dict.fromkeys(
                     field for shape in shapes for field in _FIELDS_BY_SHAPE.get(shape, ()))),
-                intents=("facts", "fixed_comparison", "selected_comparison")
-                if parent_indicator is None else ("facts",),
+                intents=intents,
             ))
 
     # A source-declared key cannot silently disappear because another map was

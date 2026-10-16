@@ -80,6 +80,31 @@ def test_named_reference_uses_its_producer_declared_non_territory_identity():
         validate_resource_item(wrong, catalogue)
 
 
+@pytest.mark.parametrize("intent", [
+    {"kind": "fixed_comparison", "context": "default"},
+    {"kind": "selected_comparison", "members": [{"type": "commune", "id": "22002"}]},
+])
+def test_sparse_membership_is_facts_only(intent):
+    catalogue = default_resource_catalogue()
+    membership = ResourceReadItem.model_validate({
+        "resource": "couverture_programmes",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "intent": intent,
+    })
+    with pytest.raises(ValueError, match="intent is not declared"):
+        validate_resource_item(membership, catalogue)
+
+
+def test_comparison_capabilities_remain_declared_for_comparable_shapes():
+    catalogue = default_resource_catalogue()
+    for resource_id in ("densite", "structure_age", "subventions_annuelles",
+                        "subventions_par_domaine"):
+        resource = catalogue.resources_by_id[resource_id]
+        assert "fixed_comparison" in resource.intents
+        assert "selected_comparison" in resource.intents
+    assert catalogue.resources_by_id["raccordement_reference"].intents == ("facts",)
+
+
 def test_dynamic_series_coordinates_defer_value_membership_to_published_descriptor():
     catalogue = default_resource_catalogue()
     resource = catalogue.resources_by_id["subventions_annuelles"]

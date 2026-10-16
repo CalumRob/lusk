@@ -64,8 +64,11 @@ def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():
     assert age.shapes == ("declared_profile",)
     assert age.axes == ("detail", "sex")
     assert resources["couverture_programmes"].shapes == ("anchored_membership",)
+    assert resources["couverture_programmes"].intents == ("facts",)
     assert resources["subventions_par_domaine"].shapes == ("period_detail",)
     assert resources["subventions_annuelles"].shapes == ("ordered_series",)
+    assert "fixed_comparison" in resources["subventions_par_domaine"].intents
+    assert "selected_comparison" in resources["subventions_annuelles"].intents
 
 
 def test_discovery_fails_closed_on_unaccounted_producer_declaration(tmp_path):

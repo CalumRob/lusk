@@ -109,3 +109,45 @@ def test_batch_preflights_every_item_before_reading_and_aborts_as_a_unit(monkeyp
     assert calls == [("preflight", "densite"), ("preflight", "structure_age")]
     assert repository.connections.opens == 1
     assert repository.connections.value.transaction_count == 1
+
+
+def test_sparse_membership_facts_read_and_comparison_intents_fail_before_storage(monkeypatch):
+    repository = Repository()
+    reads = []
+
+    def reader(conn, item, catalogue=None):
+        reads.append(item.resource)
+        return {"resource": item.resource, "facts": []}
+
+    def preflight(conn, item, catalogue=None):
+        return 1
+
+    setup(monkeypatch, repository, reader, preflight)
+    target = {"kind": "territory", "type": "commune", "id": "22001"}
+    facts = {"resource": "couverture_programmes", "target": target,
+             "intent": {"kind": "facts"}}
+    client = TestClient(main.app)
+    try:
+        accepted = client.post("/api/resources/read", json=facts)
+        assert accepted.status_code == 200, accepted.text
+        assert accepted.json()["facts"] == []
+        assert reads == ["couverture_programmes"]
+
+        for intent in (
+            {"kind": "fixed_comparison", "context": "default"},
+            {"kind": "selected_comparison", "members": [
+                {"type": "commune", "id": "22002"},
+            ]},
+        ):
+            invalid = client.post("/api/resources/read", json={**facts, "intent": intent})
+            assert invalid.status_code == 422, invalid.text
+            mixed_batch = client.post("/api/resources/read-batch", json={"items": [
+                {"id": "valid-first", "resource": "densite", "target": target,
+                 "intent": {"kind": "facts"}},
+                {"id": "invalid-membership", **facts, "intent": intent},
+            ]})
+            assert mixed_batch.status_code == 422, mixed_batch.text
+        assert reads == ["couverture_programmes"]
+        assert repository.connections.opens == 1
+    finally:
+        main.app.dependency_overrides.clear()

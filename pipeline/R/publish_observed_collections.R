@@ -254,27 +254,78 @@ publish_observed_collection <- function(projection,con,artifact_directory=NULL) 
   d <- projection$descriptor; indicator <- d$indicator_id
   version <- scalar_content_version(projection)
   DBI::dbWithTransaction(con,{
-    DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock(hashtext('observed-collection'),hashtext($1))",params=list(indicator))
-    ref <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
-    if (nrow(ref)!=1L) stop("Observed collection reference is unavailable",call.=FALSE)
-    reference <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
-    previous <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version FROM observed_collection_publication WHERE indicator_id=$1",params=list(indicator))
-    changed <- !nrow(previous) || previous$content_version[[1L]]!=version || previous$reference_content_version[[1L]]!=ref$content_version[[1L]]
-    comparisons <- project_observed_collection_comparisons(projection,reference,version,ref$content_version[[1L]])
-    comparison_version <- scalar_content_version(comparisons)
+    reference <- comparisons <- comparison_version <- NULL
+    comparison_stale <- FALSE
+    publisher_env <- environment()
+    protocol_db <- list(
+      transaction=function(expr) force(expr),
+      lock=function(owner) DBI::dbGetQuery(con,
+        "SELECT pg_advisory_xact_lock(hashtext('observed-collection'),hashtext($1))",
+        params=list(owner)),
+      marker=function(owner) DBI::dbGetQuery(con,
+        "SELECT content_version,reference_content_version,row_count FROM observed_collection_publication WHERE indicator_id=$1",
+        params=list(owner)))
+    decision <- publish_owner_snapshot(
+      db=protocol_db, owner=indicator, content_version=version,
+      dependency_name="territory_reference",
+      read_dependency=function() DBI::dbGetQuery(con,
+        "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"),
+      validate_dependency=function(reference_marker) {
+        if (nrow(reference_marker)!=1L || is.na(reference_marker$content_version[[1L]]) ||
+            !nzchar(reference_marker$content_version[[1L]]))
+          stop("Observed collection reference is unavailable",call.=FALSE)
+      },
+      publish_content=function(version_arg,dependency_arg) invisible(NULL),
+      rebind_dependency=function(reference_version) invisible(NULL),
+      requires_republish=function(marker,dependency) {
+        run_query <- function(stage,sql,params=NULL) tryCatch({
+          result <- if(is.null(params)) DBI::dbGetQuery(con,sql) else DBI::dbGetQuery(con,sql,params=params)
+          result
+        },
+          error=function(error) stop(stage,": ",conditionMessage(error),call.=FALSE))
+        reference <- run_query("read reference",
+          "SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
+        comparisons <- project_observed_collection_comparisons(
+          projection,reference,version,dependency$content_version[[1L]])
+        comparison_version <- scalar_content_version(comparisons)
+        comparison_marker <- run_query("read comparison marker","SELECT content_version,collection_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count,lineage_complete FROM observed_collection_comparison_publication WHERE indicator_id=$1",params=list(indicator))
+        actual_groups <- run_query("count comparison groups","SELECT count(*) AS n FROM observed_collection_comparison_group WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
+        actual_territories <- run_query("count comparison territories","SELECT count(*) AS n FROM observed_collection_comparison_territory WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
+        mismatched_groups <- run_query("check comparison group tokens","SELECT count(*) AS n FROM observed_collection_comparison_group WHERE indicator_id=$1 AND (collection_content_version<>$2 OR reference_content_version<>$3)",params=list(indicator,version,dependency$content_version[[1L]]))$n[[1L]]
+        mismatched_territories <- run_query("check comparison territory tokens","SELECT count(*) AS n FROM observed_collection_comparison_territory WHERE indicator_id=$1 AND (collection_content_version<>$2 OR reference_content_version<>$3)",params=list(indicator,version,dependency$content_version[[1L]]))$n[[1L]]
+        actual_lineage <- run_query("count comparison lineage","SELECT count(*) AS n FROM observed_collection_comparison_lineage WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
+        mismatched_lineage <- run_query("check comparison lineage token","SELECT count(*) AS n FROM observed_collection_comparison_lineage WHERE indicator_id=$1 AND comparison_content_version<>$2",params=list(indicator,comparison_version))$n[[1L]]
+        comparison_stale <- identical(d$kind,"period_detail") && observed_collection_comparison_stale(
+          if(nrow(comparison_marker)) as.list(comparison_marker[1,,drop=FALSE]) else NULL,
+          comparison_version,version,dependency$content_version[[1L]],nrow(comparisons$groups),
+          nrow(comparisons$territories),actual_groups,actual_territories,mismatched_groups,
+          mismatched_territories,nrow(comparisons$lineage),actual_lineage,mismatched_lineage)
+        base_marker <- run_query("read collection marker",
+          "SELECT content_version,reference_content_version,row_count FROM observed_collection_publication WHERE indicator_id=$1",
+          params=list(indicator))
+        fact_table <- switch(d$kind,period_detail="period_detail_observation",
+          anchored_membership="anchored_membership",stop("Unknown observed fact shape",call.=FALSE))
+        actual_facts <- run_query("count collection facts",paste0("SELECT count(*) AS n FROM ",fact_table,
+          " WHERE indicator_id=$1"),params=list(indicator))$n[[1L]]
+        actual_categories <- run_query("count collection categories",
+          "SELECT count(*) AS n FROM observed_collection_category WHERE indicator_id=$1",
+          params=list(indicator))$n[[1L]]
+        actual_descriptor <- run_query("count collection descriptor",
+          "SELECT count(*) AS n FROM observed_collection_descriptor WHERE indicator_id=$1",
+          params=list(indicator))$n[[1L]]
+        base_stale <- !nrow(base_marker) || is.na(base_marker$row_count[[1L]]) ||
+          base_marker$row_count[[1L]]!=nrow(projection$facts) || actual_facts!=nrow(projection$facts) ||
+          actual_categories!=nrow(projection$categories) || actual_descriptor!=1L
+        assign("reference",reference,envir=publisher_env)
+        assign("comparisons",comparisons,envir=publisher_env)
+        assign("comparison_version",comparison_version,envir=publisher_env)
+        assign("comparison_stale",comparison_stale,envir=publisher_env)
+        isTRUE(base_stale || comparison_stale)
+      })
+    changed <- decision$changed || decision$rebound || decision$republished_for_dependency
+    ref <- data.frame(content_version=decision$dependency_version)
     artifact_paths <- if (identical(d$kind,"period_detail") && !is.null(artifact_directory))
       write_observed_collection_comparison_parquets(comparisons,artifact_directory,indicator) else NULL
-    comparison_marker <- DBI::dbGetQuery(con,"SELECT content_version,collection_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count,lineage_complete FROM observed_collection_comparison_publication WHERE indicator_id=$1",params=list(indicator))
-    actual_groups <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_group WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
-    actual_territories <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_territory WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
-    mismatched_groups <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_group WHERE indicator_id=$1 AND (collection_content_version<>$2 OR reference_content_version<>$3)",params=list(indicator,version,ref$content_version[[1L]]))$n[[1L]]
-    mismatched_territories <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_territory WHERE indicator_id=$1 AND (collection_content_version<>$2 OR reference_content_version<>$3)",params=list(indicator,version,ref$content_version[[1L]]))$n[[1L]]
-    actual_lineage <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_lineage WHERE indicator_id=$1",params=list(indicator))$n[[1L]]
-    mismatched_lineage <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM observed_collection_comparison_lineage WHERE indicator_id=$1 AND comparison_content_version<>$2",params=list(indicator,comparison_version))$n[[1L]]
-    comparison_stale <- identical(d$kind,"period_detail") && observed_collection_comparison_stale(
-      if(nrow(comparison_marker)) as.list(comparison_marker[1,,drop=FALSE]) else NULL,comparison_version,version,
-      ref$content_version[[1L]],nrow(comparisons$groups),nrow(comparisons$territories),actual_groups,actual_territories,
-      mismatched_groups,mismatched_territories,nrow(comparisons$lineage),actual_lineage,mismatched_lineage)
     if (changed) {
       for (i in seq_len(nrow(projection$datasets))) {
         r <- projection$datasets[i,,drop=FALSE]

@@ -2599,6 +2599,9 @@ def _semantic_resource_preflight(conn, item, catalogue=None):
             if any(resolved_by_id.get(member_id) != member_type
                    for member_type, member_id in selection):
                 raise HTTPException(422, "Selected comparison territory type does not match")
+        _indicator_comparison_preflight(
+            conn, item.target.type, item.target.id, item.resource, selection,
+            _comparison_field_selection(item.fields))
         if item.intent.kind == "fixed_comparison":
             return 1
         resource = catalogue.resources_by_id[item.resource]
