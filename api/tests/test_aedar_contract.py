@@ -10,7 +10,7 @@ def test_aedar_reader_is_named_typed_and_bounded():
         "/api/aedar/territories/{territory_type}/{territory_id}/aggregates")
     assert route.endpoint.__name__ == "aedar_territorial_aggregates"
     assert route.methods == {"GET"}
-    sql = " ".join(c for c in route.endpoint.__code__.co_consts if isinstance(c, str))
+    sql = inspect.getsource(main._aedar_territorial_aggregate_snapshot)
     assert "territory_type=%s AND territory_id=%s" in sql
     assert "LIMIT %s OFFSET %s" in sql
     assert "typequ=ANY(%s)" in sql
@@ -21,11 +21,11 @@ def test_aedar_fixed_comparison_read_is_bounded_and_fails_closed_on_stale_depend
     route = next(route for route in main.app.routes if getattr(route, "path", "") ==
         "/api/aedar/territories/{territory_type}/{territory_id}/comparisons")
     assert route.endpoint.__name__ == "aedar_fixed_comparisons"
-    source = inspect.getsource(route.endpoint)
+    source = inspect.getsource(main._aedar_comparison_snapshot)
     assert "aedar_content_version" in source
     assert "reference_content_version" in source
     assert "aedar_comparison_territory" in source
-    assert "Query(min_length=1, max_length=64)" in source
+    assert "measure: str = Query(min_length=1, max_length=64)" in inspect.getsource(route.endpoint)
     assert "rank_ties" not in source
     schema = (Path(__file__).resolve().parents[1] / "schema.sql").read_text(encoding="utf-8")
     migration = (Path(__file__).resolve().parents[1] / "migrations" / "032_aedar_fixed_comparisons.sql").read_text(encoding="utf-8")

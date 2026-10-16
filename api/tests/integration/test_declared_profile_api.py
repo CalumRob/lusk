@@ -56,12 +56,16 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env,
         conn.execute("INSERT INTO scalar_observation_source VALUES ('part_passoires','29001','dpe','v1'),('part_passoires','29002','dpe','v1')")
         conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-v1',2,'ref-v1')")
         conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
-            reference_content_version,group_row_count,territory_row_count)
-            VALUES (true,'scalar-comparison-v1','scalar-v1','ref-v1',2,4)""")
+            reference_content_version,group_row_count,territory_row_count,lineage_row_count)
+            VALUES (true,'scalar-comparison-v1','scalar-v1','ref-v1',2,4,2)""")
         conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,
-            statistic,median,member_count,eligible_count,missing_count)
-            VALUES ('density_class','D1','commune','part_passoires','median',0.2,2,2,0),
-                   ('epci','E1','commune','part_passoires','median',0.2,2,2,0)""")
+            statistic,median,member_count,eligible_count,missing_count,lineage_source_count)
+            VALUES ('density_class','D1','commune','part_passoires','median',0.2,2,2,0,1),
+                   ('epci','E1','commune','part_passoires','median',0.2,2,2,0,1)""")
+        conn.execute("""INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,
+            territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES
+            ('scalar','density_class','D1','commune','part_passoires','dpe','v1','scalar-comparison-v1'),
+            ('scalar','epci','E1','commune','part_passoires','dpe','v1','scalar-comparison-v1')""")
         conn.execute("""INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,indicator_id,
             territory_id,value,status,rank,tie_count,rank_size)
             VALUES ('density_class','D1','commune','part_passoires','29001',0.3,'measured',2,1,2),
@@ -236,6 +240,25 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env,
             assert mixed_profile_result['eligible_count'] == 2
             assert mixed_profile_result['selected_member_count'] == 2
             assert mixed_profile_result['median'] == 0.2
+
+            # A scalar-backed profile comparison consumes the scalar comparison
+            # publication only. An unrelated declared detail profile in the
+            # same theme must neither require the profile comparison marker nor
+            # appear in this indicator-scoped reader.
+            with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
+                writer.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,
+                    completeness,descriptor_version,comparison_detail,comparison_direction)
+                    VALUES ('unrelated_detail_fixture','habitat','Unrelated detail','u',ARRAY['commune'],
+                    'dense_complete','detail-v1','value','high')""")
+                assert writer.execute("SELECT count(*) FROM profile_comparison_publication").fetchone()[0] == 0
+            dpe_single = client.post(
+                '/api/territories/commune/29001/indicators/distribution_dpe/comparison')
+            dpe_batch = client.post('/api/read-batch', json={'items': [{
+                'id': 'dpe-comparison', 'resource': 'indicator_comparison',
+                'territory_type': 'commune', 'territory_id': '29001',
+                'indicator_id': 'distribution_dpe'}]})
+            assert dpe_single.status_code == dpe_batch.status_code == 200, (dpe_single.text, dpe_batch.text)
+            assert dpe_batch.json()['results'][0]['data'] == dpe_single.json()
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as conn:
                 conn.execute("UPDATE table_publication SET content_version='scalar-v2' WHERE table_name='scalar_observation'")
             assert client.get(url).status_code == 503

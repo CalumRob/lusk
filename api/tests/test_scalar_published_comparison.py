@@ -146,7 +146,7 @@ def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_
     monkeypatch.setattr(main, "_demographic_reading_marker", lambda _conn: None)
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_args: (
         "commune", ("c1", "c2"), {"kind": "density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args: (
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: (
         "density_class", "A", "commune") if _args[3] is None else None)
     monkeypatch.setattr(main, "_published_scalar_comparison_results", lambda *_args, **_kwargs: (
         published_calls.append(True) or {"population": {"status": "available", "reason": None,
@@ -164,14 +164,14 @@ def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_
     assert published_calls == [True]
     assert dynamic_calls == []
 
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args: None)
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: None)
     dynamic = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie", [("commune", "c2")])
     assert dynamic["results"][0]["median"] == 7.5
     assert dynamic_calls == [True]
 
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_args: (
         "commune", ("c2",), {"kind": "explicit_selection"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args: (
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: (
         "density_class", "A", "commune"))
     outside = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie", [("commune", "c2")])
     assert outside["results"][0]["rank"] is None

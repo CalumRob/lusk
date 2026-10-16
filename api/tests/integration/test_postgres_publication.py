@@ -12,6 +12,7 @@ from contextlib import contextmanager
 import os
 import re
 import subprocess
+import threading
 import uuid
 from pathlib import Path
 from urllib.parse import parse_qs, urlencode, urlsplit, urlunsplit
@@ -496,46 +497,256 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as conn:
         with conn.transaction():
             with conn.cursor() as cur:
-                cur.executemany("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES (%s,'commune',%s)",
-                                [(row["territory_id"], row["territory_id"]) for row in selected] +
-                                [("outside-selection", "Outside explicit selection")])
+                cur.executemany("INSERT INTO territory_reference(territory_id,territory_type,name,density_class_code) VALUES (%s,'commune',%s,%s)",
+                                [(row["territory_id"], row["territory_id"],
+                                  "fixture-density" if row["territory_id"] == "large0000" else None)
+                                 for row in selected] +
+                                [("outside-selection", "Outside explicit selection", "fixture-density")])
+                cur.execute("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES ('large-region','region','Large region')")
             conn.execute("INSERT INTO source_dataset VALUES ('large_fixture_a','Large fixture A'),('large_fixture_b','Large fixture B')")
             conn.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('large_fixture_a','v1','2026-A'),('large_fixture_b','v2','2026-B')")
             conn.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,
                 allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES
                 ('large_scalar','demographie','Large scalar','count','high','large_scalar',
-                 ARRAY['commune'],'fixture count','sparse','large-v1')""")
+                 ARRAY['commune','region'],'fixture count','sparse','large-v1')""")
             conn.execute("INSERT INTO scalar_descriptor_source VALUES ('large_scalar','large_fixture_a'),('large_scalar','large_fixture_b')")
             conn.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES
                 ('large_scalar','large0000','commune',7,'measured'),
                 ('large_scalar','large0001','commune',10,'measured'),
-                ('large_scalar','large0002','commune',4,'measured')""")
+                ('large_scalar','large0002','commune',4,'measured'),
+                ('large_scalar','large-region','region',12,'measured')""")
             conn.execute("""INSERT INTO scalar_observation_source VALUES
-                ('large_scalar','large0000','large_fixture_a','v1'),
-                ('large_scalar','large0001','large_fixture_b','v2'),
-                ('large_scalar','large0002','large_fixture_a','v1'),
-                ('large_scalar','large0002','large_fixture_b','v2')""")
-            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',1203)")
+                    ('large_scalar','large0000','large_fixture_a','v1'),
+                    ('large_scalar','large0001','large_fixture_b','v2'),
+                    ('large_scalar','large0002','large_fixture_a','v1'),
+                    ('large_scalar','large0002','large_fixture_b','v2'),
+                    ('large_scalar','large-region','large_fixture_a','v1')""")
+            conn.execute("""INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,
+                completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction)
+                VALUES ('large_profile','Large profile','count',ARRAY['commune'],'dense_complete',
+                        'large-profile-v1','total','all','high')""")
+            conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal) VALUES
+                ('large_profile','detail','total','Total',0),('large_profile','sex','all','All',0)""")
+            conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,
+                detail_key,sex_key,value,status) VALUES
+                ('large_profile','large0000','commune','total','all',7,'measured'),
+                ('large_profile','large0001','commune','total','all',10,'measured'),
+                ('large_profile','large0002','commune','total','all',4,'measured')""")
+            conn.execute("INSERT INTO profile_descriptor_source VALUES ('large_profile','large_fixture_a')")
+            conn.execute("""INSERT INTO profile_observation_source VALUES
+                ('large_profile','large0000','total','all','large_fixture_a','v1'),
+                ('large_profile','large0001','total','all','large_fixture_a','v1'),
+                ('large_profile','large0002','total','all','large_fixture_a','v1')""")
+            conn.execute("""INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,
+                completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction)
+                VALUES ('budget_profile','Budget profile','count',ARRAY['commune'],'dense_complete',
+                        'budget-profile-v1','d0','s0','high')""")
+            conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal)
+                SELECT 'budget_profile',axis_name,axis_key,axis_key,ordinal
+                FROM (SELECT 'detail'::text AS axis_name,'d'||i AS axis_key,i AS ordinal FROM generate_series(0,150) i
+                      UNION ALL
+                      SELECT 'sex'::text,'s'||i,i FROM generate_series(0,150) i) axes""")
+            conn.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,
+                comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('large_series','year',ARRAY['2020','2021'],'may_be_missing','2021',
+                ARRAY['commune'],'Large series','count','high','large_fixture_a','v1','large-series-v1')""")
+            conn.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,
+                axis_value,observation_period,value,status,source_id,vintage_id) VALUES
+                ('large_series','large0000','commune','2020','2020',6,'measured','large_fixture_a','v1'),
+                ('large_series','large0000','commune','2021','2021',7,'measured','large_fixture_a','v1'),
+                ('large_series','large0001','commune','2020','2020',9,'measured','large_fixture_a','v1'),
+                ('large_series','large0001','commune','2021','2021',10,'measured','large_fixture_a','v1'),
+                ('large_series','large0002','commune','2020','2020',3,'measured','large_fixture_a','v1'),
+                ('large_series','large0002','commune','2021','2021',4,'measured','large_fixture_a','v1')""")
+            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',1204)")
             conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','large-v1',3,'large-ref-v1')")
-    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1, open=True,
-                          kwargs={"autocommit": True})
+            conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
+                reference_content_version) VALUES ('declared_profile','large-profile-v1',3,'large-ref-v1'),
+                ('ordered_series','large-series-v1',6,'large-ref-v1')""")
+    read_parts = urlsplit(canonical_db_env["read_dsn"])
+    read_query = parse_qs(read_parts.query, keep_blank_values=True)
+    read_query["connect_timeout"] = ["8"]
+    bounded_read_dsn = urlunsplit((read_parts.scheme, read_parts.netloc, read_parts.path,
+                                   urlencode(read_query, doseq=True), read_parts.fragment))
+
+    def configure_read_connection(connection):
+        connection.execute("SET statement_timeout = '60000ms'")
+        connection.execute("SET lock_timeout = '5000ms'")
+
+    pool = ConnectionPool(conninfo=bounded_read_dsn, min_size=0, max_size=1, open=True,
+                          kwargs={"autocommit": True}, configure=configure_read_connection)
+    class TrackingConnection:
+        def __init__(self, connection, counters):
+            self.connection = connection
+            self.counters = counters
+
+        def __getattr__(self, name):
+            return getattr(self.connection, name)
+
+        def execute(self, sql, *args, **kwargs):
+            self.counters["statements"].append(sql)
+            hook = self.counters.get("before_series_fact_read")
+            if hook and "FROM ordered_series s JOIN source_vintage" in sql:
+                self.counters["before_series_fact_read"] = None
+                hook()
+            return self.connection.execute(sql, *args, **kwargs)
+
+        @contextmanager
+        def transaction(self):
+            self.counters["transactions"] += 1
+            with self.connection.transaction():
+                yield self
+
+    class TrackingPool:
+        def __init__(self, wrapped):
+            self.wrapped = wrapped
+            self.counters = {"connections": 0, "transactions": 0, "statements": []}
+
+        @contextmanager
+        def connection(self):
+            self.counters["connections"] += 1
+            with self.wrapped.connection() as connection:
+                yield TrackingConnection(connection, self.counters)
+
+    tracked_pool = TrackingPool(pool)
     previous = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(tracked_pool)
     try:
         with TestClient(main.app) as client:
             response = client.post("/api/territories/commune/large0000/themes/comparison",
                                    json={"theme_id": "demographie", "selection": selected})
             median_only = client.post("/api/territories/commune/large0000/themes/comparison?fields=median",
                                       json={"theme_id": "demographie", "selection": selected})
+            typed_comparison_single = client.post(
+                "/api/territories/commune/large0000/themes/demographie/comparison?fields=median",
+                json={"theme_id": "demographie", "selection": selected})
             rank_only = client.post("/api/territories/commune/large0000/themes/comparison?fields=rank",
                                     json={"theme_id": "demographie", "selection": selected})
             status_only = client.post("/api/territories/commune/large0000/themes/comparison?fields=status",
                                       json={"theme_id": "demographie", "selection": selected})
+            focal_single = client.get(
+                "/api/territories/region/large-region/themes/demographie/facts?fields=value")
+            indicator_single = client.get(
+                "/api/territories/region/large-region/indicators/large_scalar?fields=status")
+            profile_single = client.get(
+                "/api/territories/commune/large0000/profiles/large_profile")
+            series_single = client.get(
+                "/api/territories/commune/large0000/series/large_series?scope_level=commune")
+            tracked_pool.counters.update(connections=0, transactions=0, statements=[])
+            mixed_batch = client.post("/api/read-batch", json={"items": [
+                {"id": "focal", "resource": "theme_facts", "territory_type": "region",
+                 "territory_id": "large-region", "theme_id": "demographie", "fields": ["value"]},
+                {"id": "peers", "resource": "theme_comparison", "territory_type": "commune",
+                 "territory_id": "large0000", "theme_id": "demographie",
+                 "selection": selected, "fields": ["median"]},
+                {"id": "named-scalar", "resource": "indicator_facts", "territory_type": "region",
+                 "territory_id": "large-region", "indicator_id": "large_scalar", "fields": ["status"]},
+                {"id": "profile", "resource": "direct_profile", "territory_type": "commune",
+                 "territory_id": "large0000", "indicator_id": "large_profile"},
+                {"id": "series", "resource": "direct_series", "territory_type": "commune",
+                 "territory_id": "large0000", "indicator_id": "large_series", "scope_level": "commune"},
+            ]})
+            batch_connection_counts = dict(tracked_pool.counters)
+            tracked_pool.counters.update(connections=0, transactions=0, statements=[])
+            collective_budget = client.post("/api/read-batch", json={"items": [
+                {"id": f"profile-{i}", "resource": "direct_profile",
+                 "territory_type": "commune", "territory_id": "large0000",
+                 "indicator_id": "budget_profile"} for i in range(9)
+            ]})
+            budget_query_trace = dict(tracked_pool.counters)
+            # First- and last-item stale marker failures happen during metadata
+            # preflight, before either preceding or following facts can be read.
+            with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
+                publisher.execute("UPDATE table_publication SET reference_content_version='stale-ref' WHERE table_name='ordered_series'")
+            stale_batches = []
+            for stale_position in (0, 1):
+                tracked_pool.counters.update(connections=0, transactions=0, statements=[])
+                profile_item = {"id":"profile","resource":"direct_profile","territory_type":"commune",
+                    "territory_id":"large0000","indicator_id":"large_profile"}
+                series_item = {"id":"series","resource":"direct_series","territory_type":"commune",
+                    "territory_id":"large0000","indicator_id":"large_series","scope_level":"commune"}
+                items = [series_item,profile_item] if stale_position == 0 else [profile_item,series_item]
+                failed = client.post("/api/read-batch",json={"items":items})
+                stale_batches.append((failed.status_code,dict(tracked_pool.counters),failed.json()))
+            with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
+                publisher.execute("UPDATE table_publication SET reference_content_version='large-ref-v1' WHERE table_name='ordered_series'")
+            # Force a publisher commit between two item reads. The batch's first
+            # preflight query has established its repeatable-read snapshot.
+            reached_fact_read, publisher_committed = threading.Event(), threading.Event()
+            def pause_at_fact_read():
+                reached_fact_read.set()
+                if not publisher_committed.wait(10):
+                    raise TimeoutError("publisher did not commit during batch read")
+            tracked_pool.counters.update(connections=0,transactions=0,statements=[],
+                                         before_series_fact_read=pause_at_fact_read)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as executor:
+                future = executor.submit(client.post,"/api/read-batch",json={"items":[
+                    {"id":"series","resource":"direct_series","territory_type":"commune",
+                     "territory_id":"large0000","indicator_id":"large_series","scope_level":"commune"},
+                    {"id":"profile","resource":"direct_profile","territory_type":"commune",
+                     "territory_id":"large0000","indicator_id":"large_profile"},
+                    {"id":"mixed-clock","resource":"theme_comparison","territory_type":"commune",
+                     "territory_id":"large0000","theme_id":"demographie",
+                     "selection":[{"territory_type":"commune","territory_id":key}
+                                   for key in ("large0000","large0001","large0002")] }]})
+                assert reached_fact_read.wait(10), "batch never reached the first series fact read"
+                with psycopg.connect(canonical_db_env["publish_dsn"]) as publisher:
+                    with publisher.transaction():
+                        publisher.execute("UPDATE ordered_series SET value=70 WHERE indicator_id='large_series' AND territory_id='large0000' AND axis_value='2021'")
+                        publisher.execute("UPDATE table_publication SET content_version='large-series-v2' WHERE table_name='ordered_series'")
+                publisher_committed.set()
+                concurrent_batch = future.result(timeout=20)
+            concurrent_trace = dict(tracked_pool.counters)
+            concurrent_trace["statements"] = list(tracked_pool.counters["statements"])
+            after_refresh = client.get("/api/territories/commune/large0000/series/large_series?scope_level=commune")
+            with pool.connection() as readonly_connection:
+                with readonly_connection.transaction():
+                    readonly_connection.execute("SET TRANSACTION READ ONLY")
+                    with pytest.raises(psycopg.errors.ReadOnlySqlTransaction):
+                        readonly_connection.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('forbidden-write','x',0)")
             invalid_fields = client.post("/api/territories/commune/large0000/themes/comparison?fields=raw_sql",
                                          json={"theme_id": "demographie", "selection": selected})
             excessive = client.post("/api/territories/commune/large0000/themes/comparison",
                                     json={"theme_id": "demographie", "selection": [selected[0]] * 1501})
         assert response.status_code == 200, response.text
+        assert focal_single.status_code == indicator_single.status_code == profile_single.status_code == series_single.status_code == mixed_batch.status_code == 200, mixed_batch.text
+        assert collective_budget.status_code == 413, collective_budget.text
+        assert [status for status,_,_ in stale_batches] == [503,503]
+        assert all("results" not in body and "data" not in body for _,_,body in stale_batches)
+        assert all(not any("FROM profile_observation" in sql or "FROM ordered_series s JOIN" in sql
+                           for sql in trace["statements"]) for _,trace,_ in stale_batches)
+        assert concurrent_batch.status_code == 200, concurrent_batch.text
+        concurrent_data = {row["id"]:row["data"] for row in concurrent_batch.json()["results"]}
+        assert concurrent_data["series"]["publication_id"] == "large-series-v1"
+        assert next(point for point in concurrent_data["series"]["points"] if point["axis"]=="2021")["value"] == 7
+        assert {(source["source_id"],source["vintage_id"])
+                for source in concurrent_data["mixed-clock"]["results"][0]["comparison_sources"]} == {
+            ("large_fixture_a","v1"),("large_fixture_b","v2")}
+        assert concurrent_data["profile"]["content_version"] == "large-profile-v1"
+        assert after_refresh.status_code == 200 and after_refresh.json()["publication_id"] == "large-series-v2"
+        assert next(point for point in after_refresh.json()["points"] if point["axis"]=="2021")["value"] == 70
+        assert concurrent_trace["connections"] == concurrent_trace["transactions"] == 1
+        assert sum("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY" in sql
+                   for sql in concurrent_trace["statements"]) == 1
+        assert budget_query_trace["connections"] == budget_query_trace["transactions"] == 1
+        assert not any("FROM profile_observation" in sql for sql in budget_query_trace["statements"])
+        batched = {item["id"]: item["data"] for item in mixed_batch.json()["results"]}
+        assert batched["focal"] == focal_single.json()
+        assert batched["named-scalar"] == indicator_single.json()
+        assert batched["profile"] == profile_single.json()
+        assert batched["series"] == series_single.json()
+        assert len(batched["series"]["scope_series"]) == 3
+        assert {group["territory"]["id"] for group in batched["series"]["scope_series"]} == {
+            "large0000", "large0001", "large0002"}
+        assert typed_comparison_single.status_code == 200, typed_comparison_single.text
+        assert batched["peers"] == typed_comparison_single.json()
+        batch_lineage = batched["peers"]["results"][0]["comparison_sources"]
+        assert {(source["source_id"], source["vintage_id"]) for source in batch_lineage} == {
+            ("large_fixture_a", "v1"), ("large_fixture_b", "v2")}
+        assert batch_connection_counts["connections"] == 1
+        assert batch_connection_counts["transactions"] == 1
+        assert sum("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY" in sql
+                   for sql in batch_connection_counts["statements"]) == 1
         body = response.json()
         result = body["results"][0]
         assert result["selected_member_count"] == 1202
@@ -921,8 +1132,25 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
 
     pool = ConnectionPool(conninfo=read_dsn, min_size=0, max_size=2, open=True,
         kwargs={"autocommit": True})
+    query_trace = []
+    class TraceConnection:
+        def __init__(self, connection): self.connection = connection
+        def __getattr__(self, name): return getattr(self.connection,name)
+        def execute(self, sql, *args, **kwargs):
+            query_trace.append(sql)
+            return self.connection.execute(sql,*args,**kwargs)
+        @contextmanager
+        def transaction(self):
+            with self.connection.transaction(): yield self
+    class TracePool:
+        def connection(self):
+            @contextmanager
+            def acquire():
+                with pool.connection() as connection: yield TraceConnection(connection)
+            return acquire()
+    trace_pool = TracePool()
     previous = main.app.dependency_overrides.get(main.get_repository)
-    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(trace_pool)
     try:
         if publication_schema == "populated_upgrade":
             root = Path(__file__).resolve().parents[2]
@@ -1021,6 +1249,83 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert expected_scalar_pairs and actual_scalar_pairs == expected_scalar_pairs
         assert expected_profile_pairs and actual_profile_pairs == expected_profile_pairs
 
+        # Compose a genuine focal read with this R-published theme comparison.
+        # Its declared detail profile makes metadata preflight distinguish
+        # detail comparison profiles from scalar-backed profiles.
+        with TestClient(main.app) as client:
+            single_facts = client.get(
+                "/api/territories/commune/22001/themes/demographie/facts?fields=value")
+            single_comparison = client.post(
+                "/api/territories/commune/22001/themes/demographie/comparison?fields=median",
+                json={"theme_id": "demographie"})
+            combined = client.post("/api/read-batch", json={"items": [
+                {"id": "facts", "resource": "theme_facts", "territory_type": "commune",
+                 "territory_id": "22001", "theme_id": "demographie", "fields": ["value"]},
+                {"id": "comparison", "resource": "theme_comparison", "territory_type": "commune",
+                 "territory_id": "22001", "theme_id": "demographie", "fields": ["median"]},
+            ]})
+        assert single_facts.status_code == single_comparison.status_code == 200
+        assert combined.status_code == 200, combined.text
+        batch_data = {item["id"]: item["data"] for item in combined.json()["results"]}
+        assert batch_data == {"facts": single_facts.json(), "comparison": single_comparison.json()}
+
+        # An unknown later named comparison must be rejected during metadata
+        # preflight, before a preceding valid fact item reads observations.
+        fact_item = {"id": "facts", "resource": "theme_facts", "territory_type": "commune",
+            "territory_id": "22001", "theme_id": "demographie", "fields": ["value"]}
+        unknown_item = {"id": "unknown", "resource": "indicator_comparison",
+            "territory_type": "commune", "territory_id": "22001",
+            "indicator_id": "not_registered_fixture_indicator"}
+        with TestClient(main.app) as client:
+            single_unknown = client.post(
+                "/api/territories/commune/22001/indicators/not_registered_fixture_indicator/comparison")
+            unknown_batches = []
+            for items in ([fact_item, unknown_item], [unknown_item, fact_item]):
+                query_trace.clear()
+                failed = client.post("/api/read-batch", json={"items": items})
+                unknown_batches.append((failed.status_code, failed.json(), list(query_trace)))
+        assert single_unknown.status_code == 404
+        assert all(status == 404 and "results" not in body and "data" not in body
+                   for status, body, _ in unknown_batches)
+        forbidden_read_tokens = ("scalar_observation", "profile_observation", "series_observation",
+            "comparison_group", "comparison_territory", "comparison_result")
+        assert all(not any(any(token in sql.lower() for token in forbidden_read_tokens)
+                           for sql in trace)
+                   for _, _, trace in unknown_batches), unknown_batches
+
+        # A stale fixed-scalar-comparison clock is a preflight dependency, not
+        # just the scalar-fact publication clock. Prove it rejects either item
+        # position without reading facts or materialized comparison results.
+        with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+            scalar_marker = publisher.execute("""SELECT content_version,scalar_content_version,
+                reference_content_version FROM scalar_comparison_publication WHERE singleton""").fetchone()
+            publisher.execute("UPDATE scalar_comparison_publication SET scalar_content_version='stale-scalar-fixture'")
+        stale_comparison_batches = []
+        try:
+            with TestClient(main.app) as client:
+                for items in ([fact_item, {"id": "comparison", "resource": "theme_comparison",
+                                  "territory_type": "commune", "territory_id": "22001",
+                                  "theme_id": "demographie"}],
+                              [{"id": "comparison", "resource": "theme_comparison",
+                                "territory_type": "commune", "territory_id": "22001",
+                                "theme_id": "demographie"}, fact_item]):
+                    query_trace.clear()
+                    failed = client.post("/api/read-batch", json={"items": items})
+                    stale_comparison_batches.append((failed.status_code, failed.json(), list(query_trace)))
+        finally:
+            with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+                publisher.execute("""UPDATE scalar_comparison_publication SET content_version=%s,
+                    scalar_content_version=%s,reference_content_version=%s WHERE singleton""", scalar_marker)
+        assert all(status == 503 and "results" not in body and "data" not in body
+                   for status, body, _ in stale_comparison_batches)
+        forbidden_comparison_reads = ("FROM scalar_observation ", "FROM scalar_observation_source",
+            "FROM profile_observation ", "FROM scalar_comparison_group",
+            "FROM scalar_comparison_territory", "FROM profile_comparison_group",
+            "FROM profile_comparison_territory")
+        assert all(not any(any(token in sql for token in forbidden_comparison_reads)
+                           for sql in trace)
+                   for _, _, trace in stale_comparison_batches), stale_comparison_batches
+
         alias_path="/api/territories/commune/22001/indicators/structure_age"
         with TestClient(main.app) as client:
             alias_full=client.get(alias_path)
@@ -1091,7 +1396,54 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
             series_response = client.post(
                 f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison",
                 json={"selection": None})
+            owned_single = client.get(
+                f"/api/series-datasets/{series['dataset_id']}/territories/{series['level']}/"
+                f"{series['territory_id']}/{series['indicator_id']}?scope_level={series['level']}")
+            owned_batch = client.post("/api/read-batch", json={"items": [{
+                "id": "owned-series", "resource": "owned_dataset",
+                "dataset_id": series["dataset_id"], "territory_type": series["level"],
+                "territory_id": series["territory_id"], "indicator_id": series["indicator_id"],
+                "scope_level": series["level"]}]})
         assert series_response.status_code == 200, series_response.text
+        assert owned_single.status_code == owned_batch.status_code == 200, (
+            owned_single.text, owned_batch.text)
+        owned = owned_single.json()
+        assert owned_batch.json()["results"][0]["data"] == owned
+        assert owned["scope_series"], "owned-series response must include published cohort rows"
+        owned_pairs = {(source["source_id"], source["vintage_id"])
+            for group in owned["scope_series"] for point in group["points"]
+            for source in point["provenance"]}
+        assert owned_pairs == {("fixture_a", "v1"), ("fixture_a", "v2"),
+                               ("fixture_b", "v1"), ("fixture_b", "v2")}
+        # Stale owned dataset markers reject either item position in metadata
+        # preflight; query_trace records the actual connection statements.
+        owned_item = {"id":"owned","resource":"owned_dataset",
+            "dataset_id":series["dataset_id"],"territory_type":series["level"],
+            "territory_id":series["territory_id"],"indicator_id":series["indicator_id"],
+            "scope_level":series["level"]}
+        profile_item = {"id":"profile","resource":"direct_profile","territory_type":"commune",
+            "territory_id":"22001","indicator_id":"structure_age"}
+        with psycopg.connect(publish_dsn,autocommit=True) as publisher:
+            owned_reference_version=publisher.execute("SELECT reference_content_version FROM series_dataset_publication WHERE dataset_id=%s",
+                (series["dataset_id"],)).fetchone()[0]
+            publisher.execute("ALTER TABLE series_dataset_publication DISABLE TRIGGER series_dataset_publication_complete")
+            publisher.execute("UPDATE series_dataset_publication SET reference_content_version='stale-owned-ref' WHERE dataset_id=%s",
+                              (series["dataset_id"],))
+            publisher.execute("ALTER TABLE series_dataset_publication ENABLE TRIGGER series_dataset_publication_complete")
+        owned_preflight_failures=[]
+        for items in ([owned_item,profile_item],[profile_item,owned_item]):
+            query_trace.clear()
+            failed=client.post("/api/read-batch",json={"items":items})
+            owned_preflight_failures.append((failed.status_code,failed.json(),list(query_trace)))
+        with psycopg.connect(publish_dsn,autocommit=True) as publisher:
+            publisher.execute("ALTER TABLE series_dataset_publication DISABLE TRIGGER series_dataset_publication_complete")
+            publisher.execute("UPDATE series_dataset_publication SET reference_content_version=%s WHERE dataset_id=%s",
+                              (owned_reference_version,series["dataset_id"]))
+            publisher.execute("ALTER TABLE series_dataset_publication ENABLE TRIGGER series_dataset_publication_complete")
+        assert all(status==503 and "results" not in body and "data" not in body
+                   for status,body,_ in owned_preflight_failures)
+        assert all(not any("series_dataset_observation" in sql or "profile_observation" in sql
+                           for sql in trace) for _,_,trace in owned_preflight_failures)
         series_result = series_response.json()["result"]
         expected_series_pairs = {(row["source_id"],row["vintage_id"]) for row in series["source_pairs"]
             if row["axis_value"] == "2025"}
@@ -1138,6 +1490,30 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert expected_collection_pairs == actual_collection_pairs
         assert len({vintage for _,vintage in actual_collection_pairs}) == 2
         assert collection_result["source_facet"] == {"detail":"total","observation_period":"2025"}
+        with psycopg.connect(publish_dsn,autocommit=True) as publisher:
+            collection_reference_version=publisher.execute("SELECT reference_content_version FROM observed_collection_publication WHERE indicator_id=%s",
+                (collection["indicator_id"],)).fetchone()[0]
+            publisher.execute("ALTER TABLE observed_collection_publication DISABLE TRIGGER observed_collection_publication_contract")
+            publisher.execute("UPDATE observed_collection_publication SET reference_content_version='stale-collection-ref' WHERE indicator_id=%s",
+                              (collection["indicator_id"],))
+            publisher.execute("ALTER TABLE observed_collection_publication ENABLE TRIGGER observed_collection_publication_contract")
+        collection_item={"id":"collection","resource":"indicator_comparison",
+            "territory_type":"commune","territory_id":collection["territory_id"],
+            "indicator_id":collection["indicator_id"],"selection":None}
+        collection_preflight_failures=[]
+        for items in ([collection_item,profile_item],[profile_item,collection_item]):
+            query_trace.clear()
+            failed=client.post("/api/read-batch",json={"items":items})
+            collection_preflight_failures.append((failed.status_code,failed.json(),list(query_trace)))
+        with psycopg.connect(publish_dsn,autocommit=True) as publisher:
+            publisher.execute("ALTER TABLE observed_collection_publication DISABLE TRIGGER observed_collection_publication_contract")
+            publisher.execute("UPDATE observed_collection_publication SET reference_content_version=%s WHERE indicator_id=%s",
+                              (collection_reference_version,collection["indicator_id"]))
+            publisher.execute("ALTER TABLE observed_collection_publication ENABLE TRIGGER observed_collection_publication_contract")
+        assert all(status==503 and "results" not in body and "data" not in body
+                   for status,body,_ in collection_preflight_failures)
+        assert all(not any("period_detail_observation" in sql or "profile_observation" in sql
+                           for sql in trace) for _,_,trace in collection_preflight_failures)
         with TestClient(main.app) as client:
             collection_median = client.post(
                 f"/api/territories/commune/{collection['territory_id']}/indicators/{collection['indicator_id']}/comparison?fields=median")
