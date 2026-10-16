@@ -50,6 +50,8 @@
 /api/.pytest_cache/
 /docs/*
 !/docs/adr/
+!/docs/design/
+!/docs/design/**
 # Le prototype #499 (jetable) : son dossier de revue — README + captures —
 # est l'artefact de décision versionné, comme les rapports d'audit des
 # PRs #451/#452/#455/#491.
