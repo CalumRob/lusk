@@ -954,7 +954,26 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert expected_scalar_pairs and actual_scalar_pairs == expected_scalar_pairs
         assert expected_profile_pairs and actual_profile_pairs == expected_profile_pairs
 
+        profile_only = client.post(
+            "/api/territories/commune/22001/indicators/structure_age/comparison?fields=median")
+        profile_invalid_field=client.post(
+            "/api/territories/commune/22001/indicators/structure_age/comparison?fields=mean")
+        assert profile_only.status_code == 200, profile_only.text
+        assert profile_invalid_field.status_code == 422
+        profile_result = profile_only.json()["result"]
+        assert profile_result["median"] == profile["structure_age"]["median"]
+        assert profile_result["status"] == profile["structure_age"]["status"]
+        assert profile_result["comparison_sources"] == profile["structure_age"]["comparison_sources"]
+        assert not {"focal_value","rank","rank_size","rank_ties","eligible_count"} & set(profile_result)
+
         series = manifest["ordered_series"]
+        captured_publication_reads=[]
+        original_publication_read=main._execute_comparison_publication_read
+        def capture_publication_read(connection,sql,params=None):
+            if "ordered_series_comparison_group" in sql or "ordered_series_comparison_territory" in sql:
+                captured_publication_reads.append((sql,params))
+            return original_publication_read(connection,sql,params)
+        main._execute_comparison_publication_read=capture_publication_read
         with TestClient(main.app) as client:
             series_response = client.post(
                 f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison",
@@ -968,6 +987,29 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert expected_series_pairs and actual_series_pairs == expected_series_pairs
         assert {source for source,_ in actual_series_pairs} == {"fixture_b"}
         assert {vintage for _,vintage in actual_series_pairs} == {"v1", "v2"}
+        with TestClient(main.app) as client:
+            series_rank_only = client.post(
+                f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison?fields=rank",
+                json={"selection":None})
+            series_invalid_field=client.post(
+                f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison?fields=mean",
+                json={"selection":None})
+        main._execute_comparison_publication_read=original_publication_read
+        assert series_rank_only.status_code == 200, series_rank_only.text
+        assert series_invalid_field.status_code == 422
+        group_projection=[(sql,params) for sql,params in captured_publication_reads
+            if "FROM ordered_series_comparison_group" in sql][-1]
+        focal_projection=[(sql,params) for sql,params in captured_publication_reads
+            if "ordered_series_comparison_territory" in sql][-1]
+        assert "CASE WHEN %s THEN group_value" in group_projection[0]
+        assert group_projection[1][0] is False
+        assert "CASE WHEN %s THEN t.value" in focal_projection[0]
+        assert focal_projection[1][:4]==(False,True,False,False)
+        rank_result=series_rank_only.json()["result"]
+        assert rank_result["rank"] == series_result["rank"]
+        assert rank_result["status"] == series_result["status"]
+        assert rank_result["comparison_sources"] == series_result["comparison_sources"]
+        assert not {"focal_value","median","rank_size","rank_ties","eligible_count"} & set(rank_result)
 
         collection = manifest["numeric_collection"]
         with TestClient(main.app) as client:
@@ -983,6 +1025,18 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert expected_collection_pairs == actual_collection_pairs
         assert len({vintage for _,vintage in actual_collection_pairs}) == 2
         assert collection_result["source_facet"] == {"detail":"total","observation_period":"2025"}
+        with TestClient(main.app) as client:
+            collection_median = client.post(
+                f"/api/territories/commune/{collection['territory_id']}/indicators/{collection['indicator_id']}/comparison?fields=median")
+            collection_invalid_field=client.post(
+                f"/api/territories/commune/{collection['territory_id']}/indicators/{collection['indicator_id']}/comparison?fields=rank_ties")
+        assert collection_median.status_code == 200, collection_median.text
+        assert collection_invalid_field.status_code == 422
+        selected_collection=collection_median.json()["result"]
+        assert selected_collection["median"] == collection_result["median"]
+        assert selected_collection["status"] == collection_result["status"]
+        assert selected_collection["comparison_sources"] == collection_result["comparison_sources"]
+        assert not {"rank","rank_size","eligible_count","missing_count"} & set(selected_collection)
         with TestClient(main.app) as client:
             empty_collection_response = client.post(
                 f"/api/territories/commune/{collection['empty_territory_id']}/themes/{collection['theme_id']}/comparison",

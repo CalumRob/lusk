@@ -92,10 +92,11 @@ class FixedComparisonConnection:
             count=len(self.members)+(1 if self.extra_member else 0)
             eligible=count if self.eligible_count is None else self.eligible_count
             lineage_count=0 if self.empty_lineage else len(self.members)
-            rows=[(axis,self.stat,None if eligible==0 else 7.5,count,eligible,count-eligible,lineage_count) for axis in axes]
+            rows=[(axis,self.stat,None if eligible==0 else 7.5,count,eligible,count-eligible,lineage_count,
+                (eligible==0 or eligible>0)) for axis in axes]
             return Cursor(rows=rows[:1] if self.incomplete else rows)
         if "FROM ordered_series_comparison_territory" in sql:
-            member_ids=[params[5]]
+            member_ids=[params[9]]
             axes=["M2","M3"] if self.axis_kind=="declared_detail" else self.axes
             eligible=len(self.members) if self.eligible_count is None else self.eligible_count
             rank=(None if self.bad_focal_rank=="missing_rank" else 1) if self.focal_status=="measured" else None
@@ -103,7 +104,9 @@ class FixedComparisonConnection:
             return Cursor(rows=[(axis,tid,10.0 if self.focal_status=="measured" else None,self.focal_status,
                 rank,
                 (1 if self.focal_status=="measured" else None),
-                rank_size)
+                rank_size,
+                ((self.focal_status=="measured" and rank is not None and rank_size==eligible) or
+                 (self.focal_status!="measured" and rank is None and rank_size is None)))
                 for axis in axes for tid in member_ids])
         raise AssertionError(sql)
 
@@ -128,7 +131,7 @@ def test_all_canonical_owned_series_contexts_read_published_axis_and_territory_r
     assert result["rank"]==1
     assert any("FROM series_provenance_revision" in sql for sql,_ in conn.sql)
     group_read=next(params for sql,params in conn.sql if "FROM ordered_series_comparison_group" in sql)
-    assert tuple(group_read[2:5])==expected
+    assert tuple(group_read[3:6])==expected
     assert markers[conn.dataset][1]=="series-v1"
     assert any("FROM ordered_series_comparison_group" in sql for sql,_ in conn.sql)
     assert any("FROM ordered_series_comparison_territory" in sql for sql,_ in conn.sql)
@@ -136,7 +139,7 @@ def test_all_canonical_owned_series_contexts_read_published_axis_and_territory_r
     assert len(raw_rows)==0
     published_territory=next((sql,params) for sql,params in conn.sql
         if "FROM ordered_series_comparison_territory" in sql)
-    assert published_territory[1][5]==territory_id
+    assert published_territory[1][9]==territory_id
 
 
 @pytest.mark.parametrize("stale",["missing","series","reference"])
@@ -214,7 +217,7 @@ def test_fixed_comparison_measured_focal_still_uses_published_eligible_count(
 @pytest.mark.parametrize("bad_focal_rank",["missing_rank","wrong_rank_size"])
 def test_fixed_comparison_fails_closed_on_invalid_measured_focal_rank(bad_focal_rank):
     conn=FixedComparisonConnection(bad_focal_rank=bad_focal_rank)
-    with pytest.raises(HTTPException,match="focal comparison result is incomplete"):
+    with pytest.raises(HTTPException,match="focal comparison result is incomplete or invalid"):
         main._owned_series_comparison_results(conn,[(conn.dataset,"milieux",False,conn.indicator)],
             "commune","c1",None,cohort=("commune",tuple(conn.members),
                 {"kind":"density_class","density_class_code":"d1"}))

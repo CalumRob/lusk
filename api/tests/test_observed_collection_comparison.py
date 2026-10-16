@@ -37,16 +37,17 @@ class PublishedConnection:
             if self.bad == "marker_stale": return Cursor(("comparison-v1", "old", "ref-v1", 1, 2, 1, True))
             if self.bad == "lineage_unpublished": return Cursor(("comparison-v1", "collection-v1", "ref-v1", 1, 2, 1, False))
             return Cursor(("comparison-v1", "collection-v1", "ref-v1", 1, 2, 1, True))
-        if "FROM observed_collection_comparison_group" in sql:
-            row = ("median", 15.0, 2, 2, 0, 1, "collection-v1", "ref-v1")
-            return Cursor(row)
         if "FROM observed_collection_comparison_territory" in sql:
             if "territory_id=%s" not in sql: raise AssertionError("focal-only comparison read expected")
-            row = ("c1", 10., "measured", 2, 1, 2, "collection-v1", "ref-v1")
+            row = ("c1", 10., "measured", 2, 1, 2, "collection-v1", "ref-v1", True)
             if self.bad == "bad_rank": row = (*row[:3], 3, *row[4:])
             if self.bad == "bad_tie": row = (*row[:4], 2, *row[5:])
-            if self.bad == "bad_version": row = (*row[:6], "old", row[7])
+            if self.bad == "bad_version": row = (*row[:6], "old", row[7],row[8])
+            if self.bad == "bad_rank": row = (*row[:8],False)
             return Cursor() if self.bad == "missing_focal" else Cursor(row)
+        if "FROM observed_collection_comparison_group\n" in sql:
+            row = ("median", 15.0, 2, 2, 0, 1, "collection-v1", "ref-v1", True)
+            return Cursor(row)
         if "FROM observed_collection_comparison_lineage" in sql:
             rows = [("source", "v1", "comparison-v1")]
             if self.bad in ("lineage_missing", "empty_lineage"): rows = []
@@ -69,6 +70,25 @@ def test_fixed_comparison_uses_published_sparse_facet_without_peer_values():
     assert not any("FROM observed_collection_comparison_territory" in sql and "territory_id=%s" not in sql for sql in conn.sql)
 
 
+def test_fixed_collection_selects_median_in_sql_and_rejects_unsupported_fields_early():
+    conn=PublishedConnection()
+    result=collection_comparison(conn,DESCRIPTOR,"commune","c1","commune",("c1","c2"),
+        ("density_class","A","commune"),fields=("median",))
+    assert result["median"]==15.0 and result["status"]=="available"
+    assert "rank" not in result and "eligible_count" not in result
+    group_sql,group_params=next((sql,params) for sql,params in conn.calls
+        if "FROM observed_collection_comparison_group" in sql)
+    focal_sql,focal_params=next((sql,params) for sql,params in conn.calls
+        if "FROM observed_collection_comparison_territory" in sql)
+    assert "CASE WHEN %s THEN median" in group_sql and group_params[0] is True
+    assert all(value is False for value in focal_params[:4])
+    invalid=PublishedConnection()
+    with pytest.raises(HTTPException) as error:
+        collection_comparison(invalid,DESCRIPTOR,"commune","c1","commune",("c1","c2"),
+            ("density_class","A","commune"),fields=("focal_value",))
+    assert error.value.status_code==422 and not invalid.calls
+
+
 def test_fixed_read_work_is_independent_of_selected_cohort_size():
     class Large(PublishedConnection):
         def __init__(self, member_count):
@@ -76,9 +96,9 @@ def test_fixed_read_work_is_independent_of_selected_cohort_size():
             self.member_count = member_count
 
         def execute(self, sql, params=None):
-            if "FROM observed_collection_comparison_group" in sql:
+            if "FROM observed_collection_comparison_group\n" in sql:
                 self.sql.append(sql); self.calls.append((sql,params))
-                return Cursor(("median",15.,self.member_count,2,self.member_count-2,1,"collection-v1","ref-v1"))
+                return Cursor(("median",15.,self.member_count,2,self.member_count-2,1,"collection-v1","ref-v1",True))
             return super().execute(sql,params)
 
     sizes=[]
@@ -163,10 +183,10 @@ def test_theme_collection_only_route_passes_exact_fixed_context(monkeypatch):
 def test_fixed_comparison_preserves_sparse_unavailable_result():
     class Sparse(PublishedConnection):
         def execute(self, sql, params=None):
-            if "FROM observed_collection_comparison_group" in sql:
-                return Cursor(("median", 10., 2, 1, 1, 1, "collection-v1", "ref-v1"))
+            if "FROM observed_collection_comparison_group\n" in sql:
+                return Cursor(("median", 10., 2, 1, 1, 1, "collection-v1", "ref-v1",True))
             if "FROM observed_collection_comparison_territory" in sql:
-                return Cursor(("c1", 10., "measured", 1, 1, 1, "collection-v1", "ref-v1"))
+                return Cursor(("c1", 10., "measured", 1, 1, 1, "collection-v1", "ref-v1",True))
             if "FROM observed_collection_comparison_lineage" in sql:
                 return Cursor(rows=[("source", "v1", "comparison-v1")])
             return super().execute(sql, params)
