@@ -37,13 +37,20 @@ class FactsIntent(BaseModel):
 class FixedComparisonIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["fixed_comparison"]
-    context: str = Field(min_length=1, max_length=64)
+    context: Literal["default"]
 
 
 class SelectedComparisonIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["selected_comparison"]
     members: list[TerritoryMember] = Field(max_length=1500)
+
+    @model_validator(mode="after")
+    def validate_unique_members(self):
+        identities = [(member.type, member.id) for member in self.members]
+        if len(identities) != len(set(identities)):
+            raise ValueError("selected comparison members must be unique")
+        return self
 
 
 ResourceIntent = Annotated[

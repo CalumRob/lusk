@@ -27,11 +27,14 @@ resource currently has a successful publication.
 `target`, optional closed `coordinates`, `fields`, and typed `intent`). The
 single-read request and each batch item have the same fields; only a batch item
 adds its correlation `id`. `POST /api/resources/read-batch` validates all items
-before reading facts and returns no partial result if any item fails. Both
+before returning results and returns no partial result if any item fails. Both
 execute on one `READ ONLY REPEATABLE READ` snapshot. The batch is limited to 12
-items, 200,000 declared work units, and 8 MB serialized output. The semantic
-read routes currently accept `facts` intent; other declared operations are
-rejected until their connection-taking readers are wired.
+items, 200,000 declared work units, and 8 MB serialized output. Supported intents
+are `facts`, `fixed_comparison` with the closed `default` context, and bounded
+`selected_comparison` with at most 1,500 unique typed territory members. Facts
+coordinates and optional fields are producer-declared; status, availability,
+descriptor, axis, and provenance metadata remain mandatory where declared.
+Comparison fields use the closed comparison-result vocabulary.
 
 <!-- BEGIN GENERATED API REQUEST INVENTORY -->
 ## Generated route and request-schema inventory
@@ -97,7 +100,7 @@ These are the model fields reachable from request bodies, including nested and d
 | `NamedReferenceTarget` | `id` | yes | string; min chars: `1`; max chars: `128` |
 | `FactsIntent` | `kind` | yes | string; const: `facts` |
 | `FixedComparisonIntent` | `kind` | yes | string; const: `fixed_comparison` |
-| `FixedComparisonIntent` | `context` | yes | string; min chars: `1`; max chars: `64` |
+| `FixedComparisonIntent` | `context` | yes | string; const: `default` |
 | `SelectedComparisonIntent` | `kind` | yes | string; const: `selected_comparison` |
 | `SelectedComparisonIntent` | `members` | yes | array of TerritoryMember; max items: `1500` |
 | `ResourceBatchItem` | `resource` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |

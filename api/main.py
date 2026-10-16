@@ -2580,8 +2580,34 @@ def discover_resources(
 
 
 def _semantic_resource_preflight(conn, item):
-    if item.intent.kind != "facts":
-        raise HTTPException(422, "This resource currently declares facts intent only")
+    if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
+        selection = ([(member.type, member.id) for member in item.intent.members]
+                     if item.intent.kind == "selected_comparison" else None)
+        _comparison_field_selection(item.fields)
+        focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
+                             (item.target.id,)).fetchone()
+        if not focal:
+            raise HTTPException(404, "Focal territory not found")
+        if focal[0] != item.target.type:
+            raise HTTPException(422, "Focal territory type does not match route")
+        if selection:
+            member_ids = [member_id for _, member_id in selection]
+            resolved = conn.execute(
+                "SELECT territory_id,territory_type FROM territory_reference WHERE territory_id=ANY(%s)",
+                (member_ids,)).fetchall()
+            resolved_by_id = {territory_id: territory_type for territory_id, territory_type in resolved}
+            if len(resolved_by_id) != len(selection):
+                raise HTTPException(404, "Selected comparison territory not found")
+            if any(resolved_by_id.get(member_id) != member_type
+                   for member_type, member_id in selection):
+                raise HTTPException(422, "Selected comparison territory type does not match")
+        if item.intent.kind == "fixed_comparison":
+            return 1
+        resource = default_resource_catalogue().resources_by_id[item.resource]
+        axis_work = 1
+        for _, values in resource.axis_values:
+            axis_work *= max(1, len(values))
+        return len(selection) * axis_work
     requested_fields = _semantic_legacy_fields(item)
     if item.target.kind == "named_reference":
         route = _owned_series_route(conn, item.resource)
@@ -2644,8 +2670,13 @@ def _semantic_legacy_fields(item):
 
 
 def _semantic_resource_read(conn, item):
-    if item.intent.kind != "facts":
-        raise HTTPException(422, "This resource currently declares facts intent only")
+    if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
+        selection = ([(member.type, member.id) for member in item.intent.members]
+                     if item.intent.kind == "selected_comparison" else None)
+        data = _indicator_comparison_snapshot(
+            conn, item.target.type, item.target.id, item.resource, selection,
+            _comparison_field_selection(item.fields))
+        return {"resource": item.resource, "target": item.target.model_dump(), **data}
     requested_fields = _semantic_legacy_fields(item)
     if item.target.kind == "named_reference":
         route = _owned_series_route(conn, item.resource)

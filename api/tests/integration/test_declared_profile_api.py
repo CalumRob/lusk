@@ -523,6 +523,34 @@ def test_declared_profile_postgres_api_contract(installation):
             assert age_comparison["facet"] == {"detail":"15-29","sex":"F"}
             assert age_comparison["median"] == pytest.approx(.4)
             assert age_comparison["eligible_count"] == 2
+            semantic_comparison_item = {
+                "resource": "structure_age",
+                "target": {"kind": "territory", "type": "commune", "id": territory},
+                "fields": ["median", "eligible_count"],
+                "intent": {"kind": "fixed_comparison", "context": "default"},
+            }
+            semantic_comparison = client.post("/api/resources/read", json=semantic_comparison_item)
+            semantic_comparison_batch = client.post("/api/resources/read-batch", json={"items": [
+                {"id": "age-comparison", **semantic_comparison_item},
+            ]})
+            assert semantic_comparison.status_code == semantic_comparison_batch.status_code == 200, (
+                semantic_comparison.text, semantic_comparison_batch.text)
+            comparison_payload = semantic_comparison_batch.json()["results"][0]["data"]
+            assert comparison_payload == semantic_comparison.json()
+            assert comparison_payload["result"]["median"] == pytest.approx(.4)
+            assert comparison_payload["result"]["eligible_count"] == 2
+            selected_comparison_item = {
+                "resource": "structure_age",
+                "target": {"kind": "territory", "type": "commune", "id": territory},
+                "intent": {"kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": peer},
+                ]},
+            }
+            selected_comparison = client.post("/api/resources/read", json=selected_comparison_item)
+            assert selected_comparison.status_code == 200, selected_comparison.text
+            assert selected_comparison.json()["selection"] == [
+                {"territory_type": "commune", "territory_id": peer},
+            ]
             one_axis = next(row for row in profile_only_results if row["indicator"] == "one_axis_fixture")
             assert one_axis["facet"] == {"detail":"length","sex":None}
             assert one_axis["unit"] == "km"

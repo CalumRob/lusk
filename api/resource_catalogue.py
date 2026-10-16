@@ -148,9 +148,17 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
     if item.target.kind == "named_reference" and item.target.id not in resource.target_ids:
         raise ValueError("named reference identity is not declared for this resource")
     if item.fields is not None:
-        supported = {field for shape in resource.shapes for field in _FIELDS_BY_SHAPE.get(shape, ())}
+        supported = ({
+            "focal_value", "median", "rank", "rank_size", "rank_ties",
+            "selected_member_count", "eligible_count", "missing_count", "mean", "mean_curve",
+        } if item.intent.kind in {"fixed_comparison", "selected_comparison"} else
+            {field for shape in resource.shapes for field in _FIELDS_BY_SHAPE.get(shape, ())})
         if len(item.fields) != len(set(item.fields)) or not set(item.fields) <= supported:
             raise ValueError("field is not declared for this resource")
+    if item.intent.kind != "facts" and item.coordinates is not None:
+        raise ValueError("coordinates apply only to facts intent")
+    if item.intent.kind != "facts" and item.target.kind != "territory":
+        raise ValueError("comparison intents require a territory target")
     if item.coordinates is not None:
         axes = dict(resource.axis_values)
         allowed_axes = set(axes) | set(resource.dynamic_axes)
@@ -252,7 +260,8 @@ def discover_indicator_resources(metadata_directory: str | Path) -> ResourceCata
                     metadata, indicator_id, page_descriptor, shapes, parent_indicator) if not values),
                 fields=tuple(dict.fromkeys(
                     field for shape in shapes for field in _FIELDS_BY_SHAPE.get(shape, ()))),
-                intents=("facts",),
+                intents=("facts", "fixed_comparison", "selected_comparison")
+                if parent_indicator is None else ("facts",),
             ))
 
     # A source-declared key cannot silently disappear because another map was

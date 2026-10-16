@@ -135,3 +135,35 @@ def test_provenance_and_status_are_mandatory_not_selectable_fields():
     })
     with pytest.raises(ValueError, match="field"):
         validate_resource_item(series, catalogue)
+
+
+def test_comparison_intents_are_closed_and_share_item_grammar():
+    catalogue = default_resource_catalogue()
+    target = {"kind": "territory", "type": "commune", "id": "22001"}
+    fixed = ResourceReadItem.model_validate({
+        "resource": "densite", "target": target,
+        "fields": ["median", "eligible_count"],
+        "intent": {"kind": "fixed_comparison", "context": "default"},
+    })
+    selected = ResourceReadItem.model_validate({
+        "resource": "densite", "target": target,
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "22002"},
+            {"type": "commune", "id": "22003"},
+        ]},
+    })
+    assert validate_resource_item(fixed, catalogue).resource_id == "densite"
+    assert validate_resource_item(selected, catalogue).resource_id == "densite"
+    with pytest.raises(ValidationError):
+        ResourceReadItem.model_validate({
+            "resource": "densite", "target": target,
+            "intent": {"kind": "fixed_comparison", "context": "arbitrary-sql"},
+        })
+    with pytest.raises(ValidationError, match="unique"):
+        ResourceReadItem.model_validate({
+            "resource": "densite", "target": target,
+            "intent": {"kind": "selected_comparison", "members": [
+                {"type": "commune", "id": "22002"},
+                {"type": "commune", "id": "22002"},
+            ]},
+        })
