@@ -430,7 +430,14 @@ async def lifespan(_app: FastAPI):
         pool.cache_clear()
 
 
-app = FastAPI(title="Lusk read API — architecture spike", lifespan=lifespan)
+app = FastAPI(
+    title="Lusk read API",
+    lifespan=lifespan,
+    docs_url="/api/docs",
+    redoc_url=None,
+    openapi_url="/api/openapi.json",
+    swagger_ui_oauth2_redirect_url=None,
+)
 
 
 def _building_publication(markers: list[tuple[str, str]]) -> str:
