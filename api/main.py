@@ -1982,15 +1982,8 @@ def _selected_scalar_comparison_sources(conn, *, indicator_ids, cohort_type, mem
     return _comparison_sources_by_indicator(source_rows)
 
 
-def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
-                                         cohort_type, members, territory_id, *, include_ties=False,
-                                         selected_fields=None):
-    """Read validated group statistics and one territory's precomputed result."""
-    context, group_id, territory_type = fixed_context
-    comparable = [row for row in scalar_descriptors
-        if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
-    if not comparable:
-        return {}
+def _scalar_comparison_publication_marker(conn):
+    """Return a compatible fixed-scalar comparison marker from this snapshot."""
     installed = conn.execute("SELECT to_regclass('scalar_comparison_publication')").fetchone()
     if not installed or not installed[0]:
         raise HTTPException(503, "Published scalar comparison is unavailable")
@@ -2004,6 +1997,19 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
     if (not marker or not marker[0] or marker[1] != marker[5] or marker[2] != marker[7]
             or marker[6] != marker[7] or marker[3] < 1 or marker[4] < 1):
         raise HTTPException(503, "Published scalar comparison is stale or incompatible")
+    return marker
+
+
+def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
+                                         cohort_type, members, territory_id, *, include_ties=False,
+                                         selected_fields=None):
+    """Read validated group statistics and one territory's precomputed result."""
+    context, group_id, territory_type = fixed_context
+    comparable = [row for row in scalar_descriptors
+        if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
+    if not comparable:
+        return {}
+    marker = _scalar_comparison_publication_marker(conn)
     indicator_ids = [row[0] for row in comparable]
     selected = set(_COMPARISON_RESULT_FIELDS) if selected_fields is None else set(selected_fields)
     groups = _execute_comparison_publication_read(conn, """SELECT indicator_id,statistic,
@@ -2078,9 +2084,13 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
            ORDER BY indicator_id""", (theme_id, indicator_id, indicator_id)
     ).fetchall()
     if preflight_only and profiles is None:
-        profiles = conn.execute("""SELECT indicator_id FROM profile_descriptor
-            WHERE theme_id=%s AND %s=ANY(allowed_levels) ORDER BY indicator_id""",
-            (theme_id, territory_type)).fetchall()
+        profile_rows = conn.execute("""SELECT indicator_id,comparison_scalar FROM profile_descriptor
+            WHERE theme_id=%s AND %s=ANY(allowed_levels)
+              AND (%s::text IS NULL OR indicator_id=%s)
+            ORDER BY indicator_id""",
+            (theme_id, territory_type, indicator_id, indicator_id)).fetchall()
+        profiles = [{"indicator": row[0], "comparison_scalar": row[1]}
+                    for row in profile_rows]
     elif profiles is None:
         profiles, profile_version = focal_profiles(conn, territory_type, territory_id,
             theme_id=theme_id, indicator_id=indicator_id)
@@ -2148,8 +2158,13 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             selection,cohort_type,members,scope)
         if territory_id not in members:
             fixed_context = None
-        if fixed_context and any(not p.get("comparison_scalar") for p in (profiles or [])):
+        if fixed_context and any(not p["comparison_scalar"] for p in (profiles or [])):
             _profile_comparison_publication_marker(conn)
+        scalar_backed_profiles = [p for p in (profiles or []) if p["comparison_scalar"]]
+        comparable_scalars = [row for row in scalar_descriptors
+            if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
+        if fixed_context and (comparable_scalars or scalar_backed_profiles):
+            _scalar_comparison_publication_marker(conn)
         if bpe_available:
             _bpe_profile_publication(conn,validate_row_count=False)
         if owned_descriptors:
@@ -3567,22 +3582,6 @@ def _bpe_profile_snapshot(conn, territory_type, territory_id, *, default_compari
 
 def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, fields=None, *, preflight_only=False):
     shape_rows = []
-    if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]:
-        bpe_descriptor = conn.execute(
-            "SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone()
-        if bpe_descriptor and bpe_descriptor[0] == indicator_id:
-            if fields is not None:
-                raise HTTPException(422, "Field selection is not declared for this indicator resource")
-            if preflight_only:
-                marker = _bpe_profile_publication(conn, validate_row_count=False)
-                territory = conn.execute("SELECT 1 FROM territory_reference WHERE territory_id=%s AND territory_type=%s",
-                                         (territory_id, territory_type)).fetchone()
-                if not territory:
-                    raise HTTPException(404, "Territory not found")
-                return {"content_version": marker[0], "reference_content_version": marker[2],
-                        "supported_fields": set()}
-            return _bpe_profile_snapshot(conn, territory_type, territory_id,
-                                         default_comparison=True)
     bpe = conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone() \
         if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0] else None
     if bpe and bpe[0] == indicator_id:
@@ -4762,23 +4761,24 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             shapes.append((table, shape))
     if len(shapes) > 1:
         raise HTTPException(503, "Indicator has ambiguous published storage shapes")
-    if shapes:
-        if shapes[0][1] in ("scalar", "profile"):
-            table, shape = shapes[0]
-            descriptor = conn.execute(
-                f"SELECT theme_id,allowed_levels FROM {table} WHERE indicator_id=%s", (indicator_id,)).fetchone()
-            if not descriptor:
-                raise HTTPException(404, "Indicator descriptor is unavailable")
-            if territory_type not in descriptor[1]:
-                raise HTTPException(422, "Indicator is not declared for this territory level")
-            if not descriptor[0]:
-                raise HTTPException(503, "Indicator theme metadata is unavailable")
-            _theme_comparison_snapshot(conn, territory_type, territory_id, descriptor[0],
-                                       selection, indicator_id=indicator_id,
-                                       result_fields=selected_fields, preflight_only=True)
-        elif shapes[0][1] == "series":
-            _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id,
-                                       preflight_only=True)
+    if not shapes:
+        raise HTTPException(404, "Indicator descriptor is unavailable")
+    if shapes[0][1] in ("scalar", "profile"):
+        table, shape = shapes[0]
+        descriptor = conn.execute(
+            f"SELECT theme_id,allowed_levels FROM {table} WHERE indicator_id=%s", (indicator_id,)).fetchone()
+        if not descriptor:
+            raise HTTPException(404, "Indicator descriptor is unavailable")
+        if territory_type not in descriptor[1]:
+            raise HTTPException(422, "Indicator is not declared for this territory level")
+        if not descriptor[0]:
+            raise HTTPException(503, "Indicator theme metadata is unavailable")
+        _theme_comparison_snapshot(conn, territory_type, territory_id, descriptor[0],
+                                   selection, indicator_id=indicator_id,
+                                   result_fields=selected_fields, preflight_only=True)
+    elif shapes[0][1] == "series":
+        _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id,
+                                   preflight_only=True)
     # Validate every explicit scope against the published reference before any
     # result query, including collection/owned dynamic readers.
     _comparison_cohort(conn, territory_type, territory_id, selection)

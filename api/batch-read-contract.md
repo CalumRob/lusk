@@ -120,11 +120,13 @@ bounded reader/publisher contract. A failed later item returns an HTTP error,
 never a partial `results` envelope.
 
 Guarded PostgreSQL first/last-item stale-marker tests record SQL executed by the
-reader connection and prove no earlier profile, series, or observed-collection
-fact/result query occurred. A barrier-controlled publisher commit between the
-first and second batch reads proves one connection and one outer
-`READ ONLY REPEATABLE READ` transaction see the old facts/clock together; a
-subsequent single read sees the new clock/value. An explicit write attempt in a
+reader connection and prove no earlier profile, series, observed-collection, or
+scalar-comparison fact/result query occurred. Unknown named comparisons are
+also rejected in metadata preflight before earlier fact reads. A
+barrier-controlled publisher commit between the first and second batch reads
+proves one connection and one outer `READ ONLY REPEATABLE READ` transaction see
+the old facts/clock together; a subsequent single read sees the new clock/value.
+An explicit write attempt in a
 read-only transaction is rejected. The independent profile clock in that batch
 also remains unchanged. The source-pinned paired batch-vs-single rehearsal and
 broader review/rollout authorization remain outside this checkpoint.

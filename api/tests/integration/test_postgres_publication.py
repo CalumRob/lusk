@@ -1249,6 +1249,83 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert expected_scalar_pairs and actual_scalar_pairs == expected_scalar_pairs
         assert expected_profile_pairs and actual_profile_pairs == expected_profile_pairs
 
+        # Compose a genuine focal read with this R-published theme comparison.
+        # Its declared detail profile makes metadata preflight distinguish
+        # detail comparison profiles from scalar-backed profiles.
+        with TestClient(main.app) as client:
+            single_facts = client.get(
+                "/api/territories/commune/22001/themes/demographie/facts?fields=value")
+            single_comparison = client.post(
+                "/api/territories/commune/22001/themes/demographie/comparison?fields=median",
+                json={"theme_id": "demographie"})
+            combined = client.post("/api/read-batch", json={"items": [
+                {"id": "facts", "resource": "theme_facts", "territory_type": "commune",
+                 "territory_id": "22001", "theme_id": "demographie", "fields": ["value"]},
+                {"id": "comparison", "resource": "theme_comparison", "territory_type": "commune",
+                 "territory_id": "22001", "theme_id": "demographie", "fields": ["median"]},
+            ]})
+        assert single_facts.status_code == single_comparison.status_code == 200
+        assert combined.status_code == 200, combined.text
+        batch_data = {item["id"]: item["data"] for item in combined.json()["results"]}
+        assert batch_data == {"facts": single_facts.json(), "comparison": single_comparison.json()}
+
+        # An unknown later named comparison must be rejected during metadata
+        # preflight, before a preceding valid fact item reads observations.
+        fact_item = {"id": "facts", "resource": "theme_facts", "territory_type": "commune",
+            "territory_id": "22001", "theme_id": "demographie", "fields": ["value"]}
+        unknown_item = {"id": "unknown", "resource": "indicator_comparison",
+            "territory_type": "commune", "territory_id": "22001",
+            "indicator_id": "not_registered_fixture_indicator"}
+        with TestClient(main.app) as client:
+            single_unknown = client.post(
+                "/api/territories/commune/22001/indicators/not_registered_fixture_indicator/comparison")
+            unknown_batches = []
+            for items in ([fact_item, unknown_item], [unknown_item, fact_item]):
+                query_trace.clear()
+                failed = client.post("/api/read-batch", json={"items": items})
+                unknown_batches.append((failed.status_code, failed.json(), list(query_trace)))
+        assert single_unknown.status_code == 404
+        assert all(status == 404 and "results" not in body and "data" not in body
+                   for status, body, _ in unknown_batches)
+        forbidden_read_tokens = ("scalar_observation", "profile_observation", "series_observation",
+            "comparison_group", "comparison_territory", "comparison_result")
+        assert all(not any(any(token in sql.lower() for token in forbidden_read_tokens)
+                           for sql in trace)
+                   for _, _, trace in unknown_batches), unknown_batches
+
+        # A stale fixed-scalar-comparison clock is a preflight dependency, not
+        # just the scalar-fact publication clock. Prove it rejects either item
+        # position without reading facts or materialized comparison results.
+        with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+            scalar_marker = publisher.execute("""SELECT content_version,scalar_content_version,
+                reference_content_version FROM scalar_comparison_publication WHERE singleton""").fetchone()
+            publisher.execute("UPDATE scalar_comparison_publication SET scalar_content_version='stale-scalar-fixture'")
+        stale_comparison_batches = []
+        try:
+            with TestClient(main.app) as client:
+                for items in ([fact_item, {"id": "comparison", "resource": "theme_comparison",
+                                  "territory_type": "commune", "territory_id": "22001",
+                                  "theme_id": "demographie"}],
+                              [{"id": "comparison", "resource": "theme_comparison",
+                                "territory_type": "commune", "territory_id": "22001",
+                                "theme_id": "demographie"}, fact_item]):
+                    query_trace.clear()
+                    failed = client.post("/api/read-batch", json={"items": items})
+                    stale_comparison_batches.append((failed.status_code, failed.json(), list(query_trace)))
+        finally:
+            with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+                publisher.execute("""UPDATE scalar_comparison_publication SET content_version=%s,
+                    scalar_content_version=%s,reference_content_version=%s WHERE singleton""", scalar_marker)
+        assert all(status == 503 and "results" not in body and "data" not in body
+                   for status, body, _ in stale_comparison_batches)
+        forbidden_comparison_reads = ("FROM scalar_observation ", "FROM scalar_observation_source",
+            "FROM profile_observation ", "FROM scalar_comparison_group",
+            "FROM scalar_comparison_territory", "FROM profile_comparison_group",
+            "FROM profile_comparison_territory")
+        assert all(not any(any(token in sql for token in forbidden_comparison_reads)
+                           for sql in trace)
+                   for _, _, trace in stale_comparison_batches), stale_comparison_batches
+
         alias_path="/api/territories/commune/22001/indicators/structure_age"
         with TestClient(main.app) as client:
             alias_full=client.get(alias_path)
