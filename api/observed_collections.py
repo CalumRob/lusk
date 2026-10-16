@@ -115,6 +115,29 @@ def collection_comparison(conn, descriptor, territory_type, territory_id, cohort
         "comparison_sources":list(sources.values()),**marker}
 
 
+def collection_comparison_preflight(conn, descriptor, fields, fixed_context, marker):
+    """Resolve collection comparison dependencies without reading published results."""
+    allowed = ({"status", "reason", "selected_member_count"}
+        if descriptor["kind"] == "anchored_membership" else
+        {"status", "reason", "selected_member_count", "eligible_count", "missing_count",
+         "median", "rank", "rank_size"})
+    normalize_field_selection(fields, allowed)
+    if descriptor["kind"] == "anchored_membership" or fixed_context is None:
+        return marker
+    storage = conn.execute("""SELECT to_regclass('observed_collection_comparison_lineage'),
+        EXISTS(SELECT 1 FROM information_schema.columns WHERE table_schema=current_schema()
+          AND table_name='observed_collection_comparison_publication' AND column_name='lineage_complete')""").fetchone()
+    if not storage or not storage[0] or not storage[1]:
+        raise HTTPException(503,"Observed collection comparison lineage storage is unavailable")
+    publication = conn.execute("""SELECT content_version,collection_content_version,
+        reference_content_version,lineage_complete FROM observed_collection_comparison_publication
+        WHERE indicator_id=%s""", (descriptor["indicator_id"],)).fetchone()
+    if (not publication or not publication[0] or publication[1] != marker["content_version"]
+            or publication[2] != marker["reference_content_version"] or publication[3] is not True):
+        raise HTTPException(503,"Observed collection comparison publication is missing or incompatible")
+    return marker
+
+
 def _published_collection_comparison(conn, descriptor, territory_type, territory_id, members,
                                      fixed_context, marker, selected):
     context, group_id, group_type = fixed_context

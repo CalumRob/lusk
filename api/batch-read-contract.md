@@ -95,7 +95,7 @@ There is one acquired connection and one outer transaction. Existing
 connection-taking readers reuse that connection; no route/HTTP fan-out,
 per-item connection, or nested transaction is used.
 
-## Remaining #788 coverage
+## Dependency-preflight and snapshot checkpoint
 
 This checkpoint is not a rollout authorization. The inventory above now covers
 the named focal/comparison resources, the direct profile response, the direct
@@ -108,24 +108,27 @@ existing active owned-reference dispatch and response identity; they are not
 folded into the direct dataset series URL, whose public response does not carry
 the separately routed named-reference resource.
 
-The whole-list preflight validates resource identities, field support, scopes,
-series descriptor axes and bounded reference-scope estimates before fact/result
-readers. Direct-profile preflight checks its publication marker, descriptor,
-scope membership and field vocabulary without fetching profile cells. Owned
-series preflight checks the dataset publication/reference marker, descriptor,
-territory, filters and scope estimate. Full reader publication/completeness
-checks still run before an item is returned. The remaining dependency gap is
-that preflight does not yet resolve every BPE, owned-series/reference,
-observed-collection, and dynamic-comparison publication dependency for every
-resource family; a stale later dependency can therefore follow earlier internal
-fact work, but the transaction returns no partial envelope. AEDAR guards run in
-metadata preflight.
+The metadata preflight resolves the current resource-family dependencies before
+any item fact/result reader: BPE publication/descriptor clocks; owned dataset
+and named-reference publication, reference clock and route identity; observed
+collection publication/reference clock and fixed-comparison lineage marker;
+scalar/profile and fixed scalar/profile/series/collection comparison markers;
+AEDAR aggregate/comparison markers; and direct profile/series markers and
+descriptor/scope limits. The existing publication guards are reused. Preflight
+does not count peer facts or validate raw fact completeness; those remain the
+bounded reader/publisher contract. A failed later item returns an HTTP error,
+never a partial `results` envelope.
 
-Still required before #788 is complete: complete marker preflight for
-BPE/owned/reference/collection/dynamic comparison paths; first/last-item
-stale/missing tests with a real query trace; concurrent publisher refresh proof;
-and the source-pinned paired batch-vs-single rehearsal. These are the next
-checkpoint, not claims made here. Resource-local bounds, the 12-item cap, the
-new aggregate profile/series work estimate and the serialized envelope limit
-bound the currently supported request work; the estimate intentionally does
-not replace dependency-completeness or concurrency proofs.
+Guarded PostgreSQL first/last-item stale-marker tests record SQL executed by the
+reader connection and prove no earlier profile, series, or observed-collection
+fact/result query occurred. A barrier-controlled publisher commit between the
+first and second batch reads proves one connection and one outer
+`READ ONLY REPEATABLE READ` transaction see the old facts/clock together; a
+subsequent single read sees the new clock/value. An explicit write attempt in a
+read-only transaction is rejected. The independent profile clock in that batch
+also remains unchanged. The source-pinned paired batch-vs-single rehearsal and
+broader review/rollout authorization remain outside this checkpoint.
+
+Resource-local bounds, the 12-item cap, the 200,000-unit aggregate
+profile/series estimate and serialized envelope limit continue to bound
+supported work; they do not imply a publisher performance benchmark.

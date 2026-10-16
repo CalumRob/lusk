@@ -143,7 +143,11 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
  bad_period<-canonical; bad_period$mobilite$indicateurs$observation_period[[1]]<-"2026-08-25";
  stopifnot(inherits(try(project_raccordement_owned_series(bad_period$mobilite$indicateurs,bad_period$vintages,metadata,RECETTE_MATRICE_TEMPS_MAIRIES),silent=TRUE),"try-error"));
      stopifnot(nrow(adapter$dataset_marker("raccordement_curve"))==0);
- result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(result$changed); retry<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(!retry$changed); DBI::dbDisconnect(con)\n''',encoding="utf-8")
+ result<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(result$changed); retry<-publish_registered_series(registry,"raccordement_courbe_owned",canonical,adapter); stopifnot(!retry$changed);
+facts<-data.frame(indicator_id=rep("fixture_scalar",5),territory_id=c("35238","35001","35002","22001","53"),territory_type=c(rep("commune",4),"region"),value=c(.6,.5,.4,.99,.75),status=rep("measured",5),support_count=rep(NA_real_,5),denominator_count=rep(NA_real_,5));
+descriptors<-data.frame(indicator_id="fixture_scalar",theme_id="mobilite",label="Fixture scalar",unit="%",direction="high",comparison_facet="fixture_scalar",denominator_semantics="fixture denominator",completeness="dense_complete",descriptor_version="1",stringsAsFactors=FALSE); descriptors$allowed_sources<-I(list("fixture_scalar_source")); descriptors$allowed_levels<-I(list(c("commune","region")));
+provenance<-data.frame(indicator_id=rep("fixture_scalar",5),territory_id=facts$territory_id,source_id=rep("fixture_scalar_source",5),vintage_id=rep("v1",5)); projection<-list(facts=facts,descriptors=descriptors,eligible_territories=facts[c("territory_id","territory_type")],provenance=provenance);
+reference<-DBI::dbGetQuery(con,"SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference"); comparison<-project_scalar_comparisons(projection,reference,"fixture-scalar-v1","fixture-ref-v1"); publish_registered_scalar_comparison(comparison,scalar_comparison_postgres_adapter(con)); DBI::dbDisconnect(con)\n''',encoding="utf-8")
             env=os.environ.copy(); env["PGPASSFILE"]=str(Path(os.environ["APPDATA"])/"PostgreSQL/pgpass.conf")
             env["R_LIBS_USER"]=str(Path(os.environ["LOCALAPPDATA"])/"R/cache/R/renv/library/pipeline-d149995d/windows/R-4.4/x86_64-w64-mingw32")
             completed=subprocess.run(["Rscript",str(script),str(root),str(payload_path),str(metadata_path),schema],cwd=root/"pipeline",env=env,capture_output=True,text=True)
@@ -181,10 +185,15 @@ def test_registered_r_curve_publication_is_read_by_stable_indicator_route():
         assert region_body["named_references"][0]["points"]!=region_body["points"]
         with TestClient(app) as client:
             named_reference=client.get("/api/territories/commune/35238/indicators/raccordement_reference")
+            named_reference_batch=client.post("/api/read-batch",json={"items":[{
+                "id":"named-reference","resource":"indicator_facts","territory_type":"commune",
+                "territory_id":"35238","indicator_id":"raccordement_reference"}]})
             wrong_reference_context=client.get("/api/territories/epci/35238/indicators/raccordement_reference")
             reference_comparison=client.post("/api/territories/commune/35238/indicators/raccordement_reference/comparison",
                 json={"selection":[{"territory_type":"commune","territory_id":"35001"}]})
         assert named_reference.status_code==200,named_reference.text
+        assert named_reference_batch.status_code==200,named_reference_batch.text
+        assert named_reference_batch.json()["results"][0]["data"]==named_reference.json()
         named=named_reference.json()
         assert named["reference"]=={"id":"commune_bretonne_mediane","label":"Commune bretonne médiane",
             "role":"analytical_reference","statistic":"median_routed_communes","required":True}

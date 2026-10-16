@@ -16,7 +16,9 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator
 from datetime import date
 from psycopg_pool import ConnectionPool
 from api.profile_reads import focal_profiles
-from api.observed_collections import collection_descriptors, collection_snapshot, collection_comparison
+from api.observed_collections import (collection_descriptors, collection_snapshot,
+                                      collection_comparison, collection_marker,
+                                      collection_comparison_preflight)
 from api.field_selection import normalize_field_selection
 
 
@@ -1646,6 +1648,21 @@ def _selected_profile_comparison_sources(conn, *, external, details, cohort_type
             _comparison_sources_by_indicator(detail_sources))
 
 
+def _profile_comparison_publication_marker(conn):
+    installed = conn.execute("SELECT to_regclass('profile_comparison_publication')").fetchone()
+    if not installed or not installed[0]:
+        raise HTTPException(503, "Published profile comparison is unavailable")
+    marker = _execute_comparison_publication_read(conn, """SELECT p.content_version,p.profile_content_version,p.reference_content_version,
+        p.group_row_count,p.territory_row_count,d.content_version,t.content_version
+        FROM profile_comparison_publication p
+        JOIN table_publication d ON d.table_name='declared_profile'
+        JOIN table_publication t ON t.table_name='territory_reference' WHERE p.singleton""").fetchone()
+    if (not marker or not marker[0] or marker[1] != marker[5] or marker[2] != marker[6]
+            or marker[3] < 1 or marker[4] < 1):
+        raise HTTPException(503, "Published profile comparison is stale or incompatible")
+    return marker
+
+
 def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_type, members, territory_id,
                                          selected_fields=None):
     """Read published detail aggregates and the focal row; scalar-backed profiles use scalar publication.
@@ -1660,17 +1677,7 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
         return {}
     selected = _validate_comparison_fields(selected_fields,
         _COMPARISON_RESULT_FIELDS-{"mean","mean_curve"})
-    installed = conn.execute("SELECT to_regclass('profile_comparison_publication')").fetchone()
-    if not installed or not installed[0]:
-        raise HTTPException(503, "Published profile comparison is unavailable")
-    marker = _execute_comparison_publication_read(conn, """SELECT p.content_version,p.profile_content_version,p.reference_content_version,
-            p.group_row_count,p.territory_row_count,d.content_version,t.content_version
-        FROM profile_comparison_publication p
-        JOIN table_publication d ON d.table_name='declared_profile'
-        JOIN table_publication t ON t.table_name='territory_reference' WHERE p.singleton""").fetchone()
-    if (not marker or not marker[0] or marker[1] != marker[5] or marker[2] != marker[6]
-            or marker[3] < 1 or marker[4] < 1):
-        raise HTTPException(503, "Published profile comparison is stale or incompatible")
+    marker = _profile_comparison_publication_marker(conn)
     ids = [p["indicator"] for p in details]
     selected = set(_COMPARISON_RESULT_FIELDS) if selected is None else set(selected)
     expected_keys = set()
@@ -2137,6 +2144,23 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             raise HTTPException(503, "Scalar publication is unavailable or incompatible")
     cohort_type, members, scope = _comparison_cohort(conn, territory_type, territory_id, selection)
     if preflight_only:
+        fixed_context = _fixed_scalar_comparison_context(conn,territory_type,territory_id,
+            selection,cohort_type,members,scope)
+        if territory_id not in members:
+            fixed_context = None
+        if fixed_context and any(not p.get("comparison_scalar") for p in (profiles or [])):
+            _profile_comparison_publication_marker(conn)
+        if bpe_available:
+            _bpe_profile_publication(conn,validate_row_count=False)
+        if owned_descriptors:
+            routes = [(dataset_id,theme_id,False,indicator,None)
+                      for dataset_id,indicator in owned_descriptors]
+            _owned_series_comparison_results(conn,routes,territory_type,territory_id,
+                selection,cohort=(cohort_type,members,scope),selected_fields=result_fields,
+                preflight_only=True)
+        for descriptor in collections:
+            marker = collection_marker(conn,descriptor)
+            collection_comparison_preflight(conn,descriptor,result_fields,fixed_context,marker)
         return {"supported_fields": available_comparison_fields,
                 "cohort_type": cohort_type, "members": members, "scope": scope}
     fixed_context = (_fixed_scalar_comparison_context(conn, territory_type, territory_id,
@@ -3079,7 +3103,8 @@ def _owned_reference_comparison_result(conn, route, territory_type, territory_id
 
 
 def _owned_series_comparison_results(conn, routes, territory_type, territory_id, selection,
-                                     cohort=None, selected_fields=None, strict_fields=False):
+                                     cohort=None, selected_fields=None, strict_fields=False,
+                                     preflight_only=False):
     if not routes:
         return [], {}, None, [], None
     cohort_type,members,scope=cohort or _comparison_cohort(
@@ -3113,6 +3138,34 @@ def _owned_series_comparison_results(conn, routes, territory_type, territory_id,
         if "median" in stats: supported.add("median")
         if "mean" in stats: supported.update({"mean","mean_curve"})
         _validate_comparison_fields(selected_fields,supported)
+    if preflight_only:
+        # Dataset/reference markers and descriptors above are metadata-only.
+        # Resolve fixed comparison publication dependencies before any item
+        # reader can fetch observations or published group/result rows.
+        for route in routes:
+            descriptor = descriptor_by_route[(route[0], route[3])]
+            valid_fixed = bool(fixed_context and descriptor[3] and descriptor[3] in descriptor[9]
+                and descriptor[6] in ("high", "low") and descriptor[7] and descriptor[12]
+                and territory_type in descriptor[7] and territory_type in descriptor[12]
+                and cohort_type in descriptor[12]
+                and ((descriptor[10] or "median") == "mean" and descriptor[11] == "selected_group"
+                     or (descriptor[10] or "median") == "median" and descriptor[11] == "default_group"))
+            if valid_fixed:
+                publication = _execute_comparison_publication_read(conn, """SELECT p.content_version,
+                    p.ordered_series_content_version,p.reference_content_version,
+                    p.group_row_count,p.territory_row_count,s.content_version,t.content_version
+                    FROM ordered_series_comparison_publication p
+                    JOIN series_dataset_publication s ON s.dataset_id=p.dataset_id
+                    JOIN table_publication t ON t.table_name='territory_reference'
+                    WHERE p.dataset_id=%s AND p.indicator_id=%s""",
+                    (route[0], route[3])).fetchone()
+                if (not publication or not publication[0] or publication[1] != marker_by_dataset[route[0]][1]
+                        or publication[2] != marker_by_dataset[route[0]][3]
+                        or publication[5] != marker_by_dataset[route[0]][1]
+                        or publication[6] != marker_by_dataset[route[0]][3]
+                        or publication[3] < 1 or publication[4] < 1):
+                    raise HTTPException(503, "Owned-series fixed comparison is unavailable or stale")
+        return [], {}, fixed_context, members, scope
     fixed_projection_read=bool(fixed_context is not None and fixed_context[2]==cohort_type and all(
         (descriptor:=descriptor_by_route.get((route[0],route[3]))) is not None and
         descriptor[3] and descriptor[3] in descriptor[9] and descriptor[6] in ("high","low") and
@@ -4663,6 +4716,43 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
         raise HTTPException(404, "Focal territory not found")
     if focal[0] != territory_type:
         raise HTTPException(422, "Focal territory type does not match route")
+    bpe = (conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone()
+           if conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0] else None)
+    if bpe and bpe[0] == indicator_id:
+        _validate_comparison_fields(selected_fields,{"selected_member_count","eligible_count","missing_count",
+            "mean","rank","rank_size","rank_ties"})
+        _bpe_profile_publication(conn,validate_row_count=False)
+        _comparison_cohort(conn,territory_type,territory_id,selection)
+        return
+    active_owned = _owned_series_route(conn,indicator_id)
+    if active_owned:
+        if active_owned[2]:
+            _validate_comparison_fields(selected_fields,{"selected_member_count"})
+            # Existing metadata validator checks the dataset marker, reference
+            # identity, and focal territory; it does not read reference facts.
+            _owned_reference_comparison_result(conn,active_owned,territory_type,territory_id,
+                                                indicator_id,selection)
+            return
+        cohort = _comparison_cohort(conn,territory_type,territory_id,selection)
+        _owned_series_comparison_results(conn,[active_owned],territory_type,territory_id,
+            selection,cohort=cohort,selected_fields=selected_fields,strict_fields=True,
+            preflight_only=True)
+        return
+    collections = collection_descriptors(conn,indicator_id=indicator_id)
+    if collections:
+        descriptor = collections[0]
+        focal_row = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
+                                 (territory_id,)).fetchone()
+        if not focal_row:
+            raise HTTPException(404,"Focal territory not found")
+        if focal_row[0] != territory_type:
+            raise HTTPException(422,"Focal territory type does not match route")
+        cohort_type,members,scope = _comparison_cohort(conn,territory_type,territory_id,selection)
+        fixed_context = _fixed_scalar_comparison_context(conn,territory_type,territory_id,
+            selection,cohort_type,members,scope)
+        marker = collection_marker(conn,descriptor)
+        collection_comparison_preflight(conn,descriptor,selected_fields,fixed_context,marker)
+        return
     shapes = []
     for table, shape in (("scalar_descriptor", "scalar"),
                          ("profile_descriptor", "profile"),
