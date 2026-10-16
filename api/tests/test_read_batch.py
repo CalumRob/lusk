@@ -92,6 +92,44 @@ def test_batch_rejects_extra_resource_parameters_before_connecting():
     assert repository.connections.connections == 0
 
 
+def test_batch_rejects_extra_owned_dataset_parameters_and_invalid_fields_before_connecting():
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    try:
+        extra = TestClient(main.app).post("/api/read-batch", json={"items": [{
+            "id": "owned", "resource": "owned_dataset", "dataset_id": "dataset_a",
+            "territory_type": "commune", "territory_id": "22001",
+            "indicator_id": "series_a", "sql": "not-a-query-language"}]})
+        invalid = TestClient(main.app).post("/api/read-batch", json={"items": [{
+            "id": "profile", "resource": "direct_profile", "territory_type": "commune",
+            "territory_id": "22001", "indicator_id": "profile_a", "fields": ["median"]}]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert extra.status_code == invalid.status_code == 422
+    assert repository.connections.connections == 0
+
+
+def test_batch_unknown_owned_dataset_is_404_during_metadata_preflight(monkeypatch):
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+
+    class EmptyResult:
+        def fetchone(self):
+            return None
+
+    monkeypatch.setattr(repository.connections.connection_value, "execute",
+                        lambda sql, params=None: EmptyResult())
+    try:
+        response = TestClient(main.app).post("/api/read-batch", json={"items": [{
+            "id": "unknown", "resource": "owned_dataset", "dataset_id": "unknown_dataset",
+            "territory_type": "commune", "territory_id": "22001", "indicator_id": "series_a"}]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 404
+    assert repository.connections.connections == 1
+    assert repository.connections.connection_value.transactions == 1
+
+
 def test_batch_rejects_extra_nested_selection_keys_before_connecting():
     repository = BatchRepository()
     main.app.dependency_overrides[main.get_repository] = lambda: repository
@@ -345,3 +383,61 @@ def test_batch_rolls_back_envelope_when_last_reader_fails(monkeypatch):
     assert response.status_code == 503
     assert "results" not in response.json()
     assert calls == ["habitat", "mobilite", "habitat", "mobilite"]
+
+
+def test_profile_and_series_resources_share_batch_snapshot_and_readers(monkeypatch):
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    preflight = []
+    reads = []
+    monkeypatch.setattr(main, "_declared_profile_snapshot", lambda conn, *args, **kwargs:
+        preflight.append(("profile", conn, kwargs.get("preflight_only"))) or
+        ({"supported_fields": {"value", "status"}, "work_units": 10}
+         if kwargs.get("preflight_only") else {"profile": "exact"}))
+    monkeypatch.setattr(main, "_preflight_series_batch_item", lambda conn, item, *, owned:
+        preflight.append(("owned" if owned else "series", conn, True)) or 4)
+    monkeypatch.setattr(main.ReadRepository, "read_series", lambda self, *args, **kwargs:
+        reads.append(("series", kwargs["connection"])) or {"series": "exact"})
+    monkeypatch.setattr(main.ReadRepository, "read_owned_series", lambda self, *args, **kwargs:
+        reads.append(("owned", kwargs["connection"])) or {"owned": "exact"})
+    repository.read_series = lambda *args, **kwargs: reads.append(
+        ("series", kwargs["connection"])) or {"series": "exact"}
+    repository.read_owned_series = lambda *args, **kwargs: reads.append(
+        ("owned", kwargs["connection"])) or {"owned": "exact"}
+    try:
+        response = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": "profile", "resource": "direct_profile", "territory_type": "commune",
+             "territory_id": "22001", "indicator_id": "profile_x"},
+            {"id": "series", "resource": "direct_series", "territory_type": "commune",
+             "territory_id": "22001", "indicator_id": "series_x", "fields": ["status"]},
+            {"id": "owned", "resource": "owned_dataset", "dataset_id": "dataset_x",
+             "territory_type": "commune", "territory_id": "22001", "indicator_id": "owned_x",
+             "comparison_detail": "annual"},
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    assert [entry["data"] for entry in response.json()["results"]] == [
+        {"profile": "exact"}, {"series": "exact"}, {"owned": "exact"}]
+    assert repository.connections.connections == 1
+    assert repository.connections.connection_value.transactions == 1
+    assert all(call[1] is repository.connections.connection_value for call in preflight + reads)
+    assert [call[0] for call in reads] == ["series", "owned"]
+
+
+def test_series_scope_work_limit_is_aggregate_and_precedes_fact_reads(monkeypatch):
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    facts = []
+    monkeypatch.setattr(main, "_preflight_series_batch_item", lambda *args, **kwargs: 100_001)
+    repository.read_series = lambda *args, **kwargs: facts.append("series") or {}
+    try:
+        response = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": f"s{i}", "resource": "direct_series", "territory_type": "commune",
+             "territory_id": "22001", "indicator_id": "series_x"} for i in range(2)
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 413
+    assert facts == []
+    assert repository.connections.connection_value.transactions == 1

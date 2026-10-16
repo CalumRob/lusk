@@ -520,8 +520,48 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
                     ('large_scalar','large0002','large_fixture_a','v1'),
                     ('large_scalar','large0002','large_fixture_b','v2'),
                     ('large_scalar','large-region','large_fixture_a','v1')""")
+            conn.execute("""INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,
+                completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction)
+                VALUES ('large_profile','Large profile','count',ARRAY['commune'],'dense_complete',
+                        'large-profile-v1','total','all','high')""")
+            conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal) VALUES
+                ('large_profile','detail','total','Total',0),('large_profile','sex','all','All',0)""")
+            conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,
+                detail_key,sex_key,value,status) VALUES
+                ('large_profile','large0000','commune','total','all',7,'measured'),
+                ('large_profile','large0001','commune','total','all',10,'measured'),
+                ('large_profile','large0002','commune','total','all',4,'measured')""")
+            conn.execute("INSERT INTO profile_descriptor_source VALUES ('large_profile','large_fixture_a')")
+            conn.execute("""INSERT INTO profile_observation_source VALUES
+                ('large_profile','large0000','total','all','large_fixture_a','v1'),
+                ('large_profile','large0001','total','all','large_fixture_a','v1'),
+                ('large_profile','large0002','total','all','large_fixture_a','v1')""")
+            conn.execute("""INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,
+                completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction)
+                VALUES ('budget_profile','Budget profile','count',ARRAY['commune'],'dense_complete',
+                        'budget-profile-v1','d0','s0','high')""")
+            conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal)
+                SELECT 'budget_profile',axis_name,axis_key,axis_key,ordinal
+                FROM (SELECT 'detail'::text AS axis_name,'d'||i AS axis_key,i AS ordinal FROM generate_series(0,150) i
+                      UNION ALL
+                      SELECT 'sex'::text,'s'||i,i FROM generate_series(0,150) i) axes""")
+            conn.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,
+                comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('large_series','year',ARRAY['2020','2021'],'may_be_missing','2021',
+                ARRAY['commune'],'Large series','count','high','large_fixture_a','v1','large-series-v1')""")
+            conn.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,
+                axis_value,observation_period,value,status,source_id,vintage_id) VALUES
+                ('large_series','large0000','commune','2020','2020',6,'measured','large_fixture_a','v1'),
+                ('large_series','large0000','commune','2021','2021',7,'measured','large_fixture_a','v1'),
+                ('large_series','large0001','commune','2020','2020',9,'measured','large_fixture_a','v1'),
+                ('large_series','large0001','commune','2021','2021',10,'measured','large_fixture_a','v1'),
+                ('large_series','large0002','commune','2020','2020',3,'measured','large_fixture_a','v1'),
+                ('large_series','large0002','commune','2021','2021',4,'measured','large_fixture_a','v1')""")
             conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',1204)")
             conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','large-v1',3,'large-ref-v1')")
+            conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,
+                reference_content_version) VALUES ('declared_profile','large-profile-v1',3,'large-ref-v1'),
+                ('ordered_series','large-series-v1',6,'large-ref-v1')""")
     read_parts = urlsplit(canonical_db_env["read_dsn"])
     read_query = parse_qs(read_parts.query, keep_blank_values=True)
     read_query["connect_timeout"] = ["8"]
@@ -583,6 +623,10 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
                 "/api/territories/region/large-region/themes/demographie/facts?fields=value")
             indicator_single = client.get(
                 "/api/territories/region/large-region/indicators/large_scalar?fields=status")
+            profile_single = client.get(
+                "/api/territories/commune/large0000/profiles/large_profile")
+            series_single = client.get(
+                "/api/territories/commune/large0000/series/large_series?scope_level=commune")
             tracked_pool.counters.update(connections=0, transactions=0, statements=[])
             mixed_batch = client.post("/api/read-batch", json={"items": [
                 {"id": "focal", "resource": "theme_facts", "territory_type": "region",
@@ -592,17 +636,36 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
                  "selection": selected, "fields": ["median"]},
                 {"id": "named-scalar", "resource": "indicator_facts", "territory_type": "region",
                  "territory_id": "large-region", "indicator_id": "large_scalar", "fields": ["status"]},
+                {"id": "profile", "resource": "direct_profile", "territory_type": "commune",
+                 "territory_id": "large0000", "indicator_id": "large_profile"},
+                {"id": "series", "resource": "direct_series", "territory_type": "commune",
+                 "territory_id": "large0000", "indicator_id": "large_series", "scope_level": "commune"},
             ]})
             batch_connection_counts = dict(tracked_pool.counters)
+            tracked_pool.counters.update(connections=0, transactions=0, statements=[])
+            collective_budget = client.post("/api/read-batch", json={"items": [
+                {"id": f"profile-{i}", "resource": "direct_profile",
+                 "territory_type": "commune", "territory_id": "large0000",
+                 "indicator_id": "budget_profile"} for i in range(9)
+            ]})
+            budget_query_trace = dict(tracked_pool.counters)
             invalid_fields = client.post("/api/territories/commune/large0000/themes/comparison?fields=raw_sql",
                                          json={"theme_id": "demographie", "selection": selected})
             excessive = client.post("/api/territories/commune/large0000/themes/comparison",
                                     json={"theme_id": "demographie", "selection": [selected[0]] * 1501})
         assert response.status_code == 200, response.text
-        assert focal_single.status_code == indicator_single.status_code == mixed_batch.status_code == 200, mixed_batch.text
+        assert focal_single.status_code == indicator_single.status_code == profile_single.status_code == series_single.status_code == mixed_batch.status_code == 200, mixed_batch.text
+        assert collective_budget.status_code == 413, collective_budget.text
+        assert budget_query_trace["connections"] == budget_query_trace["transactions"] == 1
+        assert not any("FROM profile_observation" in sql for sql in budget_query_trace["statements"])
         batched = {item["id"]: item["data"] for item in mixed_batch.json()["results"]}
         assert batched["focal"] == focal_single.json()
         assert batched["named-scalar"] == indicator_single.json()
+        assert batched["profile"] == profile_single.json()
+        assert batched["series"] == series_single.json()
+        assert len(batched["series"]["scope_series"]) == 3
+        assert {group["territory"]["id"] for group in batched["series"]["scope_series"]} == {
+            "large0000", "large0001", "large0002"}
         assert typed_comparison_single.status_code == 200, typed_comparison_single.text
         assert batched["peers"] == typed_comparison_single.json()
         batch_lineage = batched["peers"]["results"][0]["comparison_sources"]
@@ -1167,7 +1230,25 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
             series_response = client.post(
                 f"/api/territories/{series['level']}/{series['territory_id']}/indicators/{series['indicator_id']}/comparison",
                 json={"selection": None})
+            owned_single = client.get(
+                f"/api/series-datasets/{series['dataset_id']}/territories/{series['level']}/"
+                f"{series['territory_id']}/{series['indicator_id']}?scope_level={series['level']}")
+            owned_batch = client.post("/api/read-batch", json={"items": [{
+                "id": "owned-series", "resource": "owned_dataset",
+                "dataset_id": series["dataset_id"], "territory_type": series["level"],
+                "territory_id": series["territory_id"], "indicator_id": series["indicator_id"],
+                "scope_level": series["level"]}]})
         assert series_response.status_code == 200, series_response.text
+        assert owned_single.status_code == owned_batch.status_code == 200, (
+            owned_single.text, owned_batch.text)
+        owned = owned_single.json()
+        assert owned_batch.json()["results"][0]["data"] == owned
+        assert owned["scope_series"], "owned-series response must include published cohort rows"
+        owned_pairs = {(source["source_id"], source["vintage_id"])
+            for group in owned["scope_series"] for point in group["points"]
+            for source in point["provenance"]}
+        assert owned_pairs == {("fixture_a", "v1"), ("fixture_a", "v2"),
+                               ("fixture_b", "v1"), ("fixture_b", "v2")}
         series_result = series_response.json()["result"]
         expected_series_pairs = {(row["source_id"],row["vintage_id"]) for row in series["source_pairs"]
             if row["axis_value"] == "2025"}

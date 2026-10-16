@@ -20,6 +20,9 @@ aborts the whole request; no partial results envelope is returned.
 | `aedar_comparison` | commune/EPCI/département identity, `context`, `typequ`, `measure`, #781 `fields` | `_aedar_comparison_snapshot`; same payload as `GET /api/aedar/territories/{type}/{id}/comparisons` |
 | `indicator_facts` | territory identity, `indicator_id`, shape-declared `fields` | `_indicator_facts_snapshot`; same payload as `GET /api/territories/{type}/{id}/indicators/{indicator}` |
 | `indicator_comparison` | territory identity, `indicator_id`, optional typed `selection`, comparison `fields` | `_indicator_comparison_snapshot`; same payload as `POST /api/territories/{type}/{id}/indicators/{indicator}/comparison` |
+| `direct_profile` | territory identity, `indicator_id`, declared `comparison_scope`/optional ID, optional `fields` | `_declared_profile_snapshot`; same direct response as `GET /api/territories/{type}/{id}/profiles/{indicator}` (not the indicator alias with `default_comparison`) |
+| `direct_series` | territory identity, `indicator_id`, `scope_level`, optional `department_id` or `epci_id`, optional `fields` | `ReadRepository.read_series(connection=...)`; same response as `GET /api/territories/{type}/{id}/series/{indicator}`, including bounded raw `scope_series` cohort rows |
+| `owned_dataset` | registered `dataset_id` and `indicator_id`, territory identity, `scope_level`, optional commune filters / `comparison_detail`, optional `fields` | `ReadRepository.read_owned_series(connection=...)`; same response as `GET /api/series-datasets/{dataset}/territories/{type}/{id}/{indicator}`, including bounded cohort rows |
 
 Example mixing a focal read with a comparison:
 
@@ -71,11 +74,22 @@ completeness and data-shape checks; those checks are not duplicated or relaxed.
   items; individual typed selections retain their existing 1,500-member cap.
 - At most 300 requested AEDAR aggregate rows across the batch (sum of item
   limits); each reader still caps one page at 100 rows.
+- At most 200,000 estimated profile/series raw-row and cell work units across
+  the batch. Direct profile estimates use the existing 1,500-territory scan
+  ceiling plus descriptor-axis detail × sex cells. Series estimates use the
+  descriptor axis count times the bounded count of reference territories at
+  the requested level/scope (plus one focal curve); owned series additionally
+  multiplies logical points by the reader's existing maximum of eight lineage
+  revisions per point. This is conservative metadata-based estimation, not a
+  cohort-fact `COUNT(*)` audit; eligible peer rows can be fewer. Reject with
+  413 before any fact/result reader when the sum exceeds the cap. No truncation.
 - At most 8,000,000 serialized response bytes. The endpoint counts each item as
   it is produced and aborts rather than assembling an oversized envelope.
 - Existing per-reader cohort, point, cell, and publication bounds remain in
-  force. The 1,202-member published fixed comparison is not counted as 1,202
-  raw fact rows; explicit dynamic selections retain their established semantics.
+  force. A 1,202-member fixed comparison result is not charged as 1,202 fetched
+  raw peer facts: published group/focal work remains distinct from direct
+  series resources that actually return cohort fact rows. Explicit dynamic
+  selections retain their established semantics.
 
 There is one acquired connection and one outer transaction. Existing
 connection-taking readers reuse that connection; no route/HTTP fan-out,
@@ -83,36 +97,35 @@ per-item connection, or nested transaction is used.
 
 ## Remaining #788 coverage
 
-This checkpoint is not the final resource inventory or a rollout authorization.
-The following standalone logical reads remain to be shared/exposed and tested:
+This checkpoint is not a rollout authorization. The inventory above now covers
+the named focal/comparison resources, the direct profile response, the direct
+annual-series response, and owned dataset series (including actual bounded
+cohort rows), plus named-reference indicator aliases. These are explicit logical contracts, not a
+generic territory-table/group-query API. In particular, `scope_series` is the
+existing typed reader's declared series cohort, never a caller-defined group.
+Named-reference indicator aliases remain `indicator_facts` items and use the
+existing active owned-reference dispatch and response identity; they are not
+folded into the direct dataset series URL, whose public response does not carry
+the separately routed named-reference resource.
 
-- named-indicator focal dispatch (`/indicators/{indicator_id}`), including its
-  scalar, declared-profile, legacy-series alias, owned series/reference, and
-  numeric-collection response contracts, is included as `indicator_facts`;
-- named-indicator fixed/dynamic comparison is included as `indicator_comparison`;
-- direct profile and series aliases where their public response differs from a
-  theme payload; do not treat `theme_facts` as parity for those URLs;
-- bounded territory/group-row read contracts required by the app inventory.
+The whole-list preflight validates resource identities, field support, scopes,
+series descriptor axes and bounded reference-scope estimates before fact/result
+readers. Direct-profile preflight checks its publication marker, descriptor,
+scope membership and field vocabulary without fetching profile cells. Owned
+series preflight checks the dataset publication/reference marker, descriptor,
+territory, filters and scope estimate. Full reader publication/completeness
+checks still run before an item is returned. The remaining dependency gap is
+that preflight does not yet resolve every BPE, owned-series/reference,
+observed-collection, and dynamic-comparison publication dependency for every
+resource family; a stale later dependency can therefore follow earlier internal
+fact work, but the transaction returns no partial envelope. AEDAR guards run in
+metadata preflight.
 
-The whole-list preflight proves identities, field support, scopes, and request
-bounds before fact/result readers. For theme reads and the direct named
-indicator scalar/profile/series dispatch, the existing marker and dependency
-guards are reused during preflight (profile mode validates descriptors and
-scalar dependency versions without fetching profile cells). The named
-indicator-comparison preflight validates shape, scope, and the theme comparison
-markers for scalar/profile descriptors. It does not yet resolve all BPE,
-owned-series/reference, observed-collection, or every dynamic comparison
-family's publication markers during the whole-list preflight. AEDAR publication
-guards run in metadata preflight. These remaining dependency paths mean a bad
-later item can still follow earlier internal read work, though the transaction
-returns no partial envelope.
-
-Still required before #788 is complete: standalone direct profile and series
-aliases; bounded territory/group-row resources from the app inventory; complete
-marker preflight for BPE/owned/reference/collection/dynamic comparison paths;
-first/last-item stale/missing tests with a real query trace; concurrent publisher
-refresh proof; and the source-pinned paired batch-vs-single rehearsal. The
-serialized envelope limit bounds returned bytes, while current resource-local
-row/cohort limits and the 12-item cap bound supported work. A unified estimate
-across all raw-row/cell families is not yet implemented; don't treat the byte
-limit alone as a complete computational-work budget.
+Still required before #788 is complete: complete marker preflight for
+BPE/owned/reference/collection/dynamic comparison paths; first/last-item
+stale/missing tests with a real query trace; concurrent publisher refresh proof;
+and the source-pinned paired batch-vs-single rehearsal. These are the next
+checkpoint, not claims made here. Resource-local bounds, the 12-item cap, the
+new aggregate profile/series work estimate and the serialized envelope limit
+bound the currently supported request work; the estimate intentionally does
+not replace dependency-completeness or concurrency proofs.

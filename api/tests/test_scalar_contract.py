@@ -1,5 +1,6 @@
 import inspect
 
+from api import main
 from api.main import app
 
 
@@ -237,7 +238,8 @@ def test_profile_endpoint_is_bounded_and_uses_independent_marker():
     route = next(r for r in app.routes if r.path ==
                  "/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}")
     assert route.methods == {"GET"}
-    sql = " ".join(c for c in route.endpoint.__code__.co_consts if isinstance(c, str))
+    reader = main._declared_profile_snapshot
+    sql = " ".join(c for c in reader.__code__.co_consts if isinstance(c, str))
     assert "table_name='declared_profile'" in sql
     assert "profile_observation" in sql and "profile_axis" in sql
     assert "LEFT JOIN profile_axis d" in sql and "LEFT JOIN profile_axis s" in sql

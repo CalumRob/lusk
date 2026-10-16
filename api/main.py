@@ -203,10 +203,45 @@ class IndicatorComparisonBatchItem(BatchReadItemBase):
     fields: list[str] | None = Field(default=None, max_length=32)
 
 
+class DirectProfileBatchItem(BatchReadItemBase):
+    resource: Literal["direct_profile"]
+    territory_type: Literal["commune", "epci", "departement"]
+    territory_id: str = Field(min_length=1, max_length=32)
+    indicator_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,95}$")
+    comparison_scope: Literal["bretagne", "departement", "epci"] = "bretagne"
+    comparison_scope_id: str | None = Field(default=None, min_length=1, max_length=32)
+    fields: list[str] | None = Field(default=None, max_length=32)
+
+
+class DirectSeriesBatchItem(BatchReadItemBase):
+    resource: Literal["direct_series"]
+    territory_type: Literal["commune", "epci", "departement", "region"]
+    territory_id: str = Field(min_length=1, max_length=32)
+    indicator_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,95}$")
+    scope_level: Literal["commune", "epci", "departement", "region"] = "commune"
+    department_id: str | None = Field(default=None, min_length=1, max_length=8)
+    epci_id: str | None = Field(default=None, min_length=1, max_length=16)
+    fields: list[str] | None = Field(default=None, max_length=32)
+
+
+class OwnedDatasetBatchItem(BatchReadItemBase):
+    resource: Literal["owned_dataset"]
+    dataset_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,95}$")
+    territory_type: Literal["commune", "epci", "departement", "region"]
+    territory_id: str = Field(min_length=1, max_length=32)
+    indicator_id: str = Field(pattern=r"^[a-z][a-z0-9_]{0,95}$")
+    scope_level: Literal["commune", "epci", "departement", "region"] = "commune"
+    department_id: str | None = Field(default=None, min_length=1, max_length=8)
+    epci_id: str | None = Field(default=None, min_length=1, max_length=16)
+    comparison_detail: str | None = Field(default=None, min_length=1, max_length=32)
+    fields: list[str] | None = Field(default=None, max_length=32)
+
+
 BatchReadItem = Annotated[
     Union[ThemeFactsBatchItem, ThemeComparisonBatchItem, AEDARTerritorialBatchItem,
           AEDARComparisonBatchItem, IndicatorFactsBatchItem,
-          IndicatorComparisonBatchItem], Field(discriminator="resource")
+          IndicatorComparisonBatchItem, DirectProfileBatchItem,
+          DirectSeriesBatchItem, OwnedDatasetBatchItem], Field(discriminator="resource")
 ]
 
 
@@ -221,6 +256,67 @@ class BatchReadRequest(BaseModel):
         if len(ids) != len(set(ids)):
             raise ValueError("Batch item ids must be unique")
         return items
+
+
+def _preflight_series_batch_item(conn, item, *, owned):
+    """Validate series identity/scope and estimate its bounded row expansion from metadata."""
+    if owned:
+        publication = conn.execute("""SELECT p.content_version,p.reference_content_version,p.row_count,
+            t.content_version FROM series_dataset_publication p LEFT JOIN table_publication t
+              ON t.table_name='territory_reference' WHERE p.dataset_id=%s""",
+            (item.dataset_id,)).fetchone()
+        if not publication:
+            raise HTTPException(404, "Owned-series dataset is unavailable")
+        if not publication[0] or publication[1] != publication[3]:
+            raise HTTPException(503, "Owned-series publication is unavailable or stale")
+        descriptor = conn.execute("""SELECT axis_values,allowed_levels,comparison_point
+            FROM series_dataset_descriptor WHERE dataset_id=%s AND indicator_id=%s AND active_read_route""",
+            (item.dataset_id, item.indicator_id)).fetchone()
+        if not descriptor:
+            raise HTTPException(404, "Owned-series descriptor is unavailable")
+        if item.territory_type not in descriptor[1] or item.scope_level not in descriptor[1]:
+            raise HTTPException(422, "Owned-series focal or comparison level is not declared")
+        if item.comparison_detail is not None and item.comparison_detail != descriptor[2]:
+            raise HTTPException(422, "Comparison detail must match the dataset descriptor comparison point")
+    else:
+        marker = conn.execute("""SELECT s.content_version,s.reference_content_version,t.content_version
+            FROM table_publication s LEFT JOIN table_publication t ON t.table_name='territory_reference'
+            WHERE s.table_name='ordered_series'""").fetchone()
+        if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
+            raise HTTPException(503, "Series publication is unavailable")
+        descriptor = conn.execute("""SELECT axis_values,allowed_levels FROM series_descriptor
+            WHERE indicator_id=%s""", (item.indicator_id,)).fetchone()
+        if not descriptor:
+            raise HTTPException(404, "Series descriptor is unavailable")
+        if item.territory_type not in descriptor[1] or item.scope_level not in descriptor[1]:
+            raise HTTPException(422, "Series focal or comparison level is not declared")
+    if item.scope_level != "commune" and (item.department_id or item.epci_id):
+        raise HTTPException(422, "Department/EPCI filters apply only to commune scope")
+    if item.department_id and item.epci_id:
+        raise HTTPException(422, "Choose one existing commune scope filter")
+    identity = conn.execute("""SELECT territory_type,department_id,epci_id FROM territory_reference
+        WHERE territory_id=%s""", (item.territory_id,)).fetchone()
+    if not identity:
+        raise HTTPException(404, "Territory not found")
+    if identity[0] != item.territory_type:
+        raise HTTPException(422, "Territory identity/type mismatch")
+    if item.department_id and (identity[0] != "commune" or identity[1] != item.department_id):
+        raise HTTPException(422, "Department filter does not contain the focal territory")
+    if item.epci_id and (identity[0] != "commune" or identity[2] != item.epci_id):
+        raise HTTPException(422, "EPCI filter does not contain the focal territory")
+    axis_count = max(1, len(descriptor[0]))
+    territory_limit = min(5_000, max(1, 100_000 // axis_count))
+    # Reference rows are metadata. Counting the declared scope gives a safe
+    # upper bound without auditing cohort facts or reading/truncating them.
+    scope_count = conn.execute("""SELECT count(*) FROM territory_reference
+        WHERE territory_type=%s AND (%s::text IS NULL OR department_id=%s)
+          AND (%s::text IS NULL OR epci_id=%s)""",
+        (item.scope_level, item.department_id, item.department_id,
+         item.epci_id, item.epci_id)).fetchone()[0]
+    if scope_count > territory_limit:
+        raise HTTPException(413, "Requested series scope exceeds the bounded comparison cohort")
+    provenance_factor = MAX_OWNED_SERIES_PROVENANCE_PER_POINT if owned else 1
+    return (min(scope_count, territory_limit) + 1) * axis_count * provenance_factor
 
 
 class ModeComparison(BaseModel):
@@ -260,6 +356,8 @@ class BuildingSelection(BaseModel):
 
 
 MAX_TERRITORY_SEARCH_SCAN = 1500
+MAX_BATCH_PROFILE_SERIES_WORK = 200_000
+MAX_OWNED_SERIES_PROVENANCE_PER_POINT = 8
 
 _AEDAR_MEASURE_KEYS = {
     f"count_{duration}_{mode}_{statistic}"
@@ -406,13 +504,16 @@ class ReadRepository:
 
     def read_series(self, territory_type: str, territory_id: str, indicator_id: str,
                     scope_level: str, department_id: str | None = None,
-                    epci_id: str | None = None, fields=None) -> dict:
+                    epci_id: str | None = None, fields=None, *, connection=None) -> dict:
         """Read a declared series from one repeatable-read publication snapshot."""
         selection = normalize_field_selection(fields, {"value", "status"})
         project_value = selection is None or "value" in selection
-        with self.connections.connection() as connection:
-            with connection.transaction():
-                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        borrowed_connection = connection is not None
+        with (nullcontext(connection) if connection is not None else
+              self.connections.connection()) as connection:
+            with (nullcontext() if borrowed_connection else connection.transaction()):
+                if not borrowed_connection:
+                    connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 marker = connection.execute(
                     """SELECT s.content_version,s.reference_content_version,t.content_version,
                               s.row_count
@@ -539,21 +640,27 @@ class ReadRepository:
 
     def read_owned_series(self, dataset_id: str, territory_type: str, territory_id: str,
                           indicator_id: str, scope_level: str, department_id: str | None,
-                          epci_id: str | None, comparison_detail: str | None = None, fields=None) -> dict:
+                          epci_id: str | None, comparison_detail: str | None = None, fields=None,
+                          *, connection=None) -> dict:
         """Read an owned focal series and its declared peer cohort in one snapshot."""
         selection = normalize_field_selection(fields, {"value", "status"})
         project_value = selection is None or "value" in selection
-        with self.connections.connection() as connection:
-            with connection.transaction():
-                connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
+        borrowed_connection = connection is not None
+        with (nullcontext(connection) if connection is not None else
+              self.connections.connection()) as connection:
+            with (nullcontext() if borrowed_connection else connection.transaction()):
+                if not borrowed_connection:
+                    connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
                 publication = connection.execute(
                     """SELECT content_version,reference_content_version,row_count,published_at
                        FROM series_dataset_publication WHERE dataset_id=%s""", (dataset_id,)
                 ).fetchone()
+                if not publication:
+                    raise HTTPException(404, "Owned-series dataset is unavailable")
                 reference = connection.execute(
                     "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"
                 ).fetchone()
-                if not publication or not reference or publication[1] != reference[0]:
+                if not reference or publication[1] != reference[0]:
                     raise HTTPException(503, "Owned series publication is unavailable")
                 descriptor = connection.execute(
                     """SELECT axis_kind,axis_values,completeness,comparison_point,label,unit,direction,
@@ -2352,7 +2459,7 @@ def health() -> dict[str, str]:
 @app.post("/api/read-batch")
 def read_batch(request: BatchReadRequest,
                repository: ReadRepository = Depends(get_repository)) -> dict:
-    """Compose bounded theme reads in one read-only repeatable-read snapshot.
+    """Compose bounded typed serving reads in one read-only repeatable-read snapshot.
 
     Item ids are request-local correlation labels; item payloads retain their
     single-read shape and only the outer envelope is new.
@@ -2360,6 +2467,7 @@ def read_batch(request: BatchReadRequest,
     normalized = []
     expanded_territories = 0
     aggregate_rows = 0
+    aggregate_work = 0
     for item in request.items:
         if item.resource == "theme_facts":
             fields = normalize_field_selection(item.fields, _THEME_FACT_FIELDS)
@@ -2367,6 +2475,8 @@ def read_batch(request: BatchReadRequest,
                 raise HTTPException(422, "Explicit service comparison modes apply only to communes")
         elif item.resource in ("theme_comparison", "indicator_comparison"):
             fields = _comparison_field_selection(item.fields)
+        elif item.resource in ("direct_profile", "direct_series", "owned_dataset"):
+            fields = normalize_field_selection(item.fields, {"value", "status"})
         elif item.resource == "aedar_comparison":
             fields = _aedar_comparison_field_selection(item.fields)
         elif item.resource == "indicator_facts":
@@ -2385,7 +2495,6 @@ def read_batch(request: BatchReadRequest,
         raise HTTPException(413, "Batch territory selections exceed the 1500-territory limit")
     if aggregate_rows > 300:
         raise HTTPException(413, "Batch AEDAR aggregate rows exceed the 300-row limit")
-
     results = []
     response_bytes = len('{"contract":"typed-read-batch-v1","results":[]}'.encode("utf-8"))
     with repository.connections.connection() as conn:
@@ -2417,11 +2526,22 @@ def read_batch(request: BatchReadRequest,
                     _indicator_facts_snapshot(
                         conn, item.territory_type, item.territory_id,
                         item.indicator_id, item.fields, preflight_only=True)
+                elif item.resource == "direct_profile":
+                    estimate = _declared_profile_snapshot(conn, item.territory_type, item.territory_id,
+                        item.indicator_id, item.comparison_scope, item.comparison_scope_id,
+                        item.fields, preflight_only=True)
+                    aggregate_work += estimate["work_units"]
+                elif item.resource == "direct_series":
+                    aggregate_work += _preflight_series_batch_item(conn, item, owned=False)
+                elif item.resource == "owned_dataset":
+                    aggregate_work += _preflight_series_batch_item(conn, item, owned=True)
                 else:
                     _aedar_comparison_snapshot(
                         conn, item.territory_type, item.territory_id,
                         item.context, item.typequ, item.measure, item.fields,
                         preflight_only=True)
+            if aggregate_work > MAX_BATCH_PROFILE_SERIES_WORK:
+                raise HTTPException(413, f"Batch profile/series raw-row and cell work exceeds the {MAX_BATCH_PROFILE_SERIES_WORK}-unit limit")
             for item, fields, selection in normalized:
                 if item.resource == "theme_facts":
                     payload = _theme_facts_snapshot(
@@ -2443,6 +2563,19 @@ def read_batch(request: BatchReadRequest,
                     payload = _indicator_facts_snapshot(
                         conn, item.territory_type, item.territory_id,
                         item.indicator_id, item.fields)
+                elif item.resource == "direct_profile":
+                    payload = _declared_profile_snapshot(conn, item.territory_type,
+                        item.territory_id, item.indicator_id, item.comparison_scope,
+                        item.comparison_scope_id, item.fields)
+                elif item.resource == "direct_series":
+                    payload = repository.read_series(item.territory_type, item.territory_id,
+                        item.indicator_id, item.scope_level, item.department_id, item.epci_id,
+                        fields=item.fields, connection=conn)
+                elif item.resource == "owned_dataset":
+                    payload = repository.read_owned_series(item.dataset_id, item.territory_type,
+                        item.territory_id, item.indicator_id, item.scope_level,
+                        item.department_id, item.epci_id, item.comparison_detail,
+                        fields=item.fields, connection=conn)
                 else:
                     payload = _aedar_comparison_snapshot(
                         conn, item.territory_type, item.territory_id,
@@ -2459,6 +2592,143 @@ def read_batch(request: BatchReadRequest,
             return response
 
 
+def _declared_profile_snapshot(conn, territory_type, territory_id, indicator_id,
+                               comparison_scope="bretagne", comparison_scope_id=None, fields=None,
+                               *, preflight_only=False):
+    """Connection-taking implementation of the public declared-profile contract."""
+    if comparison_scope == "bretagne":
+        if comparison_scope_id is not None:
+            raise HTTPException(422, "Bretagne comparison scope does not accept an identifier")
+    elif territory_type != "commune":
+        raise HTTPException(422, "Local comparison scopes are valid only for communes")
+    elif comparison_scope_id is None:
+        raise HTTPException(422, "Local comparison scope requires an identifier")
+    marker = conn.execute(
+        """SELECT p.content_version,p.row_count,
+                  p.reference_content_version,t.content_version AS territory_version
+             FROM table_publication p LEFT JOIN table_publication t ON t.table_name='territory_reference'
+            WHERE p.table_name='declared_profile'""").fetchone()
+    if (marker is None or not marker[0] or marker[1] < 1 or
+            not marker[2] or marker[2] != marker[3]):
+        raise HTTPException(503, "Profile publication is unavailable")
+    if comparison_scope in ("departement", "epci") and comparison_scope_id is not None:
+        membership_column = "department_id" if comparison_scope == "departement" else "epci_id"
+        membership = conn.execute(
+            f"SELECT {membership_column} FROM territory_reference WHERE territory_id=%s AND territory_type='commune'",
+            (territory_id,)).fetchone()
+        # A missing territory remains classified by the existing profile read below.
+        if membership is not None and membership[0] != comparison_scope_id:
+            raise HTTPException(422, "Comparison scope identifier does not match the focal territory")
+    descriptor = conn.execute(
+        "SELECT label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction FROM profile_descriptor WHERE indicator_id=%s",
+        (indicator_id,)).fetchone()
+    if descriptor is None or territory_type not in descriptor[2]:
+        raise HTTPException(404, "Declared profile is unavailable")
+    normalize_field_selection(fields, {"value", "status"})
+    scalar_facet = conn.execute("SELECT comparison_scalar FROM profile_descriptor WHERE indicator_id=%s",
+                                (indicator_id,)).fetchone()
+    if preflight_only:
+        axes = [] if scalar_facet and scalar_facet[0] else conn.execute(
+            "SELECT axis_name,axis_key,ordinal FROM profile_axis WHERE indicator_id=%s ORDER BY axis_name,ordinal",
+            (indicator_id,)).fetchall()
+        cell_units = (sum(axis[0] == "detail" for axis in axes) *
+                      sum(axis[0] == "sex" for axis in axes))
+        return {"content_version": marker[0], "reference_content_version": marker[2],
+                "supported_fields": {"value", "status"},
+                "work_units": MAX_TERRITORY_SEARCH_SCAN + cell_units}
+    if scalar_facet and scalar_facet[0]:
+        profile_selection = normalize_field_selection(fields, {"value", "status"})
+        project_profile_value = profile_selection is None or "value" in profile_selection
+        profiles, _ = focal_profiles(conn, territory_type, territory_id,
+                                     indicator_id=indicator_id, fields=fields)
+        profile = profiles[0]
+        department_id = comparison_scope_id if comparison_scope == 'departement' else None
+        epci_id = comparison_scope_id if comparison_scope == 'epci' else None
+        peers = conn.execute("""SELECT t.territory_id,t.name,
+            CASE WHEN %s THEN o.value ELSE NULL::double precision END,o.status FROM scalar_observation o
+            JOIN territory_reference t USING(territory_id) WHERE o.indicator_id=%s AND o.territory_type=%s
+              AND (%s::text IS NULL OR t.department_id=%s) AND (%s::text IS NULL OR t.epci_id=%s)
+            ORDER BY t.name,t.territory_id LIMIT %s""", (project_profile_value, scalar_facet[0], territory_type,
+            department_id, department_id, epci_id, epci_id, MAX_TERRITORY_SEARCH_SCAN+1)).fetchall()
+        if len(peers) > MAX_TERRITORY_SEARCH_SCAN or not any(p[0] == territory_id for p in peers):
+            raise HTTPException(503, 'Profile comparison scope is unavailable')
+        profile['comparison'] = {'indicator': scalar_facet[0], 'direction': descriptor[7],
+            'scope': comparison_scope, 'scope_id': comparison_scope_id,
+            'values': [{'territory_id': tid, 'name': name,
+                        **({"value": value} if project_profile_value else {}), "status": status}
+                       for tid,name,value,status in peers]}
+        return profile
+    if (not descriptor[5] or not descriptor[6] or descriptor[7] not in ("high", "low")):
+        raise HTTPException(503, "Profile comparison descriptor is invalid")
+    profile_selection = normalize_field_selection(fields, {"value", "status"})
+    project_profile_value = profile_selection is None or "value" in profile_selection
+    department_id = comparison_scope_id if comparison_scope == "departement" else None
+    epci_id = comparison_scope_id if comparison_scope == "epci" else None
+    if territory_type != "commune":
+        department_id = epci_id = None
+    axes = conn.execute(
+        "SELECT axis_name,axis_key,label,ordinal FROM profile_axis WHERE indicator_id=%s ORDER BY axis_name,ordinal",
+        (indicator_id,)).fetchall()
+    if (not axes or {axis[0] for axis in axes} != {"detail", "sex"} or
+            len({(axis[0],axis[1]) for axis in axes}) != len(axes) or
+            len({(axis[0],axis[3]) for axis in axes}) != len(axes)):
+        raise HTTPException(503, "Profile descriptor axes are invalid")
+    detail_keys = {axis[1] for axis in axes if axis[0] == "detail"}
+    sex_keys = {axis[1] for axis in axes if axis[0] == "sex"}
+    if descriptor[5] not in detail_keys or descriptor[6] not in sex_keys:
+        raise HTTPException(503, "Profile comparison facet is not declared by its axes")
+    rows = conn.execute(
+        "SELECT o.territory_type,o.detail_key,o.sex_key,CASE WHEN %s THEN o.value ELSE NULL::double precision END,o.status FROM profile_observation o LEFT JOIN profile_axis d ON d.indicator_id=o.indicator_id AND d.axis_name='detail' AND d.axis_key=o.detail_key LEFT JOIN profile_axis s ON s.indicator_id=o.indicator_id AND s.axis_name='sex' AND s.axis_key=o.sex_key WHERE o.indicator_id=%s AND o.territory_id=%s AND o.territory_type=%s ORDER BY d.ordinal NULLS LAST,s.ordinal NULLS LAST",
+        (project_profile_value, indicator_id, territory_id, territory_type)).fetchall()
+    expected = sum(1 for axis in axes if axis[0] == 'detail') * sum(1 for axis in axes if axis[0] == 'sex')
+    if not rows:
+        raise HTTPException(404, "Profile territory is absent")
+    coordinates = [(row[1], row[2]) for row in rows]
+    if (len(rows) != expected or len(set(coordinates)) != len(coordinates) or
+            any(detail not in detail_keys or sex not in sex_keys for detail, sex in coordinates)):
+        raise HTTPException(503, "Profile publication is incomplete")
+    sources = conn.execute(
+        """SELECT DISTINCT sd.source_id,sd.name,sv.version,sv.reference_date,sv.publication_date
+             FROM profile_observation_source os JOIN source_dataset sd USING(source_id)
+             JOIN source_vintage sv USING(source_id,vintage_id)
+            WHERE os.indicator_id=%s AND os.territory_id=%s
+            ORDER BY sd.source_id""", (indicator_id, territory_id)).fetchall()
+    if not sources:
+        raise HTTPException(503, "Profile provenance is unavailable")
+    peers = conn.execute(
+        """SELECT t.territory_id,t.name,CASE WHEN %s THEN o.value ELSE NULL::double precision END,o.status
+             FROM profile_observation o JOIN territory_reference t USING(territory_id)
+            WHERE o.indicator_id=%s AND o.territory_type=%s
+              AND o.detail_key=%s AND o.sex_key=%s
+              AND (%s::text IS NULL OR t.department_id=%s)
+              AND (%s::text IS NULL OR t.epci_id=%s)
+            ORDER BY t.name,t.territory_id LIMIT %s""",
+        (project_profile_value, indicator_id, territory_type, descriptor[5], descriptor[6],
+         department_id, department_id, epci_id, epci_id, MAX_TERRITORY_SEARCH_SCAN + 1)).fetchall()
+    if len(peers) > MAX_TERRITORY_SEARCH_SCAN:
+        raise HTTPException(503, "Declared comparison scope exceeds the bounded profile read")
+    if not any(peer[0] == territory_id for peer in peers):
+        raise HTTPException(503, "Focal territory is not eligible in declared comparison scope")
+    return {"indicator": indicator_id, "label": descriptor[0], "unit": descriptor[1],
+            "descriptor_version": descriptor[4], "content_version": marker[0],
+            "sources": [{"source_id": source_id, "name": name, "version": version,
+                "reference_date": str(reference_date) if reference_date else None,
+                "publication_date": str(publication_date) if publication_date else None}
+                for source_id,name,version,reference_date,publication_date in sources],
+            "comparison": {"detail": descriptor[5], "sex": descriptor[6],
+                "direction": descriptor[7], "scope": comparison_scope,
+                "scope_id": comparison_scope_id, "values": [
+                    {"territory_id": tid, "name": name,
+                     **({"value": value} if project_profile_value else {}), "status": status}
+                    for tid,name,value,status in peers]},
+            "axes": [{"name": name, "key": key, "label": label, "order": order}
+                     for name,key,label,order in axes],
+            "cells": [{"detail": detail, "sex": sex,
+                       **({"value": value} if project_profile_value else {}), "status": status}
+                      for _level,detail,sex,value,status in rows]}
+
+
+
 @app.get("/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}")
 def declared_profile(
     territory_type: Literal["commune", "epci", "departement"],
@@ -2469,7 +2739,6 @@ def declared_profile(
     fields: Annotated[list[str] | None, Query(max_length=32)] = None,
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
-    """Return a complete, descriptor-ordered profile; never substitutes static data."""
     if comparison_scope == "bretagne":
         if comparison_scope_id is not None:
             raise HTTPException(422, "Bretagne comparison scope does not accept an identifier")
@@ -2480,119 +2749,9 @@ def declared_profile(
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            marker = conn.execute(
-                """SELECT p.content_version,p.row_count,
-                          p.reference_content_version,t.content_version AS territory_version
-                     FROM table_publication p LEFT JOIN table_publication t ON t.table_name='territory_reference'
-                    WHERE p.table_name='declared_profile'""").fetchone()
-            if (marker is None or not marker[0] or marker[1] < 1 or
-                    not marker[2] or marker[2] != marker[3]):
-                raise HTTPException(503, "Profile publication is unavailable")
-            if comparison_scope in ("departement", "epci") and comparison_scope_id is not None:
-                membership_column = "department_id" if comparison_scope == "departement" else "epci_id"
-                membership = conn.execute(
-                    f"SELECT {membership_column} FROM territory_reference WHERE territory_id=%s AND territory_type='commune'",
-                    (territory_id,)).fetchone()
-                # A missing territory remains classified by the existing profile read below.
-                if membership is not None and membership[0] != comparison_scope_id:
-                    raise HTTPException(422, "Comparison scope identifier does not match the focal territory")
-            descriptor = conn.execute(
-                "SELECT label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction FROM profile_descriptor WHERE indicator_id=%s",
-                (indicator_id,)).fetchone()
-            if descriptor is None or territory_type not in descriptor[2]:
-                raise HTTPException(404, "Declared profile is unavailable")
-            scalar_facet = conn.execute("SELECT comparison_scalar FROM profile_descriptor WHERE indicator_id=%s",
-                                        (indicator_id,)).fetchone()
-            if scalar_facet and scalar_facet[0]:
-                profile_selection = normalize_field_selection(fields, {"value", "status"})
-                project_profile_value = profile_selection is None or "value" in profile_selection
-                profiles, _ = focal_profiles(conn, territory_type, territory_id,
-                                             indicator_id=indicator_id, fields=fields)
-                profile = profiles[0]
-                department_id = comparison_scope_id if comparison_scope == 'departement' else None
-                epci_id = comparison_scope_id if comparison_scope == 'epci' else None
-                peers = conn.execute("""SELECT t.territory_id,t.name,
-                    CASE WHEN %s THEN o.value ELSE NULL::double precision END,o.status FROM scalar_observation o
-                    JOIN territory_reference t USING(territory_id) WHERE o.indicator_id=%s AND o.territory_type=%s
-                      AND (%s::text IS NULL OR t.department_id=%s) AND (%s::text IS NULL OR t.epci_id=%s)
-                    ORDER BY t.name,t.territory_id LIMIT %s""", (project_profile_value, scalar_facet[0], territory_type,
-                    department_id, department_id, epci_id, epci_id, MAX_TERRITORY_SEARCH_SCAN+1)).fetchall()
-                if len(peers) > MAX_TERRITORY_SEARCH_SCAN or not any(p[0] == territory_id for p in peers):
-                    raise HTTPException(503, 'Profile comparison scope is unavailable')
-                profile['comparison'] = {'indicator': scalar_facet[0], 'direction': descriptor[7],
-                    'scope': comparison_scope, 'scope_id': comparison_scope_id,
-                    'values': [{'territory_id': tid, 'name': name,
-                                **({"value": value} if project_profile_value else {}), "status": status}
-                               for tid,name,value,status in peers]}
-                return profile
-            if (not descriptor[5] or not descriptor[6] or descriptor[7] not in ("high", "low")):
-                raise HTTPException(503, "Profile comparison descriptor is invalid")
-            profile_selection = normalize_field_selection(fields, {"value", "status"})
-            project_profile_value = profile_selection is None or "value" in profile_selection
-            department_id = comparison_scope_id if comparison_scope == "departement" else None
-            epci_id = comparison_scope_id if comparison_scope == "epci" else None
-            if territory_type != "commune":
-                department_id = epci_id = None
-            axes = conn.execute(
-                "SELECT axis_name,axis_key,label,ordinal FROM profile_axis WHERE indicator_id=%s ORDER BY axis_name,ordinal",
-                (indicator_id,)).fetchall()
-            if (not axes or {axis[0] for axis in axes} != {"detail", "sex"} or
-                    len({(axis[0],axis[1]) for axis in axes}) != len(axes) or
-                    len({(axis[0],axis[3]) for axis in axes}) != len(axes)):
-                raise HTTPException(503, "Profile descriptor axes are invalid")
-            detail_keys = {axis[1] for axis in axes if axis[0] == "detail"}
-            sex_keys = {axis[1] for axis in axes if axis[0] == "sex"}
-            if descriptor[5] not in detail_keys or descriptor[6] not in sex_keys:
-                raise HTTPException(503, "Profile comparison facet is not declared by its axes")
-            rows = conn.execute(
-                "SELECT o.territory_type,o.detail_key,o.sex_key,CASE WHEN %s THEN o.value ELSE NULL::double precision END,o.status FROM profile_observation o LEFT JOIN profile_axis d ON d.indicator_id=o.indicator_id AND d.axis_name='detail' AND d.axis_key=o.detail_key LEFT JOIN profile_axis s ON s.indicator_id=o.indicator_id AND s.axis_name='sex' AND s.axis_key=o.sex_key WHERE o.indicator_id=%s AND o.territory_id=%s AND o.territory_type=%s ORDER BY d.ordinal NULLS LAST,s.ordinal NULLS LAST",
-                (project_profile_value, indicator_id, territory_id, territory_type)).fetchall()
-            expected = sum(1 for axis in axes if axis[0] == 'detail') * sum(1 for axis in axes if axis[0] == 'sex')
-            if not rows:
-                raise HTTPException(404, "Profile territory is absent")
-            coordinates = [(row[1], row[2]) for row in rows]
-            if (len(rows) != expected or len(set(coordinates)) != len(coordinates) or
-                    any(detail not in detail_keys or sex not in sex_keys for detail, sex in coordinates)):
-                raise HTTPException(503, "Profile publication is incomplete")
-            sources = conn.execute(
-                """SELECT DISTINCT sd.source_id,sd.name,sv.version,sv.reference_date,sv.publication_date
-                     FROM profile_observation_source os JOIN source_dataset sd USING(source_id)
-                     JOIN source_vintage sv USING(source_id,vintage_id)
-                    WHERE os.indicator_id=%s AND os.territory_id=%s
-                    ORDER BY sd.source_id""", (indicator_id, territory_id)).fetchall()
-            if not sources:
-                raise HTTPException(503, "Profile provenance is unavailable")
-            peers = conn.execute(
-                """SELECT t.territory_id,t.name,CASE WHEN %s THEN o.value ELSE NULL::double precision END,o.status
-                     FROM profile_observation o JOIN territory_reference t USING(territory_id)
-                    WHERE o.indicator_id=%s AND o.territory_type=%s
-                      AND o.detail_key=%s AND o.sex_key=%s
-                      AND (%s::text IS NULL OR t.department_id=%s)
-                      AND (%s::text IS NULL OR t.epci_id=%s)
-                    ORDER BY t.name,t.territory_id LIMIT %s""",
-                (project_profile_value, indicator_id, territory_type, descriptor[5], descriptor[6],
-                 department_id, department_id, epci_id, epci_id, MAX_TERRITORY_SEARCH_SCAN + 1)).fetchall()
-            if len(peers) > MAX_TERRITORY_SEARCH_SCAN:
-                raise HTTPException(503, "Declared comparison scope exceeds the bounded profile read")
-            if not any(peer[0] == territory_id for peer in peers):
-                raise HTTPException(503, "Focal territory is not eligible in declared comparison scope")
-            return {"indicator": indicator_id, "label": descriptor[0], "unit": descriptor[1],
-                    "descriptor_version": descriptor[4], "content_version": marker[0],
-                    "sources": [{"source_id": source_id, "name": name, "version": version,
-                        "reference_date": str(reference_date) if reference_date else None,
-                        "publication_date": str(publication_date) if publication_date else None}
-                        for source_id,name,version,reference_date,publication_date in sources],
-                    "comparison": {"detail": descriptor[5], "sex": descriptor[6],
-                        "direction": descriptor[7], "scope": comparison_scope,
-                        "scope_id": comparison_scope_id, "values": [
-                            {"territory_id": tid, "name": name,
-                             **({"value": value} if project_profile_value else {}), "status": status}
-                            for tid,name,value,status in peers]},
-                    "axes": [{"name": name, "key": key, "label": label, "order": order}
-                             for name,key,label,order in axes],
-                    "cells": [{"detail": detail, "sex": sex,
-                               **({"value": value} if project_profile_value else {}), "status": status}
-                              for _level,detail,sex,value,status in rows]}
+            return _declared_profile_snapshot(conn, territory_type, territory_id, indicator_id,
+                comparison_scope, comparison_scope_id, fields)
+
 
 
 def _owned_series_route(conn, indicator_id):
