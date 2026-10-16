@@ -219,6 +219,59 @@ def test_aedar_fixed_single_route_and_batch_share_the_same_connection_reader(mon
     assert len({call[0] for call in calls}) == 1
 
 
+def test_named_indicator_focal_read_is_a_batch_resource_with_exact_reader_payload(monkeypatch):
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    calls = []
+
+    def reader(conn, territory_type, territory_id, indicator_id, fields=None, *, preflight_only=False):
+        calls.append((conn, indicator_id, fields, preflight_only))
+        return {"supported_fields": {"value", "status"}} if preflight_only else {
+            "indicator_id": indicator_id, "value": None, "status": "suppressed",
+            "sources": [{"source_id": "src", "vintage_id": "v1"}],
+        }
+
+    monkeypatch.setattr(main, "_indicator_facts_snapshot", reader, raising=False)
+    try:
+        response = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": "named", "resource": "indicator_facts", "territory_type": "commune",
+             "territory_id": "22001", "indicator_id": "my_scalar", "fields": ["status"]},
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert response.status_code == 200, response.text
+    assert response.json()["results"][0]["data"]["status"] == "suppressed"
+    assert calls[0][0] is calls[1][0]
+    assert calls[0][3] is True and calls[1][3] is False
+
+
+def test_named_indicator_comparison_batch_and_single_share_snapshot_reader(monkeypatch):
+    repository = BatchRepository()
+    main.app.dependency_overrides[main.get_repository] = lambda: repository
+    calls = []
+
+    def reader(conn, territory_type, territory_id, indicator_id, selection, fields):
+        calls.append((conn, selection, fields))
+        return {"contract": "indicator-comparison-v1", "indicator_id": indicator_id,
+                "selection": None, "result": {"status": "unavailable", "median": None}}
+
+    monkeypatch.setattr(main, "_indicator_comparison_preflight", lambda *args: None)
+    monkeypatch.setattr(main, "_indicator_comparison_snapshot", reader)
+    try:
+        single = TestClient(main.app).post(
+            "/api/territories/commune/22001/indicators/example/comparison", json={"selection": []})
+        batch = TestClient(main.app).post("/api/read-batch", json={"items": [
+            {"id": "cmp", "resource": "indicator_comparison", "territory_type": "commune",
+             "territory_id": "22001", "indicator_id": "example", "selection": []},
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+    assert single.status_code == batch.status_code == 200
+    assert batch.json()["results"][0]["data"] == single.json()
+    assert calls[0][0] is calls[1][0]
+    assert repository.connections.connections == 2
+
+
 def test_theme_comparison_route_and_batch_share_public_contract_reader(monkeypatch):
     repository = BatchRepository()
     main.app.dependency_overrides[main.get_repository] = lambda: repository

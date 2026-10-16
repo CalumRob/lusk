@@ -581,6 +581,8 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
                                       json={"theme_id": "demographie", "selection": selected})
             focal_single = client.get(
                 "/api/territories/region/large-region/themes/demographie/facts?fields=value")
+            indicator_single = client.get(
+                "/api/territories/region/large-region/indicators/large_scalar?fields=status")
             tracked_pool.counters.update(connections=0, transactions=0, statements=[])
             mixed_batch = client.post("/api/read-batch", json={"items": [
                 {"id": "focal", "resource": "theme_facts", "territory_type": "region",
@@ -588,6 +590,8 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
                 {"id": "peers", "resource": "theme_comparison", "territory_type": "commune",
                  "territory_id": "large0000", "theme_id": "demographie",
                  "selection": selected, "fields": ["median"]},
+                {"id": "named-scalar", "resource": "indicator_facts", "territory_type": "region",
+                 "territory_id": "large-region", "indicator_id": "large_scalar", "fields": ["status"]},
             ]})
             batch_connection_counts = dict(tracked_pool.counters)
             invalid_fields = client.post("/api/territories/commune/large0000/themes/comparison?fields=raw_sql",
@@ -595,9 +599,10 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
             excessive = client.post("/api/territories/commune/large0000/themes/comparison",
                                     json={"theme_id": "demographie", "selection": [selected[0]] * 1501})
         assert response.status_code == 200, response.text
-        assert focal_single.status_code == mixed_batch.status_code == 200, mixed_batch.text
+        assert focal_single.status_code == indicator_single.status_code == mixed_batch.status_code == 200, mixed_batch.text
         batched = {item["id"]: item["data"] for item in mixed_batch.json()["results"]}
         assert batched["focal"] == focal_single.json()
+        assert batched["named-scalar"] == indicator_single.json()
         assert typed_comparison_single.status_code == 200, typed_comparison_single.text
         assert batched["peers"] == typed_comparison_single.json()
         batch_lineage = batched["peers"]["results"][0]["comparison_sources"]

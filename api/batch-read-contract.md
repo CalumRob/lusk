@@ -18,6 +18,8 @@ aborts the whole request; no partial results envelope is returned.
 | `theme_comparison` | territory identity, `theme_id`, optional typed `selection`, comparison `fields` | `_theme_comparison_contract_snapshot`; same adapted payload as `POST /api/territories/{type}/{id}/themes/{theme}/comparison`, including Mobility service/building metadata |
 | `aedar_aggregate` | territory identity, optional `typequ[]`, #781 `fields`, `limit`, `offset` | `_aedar_territorial_aggregate_snapshot`; same payload as `GET /api/aedar/territories/{type}/{id}/aggregates` |
 | `aedar_comparison` | commune/EPCI/département identity, `context`, `typequ`, `measure`, #781 `fields` | `_aedar_comparison_snapshot`; same payload as `GET /api/aedar/territories/{type}/{id}/comparisons` |
+| `indicator_facts` | territory identity, `indicator_id`, shape-declared `fields` | `_indicator_facts_snapshot`; same payload as `GET /api/territories/{type}/{id}/indicators/{indicator}` |
+| `indicator_comparison` | territory identity, `indicator_id`, optional typed `selection`, comparison `fields` | `_indicator_comparison_snapshot`; same payload as `POST /api/territories/{type}/{id}/indicators/{indicator}/comparison` |
 
 Example mixing a focal read with a comparison:
 
@@ -86,18 +88,31 @@ The following standalone logical reads remain to be shared/exposed and tested:
 
 - named-indicator focal dispatch (`/indicators/{indicator_id}`), including its
   scalar, declared-profile, legacy-series alias, owned series/reference, and
-  numeric-collection response contracts;
-- named-indicator fixed/dynamic comparison (`/indicators/{indicator_id}/comparison`);
+  numeric-collection response contracts, is included as `indicator_facts`;
+- named-indicator fixed/dynamic comparison is included as `indicator_comparison`;
 - direct profile and series aliases where their public response differs from a
   theme payload; do not treat `theme_facts` as parity for those URLs;
 - bounded territory/group-row read contracts required by the app inventory.
 
-The whole-list preflight now proves identities, field support, scopes, and
-request bounds before fact/result readers. It does not yet resolve every
-family-specific publication dependency marker for every item in that preflight
-phase; each item's established reader validates those dependencies before that
-item returns. A bad later publication can therefore follow earlier internal
-read work, though the transaction still returns no partial response. Complete
-dependency-marker preflight, first/last-item stale/missing tests, concurrent
-publisher-refresh proof, and source-pinned paired batch-vs-single rehearsal
-remain required before #788 is complete.
+The whole-list preflight proves identities, field support, scopes, and request
+bounds before fact/result readers. For theme reads and the direct named
+indicator scalar/profile/series dispatch, the existing marker and dependency
+guards are reused during preflight (profile mode validates descriptors and
+scalar dependency versions without fetching profile cells). The named
+indicator-comparison preflight validates shape, scope, and the theme comparison
+markers for scalar/profile descriptors. It does not yet resolve all BPE,
+owned-series/reference, observed-collection, or every dynamic comparison
+family's publication markers during the whole-list preflight. AEDAR publication
+guards run in metadata preflight. These remaining dependency paths mean a bad
+later item can still follow earlier internal read work, though the transaction
+returns no partial envelope.
+
+Still required before #788 is complete: standalone direct profile and series
+aliases; bounded territory/group-row resources from the app inventory; complete
+marker preflight for BPE/owned/reference/collection/dynamic comparison paths;
+first/last-item stale/missing tests with a real query trace; concurrent publisher
+refresh proof; and the source-pinned paired batch-vs-single rehearsal. The
+serialized envelope limit bounds returned bytes, while current resource-local
+row/cohort limits and the 12-item cap bound supported work. A unified estimate
+across all raw-row/cell families is not yet implemented; don't treat the byte
+limit alone as a complete computational-work budget.

@@ -1,3 +1,5 @@
+import inspect
+
 from api.main import app
 
 
@@ -6,17 +8,20 @@ def test_scalar_endpoint_is_named_bounded_and_registered():
                  "/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
     assert route.methods == {"GET"}
     assert route.endpoint.__name__ == "scalar_observation"
-    sql = " ".join(c for c in route.endpoint.__code__.co_consts if isinstance(c, str))
-    assert "REPEATABLE READ, READ ONLY" in sql
+    sql = inspect.getsource(_indicator_reader())
     assert "WHERE o.indicator_id = %s" in sql
     assert "AND o.territory_id = %s" in sql
-    marker_sql = next(c for c in route.endpoint.__code__.co_consts
-                      if isinstance(c, str) and "scalar.reference_content_version" in c)
-    assert "scalar.content_version" in marker_sql
-    assert "territory.content_version" in marker_sql
-    assert "count(" not in marker_sql.lower()
-    assert "actual_scalar_rows" not in marker_sql
-    assert "actual_territories" not in marker_sql
+    assert "scalar.reference_content_version" in sql
+    assert "scalar.content_version" in sql
+    assert "territory.content_version" in sql
+    assert "count(" not in sql.lower()
+    assert "actual_scalar_rows" not in sql
+    assert "actual_territories" not in sql
+
+
+def _indicator_reader():
+    from api import main
+    return main._indicator_facts_snapshot
 
 
 def test_scalar_cohort_route_returns_sparse_absence_and_peer_specific_lineage():

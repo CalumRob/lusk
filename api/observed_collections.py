@@ -31,7 +31,8 @@ def collection_marker(conn, descriptor):
     return {"content_version":marker[0],"reference_content_version":marker[1]}
 
 
-def collection_snapshot(conn, descriptor, territory_type, territory_id, *, fields=None):
+def collection_snapshot(conn, descriptor, territory_type, territory_id, *, fields=None,
+                        preflight_only=False):
     if territory_type not in descriptor["allowed_levels"]:
         raise HTTPException(422,"Collection is not declared for this territory level")
     focal = conn.execute("SELECT name,territory_type FROM territory_reference WHERE territory_id=%s", (territory_id,)).fetchone()
@@ -43,9 +44,14 @@ def collection_snapshot(conn, descriptor, territory_type, territory_id, *, field
     if descriptor["kind"] == "anchored_membership":
         membership_fields = normalize_field_selection(fields,
             {"detail", "label", "rider", "anchor_count", "availability"})
+        if preflight_only:
+            return {**marker, "supported_fields": {
+                "detail", "label", "rider", "anchor_count", "availability"}}
         return membership_snapshot(conn,descriptor,territory_type,territory_id,focal[0],marker,
                                    fields=membership_fields)
     selection = normalize_field_selection(fields, {"value", "status"})
+    if preflight_only:
+        return {**marker, "supported_fields": {"value", "status"}}
     project_value = selection is None or "value" in selection
     rows = conn.execute("""SELECT o.detail_key,c.label,o.observation_period,
         CASE WHEN %s THEN o.value ELSE NULL::double precision END AS value,o.source_id,
