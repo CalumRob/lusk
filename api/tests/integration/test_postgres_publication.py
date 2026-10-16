@@ -491,22 +491,32 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
 
     selected = [{"territory_type": "commune", "territory_id": f"large{i:04d}"}
                 for i in range(1202)]
+    # Keep one published reference member outside the explicit selection so
+    # this exercises the request-scoped dynamic path, not a fixed Bretagne set.
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as conn:
         with conn.transaction():
             with conn.cursor() as cur:
                 cur.executemany("INSERT INTO territory_reference(territory_id,territory_type,name) VALUES (%s,'commune',%s)",
-                                [(row["territory_id"], row["territory_id"]) for row in selected])
-            conn.execute("INSERT INTO source_dataset VALUES ('large_fixture','Large fixture')")
-            conn.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('large_fixture','v1','2026')")
+                                [(row["territory_id"], row["territory_id"]) for row in selected] +
+                                [("outside-selection", "Outside explicit selection")])
+            conn.execute("INSERT INTO source_dataset VALUES ('large_fixture_a','Large fixture A'),('large_fixture_b','Large fixture B')")
+            conn.execute("INSERT INTO source_vintage(source_id,vintage_id,version) VALUES ('large_fixture_a','v1','2026-A'),('large_fixture_b','v2','2026-B')")
             conn.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,
                 allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES
                 ('large_scalar','demographie','Large scalar','count','high','large_scalar',
                  ARRAY['commune'],'fixture count','sparse','large-v1')""")
-            conn.execute("INSERT INTO scalar_descriptor_source VALUES ('large_scalar','large_fixture')")
-            conn.execute("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES ('large_scalar','large0000','commune',7,'measured')")
-            conn.execute("INSERT INTO scalar_observation_source VALUES ('large_scalar','large0000','large_fixture','v1')")
-            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',1202)")
-            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','large-v1',1,'large-ref-v1')")
+            conn.execute("INSERT INTO scalar_descriptor_source VALUES ('large_scalar','large_fixture_a'),('large_scalar','large_fixture_b')")
+            conn.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status) VALUES
+                ('large_scalar','large0000','commune',7,'measured'),
+                ('large_scalar','large0001','commune',10,'measured'),
+                ('large_scalar','large0002','commune',4,'measured')""")
+            conn.execute("""INSERT INTO scalar_observation_source VALUES
+                ('large_scalar','large0000','large_fixture_a','v1'),
+                ('large_scalar','large0001','large_fixture_b','v2'),
+                ('large_scalar','large0002','large_fixture_a','v1'),
+                ('large_scalar','large0002','large_fixture_b','v2')""")
+            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','large-ref-v1',1203)")
+            conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','large-v1',3,'large-ref-v1')")
     pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1, open=True,
                           kwargs={"autocommit": True})
     previous = main.app.dependency_overrides.get(main.get_repository)
@@ -515,14 +525,42 @@ def test_theme_comparison_accepts_large_explicit_selection_without_peer_dump(can
         with TestClient(main.app) as client:
             response = client.post("/api/territories/commune/large0000/themes/comparison",
                                    json={"theme_id": "demographie", "selection": selected})
+            median_only = client.post("/api/territories/commune/large0000/themes/comparison?fields=median",
+                                      json={"theme_id": "demographie", "selection": selected})
+            rank_only = client.post("/api/territories/commune/large0000/themes/comparison?fields=rank",
+                                    json={"theme_id": "demographie", "selection": selected})
+            status_only = client.post("/api/territories/commune/large0000/themes/comparison?fields=status",
+                                      json={"theme_id": "demographie", "selection": selected})
+            invalid_fields = client.post("/api/territories/commune/large0000/themes/comparison?fields=raw_sql",
+                                         json={"theme_id": "demographie", "selection": selected})
             excessive = client.post("/api/territories/commune/large0000/themes/comparison",
                                     json={"theme_id": "demographie", "selection": [selected[0]] * 1501})
         assert response.status_code == 200, response.text
-        result = response.json()["results"][0]
+        body = response.json()
+        result = body["results"][0]
         assert result["selected_member_count"] == 1202
-        assert result["eligible_count"] == 1 and result["missing_count"] == 1201
-        assert result["median"] == 7 and result["rank"] == 1 and result["rank_size"] == 1
+        assert result["eligible_count"] == 3 and result["missing_count"] == 1199
+        assert result["median"] == 7 and result["rank"] == 2 and result["rank_size"] == 3
+        expected_sources = {("large_fixture_a", "v1"), ("large_fixture_b", "v2")}
+        assert {(source["source_id"], source["vintage_id"]) for source in result["comparison_sources"]} == expected_sources
         assert "observations" not in response.json() and "scope_series" not in response.json()
+        for projected in (median_only, rank_only, status_only):
+            assert projected.status_code == 200, projected.text
+            projected_body = projected.json()
+            assert {key: projected_body[key] for key in
+                    ("contract", "complete_theme", "theme_id", "content_version", "reference_content_version", "selection", "scope")} == {
+                        key: body[key] for key in
+                        ("contract", "complete_theme", "theme_id", "content_version", "reference_content_version", "selection", "scope")}
+            projected_result = projected_body["results"][0]
+            for key in ("indicator_id", "label", "unit", "direction", "descriptor_version", "status", "comparison_sources"):
+                assert projected_result[key] == result[key]
+        assert median_only.json()["results"][0]["median"] == result["median"]
+        assert "rank" not in median_only.json()["results"][0]
+        assert rank_only.json()["results"][0]["rank"] == result["rank"]
+        assert "median" not in rank_only.json()["results"][0]
+        assert status_only.json()["results"][0]["status"] == result["status"]
+        assert not {"median", "rank", "eligible_count", "missing_count"} & set(status_only.json()["results"][0])
+        assert invalid_fields.status_code == 422
         assert excessive.status_code == 422
         assert excessive.json()["detail"][0]["type"] == "too_long"
         assert excessive.json()["detail"][0]["ctx"]["max_length"] == 1500
@@ -982,6 +1020,52 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
             for row in profile["structure_age"]["comparison_sources"]}
         assert expected_scalar_pairs and actual_scalar_pairs == expected_scalar_pairs
         assert expected_profile_pairs and actual_profile_pairs == expected_profile_pairs
+
+        alias_path="/api/territories/commune/22001/indicators/structure_age"
+        with TestClient(main.app) as client:
+            alias_full=client.get(alias_path)
+            alias_status=client.get(alias_path+"?fields=status")
+            alias_value=client.get(alias_path+"?fields=value")
+            alias_invalid=client.get(alias_path+"?fields=mean")
+            profile_status=client.get("/api/territories/commune/22001/profiles/structure_age?fields=status")
+            profile_value=client.get("/api/territories/commune/22001/profiles/structure_age?fields=value")
+        assert alias_full.status_code==alias_status.status_code==alias_value.status_code==200
+        assert alias_invalid.status_code==422
+        assert profile_status.status_code==profile_value.status_code==200
+        full_profile=alias_full.json()
+        selected_status,selected_value=alias_status.json(),alias_value.json()
+        assert selected_value["cells"]==full_profile["cells"]
+        assert all("value" in cell and cell["status"] in ("measured","suppressed","unsupported","not_available")
+            and cell["sources"] for cell in full_profile["cells"])
+        assert full_profile["axes"] and full_profile["descriptor_version"] and full_profile["content_version"]
+        assert any("median" in row and "rank" in row
+            for row in full_profile["default_comparison"]["results"])
+        assert all("value" not in cell for cell in selected_status["cells"])
+        def profile_axis_status_values(cells, *, include_value):
+            keys=("detail","sex","status","value") if include_value else ("detail","sex","status")
+            return [{key:cell.get(key) for key in keys} for cell in cells]
+        assert profile_axis_status_values(full_profile["cells"],include_value=True)==profile_axis_status_values(
+            profile_value.json()["cells"],include_value=True)
+        assert profile_axis_status_values(selected_status["cells"],include_value=False)==profile_axis_status_values(
+            profile_status.json()["cells"],include_value=False)
+        assert all(cell["status"]==full_profile["cells"][index]["status"]
+            and cell["sources"]==full_profile["cells"][index]["sources"]
+            and cell["detail"]==full_profile["cells"][index]["detail"]
+            and cell.get("sex")==full_profile["cells"][index].get("sex")
+            for index,cell in enumerate(selected_status["cells"]))
+        assert {key:selected_status[key] for key in
+            ("indicator","label","unit","axes","descriptor_version","content_version")} == {
+                key:full_profile[key] for key in
+                ("indicator","label","unit","axes","descriptor_version","content_version")}
+        comparison_optional={"focal_value","median","rank","rank_size","rank_ties",
+            "selected_member_count","eligible_count","missing_count","mean","mean_curve"}
+        assert all(not comparison_optional & set(row)
+            for row in selected_status["default_comparison"]["results"])
+        assert all(not comparison_optional & set(row)
+            for row in selected_value["default_comparison"]["results"])
+        assert all(row["status"]==full_profile["default_comparison"]["results"][index]["status"]
+            and row["comparison_sources"]==full_profile["default_comparison"]["results"][index]["comparison_sources"]
+            for index,row in enumerate(selected_status["default_comparison"]["results"]))
 
         profile_only = client.post(
             "/api/territories/commune/22001/indicators/structure_age/comparison?fields=median")

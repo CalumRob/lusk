@@ -3188,8 +3188,7 @@ def scalar_observation(
             if shape is None:
                 raise HTTPException(404, "Indicator descriptor is unavailable")
             if shape == "profile":
-                if fields is not None:
-                    raise HTTPException(422, "Field selection is not declared for this indicator resource")
+                profile_selection = normalize_field_selection(fields, {"value", "status"})
                 descriptor = conn.execute(
                     "SELECT theme_id FROM profile_descriptor WHERE indicator_id=%s", (indicator_id,)
                 ).fetchone()
@@ -3203,8 +3202,10 @@ def scalar_observation(
                 cohort_type, members, scope = _comparison_cohort(conn, territory_type, territory_id, None)
                 fixed_context = _fixed_scalar_comparison_context(conn, territory_type, territory_id,
                     None, cohort_type, members, scope)
+                comparison_fields = _theme_comparison_projection(profile_selection)
                 profile_comparison_results = _profile_comparison_results(
-                    conn, [profile], members, cohort_type, territory_id, fixed_context)
+                    conn, [profile], members, cohort_type, territory_id, fixed_context,
+                    **({} if comparison_fields is None else {"selected_fields":comparison_fields}))
                 profile["default_comparison"] = {
                     "scope": scope, "results": profile_comparison_results}
                 return profile
@@ -3429,22 +3430,35 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
         "SELECT indicator_id FROM scalar_descriptor WHERE theme_id=%s ORDER BY indicator_id",
         (theme_id,)).fetchall()
     collection_resource_descriptors = collection_descriptors(conn,theme_id=theme_id)
-    profiles = conn.execute("""SELECT indicator_id FROM profile_descriptor
-        WHERE theme_id=%s AND %s=ANY(allowed_levels) ORDER BY indicator_id""",
-        (theme_id,territory_type)).fetchall()
-    series_resources = []
-    if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
-        has_theme = conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
-            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
-        has_route = conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
-            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
-        if has_theme and has_route:
-            series_resources = conn.execute("""SELECT dataset_id FROM series_dataset_descriptor
-                WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels) ORDER BY dataset_id""",
-                (theme_id,territory_type)).fetchall()
-    typed_reading = conn.execute("""SELECT EXISTS(SELECT 1 FROM selected_reading_descriptor
-        WHERE theme_id=%s)""",(theme_id,)).fetchone()[0]
     selected_fields = normalize_field_selection(fields, _THEME_FACT_FIELDS)
+    needs_numeric_vocabulary = (selected_fields is not None and
+        bool(set(selected_fields) & (_COMPARISON_RESULT_FIELDS | {"value"})))
+    profiles = []
+    series_resources = None
+    typed_reading = False
+    if needs_numeric_vocabulary:
+        profiles = conn.execute("""SELECT indicator_id FROM profile_descriptor
+            WHERE theme_id=%s AND %s=ANY(allowed_levels) ORDER BY indicator_id""",
+            (theme_id,territory_type)).fetchall()
+        series_resources = []
+        if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
+            has_theme = conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
+            has_route = conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
+            if has_theme and has_route:
+                series_resources = conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
+                    WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels) ORDER BY indicator_id""",
+                    (theme_id,territory_type)).fetchall()
+        if "value" in selected_fields:
+            typed_reading = conn.execute("""SELECT EXISTS(SELECT 1 FROM selected_reading_descriptor
+                WHERE theme_id=%s)""",(theme_id,)).fetchone()[0]
+            # Mobility's registered singleton descriptor is the resource
+            # registry for its typed numeric reading family.
+            if not typed_reading and theme_id == "mobilite" and conn.execute(
+                    "SELECT to_regclass('mobility_reading_descriptor')").fetchone()[0]:
+                typed_reading = bool(conn.execute(
+                    "SELECT 1 FROM mobility_reading_descriptor WHERE singleton").fetchone())
     membership_resources=[descriptor for descriptor in collection_resource_descriptors
         if descriptor["kind"]=="anchored_membership" and territory_type in descriptor["allowed_levels"]]
     numeric_collections=[descriptor for descriptor in collection_resource_descriptors
@@ -3488,15 +3502,18 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
     collections=[]
     bpe_profile=None
     density_distribution=None
-    if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
-        has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
-            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
-        has_route=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
-            WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
-        if has_theme and has_route:
-            routes=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
-                WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels)
-                ORDER BY indicator_id""",(theme_id,territory_type)).fetchall()
+    routes=series_resources
+    if routes is None:
+        routes=[]
+        if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
+            has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
+            has_route=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
+                WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='active_read_route')""").fetchone()[0]
+            if has_theme and has_route:
+                routes=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
+                    WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels)
+                    ORDER BY indicator_id""",(theme_id,territory_type)).fetchall()
         owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator,
                                               fields=None if project_value else ["status"])
                       for dataset_id,indicator in routes]

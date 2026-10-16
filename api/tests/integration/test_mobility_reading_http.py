@@ -63,6 +63,19 @@ def test_registered_mobility_reading_publication_survives_populated_upgrade_and_
         pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,density_class_code,density_class_label) VALUES
             ('35238','commune','Fixture Rennes','D1','Fixture density'),('35239','commune','Fixture unavailable','D1','Fixture density')""")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','ref-v1',2)")
+        # Theme-facts composes the incumbent access reader in this same
+        # snapshot; publish actual rows and matching scope metadata.
+        pub.execute("INSERT INTO service_registry(service) VALUES('fixture-service')")
+        pub.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES(true,'communes-bretagne','Fixture communes')")
+        pub.execute("""INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,
+            effective_direction,source_id,source_name,source_version,reference_date,source_publication_date) VALUES
+            ('35238','fixture-service','walk_transit',0.6,'Fixture access','high','fixture-access','Fixture access source','v1',NULL,'2026-08-06'),
+            ('35238','fixture-service','bike',0.4,'Fixture access','high','fixture-access','Fixture access source','v1',NULL,'2026-08-06'),
+            ('35238','fixture-service','car',0.8,'Fixture access','high','fixture-access','Fixture access source','v1',NULL,'2026-08-06'),
+            ('35239','fixture-service','walk_transit',0.5,'Fixture access','high','fixture-access','Fixture access source','v1',NULL,'2026-08-06'),
+            ('35239','fixture-service','bike',0.3,'Fixture access','high','fixture-access','Fixture access source','v1',NULL,'2026-08-06'),
+            ('35239','fixture-service','car',0.9,'Fixture access','high','fixture-access','Fixture access source','v1',NULL,'2026-08-06')""")
+        pub.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('essential_service_access','access-fixture-v1',6,'ref-v1')")
         pub.execute("INSERT INTO source_dataset(source_id,name) VALUES('mobilite_snapshot',%s)",
             ("Lusk — analyse d'accessibilité « Vingt minutes sans voiture » (analyse portée, BPE 2024 · OSM 02-2026 · BDNB 2025-07)",))
         pub.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
@@ -73,8 +86,14 @@ def test_registered_mobility_reading_publication_survives_populated_upgrade_and_
             VALUES('economy_typed_reading','economy-fixture-v1',1,'ref-v1')""")
         pub.execute((root / "api/migrations/023_mobility_typed_reading.sql").read_text(encoding="utf-8"))
 
+        writer=urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
+        smoke_env=os.environ.copy()
+        smoke_env.update({"LUSK_PROFILE_TEST_HOST":writer.hostname or "localhost",
+            "LUSK_PROFILE_TEST_PORT":str(writer.port or 5432),
+            "LUSK_PROFILE_TEST_DATABASE":writer.path.lstrip("/"),
+            "LUSK_PROFILE_TEST_USER":writer.username or ""})
         smoke = subprocess.run(["Rscript", "scripts/smoke-mobility-reading-postgres.R", schema], cwd=root / "pipeline",
-                               check=False, timeout=120, capture_output=True, text=True)
+                               env=smoke_env,check=False, timeout=120, capture_output=True, text=True)
         assert smoke.returncode == 0, smoke.stdout + smoke.stderr
         assert pub.execute("SELECT content_version,row_count,reference_content_version FROM table_publication WHERE table_name='mobility_typed_reading'").fetchone()[1:] == (2, "ref-v1")
         descriptor = pub.execute("SELECT unit,direction,allowed_levels,missing_status,classification_values,field_keys,source_version,reference_date FROM mobility_reading_descriptor").fetchone()
@@ -110,6 +129,21 @@ def test_registered_mobility_reading_publication_survives_populated_upgrade_and_
                 assert reading["provenance"]["source_reference_date"] is None
                 assert len(reading["provenance"]["windows"]) == 2
                 assert body["reading_content_version"]
+                status_response=client.get("/api/territories/commune/35238/themes/mobilite/facts?fields=status")
+                value_response=client.get("/api/territories/commune/35238/themes/mobilite/facts?fields=value")
+                invalid_membership=client.get("/api/territories/commune/35238/themes/mobilite/facts?fields=status&fields=rider")
+                assert status_response.status_code==value_response.status_code==200
+                assert invalid_membership.status_code==422
+                status_reading=status_response.json()["readings"][0]
+                value_reading=value_response.json()["readings"][0]
+                assert not {"div_loss_t","div_loss_b"} & set(status_reading)
+                assert status_reading["status"]==reading["status"]
+                assert value_reading["div_loss_t"]==reading["div_loss_t"]==8.0
+                assert value_reading["div_loss_b"]==reading["div_loss_b"]==5.0
+                metadata_keys=("groupe","story_key","salience_reason","classification_saillance","status",
+                    "unit","direction","source_id","vintage_id","provenance")
+                assert {key:status_reading[key] for key in metadata_keys}=={key:reading[key] for key in metadata_keys}
+                assert value_response.json()["reading_content_version"]==status_response.json()["reading_content_version"]==body["reading_content_version"]
                 unavailable_response=client.get("/api/territories/commune/35239/themes/mobilite/facts")
                 assert unavailable_response.status_code==200,unavailable_response.text
                 unavailable=unavailable_response.json()["readings"][0]
