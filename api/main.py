@@ -1368,7 +1368,6 @@ def get_resource_catalogue() -> ResourceCatalogue:
     return default_resource_catalogue()
 
 
-@app.get("/api/building-access/territories")
 def building_access_territories(repository: ReadRepository = Depends(get_repository)) -> dict:
     return repository.read_building_catalog()
 
@@ -1385,7 +1384,6 @@ def search_territories(
     return repository.search_territories(q, limit)
 
 
-@app.get("/api/territories/{territory_type}/{territory_id}/building-access")
 def initial_building_access(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str,
@@ -1396,7 +1394,6 @@ def initial_building_access(
     return repository.read_building_initial(territory_type, territory_id, comparison)
 
 
-@app.post("/api/territories/{territory_type}/{territory_id}/building-access-comparison")
 def custom_building_comparison(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str,
@@ -2752,7 +2749,6 @@ def read_resource_batch(
                                   _semantic_resource_preflight, _semantic_resource_read)
 
 
-@app.post("/api/read-batch")
 def read_batch(request: BatchReadRequest,
                repository: ReadRepository = Depends(get_repository)) -> dict:
     """Compose bounded typed serving reads in one read-only repeatable-read snapshot.
@@ -3028,7 +3024,6 @@ def _declared_profile_snapshot(conn, territory_type, territory_id, indicator_id,
 
 
 
-@app.get("/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}")
 def declared_profile(
     territory_type: Literal["commune", "epci", "departement"],
     territory_id: str = Path(min_length=1, max_length=32),
@@ -4051,7 +4046,6 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
     return dict(zip((column.name for column in cursor.description), row))
 
 
-@app.get("/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
 def scalar_observation(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str = Path(min_length=1, max_length=32),
@@ -4159,7 +4153,6 @@ def _mobility_density_distribution_snapshot(conn, territory_type, territory_id):
         "content_version":marker[0],"descriptor_version":marker[4]}
 
 
-@app.get("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
 def theme_facts(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str = Path(min_length=1, max_length=32),
@@ -4185,7 +4178,6 @@ def theme_facts(
                 fields=selected_fields)
 
 
-@app.post("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
 def selected_theme_facts(
     territory_type: Literal["commune", "epci", "departement", "region"],
     theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
@@ -4761,7 +4753,6 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
     return payload
 
 
-@app.post("/api/territories/{territory_type}/{territory_id}/themes/comparison")
 def theme_comparison(
     territory_type: Literal["commune", "epci", "departement", "region"],
     request: ThemeComparisonRequest,
@@ -4781,7 +4772,6 @@ def theme_comparison(
             return _project_comparison_payload_fields(result, selected_fields)
 
 
-@app.post("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/comparison")
 def theme_comparison_only(
     territory_type: Literal["commune", "epci", "departement", "region"],
     theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
@@ -5239,7 +5229,6 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
         "result": result},selected_fields)
 
 
-@app.post("/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}/comparison")
 def indicator_comparison_only(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str = Path(min_length=1, max_length=32),
@@ -5319,7 +5308,6 @@ def _focal_series_snapshot(conn, territory_type, territory_id, indicator_id, *, 
         "availability": "complete" if all(p["status"] == "measured" for p in points) else "incomplete"}
 
 
-@app.get("/api/territories/{territory_type}/{territory_id}/indicator-cohorts/{indicator_id}")
 def scalar_indicator_cohort(
     territory_type: Literal["commune", "epci", "departement", "region"],
     territory_id: str = Path(min_length=1, max_length=32),
@@ -5457,7 +5445,6 @@ def scalar_indicator_cohort(
                                  rang_epci,rang_epci_n,rang_dep,rang_dep_n,rang_reg,rang_reg_n in rows]}
 
 
-@app.get("/api/territories/{territory_type}/{territory_id}/series/{indicator_id}")
 def annual_series(territory_type: Literal["commune", "epci", "departement", "region"],
                   territory_id: str = Path(min_length=1, max_length=32),
                   indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
@@ -5470,7 +5457,6 @@ def annual_series(territory_type: Literal["commune", "epci", "departement", "reg
                                   department_id, epci_id, fields=fields)
 
 
-@app.get("/api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}")
 def owned_series(dataset_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
                  territory_type: Literal["commune","epci","departement","region"] = Path(),
                  territory_id: str = Path(min_length=1,max_length=32),
@@ -5485,7 +5471,6 @@ def owned_series(dataset_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
         scope_level,department_id,epci_id,comparison_detail,fields=fields)
 
 
-@app.get("/api/territories/commune/{territory_id}/essential-services", response_model=ComparisonResponse)
 def essential_services(
     territory_id: str,
     comparison: Literal["densite", "epci", "bretagne"] = Query(default="densite"),
@@ -5494,17 +5479,14 @@ def essential_services(
     return compare(repository.read(territory_id, comparison))
 
 
-@app.get("/api/territories/epci/{territory_id}/essential-services", response_model=ComparisonResponse)
 def epci_essential_services(territory_id: str, repository: ReadRepository = Depends(get_repository)) -> ComparisonResponse:
     return compare(repository.read_level("epci", territory_id))
 
 
-@app.get("/api/territories/departement/{territory_id}/essential-services", response_model=ComparisonResponse)
 def department_essential_services(territory_id: str, repository: ReadRepository = Depends(get_repository)) -> ComparisonResponse:
     return compare(repository.read_level("departement", territory_id))
 
 
-@app.get("/api/territories/region/{territory_id}/essential-services", response_model=ComparisonResponse)
 def region_essential_services(territory_id: str, repository: ReadRepository = Depends(get_repository)) -> ComparisonResponse:
     return compare(repository.read_level("region", territory_id))
 

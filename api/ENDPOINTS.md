@@ -36,6 +36,14 @@ coordinates and optional fields are producer-declared; status, availability,
 descriptor, axis, and provenance metadata remain mandatory where declared.
 Comparison fields use the closed comparison-result vocabulary.
 
+Theme/family-specific facts, direct-profile, series-dataset, building-access,
+essential-services and legacy batch routes have been retired in favor of the
+semantic resource contract. The registered AEDAR aggregate/comparison operations
+remain separate because they expose source-grain, measure-keyed producer facts
+and published comparison semantics rather than ordinary indicator reads. The
+retirement changes backend API paths; no frontend migration or caller edits are
+included in this backend change.
+
 <!-- BEGIN GENERATED API REQUEST INVENTORY -->
 ## Generated route and request-schema inventory
 
@@ -48,29 +56,11 @@ the linked resource contracts and the operation notes below.
 
 | Method | Path | Operation | Parameters | Request body |
 | --- | --- | --- | --- | --- |
-| `GET` | `/api/building-access/territories` | Building Access Territories | — | — |
 | `GET` | `/api/territories/search` | Search Territories | `q` (query, required: string; min chars: `1`; max chars: `64`)<br>`limit` (query, optional: integer; min: `1`; max: `50`; default: `8`) | — |
-| `GET` | `/api/territories/{territory_type}/{territory_id}/building-access` | Initial Building Access | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string)<br>`comparison` (query, optional: string; one of `bretagne`, `densite`, `epci`; default: `densite`) | — |
-| `POST` | `/api/territories/{territory_type}/{territory_id}/building-access-comparison` | Custom Building Comparison | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string) | required request body: `BuildingSelection` |
 | `GET` | `/api/health` | Health | — | — |
 | `GET` | `/api/resources` | Discover Resources | — | — |
 | `POST` | `/api/resources/read` | Read Resource | — | required request body: `ResourceReadItem` |
 | `POST` | `/api/resources/read-batch` | Read Resource Batch | — | required request body: `ResourceBatchRequest` |
-| `POST` | `/api/read-batch` | Read Batch | — | required request body: `BatchReadRequest` |
-| `GET` | `/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}` | Declared Profile | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`comparison_scope` (query, optional: string; one of `bretagne`, `departement`, `epci`; default: `bretagne`)<br>`comparison_scope_id` (query, optional: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
-| `GET` | `/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}` | Scalar Observation | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
-| `GET` | `/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts` | Theme Facts | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`theme_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,63}$`)<br>`comparison` (query, optional: string; one of `densite`, `epci`, `bretagne`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
-| `POST` | `/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts` | Selected Theme Facts | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`theme_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,63}$`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | required request body: `ThemeComparisonRequest` |
-| `POST` | `/api/territories/{territory_type}/{territory_id}/themes/comparison` | Theme Comparison | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | required request body: `ThemeComparisonRequest` |
-| `POST` | `/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/comparison` | Theme Comparison Only | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`theme_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,63}$`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | required request body: `ThemeComparisonRequest` |
-| `POST` | `/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}/comparison` | Indicator Comparison Only | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`fields` (query, optional: array of string; max items: `32`) | optional request body: `IndicatorComparisonRequest` |
-| `GET` | `/api/territories/{territory_type}/{territory_id}/indicator-cohorts/{indicator_id}` | Scalar Indicator Cohort | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`scope_level` (query, optional: string; one of `commune`, `epci`, `departement`, `region`; default: `commune`)<br>`department_id` (query, optional: string; min chars: `1`; max chars: `8`)<br>`epci_id` (query, optional: string; min chars: `1`; max chars: `16`) | — |
-| `GET` | `/api/territories/{territory_type}/{territory_id}/series/{indicator_id}` | Annual Series | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`scope_level` (query, optional: string; one of `commune`, `epci`, `departement`, `region`; default: `commune`)<br>`department_id` (query, optional: string; min chars: `1`; max chars: `8`)<br>`epci_id` (query, optional: string; min chars: `1`; max chars: `16`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
-| `GET` | `/api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}` | Owned Series | `dataset_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`scope_level` (query, optional: string; one of `commune`, `epci`, `departement`, `region`; default: `commune`)<br>`department_id` (query, optional: string; min chars: `1`; max chars: `8`)<br>`epci_id` (query, optional: string; min chars: `1`; max chars: `16`)<br>`comparison_detail` (query, optional: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
-| `GET` | `/api/territories/commune/{territory_id}/essential-services` | Essential Services | `territory_id` (path, required: string)<br>`comparison` (query, optional: string; one of `densite`, `epci`, `bretagne`; default: `densite`) | — |
-| `GET` | `/api/territories/epci/{territory_id}/essential-services` | Epci Essential Services | `territory_id` (path, required: string) | — |
-| `GET` | `/api/territories/departement/{territory_id}/essential-services` | Department Essential Services | `territory_id` (path, required: string) | — |
-| `GET` | `/api/territories/region/{territory_id}/essential-services` | Region Essential Services | `territory_id` (path, required: string) | — |
 | `GET` | `/api/aedar/territories/{territory_type}/{territory_id}/aggregates` | Aedar Territorial Aggregates | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`typequ` (query, optional: array of string; max items: `100`)<br>`fields` (query, optional: array of string; max items: `313`)<br>`limit` (query, optional: integer; min: `1`; max: `100`; default: `50`)<br>`offset` (query, optional: integer; min: `0`; max: `10000`; default: `0`) | — |
 | `GET` | `/api/aedar/territories/{territory_type}/{territory_id}/comparisons` | Aedar Fixed Comparisons | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`context` (query, required: string; one of `density_class`, `epci`, `bretagne`, `same_level`)<br>`typequ` (query, required: string; min chars: `4`; max chars: `4`)<br>`measure` (query, required: string; min chars: `1`; max chars: `64`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
 
@@ -80,19 +70,12 @@ These are the model fields reachable from request bodies, including nested and d
 
 | Model | Property | Required? | Schema |
 | --- | --- | --- | --- |
-| `BuildingSelection` | `selected` | yes | array of SelectedTerritory; min items: `1`; max items: `1500` |
 | `ResourceReadItem` | `resource` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
 | `ResourceReadItem` | `target` | yes | one of TerritoryTarget / NamedReferenceTarget |
 | `ResourceReadItem` | `coordinates` | no | object |
 | `ResourceReadItem` | `fields` | no | array of string; max items: `32` |
 | `ResourceReadItem` | `intent` | yes | one of FactsIntent / FixedComparisonIntent / SelectedComparisonIntent |
 | `ResourceBatchRequest` | `items` | yes | array of ResourceBatchItem; min items: `1`; max items: `12` |
-| `BatchReadRequest` | `items` | yes | array of one of ThemeFactsBatchItem / ThemeComparisonBatchItem / AEDARTerritorialBatchItem / AEDARComparisonBatchItem / IndicatorFactsBatchItem / IndicatorComparisonBatchItem / DirectProfileBatchItem / DirectSeriesBatchItem / OwnedDatasetBatchItem; min items: `1`; max items: `12` |
-| `ThemeComparisonRequest` | `theme_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,63}$` |
-| `ThemeComparisonRequest` | `selection` | no | array of ThemeTerritorySelection; max items: `1500` |
-| `IndicatorComparisonRequest` | `selection` | no | array of ThemeTerritorySelection; max items: `1500` |
-| `SelectedTerritory` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `SelectedTerritory` | `id` | yes | string; min chars: `1`; max chars: `32` |
 | `TerritoryTarget` | `kind` | yes | string; const: `territory` |
 | `TerritoryTarget` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `TerritoryTarget` | `id` | yes | string; min chars: `1`; max chars: `32` |
@@ -109,83 +92,8 @@ These are the model fields reachable from request bodies, including nested and d
 | `ResourceBatchItem` | `fields` | no | array of string; max items: `32` |
 | `ResourceBatchItem` | `intent` | yes | one of FactsIntent / FixedComparisonIntent / SelectedComparisonIntent |
 | `ResourceBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `ThemeFactsBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `ThemeFactsBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `ThemeFactsBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
-| `ThemeFactsBatchItem` | `resource` | yes | string; const: `theme_facts` |
-| `ThemeFactsBatchItem` | `theme_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,63}$` |
-| `ThemeFactsBatchItem` | `comparison` | no | string; one of `densite`, `epci`, `bretagne` |
-| `ThemeFactsBatchItem` | `fields` | no | array of string; max items: `32` |
-| `ThemeComparisonBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `ThemeComparisonBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `ThemeComparisonBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
-| `ThemeComparisonBatchItem` | `resource` | yes | string; const: `theme_comparison` |
-| `ThemeComparisonBatchItem` | `theme_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,63}$` |
-| `ThemeComparisonBatchItem` | `selection` | no | array of BatchTerritorySelection; max items: `1500` |
-| `ThemeComparisonBatchItem` | `fields` | no | array of string; max items: `32` |
-| `AEDARTerritorialBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `AEDARTerritorialBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `AEDARTerritorialBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
-| `AEDARTerritorialBatchItem` | `resource` | yes | string; const: `aedar_aggregate` |
-| `AEDARTerritorialBatchItem` | `typequ` | no | array of string; max items: `100` |
-| `AEDARTerritorialBatchItem` | `fields` | no | array of string; max items: `313` |
-| `AEDARTerritorialBatchItem` | `limit` | no | integer; min: `1.0`; max: `100.0`; default: `50` |
-| `AEDARTerritorialBatchItem` | `offset` | no | integer; min: `0.0`; max: `10000.0`; default: `0` |
-| `AEDARComparisonBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `AEDARComparisonBatchItem` | `resource` | yes | string; const: `aedar_comparison` |
-| `AEDARComparisonBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement` |
-| `AEDARComparisonBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
-| `AEDARComparisonBatchItem` | `context` | yes | string; one of `density_class`, `epci`, `bretagne`, `same_level` |
-| `AEDARComparisonBatchItem` | `typequ` | yes | string; min chars: `4`; max chars: `4` |
-| `AEDARComparisonBatchItem` | `measure` | yes | string; min chars: `1`; max chars: `64` |
-| `AEDARComparisonBatchItem` | `fields` | no | array of string; max items: `32` |
-| `IndicatorFactsBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `IndicatorFactsBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `IndicatorFactsBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
-| `IndicatorFactsBatchItem` | `resource` | yes | string; const: `indicator_facts` |
-| `IndicatorFactsBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
-| `IndicatorFactsBatchItem` | `fields` | no | array of string; max items: `32` |
-| `IndicatorComparisonBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `IndicatorComparisonBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `IndicatorComparisonBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
-| `IndicatorComparisonBatchItem` | `resource` | yes | string; const: `indicator_comparison` |
-| `IndicatorComparisonBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
-| `IndicatorComparisonBatchItem` | `selection` | no | array of BatchTerritorySelection; max items: `1500` |
-| `IndicatorComparisonBatchItem` | `fields` | no | array of string; max items: `32` |
-| `DirectProfileBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `DirectProfileBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement` |
-| `DirectProfileBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
-| `DirectProfileBatchItem` | `resource` | yes | string; const: `direct_profile` |
-| `DirectProfileBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
-| `DirectProfileBatchItem` | `comparison_scope` | no | string; one of `bretagne`, `departement`, `epci`; default: `bretagne` |
-| `DirectProfileBatchItem` | `comparison_scope_id` | no | string; min chars: `1`; max chars: `32` |
-| `DirectProfileBatchItem` | `fields` | no | array of string; max items: `32` |
-| `DirectSeriesBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `DirectSeriesBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `DirectSeriesBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
-| `DirectSeriesBatchItem` | `resource` | yes | string; const: `direct_series` |
-| `DirectSeriesBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
-| `DirectSeriesBatchItem` | `scope_level` | no | string; one of `commune`, `epci`, `departement`, `region`; default: `commune` |
-| `DirectSeriesBatchItem` | `department_id` | no | string; min chars: `1`; max chars: `8` |
-| `DirectSeriesBatchItem` | `epci_id` | no | string; min chars: `1`; max chars: `16` |
-| `DirectSeriesBatchItem` | `fields` | no | array of string; max items: `32` |
-| `OwnedDatasetBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
-| `OwnedDatasetBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `OwnedDatasetBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
-| `OwnedDatasetBatchItem` | `resource` | yes | string; const: `owned_dataset` |
-| `OwnedDatasetBatchItem` | `dataset_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
-| `OwnedDatasetBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
-| `OwnedDatasetBatchItem` | `scope_level` | no | string; one of `commune`, `epci`, `departement`, `region`; default: `commune` |
-| `OwnedDatasetBatchItem` | `department_id` | no | string; min chars: `1`; max chars: `8` |
-| `OwnedDatasetBatchItem` | `epci_id` | no | string; min chars: `1`; max chars: `16` |
-| `OwnedDatasetBatchItem` | `comparison_detail` | no | string; min chars: `1`; max chars: `32` |
-| `OwnedDatasetBatchItem` | `fields` | no | array of string; max items: `32` |
-| `ThemeTerritorySelection` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `ThemeTerritorySelection` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
 | `TerritoryMember` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `TerritoryMember` | `id` | yes | string; min chars: `1`; max chars: `32` |
-| `BatchTerritorySelection` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
-| `BatchTerritorySelection` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
 
 <!-- END GENERATED API REQUEST INVENTORY -->
 
