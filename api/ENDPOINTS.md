@@ -1,13 +1,13 @@
 # API endpoint reference
 
 This reference covers business routes registered by the current FastAPI app.
-The exact methods, paths, parameter schemas and request models are derived from
-`app.openapi()`; [`test_public_api_docs.py`](tests/test_public_api_docs.py)
-checks that every operation is represented below. The live schema at
-`/api/openapi.json` is authoritative when a detail changes. Response schemas for
-several read routes are intentionally generic dictionaries in OpenAPI; this
-reference points to the resource contracts instead of inventing a stronger
-response guarantee.
+The generated inventory below is the exact parameter and request-body reference;
+it is refreshed and checked against `app.openapi()` by
+[`generate_endpoint_inventory.py`](scripts/generate_endpoint_inventory.py).
+The schema at `/api/openapi.json` is authoritative when a detail changes.
+Response schemas for several read routes are intentionally generic dictionaries
+in OpenAPI; this reference points to resource contracts rather than inventing a
+stronger response guarantee.
 
 All paths below include the `/api` prefix. Path placeholders are literal
 parameters, not slashes. Query arrays (notably `fields` and `typequ`) are sent
@@ -16,24 +16,145 @@ normally returns `422`; an unknown territory/resource/indicator is generally
 `404`; an absent, stale or incompatible publication dependency fails closed
 with `503`. Individual operations may have additional documented errors.
 
+<!-- BEGIN GENERATED API REQUEST INVENTORY -->
+## Generated route and request-schema inventory
+
+Generated from `api.main:app.openapi()` by
+`python -m api.scripts.generate_endpoint_inventory`. This inventory is
+the authoritative source for exact methods, paths, parameter schemas,
+request-body requiredness, and request-model property constraints. It
+intentionally does not duplicate response/business vocabularies; follow
+the linked resource contracts and the operation notes below.
+
+| Method | Path | Operation | Parameters | Request body |
+| --- | --- | --- | --- | --- |
+| `GET` | `/api/building-access/territories` | Building Access Territories | — | — |
+| `GET` | `/api/territories/search` | Search Territories | `q` (query, required: string; min chars: `1`; max chars: `64`)<br>`limit` (query, optional: integer; min: `1`; max: `50`; default: `8`) | — |
+| `GET` | `/api/territories/{territory_type}/{territory_id}/building-access` | Initial Building Access | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string)<br>`comparison` (query, optional: string; one of `bretagne`, `densite`, `epci`; default: `densite`) | — |
+| `POST` | `/api/territories/{territory_type}/{territory_id}/building-access-comparison` | Custom Building Comparison | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string) | required request body: `BuildingSelection` |
+| `GET` | `/api/health` | Health | — | — |
+| `POST` | `/api/read-batch` | Read Batch | — | required request body: `BatchReadRequest` |
+| `GET` | `/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}` | Declared Profile | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`comparison_scope` (query, optional: string; one of `bretagne`, `departement`, `epci`; default: `bretagne`)<br>`comparison_scope_id` (query, optional: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
+| `GET` | `/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}` | Scalar Observation | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
+| `GET` | `/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts` | Theme Facts | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`theme_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,63}$`)<br>`comparison` (query, optional: string; one of `densite`, `epci`, `bretagne`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
+| `POST` | `/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts` | Selected Theme Facts | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`theme_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,63}$`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | required request body: `ThemeComparisonRequest` |
+| `POST` | `/api/territories/{territory_type}/{territory_id}/themes/comparison` | Theme Comparison | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | required request body: `ThemeComparisonRequest` |
+| `POST` | `/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/comparison` | Theme Comparison Only | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`theme_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,63}$`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | required request body: `ThemeComparisonRequest` |
+| `POST` | `/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}/comparison` | Indicator Comparison Only | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`fields` (query, optional: array of string; max items: `32`) | optional request body: `IndicatorComparisonRequest` |
+| `GET` | `/api/territories/{territory_type}/{territory_id}/indicator-cohorts/{indicator_id}` | Scalar Indicator Cohort | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`scope_level` (query, optional: string; one of `commune`, `epci`, `departement`, `region`; default: `commune`)<br>`department_id` (query, optional: string; min chars: `1`; max chars: `8`)<br>`epci_id` (query, optional: string; min chars: `1`; max chars: `16`) | — |
+| `GET` | `/api/territories/{territory_type}/{territory_id}/series/{indicator_id}` | Annual Series | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`scope_level` (query, optional: string; one of `commune`, `epci`, `departement`, `region`; default: `commune`)<br>`department_id` (query, optional: string; min chars: `1`; max chars: `8`)<br>`epci_id` (query, optional: string; min chars: `1`; max chars: `16`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
+| `GET` | `/api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}` | Owned Series | `dataset_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`indicator_id` (path, required: string; pattern: `^[a-z][a-z0-9_]{0,95}$`)<br>`scope_level` (query, optional: string; one of `commune`, `epci`, `departement`, `region`; default: `commune`)<br>`department_id` (query, optional: string; min chars: `1`; max chars: `8`)<br>`epci_id` (query, optional: string; min chars: `1`; max chars: `16`)<br>`comparison_detail` (query, optional: string; min chars: `1`; max chars: `32`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
+| `GET` | `/api/territories/commune/{territory_id}/essential-services` | Essential Services | `territory_id` (path, required: string)<br>`comparison` (query, optional: string; one of `densite`, `epci`, `bretagne`; default: `densite`) | — |
+| `GET` | `/api/territories/epci/{territory_id}/essential-services` | Epci Essential Services | `territory_id` (path, required: string) | — |
+| `GET` | `/api/territories/departement/{territory_id}/essential-services` | Department Essential Services | `territory_id` (path, required: string) | — |
+| `GET` | `/api/territories/region/{territory_id}/essential-services` | Region Essential Services | `territory_id` (path, required: string) | — |
+| `GET` | `/api/aedar/territories/{territory_type}/{territory_id}/aggregates` | Aedar Territorial Aggregates | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`typequ` (query, optional: array of string; max items: `100`)<br>`fields` (query, optional: array of string; max items: `313`)<br>`limit` (query, optional: integer; min: `1`; max: `100`; default: `50`)<br>`offset` (query, optional: integer; min: `0`; max: `10000`; default: `0`) | — |
+| `GET` | `/api/aedar/territories/{territory_type}/{territory_id}/comparisons` | Aedar Fixed Comparisons | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`context` (query, required: string; one of `density_class`, `epci`, `bretagne`, `same_level`)<br>`typequ` (query, required: string; min chars: `4`; max chars: `4`)<br>`measure` (query, required: string; min chars: `1`; max chars: `64`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
+
+### Request-model properties
+
+These are the model fields reachable from request bodies, including nested and discriminated-union members. `required` is per model; array/string/numeric bounds and defaults come from OpenAPI.
+
+| Model | Property | Required? | Schema |
+| --- | --- | --- | --- |
+| `BuildingSelection` | `selected` | yes | array of SelectedTerritory; min items: `1`; max items: `1500` |
+| `BatchReadRequest` | `items` | yes | array of one of ThemeFactsBatchItem / ThemeComparisonBatchItem / AEDARTerritorialBatchItem / AEDARComparisonBatchItem / IndicatorFactsBatchItem / IndicatorComparisonBatchItem / DirectProfileBatchItem / DirectSeriesBatchItem / OwnedDatasetBatchItem; min items: `1`; max items: `12` |
+| `ThemeComparisonRequest` | `theme_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,63}$` |
+| `ThemeComparisonRequest` | `selection` | no | array of ThemeTerritorySelection; max items: `1500` |
+| `IndicatorComparisonRequest` | `selection` | no | array of ThemeTerritorySelection; max items: `1500` |
+| `SelectedTerritory` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `SelectedTerritory` | `id` | yes | string; min chars: `1`; max chars: `32` |
+| `ThemeFactsBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
+| `ThemeFactsBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `ThemeFactsBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `ThemeFactsBatchItem` | `resource` | yes | string; const: `theme_facts` |
+| `ThemeFactsBatchItem` | `theme_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,63}$` |
+| `ThemeFactsBatchItem` | `comparison` | no | string; one of `densite`, `epci`, `bretagne` |
+| `ThemeFactsBatchItem` | `fields` | no | array of string; max items: `32` |
+| `ThemeComparisonBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
+| `ThemeComparisonBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `ThemeComparisonBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `ThemeComparisonBatchItem` | `resource` | yes | string; const: `theme_comparison` |
+| `ThemeComparisonBatchItem` | `theme_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,63}$` |
+| `ThemeComparisonBatchItem` | `selection` | no | array of BatchTerritorySelection; max items: `1500` |
+| `ThemeComparisonBatchItem` | `fields` | no | array of string; max items: `32` |
+| `AEDARTerritorialBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
+| `AEDARTerritorialBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `AEDARTerritorialBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `AEDARTerritorialBatchItem` | `resource` | yes | string; const: `aedar_aggregate` |
+| `AEDARTerritorialBatchItem` | `typequ` | no | array of string; max items: `100` |
+| `AEDARTerritorialBatchItem` | `fields` | no | array of string; max items: `313` |
+| `AEDARTerritorialBatchItem` | `limit` | no | integer; min: `1.0`; max: `100.0`; default: `50` |
+| `AEDARTerritorialBatchItem` | `offset` | no | integer; min: `0.0`; max: `10000.0`; default: `0` |
+| `AEDARComparisonBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
+| `AEDARComparisonBatchItem` | `resource` | yes | string; const: `aedar_comparison` |
+| `AEDARComparisonBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement` |
+| `AEDARComparisonBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `AEDARComparisonBatchItem` | `context` | yes | string; one of `density_class`, `epci`, `bretagne`, `same_level` |
+| `AEDARComparisonBatchItem` | `typequ` | yes | string; min chars: `4`; max chars: `4` |
+| `AEDARComparisonBatchItem` | `measure` | yes | string; min chars: `1`; max chars: `64` |
+| `AEDARComparisonBatchItem` | `fields` | no | array of string; max items: `32` |
+| `IndicatorFactsBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
+| `IndicatorFactsBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `IndicatorFactsBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `IndicatorFactsBatchItem` | `resource` | yes | string; const: `indicator_facts` |
+| `IndicatorFactsBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
+| `IndicatorFactsBatchItem` | `fields` | no | array of string; max items: `32` |
+| `IndicatorComparisonBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
+| `IndicatorComparisonBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `IndicatorComparisonBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `IndicatorComparisonBatchItem` | `resource` | yes | string; const: `indicator_comparison` |
+| `IndicatorComparisonBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
+| `IndicatorComparisonBatchItem` | `selection` | no | array of BatchTerritorySelection; max items: `1500` |
+| `IndicatorComparisonBatchItem` | `fields` | no | array of string; max items: `32` |
+| `DirectProfileBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
+| `DirectProfileBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement` |
+| `DirectProfileBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `DirectProfileBatchItem` | `resource` | yes | string; const: `direct_profile` |
+| `DirectProfileBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
+| `DirectProfileBatchItem` | `comparison_scope` | no | string; one of `bretagne`, `departement`, `epci`; default: `bretagne` |
+| `DirectProfileBatchItem` | `comparison_scope_id` | no | string; min chars: `1`; max chars: `32` |
+| `DirectProfileBatchItem` | `fields` | no | array of string; max items: `32` |
+| `DirectSeriesBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
+| `DirectSeriesBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `DirectSeriesBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `DirectSeriesBatchItem` | `resource` | yes | string; const: `direct_series` |
+| `DirectSeriesBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
+| `DirectSeriesBatchItem` | `scope_level` | no | string; one of `commune`, `epci`, `departement`, `region`; default: `commune` |
+| `DirectSeriesBatchItem` | `department_id` | no | string; min chars: `1`; max chars: `8` |
+| `DirectSeriesBatchItem` | `epci_id` | no | string; min chars: `1`; max chars: `16` |
+| `DirectSeriesBatchItem` | `fields` | no | array of string; max items: `32` |
+| `OwnedDatasetBatchItem` | `id` | yes | string; min chars: `1`; max chars: `64`; pattern: `^[A-Za-z0-9_-]+$` |
+| `OwnedDatasetBatchItem` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `OwnedDatasetBatchItem` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `OwnedDatasetBatchItem` | `resource` | yes | string; const: `owned_dataset` |
+| `OwnedDatasetBatchItem` | `dataset_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
+| `OwnedDatasetBatchItem` | `indicator_id` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
+| `OwnedDatasetBatchItem` | `scope_level` | no | string; one of `commune`, `epci`, `departement`, `region`; default: `commune` |
+| `OwnedDatasetBatchItem` | `department_id` | no | string; min chars: `1`; max chars: `8` |
+| `OwnedDatasetBatchItem` | `epci_id` | no | string; min chars: `1`; max chars: `16` |
+| `OwnedDatasetBatchItem` | `comparison_detail` | no | string; min chars: `1`; max chars: `32` |
+| `OwnedDatasetBatchItem` | `fields` | no | array of string; max items: `32` |
+| `ThemeTerritorySelection` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `ThemeTerritorySelection` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+| `BatchTerritorySelection` | `territory_type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `BatchTerritorySelection` | `territory_id` | yes | string; min chars: `1`; max chars: `32` |
+
+<!-- END GENERATED API REQUEST INVENTORY -->
+
 ## Shared inputs and response rules
 
-- `{territory_type}` is one of `commune`, `epci`, `departement`, `region` where
-  the operation allows it. `{territory_id}` is the producer-published
-  identifier (1–32 characters where constrained by the schema).
-- Indicator IDs match `^[a-z][a-z0-9_]{0,95}$`; theme IDs match
-  `^[a-z][a-z0-9_]{0,63}$`. Other path identifiers follow each route's
-  OpenAPI schema.
-- `fields` is an optional repeated query parameter, with at most 32 entries
-  except AEDAR aggregates (313). Omission returns the full legacy shape. A
-  supplied non-empty selection is resource-owned; unsupported/duplicate/empty
+- Use the generated inventory above for allowed territory types, identifier
+  constraints and all parameter/body bounds. `fields` is resource-owned:
+  omission returns the full legacy shape; unsupported/duplicate/empty
   selections are rejected as specified in the
   [field-selection contract](field-selection-contract.md). Identity,
   availability/status, units/axes/order where declared, provenance and
   publication/dependency metadata remain mandatory.
-- Comparison selections are typed territory identities, not arbitrary SQL or
-  caller-defined groups. Explicit selections are bounded at 1,500 territories;
-  omitted and explicit-empty selections are distinct.
+- Comparison selections are caller-chosen lists of typed territory identities,
+  subject to the bounds in the generated inventory. Omitted and explicit-empty
+  selections remain distinct. This does not provide a configurable SQL,
+  predicate, group-query language or persisted group definition.
 - Producer metadata owns indicator/theme membership, labels, units, source
   lineage, vintage and publication versions. Independent source clocks and
   publication markers may differ; no shared release version is inferred.
@@ -51,12 +172,8 @@ ready. No parameters or request body. Returns a small JSON status object.
 
 #### `GET /api/territories/search`
 
-Search the published territory reference.
-
-| Input | Required | Contract |
-| --- | --- | --- |
-| `q` query | yes | 1–64 characters |
-| `limit` query | no | 1–50; default `8` |
+Search the published territory reference. See the generated inventory for its
+required query inputs, bounds and defaults.
 
 Returns matching published territory identities and labels. Example:
 `GET /api/territories/search?q=Rennes&limit=5`.
@@ -73,11 +190,8 @@ and their current producer publication.
 #### `GET /api/territories/{territory_type}/{territory_id}/building-access`
 
 Initial building-access view for one territory, including its declared default
-comparison. Allowed territory types: commune, EPCI, département, région.
-
-| Input | Required | Contract |
-| --- | --- | --- |
-| `comparison` query | no | `densite`, `epci`, or `bretagne`; default `densite` (commune behavior); non-commune reads use their same-level scope |
+comparison. Exact allowed types, query values and defaults are in the generated
+inventory; non-commune reads use their same-level scope.
 
 Example: `GET /api/territories/commune/22001/building-access?comparison=epci`.
 Requires compatible reference, ramp and grid publications. The published shape,
@@ -86,10 +200,10 @@ the API source/tests; no missing mode/cell should be interpreted as zero.
 
 #### `POST /api/territories/{territory_type}/{territory_id}/building-access-comparison`
 
-Compare an explicit set of published territories for a focal territory.
-Allowed territory types: commune, EPCI, département, région. JSON body is a
+Compare an explicit set of published territories for a focal territory. JSON body is a
 `BuildingSelection` with `selected`, a non-empty typed list of `{ "type": ...,
-"id": ... }` members (1–1,500). Example:
+"id": ... }` members; exact bounds are in the generated request-model
+inventory. Example:
 
 ```json
 {"selected":[{"type":"commune","id":"22001"},{"type":"commune","id":"22002"}]}
@@ -107,12 +221,8 @@ fail closed; fewer than two available members produce a null comparison.
 Returns compact published focal facts/profiles for one theme; it is explicitly
 not necessarily a complete theme model.
 
-| Input | Required | Contract |
-| --- | --- | --- |
-| `comparison` query | no | `densite`, `epci`, or `bretagne` when supported by that theme/territory |
-| `fields` query | no | repeated, up to 32; resource-owned projection |
-
-Example: `GET /api/territories/commune/22001/themes/habitat/facts?fields=value`.
+Parameters and constraints are in the generated inventory. Example:
+`GET /api/territories/commune/22001/themes/habitat/facts?fields=value`.
 See the [theme-read contract](theme-read-contract.md) and
 [field-selection contract](field-selection-contract.md) for shapes and
 availability. Unsupported/unpublished theme reads do not become empty facts.
@@ -121,9 +231,9 @@ availability. Unsupported/unpublished theme reads do not become empty facts.
 
 Acquires focal theme facts and the selected comparison in one snapshot. The
 JSON body is `ThemeComparisonRequest`: required `theme_id` (pattern above),
-optional `selection` (up to 1,500 `{territory_type, territory_id}` objects;
-omission selects the published default and `[]` selects nobody). The repeated
-`fields` query parameter has a maximum of 32. Example:
+optional typed `selection` of `{territory_type, territory_id}` objects;
+omission selects the published default and `[]` selects nobody). See the
+generated inventory for exact query/body constraints. Example:
 
 ```json
 {"theme_id":"habitat","selection":[]}
@@ -135,9 +245,8 @@ not an assertion of complete six-theme coverage or consumer activation.
 #### `POST /api/territories/{territory_type}/{territory_id}/themes/comparison`
 
 Returns request-scoped theme comparison results. Body is the same
-`ThemeComparisonRequest` (required theme ID, optional typed selection up to
-1,500; omitted default differs from `[]`). Optional repeated `fields` query
-parameter (max 32) projects comparison output. Example:
+`ThemeComparisonRequest` (required theme ID; omitted selection differs from
+`[]`). Exact request schema and bounds are in the generated inventory. Example:
 
 ```json
 {"theme_id":"mobilite","selection":[{"territory_type":"commune","territory_id":"22001"}]}
@@ -151,8 +260,8 @@ fail closed.
 
 Comparison-only variant for a path-owned theme ID. JSON body is
 `ThemeComparisonRequest`; its body `theme_id` identifies the comparison
-resource. Optional repeated `fields` query parameter (max 32). Typed selection
-and omitted-versus-empty semantics are as above. The response does not include
+resource. Typed selection and omitted-versus-empty semantics are as above; exact
+request schema and bounds are in the generated inventory. The response does not include
 focal fact payloads; consult the [theme-read contract](theme-read-contract.md).
 
 ### Indicator reads and comparisons
@@ -161,7 +270,7 @@ focal fact payloads; consult the [theme-read contract](theme-read-contract.md).
 
 Stable named-indicator read. The producer descriptor chooses the published
 shape; callers do not choose a storage shape or rely on an API-maintained
-indicator list. Optional repeated `fields` query parameter (max 32). Example:
+indicator list. Request schema and bounds are in the generated inventory. Example:
 `GET /api/territories/commune/22001/indicators/subventions_annuelles`.
 For a profile-shaped indicator, the response can contain the descriptor-owned
 profile and default comparison. See field-selection rules and publication
@@ -170,9 +279,9 @@ availability in the OpenAPI response and resource contracts.
 #### `POST /api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}/comparison`
 
 Compares one indicator identity independent of its theme or shape. Optional
-body is `IndicatorComparisonRequest` with optional typed `selection` (up to
-1,500); omitted body/selection means the published default, while `[]` means an
-empty selection. Optional repeated `fields` query parameter (max 32). Example:
+body is `IndicatorComparisonRequest` with optional typed `selection`; omitted
+body/selection means the published default, while `[]` means an empty selection.
+See the generated inventory for exact request schemas and bounds. Example:
 
 ```json
 {"selection":[{"territory_type":"commune","territory_id":"22001"}]}
@@ -184,13 +293,7 @@ resource-specific response and field-selection contracts.
 #### `GET /api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}`
 
 Direct declared-profile read for commune, EPCI or département (region is not
-accepted). Optional query parameters:
-
-| Input | Contract |
-| --- | --- |
-| `comparison_scope` | `bretagne`, `departement`, `epci`; default `bretagne` |
-| `comparison_scope_id` | optional 1–32 character scope identity |
-| `fields` | repeated, max 32; resource-owned projection |
+accepted). Query schemas, defaults and constraints are in the generated inventory.
 
 Example: `GET /api/territories/commune/22001/profiles/structure_age?comparison_scope=bretagne&fields=value`.
 The descriptor owns axes/order, units, source lineage and profile completeness;
@@ -198,13 +301,8 @@ the route fails closed on absent/stale/incomplete publication.
 
 #### `GET /api/territories/{territory_type}/{territory_id}/indicator-cohorts/{indicator_id}`
 
-Returns a focal scalar and bounded, versioned peer cohort. Query parameters:
-
-| Input | Contract |
-| --- | --- |
-| `scope_level` | commune, EPCI, département or région; default `commune` |
-| `department_id` | optional, 1–8 characters |
-| `epci_id` | optional, 1–16 characters |
+Returns a focal scalar and bounded, versioned peer cohort. Query parameters,
+defaults and constraints are in the generated inventory.
 
 No `fields` projection is declared for this endpoint. The cohort is a declared
 bounded serving resource, not an arbitrary group query. Use the OpenAPI schema
@@ -214,20 +312,16 @@ and scalar resource contract for response details and publication errors.
 
 #### `GET /api/territories/{territory_type}/{territory_id}/series/{indicator_id}`
 
-Read a directly declared annual series. Optional query parameters: `scope_level`
-(commune/EPCI/département/région; default `commune`), `department_id` (1–8
-characters), `epci_id` (1–16 characters), and repeated `fields` (max 32).
+Read a directly declared annual series. Query parameters, defaults and
+constraints are in the generated inventory.
 Example: `GET /api/territories/commune/22001/series/demographic_change?scope_level=departement&department_id=22&fields=value`.
 The declared axis/order, missingness, provenance and publication contract are
 preserved; see field selection and the response contract.
 
 #### `GET /api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}`
 
-Read an owned dataset series. `dataset_id` and `indicator_id` follow the
-lowercase identifier pattern. Query parameters: `scope_level` (commune/EPCI/
-département/région; default `commune`), optional `department_id` (1–8 chars),
-`epci_id` (1–16 chars), `comparison_detail` (1–32 chars), and repeated
-`fields` (max 32). Example:
+Read an owned dataset series. The generated inventory specifies path identifier
+patterns, query parameters/defaults and constraints. Example:
 `GET /api/series-datasets/ocs_ge/territories/commune/22001/artif_m2?fields=value`.
 Only registered datasets/descriptors are readable; producer lineage and
 publication bounds remain mandatory.
@@ -236,7 +330,8 @@ publication bounds remain mandatory.
 
 #### `POST /api/read-batch`
 
-Composes 1–12 typed reads in one read-only repeatable-read database snapshot.
+Composes bounded typed reads in one read-only repeatable-read database snapshot;
+the generated inventory gives the request-model item-count bounds.
 The body is `BatchReadRequest` with an `items` array. Each item has a unique
 request-local `id`, a declared `resource` discriminator and only that resource's
 typed parameters. The result envelope is `{"contract":"typed-read-batch-v1",
@@ -262,15 +357,8 @@ publication version across different resources.
 
 #### `GET /api/aedar/territories/{territory_type}/{territory_id}/aggregates`
 
-Bounded source-grain AEDAR aggregate read; territory type may be commune, EPCI,
-département or région.
-
-| Input | Contract |
-| --- | --- |
-| `typequ` | optional repeated code list, max 100 entries |
-| `fields` | optional repeated resource-owned fields, max 313 |
-| `limit` | 1–100 rows; default `50` |
-| `offset` | 0–10,000; default `0` |
+Bounded source-grain AEDAR aggregate read. Query values/defaults and constraints
+are in the generated inventory.
 
 Example: `GET /api/aedar/territories/commune/22001/aggregates?typequ=A104&limit=20&fields=measures.count_5_walk_mean`.
 The response model is `AEDARTerritorialAggregateResponse`; see
@@ -279,15 +367,8 @@ denominators, coverage, source clock and publication metadata.
 
 #### `GET /api/aedar/territories/{territory_type}/{territory_id}/comparisons`
 
-Read one published AEDAR fixed-context comparison. Territory type is commune,
-EPCI or département. Required query parameters:
-
-| Input | Contract |
-| --- | --- |
-| `context` | `density_class`, `epci`, `bretagne` or `same_level` |
-| `typequ` | exactly four characters |
-| `measure` | 1–64 characters |
-| `fields` | optional repeated resource-owned fields, max 32 |
+Read one published AEDAR fixed-context comparison. Required query parameters,
+allowed values and constraints are in the generated inventory.
 
 Example: `GET /api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean&fields=value&fields=rank`.
 The route returns the declared fixed comparison, preserving address/coverage
@@ -304,7 +385,7 @@ records their compatibility status.
 
 #### `GET /api/territories/commune/{territory_id}/essential-services`
 
-Optional `comparison` is `densite`, `epci` or `bretagne`, default `densite`.
+The generated inventory specifies the optional comparison query schema.
 Returns the existing comparison response for the commune's published
 essential-service observations. Peer scope, ranking direction, null handling
 and counts follow the existing contract; the scope-member count is distinct

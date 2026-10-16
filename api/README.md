@@ -34,8 +34,11 @@ python -m uvicorn api.main:app --reload
 The local API listens on `http://127.0.0.1:8000`; interactive Swagger is at
 [`/api/docs`](http://127.0.0.1:8000/api/docs) and its schema at
 [`/api/openapi.json`](http://127.0.0.1:8000/api/openapi.json). The schema is
-generated from the running FastAPI application; the endpoint reference is
-checked against that same route inventory by the test suite.
+generated from the running FastAPI application. Regenerate the endpoint
+reference inventory after route/request-schema changes with
+`python -m api.scripts.generate_endpoint_inventory`; verify it is current with
+`python -m api.scripts.generate_endpoint_inventory --check`. Both commands
+derive from the existing app without a database connection.
 
 Run the ordinary, database-free API suite with:
 
