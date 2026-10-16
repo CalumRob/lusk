@@ -36,9 +36,10 @@ def fixture(theme, inserts):
         reader=os.environ["LUSK_TEST_READ_USER"]
         pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{reader}"'); pub.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO "{reader}"')
         class Rec:
-            def __init__(self,c): self.c=c; self.commands=[]
+            def __init__(self,c): self.c=c; self.commands=[]; self.queries=[]
             def execute(self,*a,**kw):
                 if a and isinstance(a[0],str) and a[0].upper().startswith("SET TRANSACTION"): self.commands.append(a[0])
+                if a and isinstance(a[0],str): self.queries.append((a[0],a[1] if len(a)>1 else None))
                 return self.c.execute(*a,**kw)
             def __getattr__(self,n): return getattr(self.c,n)
         class Pool:

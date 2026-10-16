@@ -633,6 +633,11 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
                     {"territory_type":"commune","territory_id":"29002"}]})
             overlap_comparison = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"epci","territory_id":"E1"},{"territory_type":"commune","territory_id":"29002"}]})
             focal_selected = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"29001"}]})
+            comparison_full = client.post("/api/territories/commune/29001/themes/comparison",json={"theme_id":"demographie"})
+            comparison_median = client.post("/api/territories/commune/29001/themes/comparison?fields=median",json={"theme_id":"demographie"})
+            comparison_rank_median = client.post("/api/territories/commune/29001/themes/comparison?fields=rank&fields=median",json={"theme_id":"demographie"})
+            indicator_median = client.post("/api/territories/commune/29001/indicators/fixture_scalar/comparison?fields=median")
+            invalid_comparison_fields = client.post("/api/territories/commune/29001/indicators/fixture_scalar/comparison?fields=raw_sql")
             unknown_selection = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"demographie","selection":[{"territory_type":"commune","territory_id":"99999"}]})
             unknown_theme = client.post("/api/territories/commune/29001/themes/comparison", json={"theme_id":"unknown_theme","selection":[]})
         assert response.status_code == 200, response.text
@@ -642,6 +647,23 @@ def test_shared_scalar_schema_constraints_and_bounded_read(canonical_db_env):
         assert {key: value for key, value in selected_fields.json().items() if key != "support_count"} == {
             key: value for key, value in response.json().items() if key not in ("support_count", "denominator_count")}
         assert invalid_fields.status_code == 422
+        assert comparison_full.status_code == 200, comparison_full.text
+        assert comparison_median.status_code == 200, comparison_median.text
+        full_comparison_result = next(row for row in comparison_full.json()["results"]
+                                      if row.get("indicator_id") == "fixture_scalar")
+        median_comparison_result = next(row for row in comparison_median.json()["results"]
+                                        if row.get("indicator_id") == "fixture_scalar")
+        assert median_comparison_result["status"] == full_comparison_result["status"]
+        assert median_comparison_result["median"] == full_comparison_result["median"] == 1
+        assert "rank" not in median_comparison_result
+        both_comparison_result = next(row for row in comparison_rank_median.json()["results"]
+                                      if row.get("indicator_id") == "fixture_scalar")
+        assert both_comparison_result["rank"] == full_comparison_result["rank"]
+        assert both_comparison_result["median"] == full_comparison_result["median"]
+        assert indicator_median.status_code == 200, indicator_median.text
+        assert indicator_median.json()["result"]["median"] == 1
+        assert "rank" not in indicator_median.json()["result"]
+        assert invalid_comparison_fields.status_code == 422
         assert selected_value.status_code == 200, selected_value.text
         assert selected_value.json()["value"] == response.json()["value"]
         assert "support_count" not in selected_value.json() and "denominator_count" not in selected_value.json()

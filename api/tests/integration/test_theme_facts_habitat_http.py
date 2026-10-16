@@ -10,6 +10,10 @@ def test_habitat_selected_facts_http_snapshot():
         db.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('scalar_observation','s1',0,'ref-v1'),('declared_profile','dp1',0,'ref-v1'),('selected_reading','s1',1,'ref-v1')")
         db.execute("INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version) VALUES('fixture_scalar','habitat','fixture','%', 'high','fixture_scalar',ARRAY['commune'],'none','sparse','s1')")
         db.execute("INSERT INTO scalar_descriptor_source VALUES('fixture_scalar','src')")
+        with db.transaction():
+            db.execute("INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,statistic,median,member_count,eligible_count,missing_count,lineage_source_count) VALUES('density_class','D1','commune','fixture_scalar','median',NULL,2,0,2,0)")
+            db.execute("INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,indicator_id,territory_id,value,status,rank,tie_count,rank_size) VALUES('density_class','D1','commune','fixture_scalar','35238',NULL,'not_available',NULL,NULL,NULL),('density_class','D1','commune','fixture_scalar','35001',NULL,'not_available',NULL,NULL,NULL)")
+            db.execute("INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count) VALUES(true,'sc1','s1','ref-v1',1,2,0)")
         db.execute("INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_scalar,denominator_semantics,comparison_direction,theme_id,required_scalar_version) VALUES('distribution_dpe','DPE','%',ARRAY['commune'],'dense_complete','pd1','fixture_scalar','none','high','habitat','s1')")
         db.execute("INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal) VALUES('distribution_dpe','detail','detail','DPE detail',0)")
         db.execute("INSERT INTO profile_descriptor_source VALUES('distribution_dpe','src')")
@@ -27,6 +31,14 @@ def test_habitat_selected_facts_http_snapshot():
         route=common(client,checked,'habitat')
         response=client.post(route,json={'theme_id':'habitat'})
         assert response.status_code==200,response.text
+        status_only=client.post(route+'?fields=status',json={'theme_id':'habitat'})
+        assert status_only.status_code==200,status_only.text
+        projected=status_only.json()
+        assert projected['readings'][0]['status']=='measured'
+        assert not {'part_passoires','part_abc','n_dpe'} & set(projected['readings'][0])
+        assert projected['readings'][0]['provenance']==response.json()['readings'][0]['provenance']
+        assert all('value' not in point for series_row in projected['owned_series'] for point in series_row['points'])
+        assert all('value' not in indicator for indicator in projected['indicators'])
         series=response.json()['owned_series']
         assert len(series)==1
         assert {key:series[0][key] for key in ('indicator_id','unit','axis_kind','axis_values')} == {'indicator_id':'prix_m2','unit':'€/m²','axis_kind':'year','axis_values':['2024','2025']}

@@ -19,6 +19,50 @@ from api.profile_reads import focal_profiles
 from api.observed_collections import collection_descriptors, collection_snapshot, collection_comparison
 from api.field_selection import normalize_field_selection
 
+
+_COMPARISON_RESULT_FIELDS = {
+    "focal_value", "median", "rank", "rank_size", "rank_ties",
+    "selected_member_count", "eligible_count", "missing_count",
+}
+_COMPARISON_MANDATORY_FIELDS = {"status", "reason"}
+_THEME_FACT_FIELDS = _COMPARISON_RESULT_FIELDS | _COMPARISON_MANDATORY_FIELDS | {
+    "value", "support_count", "denominator_count", "rider", "anchor_count",
+    "detail", "label", "availability",
+}
+
+
+def _comparison_field_selection(fields):
+    return normalize_field_selection(fields, _COMPARISON_RESULT_FIELDS | _COMPARISON_MANDATORY_FIELDS)
+
+
+def _theme_comparison_projection(fields):
+    if fields is None:
+        return None
+    return tuple(field for field in fields
+                 if field in _COMPARISON_RESULT_FIELDS | _COMPARISON_MANDATORY_FIELDS)
+
+
+def _project_comparison_result_fields(result, selection):
+    """Project optional published/computed result attributes, retaining status and provenance."""
+    if selection is None or not isinstance(result, dict):
+        return result
+    selected = set(selection)
+    return {key: value for key, value in result.items()
+            if key not in _COMPARISON_RESULT_FIELDS or key in selected}
+
+
+def _project_comparison_payload_fields(payload, selection):
+    if selection is None:
+        return payload
+    projected = dict(payload)
+    for key in ("results", "profile_comparisons"):
+        if key in projected:
+            projected[key] = [_project_comparison_result_fields(row, selection)
+                              for row in projected[key]]
+    if "result" in projected:
+        projected["result"] = _project_comparison_result_fields(projected["result"], selection)
+    return projected
+
 from api.building_comparison import (
     ComparisonInputError, pooled_peer_distribution, resolve_commune_members,
     weighted_peer_ramp,
@@ -1661,7 +1705,8 @@ def _selected_scalar_comparison_sources(conn, *, indicator_ids, cohort_type, mem
 
 
 def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
-                                         cohort_type, members, territory_id, *, include_ties=False):
+                                         cohort_type, members, territory_id, *, include_ties=False,
+                                         selected_fields=None):
     """Read validated group statistics and one territory's precomputed result."""
     context, group_id, territory_type = fixed_context
     comparable = [row for row in scalar_descriptors
@@ -1682,15 +1727,27 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
             or marker[6] != marker[7] or marker[3] < 1 or marker[4] < 1):
         raise HTTPException(503, "Published scalar comparison is stale or incompatible")
     indicator_ids = [row[0] for row in comparable]
-    groups = _execute_comparison_publication_read(conn, """SELECT indicator_id,statistic,median,member_count,eligible_count,missing_count,lineage_source_count
+    selected = set(_COMPARISON_RESULT_FIELDS) if selected_fields is None else set(selected_fields)
+    groups = _execute_comparison_publication_read(conn, """SELECT indicator_id,statistic,
+        CASE WHEN %s THEN median ELSE NULL::double precision END,member_count,eligible_count,missing_count,lineage_source_count,
+        ((eligible_count=0 AND median IS NULL) OR
+         (eligible_count>0 AND median IS NOT NULL AND median NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))) AS median_valid
         FROM scalar_comparison_group
         WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
-          AND indicator_id=ANY(%s)""", (context, group_id, territory_type, indicator_ids)).fetchall()
-    territories = _execute_comparison_publication_read(conn, """SELECT indicator_id,value,status,rank,tie_count,rank_size
+          AND indicator_id=ANY(%s)""", ("median" in selected,context, group_id, territory_type, indicator_ids)).fetchall()
+    territories = _execute_comparison_publication_read(conn, """SELECT indicator_id,
+        CASE WHEN %s THEN value ELSE NULL::double precision END,status,
+        CASE WHEN %s THEN rank ELSE NULL::integer END,
+        CASE WHEN %s THEN tie_count ELSE NULL::integer END,
+        CASE WHEN %s THEN rank_size ELSE NULL::integer END,
+        ((status='measured' AND value IS NOT NULL AND rank IS NOT NULL AND tie_count IS NOT NULL AND rank_size IS NOT NULL
+            AND tie_count>=1 AND rank_size>=1 AND rank>=1 AND rank<=rank_size AND tie_count<=rank_size)
+         OR (status<>'measured' AND value IS NULL AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)) AS result_valid
         FROM scalar_comparison_territory
         WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
           AND territory_id=%s AND indicator_id=ANY(%s)""",
-        (context, group_id, territory_type, territory_id, indicator_ids)).fetchall()
+        ("focal_value" in selected,"rank" in selected,"rank_ties" in selected,"rank_size" in selected,
+         context, group_id, territory_type, territory_id, indicator_ids)).fetchall()
     group_by_indicator = {row[0]: row[1:] for row in groups}
     territory_by_indicator = {row[0]: row[1:] for row in territories}
     if len(group_by_indicator) != len(groups) or len(territory_by_indicator) != len(territories):
@@ -1700,16 +1757,12 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
         territory = territory_by_indicator.get(indicator_id)
         if not group or not territory:
             raise HTTPException(503, "Published scalar comparison is incomplete")
-        statistic, median_value, member_count, eligible_count, missing_count, lineage_count = group
-        value, status, rank, tie_count, rank_size = territory
+        statistic, median_value, member_count, eligible_count, missing_count, lineage_count, median_valid = group
+        value, status, rank, tie_count, rank_size = territory[:5]
+        territory_valid = territory[5]
         if (statistic != "median" or member_count != len(members) or
                 eligible_count + missing_count != member_count or
-                (eligible_count == 0) != (median_value is None) or
-                (status == "measured" and (value is None or rank is None or tie_count is None or
-                    tie_count < 1 or rank_size != eligible_count or rank < 1 or
-                    rank > rank_size or tie_count > rank_size)) or
-                (status != "measured" and (value is not None or rank is not None or
-                    tie_count is not None or rank_size is not None))):
+                not median_valid or not territory_valid):
             raise HTTPException(503, "Published scalar comparison result is invalid")
     sources = _published_comparison_sources(conn, family="scalar", context=context,
         group_id=group_id, cohort_type=cohort_type, facets=set(indicator_ids),
@@ -1717,25 +1770,28 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
             for indicator in indicator_ids})
     results = {}
     for indicator_id in indicator_ids:
-        _statistic, median_value, member_count, eligible_count, missing_count, _lineage_count = group_by_indicator[indicator_id]
-        value, status, rank, tie_count, rank_size = territory_by_indicator[indicator_id]
+        _statistic, median_value, member_count, eligible_count, missing_count, _lineage_count, _median_valid = group_by_indicator[indicator_id]
+        value, status, rank, tie_count, rank_size = territory_by_indicator[indicator_id][:5]
         results[indicator_id] = {
             "status": "available" if eligible_count else "unavailable",
             "reason": None if eligible_count else "no_selected_comparable_values",
-            "selected_member_count": member_count, "eligible_count": eligible_count,
-            "missing_count": missing_count,
-            "focal_value": value if status == "measured" else None,
-            "median": median_value, "rank": rank,
-            "rank_size": rank_size if rank is not None else None,
+            **({"selected_member_count":member_count} if "selected_member_count" in selected else {}),
+            **({"eligible_count":eligible_count} if "eligible_count" in selected else {}),
+            **({"missing_count":missing_count} if "missing_count" in selected else {}),
+            **({"focal_value":value if status == "measured" else None} if "focal_value" in selected else {}),
+            **({"median":median_value} if "median" in selected else {}),
+            **({"rank":rank} if "rank" in selected else {}),
+            **({"rank_size":rank_size if rank is not None else None} if "rank_size" in selected else {}),
             "comparison_sources": sources.get(indicator_id, []),
         }
-        if include_ties:
+        if include_ties and "rank_ties" in selected:
             results[indicator_id]["rank_ties"] = tie_count if status == "measured" else None
     return results
 
 
 def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
-                               *, indicator_id=None, profiles=None, profile_version=None, has_readings=False):
+                               *, indicator_id=None, profiles=None, profile_version=None, has_readings=False,
+                               result_fields=None):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
     scalar_descriptors = conn.execute(
         """SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
@@ -1788,7 +1844,9 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     results = []
     if scalar_descriptors:
         published_scalar = (_published_scalar_comparison_results(conn, scalar_descriptors,
-            fixed_context, cohort_type, members, territory_id) if fixed_context else {})
+            fixed_context, cohort_type, members, territory_id,
+            selected_fields=result_fields,
+            include_ties=(result_fields is not None and "rank_ties" in result_fields)) if fixed_context else {})
         if fixed_context:
             scalar_sources_by_indicator = {}
             scalar_rows = []
@@ -2430,7 +2488,7 @@ def _theme_owned_series_indicator(series, point):
     numeric_axis = next((value for axis, value in zip(series.get("axis_values") or [],
         series.get("axis_numeric_values") or []) if axis == point.get("axis")), None)
     return {"indicator_id":series["indicator_id"],"label":series["label"],"unit":series["unit"],
-        "value":point.get("value"),"status":point.get("status"),
+        **({"value":point["value"]} if "value" in point else {}),"status":point.get("status"),
         "sources":[{**source,"name":source.get("source_name")} for source in point.get("provenance", [])],
         "dimensions":{"axis":point.get("axis"),"numeric_axis_value":numeric_axis,
             **({"observation_period":point["observation_period"]} if point.get("observation_period") is not None else {}),
@@ -3169,6 +3227,7 @@ def theme_facts(
     theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
     service_comparison: Literal["densite", "epci", "bretagne"] | None = Query(
         default=None, alias="comparison"),
+    fields: Annotated[list[str] | None, Query(max_length=32)] = None,
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Compact published focal facts/profiles.
@@ -3178,11 +3237,13 @@ def theme_facts(
     """
     if territory_type != "commune" and service_comparison is not None:
         raise HTTPException(422, "Explicit service comparison modes apply only to communes")
+    selected_fields = normalize_field_selection(fields, _THEME_FACT_FIELDS)
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             return _theme_facts_snapshot(
-                conn, territory_type, territory_id, theme_id, service_comparison, repository)
+                conn, territory_type, territory_id, theme_id, service_comparison, repository,
+                fields=selected_fields)
 
 
 @app.post("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts")
@@ -3191,11 +3252,13 @@ def selected_theme_facts(
     theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
     territory_id: str = Path(min_length=1, max_length=32),
     request: ThemeComparisonRequest = ...,
+    fields: Annotated[list[str] | None, Query(max_length=32)] = None,
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Acquire focal theme facts and selected comparisons in one snapshot."""
     if request.theme_id != theme_id:
         raise HTTPException(422, "Body theme_id must match the theme facts route")
+    selected_fields = normalize_field_selection(fields, _THEME_FACT_FIELDS)
     selected = None if request.selection is None else [
         (item.territory_type, item.territory_id) for item in request.selection]
     with repository.connections.connection() as conn:
@@ -3203,7 +3266,7 @@ def selected_theme_facts(
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             payload = _theme_facts_snapshot(
                 conn, territory_type, territory_id, theme_id, None, repository,
-                selection=selected, include_selected_comparison=True)
+                selection=selected, include_selected_comparison=True, fields=selected_fields)
             payload.pop("default_comparison", None)
             comparison = payload.pop("_selected_comparison")
             nested = {key: comparison[key] for key in (
@@ -3222,7 +3285,8 @@ def selected_theme_facts(
 
 
 def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_comparison,
-                           repository, selection=None, *, include_selected_comparison=False) -> dict:
+                           repository, selection=None, *, include_selected_comparison=False,
+                           fields=None) -> dict:
     """Build the public theme-facts response from one caller-owned snapshot."""
     territory = conn.execute("""SELECT territory_id,name,territory_type FROM territory_reference
         WHERE territory_id=%s AND territory_type=%s""", (territory_id, territory_type)).fetchone()
@@ -3231,6 +3295,13 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
     descriptors = conn.execute(
         "SELECT indicator_id FROM scalar_descriptor WHERE theme_id=%s ORDER BY indicator_id",
         (theme_id,)).fetchall()
+    selected_fields = normalize_field_selection(fields, _THEME_FACT_FIELDS)
+    if selected_fields is not None and not descriptors and any(
+            field in selected_fields for field in ("support_count", "denominator_count")):
+        raise HTTPException(422, "Count fields are not declared for this theme")
+    project_value = selected_fields is None or "value" in selected_fields
+    project_support_count = selected_fields is None or "support_count" in selected_fields
+    project_denominator_count = selected_fields is None or "denominator_count" in selected_fields
     rows = []
     marker = None
     if descriptors:
@@ -3240,7 +3311,9 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
         if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
             raise HTTPException(503, "Scalar publication is unavailable or incompatible")
         rows = conn.execute("""SELECT d.indicator_id,d.label,d.unit,d.direction,d.comparison_facet,
-             d.descriptor_version,o.value,o.status,o.support_count,o.denominator_count,
+             d.descriptor_version,CASE WHEN %s THEN o.value ELSE NULL::double precision END,o.status,
+             CASE WHEN %s THEN o.support_count ELSE NULL::integer END,
+             CASE WHEN %s THEN o.denominator_count ELSE NULL::integer END,
              COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,'name',sd.name,
                'vintage_id',os.vintage_id,'version',sv.version,'reference_date',sv.reference_date,
                'publication_date',sv.publication_date) ORDER BY os.source_id,os.vintage_id)
@@ -3250,8 +3323,11 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
              FROM scalar_descriptor d JOIN scalar_observation o USING(indicator_id)
              WHERE d.theme_id=%s AND o.territory_id=%s AND o.territory_type=%s
                AND o.territory_type=ANY(d.allowed_levels) ORDER BY d.indicator_id""",
-             (theme_id, territory_id, territory_type)).fetchall()
-    profiles, profile_version = focal_profiles(conn, territory_type, territory_id, theme_id=theme_id)
+              (project_value, project_support_count, project_denominator_count,
+               theme_id, territory_id, territory_type)).fetchall()
+    profile_fields = None if project_value else ["status"]
+    profiles, profile_version = focal_profiles(conn, territory_type, territory_id, theme_id=theme_id,
+                                                fields=profile_fields)
     owned_series=[]
     collections=[]
     bpe_profile=None
@@ -3265,15 +3341,27 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
             routes=conn.execute("""SELECT dataset_id,indicator_id FROM series_dataset_descriptor
                 WHERE theme_id=%s AND active_read_route AND %s=ANY(allowed_levels)
                 ORDER BY indicator_id""",(theme_id,territory_type)).fetchall()
-            owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator)
-                          for dataset_id,indicator in routes]
+        owned_series=[_owned_series_snapshot(conn,dataset_id,territory_type,territory_id,indicator,
+                                              fields=None if project_value else ["status"])
+                      for dataset_id,indicator in routes]
     bpe_profile = (_bpe_profile_snapshot(conn,territory_type,territory_id,default_comparison=False)
         if theme_id == "mobilite" and conn.execute("SELECT to_regclass('bpe_profile_evidence_descriptor')").fetchone()[0]
         and conn.execute("SELECT 1 FROM bpe_profile_evidence_descriptor WHERE singleton AND indicator_id='bpe_access_profile'").fetchone()
         else None)
-    collections = [collection_snapshot(conn,descriptor,territory_type,territory_id)
-                   for descriptor in collection_descriptors(conn,theme_id=theme_id)
-                   if territory_type in descriptor["allowed_levels"]]
+    collections = []
+    for descriptor in collection_descriptors(conn,theme_id=theme_id):
+        if territory_type not in descriptor["allowed_levels"]:
+            continue
+        if selected_fields is None:
+            collection_fields = None
+        elif descriptor["kind"] == "anchored_membership":
+            collection_fields = [field for field in selected_fields
+                if field in {"detail", "label", "rider", "anchor_count", "availability"}]
+            collection_fields.extend(field for field in ("detail", "label") if field not in collection_fields)
+        else:
+            collection_fields = ["value", "status"] if project_value else ["status"]
+        collections.append(collection_snapshot(conn,descriptor,territory_type,territory_id,
+                                                fields=collection_fields))
     readings = []
     reading_version = None
     reading_descriptor_version = None
@@ -3297,10 +3385,14 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
                 reading_marker[2] != reading_marker[3]):
             raise HTTPException(503, "Demographic reading publication is unavailable or incompatible")
         reading_rows = conn.execute("""SELECT groupe,story_key,salience_reason,periode,
-            solde_naturel,solde_migratoire,taux_solde_naturel,taux_solde_migratoire,
+            CASE WHEN %s THEN solde_naturel ELSE NULL::double precision END,
+            CASE WHEN %s THEN solde_migratoire ELSE NULL::double precision END,
+            CASE WHEN %s THEN taux_solde_naturel ELSE NULL::double precision END,
+            CASE WHEN %s THEN taux_solde_migratoire ELSE NULL::double precision END,
             classification,status,source_id,vintage_id
             FROM demographic_typed_reading WHERE territory_id=%s AND territory_type=%s
-            ORDER BY groupe""", (territory_id, territory_type)).fetchall() if reading_marker else []
+            ORDER BY groupe""", (project_value, project_value, project_value, project_value,
+                                   territory_id, territory_type)).fetchall() if reading_marker else []
         if reading_marker and not reading_rows:
             raise HTTPException(404, "No selected demographic reading for this territory")
         reading_version = reading_marker[0] if reading_marker else None
@@ -3311,8 +3403,14 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
             "vintage_id":reading_marker[7],"source_version":reading_marker[8],
             "source_reference_date":reading_marker[9],"source_publication_date":reading_marker[10]}
             if reading_marker else None)
-        readings = [{**dict(zip(reading_names,row)),"provenance":provenance}
-            for row in reading_rows]
+        readings = []
+        for row in reading_rows:
+            record = dict(zip(reading_names,row))
+            if not project_value:
+                for key in ("solde_naturel","solde_migratoire","taux_solde_naturel","taux_solde_migratoire"):
+                    record.pop(key,None)
+            record["provenance"] = provenance
+            readings.append(record)
         for reading in readings:
             reading["rate_unit"] = reading_marker[11]
     elif theme_id == "mobilite":
@@ -3353,24 +3451,30 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
             "windows":[dict(zip(("name","frequency","reference","trigger"),clock)) for clock in clocks]}
         story_bindings={(story,group,reason) for story,group,reason in story_descriptors}
         reading_rows = conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.classification_saillance,
-            r.div_loss_t,r.div_loss_b,r.status,r.source_id,r.vintage_id,s.story_key
+            CASE WHEN %s THEN r.div_loss_t ELSE NULL::double precision END,
+            CASE WHEN %s THEN r.div_loss_b ELSE NULL::double precision END,
+            r.status,r.source_id,r.vintage_id,s.story_key,
+            (r.div_loss_t IS NOT NULL AND r.div_loss_b IS NOT NULL)
             FROM mobility_typed_reading r LEFT JOIN mobility_reading_story s
               ON s.groupe=r.groupe AND s.story_key=r.story_key AND s.salience_reason=r.salience_reason
             WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
-            (territory_id,territory_type)).fetchall() if reading_availability == "available" else []
+            (project_value,project_value,territory_id,territory_type)).fetchall() if reading_availability == "available" else []
         if reading_availability == "available" and not reading_rows:
             raise HTTPException(503,"Declared eligible Mobility reading is absent for this territory")
         for row in reading_rows:
             if (row[9] is None or (row[1],row[0],row[2]) not in story_bindings or
                 row[7]!=reading_marker[5] or row[8]!=reading_marker[6] or row[2] is None or
                 (row[3] is not None and row[3] not in reading_marker[16]) or
-                (row[6]=="measured" and (row[4] is None or row[5] is None)) or
+                (row[6]=="measured" and not row[10]) or
                 (row[6]==reading_marker[15] and row[4] is not None and row[5] is not None) or
                 (row[6] not in ("measured",reading_marker[15]))):
                 raise HTTPException(503,"Mobility reading fields differ from their registered descriptor")
-            readings.append(dict(zip(("groupe","story_key","salience_reason","classification_saillance",
+            reading=dict(zip(("groupe","story_key","salience_reason","classification_saillance",
                 "div_loss_t","div_loss_b","status","source_id","vintage_id"),row[:9]),
-                unit=reading_marker[12],direction=reading_marker[13],provenance=source_provenance))
+                unit=reading_marker[12],direction=reading_marker[13],provenance=source_provenance)
+            if not project_value:
+                reading.pop("div_loss_t",None); reading.pop("div_loss_b",None)
+            readings.append(reading)
         reading_version = reading_marker[0]
         reading_descriptor_version = reading_marker[4]
     elif theme_id == "habitat":
@@ -3406,12 +3510,21 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
                     "vintage_id":selected_marker[7],"source_version":selected_marker[8],
                     "source_reference_date":selected_marker[9],"source_publication_date":selected_marker[10]}
                 habitat_rows=conn.execute("""SELECT groupe,story_key,salience_reason,classification,
-                    part_passoires,part_abc,n_dpe,status,source_id,vintage_id FROM habitat_typed_reading
-                    WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",(territory_id,territory_type)).fetchall()
+                    CASE WHEN %s THEN part_passoires ELSE NULL::double precision END,
+                    CASE WHEN %s THEN part_abc ELSE NULL::double precision END,
+                    CASE WHEN %s THEN n_dpe ELSE NULL::bigint END,status,source_id,vintage_id FROM habitat_typed_reading
+                    WHERE territory_id=%s AND territory_type=%s ORDER BY groupe""",
+                    (project_value,project_value,project_value,territory_id,territory_type)).fetchall()
                 if any(row[8]!=selected_marker[5] or row[9]!=selected_marker[7] for row in habitat_rows):
                     raise HTTPException(503,"Selected habitat reading provenance is incompatible")
-                readings=[dict(zip(("groupe","story_key","salience_reason","classification","part_passoires",
-                    "part_abc","n_dpe","status","source_id","vintage_id"),row),provenance=provenance) for row in habitat_rows]
+                readings=[]
+                for row in habitat_rows:
+                    reading=dict(zip(("groupe","story_key","salience_reason","classification","part_passoires",
+                        "part_abc","n_dpe","status","source_id","vintage_id"),row),provenance=provenance)
+                    if not project_value:
+                        for key in ("part_passoires","part_abc","n_dpe"):
+                            reading.pop(key,None)
+                    readings.append(reading)
                 if not readings: raise HTTPException(404,"No selected reading for this territory")
                 reading_version=selected_marker[0]
     elif theme_id == "economie":
@@ -3444,15 +3557,20 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
             provenance=({"source_id":reading_source_id,"source_name":source[0],"vintage_id":reading_rows[0][5],
                 "source_version":source[1],"source_reference_date":source[2],"source_publication_date":source[3]}
                 if reading_rows else None)
-            evidence=conn.execute("""SELECT groupe,rank,activity_code,activity_label,lq,establishment_count,park_share,source_id,vintage_id
+            evidence=conn.execute("""SELECT groupe,rank,activity_code,activity_label,
+                CASE WHEN %s THEN lq ELSE NULL::double precision END,
+                CASE WHEN %s THEN establishment_count ELSE NULL::bigint END,
+                CASE WHEN %s THEN park_share ELSE NULL::double precision END,source_id,vintage_id
                 FROM economy_activity_evidence WHERE territory_id=%s AND territory_type=%s ORDER BY groupe,rank""",
-                (territory_id,territory_type)).fetchall()
+                (project_value,project_value,project_value,territory_id,territory_type)).fetchall()
             by_group={}
             for row in evidence:
                 if row[7]!=reading_source_id or row[8]!=reading_rows[0][5]:
                     raise HTTPException(503,"Economy activity evidence provenance is incompatible")
-                by_group.setdefault(row[0],[]).append({"rank":row[1],"activity_code":row[2],"activity_label":row[3],
-                    "lq":row[4],"n":row[5],"part_parc":row[6]})
+                evidence_row={"rank":row[1],"activity_code":row[2],"activity_label":row[3]}
+                if project_value:
+                    evidence_row.update({"lq":row[4],"n":row[5],"part_parc":row[6]})
+                by_group.setdefault(row[0],[]).append(evidence_row)
             if any([item["rank"] for item in items] != list(range(1,len(items)+1)) for items in by_group.values()) or any(
                 row[3]=="measured" and not by_group.get(row[0]) for row in reading_rows):
                 raise HTTPException(503,"Economy activity evidence is incomplete")
@@ -3469,11 +3587,16 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
         if not milieux_marker or milieux_marker[0] is None or milieux_marker[1] < 1 or milieux_marker[2] != milieux_marker[3]:
             raise HTTPException(503,"Milieux reading publication is unavailable or incompatible")
         milieux_rows=conn.execute("""SELECT r.groupe,r.story_key,r.salience_reason,r.periode_pop,r.periode_artif,
-            r.delta_population,r.taux_variation_population,r.artif_m2_par_habitant,r.artif_m3_par_habitant,
-            r.trajectoire_artif_par_habitant,r.classification,r.status,r.source_id,r.vintage_id
+            CASE WHEN %s THEN r.delta_population ELSE NULL::double precision END,
+            CASE WHEN %s THEN r.taux_variation_population ELSE NULL::double precision END,
+            CASE WHEN %s THEN r.artif_m2_par_habitant ELSE NULL::double precision END,
+            CASE WHEN %s THEN r.artif_m3_par_habitant ELSE NULL::double precision END,
+            CASE WHEN %s THEN r.trajectoire_artif_par_habitant ELSE NULL::double precision END,
+            r.classification,r.status,r.source_id,r.vintage_id
             FROM milieux_typed_reading r
             WHERE r.territory_id=%s AND r.territory_type=%s ORDER BY r.groupe""",
-            (territory_id,territory_type)).fetchall()
+            (project_value,project_value,project_value,project_value,project_value,
+             territory_id,territory_type)).fetchall()
         if not milieux_rows:
             raise HTTPException(404,"No selected Milieux reading for this territory")
         source_rows=conn.execute("""SELECT b.groupe,b.field_key,b.source_id,b.source_name,b.vintage_id,b.source_version,
@@ -3532,7 +3655,7 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
                     bound_keys={(a["source_id"],a["vintage_id"],a["provenance_revision_id"]) for a in actual_for_field}
                     if not registered or registered_keys!=bound_keys or any(r[3]!=expected_role or r[4]!=expected_period for r in registered):
                         raise HTTPException(503,"Milieux source-component bindings differ from the registered OCS-GE state publication")
-            readings.append(dict(zip(("groupe","story_key","salience_reason","periode_pop","periode_artif",
+            reading=dict(zip(("groupe","story_key","salience_reason","periode_pop","periode_artif",
                 "delta_population","taux_variation_population","artif_m2_par_habitant","artif_m3_par_habitant",
                 "trajectoire_artif_par_habitant","classification","status","source_id","vintage_id"),row[:14]),
                 provenance={"source_id":population_associations[0]["source_id"],
@@ -3541,10 +3664,18 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
                 "source_version":population_associations[0]["source_version"],
                 "source_reference_date":population_associations[0]["source_reference_date"],
                 "source_publication_date":population_associations[0]["source_publication_date"],
-                "associations":associations}))
+                "associations":associations})
+            if not project_value:
+                for key in ("delta_population","taux_variation_population","artif_m2_par_habitant",
+                            "artif_m3_par_habitant","trajectoire_artif_par_habitant"):
+                    reading.pop(key,None)
+            readings.append(reading)
         reading_version=milieux_marker[0]
     comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
-        profiles=profiles, profile_version=profile_version, has_readings=bool(readings))
+        profiles=profiles, profile_version=profile_version, has_readings=bool(readings),
+        result_fields=_theme_comparison_projection(fields))
+    comparison = _project_comparison_payload_fields(
+        comparison, _theme_comparison_projection(fields))
     building_access = None
     service_reference = None
     essential_service_access = None
@@ -3590,6 +3721,11 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
     indicator_metadata = []
     for row in rows:
         fact = dict(zip(names, row))
+        if selected_fields is not None:
+            for key, enabled in (("value",project_value),("support_count",project_support_count),
+                                 ("denominator_count",project_denominator_count)):
+                if not enabled:
+                    fact.pop(key,None)
         indicators.append({**fact, "dimensions": {}})
     for profile in profiles:
         indicator_metadata.append({"indicator_id": profile["indicator"], "kind": "declared_dimensions",
@@ -3602,7 +3738,8 @@ def _theme_facts_snapshot(conn, territory_type, territory_id, theme_id, service_
             "required_scalar_version": profile.get("required_scalar_version")})
         for cell in profile["cells"]:
             indicators.append({"indicator_id": profile["indicator"], "label": profile["label"],
-                "unit": cell["unit"], "value": cell["value"], "status": cell["status"],
+                "unit": cell["unit"], **({"value":cell["value"]} if "value" in cell else {}),
+                "status": cell["status"],
                 "sources": cell["sources"], "dimensions": {"detail": cell["detail"],
                     **({"sex": cell["sex"]} if cell.get("sex") is not None else {}),
                     **({"observation_period": cell["observation_period"]} if cell.get("observation_period") is not None else {})},
@@ -3649,16 +3786,19 @@ def theme_comparison(
     territory_type: Literal["commune", "epci", "departement", "region"],
     request: ThemeComparisonRequest,
     territory_id: str = Path(min_length=1, max_length=32),
+    fields: Annotated[list[str] | None, Query(max_length=32)] = None,
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Request-scoped compact comparison over a typed selected/default cohort."""
     selected = None if request.selection is None else [
         (item.territory_type, item.territory_id) for item in request.selection]
+    selected_fields = _comparison_field_selection(fields)
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
-            return _theme_comparison_snapshot(conn, territory_type, territory_id,
-                                              request.theme_id, selected)
+            result = _theme_comparison_snapshot(conn, territory_type, territory_id,
+                                                request.theme_id, selected,result_fields=selected_fields)
+            return _project_comparison_payload_fields(result, selected_fields)
 
 
 @app.post("/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/comparison")
@@ -3667,6 +3807,7 @@ def theme_comparison_only(
     theme_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,63}$"),
     territory_id: str = Path(min_length=1, max_length=32),
     request: ThemeComparisonRequest = ...,
+    fields: Annotated[list[str] | None, Query(max_length=32)] = None,
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Return only scoped comparison statistics, without focal fact payloads."""
@@ -3674,11 +3815,12 @@ def theme_comparison_only(
         raise HTTPException(422, "Body theme_id must match the comparison route")
     selected = None if request.selection is None else [
         (item.territory_type, item.territory_id) for item in request.selection]
+    selected_fields = _comparison_field_selection(fields)
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             result = _theme_comparison_snapshot(
-                conn, territory_type, territory_id, theme_id, selected)
+                conn, territory_type, territory_id, theme_id, selected,result_fields=selected_fields)
             response = {key: result[key] for key in (
                 "contract", "complete_theme", "theme_id", "content_version",
                 "reference_content_version", "selection", "scope", "results",
@@ -3781,7 +3923,7 @@ def theme_comparison_only(
                         "scope": {"kind": "custom", "member_count": len(member_ids)},
                         "ramp": ramp, "distribution": distribution,
                     }
-            return response
+            return _project_comparison_payload_fields(response, selected_fields)
 
 
 def _comparison_result_without_focal_value(result):
@@ -3897,11 +4039,13 @@ def indicator_comparison_only(
     territory_id: str = Path(min_length=1, max_length=32),
     indicator_id: str = Path(pattern=r"^[a-z][a-z0-9_]{0,95}$"),
     request: IndicatorComparisonRequest | None = None,
+    fields: Annotated[list[str] | None, Query(max_length=32)] = None,
     repository: ReadRepository = Depends(get_repository),
 ) -> dict:
     """Compare one descriptor identity, independent of its theme or shape."""
     selection = None if request is None or request.selection is None else [
         (item.territory_type, item.territory_id) for item in request.selection]
+    selected_fields = _comparison_field_selection(fields)
     with repository.connections.connection() as conn:
         with conn.transaction():
             conn.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
@@ -3909,19 +4053,21 @@ def indicator_comparison_only(
                 bpe_descriptor=conn.execute("SELECT indicator_id FROM bpe_profile_evidence_descriptor WHERE singleton").fetchone()
                 if bpe_descriptor and bpe_descriptor[0] == indicator_id:
                     result=_bpe_profile_comparison(conn,territory_type,territory_id,selection)
-                    return {"contract":"indicator-comparison-v1","complete_theme":False,
+                    return _project_comparison_payload_fields({"contract":"indicator-comparison-v1","complete_theme":False,
                         "indicator_id":indicator_id,"shape":"bpe_profile_evidence",
                         "content_version":result["content_version"],
                         "reference_content_version":result["reference_content_version"],
                         "selection":result["selection"],"scope":result["scope"],
-                        "results":result["results"]}
+                        "results":result["results"]},selected_fields)
             active_owned=_owned_series_route(conn,indicator_id)
             if active_owned:
                 if active_owned[2]:
-                    return _owned_reference_comparison_result(conn,active_owned,territory_type,
+                    result=_owned_reference_comparison_result(conn,active_owned,territory_type,
                         territory_id,indicator_id,selection)
-                return _owned_series_comparison_result(conn,active_owned,territory_type,
-                    territory_id,indicator_id,selection)
+                else:
+                    result=_owned_series_comparison_result(conn,active_owned,territory_type,
+                        territory_id,indicator_id,selection)
+                return _project_comparison_payload_fields(result,selected_fields)
             collections = collection_descriptors(conn,indicator_id=indicator_id)
             if collections:
                 focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",(territory_id,)).fetchone()
@@ -3936,11 +4082,11 @@ def indicator_comparison_only(
                     fixed_context = None
                 result = collection_comparison(conn,collections[0],territory_type,territory_id,cohort_type,members,
                                                fixed_context)
-                return {"contract":"indicator-comparison-v1","complete_theme":False,"indicator_id":indicator_id,
+                return _project_comparison_payload_fields({"contract":"indicator-comparison-v1","complete_theme":False,"indicator_id":indicator_id,
                     "theme_id":collections[0]["theme_id"],"shape":"observed_collection",
                     "content_version":result["content_version"],"reference_content_version":result["reference_content_version"],
                     "selection":None if selection is None else [{"territory_type":level,"territory_id":code} for level,code in selection],
-                    "scope":{**scope,"member_count":len(members)} if scope else None,"result":result}
+                    "scope":{**scope,"member_count":len(members)} if scope else None,"result":result},selected_fields)
             shapes = []
             for table, shape in (("scalar_descriptor", "scalar"),
                                  ("profile_descriptor", "profile"),
@@ -3968,7 +4114,7 @@ def indicator_comparison_only(
                 comparison = _series_comparison_snapshot(conn, territory_type, territory_id,
                                                          indicator_id, selection)
                 comparison["result"] = _comparison_result_without_focal_value(comparison["result"])
-                return comparison
+                return _project_comparison_payload_fields(comparison,selected_fields)
             if shape == "scalar":
                 descriptor = conn.execute(
                     "SELECT theme_id,allowed_levels FROM scalar_descriptor WHERE indicator_id=%s",
@@ -3986,7 +4132,7 @@ def indicator_comparison_only(
             if not descriptor[0]:
                 raise HTTPException(503, "Indicator theme metadata is unavailable")
             comparison = _theme_comparison_snapshot(conn, territory_type, territory_id,
-                descriptor[0], selection, indicator_id=indicator_id)
+                descriptor[0], selection, indicator_id=indicator_id,result_fields=selected_fields)
             result_rows = comparison["results"] if shape == "scalar" else comparison["profile_comparisons"]
             if len(result_rows) != 1:
                 raise HTTPException(503, "Indicator comparison facet is unavailable or ambiguous")
@@ -4001,7 +4147,7 @@ def indicator_comparison_only(
             else:
                 result["source_facet"] = indicator_id
             result = _comparison_result_without_focal_value(result)
-            return {"contract": "indicator-comparison-v1", "complete_theme": False,
+            return _project_comparison_payload_fields({"contract": "indicator-comparison-v1", "complete_theme": False,
                 "indicator_id": indicator_id, "shape": shape,
                 "content_version": comparison["content_version"],
                 "scalar_content_version": (result.get("required_scalar_version")
@@ -4009,7 +4155,7 @@ def indicator_comparison_only(
                 "profile_content_version": comparison["profile_content_version"],
                 "reference_content_version": comparison["reference_content_version"],
                 "selection": comparison["selection"], "scope": comparison["scope"],
-                "result": result}
+                "result": result},selected_fields)
 
 
 def _focal_series_snapshot(conn, territory_type, territory_id, indicator_id, *, fields=None):

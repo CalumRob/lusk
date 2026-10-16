@@ -334,9 +334,9 @@ def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages
                 return Cursor(("pub", "scalar-v1", "ref-v1", 1, 2,
                     "scalar-v1", "ref-v1", "ref-v1"))
             if "FROM scalar_comparison_group" in sql:
-                return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0, 2)])
+                return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0, 2, True)])
             if "FROM scalar_comparison_territory" in sql:
-                return Cursor(rows=[("part_passoires", 10.0, "measured", 1, 1, 2)])
+                return Cursor(rows=[("part_passoires", 10.0, "measured", 1, 1, 2, True)])
             if "FROM comparison_source_lineage l" in sql:
                 if params and params[0] == "profile":
                     return Cursor(rows=[("housing_profile", *source, "pub-v1") for source in lineage])

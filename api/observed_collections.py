@@ -41,9 +41,10 @@ def collection_snapshot(conn, descriptor, territory_type, territory_id, *, field
         raise HTTPException(422,"Territory does not match its declared level")
     marker = collection_marker(conn,descriptor)
     if descriptor["kind"] == "anchored_membership":
-        if fields is not None:
-            raise HTTPException(422,"Field selection is not declared for categorical membership")
-        return membership_snapshot(conn,descriptor,territory_type,territory_id,focal[0],marker)
+        membership_fields = normalize_field_selection(fields,
+            {"detail", "label", "rider", "anchor_count", "availability"})
+        return membership_snapshot(conn,descriptor,territory_type,territory_id,focal[0],marker,
+                                   fields=membership_fields)
     selection = normalize_field_selection(fields, {"value", "status"})
     project_value = selection is None or "value" in selection
     rows = conn.execute("""SELECT o.detail_key,c.label,o.observation_period,
@@ -180,9 +181,11 @@ def _published_collection_comparison(conn, descriptor, territory_type, territory
         "comparison_sources":sources,**marker}
 
 
-def membership_snapshot(conn, descriptor, territory_type, territory_id, focal_name, marker):
+def membership_snapshot(conn, descriptor, territory_type, territory_id, focal_name, marker, *, fields=None):
+    project_rider = fields is None or "rider" in fields
+    project_anchor_count = fields is None or "anchor_count" in fields
     rows = conn.execute("""SELECT t.territory_id,t.territory_type,t.name,m.detail_key,c.label,
-        CASE WHEN m.convention_valant_ort THEN c.rider_label ELSE NULL END,
+        CASE WHEN %s AND m.convention_valant_ort THEN c.rider_label ELSE NULL END,
         m.source_id,sd.name,m.vintage_id,v.version,v.reference_date,v.publication_date
         FROM anchored_membership m JOIN territory_reference t USING(territory_id)
         JOIN observed_collection_category c USING(indicator_id,detail_key)
@@ -195,15 +198,17 @@ def membership_snapshot(conn, descriptor, territory_type, territory_id, focal_na
             OR (t.territory_type='epci' AND EXISTS(SELECT 1 FROM territory_reference member
               WHERE member.epci_id=t.territory_id AND member.department_id=%s))))
           OR %s='region') ORDER BY c.ordinal,t.territory_id""",
-        (descriptor["indicator_id"],territory_id,territory_type,territory_id,territory_type,territory_id,
+         (project_rider,descriptor["indicator_id"],territory_id,territory_type,territory_id,territory_type,territory_id,
          territory_type,territory_id,territory_id,territory_type)).fetchall()
     entries,relationships,summaries = [],[],{}
     for anchor_id,anchor_type,name,detail,label,rider,source_id,source_name,vintage_id,version,reference_date,publication_date in rows:
-        entry = {"detail":detail,"label":label,"rider":rider,
+        entry = {"detail":detail,"label":label,**({"rider":rider} if project_rider else {}),
                  "sources":[{"source_id":source_id,"name":source_name,"vintage_id":vintage_id,
                     "version":version,"reference_date":reference_date,"publication_date":publication_date}]}
-        summary = summaries.setdefault(detail,{"detail":detail,"label":label,"anchor_count":0})
-        summary["anchor_count"] += 1
+        summary = summaries.setdefault(detail,{"detail":detail,"label":label,
+            **({"anchor_count":0} if project_anchor_count else {})})
+        if project_anchor_count:
+            summary["anchor_count"] += 1
         if anchor_id == territory_id:
             entries.append(entry)
         else:
