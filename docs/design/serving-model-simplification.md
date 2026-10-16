@@ -1,6 +1,6 @@
 # Draft design: unified retained-resource serving and publication model
 
-**Status: PROPOSED — owner acceptance required before schema or business-reader changes.**
+**Status: PROPOSED — owner acceptance required before backend schema, publication or API implementation.**
 This is the documentation deliverable for [#795](https://github.com/CalumRob/lusk/issues/795),
 child of [#794](https://github.com/CalumRob/lusk/issues/794). The owner-approved
 direction is one public resource/read contract, shared publication machinery,
@@ -10,13 +10,18 @@ does not amend accepted ADRs, decide catalogue membership, authorize DDL,
 production work, or declare any current object safe to drop.
 
 The owner has superseded the former per-theme/service-first execution proposal.
-Legacy BPE profiles, snapshot service shares and obsolete read models are
-excluded from the target. They may be mapped only to an already-declared
-capability with the same product semantics; AEDAR's existing address-grain
-aggregates and readings are retained but are not presumed equivalents for the
-legacy products. AEDAR's INSEE BPE TYPEQU registry is valid source nomenclature
-and remains. The design gate remains open: all target identities, keys,
-retirements and replacement mappings below are **PROPOSED**, not approved.
+This initiative is **backend only**: pipeline publication, PostgreSQL and the
+serving API. Legacy BPE accessibility profiles, snapshot service shares and
+their obsolete backend read models are excluded from the target. The owner
+accepts breakage of the old non-AEDAR app; backend retirement is not gated on
+frontend migration or a replacement for those surfaces. Document affected
+caller contracts, but do not edit, migrate, remove or acceptance-test app/UI
+code here. The current AEDAR prototype is intended for future production
+Mobility after the database is settled; leave its UI, acquisition and data/map
+contracts untouched. Earlier conflation of that prototype with retired Variant
+E is superseded. AEDAR's INSEE BPE TYPEQU registry remains valid nomenclature.
+The design gate remains open for the integrated backend target, not frontend
+survival or all proposed candidate approvals.
 
 ## 1. Resource identity and discovery
 
@@ -72,7 +77,7 @@ but `/read-batch` retains nine item kinds mixing operations, resource identity
 and historical adapter choice. `api/batch-read-contract.md` documents one
 read-only repeatable-read batch snapshot. `app/src/payload/themeAcquisition.ts`,
 `app/src/payload/structureAgeProfile.ts`, `app/src/views/IndicateurPage.vue`,
-the historical Variant E reader `app/src/fiche/content/aedarApiClient.ts` and
+the current AEDAR prototype reader `app/src/fiche/content/aedarApiClient.ts` and
 [`structured-consumer-inventory.md`](../structured-consumer-inventory.md) give
 checked-in reader evidence. The complete retained coverage and excluded legacy
 surface map appears in §4. A current caller is not itself justification to
@@ -81,12 +86,11 @@ carry an excluded product into the target.
 the route/caller map is external audit evidence, not traffic telemetry.
 
 The target removes historical family/owner dispatch without claiming every old
-route is unused. Retained acquisition preserves active-theme priority,
-independent warming/cancellation and the registered static opt-out; it does not
-force all-theme dependencies or add static fallback to API reads. Excluded
-Mobility snapshot/service readers are not preserved as target resources. Any
-consumer lacking an actual AEDAR equivalent is identified in §4 for owner
-product disposition; values are not relabeled or inferred.
+route is unused. Excluded Mobility snapshot/service backend resources are not
+preserved merely for old app compatibility. Existing app callers are recorded
+only to make contract breaks and later integration impact visible; their
+migration or continued operation is not a backend acceptance gate. Do not
+relabel legacy values or infer AEDAR equivalents.
 
 ## 2. Typed request/result contract
 
@@ -334,9 +338,9 @@ not permission for per-item connections or HTTP fan-out.
 
 The proposal does **not** collapse content/theme payloads into a generalized
 fact read: it specifies how named resources are fetched. A product-level theme
-assembly may compose declared resources and semantic evidence while preserving
-active-theme-first acquisition, independent warming/cancellation, retry, and
-the explicit static opt-out.
+assembly may compose declared resources and semantic evidence. Existing app
+acquisition priority, warming/cancellation and static opt-out are context, not
+implementation or acceptance requirements for this backend-only initiative.
 
 ## 3. Constrained physical and publication model
 
@@ -440,18 +444,18 @@ must rerun that enumeration and account for every source-declared member.
 
 | Resource / semantic case | R producer → canonical metadata/artifact | Current DB facts/descriptor/publication | Current reader → consumer / tests | Proposed target and old-object disposition |
 |---|---|---|---|---|
-| Territory reference and scalar catalogue (`densite`, ordinary declared measures) | Canonical theme computations and producer descriptors → scalar-serving typed artifacts + declared theme/catalogue metadata | `scalar_descriptor`, `scalar_observation`, source links, territory reference and scalar comparison result/lineage tables; `publish_scalar.R` | `_indicator_facts_snapshot`/comparison readers; `themeAcquisition.ts`, `IndicateurPage.vue`, map and fiche readers; `test-publish-scalar.R`, API scalar/comparison contracts and consumer parity | Shared typed scalar shape; resource/measure mapping generated from existing descriptors. Merge/revise scalar tables only if target enforces identical grain and mandatory evidence. Remove duplicate route adapters after all retained callers migrate. Territory reference remains a separately versioned dependency also used outside facts. |
-| Dense declared profiles (`structure_age`, `distribution_dpe`, other registered dense profiles) | Theme computations + closed metadata axes → `profile-serving/<indicator>/` artifact, DPE scalar binding | `profile_descriptor/axis/observation/source`, profile comparison publications; `publish_profile.R` | Declared profile reader, profile comparison; `structureAgeProfile.ts`, theme composition; `test-publish-profile*`, API profile/binding tests | Shared closed coordinate shape where key/completeness/status constraints remain equivalent. Retire direct-profile route/kind and old tables only after migrated readers and exact DPE dependency/provenance parity. |
-| Ordered series/states (`conso_enaf_annuel`, OCS `artif_par_habitant`, DVF, raccordement) | Canonical R and owner descriptors → `series-reading/` and `series-serving/` immutable artifacts with revision links | `ordered_series`, series owner/descriptor/revision/source tables, named-reference rows, series comparison projections/markers; `publish_series.R` | owned/focal series readers; `IndicateurPage.vue`, Milieux content; series/artifact/comparison tests | One ordered shape with typed axis/target and independent owner tokens; retain source revisions per observation. Remove `direct_series`/`owned_dataset` selectors and route aliases after caller migration; do not collapse clocks or named-reference identity. |
+| Territory reference and scalar catalogue (`densite`, ordinary declared measures) | Canonical theme computations and producer descriptors → scalar-serving typed artifacts + declared theme/catalogue metadata | `scalar_descriptor`, `scalar_observation`, source links, territory reference and scalar comparison result/lineage tables; `publish_scalar.R` | `_indicator_facts_snapshot`/comparison readers; app/map/fiche references and current tests are contract-impact evidence, not migration gates | Shared typed scalar shape; resource/measure mapping generated from existing descriptors. Merge/revise scalar tables only if target enforces identical grain and mandatory evidence. Retire/revise superseded backend route adapters as part of the API replacement; no frontend migration required. Territory reference remains a separately versioned dependency also used outside facts. |
+| Dense declared profiles (`structure_age`, `distribution_dpe`, other registered dense profiles) | Theme computations + closed metadata axes → `profile-serving/<indicator>/` artifact, DPE scalar binding | `profile_descriptor/axis/observation/source`, profile comparison publications; `publish_profile.R` | Declared backend profile reader/tests plus known app field references for impact documentation | Shared closed coordinate shape where key/completeness/status constraints remain equivalent. Retire superseded backend route/kind and tables when the new contract preserves required DPE dependency/provenance; no app migration gate. |
+| Ordered series/states (`conso_enaf_annuel`, OCS `artif_par_habitant`, DVF, raccordement) | Canonical R and owner descriptors → `series-reading/` and `series-serving/` immutable artifacts with revision links | `ordered_series`, series owner/descriptor/revision/source tables, named-reference rows, series comparison projections/markers; `publish_series.R` | Backend series readers/tests; app references listed only for breaking-contract documentation | One ordered shape with typed axis/target and independent owner tokens; retain source revisions per observation. Replace historical API selectors/aliases within the backend workstream; do not collapse clocks or named-reference identity. |
 | Sparse period/detail collections (grant facts, economy activity evidence) | `theme_programmes_faits.R`, economy producers and declared schemas → dataset-grain Parquet / typed artifacts | `period_detail_observation`, observed collection descriptor/source and fixed-comparison results; `economy_activity_evidence` where separate | `observed_collections.py`, API comparison readers; `BlocProgrammes.vue` and declared theme consumers; publisher/collection/API tests | Map compatible numeric sparse coordinates to coordinate shape; retain distinct relation/evidence only if an actual key/invariant demands it. Absence remains absence, not zero. Remove old collection-specific adapter when shared item parity holds. |
 | Programme membership relation | Programme canonical producer → `programmes_membres` Parquet and source metadata | `anchored_membership`, membership descriptor/marker/source links | `observed_collections.py`; `BlocProgrammes.vue`; membership/publisher tests | Candidate constrained relation shape keyed by territory+programme/anchor, source/vintage attached; no row means no relation. Exact relation-vs-coordinate boundary is an owner tradeoff below. |
-| AEDAR aggregate dataset and registered source contract | `aedar_aggregates.R` canonical aggregate + pinned INSEE TYPEQU registry and registered 312-measure metadata → AEDAR artifacts | `aedar_territorial_aggregate`, source/identity metadata and aggregate publication; current `/api/aedar/...` route | `aedarApiClient.ts` currently has one app caller path: `TerritoireView.vue` focal/reference `fetchAedarAggregates` calls under `aedarPrototypeActive`. That path renders only through the excluded Variant E flow described below; API tests establish current behavior, not required UI survival. | Retain the valid AEDAR data, registered measure and TYPEQU contracts in the unified resource model. Treat the existing route/client as adapters to classify in that migration, not required readers: migrate the necessary data read to the common contract and remove the old route/client if no other authoritative consumer needs them. Do not infer a UI survivor from data validity. |
-| Independently approved AEDAR data/map contracts | AEDAR owner decisions and domain contracts recorded in `CONTEXT.md`: registered nomenclature, address-grain data semantics and separately approved map/grid definitions | AEDAR source artifacts, map products and their own publication/validation contracts | `CONTEXT.md` sections “Registre TYPEQU BPE 2025”, “Rampe temporelle AEDAR”, “Carte de perte de diversité AEDAR”, “Carte de diversité voiture AEDAR” and “Grille hexagonale AEDAR”; producer/API tests where applicable | Keep these contracts/data distinct from the retired app prototype. Their independent approval does not preserve Variant E, require its renderer/acquisition, or make every map product a resource in this serving catalogue. Do not delete valid AEDAR data/map products by association and do not invent a replacement UI. |
-| Variant E prototype and AEDAR acquisition path | Historical app prototype path; no new producer/data contract | `TerritoireView.vue` `aedarPrototypeActive` query/watch and both focal/reference `fetchAedarAggregates` calls; `VarianteCahierLibreAedar.vue`; `aedarAccessSection.ts::aedarAccessSection`; `aedarTimeRampFacts.ts::aedarTimeRampEvidence`; `VarianteCahierLibre.vue::rampToTimeRampFigureData` → `AccessRampFigureCahier.vue`; API client `app/src/fiche/content/aedarApiClient.ts` | Checked source search finds no other non-test app callsite for `fetchAedarAggregates`; the client types are imported by the prototype section and its tests. This wiring is retirement-dependency evidence only. | **EXCLUDED / RETIRE** the Variant E UI and its `aedar-proto` acquisition path. Do not require the current ramp renderer or a replacement UI. Include the prototype-only client/section/adapters/tests in retirement disposition; do not preserve them solely for Variant E. Reuse a reader only if independently required by the retained AEDAR data contract and an actual non-prototype consumer. Keep valid AEDAR data, TYPEQU nomenclature and independently approved data/map contracts separately. |
-| AEDAR fixed comparison result | `aedar_aggregates.R` comparison projection from address-grain source facts | AEDAR comparison publication/group/territory/lineage and dependencies | AEDAR comparison reader; consumer traffic is not established by static app inventory; publisher and API tests | Keep distinct semantic result identity and exact source/territory-reference tokens; preserve declared statistic/eligibility/weighting and pooled address-level computation. Audit active callers before adapter deletion. |
+| AEDAR aggregate dataset and registered source contract | `aedar_aggregates.R` canonical aggregate + pinned INSEE TYPEQU registry and registered 312-measure metadata → AEDAR artifacts | `aedar_territorial_aggregate`, source/identity metadata and aggregate publication; current `/api/aedar/...` route | The current AEDAR prototype calls `fetchAedarAggregates` for focal/reference data through `TerritoireView.vue`; this is caller-impact evidence, not an app migration requirement. API tests establish backend behavior. | Retain valid AEDAR data, registered measures and TYPEQU contracts in the backend resource model. Future production integration of the current AEDAR prototype is a later app task; leave its UI and acquisition untouched. Document any breaking API contract; do not edit the prototype or infer additional AEDAR products. |
+| Independently approved AEDAR data/map contracts | AEDAR owner decisions and domain contracts recorded in `CONTEXT.md`: registered nomenclature, address-grain data semantics and separately approved map/grid definitions | AEDAR source artifacts, map products and their own publication/validation contracts | `CONTEXT.md` sections “Registre TYPEQU BPE 2025”, “Rampe temporelle AEDAR”, “Carte de perte de diversité AEDAR”, “Carte de diversité voiture AEDAR” and “Grille hexagonale AEDAR”; producer/API tests where applicable | Preserve the valid data and backend contracts under their independent approval; do not delete or redefine them by association with legacy accessibility-serving resources. Current prototype UI/acquisition is outside this backend proposal and remains untouched. Not every map product is necessarily a serving-catalogue resource. |
+| Historical Variant E label / current AEDAR prototype caller wiring (scope note, not a backend resource) | Existing app route/adapters; no distinct producer or data contract established by that UI label | Existing `TerritoireView.vue` query/watch and AEDAR client wiring have historically been described as Variant E | Caller references identify possible API impact only. The owner clarified this is the current AEDAR prototype intended for future production Mobility; conflating it with retired Variant E was incorrect. | **No app/UI action in this initiative.** Preserve the current AEDAR prototype untouched, including acquisition. Backend decisions follow retained data/resource contracts, not the UI label. Document any changed endpoint contract for later integration; old non-AEDAR frontend breakage is acceptable and not an acceptance gate. |
+| AEDAR fixed comparison result | `aedar_aggregates.R` comparison projection from address-grain source facts | AEDAR comparison publication/group/territory/lineage and dependencies | AEDAR comparison reader; consumer traffic is not established by static app inventory; publisher and API tests | Keep distinct semantic result identity and exact source/territory-reference tokens; preserve declared statistic/eligibility/weighting and pooled address-level computation. Document any changed API contract; do not modify the current prototype or gate on caller migration. |
 | Unique semantic evidence from retained products (non-legacy) | R-authored typed-reading/artifact producers; per-field canonical descriptor and source/revision inputs | `demographic_typed_reading`, `habitat_typed_reading`, `economy_typed_reading`, `milieux_typed_reading`, `selected_reading_*`, source absence/revision and activity evidence | Theme fact assembly and semantic content; `ThemeContent`, static `modeles_lecture.R`, app read-model selectors; typed-reading artifact/API/validation tests | Audit each field, not each table: move exact duplicate numeric value/status/support to canonical facts; retain only unique semantic selection, absence, period/source-role and lineage needed by active readers. Do not keep an old “theme facts” facade as target. |
 | Independent comparison projections (all retained eligible resources) | Scalar/profile/series/collection/AEDAR comparison producers | Shape-specific result/lineage/marker tables | Fixed comparison readers and bounded selected-comparison paths; ADR-0039 tests + shape-specific comparisons | Shared constrained comparison result contract/protocol where grain/statistic fit; retain typed validators for distinct rank/median/mean/pooled/axis rules. Fixed reads select published values; selected requests remain bounded and never recompute R transformations. |
-| Static acquisition/readiness metadata and non-fact operations | `publish.R`, `rapport_run.R`, reference/source metadata | Current static artifacts/bootstrap and separate territory/source operations | `themeAcquisition.ts`, loader/search/maps, `sources.ts`, header/footer freshness; inventory tests | Not aliases for fact shapes. Migrate retained acquisition callers coherently while preserving theme priority/warming/cancellation/static opt-out. Keep search/readiness separately justified until own contracts and consumers migrate. No static fallback to resource reads. |
+| Static acquisition/readiness metadata and non-fact operations | `publish.R`, `rapport_run.R`, reference/source metadata | Current static artifacts/bootstrap and separate territory/source operations | App acquisition/search/map references are impact inventory only | Not aliases for fact shapes. This initiative does not migrate app acquisition, static registries or UI readiness behavior. Preserve backend source/territory contracts that remain in scope; no static fallback to resource reads. |
 
 Concrete test anchors for the retained rows: scalar—
 `pipeline/tests/testthat/test-publish-scalar.R`,
@@ -499,25 +503,24 @@ unknowns, not unresolved product/catalogue membership decisions. They do not
 reopen any owner's explicit retain/exclude decisions or individually approve
 the other proposed catalogue candidates.
 
-### Excluded legacy surfaces and unresolved product dependencies
+### Excluded legacy backend surfaces and caller impact
 
-| Legacy object/field path (excluded from target) | Checked-in publisher/DB/API/reader evidence | Current consumer/dependency | Disposition and exact unresolved product question |
+| Legacy object/field path (excluded from target) | Checked-in publisher/DB/API/reader evidence | Current consumer/dependency (impact evidence only) | Backend disposition and contract impact |
 |---|---|---|---|
-| `profils_acces_bpe*`, `bpe_access_profile`, `bpe_profile_evidence*` | `artefact_bpe_typequ.R`, `publish_bpe.R`; DB descriptor/class-axis/fact/source tables and marker; BPE profile API/theme projection in `api/main.py` | `app/src/payload/loader.ts`, `territoryReadModel.ts`, `mobilityThemeApiFacts.ts`; pipeline `modeles_lecture.R` reads `profils_acces_bpe.json`; fixtures/tests | Retire from target. No AEDAR equivalent for the four access classes/exemplar/mode triplets is evidenced; do not synthesize one. Owner decides whether to remove each current product surface or name a specifically evidenced, already-authoritative contract with those exact semantics; the distinct AEDAR product is not presumed a replacement. |
-| Legacy Mobility snapshot shares: `share_*`, `iso_*`, `service_share_scalar`, `service_registry`, `essential_service_access`, service source/peer scope | `theme_mobilite.json`, `analytics_mobilite.R`, `publish_scalar.R::project_service_share_scalars()` and `serving_tables.R`; `publier_tables_postgres.R`; service tables/markers and comparison/route adapters in `api/main.py` | `TerritoireView.vue` + `accessApiFacts.ts`, `themeContent.ts`, method indicators/fiche and legacy static JSON/map layers; `modeles_lecture.R` may consume snapshot-derived material | Exclude the share resource and do not preserve/re-publish these IDs as target facts. AEDAR does not declare the same 5-service×3-mode snapshot, 20-minute building threshold, coverage cutoff or peer-gap reading. Owner decides removal of the affected blocks/fields or names a specifically evidenced, already-authoritative contract for their exact semantics; AEDAR's distinct address-grain product is not a presumed substitution. |
-| Legacy BPE/OSM/BDNB equipment ramp/grid and access-distribution read models | `distribution_acces_batiments.R` explicitly takes the legacy BPE TYPEQU snapshot plus OSM/BDNB; `serving_tables.R`, `publish_mobility_distribution.R`, building-comparison producer; DB `building_ramp/grid`, descriptors and `mobility_density_distribution*`; `api/main.py` legacy readers | Legacy payload IDs are loaded/validated by `app/src/payload/loader.ts`, `usePayload.ts`, and `territoryReadModel.ts`; API building presentation is adapted in `app/src/fiche/content/mobilityThemeApiFacts.ts`. `CartographicBreakoutPrototype.vue` is **not** evidence of this lineage: `VarianteCahierLibre.vue` calls it with `SharingNetworksEvidence` and `CyclingOfferEvidence` for an exploratory cartographic breakout. Variant E's separate AEDAR-backed UI/acquisition wiring is inventoried as an excluded retirement dependency above; it is not a current required consumer of these legacy products. | Exclude the legacy BPE/OSM/BDNB ramp/grid/distribution products and their old consumer fields. The unresolved product disposition is whether each checked legacy consumer is removed or has a specifically evidenced authoritative contract with the same semantics. Valid AEDAR data/map contracts are separately retained and are not an inferred substitute. Do not relabel legacy values or silently delete a consumer. |
-| Mobility typed-reading/story fields derived from legacy access snapshot (`div_loss_*`, `pct_iso_full_t`, density/decile distribution, access story/salience and `iso_*` mirrors) | `publish_typed_readings.R`, `publish_mobility_distribution.R`, `theme_mobilite.R`; DB `mobility_typed_reading`, story, clock and distribution tables; API theme-facts assembly | `ThemeContent`, `OngletTheme.vue`, `themeFactsAdapter.ts`, `modeles_lecture.R`, static map/read-model generation | Exclude those legacy-derived semantic read models from target; field-level retirement inventory must identify all copy/figures/content. AEDAR separately declares address-grain diversity/loss ramps and map readings, but not the same legacy building-level snapshot, thresholds, story classification or peer-gap narrative; do not conflate or reconstruct either product. Owner disposition is removal or a specifically evidenced contract for the exact legacy semantics. |
+| `profils_acces_bpe*`, `bpe_access_profile`, `bpe_profile_evidence*` | `artefact_bpe_typequ.R`, `publish_bpe.R`; DB descriptor/class-axis/fact/source tables and marker; BPE profile API/theme projection in `api/main.py` | Existing app payload/read-model callers and `modeles_lecture.R` are impact evidence only; they do not gate backend retirement. | Retire these legacy backend resources/readers. Do not synthesize an AEDAR equivalent for the four access classes/exemplar/mode triplets. Record the removed API contract and downstream impact; old non-AEDAR app breakage is accepted, and later integration is outside this initiative. |
+| Legacy Mobility snapshot shares: `share_*`, `iso_*`, `service_share_scalar`, `service_registry`, `essential_service_access`, service source/peer scope | `theme_mobilite.json`, `analytics_mobilite.R`, `publish_scalar.R::project_service_share_scalars()` and `serving_tables.R`; `publier_tables_postgres.R`; service tables/markers and comparison/route adapters in `api/main.py` | Existing app and static-layer callers are listed for contract-impact documentation only; no frontend migration or compatibility is required. | Exclude and retire these backend resources/contracts. AEDAR does not declare the same 5-service×3-mode snapshot, 20-minute building threshold, coverage cutoff or peer-gap reading; do not invent an AEDAR substitution. Record the removed API contract. Old non-AEDAR app breakage is accepted. |
+| Legacy BPE/OSM/BDNB equipment ramp/grid and access-distribution read models | `distribution_acces_batiments.R` explicitly takes the legacy BPE TYPEQU snapshot plus OSM/BDNB; `serving_tables.R`, `publish_mobility_distribution.R`, building-comparison producer; DB `building_ramp/grid`, descriptors and `mobility_density_distribution*`; `api/main.py` legacy readers | Existing app payload/read-model references document breaking-contract impact only. `CartographicBreakoutPrototype.vue` is not evidence of this lineage: it receives sharing-network and cycling evidence. | Exclude and retire the legacy BPE/OSM/BDNB backend products and API contracts. AEDAR data/map contracts remain distinct; do not relabel legacy values or invent substitutes. Existing frontend references do not block backend acceptance. |
+| Mobility typed-reading/story fields derived from legacy access snapshot (`div_loss_*`, `pct_iso_full_t`, density/decile distribution, access story/salience and `iso_*` mirrors) | `publish_typed_readings.R`, `publish_mobility_distribution.R`, `theme_mobilite.R`; DB `mobility_typed_reading`, story, clock and distribution tables; API theme-facts assembly | Existing theme/content/static-map references are downstream impact evidence; no app edits or consumer-parity gate. | Exclude the legacy-derived semantic backend read models. AEDAR address-grain diversity/loss ramps are distinct from the old building-level snapshot, thresholds, story classification and peer-gap narrative; do not conflate or reconstruct either product. Record affected API fields for later integration; old frontend breakage is accepted. |
 
-These dependencies are **not** owner questions about whether legacy BPE serving
-or Variant E remains: both are explicitly excluded. They are precise product
-decisions caused by checked legacy callers whose exact semantics have no
-evidenced equivalent. Variant E's current caller wiring is a retirement
-dependency, not a preservation requirement. AEDAR's valid data, pinned BPE
-TYPEQU nomenclature and independently approved data/map contracts remain
-separate; none implies that its old prototype UI/acquisition survives. The
-implementation must not carry old resources or UI forward just to pass parity
-tests; prototype-only tests should be removed, while independent data/map
-contract tests remain as applicable. Do not invent a replacement UI.
+These are backend scope decisions, not unresolved UI product questions. Retire
+the named legacy accessibility backend resources and document the resulting API
+breaks; no frontend removal, migration, replacement, caller parity, or product
+disposition is a prerequisite. Do not preserve obsolete backend families merely
+to freeze the old app contract. Keep valid AEDAR data, nomenclature and approved
+data/map contracts distinct. The current AEDAR prototype—including its existing
+UI and acquisition path—is untouched for later production integration; prior
+Variant E conflation does not authorize its deletion. Do not invent AEDAR
+metrics or a replacement UI.
 
 ### Resolved retained B316 dependency
 
@@ -588,33 +591,29 @@ the same workstream and PR.
    republished. Preserve the owner-retained B316 ratio with the exact source,
    version, coverage/missingness and zero semantics recorded above; do not
    substitute AEDAR.
-4. **Complete read and consumer migration:** route all retained single reads and
-   batch items through one dispatcher/snapshot executor and migrate all retained
-   consumers coherently. Preserve theme acquisition priority, independent
-   warming/cancellation, registered static opt-out and no-fallback behavior.
-   Exclude and retire the Variant E UI and its AEDAR acquisition path; migrate
-   only data/map reads independently justified by their own contracts. Remove
-   obsolete aliases/adapters only where the matrix names their consumers and
-   removal condition; no permanent compatibility façade.
-5. **Legacy retirement / product resolution:** retire excluded legacy BPE
+4. **Complete backend read-contract migration:** route retained single reads and
+   batch items through one dispatcher/snapshot executor. Preserve the approved
+   API read/snapshot bounds and document breaking endpoint/field contracts for
+   later callers. Do not edit or migrate app consumers, alter UI/acquisition, or
+   require old-frontend parity. Retain the current AEDAR prototype untouched;
+   its later integration is a separate task.
+5. **Legacy backend retirement:** retire excluded legacy BPE
    accessibility-serving API, publisher, DB/table, artifacts, fields and
-   obsolete read models only after
-   the exact consumer list has a recorded product disposition (remove or a
-   specifically evidenced authoritative contract for the same semantics; do
-   not presume the distinct AEDAR product is a replacement). Also retire the
-   Variant E prototype/acquisition path and prototype-only tests; keep the AEDAR
-   dataset, nomenclature and independently approved data/map contracts
-   separately. This retirement scope does not include the owner-retained BPE25
+   obsolete read models as part of the backend replacement; frontend
+   compatibility is not a prerequisite. Keep the AEDAR dataset, nomenclature,
+   current prototype integration, and independently approved data/map contracts
+   distinct and untouched by app edits. This retirement scope does not include the owner-retained BPE25
    B316 fuel input or `bornes_ev_par_station_service`; preserve its actual source
-   clock, provenance and missingness. Update tests to the approved product result and prove retained
-   dependencies independent. No raw-data deletion or live destructive cleanup
+   clock, provenance and missingness. Update backend publisher/API contract tests
+   and prove retained dependencies independently. No raw-data deletion or live destructive cleanup
    in this brief.
-6. **Integrated acceptance and merge review:** run the complete guarded test
+6. **Integrated backend acceptance and merge review:** run the complete guarded test
    suite and semantic parity across every retained resource, shared single vs
    batch outputs, bounded work/response, provenance, missingness, comparisons,
    independent owner versions, snapshot consistency and publication failure
-   safety. Check source-to-DB-to-reader-to-consumer coverage matrix row by row;
-   verify legacy exclusions and unresolved product decisions are closed. Run
+   safety. Check source-to-DB-to-API contract coverage row by row; record known
+   caller impact separately without requiring app migration or parity. Verify
+   backend resource coverage and legacy backend exclusions. Run
    independent Standards/Spec review of the whole integrated diff. Merge only
    after all checkpoints pass and owner approves; production remains separately
    paused/authorized, with backup/recovery and honest real-data performance
@@ -627,56 +626,52 @@ the same workstream and PR.
 | Scalar/profile/coordinate | Canonical value/unit/direction/support/status/provenance parity; zero/null/suppression distinctions; complete ordered axes; DPE exact scalar version binding; comparison facets not fabricated. |
 | Ordered/mixed clocks/named references | Correct axis order/roles and absent points; per-observation source revisions/windows; independent publication versions; named reference is non-territory and unranked. |
 | Sparse grants/membership/semantic evidence | Omission remains absence; anchors and per-row sources preserved; each retained semantic field exact-source audited; no duplicated values with divergent status/clock. |
-| AEDAR data and independent contracts | Pinned TYPEQU registry and registered-measure validation; identity/count/coverage parity and any retained fixed result dependencies preserve address-grain semantics. Independently approved data/map contracts remain under their own validation; no prototype UI/acquisition preservation requirement and no commune-average substitution. |
+| AEDAR data and independent contracts | Pinned TYPEQU registry and registered-measure validation; identity/count/coverage parity and any retained fixed result dependencies preserve address-grain semantics. Independently approved data/map contracts remain under their own validation. Leave current prototype UI/acquisition untouched; no commune-average substitution. |
 | Shared request/publication | Same item and payload for single/batch; batch uses one read-only repeatable-read snapshot; all request/item/row-work/response bounds count true work; stale dependency fails closed; no-op, rebind, retry, injected rollback and last-good proofs. |
-| Acquisition and active callers | All retained consumer inventory rows migrated; active-theme-first, cancellation/warming and static opt-out tests remain; no API static fallback. Variant E and its `aedar-proto` acquisition path are absent from target/preservation gates. UI work meets detector/accessibility/design review gates. |
-| Excluded legacy surfaces and retained B316 | No legacy profiles, shares, ramp/grid snapshot, distribution, derived Mobility semantic read model, or Variant E prototype/acquisition path appears in target discovery/schema/publisher or acceptance requirements. Every named legacy consumer is removed or mapped only to a specifically evidenced authoritative contract with the same semantics. AEDAR data/nomenclature and independent contracts remain distinct. The B316 ratio is retained with its true BPE25 provenance, coverage/missingness, and zero semantics. |
+| Caller impact and API contract | Document changed/removed backend routes, fields and request/response semantics for known callers. No app edits, consumer migration, frontend parity, acquisition-registry/static-path tests, UI tests or UI acceptance gates; old non-AEDAR app breakage is accepted. Do not remove or modify the current AEDAR prototype; document any changed backend contract for its later integration. |
+| Excluded legacy backend surfaces and retained B316 | Legacy accessibility profiles, shares, ramp/grid, distribution and derived semantic read models are absent from target discovery/schema/publisher/API. Their retirement is not gated on consumer removal or equivalent product selection. AEDAR data/nomenclature and independent contracts remain distinct. The B316 ratio retains true BPE25 provenance, coverage/missingness and zero semantics. |
 | #689 module boundaries | `main.py` becomes a small composition root; justified deep modules own resource validation/discovery, snapshot execution, publication dependency checks and constrained storage access; pass-throughs/obsolete orchestration are removed. Complete imports/deployment package inventory and semantic tests pass in the integrated change. |
 
 The implementation gate itself authorizes no work now: this PR remains
 documentation-only. No schema/API/app/R edits, database/R/SSH/production
 operations, accepted ADR, merge, issue closure or downstream implementation
 issue creation is part of this correction. Detailed execution follows owner
-acceptance of the corrected proposal and closure of the product questions below.
+owner acceptance of the corrected backend proposal. The table of frontend
+callers is impact documentation, not a product-approval or migration gate.
 
-## 6. Owner decisions required to close the design gate
+## 6. Design gate boundaries and implementation recommendations
 
-Already decided and **not reopened**: shared typed read item for single and
+Already decided and **not reopened**: backend-only pipeline/database/API scope;
+no app/UI edits, migration, deletion or acceptance gates; old non-AEDAR app
+breakage is acceptable; leave the current AEDAR prototype untouched for later
+production integration; shared typed read item for single and
 batch; one public resource/read contract; shared publication machinery; a few
-constrained storage shapes rather than a universal fact table; legacy BPE
-accessibility-serving exclusion in favour of AEDAR; Variant E prototype and
-acquisition-path exclusion; retain `bornes_ev_par_station_service` with its
+constrained storage shapes rather than a universal fact table; retire legacy BPE
+accessibility-serving backend resources while retaining valid AEDAR data as a
+separate contract; retain `bornes_ev_par_station_service` with its
 official BPE25 B316 input, distinct from retired accessibility snapshots; one
 accountable integrated implementation;
 #689 belongs inside it; production pause. No per-theme resource/workstream
-decision or already-resolved B316/Variant E/legacy-BPE scope is reopened.
+decision or already-resolved B316, AEDAR-prototype or legacy-backend scope is reopened.
 
-The following are the only owner-level tradeoffs this draft asks to resolve;
-the rest of the publication/discovery details below are engineering
-recommendations, not interview questions:
+No unresolved frontend or product disposition is a gate. The following are
+backend design recommendations for the single integrated implementation, not
+additional product interviews or separate workstreams:
 
-1. **Sparse membership shape:** accept a dedicated constrained relation shape
-   for programme membership, or prefer a declared coordinate shape only if key,
-   anchor, source-clock and absence constraints can be enforced equally strongly.
-   Engineering recommendation: retain relation grain unless proof demonstrates
-   equivalent enforcement with fewer physical shapes.
-2. **AEDAR V1 typedness:** accept the registered 312-key measure map, validated
-   by R/publisher and contract tests, to preserve source grain and avoid the
-   illustrative 312× row expansion; or require a typed-column/typed-child
-   design in the integrated target? The current database cannot enforce each
-   inner JSON value's type. No storage/latency benchmark is available.
-3. **Unmatched product dependencies:** Variant E retirement is already decided
-   and is not a question. Decide product disposition for the
-   specifically inventoried legacy service/share/story, legacy BPE profile, and
-   legacy BPE/OSM/BDNB ramp/grid/distribution consumer surfaces: remove each
-   surface, or name an already-authoritative contract that covers its exact
-   semantics. Do not infer survival from existing AEDAR prototype wiring.
-   Preserve AEDAR data/nomenclature and independently approved data/map
-   contracts without preserving their former UI path or inventing a replacement
-   UI. B316 ratio retention is already decided and is not an open question; its
-   source-metadata discrepancy is an implementation-time provenance correction,
-   not a product decision. No old accessibility semantics or invented AEDAR
-   measure may be carried forward.
+1. **Sparse membership shape:** engineering recommendation is to retain the
+   constrained relation grain unless an implementation proof shows a coordinate
+   shape enforces the same key, anchor, source-clock and absence constraints.
+2. **AEDAR V1 typedness:** engineering recommendation is the registered 312-key
+   measure map validated by publisher and contract tests, preserving source grain
+   without a 312× row expansion. Typed columns/children may be revisited only if
+   required by evidence during implementation; this is not a separate product
+   approval gate.
+3. **Frontend impact (not a decision):** old non-AEDAR app breakage is accepted.
+   Record changed legacy endpoint/field contracts; do not preserve backend
+   resources for compatibility or gate acceptance on UI changes. Leave the
+   current AEDAR prototype untouched. Its later production integration is
+   outside this initiative. B316 retention is decided; reconcile its source
+   metadata to the authoritative manifests during backend implementation.
 
 Engineering recommendations (not reopened choices): resource discovery
 projects existing producer/domain descriptors; no second registry or duplicated
@@ -687,9 +682,9 @@ resource is allowed only where retained producer semantics support it—not as a
 legacy-share workaround or because an old batch kind suggests grouping.
 
 Exact table/column names and constraints, named target encoding, individual
-typed-reading fields, public legacy-route retirement order, migration DDL and
-operational rollback remain engineering proposals after these tradeoffs and
-product dispositions are reviewed. They are not implied by accepting direction.
+typed-reading fields, backend route retirement order, migration DDL and
+operational rollback remain engineering details for the integrated design and
+review. They are not separate product decisions.
 No ADR or domain definition is changed here;
 after approval, draft edits to ADR-0035/0038/0039, ADR-0037 if publication
 wording changes, and `CONTEXT.md` can be proposed and reviewed deliberately.
