@@ -47,11 +47,11 @@ def test_single_and_one_item_batch_share_typed_reader_and_result(monkeypatch):
     repository = Repository()
     calls = []
 
-    def reader(conn, item):
+    def reader(conn, item, catalogue=None):
         calls.append(("read", conn, item.resource))
         return {"resource": item.resource, "value": 0, "status": "measured"}
 
-    def preflight(conn, item):
+    def preflight(conn, item, catalogue=None):
         calls.append(("preflight", conn, item.resource))
         return 1
 
@@ -82,11 +82,11 @@ def test_batch_preflights_every_item_before_reading_and_aborts_as_a_unit(monkeyp
     repository = Repository()
     calls = []
 
-    def reader(conn, item):
+    def reader(conn, item, catalogue=None):
         calls.append(("read", item.resource))
         return {"resource": item.resource}
 
-    def preflight(conn, item):
+    def preflight(conn, item, catalogue=None):
         calls.append(("preflight", item.resource))
         if item.resource == "structure_age":
             from fastapi import HTTPException

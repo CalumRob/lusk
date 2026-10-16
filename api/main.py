@@ -2576,7 +2576,8 @@ def discover_resources(
     return catalogue.discovery_payload()
 
 
-def _semantic_resource_preflight(conn, item):
+def _semantic_resource_preflight(conn, item, catalogue=None):
+    catalogue = catalogue or default_resource_catalogue()
     if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
         selection = ([(member.type, member.id) for member in item.intent.members]
                      if item.intent.kind == "selected_comparison" else None)
@@ -2600,20 +2601,20 @@ def _semantic_resource_preflight(conn, item):
                 raise HTTPException(422, "Selected comparison territory type does not match")
         if item.intent.kind == "fixed_comparison":
             return 1
-        resource = default_resource_catalogue().resources_by_id[item.resource]
+        resource = catalogue.resources_by_id[item.resource]
         axis_work = 1
         for _, values in resource.axis_values:
             axis_work *= max(1, len(values))
         return len(selection) * axis_work
-    requested_fields = _semantic_legacy_fields(item)
+    requested_fields = _semantic_legacy_fields(item, catalogue)
     if item.target.kind == "named_reference":
         route = _owned_series_route(conn, item.resource)
         if not route or not route[2]:
             raise HTTPException(503, "Named reference publication is unavailable")
         _owned_named_reference_snapshot(conn, route, None, None, item.resource,
             fields=requested_fields, preflight_only=True, reference_target_id=item.target.id)
-        return max(1, len(default_resource_catalogue().resources_by_id[item.resource].axis_values[0][1]))
-    resource = default_resource_catalogue().resources_by_id[item.resource]
+        return max(1, len(catalogue.resources_by_id[item.resource].axis_values[0][1]))
+    resource = catalogue.resources_by_id[item.resource]
     if "declared_profile" in resource.shapes:
         descriptor = conn.execute(
             "SELECT allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
@@ -2648,11 +2649,12 @@ def _semantic_resource_preflight(conn, item):
     return estimate.get("work_units", declared_cells)
 
 
-def _semantic_legacy_fields(item):
+def _semantic_legacy_fields(item, catalogue=None):
     """Translate the common optional-value projection to a shape reader."""
     if item.fields is None:
         return None
-    resource = default_resource_catalogue().resources_by_id[item.resource]
+    catalogue = catalogue or default_resource_catalogue()
+    resource = catalogue.resources_by_id[item.resource]
     shape = resource.shapes[0]
     if "ordered_series" in resource.shapes:
         shape = "ordered_series"
@@ -2674,7 +2676,8 @@ def _semantic_legacy_fields(item):
     return None
 
 
-def _semantic_resource_read(conn, item):
+def _semantic_resource_read(conn, item, catalogue=None):
+    catalogue = catalogue or default_resource_catalogue()
     if item.intent.kind in {"fixed_comparison", "selected_comparison"}:
         selection = ([(member.type, member.id) for member in item.intent.members]
                      if item.intent.kind == "selected_comparison" else None)
@@ -2682,7 +2685,7 @@ def _semantic_resource_read(conn, item):
             conn, item.target.type, item.target.id, item.resource, selection,
             _comparison_field_selection(item.fields))
         return {"resource": item.resource, "target": item.target.model_dump(), **data}
-    requested_fields = _semantic_legacy_fields(item)
+    requested_fields = _semantic_legacy_fields(item, catalogue)
     if item.target.kind == "named_reference":
         route = _owned_series_route(conn, item.resource)
         if not route or not route[2]:
@@ -2690,7 +2693,7 @@ def _semantic_resource_read(conn, item):
         data = _owned_named_reference_snapshot(conn, route, None, None, item.resource,
             fields=requested_fields, reference_target_id=item.target.id)
         return {"resource": item.resource, "target": item.target.model_dump(), **data}
-    resource = default_resource_catalogue().resources_by_id[item.resource]
+    resource = catalogue.resources_by_id[item.resource]
     if "declared_profile" in resource.shapes:
         descriptor = conn.execute(
             "SELECT allowed_levels FROM profile_descriptor WHERE indicator_id=%s",
@@ -2752,7 +2755,8 @@ def read_resource(
     catalogue: ResourceCatalogue = Depends(get_resource_catalogue),
 ) -> dict:
     return execute_resource_single(repository.connections, item, catalogue,
-                                   _semantic_resource_preflight, _semantic_resource_read)
+        lambda conn, resource_item: _semantic_resource_preflight(conn, resource_item, catalogue),
+        lambda conn, resource_item: _semantic_resource_read(conn, resource_item, catalogue))
 
 
 @app.post("/api/resources/read-batch")
@@ -2762,7 +2766,8 @@ def read_resource_batch(
     catalogue: ResourceCatalogue = Depends(get_resource_catalogue),
 ) -> dict:
     return execute_resource_batch(repository.connections, request, catalogue,
-                                  _semantic_resource_preflight, _semantic_resource_read)
+        lambda conn, resource_item: _semantic_resource_preflight(conn, resource_item, catalogue),
+        lambda conn, resource_item: _semantic_resource_read(conn, resource_item, catalogue))
 
 
 def read_batch(request: BatchReadRequest,
