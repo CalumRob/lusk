@@ -2599,8 +2599,10 @@ def _semantic_resource_preflight(conn, item):
     declared_cells = 1
     for _axis, values in resource.axis_values:
         declared_cells *= max(1, len(values))
-    if "ordered_series" in resource.shapes and resource.dynamic_axes:
+    route = None
+    if "ordered_series" in resource.shapes:
         route = _owned_series_route(conn, item.resource)
+    if "ordered_series" in resource.shapes and resource.dynamic_axes:
         if route:
             descriptor = conn.execute("""SELECT axis_values FROM series_dataset_descriptor
                 WHERE dataset_id=%s AND indicator_id=%s AND active_read_route""",
@@ -2610,6 +2612,8 @@ def _semantic_resource_preflight(conn, item):
                                       (item.resource,)).fetchone()
         if descriptor and descriptor[0]:
             declared_cells = max(declared_cells, len(descriptor[0]))
+    if route:
+        declared_cells *= MAX_OWNED_SERIES_PROVENANCE_PER_POINT
     return estimate.get("work_units", declared_cells)
 
 
@@ -2623,8 +2627,9 @@ def _semantic_legacy_fields(item):
         shape = "ordered_series"
     selected = set(item.fields)
     if shape == "scalar":
-        return [field for field in selected
-                if field in {"value", "support_count", "denominator_count", "status"}] or None
+        projected = [field for field in selected
+                     if field in {"value", "support_count", "denominator_count", "status"}]
+        return projected or ["status"]
     if shape == "declared_profile":
         return ["value"] if "value" in selected else ["status"]
     if shape == "ordered_series":
@@ -2632,7 +2637,9 @@ def _semantic_legacy_fields(item):
     if shape == "period_detail":
         return ["value"] if "value" in selected else ["status"]
     if shape == "anchored_membership":
-        return [field for field in selected if field in {"detail", "label", "rider", "anchor_count", "availability"}] or None
+        projected = [field for field in selected
+                     if field in {"detail", "label", "rider", "anchor_count", "availability"}]
+        return projected or ["availability"]
     return None
 
 
@@ -3908,7 +3915,7 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
             profile_selection = normalize_field_selection(fields, {"value", "status"})
             profiles, version = focal_profiles(
                 conn, territory_type, territory_id, indicator_id=indicator_id,
-                include_cells=False, fields=fields)
+                include_cells=False, fields=fields, include_all_descriptors=True)
             if not profiles:
                 raise HTTPException(422, "Profile is not declared for this territory level")
             return {"content_version": version, "supported_fields": {"value", "status"}}

@@ -3,6 +3,7 @@ from pydantic import ValidationError
 
 from api.resource_catalogue import default_resource_catalogue, validate_resource_item
 from api.resource_requests import ResourceBatchRequest, ResourceReadItem
+from api.main import _semantic_legacy_fields
 
 
 def test_single_and_batch_use_the_same_typed_resource_item_vocabulary():
@@ -91,3 +92,25 @@ def test_dynamic_series_coordinates_defer_value_membership_to_published_descript
         "intent": {"kind": "facts"},
     })
     assert validate_resource_item(item, catalogue) == resource
+
+
+def test_mandatory_field_projection_does_not_accidentally_restore_optional_values():
+    for resource_id, target in (
+        ("densite", {"kind": "territory", "type": "commune", "id": "22001"}),
+        ("structure_age", {"kind": "territory", "type": "commune", "id": "22001"}),
+    ):
+        item = ResourceReadItem.model_validate({
+            "resource": resource_id,
+            "target": target,
+            "fields": ["sources"],
+            "intent": {"kind": "facts"},
+        })
+        assert _semantic_legacy_fields(item) == ["status"]
+
+    membership = ResourceReadItem.model_validate({
+        "resource": "couverture_programmes",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["sources"],
+        "intent": {"kind": "facts"},
+    })
+    assert _semantic_legacy_fields(membership) == ["availability"]

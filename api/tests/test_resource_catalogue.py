@@ -9,6 +9,26 @@ from api import main
 
 
 METADATA = Path(__file__).parents[2] / "pipeline/inst/extdata/theme-metadata"
+SNAPSHOT = Path(__file__).parents[2] / "docs/design/serving-resource-catalogue-snapshot.md"
+
+
+def _snapshot_indicator_ids():
+    retained = set()
+    excluded = set()
+    for line in SNAPSHOT.read_text(encoding="utf-8").splitlines():
+        if not line.startswith("| "):
+            continue
+        columns = [part.strip() for part in line.strip().strip("|").split("|")]
+        if len(columns) < 6 or columns[0] not in {
+            "demographie", "economie", "habitat", "milieux", "mobilite", "programmes",
+        }:
+            continue
+        indicator_id, classification, target = columns[1], columns[4], columns[5]
+        if classification.startswith("EXCLUDED -"):
+            excluded.add(indicator_id)
+        elif target.startswith("indicator:"):
+            retained.add(indicator_id)
+    return retained, excluded
 
 
 def test_discovery_accounts_for_every_theme_indicator_and_excludes_legacy_source():
@@ -30,6 +50,9 @@ def test_discovery_accounts_for_every_theme_indicator_and_excludes_legacy_source
         declaration.indicator_id for declaration in catalogue.declarations
         if declaration.disposition == "excluded_legacy_accessibility"
     }
+    expected_retained, expected_excluded = _snapshot_indicator_ids()
+    assert {resource.indicator_id for resource in catalogue.resources} == expected_retained
+    assert {declaration.indicator_id for declaration in catalogue.excluded} == expected_excluded
 
 
 def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():

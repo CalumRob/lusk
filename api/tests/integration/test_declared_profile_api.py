@@ -354,11 +354,11 @@ def test_declared_profile_postgres_api_contract(installation):
             conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('scalar_observation','scalar-fixture-v1',4,'ref-v1')")
             if installation == 'fresh':
                 conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
-                    reference_content_version,group_row_count,territory_row_count)
-                    VALUES (true,'scalar-comparison-v1','scalar-fixture-v1','ref-v1',1,2)""")
+                    reference_content_version,group_row_count,territory_row_count,lineage_row_count)
+                    VALUES (true,'scalar-comparison-v1','scalar-fixture-v1','ref-v1',1,2,0)""")
                 conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,
-                    indicator_id,statistic,median,member_count,eligible_count,missing_count)
-                    VALUES ('density_class','D1','commune','habitat_fixture','median',.4,2,2,0)""")
+                    indicator_id,statistic,median,member_count,eligible_count,missing_count,lineage_source_count)
+                    VALUES ('density_class','D1','commune','habitat_fixture','median',.4,2,2,0,0)""")
                 conn.execute("""INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,
                     indicator_id,territory_id,value,status,rank,tie_count,rank_size) VALUES
                     ('density_class','D1','commune','habitat_fixture',%s,.2,'measured',2,1,2),
@@ -435,11 +435,11 @@ def test_declared_profile_postgres_api_contract(installation):
             if installation == 'fresh':
                 conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,
                     indicator_id,detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,
-                    profile_content_version,reference_content_version) VALUES
-                    ('density_class','D1','commune','structure_age','15-29','F','median',.4,2,2,0,'profile-v1','ref-v1'),
-                    ('density_class','D1','commune','one_axis_fixture','length','','median',.9,2,2,0,'profile-v1','ref-v1'),
-                    ('epci','E1','commune','structure_age','15-29','F','median',.4,3,2,1,'profile-v1','ref-v1'),
-                    ('epci','E1','commune','one_axis_fixture','length','','median',.9,3,2,1,'profile-v1','ref-v1')""")
+                    lineage_source_count,profile_content_version,reference_content_version) VALUES
+                    ('density_class','D1','commune','structure_age','15-29','F','median',.4,2,2,0,0,'profile-v1','ref-v1'),
+                    ('density_class','D1','commune','one_axis_fixture','length','','median',.9,2,2,0,0,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','structure_age','15-29','F','median',.4,3,2,1,0,'profile-v1','ref-v1'),
+                    ('epci','E1','commune','one_axis_fixture','length','','median',.9,3,2,1,0,'profile-v1','ref-v1')""")
                 conn.execute("""INSERT INTO profile_comparison_territory(comparison_context,group_id,territory_type,
                     indicator_id,detail_key,sex_key,territory_id,value,status,rank,tie_count,rank_size,
                     profile_content_version,reference_content_version) VALUES
@@ -477,6 +477,24 @@ def test_declared_profile_postgres_api_contract(installation):
             response = client.get(base + "?comparison_scope=departement&comparison_scope_id=29")
             assert response.status_code == 200, response.text
             body = response.json()
+            semantic_item = {
+                "resource": "structure_age",
+                "target": {"kind": "territory", "type": "commune", "id": territory},
+                "fields": ["value"],
+                "intent": {"kind": "facts"},
+            }
+            semantic_single = client.post("/api/resources/read", json=semantic_item)
+            semantic_batch = client.post("/api/resources/read-batch", json={"items": [
+                {"id": "age", **semantic_item},
+            ]})
+            assert semantic_single.status_code == semantic_batch.status_code == 200, (semantic_single.text, semantic_batch.text)
+            semantic_data = semantic_batch.json()["results"][0]["data"]
+            assert semantic_data == semantic_single.json()
+            assert semantic_data["resource"] == "structure_age"
+            assert semantic_data["target"] == semantic_item["target"]
+            assert len(semantic_data["observations"]) == 4
+            assert all("value" in observation and "status" in observation
+                       for observation in semantic_data["observations"])
             assert [(c["detail"], c["sex"]) for c in body["cells"]] == [
                 ("15-29", "F"), ("15-29", "M"), ("0-14", "F"), ("0-14", "M")]
             assert body["cells"][0]["value"] == pytest.approx(.2)
