@@ -1,5 +1,6 @@
--- Retire the legacy BPE/building-access serving projection. Canonical sources
--- and retained scalar/profile/series/collection/AEDAR storage are untouched.
+-- Retire legacy BPE/building-access and snapshot-derived Mobility serving
+-- projections. Canonical sources and retained scalar/profile/series/collection/
+-- AEDAR storage are untouched.
 -- The statements intentionally use RESTRICT/default dependency behavior: an
 -- unexpected view, FK, or publisher trigger aborts this migration for review.
 BEGIN;
@@ -10,7 +11,7 @@ DROP TRIGGER IF EXISTS building_publication_descriptor ON table_publication;
 
 DELETE FROM table_publication WHERE table_name IN (
   'service_registry', 'essential_service_access', 'building_ramp', 'building_grid',
-  'bpe_profile_evidence', 'mobility_density_distribution'
+  'bpe_profile_evidence', 'mobility_density_distribution', 'mobility_typed_reading'
 );
 
 ALTER TABLE table_publication
@@ -22,7 +23,7 @@ ALTER TABLE table_publication ADD CONSTRAINT table_publication_table_name_check
     'territory_reference', 'scalar_observation', 'declared_profile', 'ordered_series',
     'demographic_typed_reading', 'selected_reading', 'economy_typed_reading',
     'economy_activity_evidence', 'milieux_typed_reading', 'milieux_reading_absence',
-    'mobility_typed_reading', 'aedar_territorial_aggregate'
+    'aedar_territorial_aggregate'
   ));
 
 ALTER TABLE table_publication ADD CONSTRAINT shared_fact_publication_requires_reference
@@ -30,7 +31,7 @@ ALTER TABLE table_publication ADD CONSTRAINT shared_fact_publication_requires_re
     'scalar_observation', 'declared_profile', 'ordered_series',
     'demographic_typed_reading', 'selected_reading', 'economy_typed_reading',
     'economy_activity_evidence', 'milieux_typed_reading', 'milieux_reading_absence',
-    'mobility_typed_reading', 'aedar_territorial_aggregate'
+    'aedar_territorial_aggregate'
   ) OR reference_content_version IS NOT NULL);
 
 -- Explicit FK order; no CASCADE. A dependent object not inventoried here must
@@ -51,6 +52,11 @@ DROP TABLE IF EXISTS mobility_density_distribution_point;
 DROP TABLE IF EXISTS mobility_density_distribution_range;
 DROP TABLE IF EXISTS mobility_density_distribution_descriptor;
 DROP TABLE IF EXISTS access_publication_metadata;
+
+DROP TABLE IF EXISTS mobility_typed_reading;
+DROP TABLE IF EXISTS mobility_reading_story;
+DROP TABLE IF EXISTS mobility_reading_clock;
+DROP TABLE IF EXISTS mobility_reading_descriptor;
 
 DROP FUNCTION IF EXISTS assert_building_fact_source();
 DROP FUNCTION IF EXISTS assert_building_dataset_complete(integer, integer);

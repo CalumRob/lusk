@@ -4,39 +4,6 @@
 # owner, the one content-version rule per reading, the theme materializer, and
 # every fail-closed reader guard.
 
-fixture_mobility_reading_metadata <- function(reference_date = "2026-02-28", version = "v1") {
-  list(sources = list(tot_loss_t = "mobilite_snapshot", tot_loss_b = "mobilite_snapshot"),
-    story_keys = c("vingt-minutes-sans-voiture", "ce-que-le-velo-preserve"),
-    selected_reading_contract = list(unit = "types de services", direction = "low",
-      allowed_levels = c("commune", "epci", "departement", "region"), missing_status = "unavailable",
-      classification_values = c("saillant", "notable", "non-saillant"),
-      field_keys = c("groupe", "story_key", "salience_reason", "classification_saillance",
-        "div_loss_t", "div_loss_b", "status")),
-    source_records = list(mobilite_snapshot = list(dataset = "Mobility snapshot dataset",
-      publisher = "Distinct publishing organisation",
-      vintages = list(list(id = "mobilite_snapshot", version = version,
-        dateReference = reference_date, datePublication = "2026-08-06")),
-      clocks = list(list(name = "BPE", frequency = "annual", reference = "2024", trigger = "new release"),
-        list(name = "Buildings", frequency = "campaign", reference = "2025-07", trigger = "new campaign")))))
-}
-
-fixture_mobility_reading_fixture <- function() {
-  # The selected rows are the first and the third, so the projection keeps the
-  # non-sequential row names of its source selection.
-  histories <- data.frame(territoire = c("35238", "35239", "35047"), type = "commune",
-    theme = c("mobilite", "autre", "mobilite"), groupe = "acces-aux-services",
-    story_key = c("vingt-minutes-sans-voiture", "ignored", "ce-que-le-velo-preserve"),
-    salience_reason = c("defaut", "ignored", "delta-velo-saillant"),
-    div_loss_t = c(8, 99, 12), div_loss_b = c(5, 99, 2),
-    classification_saillance = c("notable", "ignored", "saillant"), stringsAsFactors = FALSE)
-  vintages <- data.frame(id = "mobilite_snapshot", source = MOBILITE_SNAPSHOT_SOURCE, version = "v1",
-    date_reference = "2026-02-28", date_publication = "2026-08-06", stringsAsFactors = FALSE)
-  metadata <- fixture_mobility_reading_metadata()
-  list(histories = histories, vintages = vintages, metadata = metadata,
-    reading = project_mobility_reading(histories, vintages, metadata),
-    projector_version = mobility_reading_content_version(histories, vintages, metadata))
-}
-
 fixture_economy_reading_fixture <- function() {
   histories <- data.frame(territoire = "35238", type = "commune", theme = "economie",
     groupe = "activites", story_key = "top-activites", salience_reason = "declared",
@@ -128,7 +95,6 @@ fixture_milieux_reading_fixture <- function() {
     projection = projection, reading = assemble_typed_reading(projection, "milieux"))
 }
 
-# Every reading owner, projected from its own producer contract.
 fixture_typed_readings <- function() {
   fixtures <- list(economie = fixture_economy_reading_fixture(),
     demographie = fixture_demographic_reading_fixture(),

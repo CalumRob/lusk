@@ -54,29 +54,6 @@ decode_typed_reading_json <- function(value, field) {
   value
 }
 
-# The mobility serving descriptor travels as a typed JSON sidecar plus two typed
-# tables; descriptor_version is recomputed on assembly from the reassembled
-# contract, so a descriptor that no longer matches its own stories/clocks cannot
-# be read back as valid.
-mobility_reading_descriptor_field <- function(contract)
-  contract[!names(contract) %in% c("stories","clocks")]
-
-assemble_mobility_reading_descriptor <- function(projection) {
-  descriptor <- projection$descriptor
-  if (!is.list(descriptor) || !is.character(descriptor$descriptor_version) ||
-      length(descriptor$descriptor_version)!=1L || is.na(descriptor$descriptor_version) ||
-      !nzchar(descriptor$descriptor_version))
-    stop("Typed Mobility reading projection carries no serving descriptor version",call.=FALSE)
-  declared_version <- descriptor$descriptor_version
-  descriptor$descriptor_version <- NULL
-  descriptor$stories <- projection$stories
-  descriptor$clocks <- projection$clocks
-  if (!identical(declared_version,scalar_content_version(descriptor)))
-    stop("Typed Mobility reading descriptor version does not match its serving contract",call.=FALSE)
-  descriptor$descriptor_version <- declared_version
-  descriptor
-}
-
 # The economy reading's source clock is the single vintage record the producer
 # metadata declares for its activity source, the same expression the previous
 # economy_reading_content_version() hashed. The producer-metadata term that
@@ -97,12 +74,6 @@ typed_reading_projection <- function(reading, owner, metadata, vintages) {
   facts <- reading
   attributes(facts) <- attributes(reading)[c("names","row.names","class")]
   switch(owner,
-    mobilite={
-      contract <- attr(reading,"serving_contract")
-      if (!is.list(contract)) stop("Typed Mobility reading has no serving contract",call.=FALSE)
-      list(facts=facts,stories=contract$stories,clocks=contract$clocks,
-        descriptor=mobility_reading_descriptor_field(contract))
-    },
     economie=list(facts=facts,source=economy_reading_source(metadata,vintages)),
     demographie=list(facts=facts,descriptor=list(rate_unit=attr(reading,"rate_unit"))),
     habitat=list(facts=facts,vintage=attr(reading,"vintage")),
@@ -118,7 +89,6 @@ assemble_typed_reading <- function(projection, owner) {
   validate_typed_reading_projection(projection,owner)
   facts <- projection$facts
   switch(owner,
-    mobilite={attr(facts,"serving_contract") <- assemble_mobility_reading_descriptor(projection); facts},
     economie=facts,
     demographie={attr(facts,"rate_unit") <- projection$descriptor$rate_unit; facts},
     habitat={attr(facts,"vintage") <- projection$vintage; facts},
@@ -131,15 +101,12 @@ assemble_typed_reading <- function(projection, owner) {
 }
 
 # One content-version rule per reading, and it is the serving identity of the
-# persisted projection: mobility reuses the projector's own rule (facts plus the
-# reassembled serving descriptor), the other readings hash exactly the pieces
+# persisted projection: each owner hashes exactly the pieces
 # they persist. The Milieux database marker still hashes the source-absence
 # declarations it derives at publication time; those are a database-time
 # projection of the CONSOENAF snapshot, not part of this serving grain.
 typed_reading_content_version <- function(projection, owner) {
   switch(owner,
-    mobilite=mobility_reading_projection_content_version(projection$facts,
-      assemble_mobility_reading_descriptor(projection)),
     economie=scalar_content_version(list(facts=projection$facts,source=projection$source)),
     demographie=scalar_content_version(list(facts=projection$facts,descriptor=projection$descriptor)),
     habitat=scalar_content_version(list(facts=projection$facts,vintage=projection$vintage)),
@@ -160,26 +127,6 @@ validate_typed_reading_projection <- function(projection, owner) {
       anyNA(facts[c(identity,declared)]) || anyDuplicated(facts[identity]))
     stop("Typed reading facts are not a valid selected reading for ",owner,call.=FALSE)
   switch(owner,
-    mobilite={
-      contract_rows <- assemble_mobility_reading_descriptor(projection)
-      stories <- projection$stories; clocks <- projection$clocks
-      if (!is.data.frame(stories) || !nrow(stories) || anyNA(stories) ||
-          !all(c("story_key","groupe","salience_reason","ordinal") %in% names(stories)) ||
-          anyDuplicated(stories$story_key) || anyDuplicated(stories$ordinal) ||
-          !is.data.frame(clocks) || !nrow(clocks) || anyNA(clocks) ||
-          !all(c("ordinal","clock_name","frequency","reference","trigger") %in% names(clocks)) ||
-          anyDuplicated(clocks$ordinal))
-        stop("Typed Mobility reading story or source-window clock table is invalid",call.=FALSE)
-      if (!identical(as.integer(contract_rows$story_count),nrow(stories)) ||
-          !identical(as.integer(contract_rows$clock_count),nrow(clocks)) ||
-          any(facts$source_id!=contract_rows$source_id) ||
-          any(facts$vintage_id!=contract_rows$vintage_id) ||
-          any(!facts$territory_type %in% contract_rows$allowed_levels) ||
-          any(!facts$story_key %in% stories$story_key) ||
-          any(!is.na(facts$classification_saillance) &
-            !facts$classification_saillance %in% contract_rows$classification_values))
-        stop("Typed Mobility reading projection disagrees with its serving contract",call.=FALSE)
-    },
     economie={
       source <- projection$source
       if (!is.data.frame(source) || nrow(source)!=1L ||
