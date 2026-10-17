@@ -100,6 +100,73 @@ tryCatch({
   stopifnot(published$reading$row_count==nrow(expected),
     published$reading$changed,
     DBI::dbGetQuery(con,"SELECT count(*) FROM milieux_reading_absence")[[1L]][[1L]]==nrow(absences))
+  expected_facts <- expected[c("territory_id","territory_type","groupe","story_key","salience_reason",
+    "periode_pop","periode_artif","delta_population","taux_variation_population","artif_m2_par_habitant",
+    "artif_m3_par_habitant","trajectoire_artif_par_habitant","classification","status","source_id","vintage_id")]
+  actual_facts <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,story_key,salience_reason,
+    periode_pop,periode_artif,delta_population,taux_variation_population,artif_m2_par_habitant,
+    artif_m3_par_habitant,trajectoire_artif_par_habitant,classification,status,source_id,vintage_id
+    FROM milieux_typed_reading ORDER BY territory_type,territory_id,groupe")
+  expected_facts <- expected_facts[order(expected_facts$territory_type,expected_facts$territory_id,
+    expected_facts$groupe),,drop=FALSE]
+  stopifnot(isTRUE(all.equal(actual_facts,expected_facts,check.attributes=FALSE,tolerance=1e-10)))
+  expected_sources <- bindings[c("territory_id","territory_type","groupe","field_key","source_id","vintage_id",
+    "source_name","source_version","reference_date","publication_date","observation_period","dataset_id",
+    "dataset_content_version","state_role","axis_value","provenance_revision_id","population_revision_id")]
+  actual_sources <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,field_key,source_id,vintage_id,
+    source_name,source_version,reference_date,publication_date,observation_period,dataset_id,
+    dataset_content_version,state_role,axis_value,provenance_revision_id,population_revision_id
+    FROM milieux_reading_source ORDER BY territory_type,territory_id,groupe,field_key")
+  expected_sources <- expected_sources[order(expected_sources$territory_type,expected_sources$territory_id,
+    expected_sources$groupe,expected_sources$field_key),,drop=FALSE]
+  stopifnot(isTRUE(all.equal(actual_sources,expected_sources,check.attributes=FALSE,tolerance=1e-10)))
+  expected_absences <- absences[c("territory_id","territory_type","reason","source_id","vintage_id","source_snapshot_sha256")]
+  actual_absences <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,reason,source_id,vintage_id,
+    source_snapshot_sha256 FROM milieux_reading_absence ORDER BY territory_type,territory_id")
+  expected_absences <- expected_absences[order(expected_absences$territory_type,expected_absences$territory_id),,drop=FALSE]
+  stopifnot(isTRUE(all.equal(actual_absences,expected_absences,check.attributes=FALSE)))
+
+  # A second registered publish must be a true no-op for both the owned-series
+  # dependency and the reading/evidence family.
+  before_markers <- DBI::dbGetQuery(con,"SELECT table_name,content_version,row_count,reference_content_version,published_at
+    FROM table_publication WHERE table_name IN ('milieux_typed_reading','milieux_reading_absence') ORDER BY table_name")
+  again <- publish_canonical_milieux_reading(con,canonical_dir,source_path)
+  after_markers <- DBI::dbGetQuery(con,"SELECT table_name,content_version,row_count,reference_content_version,published_at
+    FROM table_publication WHERE table_name IN ('milieux_typed_reading','milieux_reading_absence') ORDER BY table_name")
+  stopifnot(!again$reading$changed,
+    isTRUE(all.equal(before_markers,after_markers,check.attributes=FALSE)))
+
+  # Force the registered publisher down its replacement transaction and inject
+  # a source-row failure. PostgreSQL must roll back the preceding fact delete;
+  # restore only the deliberately stale marker after proving table preservation.
+  DBI::dbExecute(con,"CREATE FUNCTION reject_milieux_reading_source() RETURNS trigger LANGUAGE plpgsql AS $$
+    BEGIN RAISE EXCEPTION 'injected Milieux source failure'; END $$")
+  DBI::dbExecute(con,"CREATE TRIGGER reject_milieux_reading_source BEFORE INSERT ON milieux_reading_source
+    FOR EACH ROW EXECUTE FUNCTION reject_milieux_reading_source()")
+  DBI::dbExecute(con,"UPDATE table_publication SET content_version='retry-required'
+    WHERE table_name='milieux_typed_reading'")
+  failed <- try(publish_canonical_milieux_reading(con,canonical_dir,source_path),silent=TRUE)
+  DBI::dbExecute(con,"DROP TRIGGER reject_milieux_reading_source ON milieux_reading_source")
+  DBI::dbExecute(con,"DROP FUNCTION reject_milieux_reading_source()")
+  rollback_facts <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,story_key,salience_reason,
+    periode_pop,periode_artif,delta_population,taux_variation_population,artif_m2_par_habitant,
+    artif_m3_par_habitant,trajectoire_artif_par_habitant,classification,status,source_id,vintage_id
+    FROM milieux_typed_reading ORDER BY territory_type,territory_id,groupe")
+  rollback_sources <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,groupe,field_key,source_id,vintage_id,
+    source_name,source_version,reference_date,publication_date,observation_period,dataset_id,
+    dataset_content_version,state_role,axis_value,provenance_revision_id,population_revision_id
+    FROM milieux_reading_source ORDER BY territory_type,territory_id,groupe,field_key")
+  rollback_absences <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type,reason,source_id,vintage_id,
+    source_snapshot_sha256 FROM milieux_reading_absence ORDER BY territory_type,territory_id")
+  rollback_marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at
+    FROM table_publication WHERE table_name='milieux_typed_reading'")
+  stopifnot(inherits(failed,"try-error"),
+    isTRUE(all.equal(actual_facts,rollback_facts,check.attributes=FALSE,tolerance=1e-10)),
+    isTRUE(all.equal(actual_sources,rollback_sources,check.attributes=FALSE,tolerance=1e-10)),
+    isTRUE(all.equal(actual_absences,rollback_absences,check.attributes=FALSE)),
+    rollback_marker$content_version[[1L]]=="retry-required")
+  DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_name='milieux_typed_reading'",
+    params=list(before_markers$content_version[before_markers$table_name=="milieux_typed_reading"]))
   DBI::dbExecute(con,paste0("GRANT USAGE ON SCHEMA ",DBI::dbQuoteIdentifier(con,schema),
     " TO ",DBI::dbQuoteIdentifier(con,read_user)))
   DBI::dbExecute(con,paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ",DBI::dbQuoteIdentifier(con,schema),
@@ -113,7 +180,7 @@ tryCatch({
   test <- normalizePath("../api/tests/integration/test_milieux_cloud_http.py",winslash="/",mustWork=TRUE)
   status <- system2(Sys.which("python"),c("-m","pytest","-q",shQuote(test,type="cmd")),stdout="",stderr="")
   if(!identical(status,0L)) stop("Registered Milieux publisher-to-semantic-HTTP proof failed",call.=FALSE)
-  cat("Canonical Milieux reading:",nrow(expected)," facts; owned-series/R reading publishers, canonical CONSOENAF absences, source-binding and fail-closed semantic HTTP: PASS\n")
+  cat("Canonical Milieux reading:",nrow(expected)," facts; exact fact/source/absence DB parity, registered publisher no-op and injected rollback, owned-series/R publishers, semantic HTTP and fail-closed absence: PASS\n")
 },finally={
   if(created && identical(Sys.getenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP"),"1"))
     cleanup_serving_smoke_schema(con,schema,"reading")
