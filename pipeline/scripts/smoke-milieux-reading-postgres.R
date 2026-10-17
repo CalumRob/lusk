@@ -143,6 +143,12 @@ tryCatch({
     BEGIN RAISE EXCEPTION 'injected Milieux source failure'; END $$")
   DBI::dbExecute(con,"CREATE TRIGGER reject_milieux_reading_source BEFORE INSERT ON milieux_reading_source
     FOR EACH ROW EXECUTE FUNCTION reject_milieux_reading_source()")
+  series_markers_before_failure <- DBI::dbGetQuery(con,"SELECT dataset_id,content_version,reference_content_version,row_count,published_at
+    FROM series_dataset_publication ORDER BY dataset_id")
+  series_descriptors_before_failure <- DBI::dbGetQuery(con,"SELECT dataset_id,indicator_id,descriptor_version,active_read_route
+    FROM series_dataset_descriptor ORDER BY dataset_id,indicator_id")
+  series_counts_before_failure <- DBI::dbGetQuery(con,"SELECT dataset_id,indicator_id,count(*) AS row_count
+    FROM series_dataset_observation GROUP BY dataset_id,indicator_id ORDER BY dataset_id,indicator_id")
   DBI::dbExecute(con,"UPDATE table_publication SET content_version='retry-required'
     WHERE table_name='milieux_typed_reading'")
   failed <- try(publish_canonical_milieux_reading(con,canonical_dir,source_path),silent=TRUE)
@@ -160,10 +166,19 @@ tryCatch({
     source_snapshot_sha256 FROM milieux_reading_absence ORDER BY territory_type,territory_id")
   rollback_marker <- DBI::dbGetQuery(con,"SELECT content_version,row_count,reference_content_version,published_at
     FROM table_publication WHERE table_name='milieux_typed_reading'")
+  series_markers_after_failure <- DBI::dbGetQuery(con,"SELECT dataset_id,content_version,reference_content_version,row_count,published_at
+    FROM series_dataset_publication ORDER BY dataset_id")
+  series_descriptors_after_failure <- DBI::dbGetQuery(con,"SELECT dataset_id,indicator_id,descriptor_version,active_read_route
+    FROM series_dataset_descriptor ORDER BY dataset_id,indicator_id")
+  series_counts_after_failure <- DBI::dbGetQuery(con,"SELECT dataset_id,indicator_id,count(*) AS row_count
+    FROM series_dataset_observation GROUP BY dataset_id,indicator_id ORDER BY dataset_id,indicator_id")
   stopifnot(inherits(failed,"try-error"),
     isTRUE(all.equal(actual_facts,rollback_facts,check.attributes=FALSE,tolerance=1e-10)),
     isTRUE(all.equal(actual_sources,rollback_sources,check.attributes=FALSE,tolerance=1e-10)),
     isTRUE(all.equal(actual_absences,rollback_absences,check.attributes=FALSE)),
+    isTRUE(all.equal(series_markers_before_failure,series_markers_after_failure,check.attributes=FALSE)),
+    isTRUE(all.equal(series_descriptors_before_failure,series_descriptors_after_failure,check.attributes=FALSE)),
+    isTRUE(all.equal(series_counts_before_failure,series_counts_after_failure,check.attributes=FALSE)),
     rollback_marker$content_version[[1L]]=="retry-required")
   DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_name='milieux_typed_reading'",
     params=list(before_markers$content_version[before_markers$table_name=="milieux_typed_reading"]))
