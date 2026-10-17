@@ -196,4 +196,4 @@ tryCatch({
   })
   if(!identical(count_status,0L)) stop("Incorrect selected-reading marker count did not fail closed",call.=FALSE)
   cat("Canonical Habitat typed readings:",nrow(actual)," rows; registered R artifact/publisher, producer-record semantic HTTP parity, stale publication/count fail-closed: PASS\n")
-},finally={if(created) cleanup_serving_smoke_schema(con,schema,"reading");DBI::dbDisconnect(con);unlink(fixture_dir,recursive=TRUE)})
+},finally={if(created && identical(Sys.getenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP"),"1")) cleanup_serving_smoke_schema(con,schema,"reading");DBI::dbDisconnect(con);unlink(fixture_dir,recursive=TRUE)})

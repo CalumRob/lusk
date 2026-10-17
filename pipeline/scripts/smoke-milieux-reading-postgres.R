@@ -115,7 +115,8 @@ tryCatch({
   if(!identical(status,0L)) stop("Registered Milieux publisher-to-semantic-HTTP proof failed",call.=FALSE)
   cat("Canonical Milieux reading:",nrow(expected)," facts; owned-series/R reading publishers, canonical CONSOENAF absences, source-binding and fail-closed semantic HTTP: PASS\n")
 },finally={
-  if(created) cleanup_serving_smoke_schema(con,schema,"reading")
+  if(created && identical(Sys.getenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP"),"1"))
+    cleanup_serving_smoke_schema(con,schema,"reading")
   DBI::dbDisconnect(con)
   unlink(fixture_dir,recursive=TRUE)
 })

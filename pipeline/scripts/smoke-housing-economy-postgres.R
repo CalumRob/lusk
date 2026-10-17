@@ -94,7 +94,8 @@ tryCatch({
   if(!identical(status,0L)) stop("Registered Economy publisher-to-semantic-HTTP proof failed",call.=FALSE)
   cat("Retained Economy scalar descriptors/facts and registered selected reading/activity evidence; semantic HTTP parity, no-op and rollback: PASS\n")
 },finally={
-  if(created) cleanup_serving_smoke_schema(con,schema,"profile")
+  if(created && identical(Sys.getenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP"),"1"))
+    cleanup_serving_smoke_schema(con,schema,"profile")
   DBI::dbDisconnect(con)
   unlink(fixture_dir,recursive=TRUE)
 })
