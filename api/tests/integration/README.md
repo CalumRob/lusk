@@ -93,24 +93,26 @@ lusk_it_contract` and the expected test roles. Afterward, unset the
 leaves its schemas for inspection by default; use its cleanup flag only when
 you have reviewed its cleanup behavior and the test-only target.
 
-The R publisher-to-PostgreSQL smoke is a separate opt-in path; it does not use
-production configuration, product data, `data/raw`, or `data/processed`. The
-operator must provision a permanent **test-only database on the Pi server**
-whose name begins `lusk_it_`, plus a dedicated login role with `CONNECT` and
-`CREATE` on that database only. Do not point it at `lusk`; the script refuses
-names outside the `lusk_it_*` pattern and creates its own random schema. It
-executes fresh `api/schema.sql` in that schema, publishes the tiny canonical
-fixture through `scalar_postgres_adapter`, and drops only that schema (without
-`CASCADE`) when explicit cleanup is enabled. `public` and other schemas are
-never changed. Do not grant the test role access to serving objects or reuse
-serving credentials. Rotate any credentials previously shared for disposable
-testing before provisioning this permanent target.
+The R publisher-to-PostgreSQL smokes are a separate opt-in path. The operator
+must provision a permanent **test-only database on the Pi server** whose name
+begins `lusk_it_`, plus dedicated publisher and read roles restricted to that
+database. Do not point them at `lusk`; each script verifies the database and
+role, creates a random schema, runs fresh `api/schema.sql`, grants only that
+schema to the read role, and cleans up only its own schema when
+`LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`. `public` and other schemas are never
+changed. Do not reuse serving credentials. The Habitat and Economy proofs read
+canonical producer artifacts from `LUSK_TEST_CANONICAL_DATA_DIR` but copy their
+required inputs to a private temporary fixture before any materializer writes.
+The Milieux proof similarly copies its selected inputs, reads the canonical
+CONSOENAF source and processed OCS window read-only, and writes only in its
+temporary fixture. None copies `data/raw` or runs a pipeline build.
 
 Run from `pipeline/` on the trusted workstation after the database and role are
 ready. Store credentials in a private libpq passfile (not the repository or
 shell history) and set `PGPASSFILE` to its path; use a separate test role from
 the serving publisher. The role name is the only credential passed in process
-environment:
+environment. Run each focused command from `pipeline/`; the last three calls
+exercise registered selected-reading publishers through semantic HTTP:
 
 ```powershell
 $env:LUSK_SCALAR_TEST_HOST = "192.168.1.120"
@@ -121,6 +123,30 @@ $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
 $env:LUSK_SCALAR_TEST_CLEANUP = "1"
 Rscript scripts/smoke-scalar-postgres.R
 ```
+
+For the retained Habitat, Economy, and Milieux publisher-to-HTTP proofs, set
+the shared test-only connection variables from the guarded configuration above
+plus `LUSK_PROFILE_TEST_HOST`, `LUSK_PROFILE_TEST_PORT`,
+`LUSK_PROFILE_TEST_DATABASE`, `LUSK_PROFILE_TEST_USER`, and
+`LUSK_TEST_READ_USER`. Set `LUSK_TEST_CANONICAL_DATA_DIR` to the read-only
+canonical artifact directory. Milieux additionally requires
+`LUSK_MILIEUX_CONSO_SOURCE` and `LUSK_MILIEUX_PROCESSED_WINDOW` pointing to the
+existing source snapshot and processed OCS window; those paths are inputs only.
+Use `PGPASSFILE` for the private passfile and process-scoped libpq timeouts.
+The scripts create isolated writable fixture directories and random guarded
+schemas; do not pass a canonical source directory as a publisher output.
+
+```powershell
+$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
+Rscript scripts/smoke-habitat-reading-postgres.R
+Rscript scripts/smoke-housing-economy-postgres.R
+Rscript scripts/smoke-milieux-reading-postgres.R
+```
+
+These proofs compare semantic HTTP payloads to canonical producer records,
+assert owner/source bindings and sparse Milieux absence evidence, and exercise
+no-op, rollback, and fail-closed publication behavior. They do not call retired
+theme/comparison routes or seed expected typed-reading rows directly in SQL.
 
 The test leaves its random schema for inspection by default. After review,
 remove only the printed `scalar_it_*` schema manually, or explicitly set

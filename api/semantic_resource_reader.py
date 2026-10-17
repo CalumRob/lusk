@@ -320,6 +320,16 @@ class SemanticResourceReader:
         reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
         if not marker or not marker[0] or not reference or marker[2] != reference[0]:
             raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+        if resource.publication_table == "selected_reading":
+            owner_marker = conn.execute("""SELECT content_version,row_count,reference_content_version
+                FROM selected_reading_publication WHERE theme_id=%s""",
+                (resource.theme_id,)).fetchone()
+            if (not owner_marker or owner_marker[0] != marker[0] or
+                    owner_marker[1] != marker[1] or owner_marker[2] != marker[2]):
+                raise HTTPException(503, "Selected-reading publication is inconsistent")
+        published_rows = int(conn.execute(f"SELECT count(*) FROM {resource.storage_relation}").fetchone()[0])
+        if published_rows != int(marker[1]):
+            raise HTTPException(503, "Typed-reading publication row count is inconsistent")
         coordinates = item.coordinates or {}
         group = coordinates.get("groupe")
         relation = resource.storage_relation

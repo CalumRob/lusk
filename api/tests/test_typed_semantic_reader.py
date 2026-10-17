@@ -60,8 +60,9 @@ def test_typed_reading_preflight_counts_facts_and_ranked_evidence():
     connection = _Connection()
 
     assert SemanticResourceReader._typed_reading_preflight(connection, item, resource) == 3
-    assert "groupe=ANY(%s::text[])" in connection.calls[3][0]
-    assert connection.calls[3][1] == ["22001", "commune", ["sante-et-taille"]]
+    target_count = next(call for call in connection.calls
+                        if "groupe=ANY(%s::text[])" in call[0])
+    assert target_count[1] == ["22001", "commune", ["sante-et-taille"]]
 
 
 def test_typed_reading_read_keeps_ranked_evidence_separate_from_facts():
