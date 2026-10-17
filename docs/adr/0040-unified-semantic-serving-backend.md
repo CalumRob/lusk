@@ -1,4 +1,4 @@
-# ADR-0030 : Contrat sémantique unifié pour le service backend
+# ADR-0040 : Contrat sémantique unifié pour le service backend
 
 - **Statut :** accepté et implémenté dans le cadre de #797
 - **Date :** 2026-10-17

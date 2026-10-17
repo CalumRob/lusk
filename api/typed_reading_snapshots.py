@@ -197,5 +197,3 @@ def _milieux_reading_cloud(conn, marker, territory_type, territory_id, cohort_ty
         "source_absent_member_count":len(absent) if 'absent' in locals() else 0,
         "unavailable_members":[{"territory_id":r[0],"territory_type":r[1],"reason":r[2],"source_id":r[3],"vintage_id":r[4],"source_snapshot_sha256":r[5]} for r in absent] if 'absent' in locals() else [],
         "content_version":marker[0],"points":points}
-
-

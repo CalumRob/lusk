@@ -70,7 +70,7 @@ def test_duplicate_batch_ids_are_rejected_before_opening_a_snapshot(monkeypatch)
 def test_batch_uses_one_connection_snapshot_and_preflights_all_before_reads(monkeypatch):
     repository = Repository()
     events = []
-    def preflight(conn, item, catalogue=None):
+    def preflight(conn, item, catalogue=None, *, work_budget=None):
         events.append(("preflight", item.id, conn))
         return 1
     def read(conn, item, catalogue=None):

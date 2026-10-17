@@ -68,11 +68,12 @@ class SemanticResourceReader:
                 raise HTTPException(422, "Coordinate value is not declared by the published descriptor")
         return domains
 
-    def preflight(self, conn, item, catalogue: ResourceCatalogue | None = None) -> int:
+    def preflight(self, conn, item, catalogue: ResourceCatalogue | None = None,
+                  *, work_budget: int = 200_000) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
         if resource.resource_kind == "typed_reading":
-            return self._typed_reading_preflight(conn, item, resource)
+            return self._typed_reading_preflight(conn, item, resource, work_budget=work_budget)
         if resource.resource_kind == "indicator":
             self._coordinate_values(conn, item, resource)
         if resource.resource_kind == "aedar_source_grain":
@@ -143,13 +144,14 @@ class SemanticResourceReader:
             if "ordered_series" in resource.shapes:
                 route = self._owned_series_route(conn, item.resource)
                 if route:
+                    from api.snapshot_reads import _execute_comparison_publication_read
                     if fixed_lookup:
                         rows = conn.execute("""SELECT count(*) FROM ordered_series_comparison_territory
                             WHERE dataset_id=%s AND indicator_id=%s AND territory_id=%s
                               AND comparison_context=%s AND group_id=%s AND territory_type=%s""",
                             (route[0], route[3], item.target.id, fixed_context[0],
                              fixed_context[1], fixed_context[2])).fetchone()[0]
-                        lineage = conn.execute("""SELECT count(*) FROM ordered_series_comparison_lineage
+                        lineage = _execute_comparison_publication_read(conn,"""SELECT count(*) FROM ordered_series_comparison_lineage
                             WHERE dataset_id=%s AND indicator_id=%s AND comparison_context=%s
                               AND group_id=%s AND territory_type=%s""",
                             (route[0], route[3], fixed_context[0], fixed_context[1], fixed_context[2])).fetchone()[0]
@@ -158,7 +160,7 @@ class SemanticResourceReader:
                         facts = conn.execute("""SELECT count(*) FROM series_dataset_observation
                             WHERE dataset_id=%s AND indicator_id=%s AND territory_id=ANY(%s::text[])""",
                             (route[0], route[3], members)).fetchone()[0]
-                        lineage = conn.execute("""SELECT count(*) FROM series_observation_provenance
+                        lineage = _execute_comparison_publication_read(conn,"""SELECT count(*) FROM series_observation_provenance
                             WHERE dataset_id=%s AND indicator_id=%s AND territory_id=ANY(%s::text[])""",
                             (route[0], route[3], members)).fetchone()[0]
                         work = max(work, int(facts) + int(lineage))
@@ -174,7 +176,8 @@ class SemanticResourceReader:
                 rows = conn.execute("""SELECT count(*) FROM scalar_comparison_territory
                     WHERE indicator_id=%s AND territory_id=%s""",
                     (item.resource, item.target.id)).fetchone()[0]
-                lineage = conn.execute("""SELECT count(*) FROM comparison_source_lineage
+                from api.snapshot_reads import _execute_comparison_publication_read
+                lineage = _execute_comparison_publication_read(conn,"""SELECT count(*) FROM comparison_source_lineage
                     WHERE comparison_family='scalar' AND facet_id=%s
                       AND comparison_context=%s AND group_id=%s AND territory_type=%s""",
                     (item.resource, fixed_context[0], fixed_context[1], fixed_context[2])).fetchone()[0]
@@ -308,7 +311,7 @@ class SemanticResourceReader:
                 **(data if isinstance(data, dict) else {"result": data})}
 
     @staticmethod
-    def _typed_reading_preflight(conn, item, resource):
+    def _typed_reading_preflight(conn, item, resource, *, work_budget=200_000):
         territory = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
                                  (item.target.id,)).fetchone()
         if not territory:
@@ -327,9 +330,28 @@ class SemanticResourceReader:
             if (not owner_marker or owner_marker[0] != marker[0] or
                     owner_marker[1] != marker[1] or owner_marker[2] != marker[2]):
                 raise HTTPException(503, "Selected-reading publication is inconsistent")
-        published_rows = int(conn.execute(f"SELECT count(*) FROM {resource.storage_relation}").fetchone()[0])
-        if published_rows != int(marker[1]):
-            raise HTTPException(503, "Typed-reading publication row count is inconsistent")
+        # Validate physical completeness without an unaccounted full-relation
+        # count. Each validation count is capped by the remaining request budget,
+        # and the scanned rows are charged as work before any focal read runs.
+        from api.snapshot_reads import _execute_comparison_publication_read
+        work = 0
+
+        def checked_count(relation, expected_count=None):
+            nonlocal work
+            remaining = work_budget - work
+            if remaining <= 0 or (expected_count is not None and int(expected_count) > remaining):
+                raise HTTPException(413, "Resource request exceeds the bounded work limit")
+            scanned = int(_execute_comparison_publication_read(conn,
+                f"SELECT count(*) FROM (SELECT 1 FROM {relation} LIMIT %s) AS bounded_rows",
+                (remaining + 1,)).fetchone()[0])
+            if scanned > remaining:
+                raise HTTPException(413, "Resource request exceeds the bounded work limit")
+            if expected_count is not None and scanned != int(expected_count):
+                raise HTTPException(503, "Typed-reading publication row count is inconsistent")
+            work += scanned
+            return scanned
+
+        checked_count(resource.storage_relation, marker[1])
         coordinates = item.coordinates or {}
         group = coordinates.get("groupe")
         relation = resource.storage_relation
@@ -338,9 +360,11 @@ class SemanticResourceReader:
         if group:
             clauses.append("groupe=ANY(%s::text[])")
             params.append(group)
-        work = int(conn.execute(f"SELECT count(*) FROM {relation} WHERE " + " AND ".join(clauses), params).fetchone()[0])
+        work += int(conn.execute(f"SELECT count(*) FROM {relation} WHERE " + " AND ".join(clauses), params).fetchone()[0])
+        if work > work_budget:
+            raise HTTPException(413, "Resource request exceeds the bounded work limit")
         for side in resource.side_relations:
-            side_marker = conn.execute("""SELECT content_version,reference_content_version
+            side_marker = conn.execute("""SELECT content_version,reference_content_version,row_count
                 FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
             if not side_marker or side_marker[1] != reference[0]:
                 raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
@@ -348,6 +372,9 @@ class SemanticResourceReader:
                 raise HTTPException(503, "Typed-reading evidence publication is incompatible")
             if side.get("same_content_version_as") == "resource" and side_marker[0] != marker[0]:
                 raise HTTPException(503, "Typed-reading evidence publication is stale")
+            expected_side_count = (side_marker[2]
+                if side["publication_table"] != resource.publication_table else None)
+            checked_count(side["storage_relation"], expected_side_count)
             side_clauses = ["territory_id=%s", "territory_type=%s"]
             side_params = [item.target.id, item.target.type]
             if "groupe" in side["fields"]:
@@ -356,6 +383,8 @@ class SemanticResourceReader:
                     side_params.append(group)
             work += int(conn.execute(f"SELECT count(*) FROM {side['storage_relation']} WHERE " +
                 " AND ".join(side_clauses), side_params).fetchone()[0])
+            if work > work_budget:
+                raise HTTPException(413, "Resource request exceeds the bounded work limit")
         return max(1, work)
 
     @staticmethod

@@ -52,7 +52,7 @@ def test_single_and_one_item_batch_share_typed_reader_and_result(monkeypatch):
         calls.append(("read", conn, item.resource))
         return {"resource": item.resource, "value": 0, "status": "measured"}
 
-    def preflight(conn, item, catalogue=None):
+    def preflight(conn, item, catalogue=None, *, work_budget=None):
         calls.append(("preflight", conn, item.resource))
         return 1
 
@@ -87,7 +87,7 @@ def test_batch_preflights_every_item_before_reading_and_aborts_as_a_unit(monkeyp
         calls.append(("read", item.resource))
         return {"resource": item.resource}
 
-    def preflight(conn, item, catalogue=None):
+    def preflight(conn, item, catalogue=None, *, work_budget=None):
         calls.append(("preflight", item.resource))
         if item.resource == "structure_age":
             from fastapi import HTTPException
@@ -120,7 +120,7 @@ def test_batch_rejects_aggregate_actual_work_before_any_item_read(monkeypatch):
         calls.append(("read", item.resource))
         return {"resource": item.resource}
 
-    def preflight(conn, item, catalogue=None):
+    def preflight(conn, item, catalogue=None, *, work_budget=None):
         calls.append(("preflight", item.resource))
         # Each resolved item is below the global work cap; only their aggregate exceeds it.
         return 70_001
@@ -149,7 +149,7 @@ def test_sparse_membership_facts_read_and_comparison_intents_fail_before_storage
         reads.append(item.resource)
         return {"resource": item.resource, "facts": []}
 
-    def preflight(conn, item, catalogue=None):
+    def preflight(conn, item, catalogue=None, *, work_budget=None):
         return 1
 
     setup(monkeypatch, repository, reader, preflight)

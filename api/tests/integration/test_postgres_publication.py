@@ -771,6 +771,18 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
             unavailable_singles, unavailable_batch = read_comparisons()
             assert [response.status_code for response in unavailable_singles] == [503] * len(comparison_items)
             assert unavailable_batch.status_code == 503
+            # A relation created by an incomplete/manual upgrade is also an
+            # unavailable publication, not an UndefinedColumn -> HTTP 500.
+            with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+                publisher.execute("""CREATE TABLE comparison_source_lineage(
+                    comparison_context text,group_id text,territory_type text,facet_id text,
+                    source_id text,vintage_id text,comparison_content_version text)""")
+                publisher.execute(f'GRANT SELECT ON comparison_source_lineage TO "{reader}"')
+            unavailable_singles, unavailable_batch = read_comparisons()
+            assert [response.status_code for response in unavailable_singles] == [503] * len(comparison_items)
+            assert unavailable_batch.status_code == 503
+            with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+                publisher.execute("DROP TABLE comparison_source_lineage")
             with psycopg.connect(publish_dsn, autocommit=True) as publisher:
                 for migration in ("033_comparison_source_lineage.sql",
                                   "034_ordered_series_comparison_lineage.sql",

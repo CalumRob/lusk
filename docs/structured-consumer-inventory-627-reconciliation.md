@@ -2,6 +2,11 @@
 
 **Status: incomplete; not acceptance or artifact-deletion approval.** This is the per-key companion to [`structured-consumer-inventory.md`](structured-consumer-inventory.md), which remains the broader 2026-09-28 discovery baseline. It records what current code/config says about active numeric readers and exposes the unresolved dispositions; a route, registry entry, merged PR, or generated artifact alone does not prove key/value/provenance parity.
 
+> **Historical snapshot (2026-10-07, pre-#797):** route and deployed-app
+> observations below describe the former theme-facts API and bundle. Those
+> backend routes have since been retired by #797/ADR-0040 and are not a current
+> route contract or a live verification of the present API.
+
 ## Audit basis and disposition rules
 
 - Code snapshot: `origin/main` **f2bff7d1** (2026-10-07); published theme descriptors under `pipeline/inst/extdata/theme-metadata/` define the 62-key scope (`indicator_keys`). The key set is not identical to `indicator_pages`: **45 page declarations, 17 declared non-page/support keys**.

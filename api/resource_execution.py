@@ -32,7 +32,7 @@ def _read_snapshot(pool, items, catalogue, preflight, read, *, batch):
             connection.execute("SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY")
             work_units = 0
             for item in items:
-                estimate = preflight(connection, item)
+                estimate = preflight(connection, item, MAX_WORK_UNITS - work_units)
                 if not isinstance(estimate, int) or estimate < 0:
                     raise HTTPException(503, "Resource preflight returned an invalid work estimate")
                 work_units += estimate

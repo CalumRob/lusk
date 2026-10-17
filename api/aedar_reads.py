@@ -123,5 +123,3 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
       "content_version":marker[0],"source_snapshot_id":marker[1],
       "aedar_content_version":marker[2],"reference_content_version":marker[3],
       "input_content_version":marker[4],"input_identity":marker[5],"comparison":result}
-
-

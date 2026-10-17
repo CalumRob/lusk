@@ -30,18 +30,6 @@ on its tables to the configured read role. The read-role test verifies an
 python -m pytest api/tests/integration -m integration
 ```
 
-`test_building_evidence_contract.py` uses that same explicit test-only database
-and creates its own random `it_building_*` schema per fresh-schema and prior
-shared-schema/migration-008 rehearsal. It checks valid ramp/grid fixture
-publications, rejected source/level/axis/quantile/availability mutations,
-deferred descriptor/source marker constraints, and rollback preservation of
-the previous facts and markers after an injected mid-refresh failure. A
-dedicated local database can be named `lusk_it_contract`; do not point these
-tests at the live `lusk` database. The migration's `NOT VALID` source-vintage
-foreign keys leave pre-migration rows readable and enforce new/updated rows;
-operators must backfill/verify source vintages and run the documented
-`VALIDATE CONSTRAINT` statements before claiming historical rows are validated.
-
 By default the uniquely named schema is retained for inspection. To explicitly
 allow cleanup of only that run's schema, set
 `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1`. Cleanup never targets `public`, tables, or
@@ -75,7 +63,7 @@ path in the test process. A password once shared in chat for the old disposable
 workers should request that the operator provision or confirm access rather
 than guessing credentials or using production roles.
 
-From the checkout root on the PC, the **focused SQL/API tests** use:
+From the checkout root on the PC, focused guarded API tests use:
 
 ```powershell
 $env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
@@ -84,6 +72,9 @@ $env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
 $env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
 $env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
 $env:PYTHONPATH = '.'
+$env:TESTTHAT_PARALLEL = 'FALSE'
+$env:PGCONNECT_TIMEOUT = '5'
+$env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
 python -m pytest api/tests/integration/test_postgres_publication.py -k shared_scalar -q
 ```
 
@@ -137,6 +128,18 @@ The scripts create isolated writable fixture directories and random guarded
 schemas; do not pass a canonical source directory as a publisher output.
 
 ```powershell
+$env:LUSK_PROFILE_TEST_HOST = '192.168.1.120'
+$env:LUSK_PROFILE_TEST_PORT = '5432'
+$env:LUSK_PROFILE_TEST_DATABASE = 'lusk_it_contract'
+$env:LUSK_PROFILE_TEST_USER = 'lusk_it_contract_pub'
+$env:LUSK_TEST_READ_USER = 'lusk_it_contract_read'
+$env:LUSK_TEST_CANONICAL_DATA_DIR = 'E:\Lusk\public\data'
+$env:LUSK_MILIEUX_CONSO_SOURCE = 'E:\Lusk\pipeline\data\raw\conso-com.csv'
+$env:LUSK_MILIEUX_PROCESSED_WINDOW = 'E:\Lusk\pipeline\data\processed\milieux\ocsge_communes.rds'
+$env:PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
+$env:PGCONNECT_TIMEOUT = '5'
+$env:PGOPTIONS = '-c statement_timeout=45000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=60000'
+$env:TESTTHAT_PARALLEL = 'FALSE'
 $env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
 Rscript scripts/smoke-habitat-reading-postgres.R
 Rscript scripts/smoke-housing-economy-postgres.R
@@ -148,15 +151,11 @@ assert owner/source bindings and sparse Milieux absence evidence, and exercise
 no-op, rollback, and fail-closed publication behavior. They do not call retired
 theme/comparison routes or seed expected typed-reading rows directly in SQL.
 
-The test leaves its random schema for inspection by default. After review,
-remove only the printed `scalar_it_*` schema manually, or explicitly set
-`LUSK_SCALAR_TEST_CLEANUP=1` to have the script drop its own schema. Assign an
-operator-owned TTL (recommended: 14 days) to abandoned `scalar_it_*` schemas;
-inspect ownership and contents before cleanup. Never automate database drops.
-The smoke checks canonical fact/status, descriptor and versions, two source
-associations (the second is explicitly synthetic smoke lineage), no-op behavior,
-dependency-only marker rebinding, DB-behind-local retry, and transaction rollback
-after an injected insert failure.
+The scalar smoke retains its random schema by default. It drops only its own
+schema when `LUSK_SCALAR_TEST_CLEANUP=1`; inspect ownership before manual cleanup.
+It checks canonical fact/status, descriptor and versions, source associations,
+no-op behavior, dependency-only marker rebinding, DB-behind-local retry, and
+transaction rollback after an injected insert failure.
 
 The comparison-lineage checkpoint has a synthetic publisher-to-API-reader
 test. It invokes the real R publishers and PostgreSQL adapters for scalar,
@@ -193,35 +192,34 @@ timestamps. This is a populated comparison-storage upgrade rehearsal, not a
 restored production-database or deployed-API rehearsal. The pinned Git object
 must be available locally; no network fetch or pipeline data is needed.
 
-The building publisher path has a separate RPostgres smoke so it exercises the
-real `.adapter_postgres` and `publier_tables_postgres` code rather than a fake
-adapter. It uses only synthetic canonical-like rows, accepts only explicit
-`LUSK_BUILDING_TEST_*` connection variables naming a `lusk_it_*` database, and
-uses a private passfile outside the checkout. It creates a random schema, runs
-the final `api/schema.sql`, then dependency-orders table/function drops and
-`DROP SCHEMA ... RESTRICT` for cleanup; it never uses `CASCADE` or touches
-`public`.
+## Current retained model and migration selectors
+
+Migration 036 is the guarded populated-schema retirement rehearsal. Migration
+037 is applied and exercised by the exhaustive AEDAR publisher-to-HTTP proof;
+it has no standalone fast selector. Do not confuse these current selectors with
+the historical migration 009 procedure retained in
+[`migrations/README.md`](../../migrations/README.md).
 
 ```powershell
-$env:LUSK_BUILDING_TEST_HOST = "192.168.1.120"
-$env:LUSK_BUILDING_TEST_PORT = "5432"
-$env:LUSK_BUILDING_TEST_DATABASE = "lusk_it_contract"
-$env:LUSK_BUILDING_TEST_USER = "lusk_it_contract_pub"
-$env:LUSK_BUILDING_TEST_PGPASSFILE = Join-Path $env:APPDATA 'PostgreSQL\pgpass.conf'
-Rscript scripts/smoke-building-postgres.R  # run from pipeline/
+# From repository root; use the guarded DSNs above.
+python -m pytest api/tests/integration/test_postgres_publication.py -k test_migration_036 -q
+
+# Migration 037 is part of this comprehensive AEDAR proof (about 8 minutes).
+# Do not run it as part of quick harness iteration.
+python -m pytest api/tests/integration/test_aedar_publisher_http.py -k test_aedar_r_publication_is_read_through_bounded_http -q
+
+# Ordinary API suite is not DB proof; report its guarded skips separately.
+python -m pytest api/tests -q
+
+# From pipeline/; serial default fixture suite, or the focused latest typed readers.
+$env:TESTTHAT_PARALLEL = 'FALSE'
+Rscript -e "testthat::test_local(filter='publish-series|publish-typed-reading-artifact', stop_on_failure=TRUE)"
+Rscript -e "testthat::test_local(stop_on_failure=TRUE)"
 ```
 
-This verifies actual R/DBI parameter and JSON serialization, descriptor/source
-lineage and independent markers, grid ordinal mapping, no-op republish,
-DB-behind retry, and rollback of facts/descriptors/markers after injected
-replacement failure. It uses no pipeline raw/processed data.
-
-The shared-scalar migration/read tests are selected with `-k shared_scalar`.
-Run the guarded migration rehearsal with `-k migration_009`; the configured
-publisher and reader DSNs must both target `lusk_it_contract`. The test creates
-and cleans up a random `it_*` schema only. After the actual retirement script,
-it simulates a supported per-table fact/marker transaction in that schema and
-checks the read-only role sees its committed update; this is schema-level
-contract evidence, not a run of the R publisher. The operator must still perform
-the separate restored-database rehearsal and approval in
-`api/migrations/README.md` before any live migration.
+The current retained publisher proofs are the Habitat, Economy, and Milieux
+scripts above, each using a private copied writable fixture and a guarded random schema.
+The ordinary suite and focused R test counts do not substitute for those
+publisher-to-database-to-HTTP proofs. Do not run the full AEDAR proof while
+iterating on unrelated harnesses; cite its pinned run and duration when reporting
+acceptance.

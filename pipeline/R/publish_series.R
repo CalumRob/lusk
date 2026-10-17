@@ -817,13 +817,28 @@ owned_series_postgres_adapter <- function(con) {
          # vintage registry needed by dependent facts (including sparse source
          # absences). Publish these canonical source records in the same
          # transaction as the immutable series revision.
-         DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2)
-           ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
-           params=list(p$source_id[[1L]],p$source_name[[1L]]))
-         DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
-           VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET
-           version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
-           params=unname(as.list(p[c("source_id","vintage_id","source_version","reference_date","publication_date")])))
+          DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2)
+            ON CONFLICT(source_id) DO NOTHING",
+            params=list(p$source_id[[1L]],p$source_name[[1L]]))
+          registered_source <- DBI::dbGetQuery(con,
+            "SELECT name FROM source_dataset WHERE source_id=$1",params=list(p$source_id[[1L]]))
+          if(nrow(registered_source)!=1L ||
+             !identical(as.character(registered_source$name[[1L]]),as.character(p$source_name[[1L]])))
+            stop("Immutable source identity conflicts with the registered source dataset: ",
+              p$source_id[[1L]],call.=FALSE)
+          DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+            VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING",
+            params=unname(as.list(p[c("source_id","vintage_id","source_version","reference_date","publication_date")])))
+          registered_vintage <- DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date
+            FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
+            params=list(p$source_id[[1L]],p$vintage_id[[1L]]))
+          expected_vintage <- p[c("source_version","reference_date","publication_date")]
+          if(nrow(registered_vintage)!=1L ||
+             !identical(as.character(registered_vintage$version[[1L]]),as.character(expected_vintage$source_version[[1L]])) ||
+             !identical(as.character(registered_vintage$reference_date[[1L]]),as.character(expected_vintage$reference_date[[1L]])) ||
+             !identical(as.character(registered_vintage$publication_date[[1L]]),as.character(expected_vintage$publication_date[[1L]])))
+            stop("Immutable source vintage conflicts with the registered source clock: ",
+              p$source_id[[1L]],"/",p$vintage_id[[1L]],call.=FALSE)
          DBI::dbExecute(con, "INSERT INTO series_provenance_revision(provenance_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,revision_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(provenance_revision_id) DO NOTHING",
           params=unname(as.list(p[1,c("provenance_revision_id","source_id","vintage_id","source_name","dataset_name","source_version","reference_date","publication_date","revision_hash")])) )
         same <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM series_provenance_revision WHERE provenance_revision_id=$1 AND source_id=$2 AND vintage_id=$3 AND source_name=$4 AND dataset_name=$5 AND source_version=$6 AND reference_date IS NOT DISTINCT FROM $7::date AND publication_date IS NOT DISTINCT FROM $8::date AND revision_hash=$9",

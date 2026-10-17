@@ -1,6 +1,6 @@
 # Unified retained-resource serving and publication model
 
-**Status: ACCEPTED target direction; integrated backend implemented, acceptance verification and independent review pending.**
+**Status: ACCEPTED direction; integrated backend implementation and acceptance review are tracked by PR #798.**
 This is the documentation deliverable for [#795](https://github.com/CalumRob/lusk/issues/795),
 child of [#794](https://github.com/CalumRob/lusk/issues/794). The owner-approved
 direction is one public resource/read contract, shared publication machinery,
@@ -703,9 +703,9 @@ Exact table/column names and constraints, named target encoding, individual
 typed-reading fields, backend route retirement order, migration DDL and
 operational rollback remain engineering details for the integrated design and
 review. They are not separate product decisions.
-No ADR or domain definition is changed here;
-after approval, draft edits to ADR-0035/0038/0039, ADR-0037 if publication
-wording changes, and `CONTEXT.md` can be proposed and reviewed deliberately.
+The accepted backend contract is recorded in ADR-0040. Existing ADRs and
+`CONTEXT.md` remain authoritative for their specific domain decisions; this
+design does not authorize frontend/client migration or production rollout.
 
 ## Evidence and source map
 
@@ -715,15 +715,17 @@ Repository contracts read for this proposal:
   owner-series, reading, AEDAR and comparison tables/constraints.
 - [`api/batch-read-contract.md`](../../api/batch-read-contract.md),
   [`api/field-selection-contract.md`](../../api/field-selection-contract.md),
-  [`api/theme-read-contract.md`](../../api/theme-read-contract.md), and
-  [`api/ENDPOINTS.md`](../../api/ENDPOINTS.md): current typed reads, limits,
-  required metadata, snapshot and public route contracts.
+  and [`api/ENDPOINTS.md`](../../api/ENDPOINTS.md): current typed reads, limits,
+  required metadata, snapshot and public route contracts. The old
+  [`api/theme-read-contract.md`](../../api/theme-read-contract.md) is explicitly
+  historical and retired, not a current contract.
 - [`docs/adr/0035-serving-grains-and-scoped-comparisons.md`](../adr/0035-serving-grains-and-scoped-comparisons.md),
   [`docs/adr/0037-publish-tables-independently-from-r.md`](../adr/0037-publish-tables-independently-from-r.md),
   [`docs/adr/0038-common-indicator-serving-contract.md`](../adr/0038-common-indicator-serving-contract.md),
   and [`docs/adr/0039-published-comparison-aggregates.md`](../adr/0039-published-comparison-aggregates.md):
-  accepted invariants and boundaries, not evidence that the proposed target
-  shapes or exact survivors have already been accepted.
+  retained invariants and boundaries for the implemented target.
+- [`docs/adr/0040-unified-semantic-serving-backend.md`](../adr/0040-unified-semantic-serving-backend.md):
+  the accepted integrated backend contract and retirement boundary.
 - [`docs/structured-consumer-inventory.md`](../structured-consumer-inventory.md)
   and [`CONTEXT.md`](../../CONTEXT.md): named consumers, product acquisition
   rules and semantic ownership.

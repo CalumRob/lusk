@@ -22,7 +22,8 @@ def create_resource_router(*, get_repository, get_catalogue, get_reader):
                       catalogue: ResourceCatalogue = Depends(get_catalogue),
                       reader: SemanticResourceReader = Depends(get_reader)) -> dict:
         return execute_single(repository.connections, item, catalogue,
-            lambda conn, resource_item: reader.preflight(conn, resource_item, catalogue),
+            lambda conn, resource_item, work_budget: reader.preflight(
+                conn, resource_item, catalogue, work_budget=work_budget),
             lambda conn, resource_item: reader.read(conn, resource_item, catalogue))
 
     @router.post("/api/resources/read-batch")
@@ -31,7 +32,8 @@ def create_resource_router(*, get_repository, get_catalogue, get_reader):
                             catalogue: ResourceCatalogue = Depends(get_catalogue),
                             reader: SemanticResourceReader = Depends(get_reader)) -> dict:
         return execute_batch(repository.connections, request, catalogue,
-            lambda conn, resource_item: reader.preflight(conn, resource_item, catalogue),
+            lambda conn, resource_item, work_budget: reader.preflight(
+                conn, resource_item, catalogue, work_budget=work_budget),
             lambda conn, resource_item: reader.read(conn, resource_item, catalogue))
 
     return router

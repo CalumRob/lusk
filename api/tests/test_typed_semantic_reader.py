@@ -19,12 +19,16 @@ class _Connection:
             if table == "economy_typed_reading":
                 return _Result(("reading-v1", 1, "reference-v1"))
             if table == "economy_activity_evidence":
-                return _Result(("evidence-v1", "reference-v1"))
+                return _Result(("evidence-v1", "reference-v1", 2))
         if "FROM table_publication WHERE table_name='territory_reference'" in sql:
             return _Result(("reference-v1",))
-        if sql.startswith("SELECT count(*) FROM economy_typed_reading"):
+        if "FROM (SELECT 1 FROM economy_typed_reading LIMIT %s)" in sql:
             return _Result((1,))
-        if sql.startswith("SELECT count(*) FROM economy_activity_evidence"):
+        if "FROM (SELECT 1 FROM economy_activity_evidence LIMIT %s)" in sql:
+            return _Result((2,))
+        if sql.startswith("SELECT count(*) FROM economy_typed_reading WHERE"):
+            return _Result((1,))
+        if sql.startswith("SELECT count(*) FROM economy_activity_evidence WHERE"):
             return _Result((2,))
         if sql.startswith("SELECT content_version FROM table_publication"):
             return _Result(("reading-v1",))
@@ -59,10 +63,34 @@ def test_typed_reading_preflight_counts_facts_and_ranked_evidence():
     resource = validate_resource_item(item, catalogue)
     connection = _Connection()
 
-    assert SemanticResourceReader._typed_reading_preflight(connection, item, resource) == 3
+    assert SemanticResourceReader._typed_reading_preflight(connection, item, resource) == 6
+    validation_queries = [sql for sql, _ in connection.calls
+                          if "FROM (SELECT 1 FROM" in sql]
+    assert len(validation_queries) == 2
+    assert all("LIMIT %s" in sql for sql in validation_queries)
     target_count = next(call for call in connection.calls
                         if "groupe=ANY(%s::text[])" in call[0])
     assert target_count[1] == ["22001", "commune", ["sante-et-taille"]]
+
+
+def test_typed_reading_preflight_charges_and_bounds_integrity_validation():
+    catalogue = default_resource_catalogue()
+    item = ResourceReadItem.model_validate({
+        "resource": "economie_selected_reading",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "intent": {"kind": "facts"},
+    })
+    resource = validate_resource_item(item, catalogue)
+    connection = _Connection()
+
+    try:
+        SemanticResourceReader._typed_reading_preflight(
+            connection, item, resource, work_budget=0)
+    except HTTPException as exc:
+        assert exc.status_code == 413
+    else:
+        raise AssertionError("typed-reading integrity work must respect the remaining request budget")
+    assert not any("FROM (SELECT 1 FROM" in sql for sql, _ in connection.calls)
 
 
 def test_typed_reading_read_keeps_ranked_evidence_separate_from_facts():
@@ -152,11 +180,13 @@ class _StaleAbsenceConnection:
             if params[0] == "milieux_typed_reading":
                 return _Result(("reading-v2", 4, "reference-v1"))
             if params[0] == "milieux_reading_absence":
-                return _Result(("reading-v1", "reference-v1"))
+                return _Result(("reading-v1", "reference-v1", 1))
         if "table_name='territory_reference'" in sql:
             return _Result(("reference-v1",))
-        if sql.startswith("SELECT count(*) FROM milieux_typed_reading"):
-            return _Result((0,))
+        if "FROM (SELECT 1 FROM milieux_typed_reading LIMIT %s)" in sql:
+            return _Result((4,))
+        if sql.startswith("SELECT count(*) FROM milieux_typed_reading WHERE"):
+            return _Result((1,))
         raise AssertionError(f"Unexpected SQL: {sql}")
 
 
