@@ -3,7 +3,7 @@
 import pytest
 from fastapi import HTTPException
 
-from api import main
+from api import snapshot_reads as main
 
 
 class Result:

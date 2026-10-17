@@ -228,6 +228,24 @@ revision_specs$dataset_name <- "Synthetic ordered-series fixture"
 revision_specs$source_version <- revision_specs$vintage_id
 revision_specs$reference_date <- as.Date("2026-01-01")
 revision_specs$publication_date <- as.Date("2026-01-02")
+shared_clock <- DBI::dbGetQuery(con,"SELECT DISTINCT sd.source_id,sd.name,sv.vintage_id,sv.version,
+  sv.reference_date,sv.publication_date FROM scalar_observation_source os
+  JOIN source_dataset sd USING(source_id) JOIN source_vintage sv USING(source_id,vintage_id)
+  ORDER BY sd.source_id,sv.vintage_id LIMIT 1")
+if(nrow(shared_clock)!=1L) stop("Series immutability proof requires a source vintage already bound to a scalar",call.=FALSE)
+shared_revision <- data.frame(source_id=shared_clock$source_id[[1L]],
+  vintage_id=shared_clock$vintage_id[[1L]],source_name=shared_clock$name[[1L]],
+  dataset_name="Synthetic ordered-series fixture",source_version=shared_clock$version[[1L]],
+  reference_date=as.Date(shared_clock$reference_date[[1L]]),
+  publication_date=as.Date(shared_clock$publication_date[[1L]]),
+  stringsAsFactors=FALSE)
+shared_revision$revision_hash <- series_revision_hash(shared_revision$source_id[[1L]],
+  shared_revision$vintage_id[[1L]],shared_revision$source_name[[1L]],shared_revision$dataset_name[[1L]],
+  shared_revision$source_version[[1L]],as.character(shared_revision$reference_date[[1L]]),
+  as.character(shared_revision$publication_date[[1L]]))
+shared_revision$provenance_revision_id <- paste0(shared_revision$source_id[[1L]],"-",
+  shared_revision$vintage_id[[1L]],"-",substr(shared_revision$revision_hash[[1L]],1L,16L))
+revision_specs <- rbind(revision_specs,shared_revision[names(revision_specs)])
 revision_specs$revision_hash <- vapply(seq_len(nrow(revision_specs)),function(i) series_revision_hash(
   revision_specs$source_id[[i]],revision_specs$vintage_id[[i]],revision_specs$source_name[[i]],
   revision_specs$dataset_name[[i]],revision_specs$source_version[[i]],
@@ -240,6 +258,8 @@ series_links <- data.frame(dataset_id=series_dataset,indicator_id=series_indicat
     paste(ifelse(series_rows$axis_value=="2024","fixture_a","fixture_b"),
       ifelse(series_rows$territory_id==series_members[[1L]],"v1","v2")),
     paste(revision_specs$source_id,revision_specs$vintage_id))],stringsAsFactors=FALSE)
+shared_point <- which(series_links$territory_id==series_members[[1L]] & series_links$axis_value=="2024")[[1L]]
+shared_fixture_revision <- series_links$provenance_revision_id[[shared_point]]
 series_projection <- list(points=series_rows,provenance=revision_specs,point_provenance=series_links,
   descriptor=list(dataset_id=series_dataset,indicator_id=series_indicator,theme_id="demographie",
     axis_kind="year",axis_values=series_axes,comparison_axis_values=series_axes,
@@ -253,6 +273,89 @@ series_registry <- list(lineage_series=list(owned=TRUE,project=function(canonica
 series_first <- publish_registered_series(series_registry,"lineage_series",series_projection,series_adapter)
 series_noop <- publish_registered_series(series_registry,"lineage_series",series_projection,series_adapter)
 stopifnot(series_first$changed,!series_noop$changed)
+
+# A new projection that attempts to rewrite the source clock already referenced
+# by a scalar fact must fail inside the real owned-series RPostgres transaction.
+# The old scalar facts/marker and source registry stay byte-for-byte unchanged.
+shared_source_before <- DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",
+  params=list(shared_revision$source_id[[1L]]))
+shared_vintage_before <- DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date FROM source_vintage
+  WHERE source_id=$1 AND vintage_id=$2",params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]]))
+shared_scalar_before <- DBI::dbGetQuery(con,"SELECT o.indicator_id,o.territory_id,o.value,o.status,p.content_version,p.row_count,p.reference_content_version
+  FROM scalar_observation_source os JOIN scalar_observation o USING(indicator_id,territory_id)
+  CROSS JOIN table_publication p WHERE os.source_id=$1 AND os.vintage_id=$2
+    AND p.table_name='scalar_observation' ORDER BY o.indicator_id,o.territory_id LIMIT 1",
+  params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]]))
+series_marker_before_clock_reject <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count,published_at
+  FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset))
+clock_conflict <- series_projection
+shared_index <- match(shared_revision$provenance_revision_id,clock_conflict$provenance$provenance_revision_id)
+clock_conflict$provenance$reference_date[[shared_index]] <- as.Date("2030-01-01")
+clock_conflict$provenance$publication_date[[shared_index]] <- as.Date("2030-02-01")
+clock_conflict$provenance$source_version[[shared_index]] <- "changed-clock"
+clock_conflict$provenance$revision_hash[[shared_index]] <- series_revision_hash(
+  clock_conflict$provenance$source_id[[shared_index]],clock_conflict$provenance$vintage_id[[shared_index]],
+  clock_conflict$provenance$source_name[[shared_index]],clock_conflict$provenance$dataset_name[[shared_index]],
+  clock_conflict$provenance$source_version[[shared_index]],
+  as.character(clock_conflict$provenance$reference_date[[shared_index]]),
+  as.character(clock_conflict$provenance$publication_date[[shared_index]]))
+clock_conflict$provenance$provenance_revision_id[[shared_index]] <- paste0(
+  clock_conflict$provenance$source_id[[shared_index]],"-",
+  clock_conflict$provenance$vintage_id[[shared_index]],"-",
+  substr(clock_conflict$provenance$revision_hash[[shared_index]],1L,16L))
+clock_conflict$point_provenance$provenance_revision_id[
+  clock_conflict$point_provenance$provenance_revision_id==shared_revision$provenance_revision_id[[1L]]] <-
+  clock_conflict$provenance$provenance_revision_id[[shared_index]]
+clock_conflict_registry <- list(lineage_series=list(owned=TRUE,project=function(canonical) clock_conflict))
+clock_conflict_result <- try(publish_registered_series(clock_conflict_registry,"lineage_series",NULL,series_adapter),silent=TRUE)
+stopifnot(inherits(clock_conflict_result,"try-error"),
+  isTRUE(all.equal(shared_source_before,DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",
+    params=list(shared_revision$source_id[[1L]])),check.attributes=FALSE)),
+  isTRUE(all.equal(shared_vintage_before,DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date
+    FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
+    params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]])),check.attributes=FALSE)),
+  isTRUE(all.equal(shared_scalar_before,DBI::dbGetQuery(con,"SELECT o.indicator_id,o.territory_id,o.value,o.status,p.content_version,p.row_count,p.reference_content_version
+    FROM scalar_observation_source os JOIN scalar_observation o USING(indicator_id,territory_id)
+    CROSS JOIN table_publication p WHERE os.source_id=$1 AND os.vintage_id=$2
+      AND p.table_name='scalar_observation' ORDER BY o.indicator_id,o.territory_id LIMIT 1",
+    params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]])),check.attributes=FALSE)),
+  isTRUE(all.equal(series_marker_before_clock_reject,DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count,published_at
+    FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset)),check.attributes=FALSE)))
+
+# A genuinely new vintage for the same source identity is valid and repeatable;
+# it is additive rather than a rewrite of the shared vintage.
+new_vintage_projection <- series_projection
+new_vintage_projection$descriptor$dataset_id <- "lineage_new_vintage"
+new_vintage_projection$points$dataset_id <- "lineage_new_vintage"
+new_vintage_projection$point_provenance$dataset_id <- "lineage_new_vintage"
+new_vintage_projection$descriptor$indicator_id <- "lineage_new_vintage_indicator"
+new_vintage_projection$points$indicator_id <- "lineage_new_vintage_indicator"
+new_vintage_projection$point_provenance$indicator_id <- "lineage_new_vintage_indicator"
+new_vintage <- shared_revision
+new_vintage$vintage_id <- paste0(shared_revision$vintage_id[[1L]],"-next")
+new_vintage$source_version <- paste0(shared_revision$source_version[[1L]],"-next")
+new_vintage$reference_date <- as.Date("2027-01-01")
+new_vintage$publication_date <- as.Date("2027-02-01")
+new_vintage$revision_hash <- series_revision_hash(new_vintage$source_id[[1L]],new_vintage$vintage_id[[1L]],
+  new_vintage$source_name[[1L]],new_vintage$dataset_name[[1L]],new_vintage$source_version[[1L]],
+  as.character(new_vintage$reference_date[[1L]]),as.character(new_vintage$publication_date[[1L]]))
+new_vintage$provenance_revision_id <- paste0(new_vintage$source_id[[1L]],"-",new_vintage$vintage_id[[1L]],"-",
+  substr(new_vintage$revision_hash[[1L]],1L,16L))
+new_vintage_projection$provenance <- rbind(new_vintage_projection$provenance,new_vintage)
+new_vintage_projection$point_provenance$provenance_revision_id[
+  new_vintage_projection$point_provenance$provenance_revision_id==shared_fixture_revision] <-
+  new_vintage$provenance_revision_id[[1L]]
+new_vintage_registry <- list(lineage_new_vintage=list(owned=TRUE,
+  project=function(canonical) new_vintage_projection))
+new_vintage_first <- publish_registered_series(new_vintage_registry,"lineage_new_vintage",NULL,series_adapter)
+new_vintage_retry <- publish_registered_series(new_vintage_registry,"lineage_new_vintage",NULL,series_adapter)
+registered_new_vintage <- DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date FROM source_vintage
+  WHERE source_id=$1 AND vintage_id=$2",params=list(new_vintage$source_id[[1L]],new_vintage$vintage_id[[1L]]))
+stopifnot(new_vintage_first$changed,!new_vintage_retry$changed,nrow(registered_new_vintage)==1L,
+  identical(as.character(registered_new_vintage$version[[1L]]),as.character(new_vintage$source_version[[1L]])),
+  identical(as.character(registered_new_vintage$reference_date[[1L]]),as.character(new_vintage$reference_date[[1L]])),
+  identical(as.character(registered_new_vintage$publication_date[[1L]]),as.character(new_vintage$publication_date[[1L]])))
+
 series_comparison <- project_ordered_series_comparisons(series_projection,reference,
   series_first$content_version,reference_version)
 old_series_marker <- DBI::dbGetQuery(con,"SELECT content_version,ordered_series_content_version,

@@ -1,5 +1,6 @@
 {
   "theme": "economie",
+  "semantic_resources": [{"resource_id":"economie_selected_reading","kind":"typed_reading","storage_relation":"economy_typed_reading","publication_table":"economy_typed_reading","source_keys":["eco_activites"],"fields":["groupe","story_key","salience_reason","status","source_id","vintage_id"],"side_relations":[{"field":"ranked_activities","storage_relation":"economy_activity_evidence","publication_table":"economy_activity_evidence","fields":["territory_id","territory_type","groupe","rank","activity_code","activity_label","lq","establishment_count","park_share","source_id","vintage_id"]}]}],
   "label": "Économie/Emploi",
   "subgroups": [
     {

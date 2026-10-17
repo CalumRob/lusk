@@ -8,8 +8,24 @@ stopifnot(all(vapply(config,nzchar,logical(1))),grepl("^lusk_it_[A-Za-z0-9_]+$",
   identical(Sys.getenv("LUSK_TEST_DATABASE_PREFIX"),"lusk_it_"))
 read_user <- Sys.getenv("LUSK_TEST_READ_USER",unset="")
 stopifnot(nzchar(read_user),read_user!=config$USER)
-canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR",unset="")
-stopifnot(dir.exists(canonical_dir))
+canonical_source <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR",unset="")
+stopifnot(dir.exists(canonical_source))
+# Publisher materializers write generations and current pointers. Keep that
+# mutable output away from the operator-owned canonical snapshot, copying only
+# the producer inputs this retained proof consumes (no raw/download cache).
+fixture_dir <- tempfile("habitat-reading-canonical-")
+dir.create(fixture_dir)
+canonical_inputs <- c("territoires.parquet","vintages.parquet","vintages.json",
+  "indicateurs_demographie.json","indicateurs_economie.json",
+  "indicateurs_habitat.json","indicateurs_mobilite.parquet",
+  "histoires_habitat.json","theme_demographie.json","theme_economie.json",
+  "theme_habitat.json","theme_milieux.json","theme_mobilite.json")
+missing_inputs <- canonical_inputs[!file.exists(file.path(canonical_source,canonical_inputs))]
+if(length(missing_inputs)) stop("Canonical Habitat proof inputs are missing: ",
+  paste(missing_inputs,collapse=", "),call.=FALSE)
+copied <- file.copy(file.path(canonical_source,canonical_inputs),fixture_dir,overwrite=TRUE)
+stopifnot(all(copied))
+canonical_dir <- normalizePath(fixture_dir,winslash="/",mustWork=TRUE)
 con <- DBI::dbConnect(RPostgres::Postgres(),host=config$HOST,port=as.integer(config$PORT),
   dbname=config$DATABASE,user=config$USER)
 schema <- paste0("reading_it_",Sys.getpid(),"_habitat"); created <- FALSE
@@ -21,19 +37,23 @@ tryCatch({
   ddl <- paste(readLines("../api/schema.sql",warn=FALSE),collapse="\n")
   for(statement in split_postgres_sql(ddl)) DBI::dbExecute(con,statement)
 
-  inputs <- preparer_tables_service(canonical_dir)
-  published <- publier_tables_postgres(con,inputs$tables,inputs$versions,inputs$access_scope,
-    inputs$building_contract,inputs$building_sources)
-  stopifnot(all(c("territory_reference","essential_service_access") %in% published))
-  scalar <- project_service_scalar_snapshot(inputs,canonical_dir)
-  scalar_publication <- publish_service_share_scalars(con,inputs$scalar_access,inputs$scalar_metadata,
-    inputs$scalar_eligible_territories,additional_projections=scalar$additional_projections)
+  territories <- nanoparquet::read_parquet(file.path(canonical_dir,"territoires.parquet"))
+  vintages <- nanoparquet::read_parquet(file.path(canonical_dir,"vintages.parquet"))
+  for (owner in retained_scalar_artifact_owners()) {
+    payload <- list(indicateurs=lire_indicateurs_commis(owner,canonical_dir),territoires=territories)
+    owner_metadata <- jsonlite::fromJSON(file.path(canonical_dir,paste0("theme_",owner,".json")),
+      simplifyVector=FALSE)
+    materialize_theme_scalar_artifact(payload,owner_metadata,vintages,owner,canonical_dir)
+  }
+  reference <- publish_canonical_territory_reference(con,canonical_dir)$projection
+  scalar <- project_retained_scalar_snapshot(canonical_dir,reference)
+  scalar_publication <- publish_retained_scalar_snapshot(con,scalar,canonical_dir)$scalar
 
   read_canonical <- function(name) {
     # #757 : les parquets de faits par-thème des cinq thèmes non-mobilité ne
     # sont plus écrits. La projection JSON du run dir reste servie et devient
-    # l'oracle (les fichiers partagés territoires/vintages et la Mobilité
-    # gardent leur parquet). Le parquet est préféré quand il existe encore.
+  # l'oracle (les fichiers partagés territoires/vintages et la Mobilité
+  # gardent leur parquet). Le parquet est préféré quand il existe encore.
     parquet <- file.path(canonical_dir, paste0(name, ".parquet"))
     if (file.exists(parquet)) return(nanoparquet::read_parquet(parquet))
     jsonlite::fromJSON(file.path(canonical_dir, paste0(name, ".json")))
@@ -72,8 +92,13 @@ tryCatch({
   histories <- read_canonical("histoires_habitat")
   dpe_source <- vintages[vintages[["id"]]==habitat_metadata$sources$part_passoires,,drop=FALSE]
   stopifnot(nrow(histories)>0L,nrow(dpe_source)==1L)
-  # The published reading is the owner-scoped serving artifact: the theme
-  # projection above is only the independent oracle, never re-projected here.
+  # Exercise the production registered artifact projector against the copied
+  # producer records, then publish that artifact through the registered DB
+  # publisher. The canonical snapshot remains an independent HTTP oracle.
+  materialize_theme_typed_reading_artifacts(
+    list(histoires=histories,territoires=territories,
+      indicateurs=read_canonical("indicateurs_habitat"),source_vintages=vintages),
+    habitat_metadata,vintages,"habitat",canonical_dir)
   publication <- read_typed_reading_publication_from(canonical_dir,"habitat")
   canonical <- list(reading=publication$reading,content_version=publication$content_version)
   registry <- register_typed_reading_artifact_publisher(list(),"habitat",publish_habitat_reading)
@@ -161,8 +186,7 @@ tryCatch({
     })
     if(!identical(code,0L)) stop("Habitat stale/missing dependency did not fail closed over HTTP",call.=FALSE)
   }
-  expect_unavailable("declared_profile","DELETE FROM table_publication WHERE table_name='declared_profile'")
-  expect_unavailable("scalar_observation","UPDATE table_publication SET content_version='deliberately-stale' WHERE table_name='scalar_observation'")
+  expect_unavailable("selected_reading","UPDATE table_publication SET content_version='deliberately-stale' WHERE table_name='selected_reading'")
   count_marker <- DBI::dbGetQuery(con,"SELECT row_count FROM table_publication WHERE table_name='selected_reading'")$row_count[[1L]]
   DBI::dbExecute(con,"UPDATE table_publication SET row_count=row_count+1 WHERE table_name='selected_reading'")
   Sys.setenv(LUSK_HABITAT_EXPECT_UNAVAILABLE="1")
@@ -171,5 +195,5 @@ tryCatch({
     Sys.unsetenv("LUSK_HABITAT_EXPECT_UNAVAILABLE")
   })
   if(!identical(count_status,0L)) stop("Incorrect selected-reading marker count did not fail closed",call.=FALSE)
-  cat("Canonical Habitat typed readings:",nrow(actual)," rows; registered scalar/profile dependencies, canonical Parquet → HTTP: PASS\n")
-},finally={if(created) cleanup_serving_smoke_schema(con,schema,"reading");DBI::dbDisconnect(con)})
+  cat("Canonical Habitat typed readings:",nrow(actual)," rows; registered R artifact/publisher, producer-record semantic HTTP parity, stale publication/count fail-closed: PASS\n")
+},finally={if(created && identical(Sys.getenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP"),"1")) cleanup_serving_smoke_schema(con,schema,"reading");DBI::dbDisconnect(con);unlink(fixture_dir,recursive=TRUE)})

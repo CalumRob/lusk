@@ -45,13 +45,19 @@ def collection_snapshot(conn, descriptor, territory_type, territory_id, *, field
         membership_fields = normalize_field_selection(fields,
             {"detail", "label", "rider", "anchor_count", "availability"})
         if preflight_only:
+            work_units = membership_snapshot(conn, descriptor, territory_type, territory_id,
+                focal[0], marker, preflight_only=True)
             return {**marker, "supported_fields": {
-                "detail", "label", "rider", "anchor_count", "availability"}}
+                "detail", "label", "rider", "anchor_count", "availability"},
+                "work_units": work_units}
         return membership_snapshot(conn,descriptor,territory_type,territory_id,focal[0],marker,
                                    fields=membership_fields)
     selection = normalize_field_selection(fields, {"value", "status"})
     if preflight_only:
-        return {**marker, "supported_fields": {"value", "status"}}
+        count = conn.execute("""SELECT count(*) FROM period_detail_observation
+            WHERE indicator_id=%s AND territory_id=%s AND territory_type=%s""",
+            (descriptor["indicator_id"], territory_id, territory_type)).fetchone()[0]
+        return {**marker, "supported_fields": {"value", "status"}, "work_units": int(count)}
     project_value = selection is None or "value" in selection
     rows = conn.execute("""SELECT o.detail_key,c.label,o.observation_period,
         CASE WHEN %s THEN o.value ELSE NULL::double precision END AS value,o.source_id,
@@ -235,25 +241,33 @@ def _published_collection_comparison(conn, descriptor, territory_type, territory
         "comparison_sources":sources,**marker}
 
 
-def membership_snapshot(conn, descriptor, territory_type, territory_id, focal_name, marker, *, fields=None):
+def membership_snapshot(conn, descriptor, territory_type, territory_id, focal_name, marker, *, fields=None,
+                        preflight_only=False):
     project_rider = fields is None or "rider" in fields
     project_anchor_count = fields is None or "anchor_count" in fields
-    rows = conn.execute("""SELECT t.territory_id,t.territory_type,t.name,m.detail_key,c.label,
+    select_clause = "count(*)" if preflight_only else """t.territory_id,t.territory_type,t.name,m.detail_key,c.label,
         CASE WHEN %s AND m.convention_valant_ort THEN c.rider_label ELSE NULL END,
-        m.source_id,sd.name,m.vintage_id,v.version,v.reference_date,v.publication_date
-        FROM anchored_membership m JOIN territory_reference t USING(territory_id)
+        m.source_id,sd.name,m.vintage_id,v.version,v.reference_date,v.publication_date"""
+    source_clause = """FROM anchored_membership m JOIN territory_reference t USING(territory_id)
         JOIN observed_collection_category c USING(indicator_id,detail_key)
         JOIN source_dataset sd ON sd.source_id=m.source_id
         JOIN source_vintage v ON v.source_id=m.source_id AND v.vintage_id=m.vintage_id
         WHERE m.indicator_id=%s AND (t.territory_id=%s
           OR (%s='commune' AND t.territory_id=(SELECT epci_id FROM territory_reference WHERE territory_id=%s))
           OR (%s='epci' AND t.epci_id=%s)
-          OR (%s='departement' AND ((t.territory_type='commune' AND t.department_id=%s)
-            OR (t.territory_type='epci' AND EXISTS(SELECT 1 FROM territory_reference member
-              WHERE member.epci_id=t.territory_id AND member.department_id=%s))))
-          OR %s='region') ORDER BY c.ordinal,t.territory_id""",
-         (project_rider,descriptor["indicator_id"],territory_id,territory_type,territory_id,territory_type,territory_id,
-         territory_type,territory_id,territory_id,territory_type)).fetchall()
+           OR (%s='departement' AND ((t.territory_type='commune' AND t.department_id=%s)
+             OR (t.territory_type='epci' AND EXISTS(SELECT 1 FROM territory_reference member
+               WHERE member.epci_id=t.territory_id AND member.department_id=%s))))
+           OR %s='region')"""
+    ordering = "" if preflight_only else " ORDER BY c.ordinal,t.territory_id"
+    params = ((descriptor["indicator_id"],territory_id,territory_type,territory_id,territory_type,territory_id,
+          territory_type,territory_id,territory_id,territory_type) if preflight_only else
+          (project_rider,descriptor["indicator_id"],territory_id,territory_type,territory_id,territory_type,territory_id,
+          territory_type,territory_id,territory_id,territory_type))
+    cursor = conn.execute(f"SELECT {select_clause} {source_clause}{ordering}", params)
+    if preflight_only:
+        return int(cursor.fetchone()[0])
+    rows = cursor.fetchall()
     entries,relationships,summaries = [],[],{}
     for anchor_id,anchor_type,name,detail,label,rider,source_id,source_name,vintage_id,version,reference_date,publication_date in rows:
         entry = {"detail":detail,"label":label,**({"rider":rider} if project_rider else {}),

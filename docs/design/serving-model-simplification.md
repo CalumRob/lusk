@@ -1,13 +1,15 @@
-# Draft design: unified retained-resource serving and publication model
+# Unified retained-resource serving and publication model
 
-**Status: PROPOSED — owner acceptance required before backend schema, publication or API implementation.**
+**Status: ACCEPTED direction; integrated backend implementation and acceptance review are tracked by PR #798.**
 This is the documentation deliverable for [#795](https://github.com/CalumRob/lusk/issues/795),
 child of [#794](https://github.com/CalumRob/lusk/issues/794). The owner-approved
 direction is one public resource/read contract, shared publication machinery,
 and a few constrained storage shapes—not one universal fact table. Shared typed
-single/batch reads are already decided. This document proposes specifics; it
-does not amend accepted ADRs, decide catalogue membership, authorize DDL,
-production work, or declare any current object safe to drop.
+single/batch reads are already decided. The owner accepted this integrated
+backend direction after merge `09364831a5ea1a1abf75688d0e7645e752bcbe8d`.
+Engineering details below are implementation constraints and recommendations;
+they do not authorize production operations or make any current object safe to
+drop without migration and dependency proof.
 
 The owner has superseded the former per-theme/service-first execution proposal.
 This initiative is **backend only**: pipeline publication, PostgreSQL and the
@@ -20,8 +22,24 @@ code here. The current AEDAR prototype is intended for future production
 Mobility after the database is settled; leave its UI, acquisition and data/map
 contracts untouched. Earlier conflation of that prototype with retired Variant
 E is superseded. AEDAR's INSEE BPE TYPEQU registry remains valid nomenclature.
-The design gate remains open for the integrated backend target, not frontend
-survival or all proposed candidate approvals.
+The design gate is closed for the integrated backend target. Catalogue membership
+is now enforced by the implementation inventory and its producer-derived
+coverage tests; details below remain the rationale and migration record.
+
+### Implementation checkpoint — 2026-10-16
+
+Producer-derived discovery, the shared typed single/batch grammar, one-snapshot
+execution, named-reference facts, focal profile facts, comparison intents, and
+one-snapshot profile parity, and shared scalar/profile/owned-series publication
+decisions have landed. Legacy theme/profile/series/building/service HTTP aliases
+are no longer registered, and generic indicator reads no longer probe the
+excluded BPE evidence tables. Sparse collection preflight now counts resolved
+rows. The collection publication decision adapter also uses the shared owner
+protocol, while its production DBI path still needs migration to that protocol.
+This is an implementation slice, not completion of this design: full retained
+shape and AEDAR catalogue coverage, production publisher/schema consolidation,
+populated upgrade proof, and removal of excluded legacy schema objects and
+publishers remain outstanding.
 
 ## 1. Resource identity and discovery
 
@@ -685,9 +703,9 @@ Exact table/column names and constraints, named target encoding, individual
 typed-reading fields, backend route retirement order, migration DDL and
 operational rollback remain engineering details for the integrated design and
 review. They are not separate product decisions.
-No ADR or domain definition is changed here;
-after approval, draft edits to ADR-0035/0038/0039, ADR-0037 if publication
-wording changes, and `CONTEXT.md` can be proposed and reviewed deliberately.
+The accepted backend contract is recorded in ADR-0040. Existing ADRs and
+`CONTEXT.md` remain authoritative for their specific domain decisions; this
+design does not authorize frontend/client migration or production rollout.
 
 ## Evidence and source map
 
@@ -697,15 +715,17 @@ Repository contracts read for this proposal:
   owner-series, reading, AEDAR and comparison tables/constraints.
 - [`api/batch-read-contract.md`](../../api/batch-read-contract.md),
   [`api/field-selection-contract.md`](../../api/field-selection-contract.md),
-  [`api/theme-read-contract.md`](../../api/theme-read-contract.md), and
-  [`api/ENDPOINTS.md`](../../api/ENDPOINTS.md): current typed reads, limits,
-  required metadata, snapshot and public route contracts.
+  and [`api/ENDPOINTS.md`](../../api/ENDPOINTS.md): current typed reads, limits,
+  required metadata, snapshot and public route contracts. The old
+  [`api/theme-read-contract.md`](../../api/theme-read-contract.md) is explicitly
+  historical and retired, not a current contract.
 - [`docs/adr/0035-serving-grains-and-scoped-comparisons.md`](../adr/0035-serving-grains-and-scoped-comparisons.md),
   [`docs/adr/0037-publish-tables-independently-from-r.md`](../adr/0037-publish-tables-independently-from-r.md),
   [`docs/adr/0038-common-indicator-serving-contract.md`](../adr/0038-common-indicator-serving-contract.md),
   and [`docs/adr/0039-published-comparison-aggregates.md`](../adr/0039-published-comparison-aggregates.md):
-  accepted invariants and boundaries, not evidence that the proposed target
-  shapes or exact survivors have already been accepted.
+  retained invariants and boundaries for the implemented target.
+- [`docs/adr/0040-unified-semantic-serving-backend.md`](../adr/0040-unified-semantic-serving-backend.md):
+  the accepted integrated backend contract and retirement boundary.
 - [`docs/structured-consumer-inventory.md`](../structured-consumer-inventory.md)
   and [`CONTEXT.md`](../../CONTEXT.md): named consumers, product acquisition
   rules and semantic ownership.

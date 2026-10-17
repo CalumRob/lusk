@@ -1,3 +1,13 @@
+# Load the shared publication protocol when sourced directly by a guarded
+# smoke script rather than through package load_all().
+if (!exists("publish_owner_snapshot", mode = "function", inherits = TRUE)) {
+  .publish_scalar_source <- tryCatch(sys.frame(1L)$ofile, error = function(e) NULL)
+  if (is.null(.publish_scalar_source)) stop("Cannot locate publication_protocol.R", call.=FALSE)
+  sys.source(file.path(dirname(normalizePath(.publish_scalar_source)), "publication_protocol.R"),
+             envir = environment())
+  rm(.publish_scalar_source)
+}
+
 # Contract validator for registered scalar projections. DBI adapters may
 # register a named projection; arbitrary SQL and inferred descriptors are not
 # part of this interface.
@@ -110,129 +120,6 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
     allowed_levels=unlist(page$levels, use.names=FALSE), comparison_facet=NA_character_,
     counts_available=FALSE)
   project_scalar_canonical_rows(rows, descriptor, ids, eligible, fixture_policy)
-}
-
-# Project the canonical service-share relation into the shared scalar grain.
-# The Parquet key remains indicator_id; service/mode are grouping dimensions
-# only for the legacy bounded response and never replace the declared identity.
-project_service_share_scalars <- function(access, metadata, eligible_territories) {
-  required <- c("territory_id", "territory_type", "indicator_id", "value",
-    "unit", "label", "direction", "source_id", "source_name", "source_version",
-    "reference_date", "publication_date")
-  if (!is.data.frame(access) || !all(required %in% names(access)) || !is.list(metadata) ||
-      !is.data.frame(eligible_territories) ||
-      !setequal(names(eligible_territories), c("territory_id", "territory_type")))
-    stop("Canonical service shares are missing contract fields", call.=FALSE)
-  if (any(!grepl("^share_[a-z0-9]+_[tbc]$", access$indicator_id)))
-    stop("Canonical service share has an invalid indicator key", call.=FALSE)
-  declared <- unique(unlist(lapply(metadata$subgroups, `[[`, "indicators"), use.names=FALSE))
-  ids <- sort(declared[grepl("^share_", declared)])
-  scalar_contract <- metadata$service_share_scalar
-  if (length(ids) != 15L || anyDuplicated(ids) ||
-      !is.list(metadata$indicator_labels) || !is.list(metadata$indicator_directions) ||
-      !is.list(metadata$sources) || !is.list(scalar_contract) ||
-      !identical(scalar_contract$completeness, "dense_complete") ||
-      !is.character(scalar_contract$denominator_semantics) ||
-      length(scalar_contract$denominator_semantics) != 1L ||
-      !nzchar(trimws(scalar_contract$denominator_semantics)) ||
-      any(!ids %in% names(metadata$indicator_labels)) ||
-      any(!ids %in% names(metadata$indicator_directions)) || any(!ids %in% names(metadata$sources)))
-    stop("Metadata must declare fifteen complete service-share descriptors", call.=FALSE)
-  if (!setequal(unique(as.character(access$indicator_id)), ids) ||
-      any(!access$unit %in% "%"))
-    stop("Canonical service shares do not match declared metadata or percent unit", call.=FALSE)
-  if (length(ids) != 15L || anyDuplicated(access[c("territory_id", "indicator_id")]))
-    stop("Canonical service scalar projection must contain fifteen complete indicator keys", call.=FALSE)
-  access <- access[order(access$indicator_id, access$territory_id), , drop=FALSE]
-  eligible_territories <- unique(eligible_territories[c("territory_id", "territory_type")])
-  eligible_territories <- eligible_territories[order(eligible_territories$territory_type,
-                                                       eligible_territories$territory_id), , drop=FALSE]
-  group <- split(access, access$indicator_id)
-  descriptors <- do.call(rbind, lapply(ids, function(id) {
-    rows <- group[[id]]
-    sources <- as.character(metadata$sources[[id]])
-    if (length(sources) != 1L || !nzchar(sources) ||
-        !identical(unique(as.character(rows$source_id)), sources) ||
-        length(unique(rows$label)) != 1L || rows$label[[1L]] != metadata$indicator_labels[[id]] ||
-        length(unique(rows$direction)) != 1L || rows$direction[[1L]] != metadata$indicator_directions[[id]])
-      stop("Canonical service scalar descriptor is inconsistent", call.=FALSE)
-    theme_id <- as.character(metadata$theme)
-    if (length(theme_id) != 1L || is.na(theme_id) || !grepl("^[a-z][a-z0-9_]{0,63}$", theme_id))
-      stop("Canonical theme identity is missing for service scalar metadata", call.=FALSE)
-    data.frame(indicator_id=id, theme_id=theme_id, allowed_sources=I(list(sources)),
-      label=as.character(rows$label[[1L]]), unit=as.character(rows$unit[[1L]]),
-      direction=as.character(rows$direction[[1L]]),
-      comparison_facet=id, allowed_levels=I(list(unique(as.character(rows$territory_type)))),
-      denominator_semantics=scalar_contract$denominator_semantics,
-      completeness=scalar_contract$completeness, descriptor_version=scalar_content_version(list(
-         indicator_id=id, theme_id=theme_id,
-        label=metadata$indicator_labels[[id]], direction=metadata$indicator_directions[[id]],
-        source=sources, levels=unique(as.character(rows$territory_type)), unit=unique(as.character(rows$unit)),
-        scalar_contract=scalar_contract)),
-      stringsAsFactors=FALSE)
-  }))
-  facts <- data.frame(indicator_id=as.character(access$indicator_id),
-    territory_id=as.character(access$territory_id), territory_type=as.character(access$territory_type),
-    value=as.numeric(access$value), status=ifelse(is.na(access$value), "not_available", "measured"),
-    support_count=NA_integer_, denominator_count=NA_integer_, stringsAsFactors=FALSE)
-  provenance <- unique(data.frame(indicator_id=as.character(access$indicator_id),
-    territory_id=as.character(access$territory_id), source_id=as.character(access$source_id),
-    vintage_id=paste(access$source_version, access$reference_date, sep="/"), stringsAsFactors=FALSE))
-  datasets <- unique(data.frame(source_id=as.character(access$source_id),
-    name=as.character(access$source_name), stringsAsFactors=FALSE))
-  vintages <- unique(data.frame(source_id=as.character(access$source_id),
-    vintage_id=paste(access$source_version, access$reference_date, sep="/"),
-    version=as.character(access$source_version), reference_date=as.Date(access$reference_date),
-    publication_date=as.Date(access$publication_date), stringsAsFactors=FALSE))
-  eligible <- unique(eligible_territories[c("territory_id", "territory_type")])
-  list(facts=facts, descriptors=descriptors, provenance=provenance,
-    datasets=datasets, vintages=vintages, eligible_territories=eligible)
-}
-
-register_service_share_scalar_publisher <- function(registry, metadata) {
-  register_scalar_publisher(registry, "services_essentiels_scalar",
-    project=function(canonical) {
-      if (!is.list(canonical) || !is.data.frame(canonical$access))
-        stop("Service scalar publisher requires canonical access facts", call.=FALSE)
-      if (!is.data.frame(canonical$eligible_territories))
-        stop("Service scalar publisher requires the canonical territory universe", call.=FALSE)
-      project_service_share_scalars(canonical$access, metadata,
-                                    canonical$eligible_territories)
-    },
-    publish=function(projection, db, version) db$replace(projection, version))
-}
-
-publish_service_share_scalars <- function(con, access, metadata, eligible_territories,
-                                          additional_projections=list()) {
-  publisher <- register_service_share_scalar_publisher(list(), metadata)
-  if (!is.list(additional_projections)) stop("Additional scalar cohorts must be registered projections", call.=FALSE)
-  project <- publisher$services_essentiels_scalar$project
-  publisher$services_essentiels_scalar$project <- function(canonical) {
-    attach_essential_service_denominators(
-      assemble_scalar_snapshot(project(canonical), additional_projections))
-  }
-  db <- scalar_postgres_adapter(con)
-  publish_registered_scalar(publisher, "services_essentiels_scalar",
-    canonical=list(access=access, eligible_territories=eligible_territories), db=db)
-}
-
-attach_essential_service_denominators <- function(projection) {
-  service_rows <- grepl("^share_", projection$facts$indicator_id)
-  if (!any(service_rows)) return(projection)
-  building_rows <- projection$facts[projection$facts$indicator_id == "nb_buildings", , drop=FALSE]
-  if (!nrow(building_rows) || anyDuplicated(building_rows$territory_id) ||
-      any(building_rows$status == "measured" & (is.na(building_rows$value) |
-        building_rows$value < 0 | building_rows$value != floor(building_rows$value))))
-    stop("Canonical nb_buildings facts have invalid measured denominators", call.=FALSE)
-  denominator <- building_rows$value[match(projection$facts$territory_id[service_rows], building_rows$territory_id)]
-  unavailable_denominator <- is.na(denominator)
-  service_fact_status <- projection$facts$status[service_rows]
-  service_fact_value <- projection$facts$value[service_rows]
-  if (any(unavailable_denominator & service_fact_status == "measured" & !is.na(service_fact_value)))
-    stop("Measured essential-service fact has no canonical nb_buildings denominator", call.=FALSE)
-  projection$facts$denominator_count[service_rows] <- as.integer(denominator)
-  validate_scalar_projection(projection$facts, projection$descriptors, projection$eligible_territories)
-  projection
 }
 
 # Shared canonical fact-to-serving projection. Fixture-only completeness is
@@ -902,42 +789,38 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical|it_building_publisher)_[A-Za-z0-9_]+$", schema))
+       !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
   tables <- c("comparison_source_lineage", "aedar_comparison_territory", "aedar_comparison_group",
     "aedar_comparison_publication",
-    "observed_collection_comparison_territory", "observed_collection_comparison_group", "observed_collection_comparison_publication",
-    "observed_collection_comparison_lineage", "profile_comparison_territory", "profile_comparison_group", "profile_comparison_publication",
+   "observed_collection_comparison_territory", "observed_collection_comparison_lineage",
+   "observed_collection_comparison_group", "observed_collection_comparison_publication",
+   "profile_comparison_territory", "profile_comparison_group", "profile_comparison_publication",
     "scalar_comparison_territory", "scalar_comparison_group", "scalar_comparison_publication",
-    "ordered_series_comparison_territory", "ordered_series_comparison_group", "ordered_series_comparison_publication",
+   "ordered_series_comparison_territory", "ordered_series_comparison_lineage",
+   "ordered_series_comparison_zero_reason", "ordered_series_comparison_group",
+   "ordered_series_comparison_publication",
     "milieux_reading_absence", "aedar_territorial_aggregate",
     "milieux_reading_source", "series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
-    "economy_activity_evidence", "economy_typed_reading", "milieux_typed_reading", "mobility_typed_reading",
-    "series_context_parent_policy", "habitat_typed_reading", "mobility_reading_clock", "mobility_reading_story", "mobility_reading_descriptor",
+    "economy_activity_evidence", "economy_typed_reading", "milieux_typed_reading",
+    "series_context_parent_policy", "habitat_typed_reading",
     "selected_reading_publication", "selected_reading_descriptor", "demographic_typed_reading", "demographic_reading_descriptor",
     "period_detail_observation", "anchored_membership", "observed_collection_category",
     "observed_collection_descriptor", "observed_collection_publication",
-    "mobility_density_distribution_point", "mobility_density_distribution_range", "mobility_density_distribution_descriptor",
-    "series_named_reference_descriptor", "series_dataset_descriptor",
+     "series_named_reference_descriptor", "series_dataset_descriptor",
     "series_dataset_publication", "series_provenance_revision", "milieux_population_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
     "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
-    "bpe_profile_evidence_source", "bpe_profile_evidence", "bpe_profile_class_axis", "bpe_profile_evidence_descriptor",
-    "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
-    "scalar_descriptor", "building_ramp", "building_grid", "building_evidence_descriptor_source",
-    "building_evidence_descriptor", "essential_service_access", "service_registry",
-    "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
+     "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
+     "scalar_descriptor", "territory_reference", "source_vintage", "source_dataset",
     "table_publication")
   functions <- c("check_aedar_comparison_publication()", "reject_profile_insert()", "reject_smoke_value()", "reject_combined_smoke_value()", "reject_smoke_ramp()",
     "reject_series_smoke_insert()",
     "assert_profile_territory_level()", "assert_scalar_observation_has_source()",
     "assert_scalar_descriptor_sources()", "assert_scalar_levels()",
     "assert_scalar_descriptor_update()", "assert_scalar_territory_update()",
-    "assert_building_dataset_complete(integer, integer)", "assert_building_fact_source()",
-    "assert_building_descriptor_publication()", "assert_current_dataset_complete(integer)",
-    "validate_series_dataset_descriptor()", "validate_series_dataset_observation()",
+     "validate_series_dataset_descriptor()", "validate_series_dataset_observation()",
      "validate_series_dataset_publication()", "validate_series_observation_provenance()",
-     "assert_bpe_profile_evidence_complete()",
      "validate_series_named_reference()", "validate_series_named_reference_provenance()",
        "validate_observed_collection_comparison_write()", "validate_observed_collection_comparison_publication()", "validate_observed_collection_comparison_lineage()",
       "validate_observed_collection_write()", "validate_anchored_membership()",
@@ -946,8 +829,7 @@ serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
      "reject_milieux_population_provenance_mutation()",
     "validate_ordered_series()", "validate_anchored_membership()",
      "validate_period_detail_observation()", "validate_observed_collection_write()",
-      "validate_observed_collection_publication()", "assert_bpe_profile_evidence_complete()",
-      "assert_mobility_density_distribution_complete()", "validate_mobility_density_distribution_territory()")
+       "validate_observed_collection_publication()")
   c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
     paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
       split <- strsplit(signature, "(", fixed=TRUE)[[1L]]
@@ -990,7 +872,6 @@ cleanup_serving_smoke_schema <- function(connection, schema, kind) {
     reading="^reading_it_[A-Za-z0-9_]+$",
     distribution="^distribution_it_[A-Za-z0-9_]+$",
     distribution_canonical="^distribution_canonical_[A-Za-z0-9_]+$",
-    building="^it_building_publisher_[A-Za-z0-9_]+$",
     series="^series_it_[A-Za-z0-9_]+$", NULL)
   if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||
       length(schema) != 1L || is.na(schema) || !grepl(expected_schema, schema))
@@ -1052,32 +933,30 @@ publish_registered_scalar <- function(registry, name, canonical, db) {
           paste(vintages$source_id, vintages$vintage_id)))
     stop("Scalar provenance refers to an undeclared dataset or vintage", call. = FALSE)
   version <- scalar_content_version(projection)
-  db$transaction({
-    if (is.function(db$lock)) db$lock()
-    reference <- db$reference_marker()
+  result <- publish_owner_snapshot(
+    db = db, owner = "scalar_observation", content_version = version,
+    dependency_name = "territory_reference",
+    read_dependency = db$reference_marker,
+    validate_dependency = function(reference) {
     if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
         !nzchar(reference$content_version[[1L]]) ||
         (all(c("row_count", "actual_rows") %in% names(reference)) &&
          reference$row_count[[1L]] != reference$actual_rows[[1L]]))
       stop("Territory reference has no committed publication marker", call. = FALSE)
     db$validate_territories(projection$eligible_territories, projection$descriptors)
-    marker <- db$marker("scalar_observation")
-    changed <- !(nrow(marker) && identical(as.character(marker$content_version[[1L]]), version))
-    reference_changed <- nrow(marker) && !identical(
-      as.character(marker$reference_content_version[[1L]]),
-      as.character(reference$content_version[[1L]]))
-    if (changed) publisher$publish(projection, db, version)
-    else if (reference_changed) db$set_reference_version(reference$content_version[[1L]])
-    invisible(list(changed = changed, compatibility_updated = reference_changed,
-                   content_version = version))
-  })
+    },
+    publish_content = function(version_arg, dependency_arg) publisher$publish(projection, db, version),
+    rebind_dependency = db$set_reference_version)
+  invisible(list(changed = result$changed,
+                 compatibility_updated = result$rebound,
+                 content_version = result$content_version))
 }
 
 scalar_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly = TRUE)) stop("DBI is required")
   list(
     transaction = function(expr) DBI::dbWithTransaction(con, expr),
-    lock = function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
+    lock = function(owner_arg) DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version, reference_content_version FROM table_publication WHERE table_name = $1", params = list(name)),
     reference_marker = function() DBI::dbGetQuery(con,

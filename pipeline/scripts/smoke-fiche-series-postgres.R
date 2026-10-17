@@ -15,10 +15,7 @@ tryCatch({
     identical(identity$username[[1L]],Sys.getenv("LUSK_PROFILE_TEST_USER")))
   DBI::dbExecute(con,paste("SET search_path TO",DBI::dbQuoteIdentifier(con,args[[1L]])))
   sortie <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR")
-  reference <- preparer_tables_service(sortie)$tables$territory_reference
-  DBI::dbWriteTable(con,"territory_reference",reference,append=TRUE,row.names=FALSE)
-  DBI::dbExecute(con,"INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference',$1,$2)",
-    params=list(scalar_content_version(reference),nrow(reference)))
+  publish_canonical_territory_reference(con, sortie)
   # The owned series and the Milieux reading come from their serving artifacts,
   # through the same readers the pipeline publishes from: no theme Parquet is
   # re-projected here. The shared vintages stay the canonical clock authority.

@@ -1279,35 +1279,25 @@ themes_fusion <- if (selection_complete) {
 }
 
 # Publication SQL explicite depuis le PC : jamais dans le cron/static par
-# défaut. Le leaf attend la dernière écriture du référentiel territorial, la
-# table fusionnée des vintages, les métadonnées Mobilité, et les publications
-# canoniques Habitat, Démographie et Économie consommées par le snapshot scalaire. Un marqueur DB en
+# défaut. Le leaf attend les artefacts scalaires et lectures canoniques retenus.
+# Il ne dépend d'aucun parquet de partage, profil BPE ou accessibilité bâtimentière. Un marqueur DB en
 # retard doit être retenté même quand tous les upstream targets sont à jour :
 # seul ce LEAF a cue=always, pas les calculs coûteux en amont.
-publication_service <- list()
+publication_retained_backend <- list()
 if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
-  if (identical(MODE_RUN, "cron") ||
-      !all(c("mobilite", "economie", "demographie", "habitat") %in% names(THEMES_RUN))) {
-    stop("LUSK_PUBLISH_DB exige un run local incluant les thèmes Mobilité, Économie/Emploi, Démographie et Habitat; cron interdit.",
+  scalar_owners <- retained_scalar_artifact_owners()
+  if (identical(MODE_RUN, "cron") || !all(scalar_owners %in% names(THEMES_RUN))) {
+    stop("LUSK_PUBLISH_DB exige un run local couvrant tous les propriétaires scalaires déclarés; cron interdit.",
          call. = FALSE)
   }
-  derniere_publication <- as.name(paste0(
-    "publie_", THEMES_RUN[[length(THEMES_RUN)]]$theme
-  ))
-  publication_service <- list(tar_target_raw(
-    "publie_tables_service",
-    bquote({
-      .(derniere_publication)
-      publie_mobilite
-      publie_economie
-      publie_demographie
-      publie_habitat
-      metadata_mobilite
-      fusion_vintages
-      scalar_serving_artifacts
-      typed_reading_serving_artifacts
-      publier_tables_service_depuis_parquet(.(SORTIE_RUN))
-    }),
+  publication_dependencies <- c(
+    lapply(paste0("publie_", scalar_owners), as.name),
+    list(as.name("fusion_vintages"), as.name("scalar_serving_artifacts"),
+      as.name("typed_reading_serving_artifacts")))
+  publication_command <- as.call(c(list(as.name("{")), publication_dependencies,
+    list(as.call(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN)))))
+  publication_retained_backend <- list(tar_target_raw(
+    "publie_backend_retained", publication_command,
     cue = tar_cue(mode = "always")
   ))
 }
@@ -1326,7 +1316,7 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
       publie_demographie
       publie_habitat
       publie_mobilite
-      publie_tables_service
+      publie_backend_retained
       profile_serving_artifacts
       publier_declared_profiles_postgres(SORTIE_RUN,
         unique(c(profile_serving_owners(metadata_demographie),
@@ -1350,7 +1340,7 @@ list(
   scalar_artifacts_themes(),
   profile_artifacts_themes(),
   typed_reading_artifacts_themes(),
-  publication_service,
+  publication_retained_backend,
   publication_profile,
   rapports,
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),

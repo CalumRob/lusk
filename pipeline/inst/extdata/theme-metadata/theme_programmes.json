@@ -113,6 +113,7 @@
     "subventions_annuelles": {
       "indicator": "subventions_annuelles",
       "series_dataset_id": "subventions_annuelles",
+      "axis_kind": "year",
       "serving_levels": ["commune", "epci", "departement", "region"],
       "completeness": "may_be_missing",
       "absence_semantics": "no_record",

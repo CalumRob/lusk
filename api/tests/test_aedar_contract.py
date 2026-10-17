@@ -1,16 +1,16 @@
 import inspect
 from pathlib import Path
 
-from api import main
+from api import aedar_reads, aedar_routes
 from api.main import app
 
 
 def test_aedar_reader_is_named_typed_and_bounded():
-    route = next(r for r in app.routes if r.path ==
+    route = next(r for r in aedar_routes.create_aedar_router(get_pool=lambda: None).routes if r.path ==
         "/api/aedar/territories/{territory_type}/{territory_id}/aggregates")
     assert route.endpoint.__name__ == "aedar_territorial_aggregates"
     assert route.methods == {"GET"}
-    sql = inspect.getsource(main._aedar_territorial_aggregate_snapshot)
+    sql = inspect.getsource(aedar_reads._aedar_territorial_aggregate_snapshot)
     assert "territory_type=%s AND territory_id=%s" in sql
     assert "LIMIT %s OFFSET %s" in sql
     assert "typequ=ANY(%s)" in sql
@@ -18,10 +18,10 @@ def test_aedar_reader_is_named_typed_and_bounded():
 
 
 def test_aedar_fixed_comparison_read_is_bounded_and_fails_closed_on_stale_dependencies():
-    route = next(route for route in main.app.routes if getattr(route, "path", "") ==
+    route = next(route for route in aedar_routes.create_aedar_router(get_pool=lambda: None).routes if getattr(route, "path", "") ==
         "/api/aedar/territories/{territory_type}/{territory_id}/comparisons")
     assert route.endpoint.__name__ == "aedar_fixed_comparisons"
-    source = inspect.getsource(main._aedar_comparison_snapshot)
+    source = inspect.getsource(aedar_reads._aedar_comparison_snapshot)
     assert "aedar_content_version" in source
     assert "reference_content_version" in source
     assert "aedar_comparison_territory" in source
@@ -116,7 +116,7 @@ def test_aedar_metadata_complete_check_fails_closed_for_partial_gamme_states():
 
 
 def test_aedar_typed_response_accepts_registered_projection_but_rejects_unknown_measure():
-    from api.main import AEDARFactResponse
+    from api.aedar_models import AEDARFactResponse
     import pytest
     payload = dict(territory_id="x", territory_type="commune", typequ="A104",
             typequ_label="GENDARMERIE",typequ_hierarchy_label="GENDARMERIE",typequ_description="Description",
@@ -152,7 +152,7 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
                      "Official description line one\nline two", "C","Services","C4","Publics",
                      "Hors Gamme","hors_gamme",1,{"code_insee": "id"},
                      10, 8, "covered", {key: (0 if key == "count_5_walk_share" else None)
-                       for key in main._AEDAR_MEASURE_KEYS}, "aedar_bretagne",
+                        for key in aedar_routes.AEDAR_MEASURE_KEYS}, "aedar_bretagne",
                       "2026-v1", "https://example.test", "ODbL",
                       "© OpenStreetMap contributors; données AEDAR — licence ODbL", None, "2026-09-30")]
     class Connection:

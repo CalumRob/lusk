@@ -156,27 +156,23 @@ def test_custom_cohort_reads_peer_facts_not_comparison_tables():
 
 
 def test_theme_collection_only_route_passes_exact_fixed_context(monkeypatch):
-    from api import main
-
-    class ThemeConn:
-        def execute(self, sql, params=None):
-            if "SELECT indicator_id,label,unit,direction,comparison_facet" in sql: return Cursor(rows=[])
-            if "to_regclass('bpe_profile_evidence_descriptor')" in sql: return Cursor((None,))
-            if "to_regclass('series_dataset_descriptor')" in sql: return Cursor((None,))
-            if "table_name='territory_reference'" in sql: return Cursor(("ref",))
-            return Cursor()
-
+    from types import SimpleNamespace
+    from api import snapshot_reads
     observed = []
-    monkeypatch.setattr(main, "collection_descriptors", lambda *_a, **_kw: [DESCRIPTOR])
-    monkeypatch.setattr(main, "_comparison_cohort", lambda *_a: ("commune", ("c1", "c2"), {"kind":"density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a, **_kw: ("density_class", "A", "commune"))
-    monkeypatch.setattr(main, "collection_comparison", lambda *a: observed.append(a[-1]) or {
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort_in_snapshot",
+        lambda *_a, **_kw: ("commune", ("c1", "c2"), {"kind":"density_class"}))
+    monkeypatch.setattr(snapshot_reads, "_fixed_scalar_comparison_context",
+        lambda *_a, **_kw: ("density_class", "A", "commune"))
+    monkeypatch.setattr(snapshot_reads, "collection_comparison", lambda *a, **_kw: observed.append(a[-1]) or {
         "content_version":"cv", "reference_content_version":"ref", "indicator_id":"grant_amount"})
-    monkeypatch.setattr(main, "_profile_comparison_results", lambda *_a: [])
-    monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_a, **_kw: ([], {}, None, None, None))
-    monkeypatch.setattr(main, "_demographic_reading_marker", lambda _c: None)
-    monkeypatch.setattr(main, "_milieux_reading_marker", lambda _c: None)
-    main._theme_comparison_snapshot(ThemeConn(), "commune", "c1", "programmes", None)
+    resource = snapshot_reads._ResolvedIndicatorResource(
+        None, (), None, (DESCRIPTOR,), None, None)
+    state = snapshot_reads._BatchReadSnapshotState()
+    state.indicator_resources["grant_amount"] = resource
+    class Connection:
+        def execute(self, sql, params=None): return Cursor(("commune",))
+    snapshot_reads._indicator_comparison_snapshot(
+        Connection(), "commune", "c1", "grant_amount", None, None, snapshot_state=state)
     assert observed == [("density_class", "A", "commune")]
 
 
@@ -220,3 +216,39 @@ def test_period_detail_field_selection_projects_value_and_keeps_sparse_provenanc
 
     full = collection_snapshot(SnapshotConnection(), DESCRIPTOR, "commune", "c1")
     assert full["entries"][0]["value"] is None
+
+
+def test_period_detail_preflight_counts_actual_focal_rows():
+    class CountConnection:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "to_regclass('observed_collection_descriptor')" in sql: return Cursor(("observed_collection_descriptor",))
+            if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
+            if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            if "SELECT count(*) FROM period_detail_observation" in sql: return Cursor((37,))
+            raise AssertionError(sql)
+
+    conn = CountConnection()
+    estimate = collection_snapshot(conn, DESCRIPTOR, "commune", "c1", preflight_only=True)
+    assert estimate["work_units"] == 37
+    assert not any("SELECT o.detail_key" in sql for sql, _ in conn.calls)
+
+
+def test_anchored_membership_preflight_counts_resolved_anchor_rows():
+    descriptor = {**DESCRIPTOR, "kind": "anchored_membership"}
+
+    class CountConnection:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "SELECT count(*) FROM anchored_membership" in sql: return Cursor((241,))
+            if "to_regclass('observed_collection_descriptor')" in sql: return Cursor(("observed_collection_descriptor",))
+            if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
+            if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            raise AssertionError(sql)
+
+    conn = CountConnection()
+    estimate = collection_snapshot(conn, descriptor, "commune", "c1", preflight_only=True)
+    assert estimate["work_units"] == 241
+    assert not any("SELECT t.territory_id" in sql for sql, _ in conn.calls)

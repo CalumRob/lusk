@@ -1,4 +1,13 @@
-# Migration 016: bounded BPE profile evidence
+# PostgreSQL migration history
+
+> **Historical chronology, not a current runbook.** Sections for migrations
+> 001–035 describe their original change and verification context; many legacy
+> paths cited there have since been retired. The current retained schema is
+> `api/schema.sql`; the latest guarded upgrade proofs are migrations 036 and 037
+> as described in [`api/tests/integration/README.md`](../tests/integration/README.md).
+> Do not execute old commands in this chronology as current operating guidance.
+
+# Migration 016: bounded BPE profile evidence (historical)
 
 Migration 016 adds a dedicated, registered `bpe_profile_evidence` publication;
 it does not put BPE class counts into the median-only declared-profile shape.
@@ -94,7 +103,12 @@ before treating the producer change as campaign-ready. A worktree without
 (#757 retired the theme-grouped `indicateurs_milieux.parquet`; the typed
 serving artifacts under `public/data/` are the canonical inputs now.)
 
-# Migration 009 operator procedure
+# Migration 009 operator procedure (historical; superseded)
+
+This procedure is retained as historical evidence only. It is not a current
+migration selector or supported operator instruction; consult the current
+036/037 guarded procedures and obtain owner/operator approval for any future
+production change.
 
 Migration 009 is reserved for issue #600 and is **not** part of fresh-install
 `schema.sql`. It removes only the retired `public.dataset_publication` relation.
@@ -408,3 +422,17 @@ unavailable until normal publisher replacement. A genuinely empty new
 comparison remains valid when the publisher declares zero eligible support and
 zero lineage. The migration is additive and does not publish data or authorize
 deployment.
+
+# Migration 036 — retire legacy accessibility serving objects
+
+`036_retire_legacy_accessibility_serving.sql` removes the BPE evidence, building
+access, service-access, and mobility-density distribution serving tables and
+their owned validation functions. It removes their obsolete publication tokens
+and narrows the shared publication-token constraints to retained owners. It
+does not use `CASCADE`: an unexpected dependent object aborts the transaction
+for explicit operator review. Retained canonical source records, scalar/profile/
+series/collection/AEDAR facts, provenance, and publication versions are preserved.
+The guarded integration proof applies this migration to a populated schema
+created from the pinned pre-retirement schema, verifies retained values and
+tokens, and checks that excluded tables/functions are absent. This migration
+only changes the serving schema; it does not authorize deployment.

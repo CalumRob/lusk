@@ -1,3 +1,13 @@
+# Load the shared owner protocol for guarded scripts that source this file
+# directly without first loading the package.
+if (!exists("publish_owner_snapshot", mode = "function", inherits = TRUE)) {
+  .publish_series_source <- tryCatch(sys.frame(1L)$ofile, error = function(e) NULL)
+  if (is.null(.publish_series_source)) stop("Cannot locate publication_protocol.R", call.=FALSE)
+  sys.source(file.path(dirname(normalizePath(.publish_series_source)), "publication_protocol.R"),
+             envir = environment())
+  rm(.publish_series_source)
+}
+
 # Validate the metadata-owned annual-series projection without filling gaps.
 `%||%` <- function(x, y) if (is.null(x)) y else x
 validate_series_projection <- function(points, descriptor) {
@@ -800,10 +810,36 @@ owned_series_postgres_adapter <- function(con) {
           stop("Dense-complete duration publication contains unregistered territory/territories: ",
             describe(unexpected),call.=FALSE)
       }
-      # Revision records are insert-only; a reused ID/hash with different content is rejected.
-      for (i in seq_len(nrow(projection$provenance))) {
-        p <- projection$provenance[i,,drop=FALSE]
-        DBI::dbExecute(con, "INSERT INTO series_provenance_revision(provenance_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,revision_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(provenance_revision_id) DO NOTHING",
+       # Revision records are insert-only; a reused ID/hash with different content is rejected.
+       for (i in seq_len(nrow(projection$provenance))) {
+         p <- projection$provenance[i,,drop=FALSE]
+         # The owner-scoped series publisher owns the source identity and
+         # vintage registry needed by dependent facts (including sparse source
+         # absences). Publish these canonical source records in the same
+         # transaction as the immutable series revision.
+          DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2)
+            ON CONFLICT(source_id) DO NOTHING",
+            params=list(p$source_id[[1L]],p$source_name[[1L]]))
+          registered_source <- DBI::dbGetQuery(con,
+            "SELECT name FROM source_dataset WHERE source_id=$1",params=list(p$source_id[[1L]]))
+          if(nrow(registered_source)!=1L ||
+             !identical(as.character(registered_source$name[[1L]]),as.character(p$source_name[[1L]])))
+            stop("Immutable source identity conflicts with the registered source dataset: ",
+              p$source_id[[1L]],call.=FALSE)
+          DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+            VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING",
+            params=unname(as.list(p[c("source_id","vintage_id","source_version","reference_date","publication_date")])))
+          registered_vintage <- DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date
+            FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
+            params=list(p$source_id[[1L]],p$vintage_id[[1L]]))
+          expected_vintage <- p[c("source_version","reference_date","publication_date")]
+          if(nrow(registered_vintage)!=1L ||
+             !identical(as.character(registered_vintage$version[[1L]]),as.character(expected_vintage$source_version[[1L]])) ||
+             !identical(as.character(registered_vintage$reference_date[[1L]]),as.character(expected_vintage$reference_date[[1L]])) ||
+             !identical(as.character(registered_vintage$publication_date[[1L]]),as.character(expected_vintage$publication_date[[1L]])))
+            stop("Immutable source vintage conflicts with the registered source clock: ",
+              p$source_id[[1L]],"/",p$vintage_id[[1L]],call.=FALSE)
+         DBI::dbExecute(con, "INSERT INTO series_provenance_revision(provenance_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,revision_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(provenance_revision_id) DO NOTHING",
           params=unname(as.list(p[1,c("provenance_revision_id","source_id","vintage_id","source_name","dataset_name","source_version","reference_date","publication_date","revision_hash")])) )
         same <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM series_provenance_revision WHERE provenance_revision_id=$1 AND source_id=$2 AND vintage_id=$3 AND source_name=$4 AND dataset_name=$5 AND source_version=$6 AND reference_date IS NOT DISTINCT FROM $7::date AND publication_date IS NOT DISTINCT FROM $8::date AND revision_hash=$9",
           params=unname(as.list(p[1,c("provenance_revision_id","source_id","vintage_id","source_name","dataset_name","source_version","reference_date","publication_date","revision_hash")])) )$n[[1L]]
@@ -884,23 +920,36 @@ publish_owned_series_projection <- function(projection, db) {
       !is.function(db$dataset_marker) || !is.function(db$reference_marker) || !is.function(db$replace_dataset))
     stop("Invalid owned series database adapter",call.=FALSE)
   version <- scalar_content_version(projection); dataset <- projection$descriptor$dataset_id
-  db$transaction({
-    db$lock(dataset)
-    marker <- db$dataset_marker(dataset); ref <- db$reference_marker()
-    if (!nrow(ref)) stop("Territory reference publication is unavailable",call.=FALSE)
-    changed <- !nrow(marker) || !identical(as.character(marker$content_version[[1L]]),version)
-    rebound <- nrow(marker) && !identical(as.character(marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]]))
-    comparison_stale <- FALSE
-    if (!is.null(projection$descriptor$comparison_levels) && is.function(db$comparison_marker)) {
-      comparison_marker <- db$comparison_marker(dataset,projection$descriptor$indicator_id)
-      comparison_stale <- !nrow(comparison_marker) ||
-        !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]),version) ||
-        !identical(as.character(comparison_marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]])) ||
-        !isTRUE(comparison_marker$lineage_row_count[[1L]]>=0L)
-    }
-    if (changed || rebound || comparison_stale) db$replace_dataset(projection,version)
-    invisible(list(changed=changed,rebound=rebound,content_version=version,dataset_id=dataset))
-  })
+  protocol_db <- list(transaction = db$transaction, lock = db$lock,
+                      marker = function(owner) db$dataset_marker(owner))
+  result <- publish_owner_snapshot(
+    db = protocol_db, owner = dataset, content_version = version,
+    dependency_name = "territory_reference",
+    read_dependency = db$reference_marker,
+    validate_dependency = function(ref) {
+      if (!nrow(ref) || is.na(ref$content_version[[1L]]) ||
+          !nzchar(as.character(ref$content_version[[1L]])))
+        stop("Territory reference publication is unavailable", call.=FALSE)
+    },
+    publish_content = function(version_arg, dependency_arg) db$replace_dataset(projection, version),
+    rebind_dependency = function(reference_version) db$replace_dataset(projection, version),
+    requires_republish = function(marker, ref) {
+      if (!is.data.frame(marker) || !nrow(marker) ||
+          !"reference_content_version" %in% names(marker)) return(TRUE)
+      if (!identical(as.character(marker$reference_content_version[[1L]]),
+                     as.character(ref$content_version[[1L]]))) return(TRUE)
+      if (is.null(projection$descriptor$comparison_levels) || !is.function(db$comparison_marker))
+        return(FALSE)
+      comparison_marker <- db$comparison_marker(dataset, projection$descriptor$indicator_id)
+      !nrow(comparison_marker) ||
+        !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]), version) ||
+        !identical(as.character(comparison_marker$reference_content_version[[1L]]),
+                   as.character(ref$content_version[[1L]])) ||
+        !isTRUE(comparison_marker$lineage_row_count[[1L]] >= 0L)
+    })
+  invisible(list(changed=result$changed, rebound=result$rebound,
+    republished_for_dependency=result$republished_for_dependency,
+    content_version=result$content_version, dataset_id=dataset))
 }
 
 # Fingerprint all authoritative inputs on both sides of one read window. This

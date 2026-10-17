@@ -70,7 +70,7 @@ jsonlite::write_json(list(membership=a$membership,indicators=rows,vintages=v,ora
         library = subprocess.run(["Rscript", "-e", "cat(.libPaths()[1])"], cwd=root / "pipeline",
                                  capture_output=True, text=True, check=True).stdout
         env["R_LIBS_USER"] = library
-        prepared_run = subprocess.run(["Rscript", str(prepare), str(root), str(prepared)], cwd=root,
+        prepared_run = subprocess.run(["Rscript", str(prepare), str(root), str(prepared)], cwd=root / "pipeline",
                                       env=env, capture_output=True, text=True)
         assert prepared_run.returncode == 0, prepared_run.stdout + prepared_run.stderr
         data = json.loads(prepared.read_text(encoding="utf-8"))
@@ -93,20 +93,6 @@ jsonlite::write_json(list(membership=a$membership,indicators=rows,vintages=v,ora
           VALUES(%s,%s,%s,%s,%s,%s,%s)""", refs)
         upgrade.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','national-test-ref-v1',%s)",
                         (len(refs),))
-        upgrade.execute("INSERT INTO access_publication_metadata(singleton,bretagne_kind,bretagne_label) VALUES(true,'region','Bretagne')")
-        upgrade.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('essential_service_access','national-test-access-v1',1)")
-        upgrade.execute("INSERT INTO service_registry(service) VALUES('fixture_service')")
-        upgrade.execute("""INSERT INTO essential_service_access(territory_id,service,mode,share,indicator_label,effective_direction,source_id,source_name,source_version,reference_date,source_publication_date)
-          VALUES('35085','fixture_service','walk_transit',.5,'Fixture access','high','fixture_access','Fixture access','v1','2026-01-01','2026-01-02')""")
-        upgrade.execute("INSERT INTO source_dataset(source_id,name) VALUES('mobility_snapshot','Mobility reading fixture')")
-        upgrade.execute("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES('mobility_snapshot','v1','v1','2026-01-01','2026-01-02')")
-        upgrade.execute("INSERT INTO mobility_reading_story(story_key,groupe,salience_reason,ordinal) VALUES('fixture_story','fixture_group','fixture_reason',1)")
-        upgrade.execute("INSERT INTO mobility_reading_clock(ordinal,clock_name,frequency,reference,trigger) VALUES(1,'Fixture clock','annual','Fixture reference','Fixture trigger')")
-        upgrade.execute("""INSERT INTO mobility_reading_descriptor(singleton,descriptor_version,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,unit,direction,allowed_levels,missing_status,classification_values,field_keys,story_count,clock_count)
-          VALUES(true,'1','mobility_snapshot','v1','Mobility reading fixture','Fixture','v1','2026-01-01','2026-01-02','count','high',ARRAY['commune','epci','departement','region'],'unavailable',ARRAY['saillant'],ARRAY['groupe','story_key','salience_reason','classification_saillance','div_loss_t','div_loss_b','status'],1,1)""")
-        upgrade.execute("""INSERT INTO mobility_typed_reading(territory_id,territory_type,groupe,story_key,salience_reason,classification_saillance,div_loss_t,div_loss_b,status,source_id,vintage_id)
-          VALUES('35085','commune','fixture_group','fixture_story','fixture_reason','saillant',1,.5,'measured','mobility_snapshot','v1')""")
-        upgrade.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES('mobility_typed_reading','fixture-reading-v1',1,'national-test-ref-v1')")
         vintage = next(row for row in data["vintages"] if row["id"] == "raccordement_gtfs_national")
         upgrade.execute("INSERT INTO source_dataset(source_id,name) VALUES(%s,%s)",
                         (vintage["id"], vintage["source"]))
@@ -135,7 +121,7 @@ DBI::dbDisconnect(con)
 ''', encoding="utf-8")
         env.update({"LUSK_TEST_DATABASE_NAME": "lusk_it_contract"})
         published = subprocess.run(["Rscript", str(publish), str(root), str(payload_path), str(metadata_path), schema],
-                                   cwd=root, env=env, capture_output=True, text=True)
+                                   cwd=root / "pipeline", env=env, capture_output=True, text=True)
         assert published.returncode == 0, published.stdout + published.stderr
         assert upgrade.execute("SELECT row_count FROM series_dataset_publication WHERE dataset_id='raccordement_courbe'").fetchone() == (92637,)
         assert upgrade.execute("SELECT count(*) FROM series_dataset_observation WHERE indicator_id='raccordement_courbe'").fetchone() == (92564,)
@@ -158,7 +144,9 @@ preserved<-as.data.frame(combined[seq_len(sum(keep)),names(incumbent)])
 original<-as.data.frame(incumbent[keep,]); rownames(preserved)<-rownames(original)<-NULL
 stopifnot(identical(preserved,original))
 v<-nanoparquet::read_parquet(file.path(root,"public/data/vintages.parquet"))
-new_v<-lusk:::vintages_mobilite(); new_v<-new_v[new_v$id=="raccordement_gtfs_national",]
+# Rebind every retained scalar source to its producer-owned current vintage;
+# the incumbent snapshot may predate the BPE25 B316 owner-retained ratio.
+new_v<-lusk:::vintages_mobilite()
 v<-dplyr::bind_rows(v[!v$id %in% new_v$id,],new_v)
 nanoparquet::write_parquet(combined,file.path(bundle,"indicateurs_mobilite.parquet"))
 nanoparquet::write_parquet(v,file.path(bundle,"vintages.parquet"))
@@ -166,8 +154,15 @@ stopifnot(file.copy(file.path(root,"pipeline/inst/extdata/theme-metadata/theme_m
 refs<-nanoparquet::read_parquet(file.path(root,"public/data/territoires.parquet"))
 eligible<-data.frame(territory_id=as.character(refs$territoire),territory_type=as.character(refs$type))
 registry<-lusk:::register_scalar_publisher(list(),"canonical_mobility",
- project=function(directory) lusk:::project_mobility_scalar_cohort(directory,eligible),
+ project=function(directory) lusk:::project_theme_scalar_cohort(directory,eligible,"mobilite"),
  publish=function(projection,db,version) db$replace(projection,version))
+metadata<-lusk:::lire_theme_metadata("mobilite")
+# This proof owns the retained raccordement scalar only. Use the real producer
+# projector/artifact and registered publisher without copying unrelated scalar
+# indicator rows into this focused guarded fixture.
+metadata$scalar_contracts<-metadata$scalar_contracts["raccordement_tc"]
+payload<-list(indicateurs=combined,territoires=refs)
+lusk:::materialize_theme_scalar_artifact(payload,metadata,new_v,"mobilite",bundle)
 con<-DBI::dbConnect(RPostgres::Postgres(),dbname=Sys.getenv("LUSK_TEST_DATABASE_NAME"),host="192.168.1.120",port=5432,user="lusk_it_contract_pub")
 DBI::dbExecute(con,sprintf("SET search_path TO \\"%s\\"",schema))
 adapter<-lusk:::scalar_postgres_adapter(con)
@@ -175,23 +170,31 @@ published<-lusk:::publish_registered_scalar(registry,"canonical_mobility",bundle
 stopifnot(published$changed)
 retry<-lusk:::publish_registered_scalar(registry,"canonical_mobility",bundle,adapter)
 stopifnot(!retry$changed)
-# Rejected candidate refreshes must leave the already published scalar visible.
-# Invoke the same public publisher, then prove its previous value/version/source
-# through HTTP below; do not substitute hand-inserted SQL observations.
+# Rejected canonical candidates must leave the already published scalar visible.
+# The producer artifact builder rejects contradictory source facts before the
+# registered publisher can be invoked; the published value/version/source are
+# verified through HTTP below, never by substituting hand-inserted SQL facts.
 original<-nanoparquet::read_parquet(file.path(bundle,"indicateurs_mobilite.parquet"))
 index<-which(original$key=="raccordement_tc" & original$territoire=="35238")
 stopifnot(length(index)==1L)
 rejections<-list()
 for (field in c("value","vintage_source","vintage_date_reference")) {
  bad<-original
- bad[[field]][index]<-switch(field,value=original$value[index]+.01,
-   vintage_source="Legacy mairie producer",vintage_date_reference="2000-01-01")
- nanoparquet::write_parquet(bad,file.path(bundle,"indicateurs_mobilite.parquet"))
- error<-tryCatch({lusk:::publish_registered_scalar(registry,"canonical_mobility",bundle,adapter);NULL},error=function(e) conditionMessage(e))
+  bad[[field]][index]<-switch(field,value=original$value[index]+.01,
+    vintage_source="Legacy mairie producer",vintage_date_reference="2000-01-01")
+  nanoparquet::write_parquet(bad,file.path(bundle,"indicateurs_mobilite.parquet"))
+  error<-tryCatch({
+   payload$indicateurs<-bad
+   lusk:::materialize_theme_scalar_artifact(payload,metadata,new_v,"mobilite",bundle)
+   lusk:::publish_registered_scalar(registry,"canonical_mobility",bundle,adapter)
+   NULL
+  },error=function(e) conditionMessage(e))
  stopifnot(!is.null(error),grepl("Raccordement scalar",error,fixed=TRUE))
  rejections[[field]]<-error
 }
 nanoparquet::write_parquet(original,file.path(bundle,"indicateurs_mobilite.parquet"))
+payload$indicateurs<-original
+lusk:::materialize_theme_scalar_artifact(payload,metadata,new_v,"mobilite",bundle)
 retry<-lusk:::publish_registered_scalar(registry,"canonical_mobility",bundle,adapter)
 stopifnot(!retry$changed,identical(retry$content_version,published$content_version))
 jsonlite::write_json(list(schema=schema,bundle=bundle,content_version=published$content_version,
@@ -200,7 +203,7 @@ jsonlite::write_json(list(schema=schema,bundle=bundle,content_version=published$
 DBI::dbDisconnect(con)
 ''', encoding="utf-8")
         scalar_run = subprocess.run(["Rscript", str(scalar_publish), str(root), str(bundle), schema],
-                                    cwd=root, env=env, capture_output=True, text=True)
+                                    cwd=root / "pipeline", env=env, capture_output=True, text=True)
         assert scalar_run.returncode == 0, scalar_run.stdout + scalar_run.stderr
         scalar_receipt = json.loads((bundle / "publisher-receipt.json").read_text(encoding="utf-8"))
         assert set(scalar_receipt["rejected_refreshes"]) == {"value", "vintage_source", "vintage_date_reference"}
@@ -223,6 +226,14 @@ DBI::dbDisconnect(con)
         combourg_row = next(row for row in membership if row["code"] == combourg)
         density_code = data["combourg_density"]
         to_values = lambda rows: [row["share"] if "share" in row else row["share_mean"] for row in rows]
+        def read_facts(resource, level, code):
+            return client.post("/api/resources/read",json={"resource":resource,
+                "target":{"kind":"territory","type":level,"id":code},
+                "intent":{"kind":"facts"}})
+        def compare(resource, level, code, intent=None):
+            return client.post("/api/resources/read",json={"resource":resource,
+                "target":{"kind":"territory","type":level,"id":code},
+                "intent":intent or {"kind":"fixed_comparison","context":"default"}})
         with TestClient(app) as client:
             scalar_cases = [("commune", "35238", .43772196082183124),
                             ("commune", "35085", .31532250816815825),
@@ -234,8 +245,8 @@ DBI::dbDisconnect(con)
                             ("region", "53", .0815863775592058)]
             scalar_bodies = []
             for level, code, expected in scalar_cases:
-                scalar = client.get(f"/api/territories/{level}/{code}/indicators/raccordement_tc")
-                curve = client.get(f"/api/territories/{level}/{code}/indicators/raccordement_courbe")
+                scalar = read_facts("raccordement_tc",level,code)
+                curve = read_facts("raccordement_courbe",level,code)
                 assert scalar.status_code == curve.status_code == 200, (scalar.text, curve.text)
                 body = scalar.json()
                 assert body["status"] == "measured"
@@ -248,19 +259,19 @@ DBI::dbDisconnect(con)
                     "publication_date": vintage["date_publication"]}]
                 scalar_bodies.append(body)
             (bundle / "scalar-http-receipt.json").write_text(json.dumps(scalar_bodies, ensure_ascii=False, indent=2), encoding="utf-8")
-            focal = client.get(f"/api/territories/commune/{combourg}/indicators/raccordement_courbe")
-            zero_response = client.get(f"/api/territories/commune/{zero['code']}/indicators/raccordement_courbe")
-            region = client.get("/api/territories/region/53/indicators/raccordement_courbe")
-            epci = client.get(f"/api/territories/epci/{combourg_row['epci_code']}/indicators/raccordement_courbe")
-            selected_epci = client.post(f"/api/territories/commune/{combourg}/indicators/raccordement_courbe/comparison",
-                json={"selection":[{"territory_type":"epci","territory_id":data["combourg_epci"]}]})
-            one_member = client.post(f"/api/territories/commune/{combourg}/indicators/raccordement_courbe/comparison",
-                json={"selection":[{"territory_type":"commune","territory_id":combourg}]})
-            default_facts = client.get(f"/api/territories/commune/{combourg}/themes/mobilite/facts")
-            density_rank = client.post("/api/territories/commune/35238/indicators/raccordement_courbe/comparison")
+            focal = read_facts("raccordement_courbe","commune",combourg)
+            zero_response = read_facts("raccordement_courbe","commune",zero["code"])
+            region = read_facts("raccordement_courbe","region","53")
+            epci = read_facts("raccordement_courbe","epci",combourg_row["epci_code"])
+            selected_epci = compare("raccordement_courbe","commune",combourg,
+                {"kind":"selected_comparison","members":[{"type":"epci","id":data["combourg_epci"]}]})
+            one_member = compare("raccordement_courbe","commune",combourg,
+                {"kind":"selected_comparison","members":[{"type":"commune","id":combourg}]})
+            default_facts = compare("raccordement_courbe","commune",combourg)
+            density_rank = compare("raccordement_courbe","commune","35238")
             rennes_epci = next(row for row in membership if row["code"] == "35238")["epci_code"]
-            epci_rank = client.post("/api/territories/commune/35238/indicators/raccordement_courbe/comparison",
-                json={"selection":[{"territory_type":"epci","territory_id":rennes_epci}]})
+            epci_rank = compare("raccordement_courbe","commune","35238",
+                {"kind":"selected_comparison","members":[{"type":"epci","id":rennes_epci}]})
         responses={"focal":focal,"zero":zero_response,"region":region,"epci":epci,
                    "default_facts":default_facts,"selected_epci":selected_epci,"one_member":one_member,
                    "density_rank":density_rank,"epci_rank":epci_rank}
@@ -280,8 +291,7 @@ DBI::dbDisconnect(con)
         assert all(point["value"] == 0 and point["status"] == "measured" and
                    point["missing_reason"] == zero["structural_zero_reason"] for point in zero_body["points"])
         assert [point["value"] for point in zero_body["points"]] == pytest.approx(to_values(data["oracle"]["zero"]), abs=1e-12)
-        default_mean = next(row for row in default_facts.json()["default_comparison"]["results"]
-                            if row["indicator_id"] == "raccordement_courbe")
+        default_mean = default_facts.json()["result"]
         assert default_mean["statistic"] == "mean" and len(default_mean["mean_curve"]["points"]) == 73
         assert default_mean["mean_curve"]["scope"]["density_class_code"] == density_code
         assert [point["value"] for point in default_mean["mean_curve"]["points"]] == pytest.approx(to_values(data["oracle"]["density"]), abs=1e-12)
@@ -300,8 +310,7 @@ DBI::dbDisconnect(con)
         assert [point["value"] for point in selected_result["mean_curve"]["points"]] == pytest.approx(to_values(data["oracle"]["epci"]), abs=1e-12)
         assert selected_result["mean_curve"]["model_zero_reason_counts"]["no_modeled_endpoint_stops"] == 13
         assert selected_result["comparison_sources"] == comparison_sources
-        selected_theme_result = next(row for row in default_facts.json()["default_comparison"]["results"]
-                                     if row["indicator_id"] == "raccordement_courbe")
+        selected_theme_result = default_facts.json()["result"]
         assert selected_theme_result["mean_curve"]["model_zero_reason_counts"] == {
             "endpoint_stops_but_no_permitted_first_boarding": 24, "no_modeled_endpoint_stops": 55}
         assert selected_result["mean_curve"]["model_zero_reason_counts"]["no_modeled_endpoint_stops"] == 13
@@ -341,10 +350,13 @@ DBI::dbDisconnect(con)
                 capture_output=True, text=True)
             assert completed.returncode == 0, completed.stdout + completed.stderr
             with TestClient(app) as client:
-                curve = client.get(f"/api/territories/commune/{combourg}/indicators/raccordement_courbe")
-                selected = client.post(
-                    f"/api/territories/commune/{combourg}/indicators/raccordement_courbe/comparison",
-                    json={"selection":[{"territory_type":"epci","territory_id":data["combourg_epci"]}]})
+                curve = client.post("/api/resources/read",json={"resource":"raccordement_courbe",
+                    "target":{"kind":"territory","type":"commune","id":combourg},
+                    "intent":{"kind":"facts"}})
+                selected = client.post("/api/resources/read",json={"resource":"raccordement_courbe",
+                    "target":{"kind":"territory","type":"commune","id":combourg},
+                    "intent":{"kind":"selected_comparison","members":[
+                        {"type":"epci","id":data["combourg_epci"]}]}})
             assert curve.status_code == selected.status_code == 200
             assert curve.json()["publication_id"] == prior_curve["publication_id"]
             assert curve.json()["points"] == prior_curve["points"]

@@ -4,7 +4,7 @@ from api.field_selection import normalize_field_selection
 
 
 def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicator_id=None, include_cells=True,
-                   fields=None):
+                   fields=None, include_all_descriptors=False):
     selection = normalize_field_selection(fields, {"value", "status"})
     project_value = selection is None or "value" in selection
     descriptors = conn.execute("""SELECT indicator_id,label,unit,allowed_levels,descriptor_version,
@@ -34,7 +34,8 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
                     or not set(d[3]).issubset(facet[2]) or facet[3] != d[8]):
                 raise HTTPException(503, 'Profile scalar dependency is stale or incompatible')
     if not include_cells:
-        return [{'indicator': d[0], 'comparison_scalar': d[8]} for d in descriptors if d[8]], marker[0]
+        return [{'indicator': d[0], 'comparison_scalar': d[8]} for d in descriptors
+                if include_all_descriptors or d[8]], marker[0]
     ids = [d[0] for d in descriptors]
     axes_by_id = {}
     for row in conn.execute("""SELECT indicator_id,axis_name,axis_key,label,ordinal,unit FROM profile_axis

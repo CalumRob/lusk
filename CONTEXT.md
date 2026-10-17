@@ -50,7 +50,7 @@ A static, generated browser projection shaped for one product reading surface ra
 _Avoid_: payload global, table de pipeline, cache applicatif, base de données navigateur, view model
 
 **Acquisition par thème** (anciennement « Acquisition paresseuse par thème », décision propriétaire 2026-10-06, révisée 2026-10-07) :
-The fiche's product serving mode (#627): the kept atomic read model supplies identity, metadata and presentation grammar, while the active theme's single `POST /api/territories/{type}/{id}/themes/{theme}/facts` request supplies ALL its numerics — active theme has priority, then every other registered theme warms in the background without blocking rendering or navigation; warmed switches and cached revisits acquire nothing, with no flash, no static numeric fallback and no per-indicator cohort fan-out. A selection change acquires one comparison-only request with typed members (the declared default comparison is served nested in the facts response); publication-token mismatch fails closed and stays retryable; late responses are rejected — and the cache keys entries by (territory, theme), so a late response from a former territory can only populate its own key. The mode is the DEFAULT of every build (`VITE_THEME_ACQUISITION_API` unset = on); the incumbent static path survives only as the explicit opt-out `'0'`. All six canonical themes ship registered in the acquisition registry — a contract test fails if one is omitted (new themes cannot ship outside the switches); Mobilité's prototype E flow keeps its own acquisition while active. Comparison ranks render through the acquired comparison's declared scope — the chip names the group actually ranked (its portée), never a column-fixed phrase: the legacy `rang_*` columns were the retired compatibility contract of three fixed scopes (EPCI/département/région) and are never repopulated from a differently-scoped comparison. A default build expects the serving API's theme routes live; activation is coordinated with the API deployment (owner-owned).
+The fiche's product serving mode (#627): the kept atomic read model supplies identity, metadata and presentation grammar, while the active theme's single `POST /api/territories/{type}/{id}/themes/{theme}/facts` request supplies ALL its numerics — active theme has priority, then every other registered theme warms in the background without blocking rendering or navigation; warmed switches and cached revisits acquire nothing, with no flash, no static numeric fallback and no per-indicator cohort fan-out. A selection change acquires one comparison-only request with typed members (the declared default comparison is served nested in the facts response); publication-token mismatch fails closed and stays retryable; late responses are rejected — and the cache keys entries by (territory, theme), so a late response from a former territory can only populate its own key. The mode is the DEFAULT of every build (`VITE_THEME_ACQUISITION_API` unset = on); the incumbent static path survives only as the explicit opt-out `'0'`. All six canonical themes ship registered in the acquisition registry — a contract test fails if one is omitted (new themes cannot ship outside the switches); Mobilité's prototype E flow keeps its own acquisition while active. Comparison ranks render through the acquired comparison's declared scope — the chip names the group actually ranked (its portée), never a column-fixed phrase: the legacy `rang_*` columns were the retired compatibility contract of three fixed scopes (EPCI/département/région) and are never repopulated from a differently-scoped comparison. **Backend contract status:** the theme facts and comparison routes described here were retired by ADR-0040 and issue #797. This entry records the existing app's owner-approved acquisition decision; it does not promise backend route availability or authorize app/client migration in #797. The current backend contract is the producer-derived semantic resource API documented in `api/ENDPOINTS.md`.
 _Avoid_: le flag (name the switch and its default), le préchargement bloquant (background warm-up must never delay the active theme's render), repli statique (the forbidden fallback), le registre (the registry is THE canonical list — extend it, never bypass it)
 
 **Version de table publiée**:
@@ -543,6 +543,18 @@ The salience-fired Story of Économie/Emploi (built 2026-08-05, **parked 2026-08
 _Avoid_: Commune dortoir (only the deep-dormitory half — misses pôle-emploi), navettes domicile-travail (the transport reading, not the ratio)
 
 ## Data freshness
+
+**Ressource sémantique de service** (#797):
+An indicator or non-indicator data object exposed through the producer-derived
+backend catalogue. Its identity, typed target, declared coordinates and facts or
+comparison intent determine the read; storage shape and SQL are not caller
+choices. Single and batch reads share that grammar and one repeatable-read
+snapshot. An absent sparse relation is absence, not a zero or `false`; a missing
+indicator value remains missing. AEDAR address-grain measures are a distinct
+source-grain contract, not a replacement for the retired building/service
+accessibility snapshots or their derived narratives.
+_Avoid_: Resource type selected by a caller (physical storage is not domain
+identity), AEDAR as a synonym for the former BPE accessibility score.
 
 **Vintage**:
 The source identity + version + date shown with every indicator ("BPE 2024 · RP 2021"). What makes the "alive" claim honest.

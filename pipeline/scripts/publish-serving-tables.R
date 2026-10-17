@@ -1,5 +1,5 @@
 #!/usr/bin/env Rscript
-# Desktop-only publication of canonical Parquet to the existing serving schema.
+# Desktop-only publication of retained canonical resources to PostgreSQL.
 # The operator's libpq password file is private. No Parquet is copied to the Pi.
 if (!requireNamespace("pkgload", quietly = TRUE)) {
   stop("pkgload is required to load the pipeline.", call. = FALSE)
@@ -175,7 +175,7 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
   }
   configuration_service_postgres() # fail before any upstream compute
   Sys.setenv(LUSK_PUBLISH_DB = "1")
-  requested_targets <- serving_publication_target_names()
+  requested_targets <- backend_publication_target_names()
   targets::tar_make(names = requested_targets, callr_function = NULL)
   failed <- targets::tar_errored()
   if (length(failed)) {
@@ -183,11 +183,13 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
          call. = FALSE)
   }
 } else if (args[[1L]] == "--check") {
-  tables <- preparer_tables_service(file.path("..", "public", "data"))
-  scalar_snapshot <- project_service_scalar_snapshot(tables, file.path("..", "public", "data"))
-  scalar_projection <- scalar_snapshot$projection
-  comparison_projection <- scalar_snapshot$comparison
-  cat("Validated complete scalar snapshot:", nrow(scalar_projection$facts), "facts across",
+  sortie <- Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data"))
+  reference <- project_territory_reference(nanoparquet::read_parquet(
+    file.path(sortie, "territoires.parquet")))
+  snapshot <- project_retained_scalar_snapshot(sortie, reference)
+  scalar_projection <- snapshot$scalar
+  comparison_projection <- snapshot$comparison
+  cat("Validated retained scalar snapshot:", nrow(scalar_projection$facts), "facts across",
       nrow(scalar_projection$descriptors), "registered indicators; version",
       scalar_content_version(scalar_projection), "\n")
   cat("Validated fixed-context scalar comparisons:", nrow(comparison_projection$groups),
@@ -195,12 +197,11 @@ if (args[[1L]] %in% c("--owned-series-check","--owned-series-publish")) {
       "territory results; version", comparison_projection$content_version,
       "; scalar input", comparison_projection$scalar_content_version,
       "; territory reference", comparison_projection$reference_content_version, "\n")
-  print(data.frame(table_name = names(tables$tables),
-                   rows = vapply(tables$tables, nrow, integer(1)),
-                   content_version = unname(tables$versions)))
+  cat("Validated canonical territory reference:", nrow(reference$rows), "territories; version",
+      reference$content_version, "\n")
 } else {
-  # Recovery only: use already-published Parquet, without building upstream.
-  changed <- publier_tables_service_depuis_parquet(file.path("..", "public", "data"))
-  cat(if (length(changed)) paste("Published:", paste(changed, collapse = ", ")) else
-        "No table changes", "\n")
+  # Recovery only: use already-published retained artifacts, without rebuilding upstream.
+  changed <- publish_retained_backend_from_parquet(
+    Sys.getenv("LUSK_SORTIE", file.path("..", "public", "data")))
+  cat("Reconciled retained backend owners:", paste(names(changed), collapse=", "), "\n")
 }

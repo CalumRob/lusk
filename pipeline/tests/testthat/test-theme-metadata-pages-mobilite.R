@@ -203,3 +203,22 @@ test_that("la page Mobilité optée a son manifeste et son artefact de lecture c
   expect_setequal(names(modele$source_records), c("bpe_b316", "bornes-recharges"))
   expect_gt(length(modele$facts), 0L)
 })
+
+test_that("la provenance B316 et IRVE publiée suit les manifests canoniques", {
+  metadata <- jsonlite::fromJSON(
+    testthat::test_path("..", "..", "inst", "extdata", "theme-metadata", "theme_mobilite.json"),
+    simplifyVector = FALSE
+  )
+
+  bpe <- metadata$source_records$bpe_b316$vintages[[1]]
+  irve <- metadata$source_records[["bornes-recharges"]]$vintages[[1]]
+  bpe_manifest <- MANIFEST_MOBILITE_BPE_B316[1, ]
+  irve_manifest <- MANIFEST_MOBILITE_BORNES[1, ]
+
+  expect_identical(bpe$version, as.character(bpe_manifest$vintage))
+  expect_identical(bpe$dateReference, as.character(bpe_manifest$date_reference))
+  expect_identical(bpe$datePublication, as.character(bpe_manifest$date_publication))
+  expect_identical(irve$version, as.character(irve_manifest$vintage))
+  expect_identical(irve$dateReference, as.character(irve_manifest$date_reference))
+  expect_identical(irve$datePublication, as.character(irve_manifest$date_publication))
+})

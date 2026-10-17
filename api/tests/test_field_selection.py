@@ -8,25 +8,6 @@ def test_omitted_selection_preserves_legacy_full_response():
     assert normalize_field_selection(None, {"value", "status"}) is None
 
 
-def test_theme_fact_vocabulary_is_the_union_of_participating_resource_descriptors():
-    from api.main import _theme_fact_supported_fields
-
-    base = _theme_fact_supported_fields(scalar_resources=[], profile_resources=[],
-        series_resources=[], numeric_collections=[], membership_resources=[], typed_reading=False)
-    membership = _theme_fact_supported_fields(scalar_resources=[], profile_resources=[],
-        series_resources=[], numeric_collections=[], membership_resources=[{"kind":"anchored_membership"}],
-        typed_reading=False)
-    assert "rider" not in base and "rider" in membership
-    assert {"status", "reason"} <= base
-    assert "value" not in base
-    assert {"value", "median", "rank"} <= _theme_fact_supported_fields(
-        scalar_resources=[{"indicator_id":"scalar"}], profile_resources=[], series_resources=[],
-        numeric_collections=[], membership_resources=[], typed_reading=False)
-    assert {"mean", "mean_curve"} <= _theme_fact_supported_fields(
-        scalar_resources=[], profile_resources=[], series_resources=[{"dataset_id":"series"}],
-        numeric_collections=[], membership_resources=[], typed_reading=False)
-
-
 def test_selection_is_normalized_and_rejects_empty_duplicate_and_unknown_fields():
     assert normalize_field_selection(["denominator_count", "support_count"],
                                      {"support_count", "denominator_count"}) == (
@@ -38,15 +19,14 @@ def test_selection_is_normalized_and_rejects_empty_duplicate_and_unknown_fields(
 
 
 def test_aedar_projection_happens_inside_sql_and_scalar_uses_only_contract_columns():
-    from api import main
+    from api import aedar_reads, aedar_routes, snapshot_reads
+    from api.main import app
 
-    aedar = next(route.endpoint for route in main.app.routes if getattr(route, "path", "") ==
+    aedar = next(route.endpoint for route in aedar_routes.create_aedar_router(get_pool=lambda: None).routes if getattr(route, "path", "") ==
         "/api/aedar/territories/{territory_type}/{territory_id}/aggregates")
-    scalar = next(route.endpoint for route in main.app.routes if getattr(route, "path", "") ==
-        "/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}")
     import inspect
-    aedar_source = inspect.getsource(main._aedar_territorial_aggregate_snapshot)
-    scalar_source = inspect.getsource(main._indicator_facts_snapshot)
+    aedar_source = inspect.getsource(aedar_reads._aedar_territorial_aggregate_snapshot)
+    scalar_source = inspect.getsource(snapshot_reads._indicator_facts_snapshot)
     assert "jsonb_object_agg" in aedar_source and "jsonb_each" in aedar_source
     assert "selected_measure_keys" in aedar_source
     assert '"value": "o.value"' in scalar_source
@@ -54,3 +34,4 @@ def test_aedar_projection_happens_inside_sql_and_scalar_uses_only_contract_colum
     assert '"denominator_count": "o.denominator_count"' in scalar_source
     assert "o.value, o.status" not in scalar_source
     assert 'selected_scalar_columns' in scalar_source
+    assert "bpe_profile_evidence" not in scalar_source

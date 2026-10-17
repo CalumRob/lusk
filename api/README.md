@@ -10,12 +10,15 @@ or the owner of source facts.
 
 - [Endpoint reference](ENDPOINTS.md) — every registered business operation,
   inputs, bounds, response-contract pointers and availability behavior.
-- [Field selection contract](field-selection-contract.md) — resource-owned
-  `fields` projection rules and mandatory response metadata.
-- [Typed batch-read contract](batch-read-contract.md) — supported resources,
-  atomicity, validation and aggregate bounds for `POST /api/read-batch`.
-- [Theme-read contract](theme-read-contract.md) — current theme read families
-  and their coverage boundaries.
+- [Semantic resource contract](batch-read-contract.md) — current discovery at
+  `GET /api/resources`, single reads at `POST /api/resources/read`, and atomic
+  batches at `POST /api/resources/read-batch`; producer-declared targets,
+  coordinates, intents, fields, and bounds.
+- [Field selection contract](field-selection-contract.md) — current resource-owned
+  projection rules and mandatory response metadata.
+- [Historical theme-read contract](theme-read-contract.md) — retired theme and
+  comparison route shapes retained for migration context only; those routes are
+  not supported by the current API.
 - [Database migrations](migrations/README.md) — fresh-schema versus additive
   migration guidance (not authorization to apply either).
 - [Historical API notes](README-history.md) — retained design, test and

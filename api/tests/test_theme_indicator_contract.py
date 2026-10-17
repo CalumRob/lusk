@@ -1,9 +1,12 @@
-from api.main import _theme_owned_series_contract, _theme_owned_series_indicator
+"""Producer declarations feed the semantic catalogue without legacy wrappers."""
+
 import json
 from pathlib import Path
 
+from api.resource_catalogue import default_resource_catalogue
 
-def test_mobility_canonical_pages_declare_regional_motorisation_and_curve():
+
+def test_mobility_producer_pages_declare_retained_levels_and_canonical_curve():
     metadata_path = Path(__file__).parents[2] / "pipeline/inst/extdata/theme-metadata/theme_mobilite.json"
     metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
     published_path = Path(__file__).parents[2] / "public/data/theme_mobilite.json"
@@ -15,43 +18,25 @@ def test_mobility_canonical_pages_declare_regional_motorisation_and_curve():
         "sans_voiture", "une_voiture", "deux_plus"]
     assert "region" in published["indicator_pages"]["voitures_menage"]["levels"]
     assert published["indicator_pages"]["voitures_menage"] == pages["voitures_menage"]
-    # The checked-in static payload is an immutable incumbent snapshot; the
-    # active owned-series metadata declares the new 73-point canonical route.
+    # The checked-in static payload is an incumbent snapshot; the producer's
+    # retained owned-series declaration is authoritative for semantic discovery.
     assert len(published["indicator_pages"]["raccordement_courbe"]["comparison"]["details"]) == 11
     assert len(pages["raccordement_courbe"]["comparison"]["details"]) == 73
     assert pages["raccordement_courbe"]["comparison"]["detail"] == "t0090"
 
 
-def test_owned_series_contract_keeps_descriptor_and_named_reference_independent():
-    series = {
-        "indicator_id": "raccordement_courbe", "dataset_id": "owned-dataset",
-        "theme_id": "mobilite", "axis_kind": "duration_minute",
-        "axis_values": ["60"], "axis_numeric_values": [60], "completeness": "dense_complete",
-        "direction": "low", "descriptor_version": "descriptor-v3",
-        "comparison_point": "60", "observation_period_kind": "source_snapshot",
-        "context": {"territory_id": "22001", "source_revision": "context-rev"},
-        "points": [{"axis": "60", "value": 0.4}], "scope_series": [],
-        "named_references": [{"id": "commune_bretonne_mediane", "role": "reference",
-            "statistic": "median_routed_communes", "unit": "%", "observation_period_kind": "source_snapshot",
-            "points": [{"axis": "60", "observation_period": "2026-09-16", "value": 0.2,
-                "status": "measured", "provenance": [{"revision_id": "ref-rev", "revision_hash": "ref-hash"}]}]}],
-    }
-    metadata, references = _theme_owned_series_contract([series])
-    assert metadata == [{key: value for key, value in series.items()
-                         if key not in ("points", "scope_series", "named_references")}]
-    assert references == [{"indicator_id": "raccordement_courbe", **series["named_references"][0]}]
-    assert references[0]["points"][0]["provenance"][0]["revision_hash"] == "ref-hash"
-
-
-def test_owned_series_indicator_preserves_period_numeric_axis_and_complete_revision_lineage():
-    series = {"indicator_id": "raccordement_courbe", "label": "Raccordement", "unit": "%",
-        "axis_values": ["60"], "axis_numeric_values": [60]}
-    point = {"axis": "60", "observation_period": "2026-09-16", "state_role": None,
-        "value": 0.4, "status": "measured", "provenance": [{
-            "revision_id": "point-rev", "source_id": "source-1", "vintage_id": "vintage-7",
-            "source_name": "Source", "dataset_name": "Dataset", "version": "v1",
-            "reference_date": None, "publication_date": "2026-09-20", "revision_hash": "sha256"}]}
-    fact = _theme_owned_series_indicator(series, point)
-    assert fact["dimensions"] == {"axis": "60", "numeric_axis_value": 60,
-        "observation_period": "2026-09-16"}
-    assert fact["sources"][0] == {**point["provenance"][0], "name": "Source"}
+def test_owned_series_and_named_reference_are_producer_derived_resources():
+    catalogue = default_resource_catalogue()
+    metadata = json.loads((Path(__file__).parents[2] /
+        "pipeline/inst/extdata/theme-metadata/theme_mobilite.json").read_text(encoding="utf-8"))
+    route = metadata["owned_series_routes"]["raccordement_courbe"]
+    series = catalogue.resources_by_id["raccordement_courbe"]
+    reference = catalogue.resources_by_id["raccordement_reference"]
+    assert route["active_read_route"] is True
+    assert route["reference_read_route"] is True
+    assert series.shapes == ("ordered_series",)
+    assert series.axes == ("duration_minute",)
+    assert reference.shapes == ("named_reference",)
+    assert reference.target_kinds == ("named_reference",)
+    assert reference.target_ids == (route["reference_id"],)
+    assert "facts" in reference.intents

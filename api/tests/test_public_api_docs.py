@@ -20,15 +20,23 @@ def test_public_docs_and_openapi_are_database_free_and_api_prefixed():
     assert docs.status_code == 200
     assert "url: '/api/openapi.json'" in docs.text
     assert schema.status_code == 200
-    assert "/api/read-batch" in schema.json()["paths"]
-    assert "BatchReadRequest" in schema.json()["components"]["schemas"]
-    assert any(
-        parameter["name"] == "fields"
-        for path, path_item in schema.json()["paths"].items()
-        if "/themes/" in path
-        for operation in path_item.values()
-        for parameter in operation.get("parameters", [])
-    )
+    paths = schema.json()["paths"]
+    assert "/api/resources/read-batch" in paths
+    assert "/api/read-batch" not in paths
+    assert "/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/facts" not in paths
+    for retired_path in (
+        "/api/building-access/territories",
+        "/api/territories/{territory_type}/{territory_id}/building-access",
+        "/api/territories/{territory_type}/{territory_id}/building-access-comparison",
+        "/api/territories/{territory_type}/{territory_id}/profiles/{indicator_id}",
+        "/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}",
+        "/api/territories/{territory_type}/{territory_id}/themes/{theme_id}/comparison",
+        "/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}/comparison",
+        "/api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}",
+        "/api/territories/commune/{territory_id}/essential-services",
+    ):
+        assert retired_path not in paths
+    assert "/api/aedar/territories/{territory_type}/{territory_id}/aggregates" in paths
 
 
 def test_endpoint_request_inventory_matches_openapi():
@@ -47,18 +55,11 @@ def test_endpoint_request_inventory_is_deterministic():
     schema = app.openapi()
     generated = render_inventory(schema)
     assert generated == render_inventory(schema)
-    assert "`fields` (query, optional: array of string; max items: `32`)" in generated
-    assert (
-        "`comparison` (query, optional: string; one of `bretagne`, `densite`, `epci`; "
-        "default: `densite`)"
-    ) in generated
-    assert "optional request body: `IndicatorComparisonRequest`" in generated
-    assert "| `BatchReadRequest` | `items` | yes |" in generated
-    assert (
-        "| `ThemeComparisonRequest` | `selection` | no | "
-        "array of ThemeTerritorySelection; max items: `1500` |"
-    ) in generated
-    assert "const: `theme_facts`" in generated
+    assert "required request body: `ResourceReadItem`" in generated
+    assert "required request body: `ResourceBatchRequest`" in generated
+    assert "| `ResourceReadItem` | `resource` | yes |" in generated
+    assert "| `ResourceBatchRequest` | `items` | yes |" in generated
+    assert "const: `facts`" in generated
 
 
 def test_endpoint_request_inventory_check_detects_schema_drift(tmp_path):
@@ -66,19 +67,10 @@ def test_endpoint_request_inventory_check_detects_schema_drift(tmp_path):
     reference = ENDPOINTS.read_text(encoding="utf-8")
     generated = render_inventory(schema)
     examples = (
-        ("default: `8`", "default: `9`"),
         ("required request body", "optional request body"),
         ("max items: `12`", "max items: `11`"),
-        (
-            "| `BatchReadRequest` | `items` | yes |",
-            "| `BatchReadRequest` | `items` | no |",
-        ),
-        (
-            "| `ThemeComparisonRequest` | `selection` | no | "
-            "array of ThemeTerritorySelection; max items: `1500` |",
-            "| `ThemeComparisonRequest` | `selection` | no | "
-            "array of ThemeTerritorySelection; max items: `1499` |",
-        ),
+        ("| `ResourceBatchRequest` | `items` | yes |", "| `ResourceBatchRequest` | `items` | no |"),
+        ("| `ResourceReadItem` | `resource` | yes |", "| `ResourceReadItem` | `resource` | no |"),
     )
     for expected, changed in examples:
         assert expected in generated

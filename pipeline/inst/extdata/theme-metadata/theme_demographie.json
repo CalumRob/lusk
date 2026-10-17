@@ -1,5 +1,6 @@
 {
   "theme": "demographie",
+  "semantic_resources": [{"resource_id":"demographie_selected_reading","kind":"typed_reading","storage_relation":"demographic_typed_reading","publication_table":"demographic_typed_reading","source_keys":["serie_historique"],"fields":["groupe","story_key","salience_reason","periode","solde_naturel","solde_migratoire","taux_solde_naturel","taux_solde_migratoire","classification","status","source_id","vintage_id"],"side_relations":[]}],
   "label": "Démographie",
   "subgroups": [
     {

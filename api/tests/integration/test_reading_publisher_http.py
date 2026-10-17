@@ -133,6 +133,8 @@ def test_canonical_habitat_reading_is_readable_over_http():
     if not schema or not read_dsn or not canonical.is_dir():
         pytest.skip("invoked by smoke-demographic-reading-postgres.R with guarded schema")
     expected = json.loads((canonical / "histoires_habitat.json").read_text(encoding="utf-8"))
+    vintages = json.loads((canonical / "vintages.json").read_text(encoding="utf-8"))
+    metadata = json.loads((canonical / "theme_habitat.json").read_text(encoding="utf-8"))
     read_ids = {("commune", "35238"), ("epci", "200068120"),
                 ("departement", "35"), ("region", "53")}
     selected = {(row["type"], row["territoire"]): row for row in expected
@@ -178,45 +180,73 @@ def test_canonical_habitat_reading_is_readable_over_http():
                 assert publication and publication[1] == len(expected)
         if os.environ.get("LUSK_HABITAT_EXPECT_UNAVAILABLE"):
             with TestClient(main.app) as client:
-                unavailable = client.get("/api/territories/region/53/themes/habitat/facts")
+                unavailable = client.post("/api/resources/read", json={
+                    "resource": "habitat_selected_reading",
+                    "target": {"kind": "territory", "type": "region", "id": "53"},
+                    "intent": {"kind": "facts"},
+                })
             assert unavailable.status_code == 503, unavailable.text
             return
         with TestClient(main.app) as client:
             for (level, territory), old in selected.items():
-                response = client.get(f"/api/territories/{level}/{territory}/themes/habitat/facts")
-                assert response.status_code == 200, response.text
-                body = response.json()
-                reading = next(item for item in body["readings"] if item["groupe"] == old["groupe"])
                 with pool.connection() as conn:
                     scalar_state = conn.execute("SELECT status FROM scalar_observation "
                         "WHERE indicator_id='part_passoires' AND territory_id=%s", (territory,)).fetchone()
-                for field in ("groupe", "story_key", "salience_reason", "classification",
-                              "part_passoires", "part_abc", "n_dpe"):
-                    assert reading[field] == old[field], (level, territory, field)
-                assert body["complete_theme"] is False
-                assert scalar_state is not None
-                assert reading["status"] == scalar_state[0]
-                with pool.connection() as conn:
                     bound = conn.execute("""SELECT os.source_id,os.vintage_id,sv.version,sv.reference_date,
                         sv.publication_date FROM scalar_observation_source os
                         JOIN source_vintage sv USING(source_id,vintage_id)
                         WHERE os.indicator_id='part_passoires' AND os.territory_id=%s""",
                         (territory,)).fetchone()
-                assert bound is not None
-                assert reading["provenance"]["source_id"] == bound[0]
-                assert reading["provenance"]["vintage_id"] == bound[1]
-                assert reading["provenance"]["source_version"] == bound[2]
-                assert reading["provenance"]["source_reference_date"] == (bound[3].isoformat() if bound[3] else None)
-                assert reading["provenance"]["source_publication_date"] == bound[4].isoformat()
-            suppressed = client.get("/api/territories/commune/22006/themes/habitat/facts").json()["readings"][0]
-            assert suppressed["status"] == "suppressed"
-            assert suppressed["n_dpe"] == 24
-            assert suppressed["classification"] is None
-            assert suppressed["part_passoires"] is None and suppressed["part_abc"] is None
-            absent = client.get("/api/territories/commune/99999/themes/habitat/facts")
+                assert scalar_state is not None and bound is not None
+                source_id = metadata["sources"]["part_passoires"]
+                source_vintage = next(row for row in vintages if row["id"] == source_id)
+                expected_vintage_id = f"{source_vintage['version']}/{source_vintage['date_reference'] or 'NA'}"
+                semantic = client.post("/api/resources/read", json={
+                    "resource": "habitat_selected_reading",
+                    "target": {"kind": "territory", "type": level, "id": territory},
+                    "coordinates": {"groupe": [old["groupe"]]},
+                    "fields": ["groupe", "story_key", "salience_reason", "classification",
+                               "part_passoires", "part_abc", "n_dpe", "status", "source_id", "vintage_id"],
+                    "intent": {"kind": "facts"},
+                })
+                assert semantic.status_code == 200, semantic.text
+                semantic_fact = semantic.json()["facts"][0]
+                for field in ("groupe", "story_key", "salience_reason", "classification",
+                              "part_passoires", "part_abc", "n_dpe"):
+                    assert semantic_fact[field] == old[field]
+                assert semantic_fact["status"] == scalar_state[0]
+                # The typed fact's source identity is bound to the independently
+                # published scalar observation; the producer record remains the
+                # value oracle, not SQL read back from the typed fact table.
+                assert bound[0] == source_id
+                assert bound[1] == expected_vintage_id
+                assert semantic_fact["source_id"] == bound[0]
+                assert semantic_fact["vintage_id"] == bound[1]
+            suppressed = client.post("/api/resources/read", json={
+                "resource": "habitat_selected_reading",
+                "target": {"kind": "territory", "type": "commune", "id": "22006"},
+                "coordinates": {"groupe": ["etat-energetique-du-parc"]},
+                "fields": ["classification", "part_passoires", "part_abc", "n_dpe", "status"],
+                "intent": {"kind": "facts"},
+            })
+            assert suppressed.status_code == 200, suppressed.text
+            suppressed_fact = suppressed.json()["facts"][0]
+            assert suppressed_fact["status"] == "suppressed"
+            assert suppressed_fact["n_dpe"] == 24
+            assert suppressed_fact["classification"] is None
+            assert suppressed_fact["part_passoires"] is None and suppressed_fact["part_abc"] is None
+            absent = client.post("/api/resources/read", json={
+                "resource": "habitat_selected_reading",
+                "target": {"kind": "territory", "type": "commune", "id": "99999"},
+                "intent": {"kind": "facts"},
+            })
             assert absent.status_code == 404
-        assert not any(re.search(r"\bselect\s+count\s*\(\s*\*\s*\)\s+from\s+habitat_typed_reading\b", sql)
-                       for sql in executed_sql), executed_sql
+        preflight = next(i for i, sql in enumerate(executed_sql)
+                         if re.search(r"\bselect\s+count\s*\(\s*\*\s*\)\s+from\s+habitat_typed_reading\b", sql))
+        fact_read = next(i for i, sql in enumerate(executed_sql)
+                         if "from habitat_typed_reading where" in sql
+                         and not re.search(r"\bselect\s+count\s*\(", sql))
+        assert preflight < fact_read, executed_sql
     finally:
         if prior is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
