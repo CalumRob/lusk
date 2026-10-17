@@ -832,7 +832,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             marker = collection_marker(conn,descriptor)
             collection_comparison_preflight(conn,descriptor,result_fields,fixed_context,marker)
         return {"supported_fields": available_comparison_fields,
-                "cohort_type": cohort_type, "members": members, "scope": scope}
+                "cohort_type": cohort_type, "members": members, "scope": scope,
+                "fixed_context": fixed_context}
     fixed_context = (_fixed_scalar_comparison_context(conn, territory_type, territory_id,
         selection, cohort_type, members, scope, snapshot_state=snapshot_state)
         if scalar_descriptors or profiles or collections else None)
@@ -1933,15 +1934,17 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             _validate_comparison_fields(selected_fields,{"selected_member_count"})
             # Existing metadata validator checks the dataset marker, reference
             # identity, and focal territory; it does not read reference facts.
-            _owned_reference_comparison_result(conn,active_owned,territory_type,territory_id,
-                                                indicator_id,selection)
-            return
+            checked = _owned_reference_comparison_result(conn,active_owned,territory_type,territory_id,
+                                                          indicator_id,selection)
+            return {"shape": "named_reference", "checked": checked}
         cohort = _comparison_cohort_in_snapshot(conn,territory_type,territory_id,selection,
                                                 snapshot_state)
-        _owned_series_comparison_results(conn,[active_owned],territory_type,territory_id,
+        checked = _owned_series_comparison_results(conn,[active_owned],territory_type,territory_id,
             selection,cohort=cohort,selected_fields=selected_fields,strict_fields=True,
             preflight_only=True)
-        return
+        return {"shape": "ordered_series", "cohort_type": cohort[0],
+                "members": cohort[1], "scope": cohort[2], "fixed_context": checked[2],
+                "checked": checked}
     collections = list(resource.collections) if resource else collection_descriptors(
         conn,indicator_id=indicator_id)
     if collections:
@@ -1958,7 +1961,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             selection,cohort_type,members,scope,snapshot_state=snapshot_state)
         marker = collection_marker(conn,descriptor)
         collection_comparison_preflight(conn,descriptor,selected_fields,fixed_context,marker)
-        return
+        return {"shape": "collection", "cohort_type": cohort_type,
+                "members": members, "scope": scope}
     shapes = list(resource.shape_rows) if resource else []
     if resource is None:
         for table, shape in (("scalar_descriptor", "scalar"),
@@ -1983,17 +1987,21 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
             raise HTTPException(422, "Indicator is not declared for this territory level")
         if not descriptor[0]:
             raise HTTPException(503, "Indicator theme metadata is unavailable")
-        _theme_comparison_snapshot(conn, territory_type, territory_id, descriptor[0],
+        estimate = _theme_comparison_snapshot(conn, territory_type, territory_id, descriptor[0],
                                    selection, indicator_id=indicator_id,
                                    result_fields=selected_fields, preflight_only=True,
                                    snapshot_state=snapshot_state)
+        return {**estimate, "theme_id": descriptor[0], "shape": shape}
     elif shapes[0][1] == "series":
-        _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id,
-                                   preflight_only=True, snapshot_state=snapshot_state)
+        result = _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id,
+                                           preflight_only=True, snapshot_state=snapshot_state)
+        return {"shape": "series", "content_version": result.get("content_version")}
     # Validate every explicit scope against the published reference before any
     # result query, including collection/owned dynamic readers.
-    _comparison_cohort_in_snapshot(conn, territory_type, territory_id, selection,
-                                   snapshot_state)
+    cohort_type,members,scope = _comparison_cohort_in_snapshot(
+        conn, territory_type, territory_id, selection, snapshot_state)
+    return {"shape": shapes[0][1], "cohort_type": cohort_type,
+            "members": members, "scope": scope}
 
 
 def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator_id, selection,
@@ -2166,7 +2174,3 @@ def _focal_series_snapshot(conn, territory_type, territory_id, indicator_id, *, 
         "unit": descriptor[5], "direction": descriptor[6], "descriptor_version": descriptor[9],
         "comparison_point": descriptor[3], "points": points,
         "availability": "complete" if all(p["status"] == "measured" for p in points) else "incomplete"}
-
-
-
-

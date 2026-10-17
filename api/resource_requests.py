@@ -37,7 +37,7 @@ class FactsIntent(BaseModel):
 class FixedComparisonIntent(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["fixed_comparison"]
-    context: Literal["default"]
+    context: str = Field(min_length=1, max_length=64)
 
 
 class SelectedComparisonIntent(BaseModel):

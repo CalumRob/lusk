@@ -83,7 +83,7 @@ These are the model fields reachable from request bodies, including nested and d
 | `NamedReferenceTarget` | `id` | yes | string; min chars: `1`; max chars: `128` |
 | `FactsIntent` | `kind` | yes | string; const: `facts` |
 | `FixedComparisonIntent` | `kind` | yes | string; const: `fixed_comparison` |
-| `FixedComparisonIntent` | `context` | yes | string; const: `default` |
+| `FixedComparisonIntent` | `context` | yes | string; min chars: `1`; max chars: `64` |
 | `SelectedComparisonIntent` | `kind` | yes | string; const: `selected_comparison` |
 | `SelectedComparisonIntent` | `members` | yes | array of TerritoryMember; max items: `1500` |
 | `ResourceBatchItem` | `resource` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
@@ -142,9 +142,9 @@ registered measure.
 - Producer metadata owns membership, labels, units, axes, source lineage,
   vintages and publication versions. Missing values are not zero; absent, stale
   or incompatible publication dependencies fail closed.
-- Separate AEDAR aggregate and fixed-comparison endpoints remain because they
-  expose source-grain, measure-keyed producer facts. Their exact query contracts
-  are in the generated inventory and OpenAPI schema.
+- AEDAR aggregate and fixed-comparison reads are also available through the
+  semantic single/batch grammar. Existing source-grain routes remain adapters
+  over the same caller-owned snapshot readers.
 
 ## Retired route families
 
@@ -161,4 +161,5 @@ records the contract boundary; it does not include frontend migration.
 `api/batch-read-contract.md` documents semantic resource intent and batch
 semantics. `api/field-selection-contract.md` documents projection rules, and
 `api/resource_catalogue.py` plus generated OpenAPI define the accepted request
-shapes. AEDAR contracts remain documented in the route schemas and tests.
+shapes. AEDAR source-grain fields and coordinate selectors are documented in
+the route schemas and producer semantic-resource declaration.

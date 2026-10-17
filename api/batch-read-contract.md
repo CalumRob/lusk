@@ -19,8 +19,11 @@ whole request. Batches are bounded by 200,000 preflight work units and 8 MB outp
 | Comparable retained shapes | A declared territory target and a producer-declared comparison context or explicit bounded member selection | `fixed_comparison` or `selected_comparison` |
 
 The catalogue is the source of truth for identifiers, capabilities, field
-projection, coordinate values and target levels. Separate AEDAR aggregate and
-comparison endpoints retain their source-grain, measure-keyed contract. Legacy
+projection, coordinate values and target levels. AEDAR is a producer-declared
+source-grain resource in the same single/batch grammar: `typequ` and `measure`
+are coordinates and fixed comparisons use the declared comparison context.
+The existing AEDAR HTTP routes remain compatibility adapters over the same
+connection-taking snapshot readers. Legacy
 service/building accessibility and Mobility snapshot-derived reading resources
 are retired; they are not represented as semantic resources.
 

@@ -112,6 +112,35 @@ def test_batch_preflights_every_item_before_reading_and_aborts_as_a_unit(monkeyp
     assert repository.connections.value.transaction_count == 1
 
 
+def test_batch_rejects_aggregate_actual_work_before_any_item_read(monkeypatch):
+    repository = Repository()
+    calls = []
+
+    def reader(conn, item, catalogue=None):
+        calls.append(("read", item.resource))
+        return {"resource": item.resource}
+
+    def preflight(conn, item, catalogue=None):
+        calls.append(("preflight", item.resource))
+        # Each resolved item is below the global work cap; only their aggregate exceeds it.
+        return 70_001
+
+    setup(monkeypatch, repository, reader, preflight)
+    target = {"kind": "territory", "type": "commune", "id": "22001"}
+    try:
+        response = TestClient(main.app).post("/api/resources/read-batch", json={"items": [
+            {"id": str(index), "resource": "densite", "target": target,
+             "intent": {"kind": "facts"}} for index in range(3)
+        ]})
+    finally:
+        main.app.dependency_overrides.clear()
+
+    assert response.status_code == 413
+    assert calls == [("preflight", "densite")] * 3
+    assert repository.connections.opens == 1
+    assert repository.connections.value.transaction_count == 1
+
+
 def test_sparse_membership_facts_read_and_comparison_intents_fail_before_storage(monkeypatch):
     repository = Repository()
     reads = []

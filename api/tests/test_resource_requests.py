@@ -180,11 +180,11 @@ def test_comparison_intents_are_closed_and_share_item_grammar():
     })
     assert validate_resource_item(fixed, catalogue).resource_id == "densite"
     assert validate_resource_item(selected, catalogue).resource_id == "densite"
-    with pytest.raises(ValidationError):
-        ResourceReadItem.model_validate({
+    with pytest.raises(ValueError, match="comparison context"):
+        validate_resource_item(ResourceReadItem.model_validate({
             "resource": "densite", "target": target,
             "intent": {"kind": "fixed_comparison", "context": "arbitrary-sql"},
-        })
+        }), catalogue)
     with pytest.raises(ValidationError, match="unique"):
         ResourceReadItem.model_validate({
             "resource": "densite", "target": target,

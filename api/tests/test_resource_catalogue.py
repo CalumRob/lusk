@@ -1,4 +1,5 @@
 import json
+import shutil
 from pathlib import Path
 
 import pytest
@@ -53,6 +54,25 @@ def test_discovery_accounts_for_every_theme_indicator_and_excludes_legacy_source
     expected_retained, expected_excluded = _snapshot_indicator_ids()
     assert {resource.indicator_id for resource in catalogue.resources} == expected_retained
     assert {declaration.indicator_id for declaration in catalogue.excluded} == expected_excluded
+
+
+def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(monkeypatch, tmp_path):
+    """Mirror only the producer metadata COPY inputs from api/deploy/Dockerfile."""
+    root = Path(__file__).parents[2]
+    source = root / "pipeline/inst/extdata"
+    dockerfile = (root / "api/deploy/Dockerfile").read_text(encoding="utf-8")
+    assert "COPY pipeline/inst/extdata/theme-metadata /app/pipeline/inst/extdata/theme-metadata" in dockerfile
+    assert "COPY pipeline/inst/extdata/semantic-resource-contracts.json /app/pipeline/inst/extdata/semantic-resource-contracts.json" in dockerfile
+    image_payload = tmp_path / "pipeline/inst/extdata"
+    shutil.copytree(source / "theme-metadata", image_payload / "theme-metadata")
+    shutil.copy2(source / "semantic-resource-contracts.json", image_payload)
+    monkeypatch.setenv("LUSK_PRODUCER_METADATA_DIR", str(image_payload))
+
+    from api.resource_catalogue import default_resource_catalogue
+    catalogue = default_resource_catalogue.__wrapped__()
+    assert len(catalogue.resources) == 34
+    assert len(catalogue.excluded) == 29
+    assert "aedar_territorial_aggregate" in catalogue.resources_by_id
 
 
 def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():

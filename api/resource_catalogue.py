@@ -8,6 +8,7 @@ indicator IDs or physical table names.
 from dataclasses import asdict, dataclass
 from functools import lru_cache
 import json
+import os
 from pathlib import Path
 
 
@@ -38,6 +39,8 @@ class IndicatorResource:
     dynamic_axes: tuple[str, ...]
     fields: tuple[str, ...]
     intents: tuple[str, ...]
+    resource_kind: str = "indicator"
+    context_values: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -60,8 +63,10 @@ class ResourceCatalogue:
 
 @lru_cache(maxsize=1)
 def default_resource_catalogue() -> ResourceCatalogue:
-    metadata = Path(__file__).resolve().parents[1] / "pipeline" / "inst" / "extdata" / "theme-metadata"
-    return discover_indicator_resources(metadata)
+    root = Path(__file__).resolve().parents[1]
+    producer = Path(os.environ.get("LUSK_PRODUCER_METADATA_DIR", root / "pipeline" / "inst" / "extdata"))
+    metadata = producer / "theme-metadata"
+    return discover_indicator_resources(metadata, producer / "semantic-resource-contracts.json")
 
 
 _SHAPE_DECLARATIONS = (
@@ -152,15 +157,17 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
     if item.target.kind == "named_reference" and item.target.id not in resource.target_ids:
         raise ValueError("named reference identity is not declared for this resource")
     if item.fields is not None:
-        supported = ({
+        if resource.resource_kind == "aedar_source_grain" and item.intent.kind == "facts":
+            from api.aedar_models import AEDAR_MEASURE_KEYS
+            supported = {"measures." + key for key in AEDAR_MEASURE_KEYS}
+        else:
+            supported = (set(resource.fields) if resource.resource_kind != "indicator" else {
             "focal_value", "median", "rank", "rank_size", "rank_ties",
             "selected_member_count", "eligible_count", "missing_count", "mean", "mean_curve",
         } if item.intent.kind in {"fixed_comparison", "selected_comparison"} else
             {field for shape in resource.shapes for field in _FIELDS_BY_SHAPE.get(shape, ())})
         if len(item.fields) != len(set(item.fields)) or not set(item.fields) <= supported:
             raise ValueError("field is not declared for this resource")
-    if item.intent.kind != "facts" and item.coordinates is not None:
-        raise ValueError("coordinates apply only to facts intent")
     if item.intent.kind != "facts" and item.target.kind != "territory":
         raise ValueError("comparison intents require a territory target")
     if item.coordinates is not None:
@@ -171,12 +178,22 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         if any(axis in axes and axes[axis] and not set(values) <= set(axes[axis])
                for axis, values in item.coordinates.items()):
             raise ValueError("coordinate value is not declared for this resource")
+        if resource.resource_kind == "aedar_source_grain" and "context" in item.coordinates:
+            raise ValueError("AEDAR comparison context belongs in fixed_comparison intent")
+    if (resource.resource_kind == "aedar_source_grain" and
+            item.intent.kind == "fixed_comparison" and
+            item.intent.context not in resource.context_values):
+        raise ValueError("comparison context is not declared for this resource")
+    if (resource.resource_kind == "indicator" and item.intent.kind == "fixed_comparison"
+            and item.intent.context != "default"):
+        raise ValueError("comparison context is not declared for this resource")
     if item.intent.kind not in resource.intents:
         raise ValueError("intent is not declared for this resource")
     return resource
 
 
-def discover_indicator_resources(metadata_directory: str | Path) -> ResourceCatalogue:
+def discover_indicator_resources(metadata_directory: str | Path,
+                                 semantic_contract_path: str | Path | None = None) -> ResourceCatalogue:
     """Validate and project all theme-scoped indicator declarations.
 
     A retained indicator must be covered by at least one producer-declared
@@ -270,7 +287,8 @@ def discover_indicator_resources(metadata_directory: str | Path) -> ResourceCata
                                  .get(parent_indicator, {}).get("reference_id")),)
                             if parent_indicator is not None else ()),
                 dynamic_axes=tuple(axis for axis, values in _axis_values(
-                    metadata, indicator_id, page_descriptor, shapes, parent_indicator) if not values),
+                    metadata, indicator_id, page_descriptor, shapes, parent_indicator)
+                    if not values or "ordered_series" in shapes or "declared_profile" in shapes),
                 fields=tuple(dict.fromkeys(
                     field for shape in shapes for field in _FIELDS_BY_SHAPE.get(shape, ()))),
                 intents=intents,
@@ -285,6 +303,22 @@ def discover_indicator_resources(metadata_directory: str | Path) -> ResourceCata
                 raise ValueError(f"unaccounted producer indicator source: {metadata['theme']}/{indicator_id}")
 
     declarations.sort(key=lambda item: (item.theme_id, item.indicator_id))
+    if semantic_contract_path is not None:
+        contract = json.loads(Path(semantic_contract_path).read_text(encoding="utf-8"))
+        if contract.get("contract") != "producer-semantic-resources-v1":
+            raise ValueError("Invalid producer semantic resource contract")
+        for declaration in contract.get("resources", []):
+            resource_id = declaration["resource_id"]
+            axes = tuple(declaration["axes"])
+            resources.append(IndicatorResource(
+                resource_id=resource_id, theme_id="", indicator_id=resource_id,
+                label=declaration["label"], unit="", direction="none",
+                allowed_levels=tuple(declaration["allowed_levels"]),
+                sources=(declaration["source_id"],), shapes=(declaration["kind"],),
+                axes=axes, axis_values=(), target_kinds=("territory",), target_ids=(),
+                dynamic_axes=axes, fields=tuple(declaration["fields"]),
+                intents=tuple(declaration["intents"]), resource_kind=declaration["kind"],
+                context_values=tuple(declaration["axes"].get("context", ()))))
     resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
     excluded = tuple(item for item in declarations
                      if item.disposition == "excluded_legacy_accessibility")
