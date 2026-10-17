@@ -208,6 +208,20 @@ def test_canonical_habitat_reading_is_readable_over_http():
                 assert reading["provenance"]["source_version"] == bound[2]
                 assert reading["provenance"]["source_reference_date"] == (bound[3].isoformat() if bound[3] else None)
                 assert reading["provenance"]["source_publication_date"] == bound[4].isoformat()
+                semantic = client.post("/api/resources/read", json={
+                    "resource": "habitat_selected_reading",
+                    "target": {"kind": "territory", "type": level, "id": territory},
+                    "coordinates": {"groupe": [old["groupe"]]},
+                    "fields": ["groupe", "story_key", "salience_reason", "classification",
+                               "part_passoires", "part_abc", "n_dpe", "status"],
+                    "intent": {"kind": "facts"},
+                })
+                assert semantic.status_code == 200, semantic.text
+                semantic_fact = semantic.json()["facts"][0]
+                for field in ("groupe", "story_key", "salience_reason", "classification",
+                              "part_passoires", "part_abc", "n_dpe"):
+                    assert semantic_fact[field] == old[field]
+                assert semantic_fact["status"] == old["status"]
             suppressed = client.get("/api/territories/commune/22006/themes/habitat/facts").json()["readings"][0]
             assert suppressed["status"] == "suppressed"
             assert suppressed["n_dpe"] == 24

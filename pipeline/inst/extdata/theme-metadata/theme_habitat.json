@@ -1,5 +1,6 @@
 {
   "theme": "habitat",
+  "semantic_resources": [{"resource_id":"habitat_selected_reading","kind":"typed_reading","storage_relation":"habitat_typed_reading","publication_table":"selected_reading","source_keys":["part_passoires"],"fields":["groupe","story_key","salience_reason","classification","part_passoires","part_abc","n_dpe","status","source_id","vintage_id"],"side_relations":[]}],
   "label": "Habitat",
   "subgroups": [
     {

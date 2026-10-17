@@ -35,6 +35,11 @@ are `facts`, `fixed_comparison` with the closed `default` context, and bounded
 coordinates and optional fields are producer-declared; status, availability,
 descriptor, axis, and provenance metadata remain mandatory where declared.
 Comparison fields use the closed comparison-result vocabulary.
+The catalogue also includes four producer-declared `typed_reading` resources for
+selected Démographie, Économie/Emploi, Habitat, and Milieux evidence. These use the
+same `facts` grammar and a declared `groupe` coordinate. Ranked economy activities,
+Milieux source absences, and Milieux source bindings are exposed as separate named
+evidence fields, with publication/reference compatibility checked before reads.
 
 Theme/family-specific facts, direct-profile, series-dataset, building-access,
 essential-services and legacy batch routes have been retired in favor of the

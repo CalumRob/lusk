@@ -174,6 +174,37 @@ def test_registered_economy_readings_match_independent_canonical_artifact():
                     producer_row["story_key"], producer_row["salience_reason"])
                 assert actual["status"] == ("measured" if expected_activities else "unavailable")
                 assert actual["activities"] == expected_activities
+                semantic = client.post("/api/resources/read", json={
+                    "resource": "economie_selected_reading",
+                    "target": {"kind": "territory", "type": level, "id": str(territory_id)},
+                    "coordinates": {"groupe": [producer_row["groupe"]]},
+                    "fields": ["groupe", "story_key", "salience_reason", "status",
+                               "source_id", "vintage_id", "ranked_activities"],
+                    "intent": {"kind": "facts"},
+                })
+                assert semantic.status_code == 200, semantic.text
+                semantic_payload = semantic.json()
+                assert len(semantic_payload["facts"]) == 1
+                semantic_fact = semantic_payload["facts"][0]
+                assert (semantic_fact["groupe"], semantic_fact["story_key"],
+                        semantic_fact["salience_reason"], semantic_fact["status"]) == (
+                    producer_row["groupe"], producer_row["story_key"],
+                    producer_row["salience_reason"], actual["status"])
+                semantic_activities = [{
+                    "rank": row["rank"], "activity_code": row["activity_code"],
+                    "activity_label": row["activity_label"], "lq": row["lq"],
+                    "establishment_count": row["establishment_count"],
+                    "park_share": row["park_share"], "source_id": row["source_id"],
+                    "vintage_id": row["vintage_id"],
+                } for row in semantic_payload["ranked_activities"]]
+                assert [{key: row[key] for key in ("rank", "activity_code", "activity_label", "lq")}
+                        for row in semantic_activities] == [{key: row[key] for key in
+                        ("rank", "activity_code", "activity_label", "lq")}
+                        for row in expected_activities]
+                assert [row["establishment_count"] for row in semantic_activities] == [
+                    row["n"] for row in expected_activities]
+                assert [row["park_share"] for row in semantic_activities] == [
+                    row["part_parc"] for row in expected_activities]
                 source_rows = [row for row in vintages if row["source"] == producer_row["vintage_source"]]
                 assert len(source_rows) == 1
                 source = source_rows[0]

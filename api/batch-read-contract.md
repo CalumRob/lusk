@@ -16,12 +16,19 @@ whole request. Batches are bounded by 200,000 preflight work units and 8 MB outp
 | Resource shape | Target / coordinates | Intent |
 | --- | --- | --- |
 | `scalar`, `declared_profile`, `ordered_series`, `distribution`, `period_detail`, `anchored_membership`, `named_reference` | Producer-declared target kind and coordinates; optional declared output fields | `facts` |
+| `typed_reading` | A territory target and producer-declared reading group (`groupe`) | `facts` |
 | Comparable retained shapes | A declared territory target and a producer-declared comparison context or explicit bounded member selection | `fixed_comparison` or `selected_comparison` |
 
 The catalogue is the source of truth for identifiers, capabilities, field
 projection, coordinate values and target levels. AEDAR is a producer-declared
 source-grain resource in the same single/batch grammar: `typequ` and `measure`
 are coordinates and fixed comparisons use the declared comparison context.
+The four selected-reading resources for Démographie, Économie/Emploi, Habitat,
+and Milieux expose the already-published reading facts. Producer-declared ranked
+activity evidence, Milieux source absences, and Milieux source bindings are separate
+named evidence fields; they do not copy or recompute scalar/series measurements.
+Publication markers and territory-reference versions are checked during batch
+preflight, and typed rows/evidence are read on the shared repeatable-read snapshot.
 The existing AEDAR HTTP routes remain compatibility adapters over the same
 connection-taking snapshot readers. Legacy
 service/building accessibility and Mobility snapshot-derived reading resources

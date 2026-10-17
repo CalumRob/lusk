@@ -70,9 +70,23 @@ def test_declared_docker_metadata_payload_loads_full_catalogue_without_checkout(
 
     from api.resource_catalogue import default_resource_catalogue
     catalogue = default_resource_catalogue.__wrapped__()
-    assert len(catalogue.resources) == 34
+    assert len(catalogue.resources) == 38
     assert len(catalogue.excluded) == 29
     assert "aedar_territorial_aggregate" in catalogue.resources_by_id
+    typed = {resource_id: catalogue.resources_by_id[resource_id] for resource_id in (
+        "demographie_selected_reading", "economie_selected_reading",
+        "habitat_selected_reading", "milieux_selected_reading")}
+    assert all(resource.resource_kind == "typed_reading" for resource in typed.values())
+    assert typed["economie_selected_reading"].side_relations[0]["storage_relation"] == "economy_activity_evidence"
+    assert typed["milieux_selected_reading"].side_relations[0]["storage_relation"] == "milieux_reading_absence"
+    public_contract = next(item for item in catalogue.discovery_payload()["resources"]
+                           if item["resource_id"] == "economie_selected_reading")
+    assert "ranked_activities" in public_contract["fields"]
+    assert "storage_relation" not in public_contract
+    assert "side_relations" not in public_contract
+    assert public_contract["evidence"] == [{"field": "ranked_activities", "fields": [
+        "territory_id", "territory_type", "groupe", "rank", "activity_code",
+        "activity_label", "lq", "establishment_count", "park_share", "source_id", "vintage_id"]}]
 
 
 def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():

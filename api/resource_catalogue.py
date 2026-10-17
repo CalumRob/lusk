@@ -41,6 +41,9 @@ class IndicatorResource:
     intents: tuple[str, ...]
     resource_kind: str = "indicator"
     context_values: tuple[str, ...] = ()
+    storage_relation: str | None = None
+    publication_table: str | None = None
+    side_relations: tuple[dict, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -55,9 +58,20 @@ class ResourceCatalogue:
 
     def discovery_payload(self) -> dict:
         """Public, bounded description of producer-declared retained resources."""
+        public_resources = []
+        for resource in self.resources:
+            declaration = asdict(resource)
+            physical_relations = declaration.pop("side_relations")
+            declaration["evidence"] = [
+                {"field": side["field"], "fields": side["fields"]}
+                for side in physical_relations
+            ]
+            for key in ("storage_relation", "publication_table"):
+                declaration.pop(key, None)
+            public_resources.append(declaration)
         return {
             "contract": "semantic-resource-catalogue-v1",
-            "resources": [asdict(resource) for resource in self.resources],
+            "resources": public_resources,
         }
 
 
@@ -307,18 +321,63 @@ def discover_indicator_resources(metadata_directory: str | Path,
         contract = json.loads(Path(semantic_contract_path).read_text(encoding="utf-8"))
         if contract.get("contract") != "producer-semantic-resources-v1":
             raise ValueError("Invalid producer semantic resource contract")
-        for declaration in contract.get("resources", []):
+        semantic_declarations = list(contract.get("resources", []))
+        metadata_by_theme = {}
+        for path in metadata_files:
+            theme_metadata = json.loads(path.read_text(encoding="utf-8"))
+            metadata_by_theme[theme_metadata["theme"]] = theme_metadata
+            for declaration in theme_metadata.get("semantic_resources", []):
+                semantic_declarations.append({**declaration, "theme_id": theme_metadata["theme"]})
+        for declaration in semantic_declarations:
             resource_id = declaration["resource_id"]
-            axes = tuple(declaration["axes"])
+            kind = declaration["kind"]
+            axes = tuple(declaration.get("axes", ()))
+            theme_id = declaration.get("theme_id", "")
+            theme_metadata = metadata_by_theme.get(theme_id, {})
+            groups = tuple(declaration.get("groups", ()))
+            if kind == "typed_reading":
+                axes = ("groupe",)
+                declared_groups = {group.get("key") for group in theme_metadata.get("subgroups", [])
+                                   if group.get("reading")}
+                if not groups:
+                    groups = tuple(group.get("key") for group in theme_metadata.get("subgroups", [])
+                                   if group.get("reading"))
+                if not groups or not set(groups) <= declared_groups:
+                    raise ValueError(f"Invalid typed-reading groups for producer resource: {resource_id}")
+            identifiers = [declaration.get("storage_relation"), declaration.get("publication_table")]
+            identifiers.extend(side.get(key) for side in declaration.get("side_relations", [])
+                               for key in ("storage_relation", "publication_table"))
+            identifiers.extend(declaration.get("fields", ()))
+            identifiers.extend(field for side in declaration.get("side_relations", [])
+                               for field in side.get("fields", ()))
+            if any(value is not None and (not isinstance(value, str) or
+                    not value.replace("_", "").isalnum()) for value in identifiers):
+                raise ValueError(f"Invalid storage identifier for producer resource: {resource_id}")
+            sources = tuple(declaration.get("sources", ()))
+            source_keys = tuple(declaration.get("source_keys", ()))
+            producer_sources = theme_metadata.get("sources", {}) or {}
+            sources += tuple(producer_sources.get(key, key) for key in source_keys)
+            declared_sources = set((theme_metadata.get("source_records") or {}).keys())
+            declared_sources.update(producer_sources.values())
+            if any(source not in declared_sources for source in sources):
+                raise ValueError(f"Unknown producer source identity for semantic resource: {resource_id}")
             resources.append(IndicatorResource(
-                resource_id=resource_id, theme_id="", indicator_id=resource_id,
-                label=declaration["label"], unit="", direction="none",
-                allowed_levels=tuple(declaration["allowed_levels"]),
-                sources=(declaration["source_id"],), shapes=(declaration["kind"],),
-                axes=axes, axis_values=(), target_kinds=("territory",), target_ids=(),
-                dynamic_axes=axes, fields=tuple(declaration["fields"]),
-                intents=tuple(declaration["intents"]), resource_kind=declaration["kind"],
-                context_values=tuple(declaration["axes"].get("context", ()))))
+                resource_id=resource_id, theme_id=theme_id, indicator_id=resource_id,
+                label=declaration.get("label", theme_metadata.get("label", resource_id)),
+                unit="", direction="none",
+                allowed_levels=tuple(declaration.get("allowed_levels", ("commune", "epci", "departement", "region"))),
+                sources=sources, shapes=(kind,),
+                axes=axes, axis_values=(("groupe", groups),) if kind == "typed_reading" else (),
+                target_kinds=("territory",), target_ids=(),
+                dynamic_axes=(), fields=tuple(dict.fromkeys([
+                    *declaration["fields"],
+                    *(side["field"] for side in declaration.get("side_relations", ())),
+                ])),
+                intents=tuple(declaration.get("intents", ("facts",))), resource_kind=kind,
+                context_values=tuple(declaration.get("axes", {}).get("context", ())),
+                storage_relation=declaration.get("storage_relation"),
+                publication_table=declaration.get("publication_table"),
+                side_relations=tuple(declaration.get("side_relations", ()))))
     resources.sort(key=lambda item: (item.theme_id, item.indicator_id))
     excluded = tuple(item for item in declarations
                      if item.disposition == "excluded_legacy_accessibility")

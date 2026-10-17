@@ -71,6 +71,8 @@ class SemanticResourceReader:
     def preflight(self, conn, item, catalogue: ResourceCatalogue | None = None) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        if resource.resource_kind == "typed_reading":
+            return self._typed_reading_preflight(conn, item, resource)
         if resource.resource_kind == "indicator":
             self._coordinate_values(conn, item, resource)
         if resource.resource_kind == "aedar_source_grain":
@@ -240,6 +242,8 @@ class SemanticResourceReader:
     def read(self, conn, item, catalogue: ResourceCatalogue | None = None) -> dict:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        if resource.resource_kind == "typed_reading":
+            return self._typed_reading_read(conn, item, resource)
         if resource.resource_kind == "aedar_source_grain":
             from api.aedar_reads import (_aedar_comparison_snapshot,
                 _aedar_territorial_aggregate_snapshot)
@@ -302,6 +306,84 @@ class SemanticResourceReader:
             data = self._filter_coordinates(data, item.coordinates, resource)
         return {"resource": item.resource, "target": item.target.model_dump(),
                 **(data if isinstance(data, dict) else {"result": data})}
+
+    @staticmethod
+    def _typed_reading_preflight(conn, item, resource):
+        territory = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
+                                 (item.target.id,)).fetchone()
+        if not territory:
+            raise HTTPException(404, "Territory not found")
+        if territory[0] != item.target.type:
+            raise HTTPException(422, "Territory target type does not match")
+        marker = conn.execute("""SELECT content_version,row_count,reference_content_version
+            FROM table_publication WHERE table_name=%s""", (resource.publication_table,)).fetchone()
+        reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
+        if not marker or not marker[0] or not reference or marker[2] != reference[0]:
+            raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+        coordinates = item.coordinates or {}
+        group = coordinates.get("groupe")
+        relation = resource.storage_relation
+        clauses = ["territory_id=%s", "territory_type=%s"]
+        params = [item.target.id, item.target.type]
+        if group:
+            clauses.append("groupe=ANY(%s::text[])")
+            params.append(group)
+        work = int(conn.execute(f"SELECT count(*) FROM {relation} WHERE " + " AND ".join(clauses), params).fetchone()[0])
+        for side in resource.side_relations:
+            side_marker = conn.execute("""SELECT content_version,reference_content_version
+                FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
+            if not side_marker or side_marker[1] != reference[0]:
+                raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
+            if side["publication_table"] == resource.publication_table and side_marker[0] != marker[0]:
+                raise HTTPException(503, "Typed-reading evidence publication is incompatible")
+            side_clauses = ["territory_id=%s", "territory_type=%s"]
+            side_params = [item.target.id, item.target.type]
+            if "groupe" in side["fields"]:
+                if group:
+                    side_clauses.append("groupe=ANY(%s::text[])")
+                    side_params.append(group)
+            work += int(conn.execute(f"SELECT count(*) FROM {side['storage_relation']} WHERE " +
+                " AND ".join(side_clauses), side_params).fetchone()[0])
+        return max(1, work)
+
+    @staticmethod
+    def _typed_reading_read(conn, item, resource):
+        marker = conn.execute("SELECT content_version FROM table_publication WHERE table_name=%s",
+                              (resource.publication_table,)).fetchone()
+        if not marker or not marker[0]:
+            raise HTTPException(503, "Typed-reading publication is unavailable")
+        coordinates = item.coordinates or {}
+        selected_fields = set(item.fields or resource.fields)
+        evidence_fields = {side["field"] for side in resource.side_relations}
+        fields = [field for field in resource.fields
+                  if field in selected_fields and field not in evidence_fields]
+        clauses = ["territory_id=%s", "territory_type=%s"]
+        params = [item.target.id, item.target.type]
+        if coordinates.get("groupe"):
+            clauses.append("groupe=ANY(%s::text[])")
+            params.append(coordinates["groupe"])
+        rows = conn.execute(f"SELECT {','.join(fields)} FROM {resource.storage_relation} WHERE " +
+            " AND ".join(clauses) + " ORDER BY groupe", params).fetchall() if fields else []
+        facts = [dict(zip(fields, row)) for row in rows]
+        evidence = {}
+        for side in resource.side_relations:
+            side_fields = list(side["fields"])
+            side_clauses = ["territory_id=%s", "territory_type=%s"]
+            side_params = [item.target.id, item.target.type]
+            if "groupe" in side_fields and coordinates.get("groupe"):
+                side_clauses.append("groupe=ANY(%s::text[])")
+                side_params.append(coordinates["groupe"])
+            order = "rank" if "rank" in side_fields else ",".join(side_fields)
+            side_rows = conn.execute(f"SELECT {','.join(side_fields)} FROM {side['storage_relation']} WHERE " +
+                " AND ".join(side_clauses) + f" ORDER BY {order}", side_params).fetchall()
+            evidence[side["field"]] = [dict(zip(side_fields, row)) for row in side_rows]
+        if "source_absences" in evidence:
+            absences = evidence["source_absences"]
+            if (not facts and len(absences) != 1) or (facts and absences):
+                raise HTTPException(503, "Milieux reading is missing or overlaps its source-absence evidence")
+        return {"resource": item.resource, "target": item.target.model_dump(),
+                "content_version": marker[0], "facts": facts,
+                **{key: value for key, value in evidence.items() if key in selected_fields}}
 
     @staticmethod
     def _filter_coordinates(data, coordinates, resource):
