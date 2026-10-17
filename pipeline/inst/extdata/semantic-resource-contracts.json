@@ -1,0 +1,16 @@
+{
+  "contract": "producer-semantic-resources-v1",
+  "resources": [
+    {
+      "resource_id": "aedar_territorial_aggregate",
+      "producer": "pipeline/R/aedar_aggregates.R",
+      "kind": "aedar_source_grain",
+      "label": "AEDAR territorial aggregates",
+      "source_id": "aedar_bretagne",
+      "allowed_levels": ["commune", "epci", "departement", "region"],
+      "axes": {"typequ": "producer_typequ_registry", "measure": "AEDAR_AGGREGATE_MEASURES", "context": ["density_class", "epci", "bretagne", "same_level"]},
+      "fields": ["group_value", "value", "rank", "rank_size", "member_count", "eligible_count", "missing_count"],
+      "intents": ["facts", "fixed_comparison"]
+    }
+  ]
+}

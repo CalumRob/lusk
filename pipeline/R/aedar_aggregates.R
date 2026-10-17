@@ -1454,10 +1454,16 @@ validate_aedar_comparison_manifest_membership <- function(manifest,territory_ref
 }
 
 publish_aedar_comparisons <- function(x,con) {
+  progress_started <- proc.time()[[3L]]
+  progress <- function(stage,...) if (identical(Sys.getenv("LUSK_AEDAR_PUBLISH_PROGRESS"),"1"))
+    cat(sprintf("AEDAR_PUBLISH elapsed=%.3fs stage=%s %s\n",proc.time()[[3L]]-progress_started,
+      stage,paste(...,collapse=" ")))
+  progress("validate-canonical")
   if(!is.list(x)||is.null(x$parts)||is.null(x$manifest_path))
     stop("AEDAR comparison publication requires the bounded canonical manifest",call.=FALSE)
   validate_aedar_comparison_manifest(x,x$directory,verify_parts=FALSE)
-  DBI::dbWithTransaction(con, {
+  progress("begin-transaction")
+  result <- DBI::dbWithTransaction(con, {
     DBI::dbExecute(con,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     DBI::dbGetQuery(con,"SELECT pg_advisory_xact_lock(594, 756)")
     deps<-DBI::dbGetQuery(con,"SELECT a.content_version aedar_content_version,r.content_version reference_content_version FROM table_publication a CROSS JOIN table_publication r WHERE a.table_name='aedar_territorial_aggregate' AND r.table_name='territory_reference' FOR SHARE OF a,r")
@@ -1472,12 +1478,14 @@ publish_aedar_comparisons <- function(x,con) {
          current$group_row_count[[1L]]==x$group_row_count&&current$territory_row_count[[1L]]==x$territory_row_count
       if(unchanged) {
       validate_aedar_comparison_manifest(x,x$directory,verify_parts=TRUE)
-      list(changed=FALSE,content_version=x$content_version,group_row_count=x$group_row_count,territory_row_count=x$territory_row_count)
-    } else {
+       transaction_result <- list(changed=FALSE,content_version=x$content_version,group_row_count=x$group_row_count,territory_row_count=x$territory_row_count)
+     } else {
+      progress("begin-replacement",groups=x$group_row_count,territories=x$territory_row_count)
       DBI::dbExecute(con,"DELETE FROM aedar_comparison_territory")
       DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
       chunk_size<-20000L
-      for(part in x$parts) {
+      for(part_index in seq_along(x$parts)) {
+        part <- x$parts[[part_index]]
         groups<-as.data.frame(nanoparquet::read_parquet(file.path(x$directory,part$groups)),stringsAsFactors=FALSE)
         territories<-as.data.frame(nanoparquet::read_parquet(file.path(x$directory,part$territories)),stringsAsFactors=FALSE)
         validate_aedar_comparison_part(groups,territories,part$TYPEQU,x$membership)
@@ -1490,13 +1498,19 @@ publish_aedar_comparisons <- function(x,con) {
           DBI::dbWriteTable(con,"aedar_comparison_group",groups[start:min(start+chunk_size-1L,nrow(groups)),,drop=FALSE],append=TRUE,row.names=FALSE)
         for(start in seq.int(1L,nrow(territories),by=chunk_size))
           DBI::dbWriteTable(con,"aedar_comparison_territory",territories[start:min(start+chunk_size-1L,nrow(territories)),,drop=FALSE],append=TRUE,row.names=FALSE)
+        if(part_index %% 25L == 0L) progress("replacement-partitions",done=part_index,total=length(x$parts))
       }
+      progress("before-publication-marker")
       DBI::dbExecute(con,"INSERT INTO aedar_comparison_publication(singleton,content_version,source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,input_identity,group_row_count,territory_row_count,published_at) VALUES(true,$1,'2026-v1',$2,$3,$4,$5::jsonb,$6,$7,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,source_snapshot_id=EXCLUDED.source_snapshot_id,aedar_content_version=EXCLUDED.aedar_content_version,reference_content_version=EXCLUDED.reference_content_version,input_content_version=EXCLUDED.input_content_version,input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=EXCLUDED.published_at",
         params=list(x$content_version,x$aedar_content_version,x$reference_content_version,x$input_content_version,
            x$input_identity,x$group_row_count,x$territory_row_count))
-      list(changed=TRUE,content_version=x$content_version,group_row_count=x$group_row_count,territory_row_count=x$territory_row_count)
-    }
+       transaction_result <- list(changed=TRUE,content_version=x$content_version,group_row_count=x$group_row_count,territory_row_count=x$territory_row_count)
+     }
+     progress("before-transaction-commit")
+     transaction_result
   })
+  progress("transaction-committed")
+  result
 }
 
 serialize_aedar_json_rows <- function(x) {
