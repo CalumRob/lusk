@@ -1456,8 +1456,8 @@ validate_aedar_comparison_manifest_membership <- function(manifest,territory_ref
 publish_aedar_comparisons <- function(x,con) {
   progress_started <- proc.time()[[3L]]
   progress <- function(stage,...) if (identical(Sys.getenv("LUSK_AEDAR_PUBLISH_PROGRESS"),"1"))
-    cat(sprintf("AEDAR_PUBLISH elapsed=%.3fs stage=%s %s\n",proc.time()[[3L]]-progress_started,
-      stage,paste(...,collapse=" ")))
+    {cat(sprintf("AEDAR_PUBLISH elapsed=%.3fs stage=%s %s\n",proc.time()[[3L]]-progress_started,
+      stage,paste(...,collapse=" ")));flush.console()}
   progress("validate-canonical")
   if(!is.list(x)||is.null(x$parts)||is.null(x$manifest_path))
     stop("AEDAR comparison publication requires the bounded canonical manifest",call.=FALSE)
@@ -1484,6 +1484,22 @@ publish_aedar_comparisons <- function(x,con) {
       DBI::dbExecute(con,"DELETE FROM aedar_comparison_territory")
       DBI::dbExecute(con,"DELETE FROM aedar_comparison_group")
       chunk_size<-20000L
+      group_buffer<-list(); group_buffer_rows<-0L
+      territory_buffer<-list(); territory_buffer_rows<-0L
+      flush_groups<-function() {
+        if(length(group_buffer)) {
+          batch<-do.call(rbind,group_buffer)
+          DBI::dbWriteTable(con,"aedar_comparison_group",batch,append=TRUE,row.names=FALSE)
+          group_buffer<<-list(); group_buffer_rows<<-0L
+        }
+      }
+      flush_territories<-function() {
+        if(length(territory_buffer)) {
+          batch<-do.call(rbind,territory_buffer)
+          DBI::dbWriteTable(con,"aedar_comparison_territory",batch,append=TRUE,row.names=FALSE)
+          territory_buffer<<-list(); territory_buffer_rows<<-0L
+        }
+      }
       for(part_index in seq_along(x$parts)) {
         part <- x$parts[[part_index]]
         groups<-as.data.frame(nanoparquet::read_parquet(file.path(x$directory,part$groups)),stringsAsFactors=FALSE)
@@ -1494,12 +1510,20 @@ publish_aedar_comparisons <- function(x,con) {
           stop("AEDAR comparison partition changed before database publication",call.=FALSE)
         names(groups)[names(groups)=="TYPEQU"]<-"typequ"
         names(territories)[names(territories)=="TYPEQU"]<-"typequ"
-        for(start in seq.int(1L,nrow(groups),by=chunk_size))
-          DBI::dbWriteTable(con,"aedar_comparison_group",groups[start:min(start+chunk_size-1L,nrow(groups)),,drop=FALSE],append=TRUE,row.names=FALSE)
-        for(start in seq.int(1L,nrow(territories),by=chunk_size))
-          DBI::dbWriteTable(con,"aedar_comparison_territory",territories[start:min(start+chunk_size-1L,nrow(territories)),,drop=FALSE],append=TRUE,row.names=FALSE)
+        group_buffer[[length(group_buffer)+1L]]<-groups
+        group_buffer_rows<-group_buffer_rows+nrow(groups)
+        territory_buffer[[length(territory_buffer)+1L]]<-territories
+        territory_buffer_rows<-territory_buffer_rows+nrow(territories)
+        if(group_buffer_rows>=chunk_size) flush_groups()
+        if(territory_buffer_rows>=chunk_size) {
+          # The territory table has an immediate FK to its group parent. Flush
+          # all queued group rows first even when their own batch is smaller.
+          flush_groups()
+          flush_territories()
+        }
         if(part_index %% 25L == 0L) progress("replacement-partitions",done=part_index,total=length(x$parts))
       }
+      flush_groups(); flush_territories()
       progress("before-publication-marker")
       DBI::dbExecute(con,"INSERT INTO aedar_comparison_publication(singleton,content_version,source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,input_identity,group_row_count,territory_row_count,published_at) VALUES(true,$1,'2026-v1',$2,$3,$4,$5::jsonb,$6,$7,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,source_snapshot_id=EXCLUDED.source_snapshot_id,aedar_content_version=EXCLUDED.aedar_content_version,reference_content_version=EXCLUDED.reference_content_version,input_content_version=EXCLUDED.input_content_version,input_identity=EXCLUDED.input_identity,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=EXCLUDED.published_at",
         params=list(x$content_version,x$aedar_content_version,x$reference_content_version,x$input_content_version,

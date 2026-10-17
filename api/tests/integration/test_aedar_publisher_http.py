@@ -19,6 +19,9 @@ pytestmark = pytest.mark.integration
 
 
 def test_aedar_r_publication_is_read_through_bounded_http():
+    phase = os.getenv("AEDAR_IT_PHASE", "semantic")
+    if phase not in {"semantic", "full-audit"}:
+        raise AssertionError("AEDAR_IT_PHASE must be semantic or full-audit")
     required = ("LUSK_TEST_PUBLISH_DSN", "LUSK_TEST_READ_DSN", "LUSK_TEST_READ_USER",
                 "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX")
     if not all(os.getenv(k) for k in required):
@@ -83,7 +86,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',5)")
 
         rscript = r'''started <- proc.time()[[3L]]
-stage <- function(name, ...) cat(sprintf("AEDAR_STAGE elapsed=%.3fs name=%s %s\n",proc.time()[[3L]]-started,name,paste(...,collapse=" ")))
+stage <- function(name, ...) {cat(sprintf("AEDAR_STAGE elapsed=%.3fs name=%s %s\n",proc.time()[[3L]]-started,name,paste(...,collapse=" ")));flush.console()}
 stage("begin-package-load")
 pkgload::load_all('.',quiet=TRUE)
 stage("end-package-load")
@@ -221,10 +224,12 @@ territory_columns <- c('comparison_context','group_id','territory_type','territo
   'status','n_addresses','n_observed','coverage_status','rank','rank_size')
 group_order <- c('comparison_context','group_id','territory_type','TYPEQU','measure')
 territory_order <- c('comparison_context','group_id','territory_type','territory_id','TYPEQU','measure')
-stage("begin-exhaustive-parity")
-compare_db_projection('groups','aedar_comparison_group',group_columns,group_order)
-compare_db_projection('territories','aedar_comparison_territory',territory_columns,territory_order)
-stage("end-exhaustive-parity",partitions=length(comparison$parts))
+if (identical(Sys.getenv('AEDAR_IT_PHASE'),'full-audit')) {
+  stage("begin-exhaustive-parity")
+  compare_db_projection('groups','aedar_comparison_group',group_columns,group_order)
+  compare_db_projection('territories','aedar_comparison_territory',territory_columns,territory_order)
+  stage("end-exhaustive-parity",partitions=length(comparison$parts))
+}
 a104_part <- comparison$parts[[match('A104',vapply(comparison$parts,`[[`,character(1),'TYPEQU'))]]
 part_groups <- as.data.frame(nanoparquet::read_parquet(file.path(canonical_comparison,a104_part$groups)))
 part_territories <- as.data.frame(nanoparquet::read_parquet(file.path(canonical_comparison,a104_part$territories)))
@@ -235,6 +240,10 @@ jsonlite::write_json(list(group=as.list(focus_group),territory=as.list(focus_ter
   content_version=comparison$content_version,aedar_content_version=comparison$aedar_content_version,
   reference_content_version=comparison$reference_content_version,input_content_version=comparison$input_content_version,
   input_identity=jsonlite::fromJSON(comparison$input_identity)),Sys.getenv('AEDAR_EXPECTED_COMPARISON_JSON'),auto_unbox=TRUE,na='null',digits=17)
+if (identical(Sys.getenv('AEDAR_IT_PHASE'),'semantic')) {
+  stage("semantic-fixture-ready")
+  quit(save="no",status=0L)
+}
         comparison_before <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_comparison_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced comparison rollback'; END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_comparison_insert BEFORE INSERT ON aedar_comparison_territory FOR EACH ROW EXECUTE FUNCTION reject_aedar_comparison_insert()")
@@ -259,6 +268,7 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
             parts = urlsplit(publish_dsn)
             env = os.environ.copy(); env["AEDAR_IT_SCHEMA"] = schema
             env["LUSK_AEDAR_PUBLISH_PROGRESS"] = "1"
+            env["AEDAR_IT_PHASE"] = phase
             env["AEDAR_EXPECTED_COMPARISON_JSON"] = str(expected_comparison_path)
             env["AEDAR_CANONICAL_AGGREGATE_DIR"] = str(canonical_aggregate_dir)
             env["AEDAR_CANONICAL_COMPARISON_DIR"] = str(canonical_comparison_dir)
@@ -272,10 +282,11 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
             def capture_progress():
                 for line in child.stdout:
                     output.append(line)
+                    print(line,end="",flush=True)
             capture_thread = threading.Thread(target=capture_progress,daemon=True)
             capture_thread.start()
             try:
-                child.wait(timeout=275)
+                child.wait(timeout=275 if phase == "semantic" else 850)
             except subprocess.TimeoutExpired:
                 child.terminate()
                 try:
@@ -283,7 +294,7 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                 except subprocess.TimeoutExpired:
                     child.kill(); child.wait()
                 capture_thread.join(timeout=2)
-                pytest.fail("AEDAR fixture exceeded 275s; incremental R stages:\n" + "".join(output))
+                pytest.fail(f"AEDAR {phase} fixture exceeded its bounded child budget; incremental R stages:\n" + "".join(output))
             capture_thread.join(timeout=2)
             assert child.returncode == 0, "".join(output)
             expected_comparison = json.loads(expected_comparison_path.read_text(encoding="utf-8"))
@@ -408,7 +419,8 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                 assert pub.execute("SELECT count(*) FROM aedar_comparison_territory").fetchone()[0] == last_territory_rows
                 stale_after_source_refresh=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
                 assert stale_after_source_refresh.status_code==503
-                stale_script = r'''pkgload::load_all('.',quiet=TRUE)
+                if phase == "full-audit":
+                    stale_script = r'''pkgload::load_all('.',quiet=TRUE)
 schema <- Sys.getenv('AEDAR_IT_SCHEMA')
 con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
   dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'),password=Sys.getenv('PGPASSWORD'))
@@ -436,14 +448,14 @@ DBI::dbExecute(con,"DROP FUNCTION reject_aedar_stale_insert()")
 after <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
 stopifnot(failed,identical(before,after))
 '''
-                stale_script_path = fixture_tmp / "stale-fixture.R"
-                stale_script_path.write_text(stale_script,encoding="utf-8")
-                stale_env = env.copy()
-                stale_env["AEDAR_IT_SCHEMA"] = schema
-                stale_run = subprocess.run(["Rscript",str(stale_script_path)],cwd=pipeline,env=stale_env,capture_output=True,text=True)
-                assert stale_run.returncode==0,stale_run.stdout+stale_run.stderr
-                stale_aedar=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
-                assert stale_aedar.status_code==503
+                    stale_script_path = fixture_tmp / "stale-fixture.R"
+                    stale_script_path.write_text(stale_script,encoding="utf-8")
+                    stale_env = env.copy()
+                    stale_env["AEDAR_IT_SCHEMA"] = schema
+                    stale_run = subprocess.run(["Rscript",str(stale_script_path)],cwd=pipeline,env=stale_env,capture_output=True,text=True)
+                    assert stale_run.returncode==0,stale_run.stdout+stale_run.stderr
+                    stale_aedar=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+                    assert stale_aedar.status_code==503
         finally:
             dbread.close(); pool.cache_clear()
             if original_database_url is None: os.environ.pop("DATABASE_URL",None)
