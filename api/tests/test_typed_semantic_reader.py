@@ -141,3 +141,36 @@ def test_milieux_semantic_read_fails_closed_without_fact_or_absence_evidence():
         assert exc.status_code == 503
     else:
         raise AssertionError("undeclared Milieux source absence must fail closed")
+
+
+class _StaleAbsenceConnection:
+    def execute(self, sql, params=()):
+        if sql.startswith("SELECT territory_type FROM territory_reference"):
+            return _Result(("commune",))
+        if "FROM table_publication WHERE table_name=%s" in sql:
+            if params[0] == "milieux_typed_reading":
+                return _Result(("reading-v2", 4, "reference-v1"))
+            if params[0] == "milieux_reading_absence":
+                return _Result(("reading-v1", "reference-v1"))
+        if "table_name='territory_reference'" in sql:
+            return _Result(("reference-v1",))
+        if sql.startswith("SELECT count(*) FROM milieux_typed_reading"):
+            return _Result((0,))
+        raise AssertionError(f"Unexpected SQL: {sql}")
+
+
+def test_milieux_preflight_rejects_stale_absence_publication():
+    catalogue = default_resource_catalogue()
+    item = ResourceReadItem.model_validate({
+        "resource": "milieux_selected_reading",
+        "target": {"kind": "territory", "type": "commune", "id": "35004"},
+        "intent": {"kind": "facts"},
+    })
+    resource = validate_resource_item(item, catalogue)
+
+    try:
+        SemanticResourceReader._typed_reading_preflight(_StaleAbsenceConnection(), item, resource)
+    except HTTPException as exc:
+        assert exc.status_code == 503
+    else:
+        raise AssertionError("stale source-absence evidence must fail closed")

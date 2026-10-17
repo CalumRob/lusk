@@ -336,6 +336,8 @@ class SemanticResourceReader:
                 raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
             if side["publication_table"] == resource.publication_table and side_marker[0] != marker[0]:
                 raise HTTPException(503, "Typed-reading evidence publication is incompatible")
+            if side.get("same_content_version_as") == "resource" and side_marker[0] != marker[0]:
+                raise HTTPException(503, "Typed-reading evidence publication is stale")
             side_clauses = ["territory_id=%s", "territory_type=%s"]
             side_params = [item.target.id, item.target.type]
             if "groupe" in side["fields"]:

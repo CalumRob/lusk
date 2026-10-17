@@ -350,6 +350,9 @@ def discover_indicator_resources(metadata_directory: str | Path,
             identifiers.extend(declaration.get("fields", ()))
             identifiers.extend(field for side in declaration.get("side_relations", [])
                                for field in side.get("fields", ()))
+            if any(side.get("same_content_version_as") not in (None, "resource")
+                   for side in declaration.get("side_relations", [])):
+                raise ValueError(f"Invalid semantic evidence dependency for resource: {resource_id}")
             if any(value is not None and (not isinstance(value, str) or
                     not value.replace("_", "").isalnum()) for value in identifiers):
                 raise ValueError(f"Invalid storage identifier for producer resource: {resource_id}")
