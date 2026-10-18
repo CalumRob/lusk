@@ -443,12 +443,12 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                     coordinates={"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
                     intent={"kind": "fixed_comparison", "context": "epci"})
                 # The stored comparison survives (asserted above), but the read
-                # must not serve it: the semantic coordinate preflight sees the
-                # now-empty AEDAR aggregate descriptor and refuses (422) instead
-                # of reading through. The publication-staleness fail-closed case
-                # (exact 503) is asserted above; either way no comparison is
-                # returned.
-                assert stale_after_source_refresh.status_code in {422, 503}
+                # must not serve it: the intent snapshot preflight compares the
+                # published comparison's aedar_content_version with the now-bumped
+                # aggregate marker and fails closed. The preflight runs before the
+                # published-descriptor domain check, so this is the exact 503 the
+                # retired legacy route returned, not a 422.
+                assert stale_after_source_refresh.status_code == 503
                 assert "comparison" not in stale_after_source_refresh.json()
                 if phase == "full-audit":
                     stale_script = r'''pkgload::load_all('.',quiet=TRUE)
