@@ -143,8 +143,8 @@ Examples of the closed descriptor rules (not caller-supplied schemas):
 | Resource | Coordinate selector and allowed values | Omission/default and invalid combinations | Identity versus projection |
 |---|---|---|---|
 | `structure_age` | Optional `detail` from the declared ordered codes `Y_LT15`, `Y15T24`, `Y25T39`, `Y40T54`, `Y55T64`, `Y65T79`, `Y_GE80`; `sex` is `F` or `M`. | Omission returns all 14 cells in descriptor order; either axis may be selected from its closed values. Unknown code/sex, wrong scalar/list type, empty list, or unsupported axis combination rejects. | Resource and territory are identity; selected detail/sex coordinates remain in each returned observation and cannot be omitted with `fields`. Value/status/provenance fields may be projected only as allowed. |
-| `aedar_territorial_aggregate` | Optional `typequ`, a string drawn from the pinned 235-code INSEE TYPEQU registry. | Omission returns the full registered TYPEQU domain; explicit selection is a non-empty subset, at most 100 codes under the current API bound. Unknown code or an empty/ill-typed selection rejects. No client-defined mode/horizon axis is accepted: measure IDs encode those producer-registered variants. | Resource, territory and TYPEQU are identity; `fields` selects allowlisted `measures.<registered-id>` values. Counts, coverage, source snapshot and mandatory provenance remain. |
-| `aedar_comparison` | Optional `typequ` from that same registry; comparison `context` is an `intent` member, not a coordinate. | Omission uses the declared comparison TYPEQU domain; context must be a declared fixed context. An unregistered context or incompatible coordinate/result selection rejects. | Resource, territory, context and TYPEQU identify the result. Measure is a projected registered result field, never a coordinate; rank/status/count/lineage remain mandatory where declared. |
+| `aedar_territorial_aggregate` (facts) | Optional list-valued `typequ` drawn from the pinned 235-code INSEE TYPEQU registry; optional list-valued `measure` from the registered measure keys. | Omission returns the full registered TYPEQU domain; an explicit selection is a non-empty subset with no coordinate-count cap — request work is bounded by preflight work units instead. Unknown code or an empty/ill-typed selection rejects. No client-defined mode/horizon axis is accepted: measure IDs encode those producer-registered variants. | Resource, territory and TYPEQU are identity; `fields` selects allowlisted `measures.<registered-id>` values. Counts, coverage, source snapshot and mandatory provenance remain. |
+| `aedar_territorial_aggregate` (fixed comparison) | List-valued `typequ` (exactly one) and `measure` (exactly one) from the registered vocabularies; comparison `context` is an `intent` member, not a coordinate. | A fixed comparison requires exactly one TYPEQU and one measure coordinate and a declared fixed context. An unregistered context or an undeclared coordinate/result selection rejects. | Resource, territory, context and TYPEQU identify the result; `measure` is a declared coordinate, not a projected field. `fields` projects `group_value`, focal `value`, `rank`, `rank_size`, `member_count`, `eligible_count` and `missing_count`; rank/status/count/lineage remain mandatory where declared. |
 
 For all other resources the same descriptor table owns axis type, values,
 ordering, default, requiredness, and compatible combinations. Open-ended
@@ -264,7 +264,7 @@ free-form axis or treating the BPE registry string as retired serving logic:
 ```json
 {"resource":"aedar_territorial_aggregate",
  "target":{"kind":"territory","type":"commune","id":"22001"},
- "coordinates":{"typequ":"<registered-TYPEQU>"},
+ "coordinates":{"typequ":["<registered-TYPEQU>"]},
  "fields":["measures.<registered-measure>"],"intent":{"kind":"facts"}}
 ```
 The result retains registered measure keys, `n_addresses`, `n_observed`,
@@ -275,16 +275,16 @@ commune aggregates. The illustrative 312-key map is not a license for
 unrestricted JSON or SQL-side calculation.
 
 The fixed AEDAR comparison is another item under the same read contract, not a
-second physical-family selector. The fixed comparison context is part of
-`intent`, consistently with the generic comparison grammar; `coordinates`
-selects only registered AEDAR fact axes. The measure is a projected value
-field, not an axis:
+second physical-family selector. The comparison context is part of `intent`,
+consistently with the generic comparison grammar; `coordinates` carry the
+declared AEDAR fact axes `typequ` and `measure` as closed list-valued selectors,
+and `fields` projects the registered result values:
 
 ```json
-{"resource":"aedar_comparison",
+{"resource":"aedar_territorial_aggregate",
  "target":{"kind":"territory","type":"commune","id":"22001"},
- "coordinates":{"typequ":"<registered-TYPEQU>"},
- "fields":["measures.<registered-measure>","rank","member_count","eligible_count","missing_count"],
+ "coordinates":{"typequ":["<registered-TYPEQU>"],"measure":["<registered-measure>"]},
+ "fields":["rank","member_count","eligible_count","missing_count"],
  "intent":{"kind":"fixed_comparison","context":"density_class"}}
 ```
 Its result identifies the resolved group/context and statistic, focal value and

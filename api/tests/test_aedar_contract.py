@@ -293,6 +293,53 @@ def test_retired_aedar_get_routes_return_404_and_are_absent_from_openapi():
     assert comparison.status_code == 404, comparison.text
 
 
+def test_aedar_malformed_request_is_422_before_any_publication_read(monkeypatch):
+    # Precedence guard: request-shape validation (422) must win over the
+    # absent/stale/incompatible publication preflight (503). The stub makes any
+    # publication or source-grain query return an unavailable marker, so a
+    # malformed request that reached the publication preflight would surface as
+    # 503; the assertions below prove it never gets there and no fact row is read.
+    from contextlib import contextmanager
+    from fastapi.testclient import TestClient
+    import api.main as main
+
+    consulted = []
+
+    class Cursor:
+        description = [type("Column", (), {"name": "value"})]
+        def __init__(self, row=None): self.row = row
+        def fetchone(self): return self.row
+        def fetchall(self): return []
+
+    class Connection:
+        def execute(self, sql, params=None):
+            if "table_publication" in sql or "aedar_territorial_aggregate" in sql:
+                consulted.append(sql)
+                return Cursor(None)
+            return Cursor(None)
+        @contextmanager
+        def transaction(self): yield self
+
+    class FakePool:
+        @contextmanager
+        def connection(self): yield Connection()
+
+    monkeypatch.setattr(main, "pool", lambda: FakePool())
+    client = TestClient(main.app)
+    target = {"kind": "territory", "type": "commune", "id": "22001"}
+    malformed = (
+        {"coordinates": {"measure": ["bogus"]}, "intent": {"kind": "facts"}},
+        {"coordinates": {"typequ": ["C401"], "measure": ["bogus"]}, "intent": {"kind": "facts"}},
+        {"coordinates": {"typequ": ["C401"]},
+         "intent": {"kind": "fixed_comparison", "context": "epci"}},
+    )
+    for item in malformed:
+        response = client.post("/api/resources/read", json={
+            "resource": "aedar_territorial_aggregate", "target": target, **item})
+        assert response.status_code == 422, response.text
+    assert consulted == []
+
+
 def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monkeypatch):
     from contextlib import contextmanager
     from fastapi.testclient import TestClient

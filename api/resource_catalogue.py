@@ -191,7 +191,7 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         # membership exposes `membership` over the `detail` storage key) and
         # dynamic domains (AEDAR `typequ`/`measure`) have no static values, so
         # declaration, not storage shape, decides which axes exist.
-        allowed_axes = set(resource.axes) | set(axes) | set(resource.dynamic_axes)
+        allowed_axes = set(resource.axes) | set(axes)
         if set(item.coordinates) - allowed_axes:
             raise ValueError("coordinate axis is not declared for this resource")
         if any(axis in axes and axes[axis] and not set(values) <= set(axes[axis])

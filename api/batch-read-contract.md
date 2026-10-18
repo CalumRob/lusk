@@ -29,8 +29,10 @@ activity evidence, Milieux source absences, and Milieux source bindings are sepa
 named evidence fields; they do not copy or recompute scalar/series measurements.
 Publication markers and territory-reference versions are checked during batch
 preflight, and typed rows/evidence are read on the shared repeatable-read snapshot.
-The existing AEDAR HTTP routes remain compatibility adapters over the same
-connection-taking snapshot readers. Legacy
+The AEDAR territorial aggregates and fixed comparisons are read only through
+the unified semantic resource contract (`/api/resources/read` and
+`/api/resources/read-batch`); the legacy GET routes are retired and return 404.
+Legacy
 service/building accessibility and Mobility snapshot-derived reading resources
 are retired; they are not represented as semantic resources.
 
