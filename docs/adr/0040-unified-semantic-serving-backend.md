@@ -27,8 +27,11 @@ retiennent une grammaire commune sans imposer un stockage universel.
 - Les routes et publications legacy d'accessibilité BPE/services et les lectures
   Mobilité dérivées des anciens snapshots sont retirées. Les données source
   AEDAR et le ratio propriétaire B316 restent distincts et ne les remplacent pas.
-- L'API AEDAR à granularité source reste séparée du contrat ordinaire des
-  ressources sémantiques.
+- L'identité AEDAR à granularité source (`aedar_territorial_aggregate`) est
+  déclarée par `pipeline/inst/extdata/semantic-resource-contracts.json` et lit
+  via la même API sémantique (`/api/resources/read[-batch]`) ; ses routes GET
+  dédiées restent temporairement pour le prototype actuel de Mobilité, sans
+  dupliquer les lectures sous-jacentes.
 
 ## Conséquences
 

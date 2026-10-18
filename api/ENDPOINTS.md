@@ -43,9 +43,14 @@ evidence fields, with publication/reference compatibility checked before reads.
 
 Theme/family-specific facts, direct-profile, series-dataset, building-access,
 essential-services and legacy batch routes have been retired in favor of the
-semantic resource contract. The registered AEDAR aggregate/comparison operations
-remain separate because they expose source-grain, measure-keyed producer facts
-and published comparison semantics rather than ordinary indicator reads. The
+semantic resource contract. `aedar_territorial_aggregate` is declared as a
+semantic resource and can be read through `/api/resources/read` and
+`/api/resources/read-batch`; `typequ` and
+`measure` are closed coordinate selectors, `measures.<registered-id>` is a field
+projection, and comparison context belongs to `fixed_comparison` intent. The two
+registered AEDAR GET operations remain only as compatibility routes for the
+current untouched Mobilité prototype; both delegate to the same source-grain
+reads and do not imply that AEDAR data is outside the unified contract. The
 retirement changes backend API paths; no frontend migration or caller edits are
 included in this backend change.
 
