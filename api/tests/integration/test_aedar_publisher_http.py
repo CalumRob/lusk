@@ -317,17 +317,26 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
             http_started=time.monotonic()
             print("AEDAR_STAGE first-semantic-http-read begin",flush=True)
             with TestClient(app) as client:
+                def semantic_read(level, territory_id, **item):
+                    return client.post("/api/resources/read", json={
+                        "resource": "aedar_territorial_aggregate",
+                        "target": {"kind": "territory", "type": level, "id": territory_id},
+                        **item})
                 for level, territory_id in (("commune","22001"),("epci","200000001"),("departement","22"),("region","53")):
-                    resp = client.get(f"/api/aedar/territories/{level}/{territory_id}/aggregates?typequ=A135&limit=1")
+                    resp = semantic_read(level, territory_id,
+                        coordinates={"typequ": ["A135"]}, intent={"kind": "facts"})
                     assert resp.status_code == 200, resp.text
                     fact = resp.json()["facts"][0]
+                    assert resp.json()["territory"] == {"territory_type": level, "territory_id": territory_id}
                     assert fact["typequ_hierarchy_label"] == "COUR D’ASSISES"
                     assert fact["typequ_description"] == "Description 1"
                     assert fact["typequ_label"] == "COUR D'ASSISES"
                     assert fact["measures"]["count_5_walk_share"] is None
                     assert fact["measures"]["count_5_walk_min"] == 0
                     assert fact["measures"]["count_5_walk_max"] == pytest.approx(0.12345678901234566, rel=1e-15)
-                    projected = client.get(f"/api/aedar/territories/{level}/{territory_id}/aggregates?typequ=A135&limit=1&fields=measures.count_5_walk_max")
+                    projected = semantic_read(level, territory_id,
+                        coordinates={"typequ": ["A135"]},
+                        fields=["measures.count_5_walk_max"], intent={"kind": "facts"})
                     assert projected.status_code == 200, projected.text
                     assert projected.json()["facts"][0]["measures"] == {"count_5_walk_max": pytest.approx(0.12345678901234566, rel=1e-15)}
                     assert projected.json()["facts"][0]["source_id"] == "aedar_bretagne"
@@ -336,9 +345,18 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                     assert fact["attribution"] == "© OpenStreetMap contributors; données AEDAR — licence ODbL"
                     assert resp.json()["content_version"]
                     assert resp.json()["reference_content_version"] == "fixture-ref-v1"
-                assert client.get("/api/aedar/territories/region/53/aggregates?limit=101").status_code == 422
-                assert client.get("/api/aedar/territories/region/53/aggregates?fields=").status_code == 422
-                assert client.get("/api/aedar/territories/region/53/aggregates?fields=measures.not_registered").status_code == 422
+                # The retired legacy AEDAR GET compatibility routes are absent.
+                assert client.get("/api/aedar/territories/region/53/aggregates?typequ=A135&limit=1").status_code == 404
+                assert client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean").status_code == 404
+                # The unified grammar replaces the retired route's query bounds:
+                # no unbounded limit, no empty or unknown measure projection.
+                assert semantic_read("region", "53",
+                    coordinates={"typequ": ["A135"]}, fields=[], intent={"kind": "facts"}).status_code == 422
+                assert semantic_read("region", "53",
+                    coordinates={"typequ": ["A135"]}, fields=["measures.not_registered"],
+                    intent={"kind": "facts"}).status_code == 422
+                assert semantic_read("region", "53",
+                    coordinates={"typequ": ["A135"]}, limit=101, intent={"kind": "facts"}).status_code == 422
                 # AEDAR is a source-grain semantic resource, not a disconnected GET-only API.
                 semantic_facts = client.post("/api/resources/read", json={
                     "resource": "aedar_territorial_aggregate",
@@ -379,7 +397,9 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                     "target": {"kind": "territory", "type": "commune", "id": "22001"},
                     "coordinates": {"typequ": ["NOT-A-TYPEQU"]}, "intent": {"kind": "facts"},
                 }).status_code == 422
-                comparison=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+                comparison=semantic_read("commune", "22001",
+                    coordinates={"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+                    intent={"kind": "fixed_comparison", "context": "epci"})
                 assert comparison.status_code==200,comparison.text
                 compared=comparison.json()
                 assert compared["source_snapshot_id"]=="2026-v1"
@@ -404,7 +424,9 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                 assert compared["comparison"]["n_addresses"]==territory["n_addresses"]==2
                 assert "rank_ties" not in compared["comparison"]
                 pub.execute("UPDATE table_publication SET content_version='fixture-ref-stale' WHERE table_name='territory_reference'")
-                stale=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+                stale=semantic_read("commune", "22001",
+                    coordinates={"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+                    intent={"kind": "fixed_comparison", "context": "epci"})
                 assert stale.status_code==503
                 pub.execute("UPDATE table_publication SET content_version='fixture-ref-v1' WHERE table_name='territory_reference'")
                 last_complete = pub.execute("SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone()
@@ -417,8 +439,17 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                 assert pub.execute("SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone() == last_complete
                 assert pub.execute("SELECT count(*) FROM aedar_comparison_group").fetchone()[0] == last_group_rows
                 assert pub.execute("SELECT count(*) FROM aedar_comparison_territory").fetchone()[0] == last_territory_rows
-                stale_after_source_refresh=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
-                assert stale_after_source_refresh.status_code==503
+                stale_after_source_refresh=semantic_read("commune", "22001",
+                    coordinates={"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+                    intent={"kind": "fixed_comparison", "context": "epci"})
+                # The stored comparison survives (asserted above), but the read
+                # must not serve it: the intent snapshot preflight compares the
+                # published comparison's aedar_content_version with the now-bumped
+                # aggregate marker and fails closed. The preflight runs before the
+                # published-descriptor domain check, so this is the exact 503 the
+                # retired legacy route returned, not a 422.
+                assert stale_after_source_refresh.status_code == 503
+                assert "comparison" not in stale_after_source_refresh.json()
                 if phase == "full-audit":
                     stale_script = r'''pkgload::load_all('.',quiet=TRUE)
 schema <- Sys.getenv('AEDAR_IT_SCHEMA')
@@ -454,7 +485,9 @@ stopifnot(failed,identical(before,after))
                     stale_env["AEDAR_IT_SCHEMA"] = schema
                     stale_run = subprocess.run(["Rscript",str(stale_script_path)],cwd=pipeline,env=stale_env,capture_output=True,text=True)
                     assert stale_run.returncode==0,stale_run.stdout+stale_run.stderr
-                    stale_aedar=client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+                    stale_aedar=semantic_read("commune", "22001",
+                        coordinates={"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+                        intent={"kind": "fixed_comparison", "context": "epci"})
                     assert stale_aedar.status_code==503
         finally:
             dbread.close(); pool.cache_clear()

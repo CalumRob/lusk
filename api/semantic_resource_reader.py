@@ -82,24 +82,36 @@ class SemanticResourceReader:
             coordinates = item.coordinates or {}
             typequ = coordinates.get("typequ")
             measures = coordinates.get("measure")
+            # (a) Request-shape validation runs first: a malformed request must
+            # fail with 422 rather than be misreported as a publication problem.
+            if measures:
+                from api.aedar_models import AEDAR_MEASURE_KEYS
+                if not set(measures) <= AEDAR_MEASURE_KEYS:
+                    raise HTTPException(422, "Coordinate measure is not declared for AEDAR")
+            if item.intent.kind == "fixed_comparison" and not (
+                    typequ and len(typequ) == 1 and measures and len(measures) == 1):
+                raise HTTPException(422, "AEDAR comparison requires one TYPEQU and one measure coordinate")
+            # (b) Publication preflight runs second: an absent, stale or
+            # incompatible publication fails closed with 503, matching the
+            # retired legacy routes and the documented endpoint contract, so a
+            # valid request is never reported as malformed.
+            if item.intent.kind == "fixed_comparison":
+                _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
+                    item.intent.context, typequ[0], measures[0], item.fields, preflight_only=True)
+            elif item.intent.kind == "facts":
+                _aedar_territorial_aggregate_snapshot(conn, item.target.type,
+                    item.target.id, typequ, None, 100, 0, preflight_only=True)
+            # (c) Published-descriptor domain check runs last: 422 only once the
+            # publication is available and the value is not declared by it.
             if typequ:
                 known = {row[0] for row in conn.execute(
                     "SELECT DISTINCT typequ FROM aedar_territorial_aggregate WHERE typequ=ANY(%s)",
                     (typequ,)).fetchall()}
                 if known != set(typequ):
                     raise HTTPException(422, "Coordinate value is not present in the published AEDAR descriptor")
-            if measures:
-                from api.aedar_models import AEDAR_MEASURE_KEYS
-                if not set(measures) <= AEDAR_MEASURE_KEYS:
-                    raise HTTPException(422, "Coordinate measure is not declared for AEDAR")
             if item.intent.kind == "fixed_comparison":
-                if not typequ or len(typequ) != 1 or not measures or len(measures) != 1:
-                    raise HTTPException(422, "AEDAR comparison requires one TYPEQU and one measure coordinate")
-                return _aedar_comparison_snapshot(conn, item.target.type, item.target.id,
-                    item.intent.context, typequ[0], measures[0], item.fields, preflight_only=True) and 1
+                return 1
             if item.intent.kind == "facts":
-                result = _aedar_territorial_aggregate_snapshot(conn, item.target.type,
-                    item.target.id, typequ, None, 100, 0, preflight_only=True)
                 count = conn.execute("SELECT count(*) FROM aedar_territorial_aggregate WHERE territory_type=%s AND territory_id=%s AND (%s::text[] IS NULL OR typequ=ANY(%s))",
                     (item.target.type, item.target.id, typequ, typequ)).fetchone()[0]
                 return min(count, 100)

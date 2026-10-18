@@ -10,8 +10,9 @@ in OpenAPI; this reference points to resource contracts rather than inventing a
 stronger response guarantee.
 
 All paths below include the `/api` prefix. Path placeholders are literal
-parameters, not slashes. Query arrays (notably `fields` and `typequ`) are sent
-as repeated keys, e.g. `?fields=value&fields=status`. A validation failure
+parameters, not slashes. The only path taking query parameters is
+`/api/territories/search`; semantic reads carry arrays such as `fields` and
+`coordinates` in the JSON request body. A validation failure
 normally returns `422`; an unknown territory/resource/indicator is generally
 `404`; an absent, stale or incompatible publication dependency fails closed
 with `503`. Individual operations may have additional documented errors.
@@ -48,11 +49,11 @@ semantic resource and can be read through `/api/resources/read` and
 `/api/resources/read-batch`; `typequ` and
 `measure` are closed coordinate selectors, `measures.<registered-id>` is a field
 projection, and comparison context belongs to `fixed_comparison` intent. The two
-registered AEDAR GET operations remain only as compatibility routes for the
-current untouched Mobilité prototype; both delegate to the same source-grain
-reads and do not imply that AEDAR data is outside the unified contract. The
-retirement changes backend API paths; no frontend migration or caller edits are
-included in this backend change.
+legacy AEDAR GET operations
+(`/api/aedar/territories/{type}/{id}/aggregates` and `/comparisons`) are
+retired: AEDAR data is available only through the unified resource contract.
+This backend change removes those compatibility paths; no frontend migration or
+caller edits are included in this backend change.
 
 <!-- BEGIN GENERATED API REQUEST INVENTORY -->
 ## Generated route and request-schema inventory
@@ -69,8 +70,6 @@ the linked resource contracts and the operation notes below.
 | `GET` | `/api/resources` | Discover Resources | — | — |
 | `POST` | `/api/resources/read` | Read Resource | — | required request body: `ResourceReadItem` |
 | `POST` | `/api/resources/read-batch` | Read Resource Batch | — | required request body: `ResourceBatchRequest` |
-| `GET` | `/api/aedar/territories/{territory_type}/{territory_id}/aggregates` | Aedar Territorial Aggregates | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`, `region`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`typequ` (query, optional: array of string; max items: `100`)<br>`fields` (query, optional: array of string; max items: `313`)<br>`limit` (query, optional: integer; min: `1`; max: `100`; default: `50`)<br>`offset` (query, optional: integer; min: `0`; max: `10000`; default: `0`) | — |
-| `GET` | `/api/aedar/territories/{territory_type}/{territory_id}/comparisons` | Aedar Fixed Comparisons | `territory_type` (path, required: string; one of `commune`, `epci`, `departement`)<br>`territory_id` (path, required: string; min chars: `1`; max chars: `32`)<br>`context` (query, required: string; one of `density_class`, `epci`, `bretagne`, `same_level`)<br>`typequ` (query, required: string; min chars: `4`; max chars: `4`)<br>`measure` (query, required: string; min chars: `1`; max chars: `64`)<br>`fields` (query, optional: array of string; max items: `32`) | — |
 | `GET` | `/api/territories/search` | Search Territories | `q` (query, required: string; min chars: `1`; max chars: `64`)<br>`limit` (query, optional: integer; min: `1`; max: `50`; default: `8`) | — |
 | `GET` | `/api/health` | Health | — | — |
 
@@ -131,16 +130,6 @@ snapshot; failures reject the request without partial results.
 
 Searches the retained published territory reference with bounded query inputs.
 
-### `GET /api/aedar/territories/{territory_type}/{territory_id}/aggregates`
-
-Returns bounded AEDAR source-grain aggregates with explicit TYPEQU and measure
-field projection.
-
-### `GET /api/aedar/territories/{territory_type}/{territory_id}/comparisons`
-
-Returns one published AEDAR comparison for the requested context, TYPEQU and
-registered measure.
-
 - The generated inventory above is authoritative for paths, request schemas and
   bounds. `GET /api/resources` returns the producer-derived retained catalogue;
   it does not connect to PostgreSQL.
@@ -152,24 +141,26 @@ registered measure.
 - Producer metadata owns membership, labels, units, axes, source lineage,
   vintages and publication versions. Missing values are not zero; absent, stale
   or incompatible publication dependencies fail closed.
-- AEDAR aggregate and fixed-comparison reads are also available through the
-  semantic single/batch grammar. Existing source-grain routes remain adapters
-  over the same caller-owned snapshot readers.
+- AEDAR aggregate and fixed-comparison reads are available only through the
+  semantic single/batch grammar; the retired source-grain GET routes were
+  adapters over the same caller-owned snapshot readers.
 
 ## Retired route families
 
 Theme/family-specific facts and comparisons, direct indicator/profile/series
 reads, owned-dataset reads, scalar cohorts, building-access, essential-services,
-and the legacy `/api/read-batch` request grammar have been retired. Use the
-producer-derived catalogue and semantic single/batch read routes for retained
-resources. Legacy building/service accessibility and Mobility snapshot-derived
-read models are excluded, not aliases for AEDAR resources. This backend change
-records the contract boundary; it does not include frontend migration.
+the legacy AEDAR GET compatibility routes, and the legacy `/api/read-batch`
+request grammar have been retired. Use the producer-derived catalogue and
+semantic single/batch read routes for retained resources. Legacy
+building/service accessibility and Mobility snapshot-derived read models are
+excluded, not aliases for AEDAR resources. This backend change records the
+contract boundary; it does not include frontend migration.
 
 ## Resource contracts
 
 `api/batch-read-contract.md` documents semantic resource intent and batch
 semantics. `api/field-selection-contract.md` documents projection rules, and
 `api/resource_catalogue.py` plus generated OpenAPI define the accepted request
-shapes. AEDAR source-grain fields and coordinate selectors are documented in
-the route schemas and producer semantic-resource declaration.
+shapes. AEDAR source-grain fields and coordinate selectors are declared in
+`pipeline/inst/extdata/semantic-resource-contracts.json` (measure registry in
+`api/aedar_models.py`) and enforced by the semantic read grammar.

@@ -28,10 +28,13 @@ retiennent une grammaire commune sans imposer un stockage universel.
   Mobilité dérivées des anciens snapshots sont retirées. Les données source
   AEDAR et le ratio propriétaire B316 restent distincts et ne les remplacent pas.
 - L'identité AEDAR à granularité source (`aedar_territorial_aggregate`) est
-  déclarée par `pipeline/inst/extdata/semantic-resource-contracts.json` et lit
-  via la même API sémantique (`/api/resources/read[-batch]`) ; ses routes GET
-  dédiées restent temporairement pour le prototype actuel de Mobilité, sans
-  dupliquer les lectures sous-jacentes.
+  déclarée par `pipeline/inst/extdata/semantic-resource-contracts.json` et se
+  lit uniquement via l'API sémantique (`/api/resources/read[-batch]`) : `typequ`
+  et `measure` sont des coordonnées fermées, `measures.<id>` une projection de
+  champs, et le contexte de comparaison appartient à l'intention
+  `fixed_comparison`. Les deux routes GET AEDAR historiques
+  (`/api/aedar/territories/{type}/{id}/aggregates` et `/comparisons`) sont
+  retirées ; elles ne sont pas conservées comme alias.
 
 ## Conséquences
 
