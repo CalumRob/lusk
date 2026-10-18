@@ -7,7 +7,6 @@ import os
 from fastapi import Depends, FastAPI, HTTPException, Query
 from psycopg_pool import ConnectionPool
 from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
-from api.aedar_routes import create_aedar_router
 from api.resource_routes import create_resource_router
 from api.semantic_resource_reader import SemanticResourceReader
 from api.repository import ReadRepository
@@ -76,7 +75,6 @@ app.include_router(create_resource_router(
     get_catalogue=get_resource_catalogue,
     get_reader=get_semantic_resource_reader,
 ))
-app.include_router(create_aedar_router(get_pool=lambda: pool()))
 
 
 @app.get("/api/territories/search")

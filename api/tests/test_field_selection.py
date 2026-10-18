@@ -19,12 +19,13 @@ def test_selection_is_normalized_and_rejects_empty_duplicate_and_unknown_fields(
 
 
 def test_aedar_projection_happens_inside_sql_and_scalar_uses_only_contract_columns():
-    from api import aedar_reads, aedar_routes, snapshot_reads
-    from api.main import app
-
-    aedar = next(route.endpoint for route in aedar_routes.create_aedar_router(get_pool=lambda: None).routes if getattr(route, "path", "") ==
-        "/api/aedar/territories/{territory_type}/{territory_id}/aggregates")
+    from api import aedar_reads, semantic_resource_reader, snapshot_reads
     import inspect
+
+    # The retired AEDAR GET route is gone; the semantic reader is the only
+    # dispatcher and must reuse the same source-grain SQL projection reader.
+    dispatch_source = inspect.getsource(semantic_resource_reader.SemanticResourceReader)
+    assert "_aedar_territorial_aggregate_snapshot" in dispatch_source
     aedar_source = inspect.getsource(aedar_reads._aedar_territorial_aggregate_snapshot)
     scalar_source = inspect.getsource(snapshot_reads._indicator_facts_snapshot)
     assert "jsonb_object_agg" in aedar_source and "jsonb_each" in aedar_source

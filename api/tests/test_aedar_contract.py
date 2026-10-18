@@ -1,15 +1,27 @@
 import inspect
 from pathlib import Path
 
-from api import aedar_reads, aedar_routes
-from api.main import app
+import pytest
+
+from api import aedar_reads, semantic_resource_reader
+from api.resource_catalogue import default_resource_catalogue, validate_resource_item
+from api.resource_requests import ResourceReadItem
 
 
-def test_aedar_reader_is_named_typed_and_bounded():
-    route = next(r for r in aedar_routes.create_aedar_router(get_pool=lambda: None).routes if r.path ==
-        "/api/aedar/territories/{territory_type}/{territory_id}/aggregates")
-    assert route.endpoint.__name__ == "aedar_territorial_aggregates"
-    assert route.methods == {"GET"}
+def test_aedar_semantic_dispatch_is_declared_typed_and_bounded():
+    # The legacy AEDAR GET routes are retired: the producer declaration plus the
+    # semantic reader is the sole read path. Coordinate and intent grammar stay
+    # exactly as declared, and the shared source-grain SQL reader is reused.
+    resource = default_resource_catalogue.__wrapped__().resources_by_id["aedar_territorial_aggregate"]
+    assert resource.resource_kind == "aedar_source_grain"
+    assert resource.axes == ("typequ", "measure", "context")
+    assert resource.intents == ("facts", "fixed_comparison")
+    assert resource.allowed_levels == ("commune", "epci", "departement", "region")
+    assert resource.context_values == ("density_class", "epci", "bretagne", "same_level")
+    dispatch_source = inspect.getsource(semantic_resource_reader.SemanticResourceReader)
+    assert 'resource.resource_kind == "aedar_source_grain"' in dispatch_source
+    assert dispatch_source.count("_aedar_territorial_aggregate_snapshot") >= 2
+    assert dispatch_source.count("_aedar_comparison_snapshot") >= 2
     sql = inspect.getsource(aedar_reads._aedar_territorial_aggregate_snapshot)
     assert "territory_type=%s AND territory_id=%s" in sql
     assert "LIMIT %s OFFSET %s" in sql
@@ -17,15 +29,38 @@ def test_aedar_reader_is_named_typed_and_bounded():
     assert "aedar_territorial_aggregate" in sql
 
 
-def test_aedar_fixed_comparison_read_is_bounded_and_fails_closed_on_stale_dependencies():
-    route = next(route for route in aedar_routes.create_aedar_router(get_pool=lambda: None).routes if getattr(route, "path", "") ==
-        "/api/aedar/territories/{territory_type}/{territory_id}/comparisons")
-    assert route.endpoint.__name__ == "aedar_fixed_comparisons"
+def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_bounded():
+    catalogue = default_resource_catalogue.__wrapped__()
+    resource = catalogue.resources_by_id["aedar_territorial_aggregate"]
+    target = {"kind": "territory", "type": "commune", "id": "22001"}
+    facts = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate", "target": target,
+        "coordinates": {"typequ": ["A104"]}, "intent": {"kind": "facts"},
+    })
+    assert validate_resource_item(facts, catalogue) == resource
+    comparison = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate", "target": target,
+        "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+        "fields": ["group_value", "rank"], "intent": {"kind": "fixed_comparison", "context": "epci"},
+    })
+    assert validate_resource_item(comparison, catalogue) == resource
+    context_as_coordinate = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate", "target": target,
+        "coordinates": {"context": ["epci"]}, "intent": {"kind": "facts"},
+    })
+    with pytest.raises(ValueError, match="fixed_comparison intent"):
+        validate_resource_item(context_as_coordinate, catalogue)
+    undeclared_axis = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate", "target": target,
+        "coordinates": {"sql": ["anything"]}, "intent": {"kind": "facts"},
+    })
+    with pytest.raises(ValueError, match="coordinate axis"):
+        validate_resource_item(undeclared_axis, catalogue)
+
     source = inspect.getsource(aedar_reads._aedar_comparison_snapshot)
     assert "aedar_content_version" in source
     assert "reference_content_version" in source
     assert "aedar_comparison_territory" in source
-    assert "measure: str = Query(min_length=1, max_length=64)" in inspect.getsource(route.endpoint)
     assert "rank_ties" not in source
     schema = (Path(__file__).resolve().parents[1] / "schema.sql").read_text(encoding="utf-8")
     migration = (Path(__file__).resolve().parents[1] / "migrations" / "032_aedar_fixed_comparisons.sql").read_text(encoding="utf-8")
@@ -44,7 +79,12 @@ def test_aedar_fixed_comparison_read_is_bounded_and_fails_closed_on_stale_depend
     assert "FOREIGN KEY(territory_type,territory_id,typequ)" not in migration
     assert "FOREIGN KEY(territory_type,territory_id,typequ)" not in schema
     assert "source refresh retains the last complete comparison" in migration
-    assert "sql" not in route.endpoint.__annotations__
+    # The retired route's open query surface is gone: the semantic item accepts
+    # only the producer-declared axes and a closed comparison field vocabulary.
+    assert "sql" not in resource.axes
+    assert set(resource.fields) == {
+        "group_value", "value", "rank", "rank_size",
+        "member_count", "eligible_count", "missing_count"}
 
 
 def test_aedar_source_measure_contract_has_312_fields_and_four_level_identity():
@@ -132,46 +172,74 @@ def test_aedar_typed_response_accepts_registered_projection_but_rejects_unknown_
         AEDARFactResponse(**{**payload, "measures": {"not_registered": 0}})
 
 
-def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
+def test_aedar_semantic_facts_read_bounds_results_for_all_territory_levels(monkeypatch):
     from contextlib import contextmanager
     from fastapi.testclient import TestClient
     import api.main as main
+    from api.aedar_models import AEDAR_MEASURE_KEYS, AEDARTerritorialAggregateResponse
+
+    columns = ("territory_id", "territory_type", "typequ", "typequ_label","typequ_hierarchy_label","typequ_description",
+        "typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
+        "typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order",
+        "identity", "n_addresses", "n_observed", "coverage_status",
+        "measures", "source_id", "vintage_id", "source_url", "licence", "attribution",
+        "reference_date", "publication_date")
+    known_typequ = {"C401", "A135", "A104", "B316"}
+    full_measures = {key: (0 if key == "count_5_walk_share" else None) for key in AEDAR_MEASURE_KEYS}
 
     class Cursor:
-        description = [type("Column", (), {"name": n}) for n in
-                       ("territory_id", "territory_type", "typequ", "typequ_label","typequ_hierarchy_label","typequ_description",
-                        "typequ_domain_code","typequ_domain_label","typequ_subdomain_code",
-                        "typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order",
-                        "identity", "n_addresses", "n_observed", "coverage_status",
-                        "measures", "source_id", "vintage_id", "source_url", "licence", "attribution",
-                        "reference_date", "publication_date")]
-        def fetchone(self): return ("aedar-v1", 1, "ref-v1", "ref-v1")
-        def fetchall(self):
-            return [("id", "commune", "C401", "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES ÉCOLES",
-                     "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES",
-                     "Official description line one\nline two", "C","Services","C4","Publics",
-                     "Hors Gamme","hors_gamme",1,{"code_insee": "id"},
-                     10, 8, "covered", {key: (0 if key == "count_5_walk_share" else None)
-                        for key in aedar_routes.AEDAR_MEASURE_KEYS}, "aedar_bretagne",
-                      "2026-v1", "https://example.test", "ODbL",
-                      "© OpenStreetMap contributors; données AEDAR — licence ODbL", None, "2026-09-30")]
+        description = [type("Column", (), {"name": n}) for n in columns]
+        def __init__(self, rows): self.rows = rows
+        def fetchone(self): return self.rows[0] if self.rows else None
+        def fetchall(self): return self.rows
+
+    def fact_row(measures):
+        return ("id", "commune", "C401",
+                "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES ÉCOLES",
+                "STS SECTION TECHNICIEN SUPÉRIEUR, CPGE CLASSE PRÉPARATOIRE AUX GRANDES\nÉCOLES",
+                "Official description line one\nline two", "C","Services","C4","Publics",
+                "Hors Gamme","hors_gamme",1,{"code_insee": "id"},
+                10, 8, "covered", measures, "aedar_bretagne",
+                "2026-v1", "https://example.test", "ODbL",
+                "© OpenStreetMap contributors; données AEDAR — licence ODbL", None, "2026-09-30")
+
     class Connection:
-        def execute(self, sql, *_args, **_kwargs):
+        def execute(self, sql, params=None):
+            if "SELECT DISTINCT typequ" in sql:
+                return Cursor([(value,) for value in (params[0] if params else ()) if value in known_typequ])
             if "SELECT p.content_version" in sql:
-                return type("Marker",(),{"fetchone":lambda self:("aedar-v1",1,"ref-v1","ref-v1")})()
-            return Cursor()
+                return Cursor([("aedar-v1", 1, "ref-v1", "ref-v1")])
+            if "SELECT count(*)" in sql:
+                return Cursor([(1,)])
+            if "FROM territory_reference" in sql:
+                return Cursor([(1,)])
+            # Source-grain projection. A measure field selection is passed as the
+            # projected registry keys in the first parameter.
+            selected = params[0] if params and isinstance(params[0], (list, tuple)) else None
+            measures = full_measures if selected is None else {key: full_measures[key] for key in selected}
+            return Cursor([fact_row(measures)])
         @contextmanager
         def transaction(self): yield self
+
     class FakePool:
         @contextmanager
         def connection(self): yield Connection()
+
     monkeypatch.setattr(main, "pool", lambda: FakePool())
     client = TestClient(main.app)
     for level in ("commune", "epci", "departement", "region"):
-        response = client.get(f"/api/aedar/territories/{level}/id/aggregates?limit=1&typequ=C401")
-        assert response.status_code == 200
+        response = client.post("/api/resources/read", json={
+            "resource": "aedar_territorial_aggregate",
+            "target": {"kind": "territory", "type": level, "id": "id"},
+            "coordinates": {"typequ": ["C401"]},
+            "intent": {"kind": "facts"},
+        })
+        assert response.status_code == 200, response.text
         body = response.json()
+        assert body["resource"] == "aedar_territorial_aggregate"
+        assert body["target"] == {"kind": "territory", "type": level, "id": "id"}
         assert body["territory"] == {"territory_type": level, "territory_id": "id"}
+        assert body["limit"] == 100 and body["offset"] == 0
         assert len(body["facts"]) == 1
         assert body["facts"][0]["licence"] == "ODbL"
         assert body["facts"][0]["measures"]["count_5_walk_share"] == 0
@@ -187,6 +255,42 @@ def test_aedar_http_read_bounds_results_for_all_territory_levels(monkeypatch):
         assert body["content_version"] == "aedar-v1"
         assert body["reference_content_version"] == "ref-v1"
         assert body["facts"][0]["attribution"] == "© OpenStreetMap contributors; données AEDAR — licence ODbL"
+        # The typed AEDAR response contract still describes the semantic facts envelope.
+        AEDARTerritorialAggregateResponse.model_validate(body)
+        projected = client.post("/api/resources/read", json={
+            "resource": "aedar_territorial_aggregate",
+            "target": {"kind": "territory", "type": level, "id": "id"},
+            "coordinates": {"typequ": ["C401"]},
+            "fields": ["measures.count_5_walk_max"],
+            "intent": {"kind": "facts"},
+        })
+        assert projected.status_code == 200, projected.text
+        assert projected.json()["facts"][0]["measures"] == {"count_5_walk_max": None}
+        assert projected.json()["facts"][0]["source_id"] == "aedar_bretagne"
+    # Bounded, closed request grammar: no unbounded limit, no empty or unknown
+    # projection, and no coordinate absent from the published descriptor.
+    base = {"resource": "aedar_territorial_aggregate",
+            "target": {"kind": "territory", "type": "region", "id": "id"},
+            "coordinates": {"typequ": ["C401"]}, "intent": {"kind": "facts"}}
+    for invalid in ({"limit": 101}, {"fields": []},
+                    {"fields": ["measures.not_registered"]},
+                    {"coordinates": {"typequ": ["ZZZZ"]}}):
+        assert client.post("/api/resources/read", json={**base, **invalid}).status_code == 422
+
+
+def test_retired_aedar_get_routes_return_404_and_are_absent_from_openapi():
+    from fastapi.testclient import TestClient
+    import api.main as main
+
+    paths = main.app.openapi()["paths"]
+    assert not any(path.startswith("/api/aedar") for path in paths)
+    with TestClient(main.app) as client:
+        aggregate = client.get("/api/aedar/territories/commune/22001/aggregates?typequ=C401")
+        comparison = client.get(
+            "/api/aedar/territories/commune/22001/comparisons"
+            "?context=epci&typequ=A104&measure=count_5_walk_mean")
+    assert aggregate.status_code == 404, aggregate.text
+    assert comparison.status_code == 404, comparison.text
 
 
 def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monkeypatch):
@@ -203,9 +307,14 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
              "member_count","eligible_count","missing_count","value","status","n_addresses","n_observed","coverage_status","rank","rank_size")]
         def __init__(self, row): self.row=row
         def fetchone(self): return self.row
+    class Rows:
+        def __init__(self, rows): self.rows=rows
+        def fetchall(self): return self.rows
     class Connection:
         def execute(self, sql, *_args, **_kwargs):
             state["queries"].append((sql,_args[0] if _args else None))
+            if "SELECT DISTINCT typequ" in sql:
+                return Rows([("A104",)])
             if "aedar_comparison_publication" in sql:
                 return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,8,"old-aedar" if state["stale"] else "aed-v1","ref-v1")})()
             if "FROM territory_reference" in sql:
@@ -217,8 +326,16 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
         @contextmanager
         def connection(self): yield Connection()
     monkeypatch.setattr(main,"pool",lambda:FakePool())
-    response=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
-    assert response.status_code==200
+    def payload(**extra):
+        return {
+            "resource": "aedar_territorial_aggregate",
+            "target": {"kind": "territory", "type": "commune", "id": "22001"},
+            "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
+            "intent": {"kind": "fixed_comparison", "context": state["context"]},
+            **extra,
+        }
+    response=TestClient(main.app).post("/api/resources/read", json=payload())
+    assert response.status_code==200, response.text
     body=response.json()
     assert body["content_version"]=="cmp-v1"
     assert body["source_snapshot_id"]=="2026-v1"
@@ -229,8 +346,8 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
     assert body["comparison"]["rank_size"]==2
     assert body["comparison"]["statistic"]=="median"
     assert "rank_ties" not in body["comparison"]
-    value_only=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean&fields=value")
-    rank_only=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean&fields=rank")
+    value_only=TestClient(main.app).post("/api/resources/read", json=payload(fields=["value"]))
+    rank_only=TestClient(main.app).post("/api/resources/read", json=payload(fields=["rank"]))
     assert value_only.status_code==rank_only.status_code==200
     assert value_only.json()["comparison"]["value"]==5.0
     assert "group_value" not in value_only.json()["comparison"] and "rank" not in value_only.json()["comparison"]
@@ -240,13 +357,13 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
     assert "CASE WHEN %s THEN t.value" in projection_queries[-2][0] and projection_queries[-2][1][4] is True
     assert projection_queries[-1][1][4] is False and projection_queries[-1][1][5] is True
     before=len(state["queries"])
-    invalid=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean&fields=not_a_field")
+    invalid=TestClient(main.app).post("/api/resources/read", json=payload(fields=["not_a_field"]))
     assert invalid.status_code==422 and len(state["queries"])==before
     state["statistic"]="pooled"
     state["context"]="density_class"
-    pooled=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=density_class&typequ=A104&measure=count_5_walk_mean")
+    pooled=TestClient(main.app).post("/api/resources/read", json=payload())
     assert pooled.status_code==200
     assert pooled.json()["comparison"]["statistic"]=="pooled"
     state["stale"]=True
-    stale=TestClient(main.app).get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean")
+    stale=TestClient(main.app).post("/api/resources/read", json=payload())
     assert stale.status_code==503

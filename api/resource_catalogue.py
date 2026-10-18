@@ -186,7 +186,12 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         raise ValueError("comparison intents require a territory target")
     if item.coordinates is not None:
         axes = dict(resource.axis_values)
-        allowed_axes = set(axes) | set(resource.dynamic_axes)
+        # `resource.axes` are the producer-declared public coordinate axis names.
+        # Storage axis keys in `axis_values` may differ (e.g. anchored
+        # membership exposes `membership` over the `detail` storage key) and
+        # dynamic domains (AEDAR `typequ`/`measure`) have no static values, so
+        # declaration, not storage shape, decides which axes exist.
+        allowed_axes = set(resource.axes) | set(axes) | set(resource.dynamic_axes)
         if set(item.coordinates) - allowed_axes:
             raise ValueError("coordinate axis is not declared for this resource")
         if any(axis in axes and axes[axis] and not set(values) <= set(axes[axis])

@@ -34,9 +34,12 @@ def test_public_docs_and_openapi_are_database_free_and_api_prefixed():
         "/api/territories/{territory_type}/{territory_id}/indicators/{indicator_id}/comparison",
         "/api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}",
         "/api/territories/commune/{territory_id}/essential-services",
+        "/api/aedar/territories/{territory_type}/{territory_id}/aggregates",
+        "/api/aedar/territories/{territory_type}/{territory_id}/comparisons",
     ):
         assert retired_path not in paths
-    assert "/api/aedar/territories/{territory_type}/{territory_id}/aggregates" in paths
+    assert not any(path.startswith("/api/aedar") for path in paths)
+    assert "/api/resources/read" in paths
 
 
 def test_endpoint_request_inventory_matches_openapi():
