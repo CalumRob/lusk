@@ -3,8 +3,8 @@
 > **Historical chronology, not a current runbook.** Sections for migrations
 > 001–035 describe their original change and verification context; many legacy
 > paths cited there have since been retired. The current retained schema is
-> `api/schema.sql`; the latest guarded upgrade proofs are migrations 036 and 037
-> as described in [`api/tests/integration/README.md`](../tests/integration/README.md).
+> `api/schema.sql`; the latest guarded upgrade proofs are migrations 036 through
+> 038 as described in [`api/tests/integration/README.md`](../tests/integration/README.md).
 > Do not execute old commands in this chronology as current operating guidance.
 
 # Migration 016: bounded BPE profile evidence (historical)
@@ -436,3 +436,32 @@ The guarded integration proof applies this migration to a populated schema
 created from the pinned pre-retirement schema, verifies retained values and
 tokens, and checks that excluded tables/functions are absent. This migration
 only changes the serving schema; it does not authorize deployment.
+
+# Migration 038 — set-based owned-series provenance validation
+
+`038_owned_series_provenance_set_validation.sql` replaces only the
+`validate_series_dataset_publication()` trigger function. The focal
+observation-to-provenance check becomes one `EXCEPT` set difference over the
+exact `(dataset_id,indicator_id,territory_id,axis_value)` key instead of a
+correlated `NOT EXISTS`. The correlated form can plan as a nested loop that
+rescans a dataset's provenance rows once per observation row: on a freshly
+written, unanalyzed schema the guarded 4,745-row publication spent 11,264,631
+index-tuple fetches and 13.2 s in COMMIT; after the rewrite it spends 14,235
+fetches and 0.94 s, and a 28,105-row publication commits in 5.8 s. The two
+sets of figures are separate runs with different counter scopes: the
+real-publisher numbers count `idx_tup_fetch` on
+`series_observation_provenance` alone, while the guarded 4,744-observation
+regression counts `seq_tup_read + idx_tup_fetch` over both focal relations
+(37,952 visits). Counters are PostgreSQL 18.6 cumulative statistics read
+through `pg_stat_force_next_flush()` and `pg_stat_user_tables`; they record
+work, not a guaranteed physical plan. Every other
+check, error message, marker `row_count` contract, per-row provenance trigger
+and the `NEW.dataset_id` scope are unchanged, so per-owner atomic replacement
+and direct SQL rejection guarantees are preserved. The migration is additive:
+no table, column, index, trigger or data change, and it does not analyze shared
+tables. Fresh installs carry the same function body in `schema.sql`. The guarded
+integration proof installs migration 015's validator, applies 038, and compares
+the migrated function and its accepted/rejected outcomes with a fresh schema;
+the work regression is pinned by PostgreSQL tuple-visit counters rather than a
+wall-clock threshold. This migration does not publish data or authorize
+deployment.
