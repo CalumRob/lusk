@@ -659,9 +659,12 @@ DECLARE actual_rows bigint; actual_descriptors bigint; BEGIN
    AND t.content_version=NEW.reference_content_version) THEN
    RAISE EXCEPTION 'owned series publication is bound to a stale territory reference';
  END IF;
- IF EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=NEW.dataset_id
-   AND NOT EXISTS(SELECT 1 FROM series_observation_provenance p WHERE p.dataset_id=o.dataset_id
-   AND p.indicator_id=o.indicator_id AND p.territory_id=o.territory_id AND p.axis_value=o.axis_value)) THEN
+ IF EXISTS(SELECT 1 FROM (
+   SELECT o.dataset_id,o.indicator_id,o.territory_id,o.axis_value FROM series_dataset_observation o
+     WHERE o.dataset_id=NEW.dataset_id
+   EXCEPT
+   SELECT p.dataset_id,p.indicator_id,p.territory_id,p.axis_value FROM series_observation_provenance p
+     WHERE p.dataset_id=NEW.dataset_id) AS missing) THEN
    RAISE EXCEPTION 'owned series observation is missing provenance association';
  END IF;
  IF EXISTS(SELECT 1 FROM series_named_reference r WHERE r.dataset_id=NEW.dataset_id AND NOT EXISTS(
