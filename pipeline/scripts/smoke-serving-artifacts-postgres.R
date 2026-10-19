@@ -22,15 +22,15 @@
 # `publish-serving-tables.R` bundle — which assumes the serving database already
 # holds the profiles — is exercised afterwards as the no-op republication check.
 #
-# Scope of this proof: diagnostic subset, never all-owner acceptance. One retained
-# owner (the Mobilite owned series `raccordement_courbe`, whose committed facts
-# predate the #728 national GTFS producer run) cannot be fed by the committed
-# payload, so the materializer reports it blocked and the full `--check` exits
-# non-zero. This smoke asserts exactly that one blocked owner — the run stays
-# fail-closed, nothing is stubbed or exempted — and proves the publication and
-# semantic read-back of the subset the committed payload does feed. All-owner and
-# rollout acceptance require the committed payload to be regenerated first and are
-# deliberately not claimed here.
+# Scope of this proof: every owner the materializer plans, including the Mobilite
+# owned series `raccordement_courbe` (with the `raccordement_tc` headline and the
+# `raccordement_reference` trajectory beside it). The committed facts of that owner
+# predate the #728 national GTFS producer run, so it is fed from the byte-pinned
+# package artifact through the producer's own functions. The materializer must
+# report no blocked owner here and the full `--check` exits zero, which makes this
+# smoke all-owner acceptance for the rollout rather than a diagnostic subset.
+# Nothing is stubbed or exempted: a pin or producer-contract failure would block
+# the owner and fail this smoke.
 pkgload::load_all(".", quiet=TRUE)
 required <- c("HOST", "PORT", "DATABASE", "USER")
 config <- setNames(lapply(required, function(key) Sys.getenv(paste0("LUSK_SERVING_TEST_", key), unset="")), required)
@@ -77,13 +77,11 @@ tryCatch({
   #    The entrypoint copies the payload inputs itself, so the canonical snapshot
   #    is never written to.
   materialized <- materialize_serving_artifacts(canonical_source, work, "materialize")
-  stopifnot(nrow(materialized$blocked) == 1L,
-    identical(materialized$blocked$owner[[1L]], "raccordement_courbe"))
+  stopifnot(nrow(materialized$blocked) == 0L)
   scalar_binding <- read_profile_scalar_binding(work)
   stopifnot(grepl("^[a-f0-9]{32}$", scalar_binding))
-  cat("Materialized", nrow(materialized$versions), "retained owners into the work dir;",
-    nrow(materialized$blocked), "blocked (", materialized$blocked$owner[[1L]],
-    ") - the blocked owner is the committed-payload prerequisite, so this run proves the feedable subset only\n")
+  cat("Materialized all", nrow(materialized$versions),
+    "retained owners into the work dir; none blocked\n")
 
   DBI::dbExecute(con, paste0("CREATE SCHEMA ", DBI::dbQuoteIdentifier(con, schema))); created <- TRUE
   DBI::dbExecute(con, paste0("SET search_path TO ", DBI::dbQuoteIdentifier(con, schema)))
@@ -142,12 +140,12 @@ tryCatch({
   publish_owned <- function(owner) dispatch_owned_series_cli("publish",
     read_owned_series_projections(work, indicator_id=owner), connect_owned,
     opt_in="1", indicator_id=owner)
-  for (owner in c("conso_enaf_annuel", "prix_m2")) publish_owned(owner)
+  for (owner in c("conso_enaf_annuel", "prix_m2", "raccordement_courbe")) publish_owned(owner)
   annual <- read_conso_enaf_series_projection(work)
   publish_series_projection(annual, series_postgres_adapter(con),
     function(validated, db, content_version) db$replace(validated, content_version))
   cat("Unified publication: reference + scalar + comparisons + 4 typed readings +",
-    length(profile_owners), "declared profiles + 3 owned series + 1 annual series\n")
+    length(profile_owners), "declared profiles + 4 owned series + 1 annual series\n")
 
   # 4. Semantic read-back against the materialized artifacts.
   scalar_rows <- assert_parity(con, "SELECT * FROM scalar_observation", retained$scalar$facts,
@@ -167,13 +165,26 @@ tryCatch({
   }
 
   owned_rows <- 0L
-  for (owner in c("artif_par_habitant", "conso_enaf_annuel", "prix_m2")) {
+  for (owner in c("artif_par_habitant", "conso_enaf_annuel", "prix_m2", "raccordement_courbe")) {
     projection <- read_owned_series_artifact(file.path(work, "series-serving", owner), owner)
     owned_rows <- owned_rows + assert_parity(con,
       "SELECT * FROM series_dataset_observation WHERE dataset_id=$1", projection$points,
       c("dataset_id", "indicator_id", "territory_id", "axis_value"),
       params=list(projection$descriptor$dataset_id))
   }
+  # The national raccordement trajectory publishes its named reference (the
+  # regional mean) and the declared reference descriptors alongside the focal
+  # points, all read back from the pinned producer rows.
+  raccordement <- read_owned_series_artifact(
+    file.path(work, "series-serving", "raccordement_courbe"), "raccordement_courbe")
+  reference_rows <- DBI::dbGetQuery(con,
+    "SELECT count(*) AS n FROM series_named_reference WHERE dataset_id=$1",
+    params=list(raccordement$descriptor$dataset_id))$n[[1L]]
+  descriptor_rows <- DBI::dbGetQuery(con,
+    "SELECT count(*) AS n FROM series_named_reference_descriptor WHERE dataset_id=$1",
+    params=list(raccordement$descriptor$dataset_id))$n[[1L]]
+  stopifnot(identical(as.integer(reference_rows), nrow(raccordement$named_reference)),
+    identical(as.integer(descriptor_rows), nrow(raccordement$named_reference_descriptors)))
   # The reconstructed Milieux state roles survive into the published series.
   habitat_series <- read_owned_series_artifact(
     file.path(work, "series-serving", "artif_par_habitant"), "artif_par_habitant")$points
@@ -219,7 +230,7 @@ tryCatch({
   #    against the materialized directory.
   markers <- DBI::dbGetQuery(con, "SELECT * FROM table_publication ORDER BY table_name")
   publish_retained_backend_snapshot(con, work, conso_source_path=NULL)
-  for (owner in c("conso_enaf_annuel", "prix_m2")) publish_owned(owner)
+  for (owner in c("conso_enaf_annuel", "prix_m2", "raccordement_courbe")) publish_owned(owner)
   publish_series_projection(annual, series_postgres_adapter(con),
     function(validated, db, content_version) db$replace(validated, content_version))
   no_op <- publier_declared_profiles_postgres(work, profile_owners, con=con)
@@ -254,8 +265,8 @@ tryCatch({
     if (!identical(status, 0L)) stop("Serving-artifacts publisher-to-HTTP parity failed", call.=FALSE)
     cat("Guarded publisher-to-HTTP semantic read-back (habitat typed reading via /api/resources/read): PASS\n")
   } else cat("Guarded publisher-to-HTTP semantic read-back: SKIPPED (read DSN/pytest not configured)\n")
-  cat("Serving-artifacts subset end-to-end proof (diagnostic): PASS",
-    "- one retained owner stays blocked by the committed payload, so all-owner acceptance is pending payload regeneration\n")
+  cat("Serving-artifacts end-to-end proof: PASS",
+    "- every planned owner materialized from the committed payload plus the pinned producer artifact and published back\n")
 }, finally={
   if (created && identical(Sys.getenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP"), "1")) {
     tryCatch(cleanup_serving_smoke_schema(con, schema, "serving"),

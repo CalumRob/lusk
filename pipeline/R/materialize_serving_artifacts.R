@@ -6,21 +6,24 @@
 # scripts/materialize-serving-artifacts.R; this file owns the reusable
 # orchestration so it can be exercised without a subprocess.
 #
-# Boundary (issue #802): the committed payload is the only producer input. No
-# `data/raw` cache, no database, no network. Every write goes to a caller-owned
-# private work directory; the committed snapshot is copied in first and asserted
-# unchanged, so it can never be mutated in place. Before the first write the
-# work root and every planned write destination are resolved through the
-# filesystem — symlinks, junctions and aliases included — and refused if any of
-# them reaches the snapshot (see assert_serving_work_isolated()).
+# Boundary (issue #802): the committed payload and the package's byte-pinned
+# producer artifacts are the only producer inputs. No `data/raw` cache, no
+# database, no network. Every write goes to a caller-owned private work
+# directory; the committed snapshot is copied in first and asserted unchanged, so
+# it can never be mutated in place. Before the first write the work root and every
+# planned write destination are resolved through the filesystem — symlinks,
+# junctions and aliases included — and refused if any of them reaches the
+# snapshot (see assert_serving_work_isolated()).
 #
-# An owner the committed payload cannot feed (today the Mobilite owned series
-# `raccordement_courbe`, whose committed observation period predates the current
-# producer contract) is reported blocked, never skipped or stubbed: the run stays
-# fail-closed and the CLI's full check exits non-zero until the committed payload
-# is regenerated. scripts/smoke-serving-artifacts-postgres.R proves the subset the
-# committed payload can feed end to end and labels itself diagnostic for that
-# reason — it is not all-owner acceptance for the rollout.
+# One owner is NOT read from the committed payload: the Mobilite owned series
+# `raccordement_courbe` — with the `raccordement_tc` headline and the
+# `raccordement_reference` trajectory it is projected from — is a producer-owned
+# built result the committed payload predates (#728). It is taken from the
+# byte-pinned package artifact through the producer's own functions instead (see
+# "Producer-owned pinned inputs" below), so no owner is left blocked by a stale
+# theme Parquet and no retired fact is relabelled. The run stays fail-closed: a
+# pin mismatch or a producer contract violation blocks before any generation is
+# presented as current.
 #
 # Owner derivation is always producer-derived, never a copied theme list:
 #   - scalar        retained_scalar_artifact_owners()  (scalar_contracts minus
@@ -331,6 +334,111 @@ copy_serving_inputs <- function(source, target, inputs) {
   invisible(inputs)
 }
 
+# Producer-owned pinned inputs --------------------------------------------------
+# One retained owner is not a committed-payload projection but a producer-owned
+# BUILT result the committed payload predates: the #728 national GTFS raccordement
+# run. Its facts (the owned curve, the regional mean reference and the headline
+# scalar projected from them), its metadata declarations and its vintage therefore
+# come from the pins through the producer's own functions — never from the retired
+# theme-wide Parquet rows, and never from a literal restamped to look current.
+#
+# The committed payload is not asked to carry this owner: it keeps only what it
+# still legitimately owns (its other Mobility facts and their declarations), and its
+# retired raccordement rows are dropped rather than relabelled with the national
+# vintage. A pin whose bytes differ from the canonical sha256, whose saved envelope
+# disagrees with the recalculated one, or whose recipe contract changed stops the
+# run before any generation is written.
+
+# The producer's canonical rows for that owner, read from the byte-pinned artifact.
+# lire_artefact_raccordement_national() validates the pins, the recipe contract, the
+# population pin and the saved/calculated parity without any raw cache, routing or
+# network, and lignes_indicateurs_raccordement_national() is the very projection
+# publier_mobilite() runs — the serving rows are the producer's rows.
+producer_owned_raccordement_inputs <- function(chemin_enveloppe=NULL, chemin_matrice=NULL) {
+  artifact <- lire_artefact_raccordement_national(chemin_enveloppe, chemin_matrice)
+  rows <- lignes_indicateurs_raccordement_national(artifact$calculation, VINTAGES_RACCORDEMENT)
+  theme <- unique(as.character(rows$theme))
+  keys <- unique(as.character(rows$key))
+  if (length(theme) != 1L || is.na(theme) || !nzchar(theme) || !length(keys) || anyNA(keys))
+    stop("The pinned national raccordement artifact declares no single theme owner", call.=FALSE)
+  list(theme=theme, keys=keys, rows=rows, vintages=VINTAGES_RACCORDEMENT,
+    metadata=lire_theme_metadata(theme))
+}
+
+# The producer-owned artifacts this materialization reads beside the committed
+# payload, keyed by file name and valued by the byte pin the producer's own reader
+# enforces. Reported as evidence: a rollout run names every non-committed input it
+# consumed, and a pin mismatch fails before any generation is written.
+serving_pinned_producer_inputs <- function() {
+  paths <- c(chemin_artefact_raccordement_national(), chemin_matrice_raccordement_national())
+  stats::setNames(c(RACCORDEMENT_NATIONAL_ENVELOPPE_SHA256, MATRICE_RACCORDEMENT_NATIONAL_SHA256),
+    vapply(paths, basename, character(1)))
+}
+
+# The producer's CURRENT declaration for the indicators the pins supply, overlaid on
+# the committed metadata: those entries describe the facts this materialization now
+# takes from the pins, so they are the producer's. Every other declaration keeps its
+# committed form — the committed payload still owns those facts — and the source
+# record each supplied indicator resolves to travels with it.
+producer_owned_theme_metadata <- function(committed, inputs) {
+  if (!is.list(committed)) stop("Committed theme metadata is not a declaration", call.=FALSE)
+  merged <- committed
+  for (section in c("sources", "detail_labels", "indicator_labels", "indicator_caveats",
+                    "indicator_pages", "owned_series_routes")) {
+    declared <- inputs$metadata[[section]]
+    if (is.null(declared)) next
+    for (key in intersect(inputs$keys, names(declared))) merged[[section]][[key]] <- declared[[key]]
+  }
+  for (key in inputs$keys) {
+    source_id <- as.character(inputs$metadata$sources[[key]])
+    if (length(source_id) != 1L || is.na(source_id) || !nzchar(source_id))
+      stop("The producer metadata declares no source for the indicator ", key, call.=FALSE)
+    record <- inputs$metadata$source_records[[source_id]]
+    if (is.null(record))
+      stop("The producer metadata declares no source record for ", source_id, call.=FALSE)
+    merged$source_records[[source_id]] <- record
+  }
+  merged
+}
+
+# The committed rows of the indicators the pins supply are dropped whole and the
+# pinned rows take their place, in the committed projection's own columns: the theme
+# keeps the shape it publishes and no retired row survives under a new stamp.
+producer_owned_facts <- function(indicators, inputs) {
+  if (!is.data.frame(indicators) || !"key" %in% names(indicators))
+    stop("Committed theme indicators are not a producer projection", call.=FALSE)
+  keep <- indicators[!(as.character(indicators$key) %in% inputs$keys), , drop=FALSE]
+  rows <- inputs$rows[, intersect(names(indicators), names(inputs$rows)), drop=FALSE]
+  for (column in setdiff(names(indicators), names(rows))) rows[[column]] <- NA
+  merged <- rbind(keep, rows[names(indicators)])
+  rownames(merged) <- NULL
+  merged
+}
+
+# Apply the producer-owned inputs to the loaded committed payload AND make the
+# private work directory describe them: the work directory is the publication input,
+# so it must carry the declarations the serving generations were built from. The
+# vintage table is merged with the pipeline's own upsert (the producer's declared
+# rows win on their id) and the theme metadata is written through the producer's
+# publication seam, which validates it against that table before writing. Both
+# writers are content-addressed no-ops when the file already says this, so a rerun
+# leaves the work directory byte-identical.
+apply_producer_owned_inputs <- function(payload, directory) {
+  inputs <- producer_owned_raccordement_inputs()
+  theme <- inputs$theme
+  if (is.null(payload$facts[[theme]]) || is.null(payload$metadata[[theme]]))
+    stop("The producer-owned inputs declare a theme the payload does not carry", call.=FALSE)
+  payload$facts[[theme]] <- producer_owned_facts(payload$facts[[theme]], inputs)
+  payload$metadata[[theme]] <- producer_owned_theme_metadata(payload$metadata[[theme]], inputs)
+  payload$vintages <- fusionner_vintages(inputs$vintages, directory)
+  ecrire_parquet_si_modifie(payload$vintages, file.path(directory, "vintages.parquet"))
+  ecrire_json_si_modifie(payload$vintages, file.path(directory, "vintages.json"),
+    dataframe="rows", na="null", digits=17, pretty=TRUE)
+  publier_theme_metadata(payload$metadata[[theme]], directory,
+    vintages=payload$vintages, theme_attendu=theme)
+  payload
+}
+
 load_serving_payload <- function(directory, plan) {
   facts <- lapply(plan$facts_themes, function(theme) lire_faits_commis(directory, theme, "indicateurs"))
   names(facts) <- plan$facts_themes
@@ -340,9 +448,10 @@ load_serving_payload <- function(directory, plan) {
   names(metadata) <- THEMES_METADATA
   if ("milieux" %in% names(facts))
     facts$milieux <- reconstruct_milieux_state_roles(facts$milieux, metadata$milieux)
-  list(territories=nanoparquet::read_parquet(file.path(directory, "territoires.parquet")),
+  payload <- list(territories=nanoparquet::read_parquet(file.path(directory, "territoires.parquet")),
     vintages=nanoparquet::read_parquet(file.path(directory, "vintages.parquet")),
     facts=facts, histories=histories, metadata=metadata)
+  apply_producer_owned_inputs(payload, directory)
 }
 
 # The immutable pointer a materialized owner commits: the family-local declaration
@@ -552,6 +661,10 @@ format_serving_artifact_report <- function(result) {
   outcomes <- result$outcomes
   lines <- sprintf("Serving artifacts (%s): committed payload %s",
     if (identical(result$mode, "check")) "check" else "materialize", result$plan$source)
+  pins <- serving_pinned_producer_inputs()
+  lines <- c(lines, "Producer-owned pinned inputs:")
+  for (i in seq_along(pins))
+    lines <- c(lines, sprintf("  %s %s", names(pins)[[i]], pins[[i]]))
   lines <- c(lines, "Planned owners:")
   for (family in unique(outcomes$family)) {
     at <- outcomes$family == family
@@ -567,7 +680,7 @@ format_serving_artifact_report <- function(result) {
         versions$content_version[[i]]))
   blocked <- result$blocked
   if (nrow(blocked)) {
-    lines <- c(lines, sprintf("Blocked owners (%d): the committed payload cannot feed them", nrow(blocked)))
+    lines <- c(lines, sprintf("Blocked owners (%d): the committed payload and the pinned producer inputs cannot feed them", nrow(blocked)))
     for (i in seq_len(nrow(blocked)))
       lines <- c(lines, sprintf("  %s/%s: %s", blocked$family[[i]], blocked$owner[[i]], blocked$detail[[i]]))
   }

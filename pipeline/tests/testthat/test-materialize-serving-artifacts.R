@@ -1,9 +1,11 @@
 # test-materialize-serving-artifacts -------------------------------------------
 # Issue #802: the offline materialization entrypoint derives every retained owner
 # from producer metadata (never a copied theme list) and materializes the four
-# serving families from the committed payload alone. These tests pin the owner
-# derivation, the Milieux producer-only state-role reconstruction, the read-only
-# guarantee on the canonical snapshot, and the end-to-end materialization.
+# serving families from the committed payload plus the package's byte-pinned
+# producer artifacts (the national raccordement owner the committed payload
+# predates). These tests pin the owner derivation, the Milieux producer-only
+# state-role reconstruction, the read-only guarantee on the canonical snapshot, the
+# end-to-end materialization, and the pinned producer input seam.
 
 serving_payload_dir <- function()
   file.path(pkgload::pkg_path(), "..", "public", "data")
@@ -165,7 +167,7 @@ test_that("le repertoire de travail prive ne peut pas viser l'instantane commis"
   expect_silent(assert_serving_work_isolated(source, file.path(tempdir(), "serving-outsider")))
 })
 
-test_that("la materialisation couvre les quatre familles et signale le proprietaire bloque", {
+test_that("la materialisation couvre les quatre familles sans proprietaire bloque", {
   serving_skip()
   cache <- serving_materialized()
   result <- cache$result
@@ -174,15 +176,19 @@ test_that("la materialisation couvre les quatre familles et signale le proprieta
   expect_setequal(unique(outcomes$family),
     c("scalar-serving", "series-serving", "typed-reading", "profile-serving"))
   expect_equal(nrow(outcomes), 22L)
-  expect_equal(nrow(result$versions), 21L)
+  expect_equal(nrow(result$versions), 22L)
 
-  # The one owner the committed payload cannot feed is the Mobilite owned series:
-  # public/data predates the #728 national GTFS raccordement run, so its committed
-  # observation period violates the current producer snapshot-date contract.
-  expect_equal(nrow(result$blocked), 1L)
-  expect_identical(result$blocked$family[[1L]], "series-serving")
-  expect_identical(result$blocked$owner[[1L]], "raccordement_courbe")
-  expect_match(result$blocked$detail[[1L]], "raccordement observation period")
+  # Every declared owner is fed. The Mobilite owned series is fed by the pinned
+  # national raccordement artifact rather than by the committed rows, which predate
+  # the #728 run and are therefore not the producer's current contract.
+  expect_equal(nrow(result$blocked), 0L)
+
+  # The pins the materializer read are the pinned bytes, unchanged: the pinned
+  # artifact is an input, never an output.
+  expect_identical(empreinte_fichier_raccordement(chemin_artefact_raccordement_national()),
+    RACCORDEMENT_NATIONAL_ENVELOPPE_SHA256)
+  expect_identical(empreinte_fichier_raccordement(chemin_matrice_raccordement_national()),
+    MATRICE_RACCORDEMENT_NATIONAL_SHA256)
 
   # Every other declared owner produced its artifact pointer with a version.
   expect_false(anyNA(result$versions$content_version))
@@ -236,8 +242,7 @@ test_that("le mode --check est en lecture seule et rapporte les memes versions",
   # No committed payload input changed, and the disposable temp directory is gone.
   expect_identical(before, after)
   expect_false(dir.exists(checked$work))
-  expect_equal(nrow(checked$blocked), 1L)
-  expect_identical(checked$blocked$owner[[1L]], "raccordement_courbe")
+  expect_equal(nrow(checked$blocked), 0L)
   # The materializable owners report the exact versions the materialization wrote.
   ordered <- function(versions) versions[order(versions$family, versions$owner), , drop = FALSE]
   expect_identical(ordered(checked$versions), ordered(result$versions))
@@ -583,6 +588,250 @@ test_that("provenance: une defaillance partielle bloque toute la famille multipl
   expect_true(all(file.exists(pointers)))
   expect_identical(vapply(pointers, function(pointer)
     serving_pointer_value(pointer)$semantic_version, character(1)), versions)
+})
+
+# Producer-owned pinned raccordement inputs -------------------------------------
+# The committed Mobility payload predates the #728 national GTFS raccordement run:
+# its raccordement facts carry the retired mairie snapshot (an 11-point median grid
+# observed on 2026-09-16) and its committed theme metadata still declares that
+# retired source. The owner is neither regenerated from the retired theme-wide
+# Parquet nor asked of the committed payload: the producer already owns the
+# canonical built result as a byte-pinned package artifact. The materializer takes
+# that owner's facts, its declarations and its vintage from the pins through the
+# producer's own functions. These blocks pin the seam and its consequences.
+
+producer_raccordement_inputs <- local({
+  cache <- new.env(parent = emptyenv())
+  function() {
+    if (is.null(cache$value)) cache$value <- producer_owned_raccordement_inputs()
+    cache$value
+  }
+})
+
+test_that("les entrees raccordement sont celles de l'artefact national epingle", {
+  inputs <- producer_raccordement_inputs()
+  expect_identical(inputs$theme, "mobilite")
+  expect_setequal(inputs$keys, c("raccordement_tc", "raccordement_courbe",
+    "raccordement_reference"))
+
+  # The producer's current national contract: the pinned observation period and the
+  # 73-point publication grid over the four served levels — never the retired
+  # 11-point mairie grid the committed theme Parquet still carries.
+  grid <- grille_raccordement_national()
+  expect_length(grid, 73L)
+  curve <- inputs$rows[inputs$rows$key == "raccordement_courbe", , drop = FALSE]
+  expect_setequal(unique(as.character(curve$detail)), grid)
+  expect_setequal(unique(as.character(curve$type)),
+    c("commune", "epci", "departement", "region"))
+  reference <- inputs$rows[inputs$rows$key == "raccordement_reference", , drop = FALSE]
+  expect_identical(unique(as.character(reference$type)), "region")
+  expect_setequal(unique(as.character(reference$detail)), grid)
+  expect_identical(unique(as.character(inputs$rows$observation_period)),
+    RECETTE_RACCORDEMENT_NATIONAL$date_mesure)
+
+  # And the producer's declared vintage, not the retired mairie stamp.
+  vintage <- VINTAGES_RACCORDEMENT[VINTAGES_RACCORDEMENT$id == "raccordement_gtfs_national", , drop = FALSE]
+  expect_equal(nrow(vintage), 1L)
+  expect_identical(unique(as.character(inputs$rows$vintage_source)), as.character(vintage$source))
+  expect_identical(unique(as.character(inputs$rows$vintage_version)), as.character(vintage$version))
+  expect_identical(unique(as.character(inputs$rows$vintage_date_reference)),
+    as.character(vintage$date_reference))
+  expect_identical(unique(as.character(inputs$rows$vintage_date_publication)),
+    as.character(vintage$date_publication))
+
+  # The declarations that travel with the rows are the producer's current ones.
+  expect_identical(as.character(inputs$metadata$sources$raccordement_tc),
+    "raccordement_gtfs_national")
+})
+
+test_that("un artefact raccordement epingle non conforme bloque la materialisation", {
+  envelope <- chemin_artefact_raccordement_national()
+  matrix <- chemin_matrice_raccordement_national()
+  # The producer reader owns the pins: substituted bytes are caught by the sha256
+  # contract and an absent pin stops before anything is read. Neither can ever feed
+  # a serving generation.
+  expect_error(producer_owned_raccordement_inputs(envelope, envelope), "sha256")
+  expect_error(producer_owned_raccordement_inputs(tempfile(fileext = ".rds"), matrix),
+    "missing")
+
+  # The reported input inventory names those pins, so a rollout run lists every
+  # non-committed input it consumed.
+  pins <- serving_pinned_producer_inputs()
+  expect_setequal(unname(pins), c(RACCORDEMENT_NATIONAL_ENVELOPPE_SHA256,
+    MATRICE_RACCORDEMENT_NATIONAL_SHA256))
+  expect_true(all(file.exists(file.path(system.file("extdata", package = "lusk"),
+    names(pins)))))
+  expect_true(any(grepl(names(pins)[[1L]], format_serving_artifact_report(
+    list(mode = "check", plan = list(source = envelope), outcomes = data.frame(
+      family = character(), owner = character(), status = character(),
+      content_version = character(), stringsAsFactors = FALSE),
+      versions = data.frame(family = character(), owner = character(),
+        content_version = character(), stringsAsFactors = FALSE),
+      blocked = data.frame(family = character(), owner = character(),
+        detail = character(), stringsAsFactors = FALSE))), fixed = TRUE)))
+})
+
+test_that("les declarations raccordement deviennent celles du producteur, le reste du commis demeure", {
+  serving_skip()
+  source <- serving_payload_dir()
+  committed <- serving_theme_metadata(source, "mobilite")
+  inputs <- producer_raccordement_inputs()
+  merged <- producer_owned_theme_metadata(committed, inputs)
+
+  # The indicators the pins supply now declare the producer's current source, its
+  # source record, its page contract and its series route.
+  expect_identical(as.character(merged$sources$raccordement_tc), "raccordement_gtfs_national")
+  expect_false(identical(merged$sources$raccordement_tc, committed$sources$raccordement_tc))
+  expect_identical(merged$source_records$raccordement_gtfs_national,
+    inputs$metadata$source_records$raccordement_gtfs_national)
+  expect_identical(merged$indicator_pages$raccordement_courbe,
+    inputs$metadata$indicator_pages$raccordement_courbe)
+  expect_identical(merged$owned_series_routes$raccordement_courbe,
+    inputs$metadata$owned_series_routes$raccordement_courbe)
+  expect_identical(merged$indicator_labels$raccordement_tc,
+    inputs$metadata$indicator_labels$raccordement_tc)
+
+  # Every other indicator keeps the committed declaration: the committed payload
+  # still owns those facts, so its metadata still describes them.
+  expect_identical(merged$sources$nb_buildings, committed$sources$nb_buildings)
+  expect_identical(merged$indicator_pages$nb_buildings, committed$indicator_pages$nb_buildings)
+  expect_identical(merged$source_records[["bornes-recharges"]],
+    committed$source_records[["bornes-recharges"]])
+  expect_identical(merged$source_records$bpe_b316, committed$source_records$bpe_b316)
+  expect_identical(merged$subgroups, committed$subgroups)
+
+  # The merged declarations are a valid producer declaration against the producer's
+  # vintage rows, with the source the pinned rows carry.
+  vintages <- fusionner_vintages(VINTAGES_RACCORDEMENT, source)
+  expect_silent(valider_theme_metadata(merged, vintages = vintages))
+})
+
+test_that("les faits raccordement commis cedent a ceux du producteur, le reste du theme demeure", {
+  serving_skip()
+  source <- serving_payload_dir()
+  committed <- lire_faits_commis(source, "mobilite", "indicateurs")
+  inputs <- producer_raccordement_inputs()
+  merged <- producer_owned_facts(committed, inputs)
+
+  # The theme keeps its producer projection columns; only the owner's rows changed.
+  expect_identical(names(merged), names(committed))
+  owner <- merged$key %in% inputs$keys
+  expect_identical(nrow(merged[owner, , drop = FALSE]), nrow(inputs$rows))
+  expect_identical(unique(as.character(merged$observation_period[owner])),
+    RECETTE_RACCORDEMENT_NATIONAL$date_mesure)
+  # The retired mairie snapshot is gone, not relabelled.
+  expect_false("2026-09-16" %in% as.character(merged$observation_period[owner]))
+  expect_length(unique(as.character(merged$detail[owner &
+    merged$key == "raccordement_courbe"])), 73L)
+
+  # Every other key of the theme is byte-identical to the committed projection.
+  other <- !owner
+  expect_identical(merged[other, , drop = FALSE],
+    committed[!(committed$key %in% inputs$keys), , drop = FALSE])
+})
+
+test_that("la materialisation ecrit les declarations producteur dans le repertoire de travail", {
+  serving_skip()
+  source <- serving_payload_dir()
+  directory <- tempfile("serving-producer-inputs-")
+  dir.create(directory)
+  on.exit(unlink(directory, recursive = TRUE, force = TRUE), add = TRUE)
+  inputs <- producer_raccordement_inputs()
+  inputs_files <- c("theme_mobilite.json", "vintages.parquet", "vintages.json")
+  file.copy(file.path(source, inputs_files), directory)
+  committed <- serving_theme_metadata(source, "mobilite")
+  payload <- list(facts = list(mobilite = lire_faits_commis(source, "mobilite", "indicateurs")),
+    histories = list(),
+    vintages = nanoparquet::read_parquet(file.path(directory, "vintages.parquet")),
+    metadata = list(mobilite = committed))
+
+  patched <- apply_producer_owned_inputs(payload, directory)
+
+  # The in-memory payload and the work directory both carry the producer's
+  # declarations, so a reader of the work directory cannot be told the retired
+  # source while the serving generations were built from the current one.
+  written <- serving_theme_metadata(directory, "mobilite")
+  expect_identical(as.character(written$sources$raccordement_tc), "raccordement_gtfs_national")
+  expect_identical(written, patched$metadata$mobilite)
+  vintages <- nanoparquet::read_parquet(file.path(directory, "vintages.parquet"))
+  expect_identical(as.character(vintages$version[vintages$id == "raccordement_gtfs_national"]),
+    as.character(VINTAGES_RACCORDEMENT$version[VINTAGES_RACCORDEMENT$id == "raccordement_gtfs_national"]))
+  expect_identical(patched$vintages$id, vintages$id)
+  expect_false("raccordement_gtfs_national" %in% names(committed$source_records))
+
+  # Deterministic: the same committed copy produces the same declarations, and the
+  # writers are content-addressed no-ops.
+  before <- serving_tree_fingerprint(directory)
+  again <- apply_producer_owned_inputs(payload, directory)
+  expect_identical(again$vintages, patched$vintages)
+  expect_identical(serving_tree_fingerprint(directory), before)
+})
+
+test_that("le raccordement se materialise depuis les epingles, jamais depuis les faits retires", {
+  serving_skip()
+  source <- serving_payload_dir()
+  inputs <- producer_raccordement_inputs()
+  committed_metadata <- serving_theme_metadata(source, "mobilite")
+  committed_vintages <- nanoparquet::read_parquet(file.path(source, "vintages.parquet"))
+  territoires <- nanoparquet::read_parquet(file.path(source, "territoires.parquet"))
+  committed_facts <- lire_faits_commis(source, "mobilite", "indicateurs")
+  directory <- tempfile("serving-raccordement-")
+  dir.create(directory)
+  on.exit(unlink(directory, recursive = TRUE, force = TRUE), add = TRUE)
+
+  # The committed payload cannot feed this owner: its committed declarations and its
+  # committed rows describe the retired snapshot.
+  expect_error(materialize_theme_series_artifacts(
+    list(indicateurs = committed_facts, histoires = NULL, vintages = committed_vintages,
+      territoires = territoires),
+    committed_metadata, committed_vintages, "mobilite", directory),
+    "raccordement observation period")
+
+  # With the producer-owned inputs it materializes, and it does so even when the
+  # retired theme Parquet keeps no raccordement row at all — the owner is fed by the
+  # pins, not by what the stale theme table happens to carry.
+  merged_metadata <- producer_owned_theme_metadata(committed_metadata, inputs)
+  merged_vintages <- fusionner_vintages(inputs$vintages, source)
+  retired <- committed_facts[!(committed_facts$key %in% inputs$keys), , drop = FALSE]
+  expect_false(any(retired$key %in% inputs$keys))
+  facts <- producer_owned_facts(retired, inputs)
+  published <- materialize_theme_series_artifacts(
+    list(indicateurs = facts, histoires = NULL, vintages = merged_vintages,
+      territoires = territoires),
+    merged_metadata, merged_vintages, "mobilite", directory)
+  expect_true(nzchar(published$raccordement_courbe))
+
+  projection <- read_owned_series_artifact(
+    file.path(directory, "series-serving", "raccordement_courbe"), "raccordement_courbe")
+  curve <- inputs$rows[inputs$rows$key == "raccordement_courbe", , drop = FALSE]
+  expect_setequal(unique(as.character(projection$points$axis_value)), grille_raccordement_national())
+  expect_setequal(unique(as.character(projection$points$territory_type)),
+    c("commune", "epci", "departement", "region"))
+  expect_identical(unique(as.character(projection$points$observation_period)),
+    RECETTE_RACCORDEMENT_NATIONAL$date_mesure)
+  expect_identical(sort(unique(as.character(projection$points$territory_id))),
+    sort(unique(as.character(curve$territoire))))
+
+  # The scalar headline is the 90-minute projection of those very pinned rows, and
+  # it materializes through the same producer bundle.
+  expect_silent(materialize_theme_scalar_artifact(
+    list(indicateurs = facts, territoires = territoires), merged_metadata,
+    merged_vintages, "mobilite", directory))
+  scalar <- read_scalar_serving_artifact(file.path(directory, "scalar-serving", "mobilite"))
+  headline <- scalar$facts[scalar$facts$indicator_id == "raccordement_tc", , drop = FALSE]
+  t0090 <- curve[curve$detail == "t0090", , drop = FALSE]
+  expect_identical(nrow(headline), nrow(t0090))
+  expect_equal(headline$value[match(t0090$territoire, headline$territory_id)], t0090$value)
+
+  # The headline's provenance is the producer's declared source and vintage, and its
+  # dataset name is the producer's declared one — not the retired mairie source.
+  declared <- VINTAGES_RACCORDEMENT[VINTAGES_RACCORDEMENT$id == "raccordement_gtfs_national", , drop = FALSE]
+  expect_identical(unique(as.character(scalar$provenance$source_id[
+    scalar$provenance$indicator_id == "raccordement_tc"])), "raccordement_gtfs_national")
+  expect_identical(as.character(scalar$datasets$name[scalar$datasets$source_id == "raccordement_gtfs_national"]),
+    as.character(declared$source))
+  expect_identical(as.character(scalar$vintages$version[scalar$vintages$source_id == "raccordement_gtfs_national"]),
+    as.character(declared$version))
 })
 
 test_that("provenance: un binding de profil indisponible bloque meme un pointeur existant", {

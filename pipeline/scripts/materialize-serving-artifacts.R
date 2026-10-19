@@ -9,15 +9,25 @@
 # pipeline-generated serving artifacts, so the publishers cannot run until those
 # artifacts exist locally.
 #
-# The committed payload is the ONLY producer input: no `data/raw` download cache,
-# no database and no network. The payload inputs are copied into the work
-# directory first and the committed snapshot is asserted unchanged, so it is
-# never written in place. Before the first write, the work root and every planned
-# write destination are resolved through the filesystem — symlinks, junctions and
-# aliases included — and refused if any of them reaches the snapshot. The work
-# directory is otherwise a complete `LUSK_SORTIE` for the rollout's publication
-# step (it also carries the shared Programme Parquets the Programme publisher
-# reads directly).
+# The committed payload plus the package's byte-pinned producer artifacts are the
+# only producer inputs: no `data/raw` download cache, no database and no network.
+# The payload inputs are copied into the work directory first and the committed
+# snapshot is asserted unchanged, so it is never written in place. Before the first
+# write, the work root and every planned write destination are resolved through the
+# filesystem — symlinks, junctions and aliases included — and refused if any of
+# them reaches the snapshot. The work directory is otherwise a complete
+# `LUSK_SORTIE` for the rollout's publication step (it also carries the shared
+# Programme Parquets the Programme publisher reads directly, and it declares the
+# producer sources the serving generations were built from).
+#
+# One retained owner is not a committed-payload projection: the Mobilite owned
+# series `raccordement_courbe`, with the `raccordement_tc` headline and the
+# `raccordement_reference` trajectory it is projected from, is a producer-owned
+# built result the committed payload predates (#728). It is taken from the pinned
+# national GTFS artifact through the producer's own reader and projection, with the
+# producer's current declarations and vintage, so no owner depends on a stale
+# theme-wide Parquet and no retired fact is relabelled. A pin or producer-contract
+# failure blocks before any generation is written.
 #
 # Retained owners are derived from producer metadata only — never a copied theme
 # list: the scalar owners from each theme's scalar_contracts minus the excluded
@@ -35,15 +45,13 @@
 #                   artifacts and their content versions; read-only apart from a
 #                   disposable temp directory.
 #
-# An owner the committed payload cannot feed (its committed facts no longer
-# satisfy the pinned producer contract) is reported as BLOCKED with the reason
-# and the run exits non-zero; every other owner is still materialized, so the
-# work directory is usable for those publishers. The status stays fail-closed:
-# a non-zero exit means the retained owner set is incomplete, so a publication
-# built from that work directory proves the feedable subset — it is diagnostic
-# evidence, not all-owner acceptance for the rollout. Re-running after the
-# committed payload is regenerated picks up the previously blocked owners, and
-# only then can the run exit zero.
+# An owner the inputs cannot feed (a producer contract the committed facts or the
+# pinned artifact no longer satisfy) is reported as BLOCKED with the reason and the
+# run exits non-zero; every other owner is still materialized, so the work
+# directory stays usable for those publishers. The status is fail-closed: a
+# non-zero exit means the retained owner set is incomplete, so a publication built
+# from that work directory is diagnostic evidence and not all-owner acceptance for
+# the rollout. A clean run reports no blocked owner and exits zero.
 #
 # Wall-clock and disk: the materialization reads the committed JSON projections
 # (~100 MB) and writes immutable generations plus their current pointers into the
@@ -61,5 +69,6 @@ cat(paste(format_serving_artifact_report(result), collapse="\n"), "\n", sep="")
 if (!identical(result$mode, "check"))
   cat("Materialized into", result$work, "\n")
 if (nrow(result$blocked))
-  stop("Blocked owner(s) require a regenerated committed payload: ",
+  stop("Blocked owner(s): the committed payload and the pinned producer inputs ",
+    "cannot feed them: ",
     paste(paste0(result$blocked$family, "/", result$blocked$owner), collapse=", "), call.=FALSE)
