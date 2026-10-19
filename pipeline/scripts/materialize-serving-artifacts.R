@@ -13,9 +13,12 @@
 # only producer inputs: no `data/raw` download cache, no database and no network.
 # The payload inputs are copied into the work directory first and the committed
 # snapshot is asserted unchanged, so it is never written in place. Before the first
-# write, the work root and every planned write destination are resolved through the
-# filesystem — symlinks, junctions and aliases included — and refused if any of
-# them reaches the snapshot. The work directory is otherwise a complete
+# write, the work root, every planned owner directory and every copied input
+# destination file are resolved through the filesystem — symlinks, junctions and
+# reparse points included — and refused if any of them reaches the snapshot. A hard
+# link is invisible to that resolution, so the copy never opens a pre-existing
+# destination object either: each input is staged and installed by rename. The work
+# directory is otherwise a complete
 # `LUSK_SORTIE` for the rollout's publication step (it also carries the shared
 # Programme Parquets the Programme publisher reads directly, and it declares the
 # producer sources the serving generations were built from).

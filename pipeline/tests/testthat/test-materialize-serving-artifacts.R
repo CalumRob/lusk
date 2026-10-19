@@ -458,6 +458,202 @@ test_that("isolation: l'inventaire garde couvre chaque ecriture planifiee", {
     "conso_enaf_annuel")) %in% keys)
 })
 
+# Hard-link aliasing ------------------------------------------------------------
+# A caller-owned work directory can already contain a name that is a hard link to
+# a canonical payload file. A hard link is NOT distinguishable from the path form:
+# both names resolve to themselves, so the filesystem guard cannot refuse it the
+# way it refuses a symlink or a junction. The risk is therefore closed on the write
+# side — no materializer write may open a pre-existing destination file object for
+# writing — and these blocks pin both halves of that disposition with real links.
+
+serving_file_identity <- function(paths) {
+  info <- file.info(paths)
+  data.frame(path = paths, size = info$size,
+    mtime = format(info$mtime, "%Y-%m-%d %H:%M:%OS6"),
+    md5 = as.character(tools::md5sum(paths)), stringsAsFactors = FALSE)
+}
+
+# A genuine hard link (base R file.link), never a reparse point: fs::link_create()
+# on this platform creates a junction, which is a different object with different
+# semantics.
+serving_hardlink <- function(target, link) {
+  created <- tryCatch(suppressWarnings(file.link(target, link)), error = function(e) FALSE)
+  isTRUE(created) && file.exists(link) && !fs::is_link(link)
+}
+
+serving_hardlinks_supported <- function() {
+  probe <- tempfile("serving-hardlink-probe-")
+  dir.create(probe)
+  on.exit(unlink(probe, recursive = TRUE, force = TRUE), add = TRUE)
+  target <- file.path(probe, "target.txt")
+  writeLines("probe", target)
+  serving_hardlink(target, file.path(probe, "link.txt"))
+}
+
+test_that("copie: aucun lien dur sur un fichier canonique n'est ecrit au travers", {
+  skip_if_not(serving_hardlinks_supported(), "hard links are not supported on this filesystem")
+  root <- tempfile("serving-hardlink-copy-")
+  dir.create(root)
+  on.exit({ serving_remove_links(root); unlink(root, recursive = TRUE, force = TRUE) }, add = TRUE)
+  source <- file.path(root, "snapshot")
+  work <- file.path(root, "work")
+  dir.create(source)
+  dir.create(work)
+  inputs <- c("vintages.parquet", "theme_mobilite.json")
+  writeLines("canonical vintages bytes", file.path(source, inputs[[1L]]))
+  writeLines("canonical theme bytes", file.path(source, inputs[[2L]]))
+
+  # (a) the work destination IS the canonical file: one file object, two names.
+  expect_true(serving_hardlink(file.path(source, inputs[[1L]]), file.path(work, inputs[[1L]])))
+  # (b) a work destination hard-linked to ANOTHER canonical file whose bytes differ,
+  # so a write-through is visible in the content and not only in the timestamps.
+  writeLines("canonical other bytes", file.path(source, "other.txt"))
+  expect_true(serving_hardlink(file.path(source, "other.txt"), file.path(work, inputs[[2L]])))
+  canonical <- file.path(source, c(inputs, "other.txt"))
+  before <- serving_file_identity(canonical)
+
+  copy_serving_inputs(source, work, inputs)
+
+  # The canonical snapshot is byte-for-byte, size- and mtime-identical: nothing was
+  # written through the work names.
+  expect_identical(serving_file_identity(canonical), before)
+  expect_identical(readLines(file.path(source, inputs[[1L]])), "canonical vintages bytes")
+  expect_identical(readLines(file.path(source, "other.txt")), "canonical other bytes")
+
+  # The work copies carry the source bytes and are ordinary files this run owns, so
+  # a later in-place writer cannot reach the snapshot through them either.
+  expect_identical(serving_file_identity(file.path(work, inputs))$md5,
+    serving_file_identity(file.path(source, inputs))$md5)
+
+  # Idempotent: a rerun keeps the canonical snapshot identical and the work bytes
+  # identical too.
+  copy_serving_inputs(source, work, inputs)
+  expect_identical(serving_file_identity(canonical), before)
+  expect_identical(serving_file_identity(file.path(work, inputs))$md5,
+    serving_file_identity(file.path(source, inputs))$md5)
+})
+
+test_that("copie: l'entree ne mute pas l'instantane quand le travail pre-lie ses entrees", {
+  serving_skip()
+  skip_if_not(serving_hardlinks_supported(), "hard links are not supported on this filesystem")
+  real <- serving_payload_dir()
+  plan <- plan_serving_artifacts(real)
+  root <- tempfile("serving-hardlink-entry-")
+  dir.create(root)
+  on.exit({ serving_remove_links(root); unlink(root, recursive = TRUE, force = TRUE) }, add = TRUE)
+  snapshot <- file.path(root, "snapshot")
+  dir.create(snapshot)
+  metadata_inputs <- paste0("theme_", THEMES_METADATA, ".json")
+  file.copy(file.path(real, metadata_inputs), snapshot)
+  for (input in setdiff(plan$inputs, metadata_inputs))
+    writeLines(paste("synthetic payload", input), file.path(snapshot, input))
+  work <- file.path(root, "work")
+  dir.create(work)
+  for (input in plan$inputs)
+    expect_true(serving_hardlink(file.path(snapshot, input), file.path(work, input)))
+  # ... and one destination is linked to a DIFFERENT canonical file whose bytes
+  # differ, so "the copy ran and replaced the alias" is observable in the content
+  # and not only in the timestamps.
+  distinct <- file.path(snapshot, "other.txt")
+  writeLines("distinct canonical bytes", distinct)
+  unlink(file.path(work, "theme_mobilite.json"))
+  expect_true(serving_hardlink(distinct, file.path(work, "theme_mobilite.json")))
+  canonical <- file.path(snapshot, c(plan$inputs, "other.txt"))
+  before <- serving_file_identity(canonical)
+
+  # The synthetic payload cannot be materialized (its fact projections are not
+  # Parquet), but the copy runs first: whatever the run then reports, no canonical
+  # byte, size or mtime may change through a work name.
+  tryCatch(materialize_serving_artifacts(snapshot, work, "materialize"),
+    error = function(e) invisible(e))
+  expect_identical(serving_file_identity(canonical), before)
+  expect_identical(readLines(distinct), "distinct canonical bytes")
+  expect_identical(serving_file_identity(file.path(work, "theme_mobilite.json"))$md5,
+    before$md5[match("theme_mobilite.json", basename(canonical))])
+})
+
+test_that("copie: un repertoire de travail ordinaire reste reutilisable tel quel", {
+  root <- tempfile("serving-copy-rerun-")
+  dir.create(root)
+  on.exit(unlink(root, recursive = TRUE, force = TRUE), add = TRUE)
+  source <- file.path(root, "snapshot")
+  work <- file.path(root, "work")
+  dir.create(source)
+  inputs <- c("theme_mobilite.json", "vintages.parquet")
+  writeLines("A", file.path(source, inputs[[1L]]))
+  writeLines("B", file.path(source, inputs[[2L]]))
+  before <- serving_file_identity(file.path(source, inputs))
+
+  copy_serving_inputs(source, work, inputs)
+  first <- serving_file_identity(file.path(work, inputs))
+  expect_identical(first$md5, before$md5)
+  # An already existing work directory (a rerun, or a directory a previous step
+  # prepared) is reused: no error, no extra entry, the same bytes.
+  copy_serving_inputs(source, work, inputs)
+  expect_setequal(list.files(work), inputs)
+  expect_identical(serving_file_identity(file.path(work, inputs))$md5, before$md5)
+  expect_identical(serving_file_identity(file.path(source, inputs)), before)
+})
+
+test_that("isolation: l'inventaire couvre chaque fichier d'entree copie, pas seulement son repertoire", {
+  serving_skip()
+  plan <- plan_serving_artifacts(serving_payload_dir())
+  work <- normalize_serving_dir(file.path(tempdir(), "serving-input-destinations-probe"))
+  guard <- serving_write_destinations(plan, work)
+  # Every copied input is itself an inventoried destination.
+  expect_true(all(serving_path_key(file.path(work, plan$inputs)) %in% serving_path_key(guard)))
+
+  # A resolvable alias sitting at an input destination is refused: the destination
+  # is the file, not only the directory that holds it.
+  root <- tempfile("serving-input-alias-")
+  dir.create(root)
+  on.exit({ serving_remove_links(root); unlink(root, recursive = TRUE, force = TRUE) }, add = TRUE)
+  linked <- file.path(root, "work")
+  dir.create(linked)
+  fs::link_create(plan$source, file.path(linked, plan$inputs[[1L]]))
+  expect_error(assert_serving_work_isolated(plan$source, linked,
+    serving_write_destinations(plan, linked)), "committed payload")
+})
+
+test_that("ecriture: les installateurs du protocole ne tronquent pas un objet pre-existant", {
+  skip_if_not(serving_hardlinks_supported(), "hard links are not supported on this filesystem")
+  root <- tempfile("serving-writer-alias-")
+  dir.create(root)
+  on.exit({ serving_remove_links(root); unlink(root, recursive = TRUE, force = TRUE) }, add = TRUE)
+  work <- file.path(root, "work")
+  dir.create(work)
+
+  # The JSON installer the metadata/vintage overlay writes through.
+  canonical_json <- file.path(root, "canonical.json")
+  writeLines('{"keep": true}', canonical_json)
+  expect_true(serving_hardlink(canonical_json, file.path(work, "theme_mobilite.json")))
+  before <- serving_file_identity(canonical_json)
+  ecrire_json_si_modifie(list(theme = "mobilite"), file.path(work, "theme_mobilite.json"),
+    dataframe = "rows", na = "null", digits = 17, pretty = TRUE, auto_unbox = TRUE)
+  expect_identical(serving_file_identity(canonical_json), before)
+  expect_match(paste(readLines(file.path(work, "theme_mobilite.json")), collapse = ""), "mobilite")
+
+  # The Parquet installer.
+  canonical_parquet <- file.path(root, "canonical.parquet")
+  nanoparquet::write_parquet(data.frame(keep = TRUE), canonical_parquet)
+  expect_true(serving_hardlink(canonical_parquet, file.path(work, "vintages.parquet")))
+  before_parquet <- serving_file_identity(canonical_parquet)
+  ecrire_parquet_si_modifie(data.frame(id = "x"), file.path(work, "vintages.parquet"))
+  expect_identical(serving_file_identity(canonical_parquet), before_parquet)
+  expect_identical(names(nanoparquet::read_parquet(file.path(work, "vintages.parquet"))), "id")
+
+  # The shared installer the publishers' pointers and published files go through.
+  canonical_plain <- file.path(root, "canonical.txt")
+  writeLines("canonical", canonical_plain)
+  expect_true(serving_hardlink(canonical_plain, file.path(work, "installed.txt")))
+  before_plain <- serving_file_identity(canonical_plain)
+  staged <- tempfile(".publish-", tmpdir = work)
+  writeLines("new bytes", staged)
+  expect_true(remplacer_fichier_si_modifie(staged, file.path(work, "installed.txt")))
+  expect_identical(serving_file_identity(canonical_plain), before_plain)
+  expect_identical(readLines(file.path(work, "installed.txt")), "new bytes")
+})
+
 # One retained scalar owner materialized from the committed payload, scoped so the
 # probe pays only that theme's read.
 serving_scalar_probe <- local({

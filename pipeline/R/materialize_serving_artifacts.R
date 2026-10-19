@@ -10,10 +10,13 @@
 # producer artifacts are the only producer inputs. No `data/raw` cache, no
 # database, no network. Every write goes to a caller-owned private work
 # directory; the committed snapshot is copied in first and asserted unchanged, so
-# it can never be mutated in place. Before the first write the work root and every
-# planned write destination are resolved through the filesystem — symlinks,
-# junctions and aliases included — and refused if any of them reaches the
-# snapshot (see assert_serving_work_isolated()).
+# it can never be mutated in place. Before the first write the work root, every
+# planned owner directory and every copied input destination are resolved through
+# the filesystem — symlinks, junctions and reparse points included — and refused
+# if any of them reaches the snapshot (see assert_serving_work_isolated()). A hard
+# link is not visible to that resolution (both names resolve to themselves), so the
+# copy never opens a pre-existing destination object: each input is staged beside
+# it and installed by rename, never written through (see copy_serving_inputs()).
 #
 # One owner is NOT read from the committed payload: the Mobilite owned series
 # `raccordement_courbe` — with the `raccordement_tc` headline and the
@@ -69,15 +72,20 @@ normalize_serving_dir <- function(path) as.character(fs::path_norm(fs::path_abs(
 # Comparison is case-insensitive on Windows, where the filesystem is.
 #
 # Guarantee: at the moment of the check no path the materializer writes through —
-# the work root, every planned owner directory, the copied input inventory and
-# the family-level binding/reading locations — resolves into the committed
-# snapshot, and the snapshot does not resolve into the work root. A link whose
-# target is disjoint from the snapshot is accepted: the containment rule still
-# proves the write lands in the caller's own tree.
+# the work root, every planned owner directory, every copied input destination
+# (the files themselves, not only the directory that holds them) and the
+# family-level binding/reading locations — resolves into the committed snapshot,
+# and the snapshot does not resolve into the work root. A link whose target is
+# disjoint from the snapshot is accepted: the containment rule still proves the
+# write lands in the caller's own tree.
 #
-# Limitation: this is a point-in-time assertion made before the first write. A
-# link created concurrently after it, or a write performed by another process, is
-# out of scope.
+# Limitation: this is a point-in-time assertion made before the first write, and it
+# decides from names. A HARD link is invisible to it — both names resolve to
+# themselves, so no resolution ever reaches the other name — and that case is
+# closed on the write side instead (copy_serving_inputs() installs a fresh staged
+# file by rename and never opens a pre-existing destination object), never by
+# claiming the path comparison covers it. A link created concurrently after the
+# check, or a write performed by another process, is out of scope.
 serving_resolve_path <- function(path) {
   path <- fs::path_abs(path)
   missing <- character()
@@ -129,11 +137,13 @@ assert_serving_work_isolated <- function(source, work, destinations=character())
   invisible(work)
 }
 
-# Every path the materialization writes through. The work root, the copied input
-# inventory and each planned owner's artifact directory are the materializer's own
-# destinations; the declared-profile scalar binding and the Milieux annual series
-# reading are written beside them by their publishers (see
-# cache_profile_scalar_binding() and write_conso_enaf_reading_artifact()).
+# Every path the materialization writes through. The work root, every copied input
+# destination FILE (not only the directory that holds it, so a resolvable alias
+# planted at an input name is refused as well) and each planned owner's artifact
+# directory are the materializer's own destinations; the declared-profile scalar
+# binding and the Milieux annual series reading are written beside them by their
+# publishers (see cache_profile_scalar_binding() and
+# write_conso_enaf_reading_artifact()).
 serving_write_destinations <- function(plan, directory) {
   families <- rep(c("scalar-serving", "series-serving", "typed-reading", "profile-serving"),
     c(length(plan$scalar_owners), length(plan$series_owners), length(plan$typed_themes),
@@ -142,7 +152,8 @@ serving_write_destinations <- function(plan, directory) {
   directories <- vapply(seq_along(owners), function(index)
     dirname(serving_artifact_pointer_path(families[[index]], directory, owners[[index]])),
     character(1))
-  unique(c(directory, dirname(file.path(directory, plan$inputs)), directories,
+  unique(c(directory, dirname(file.path(directory, plan$inputs)),
+    file.path(directory, plan$inputs), directories,
     file.path(directory, "scalar-serving"),
     file.path(directory, "series-reading", "conso_enaf_annuel")))
 }
@@ -326,12 +337,54 @@ serving_input_state <- function(source, inputs) {
   file.info(file.path(source, inputs))[, c("size", "mtime"), drop=FALSE]
 }
 
+# The payload inputs are copied in, never written through. A work directory can
+# already hold a name that is a hard link to a canonical payload file, and a hard
+# link is invisible to the filesystem guard: both names resolve to themselves, so
+# no path comparison can tell them apart. An overwriting copy opens the
+# pre-existing destination object — and truncates it on this platform — so the
+# shared canonical bytes would change through the work name; a destination linked
+# to the canonical file itself is emptied outright (the copy reads the file it has
+# just truncated). Every input is therefore staged as a fresh file in the
+# destination directory and installed by rename, the same copy-on-write the
+# publication protocol uses (remplacer_fichier_si_modifie(), the scalar, typed and
+# profile pointer installs): the directory entry is replaced, never the file
+# object, so a pre-existing alias of any kind is left untouched and the work copy
+# is a plain file this run owns. A rerun installs the same bytes again, so the work
+# directory stays byte-identical.
 copy_serving_inputs <- function(source, target, inputs) {
   if (!dir.exists(target)) dir.create(target, recursive=TRUE)
-  copied <- file.copy(file.path(source, inputs), file.path(target, inputs), overwrite=TRUE)
-  if (!all(copied))
-    stop("Could not copy committed payload inputs into the work directory", call.=FALSE)
+  for (input in inputs) {
+    from <- file.path(source, input)
+    to <- file.path(target, input)
+    staging <- tempfile(".serving-input-", tmpdir=dirname(to))
+    on.exit(unlink(staging), add=TRUE)
+    if (!file.copy(from, staging, overwrite=TRUE))
+      stop("Could not copy the committed payload input ", input,
+        " into the work directory", call.=FALSE)
+    if (!install_serving_input(staging, to))
+      stop("Could not install the committed payload input ", input,
+        " into the work directory", call.=FALSE)
+  }
   invisible(inputs)
+}
+
+# Install a staged copy at `to` without ever opening whatever object `to` may
+# already name: the existing entry is moved aside, the staged file renamed in, and
+# the aside unlinked only then — so a pre-existing alias (a hard link to a
+# canonical file above all) is never truncated, and an install that fails puts the
+# previous entry back.
+install_serving_input <- function(staging, to) {
+  previous <- NULL
+  if (file.exists(to)) {
+    previous <- tempfile(".previous-", tmpdir=dirname(to))
+    if (!file.rename(to, previous)) return(FALSE)
+  }
+  if (!file.rename(staging, to)) {
+    if (!is.null(previous)) file.rename(previous, to)
+    return(FALSE)
+  }
+  if (!is.null(previous)) unlink(previous)
+  TRUE
 }
 
 # Producer-owned pinned inputs --------------------------------------------------
