@@ -59,12 +59,7 @@ verifier_projection_sur_table <- function(table, json, nom) {
 # theme_parquet_retire(), jamais d'une liste recopiée.
 lire_indicateurs_commis <- function(theme,
                                     public = file.path(pkgload::pkg_path(), "..", "public", "data")) {
-  if (theme_parquet_retire(theme)) {
-    jsonlite::fromJSON(file.path(public, paste0("indicateurs_", theme, ".json")),
-                       simplifyVector = TRUE)
-  } else {
-    nanoparquet::read_parquet(file.path(public, paste0("indicateurs_", theme, ".parquet")))
-  }
+  lire_faits_commis(public, theme, "indicateurs")
 }
 
 # lire_histoires_commis ---------------------------------------------------------
@@ -72,10 +67,5 @@ lire_indicateurs_commis <- function(theme,
 # thème (voir #757).
 lire_histoires_commis <- function(theme,
                                   public = file.path(pkgload::pkg_path(), "..", "public", "data")) {
-  if (theme_parquet_retire(theme)) {
-    jsonlite::fromJSON(file.path(public, paste0("histoires_", theme, ".json")),
-                       simplifyVector = TRUE)
-  } else {
-    nanoparquet::read_parquet(file.path(public, paste0("histoires_", theme, ".parquet")))
-  }
+  lire_faits_commis(public, theme, "histoires")
 }

@@ -789,7 +789,7 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-       !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical)_[A-Za-z0-9_]+$", schema))
+       !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical|serving_it)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
   tables <- c("comparison_source_lineage", "aedar_comparison_territory", "aedar_comparison_group",
@@ -872,7 +872,8 @@ cleanup_serving_smoke_schema <- function(connection, schema, kind) {
     reading="^reading_it_[A-Za-z0-9_]+$",
     distribution="^distribution_it_[A-Za-z0-9_]+$",
     distribution_canonical="^distribution_canonical_[A-Za-z0-9_]+$",
-    series="^series_it_[A-Za-z0-9_]+$", NULL)
+    series="^series_it_[A-Za-z0-9_]+$",
+    serving="^serving_it_[A-Za-z0-9_]+$", NULL)
   if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||
       length(schema) != 1L || is.na(schema) || !grepl(expected_schema, schema))
     stop("Cleanup requires an owned ", kind, " smoke schema; received ", schema, call. = FALSE)

@@ -649,6 +649,7 @@ test_that("smoke schema cleanup is explicitly dependency ordered and restricted"
   sql <- scalar_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "scalar_it_test")
   serving_sql <- serving_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "scalar_it_test")
   profile_sql <- serving_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "profile_it_test")
+  serving_it_sql <- serving_smoke_schema_cleanup_sql(function(x) paste0('"', x, '"'), "serving_it_test")
   expect_true(any(grepl('DROP TABLE IF EXISTS "scalar_it_test"."scalar_observation_source" RESTRICT', sql, fixed=TRUE)))
   expect_true(any(grepl('DROP FUNCTION IF EXISTS "scalar_it_test"."reject_smoke_value"() RESTRICT', sql, fixed=TRUE)))
   expect_lt(which(grepl('"scalar_observation_source"', sql, fixed=TRUE))[1L],
@@ -672,7 +673,8 @@ test_that("smoke schema cleanup is explicitly dependency ordered and restricted"
   expect_lt(which(grepl('"profile_observation_source"', serving_sql, fixed=TRUE))[1L],
             which(grepl('"profile_observation"', serving_sql, fixed=TRUE))[1L])
   expect_true(grepl('DROP SCHEMA IF EXISTS "profile_it_test" RESTRICT', tail(profile_sql, 1L), fixed=TRUE))
-  expect_false(any(grepl("CASCADE", c(serving_sql, profile_sql), fixed=TRUE)))
+  expect_true(grepl('DROP SCHEMA IF EXISTS "serving_it_test" RESTRICT', tail(serving_it_sql, 1L), fixed=TRUE))
+  expect_false(any(grepl("CASCADE", c(serving_sql, profile_sql, serving_it_sql), fixed=TRUE)))
   expect_error(scalar_smoke_schema_cleanup_sql(identity, "public"), "owned smoke schema")
   expect_error(profile_smoke_schema_cleanup_sql(identity, "public"), "owned profile smoke schema")
   expect_error(serving_smoke_schema_cleanup_sql(identity, "public"), "owned smoke schema")
