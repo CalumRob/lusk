@@ -447,7 +447,14 @@ correlated `NOT EXISTS`. The correlated form can plan as a nested loop that
 rescans a dataset's provenance rows once per observation row: on a freshly
 written, unanalyzed schema the guarded 4,745-row publication spent 11,264,631
 index-tuple fetches and 13.2 s in COMMIT; after the rewrite it spends 14,235
-fetches and 0.94 s, and a 28,105-row publication commits in 5.8 s. Every other
+fetches and 0.94 s, and a 28,105-row publication commits in 5.8 s. The two
+sets of figures are separate runs with different counter scopes: the
+real-publisher numbers count `idx_tup_fetch` on
+`series_observation_provenance` alone, while the guarded 4,744-observation
+regression counts `seq_tup_read + idx_tup_fetch` over both focal relations
+(37,952 visits). Counters are PostgreSQL 18.6 cumulative statistics read
+through `pg_stat_force_next_flush()` and `pg_stat_user_tables`; they record
+work, not a guaranteed physical plan. Every other
 check, error message, marker `row_count` contract, per-row provenance trigger
 and the `NEW.dataset_id` scope are unchanged, so per-owner atomic replacement
 and direct SQL rejection guarantees are preserved. The migration is additive:
