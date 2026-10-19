@@ -22,10 +22,15 @@
 # `publish-serving-tables.R` bundle — which assumes the serving database already
 # holds the profiles — is exercised afterwards as the no-op republication check.
 #
-# The one owner the committed payload cannot feed (the Mobilite owned series
-# `raccordement_courbe`, whose committed facts predate the #728 national GTFS
-# producer run) is reported by the materializer and asserted here as the only
-# blocked owner; every other retained owner is published.
+# Scope of this proof: diagnostic subset, never all-owner acceptance. One retained
+# owner (the Mobilite owned series `raccordement_courbe`, whose committed facts
+# predate the #728 national GTFS producer run) cannot be fed by the committed
+# payload, so the materializer reports it blocked and the full `--check` exits
+# non-zero. This smoke asserts exactly that one blocked owner — the run stays
+# fail-closed, nothing is stubbed or exempted — and proves the publication and
+# semantic read-back of the subset the committed payload does feed. All-owner and
+# rollout acceptance require the committed payload to be regenerated first and are
+# deliberately not claimed here.
 pkgload::load_all(".", quiet=TRUE)
 required <- c("HOST", "PORT", "DATABASE", "USER")
 config <- setNames(lapply(required, function(key) Sys.getenv(paste0("LUSK_SERVING_TEST_", key), unset="")), required)
@@ -77,7 +82,8 @@ tryCatch({
   scalar_binding <- read_profile_scalar_binding(work)
   stopifnot(grepl("^[a-f0-9]{32}$", scalar_binding))
   cat("Materialized", nrow(materialized$versions), "retained owners into the work dir;",
-    nrow(materialized$blocked), "blocked (", materialized$blocked$owner[[1L]], ")\n")
+    nrow(materialized$blocked), "blocked (", materialized$blocked$owner[[1L]],
+    ") - the blocked owner is the committed-payload prerequisite, so this run proves the feedable subset only\n")
 
   DBI::dbExecute(con, paste0("CREATE SCHEMA ", DBI::dbQuoteIdentifier(con, schema))); created <- TRUE
   DBI::dbExecute(con, paste0("SET search_path TO ", DBI::dbQuoteIdentifier(con, schema)))
@@ -248,7 +254,8 @@ tryCatch({
     if (!identical(status, 0L)) stop("Serving-artifacts publisher-to-HTTP parity failed", call.=FALSE)
     cat("Guarded publisher-to-HTTP semantic read-back (habitat typed reading via /api/resources/read): PASS\n")
   } else cat("Guarded publisher-to-HTTP semantic read-back: SKIPPED (read DSN/pytest not configured)\n")
-  cat("Serving-artifacts end-to-end proof: PASS\n")
+  cat("Serving-artifacts subset end-to-end proof (diagnostic): PASS",
+    "- one retained owner stays blocked by the committed payload, so all-owner acceptance is pending payload regeneration\n")
 }, finally={
   if (created && identical(Sys.getenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP"), "1")) {
     tryCatch(cleanup_serving_smoke_schema(con, schema, "serving"),

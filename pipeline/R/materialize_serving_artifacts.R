@@ -9,8 +9,18 @@
 # Boundary (issue #802): the committed payload is the only producer input. No
 # `data/raw` cache, no database, no network. Every write goes to a caller-owned
 # private work directory; the committed snapshot is copied in first and asserted
-# unchanged, so it can never be mutated in place (a junction into it is refused
-# structurally before the first write).
+# unchanged, so it can never be mutated in place. Before the first write the
+# work root and every planned write destination are resolved through the
+# filesystem — symlinks, junctions and aliases included — and refused if any of
+# them reaches the snapshot (see assert_serving_work_isolated()).
+#
+# An owner the committed payload cannot feed (today the Mobilite owned series
+# `raccordement_courbe`, whose committed observation period predates the current
+# producer contract) is reported blocked, never skipped or stubbed: the run stays
+# fail-closed and the CLI's full check exits non-zero until the committed payload
+# is regenerated. scripts/smoke-serving-artifacts-postgres.R proves the subset the
+# committed payload can feed end to end and labels itself diagnostic for that
+# reason — it is not all-owner acceptance for the rollout.
 #
 # Owner derivation is always producer-derived, never a copied theme list:
 #   - scalar        retained_scalar_artifact_owners()  (scalar_contracts minus
@@ -46,15 +56,92 @@ serving_theme_metadata <- function(directory, theme) {
 
 normalize_serving_dir <- function(path) as.character(fs::path_norm(fs::path_abs(path)))
 
-# The private work directory must never be, contain, or live inside the
-# committed snapshot: that structural guard precedes every write.
-assert_serving_work_isolated <- function(source, work) {
-  prefix <- function(path) sub("/+$", "", paste0(path, "/"))
-  if (identical(source, work) ||
-      startsWith(prefix(work), prefix(source)) ||
-      startsWith(prefix(source), prefix(work)))
+# Path isolation ---------------------------------------------------------------
+# A work directory can be lexically outside the committed snapshot and still
+# reach it through a symlink, a Windows junction or any other reparse point — at
+# the root, at one of its ancestors, or at a pre-existing output descendant. The
+# guard therefore decides from the filesystem and never from the string form:
+# every path is resolved through its existing ancestors (a tail that does not
+# exist yet cannot alias anything), and the resolved identities are compared.
+# Comparison is case-insensitive on Windows, where the filesystem is.
+#
+# Guarantee: at the moment of the check no path the materializer writes through —
+# the work root, every planned owner directory, the copied input inventory and
+# the family-level binding/reading locations — resolves into the committed
+# snapshot, and the snapshot does not resolve into the work root. A link whose
+# target is disjoint from the snapshot is accepted: the containment rule still
+# proves the write lands in the caller's own tree.
+#
+# Limitation: this is a point-in-time assertion made before the first write. A
+# link created concurrently after it, or a write performed by another process, is
+# out of scope.
+serving_resolve_path <- function(path) {
+  path <- fs::path_abs(path)
+  missing <- character()
+  current <- path
+  repeat {
+    if (fs::file_exists(current) || fs::dir_exists(current)) {
+      resolved <- normalizePath(current, winslash="/", mustWork=TRUE)
+      if (!length(missing)) return(resolved)
+      return(as.character(do.call(fs::path, c(list(resolved), as.list(missing)))))
+    }
+    parent <- fs::path_dir(current)
+    if (identical(as.character(parent), as.character(current))) return(as.character(path))
+    missing <- c(basename(current), missing)
+    current <- parent
+  }
+}
+
+serving_path_key <- function(path) {
+  key <- gsub("\\\\", "/", as.character(path))
+  key <- sub("^//\\?/", "", key)
+  key <- sub("/+$", "", key)
+  if (.Platform$OS.type == "windows") key <- tolower(key)
+  key
+}
+
+serving_path_within <- function(parent, child) {
+  parent <- serving_path_key(parent)
+  child <- serving_path_key(child)
+  identical(parent, child) || startsWith(child, paste0(parent, "/"))
+}
+
+# The private work directory must never be, contain, or live inside the committed
+# snapshot, and no destination may leave it: that structural guard precedes every
+# write.
+assert_serving_work_isolated <- function(source, work, destinations=character()) {
+  snapshot <- serving_resolve_path(source)
+  root <- serving_resolve_path(work)
+  if (serving_path_within(snapshot, root) || serving_path_within(root, snapshot))
     stop("The private work directory must sit outside the committed payload snapshot", call.=FALSE)
+  for (destination in unique(as.character(destinations))) {
+    resolved <- serving_resolve_path(destination)
+    if (serving_path_within(snapshot, resolved))
+      stop("A materialized destination resolves into the committed payload snapshot: ",
+        destination, call.=FALSE)
+    if (!serving_path_within(root, resolved))
+      stop("A materialized destination resolves outside the private work directory: ",
+        destination, call.=FALSE)
+  }
   invisible(work)
+}
+
+# Every path the materialization writes through. The work root, the copied input
+# inventory and each planned owner's artifact directory are the materializer's own
+# destinations; the declared-profile scalar binding and the Milieux annual series
+# reading are written beside them by their publishers (see
+# cache_profile_scalar_binding() and write_conso_enaf_reading_artifact()).
+serving_write_destinations <- function(plan, directory) {
+  families <- rep(c("scalar-serving", "series-serving", "typed-reading", "profile-serving"),
+    c(length(plan$scalar_owners), length(plan$series_owners), length(plan$typed_themes),
+      length(plan$profile_owners)))
+  owners <- c(plan$scalar_owners, plan$series_owners, plan$typed_themes, plan$profile_owners)
+  directories <- vapply(seq_along(owners), function(index)
+    dirname(serving_artifact_pointer_path(families[[index]], directory, owners[[index]])),
+    character(1))
+  unique(c(directory, dirname(file.path(directory, plan$inputs)), directories,
+    file.path(directory, "scalar-serving"),
+    file.path(directory, "series-reading", "conso_enaf_annuel")))
 }
 
 # Planning ---------------------------------------------------------------------
@@ -123,6 +210,23 @@ validate_serving_artifact_inputs <- function(plan) {
 # — the same producer-shaped reconstruction smoke-milieux-reading-postgres.R
 # performs from the processed window, but without any data/raw access. A payload
 # that already carries both columns is returned untouched.
+#
+# Producer source of truth: the applied vintages declared by the state indicator's
+# own source record — indicator_pages$artif_par_habitant$sources -> the matching
+# source_records entry -> its declared `vintages` — read through the contract
+# helper milieux_artificialisation_vintages(). The declared product prefix is the
+# source id with its `<dept>_<year>` tail removed, so the patch vintages sharing
+# the record are excluded by construction.
+#
+# The payload's own strings are read as the producer assembled them and are never
+# re-derived from geography: `detail` pairs identify the M2/M3 roles, and a
+# multi-window territory carries the producer's span string, which enumerates the
+# department x window couples. Anything that does not match the declared contract
+# — a territory without exactly two states, or a source that is not a declared
+# applied vintage — fails loudly rather than being approximated. Limitation: this
+# is an adapter for the committed presentation projection; its true producer is
+# the pipeline's processed OCS-GE window, and it should be retired once the
+# committed projection carries the typed columns again.
 
 # The applied OCS-GE vintages declared by the state indicator's source record.
 # The declared product prefix is the source id with its `<dept>_<year>` tail
@@ -241,11 +345,9 @@ load_serving_payload <- function(directory, plan) {
     facts=facts, histories=histories, metadata=metadata)
 }
 
-# The immutable pointer a materialized owner commits, and the family-local test
-# that an owner actually produced its artifact. An attempt that fails (the
-# committed payload predates the current producer contract for one owner, for
-# instance) leaves that owner without a pointer: it is reported blocked with the
-# captured reason while every other owner still materializes.
+# The immutable pointer a materialized owner commits: the family-local declaration
+# that every reader — and the materializer's own outcome evidence — resolves the
+# owner's current generation through.
 serving_artifact_pointer_path <- function(family, directory, owner) {
   if (identical(family, "scalar-serving"))
     return(file.path(directory, "scalar-serving", owner, "scalar-current.json"))
@@ -254,18 +356,75 @@ serving_artifact_pointer_path <- function(family, directory, owner) {
   file.path(directory, family, owner, "current.json")
 }
 
+# Outcome evidence -------------------------------------------------------------
+# Every family writer returns the content version it computed for the attempt
+# that just ran — including when the artifact already existed, in which case it
+# revalidated the retained generation and left the pointer untouched. That return
+# is therefore the only evidence that the CURRENT attempt covered the owner; a
+# pointer a previous run left behind never is.
+serving_pointer_version <- function(family, directory, owner) {
+  path <- serving_artifact_pointer_path(family, directory, owner)
+  if (!file.exists(path)) return(NA_character_)
+  pointer <- tryCatch(jsonlite::fromJSON(path, simplifyVector=FALSE), error=function(e) NULL)
+  if (!is.list(pointer)) return(NA_character_)
+  version <- pointer[[if (identical(family, "scalar-serving")) "version" else "semantic_version"]]
+  if (!is.character(version) || length(version) != 1L || is.na(version)) return(NA_character_)
+  version
+}
+
+# Normalize a family materializer's return value into owner -> version. The
+# scalar and typed-reading families carry one owner per theme and return a bare
+# version; the series and profile families return a named per-owner map. Anything
+# else is no evidence at all, so a return that does not name an owner can never
+# mark it materialized.
+serving_attempt_provenance <- function(owners, produced) {
+  absent <- stats::setNames(rep(NA_character_, length(owners)), owners)
+  if (is.null(produced) || !length(produced)) return(absent)
+  entries <- if (is.list(produced)) produced else if (!is.null(names(produced))) as.list(produced) else NULL
+  if (!is.null(entries)) {
+    if (is.null(names(entries))) return(absent)
+    versions <- vapply(entries, function(entry)
+      if (is.character(entry) && length(entry) == 1L && !is.na(entry)) entry else NA_character_,
+      character(1))
+    return(stats::setNames(vapply(owners, function(owner)
+      if (owner %in% names(versions)) versions[[owner]] else NA_character_, character(1)), owners))
+  }
+  if (length(owners) != 1L || !is.character(produced) || length(produced) != 1L || is.na(produced))
+    return(absent)
+  stats::setNames(produced, owners)
+}
+
+# The outcome rows one family attempt produces. Only an attempt that ran without
+# error AND whose own return names the owner with the version that owner's
+# immutable pointer now declares counts as materialized — a deterministic no-op
+# rerun included, since the writer then recomputes the same version and leaves the
+# pointer in place. A family that failed is reported conservatively: every owner
+# it covers, written before or after the failure, is blocked, so an unvisited or
+# retained generation is never presented as the current attempt's success. The
+# retained artifacts stay on disk for atomic safety; the caller turns a non-empty
+# `blocked` set into a non-zero exit status.
+serving_attempt_outcomes <- function(family, owners, produced, error, directory) {
+  if (!length(owners)) return(data.frame(family=character(), owner=character(),
+    status=character(), detail=character(), stringsAsFactors=FALSE))
+  versions <- serving_attempt_provenance(owners, produced)
+  materialized <- is.null(error) & vapply(owners, function(owner) {
+    version <- versions[[owner]]
+    !is.na(version) && identical(serving_pointer_version(family, directory, owner), version)
+  }, logical(1))
+  data.frame(family=family, owner=owners,
+    status=ifelse(materialized, "materialized", "blocked"),
+    detail=ifelse(materialized, "", if (is.null(error))
+      "the committed payload did not produce this artifact" else error),
+    stringsAsFactors=FALSE)
+}
+
 materialize_serving_families <- function(plan, payload, directory) {
   outcomes <- list()
-  record <- function(family, owner, error) {
-    present <- file.exists(serving_artifact_pointer_path(family, directory, owner))
-    outcomes[[length(outcomes) + 1L]] <<- data.frame(family=family, owner=owner,
-      status=if (present) "materialized" else "blocked",
-      detail=if (present) "" else (error %||% "the committed payload did not produce this artifact"),
-      stringsAsFactors=FALSE)
-  }
   attempt <- function(family, owners, expression) {
-    error <- tryCatch({ force(expression); NULL }, error=function(e) conditionMessage(e))
-    for (owner in owners) record(family, owner, error)
+    produced <- NULL
+    error <- tryCatch({ produced <- force(expression); NULL }, error=function(e) conditionMessage(e))
+    outcomes[[length(outcomes) + 1L]] <<- serving_attempt_outcomes(family, owners, produced, error,
+      directory)
   }
   for (theme in plan$scalar_owners)
     attempt("scalar-serving", theme, materialize_theme_scalar_artifact(
@@ -283,7 +442,9 @@ materialize_serving_families <- function(plan, payload, directory) {
         territoires=payload$territories),
       payload$metadata[[theme]], payload$vintages, theme, directory))
   # The declared-profile DPE facet binds to the retained scalar snapshot, so the
-  # profiles are materialized only after the scalar generations exist.
+  # profiles are materialized only after the scalar generations exist. An
+  # unavailable binding blocks every profile owner: a retained generation is not
+  # evidence for the attempt that could not bind.
   binding_error <- NULL
   binding <- tryCatch({
     if (!profile_scalar_binding_inputs_available(directory))
@@ -295,7 +456,8 @@ materialize_serving_families <- function(plan, payload, directory) {
   for (theme in plan$profile_themes) {
     owners <- profile_serving_owners(payload$metadata[[theme]])
     if (!is.null(binding_error)) {
-      for (owner in owners) record("profile-serving", owner, binding_error)
+      outcomes[[length(outcomes) + 1L]] <- serving_attempt_outcomes("profile-serving", owners,
+        NULL, binding_error, directory)
     } else {
       scalar_binding <- if (length(profile_serving_scalar_owners(payload$metadata[[theme]]))) binding else NULL
       attempt("profile-serving", owners, materialize_theme_profile_artifacts(
@@ -360,15 +522,17 @@ materialize_serving_artifacts <- function(source, work=NULL, mode=c("materialize
   plan <- plan_serving_artifacts(source)
   validate_serving_artifact_inputs(plan)
   if (identical(mode, "check")) {
-    directory <- tempfile("lusk-serving-artifacts-check-")
+    directory <- normalize_serving_dir(tempfile("lusk-serving-artifacts-check-"))
+    assert_serving_work_isolated(plan$source, directory,
+      serving_write_destinations(plan, directory))
     dir.create(directory, recursive=TRUE)
     on.exit(unlink(directory, recursive=TRUE), add=TRUE)
-    assert_serving_work_isolated(plan$source, normalize_serving_dir(directory))
   } else {
     if (is.null(work) || !nzchar(work))
       stop("A private work directory is required to materialize serving artifacts", call.=FALSE)
     directory <- normalize_serving_dir(work)
-    assert_serving_work_isolated(plan$source, directory)
+    assert_serving_work_isolated(plan$source, directory,
+      serving_write_destinations(plan, directory))
     if (!dir.exists(directory) && !dir.create(directory, recursive=TRUE) && !dir.exists(directory))
       stop("Could not create the private work directory: ", directory, call.=FALSE)
   }

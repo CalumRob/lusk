@@ -242,3 +242,372 @@ test_that("le mode --check est en lecture seule et rapporte les memes versions",
   ordered <- function(versions) versions[order(versions$family, versions$owner), , drop = FALSE]
   expect_identical(ordered(checked$versions), ordered(result$versions))
 })
+
+# Regression suite for the two review blockers ---------------------------------
+# 1. Isolation is decided from the filesystem, not from the lexical form of a
+#    path: a junction, a symlink or an alias at the work root, at one of its
+#    ancestors or at a pre-existing output descendant can reach the committed
+#    snapshot.
+# 2. An owner is reported materialized only on evidence produced by the CURRENT
+#    attempt. The presence of an artifact a previous run left behind is never
+#    that evidence, and a family that failed never promotes a retained or
+#    unvisited generation to a success.
+
+# Synthetic fixture trees may contain links: remove every link before any
+# recursive delete, so cleanup can never follow one into its target.
+serving_remove_links <- function(path) {
+  for (entry in list.files(path, full.names = TRUE, all.files = TRUE, no.. = TRUE)) {
+    if (fs::is_link(entry)) fs::link_delete(entry)
+    else if (dir.exists(entry)) serving_remove_links(entry)
+  }
+  invisible(path)
+}
+
+serving_tree_fingerprint <- function(path) {
+  entries <- list.files(path, recursive = TRUE, all.files = TRUE, no.. = TRUE)
+  stats::setNames(vapply(entries, function(entry)
+    as.character(tools::md5sum(file.path(path, entry))), character(1)), entries)
+}
+
+# Commit a pointer the way the family writers do: the immutable declaration the
+# readers resolve the owner's generation through.
+write_serving_pointer <- function(family, directory, owner, version) {
+  path <- serving_artifact_pointer_path(family, directory, owner)
+  if (!dir.exists(dirname(path))) dir.create(dirname(path), recursive = TRUE)
+  pointer <- if (identical(family, "scalar-serving"))
+    list(grain = "scalar", version = version, generation = paste0("scalar-", version))
+  else list(semantic_version = version, generation = paste0("generation-", version))
+  jsonlite::write_json(pointer, path, auto_unbox = TRUE)
+  path
+}
+
+serving_pointer_value <- function(pointer) jsonlite::fromJSON(pointer, simplifyVector = FALSE)
+
+test_that("provenance: seul l'artefact de la tentative courante est materialise", {
+  version <- "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  directory <- tempfile("serving-outcomes-")
+  dir.create(directory)
+  on.exit(unlink(directory, recursive = TRUE), add = TRUE)
+  pointer <- write_serving_pointer("scalar-serving", directory, "demographie", version)
+  status <- function(outcomes) outcomes$status[[1L]]
+
+  # An attempt that failed is never proven by a retained pointer.
+  failed <- serving_attempt_outcomes("scalar-serving", "demographie", NULL,
+    "producer refused the payload", directory)
+  expect_identical(status(failed), "blocked")
+  expect_identical(failed$detail[[1L]], "producer refused the payload")
+  expect_true(file.exists(pointer))
+
+  # The current attempt recomputed the version the pointer already declares: a
+  # deterministic no-op rerun succeeds without rewriting anything.
+  expect_identical(status(serving_attempt_outcomes("scalar-serving", "demographie",
+    version, NULL, directory)), "materialized")
+
+  # The current attempt computed a version the pointer does not declare: the
+  # retained generation is stale and is not this attempt's artifact.
+  expect_identical(status(serving_attempt_outcomes("scalar-serving", "demographie",
+    "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb", NULL, directory)), "blocked")
+
+  # An attempt that returned without naming the owner is no evidence for it.
+  expect_identical(status(serving_attempt_outcomes("scalar-serving", "demographie",
+    NULL, NULL, directory)), "blocked")
+
+  # A multi-owner family: a return that does not name an owner is never spread
+  # over the family, and a failed attempt blocks every owner it covers even when
+  # they all carry a valid retained pointer.
+  owners <- c("conso_enaf_annuel", "artif_par_habitant")
+  for (owner in owners) write_serving_pointer("series-serving", directory, owner, version)
+  expect_true(all(serving_attempt_outcomes("series-serving", owners, version, NULL,
+    directory)$status == "blocked"))
+  expect_true(all(serving_attempt_outcomes("series-serving", owners,
+    list(conso_enaf_annuel = version), "artif_par_habitant refused", directory)$status == "blocked"))
+  expect_true(all(serving_attempt_outcomes("series-serving", owners,
+    list(conso_enaf_annuel = version, artif_par_habitant = version), NULL,
+    directory)$status == "materialized"))
+  # An owner no attempt ever wrote stays blocked, pointer or not.
+  expect_identical(status(serving_attempt_outcomes("series-serving", "prix_m2", NULL,
+    NULL, directory)), "blocked")
+})
+
+test_that("isolation: un alias, un lien ou un ancetre lie ne peuvent pas viser l'instantane", {
+  root <- tempfile("serving-isolation-")
+  dir.create(root)
+  on.exit({ serving_remove_links(root); unlink(root, recursive = TRUE, force = TRUE) }, add = TRUE)
+  source <- file.path(root, "snapshot")
+  dir.create(source)
+  writeLines("canonical payload", file.path(source, "marker.txt"))
+  writeLines("second", file.path(source, "other.txt"))
+  before <- serving_tree_fingerprint(source)
+  expect_rejected <- function(work, destinations = character()) {
+    expect_error(assert_serving_work_isolated(source, work, destinations), "committed payload")
+    # A refused work directory is refused before anything is written through it.
+    expect_identical(serving_tree_fingerprint(source), before)
+  }
+
+  # Plain overlap: identical, contained and containing.
+  expect_rejected(source)
+  expect_rejected(file.path(source, "series-serving"))
+  expect_rejected(root)
+
+  # A work root that is a link to the snapshot, and a not-yet-created work
+  # directory below a linked ancestor.
+  root_alias <- file.path(root, "root-alias")
+  fs::link_create(source, root_alias)
+  expect_rejected(root_alias)
+  expect_rejected(file.path(root_alias, "fresh-work"))
+
+  # A linked destination subdirectory under an otherwise isolated work root: the
+  # root alone passes, the destination that resolves into the snapshot does not.
+  work <- file.path(root, "work")
+  dir.create(work)
+  fs::link_create(source, file.path(work, "scalar-serving"))
+  expect_silent(assert_serving_work_isolated(source, work))
+  expect_rejected(work, file.path(work, "scalar-serving", "demographie"))
+
+  # A destination that escapes an isolated work root without touching the
+  # snapshot is refused too: every write lands in the caller's own tree.
+  elsewhere <- file.path(root, "elsewhere")
+  dir.create(elsewhere)
+  fs::link_create(elsewhere, file.path(work, "series-serving"))
+  expect_error(assert_serving_work_isolated(source, work,
+    file.path(work, "series-serving", "prix_m2")), "work directory")
+
+  # A legitimate isolated work directory, with destinations not created yet, is
+  # accepted.
+  expect_silent(assert_serving_work_isolated(source, file.path(root, "outside"),
+    file.path(root, "outside", "scalar-serving", "demographie")))
+
+  # On Windows the same directory answers to any case, and only the filesystem
+  # says so: the lexical form keeps the case it was given.
+  if (.Platform$OS.type == "windows") {
+    expect_identical(serving_path_key(serving_resolve_path(toupper(source))),
+      serving_path_key(source))
+    expect_rejected(toupper(source))
+    expect_rejected(file.path(toupper(source), "series-serving"))
+  }
+
+  expect_identical(serving_tree_fingerprint(source), before)
+})
+
+test_that("isolation: l'entree refuse un travail recouvrant l'instantane avant toute ecriture", {
+  serving_skip()
+  real <- serving_payload_dir()
+  plan <- plan_serving_artifacts(real)
+  root <- tempfile("serving-entry-isolation-")
+  dir.create(root)
+  on.exit({ serving_remove_links(root); unlink(root, recursive = TRUE, force = TRUE) }, add = TRUE)
+
+  # A synthetic snapshot carrying the producer-derived input inventory: the owner
+  # derivation reads the real theme metadata (copied read-only), and the guard has
+  # to fire before any of the remaining inputs is read or copied.
+  snapshot <- file.path(root, "snapshot")
+  dir.create(snapshot)
+  metadata_inputs <- paste0("theme_", THEMES_METADATA, ".json")
+  file.copy(file.path(real, metadata_inputs), snapshot)
+  for (input in setdiff(plan$inputs, metadata_inputs)) file.create(file.path(snapshot, input))
+  before <- serving_input_state(snapshot, plan$inputs)
+  expect_setequal(list.files(snapshot), plan$inputs)
+
+  overlap <- file.path(snapshot, "series-serving")
+  expect_error(materialize_serving_artifacts(snapshot, overlap, "materialize"),
+    "outside the committed payload")
+  expect_error(materialize_serving_artifacts(snapshot, snapshot, "materialize"),
+    "outside the committed payload")
+
+  # Nothing was written: no work directory, no artifact, and every committed input
+  # keeps its size and mtime.
+  expect_false(dir.exists(overlap))
+  expect_setequal(list.files(snapshot), plan$inputs)
+  expect_identical(serving_input_state(snapshot, plan$inputs), before)
+})
+
+test_that("isolation: l'inventaire garde couvre chaque ecriture planifiee", {
+  serving_skip()
+  plan <- plan_serving_artifacts(serving_payload_dir())
+  work <- normalize_serving_dir(file.path(tempdir(), "serving-destinations-probe"))
+  guard <- serving_write_destinations(plan, work)
+
+  # Every entry is the work root or sits inside it, and the guard accepts the
+  # inventory the entry point hands it.
+  expect_true(all(vapply(guard, function(destination)
+    identical(serving_path_key(destination), serving_path_key(work)) ||
+      serving_path_within(work, destination), logical(1))))
+  expect_silent(assert_serving_work_isolated(plan$source, work, guard))
+
+  # The inventory covers every planned owner directory — derived from the plan,
+  # not from a copied list — so a linked destination cannot hide behind an owner
+  # the inventory forgot.
+  keys <- serving_path_key(guard)
+  owner_directories <- function(family, owners) vapply(owners, function(owner)
+    dirname(serving_artifact_pointer_path(family, work, owner)), character(1))
+  planned <- list("scalar-serving" = plan$scalar_owners, "series-serving" = plan$series_owners,
+    "typed-reading" = plan$typed_themes, "profile-serving" = plan$profile_owners)
+  for (family in names(planned)) {
+    directories <- owner_directories(family, planned[[family]])
+    expect_true(all(serving_path_key(directories) %in% keys))
+  }
+  # Plus the two family-level locations the publishers write beside the owners:
+  # the declared-profile scalar binding and the Milieux annual series reading.
+  expect_true(serving_path_key(file.path(work, "scalar-serving")) %in% keys)
+  expect_true(serving_path_key(file.path(work, "series-reading",
+    "conso_enaf_annuel")) %in% keys)
+})
+
+# One retained scalar owner materialized from the committed payload, scoped so the
+# probe pays only that theme's read.
+serving_scalar_probe <- local({
+  cache <- new.env(parent = emptyenv())
+  function() {
+    if (is.null(cache$payload)) {
+      source <- serving_payload_dir()
+      plan <- plan_serving_artifacts(source)
+      theme <- "demographie"
+      scoped <- plan
+      scoped$scalar_owners <- theme
+      scoped$series_themes <- character()
+      scoped$series_owners <- character()
+      scoped$typed_themes <- character()
+      scoped$profile_themes <- character()
+      scoped$profile_owners <- character()
+      scoped$facts_themes <- theme
+      scoped$history_themes <- character()
+      scoped$inputs <- serving_artifact_input_files(scoped)
+      cache$plan <- scoped
+      cache$payload <- list(
+        facts = stats::setNames(list(lire_faits_commis(source, theme, "indicateurs")), theme),
+        histories = list(),
+        vintages = nanoparquet::read_parquet(file.path(source, "vintages.parquet")),
+        territories = nanoparquet::read_parquet(file.path(source, "territoires.parquet")),
+        metadata = plan$metadata)
+    }
+    cache
+  }
+})
+
+test_that("provenance: une regeneration invalide bloque et conserve l'ancienne generation", {
+  serving_skip()
+  probe <- serving_scalar_probe()
+  work <- file.path(tempdir(), "materialize-serving-regeneration")
+  if (dir.exists(work)) unlink(work, recursive = TRUE)
+  on.exit(unlink(work, recursive = TRUE), add = TRUE)
+
+  first <- materialize_serving_families(probe$plan, probe$payload, work)
+  expect_identical(first$status[[1L]], "materialized")
+  pointer <- serving_artifact_pointer_path("scalar-serving", work, "demographie")
+  version <- serving_pointer_value(pointer)$version
+  generation <- file.path(dirname(pointer), serving_pointer_value(pointer)$generation)
+  bytes <- readBin(pointer, "raw", file.info(pointer)$size)
+  expect_true(dir.exists(generation))
+
+  # The unchanged payload recomputes the same deterministic version: the owner
+  # stays materialized and the immutable pointer is not rewritten.
+  rerun <- materialize_serving_families(probe$plan, probe$payload, work)
+  expect_identical(rerun$status[[1L]], "materialized")
+  expect_identical(readBin(pointer, "raw", file.info(pointer)$size), bytes)
+
+  # A payload the current producer contract refuses is blocked, and the previous
+  # generation is retained — not deleted, and never reported as this attempt's
+  # success. That blocked owner is what the caller turns into a non-zero status.
+  broken <- probe$payload
+  facts <- broken$facts[["demographie"]]
+  facts$unit <- NULL
+  broken$facts[["demographie"]] <- facts
+  refused <- materialize_serving_families(probe$plan, broken, work)
+  expect_identical(refused$status[[1L]], "blocked")
+  expect_match(refused$detail[[1L]], "no valid scalar fact rows")
+  expect_true(file.exists(pointer))
+  expect_identical(serving_pointer_value(pointer)$version, version)
+  expect_true(dir.exists(generation))
+  expect_true(file.exists(file.path(generation, "manifest.json")))
+})
+
+# The Milieux owned-series family writes two owners from one attempt, so it can be
+# driven into a partial failure through the real producers.
+serving_milieux_series_probe <- local({
+  cache <- new.env(parent = emptyenv())
+  function() {
+    if (is.null(cache$payload)) {
+      source <- serving_payload_dir()
+      plan <- plan_serving_artifacts(source)
+      theme <- "milieux"
+      scoped <- plan
+      scoped$scalar_owners <- character()
+      scoped$series_themes <- theme
+      scoped$series_owners <- names(plan$metadata[[theme]]$owned_series_routes)
+      scoped$typed_themes <- character()
+      scoped$profile_themes <- character()
+      scoped$profile_owners <- character()
+      scoped$facts_themes <- theme
+      scoped$history_themes <- theme
+      scoped$inputs <- serving_artifact_input_files(scoped)
+      raw <- lire_faits_commis(source, theme, "indicateurs")
+      cache$raw <- raw
+      cache$plan <- scoped
+      cache$payload <- list(
+        facts = stats::setNames(list(reconstruct_milieux_state_roles(raw, plan$metadata[[theme]])), theme),
+        histories = stats::setNames(list(lire_faits_commis(source, theme, "histoires")), theme),
+        vintages = nanoparquet::read_parquet(file.path(source, "vintages.parquet")),
+        metadata = plan$metadata)
+    }
+    cache
+  }
+})
+
+test_that("provenance: une defaillance partielle bloque toute la famille multiple", {
+  serving_skip()
+  probe <- serving_milieux_series_probe()
+  owners <- probe$plan$series_owners
+  expect_length(owners, 2L)
+  work <- tempfile("materialize-serving-partial-")
+  dir.create(work)
+  on.exit(unlink(work, recursive = TRUE), add = TRUE)
+
+  # A complete attempt materializes every owner of the family.
+  complete <- materialize_serving_families(probe$plan, probe$payload, work)
+  expect_true(all(complete$status[match(owners, complete$owner)] == "materialized"))
+  pointers <- stats::setNames(vapply(owners, function(owner)
+    serving_artifact_pointer_path("series-serving", work, owner), character(1)), owners)
+  expect_true(all(file.exists(pointers)))
+  versions <- vapply(pointers, function(pointer) serving_pointer_value(pointer)$semantic_version, character(1))
+
+  # The producer contract refuses the second owner's input after the first owner
+  # was already written. The retained pointers of both owners are not evidence for
+  # the current attempt, so the whole family is blocked and every previous
+  # generation is left in place — the caller's blocked set is what turns non-zero.
+  refused <- materialize_serving_families(probe$plan,
+    list(facts = stats::setNames(list(probe$raw), probe$plan$series_themes),
+      histories = probe$payload$histories, vintages = probe$payload$vintages,
+      metadata = probe$payload$metadata), work)
+  expect_true(all(refused$status == "blocked"))
+  expect_match(refused$detail[[1L]], "incomplete")
+  expect_true(all(file.exists(pointers)))
+  expect_identical(vapply(pointers, function(pointer)
+    serving_pointer_value(pointer)$semantic_version, character(1)), versions)
+})
+
+test_that("provenance: un binding de profil indisponible bloque meme un pointeur existant", {
+  serving_skip()
+  plan <- plan_serving_artifacts(serving_payload_dir())
+  theme <- plan$profile_themes[[1L]]
+  scoped <- plan
+  scoped$scalar_owners <- character()
+  scoped$series_themes <- character()
+  scoped$series_owners <- character()
+  scoped$typed_themes <- character()
+  scoped$profile_themes <- theme
+  scoped$profile_owners <- profile_serving_owners(plan$metadata[[theme]])
+  work <- tempfile("materialize-serving-binding-")
+  dir.create(work)
+  on.exit(unlink(work, recursive = TRUE), add = TRUE)
+  owner <- scoped$profile_owners[[1L]]
+  pointer <- write_serving_pointer("profile-serving", work, owner, strrep("b", 32))
+
+  # Without the retained scalar generations the declared-profile facet cannot
+  # bind: the retained pointer is not evidence, so every owner stays blocked.
+  outcomes <- materialize_serving_families(scoped,
+    list(facts = list(), histories = list(), territories = NULL, vintages = NULL,
+      metadata = plan$metadata), work)
+  expect_true(all(outcomes$status == "blocked"))
+  expect_match(outcomes$detail[[1L]], "retained scalar generations")
+  expect_true(file.exists(pointer))
+})

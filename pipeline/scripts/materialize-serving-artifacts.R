@@ -12,9 +12,12 @@
 # The committed payload is the ONLY producer input: no `data/raw` download cache,
 # no database and no network. The payload inputs are copied into the work
 # directory first and the committed snapshot is asserted unchanged, so it is
-# never written in place. The work directory is otherwise a complete
-# `LUSK_SORTIE` for the rollout's publication step (it also carries the shared
-# Programme Parquets the Programme publisher reads directly).
+# never written in place. Before the first write, the work root and every planned
+# write destination are resolved through the filesystem — symlinks, junctions and
+# aliases included — and refused if any of them reaches the snapshot. The work
+# directory is otherwise a complete `LUSK_SORTIE` for the rollout's publication
+# step (it also carries the shared Programme Parquets the Programme publisher
+# reads directly).
 #
 # Retained owners are derived from producer metadata only — never a copied theme
 # list: the scalar owners from each theme's scalar_contracts minus the excluded
@@ -35,8 +38,12 @@
 # An owner the committed payload cannot feed (its committed facts no longer
 # satisfy the pinned producer contract) is reported as BLOCKED with the reason
 # and the run exits non-zero; every other owner is still materialized, so the
-# work directory is usable for those publishers. Re-running after the payload is
-# regenerated picks up the previously blocked owners.
+# work directory is usable for those publishers. The status stays fail-closed:
+# a non-zero exit means the retained owner set is incomplete, so a publication
+# built from that work directory proves the feedable subset — it is diagnostic
+# evidence, not all-owner acceptance for the rollout. Re-running after the
+# committed payload is regenerated picks up the previously blocked owners, and
+# only then can the run exit zero.
 #
 # Wall-clock and disk: the materialization reads the committed JSON projections
 # (~100 MB) and writes immutable generations plus their current pointers into the

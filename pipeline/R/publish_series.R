@@ -699,29 +699,41 @@ read_conso_enaf_reading_artifact <- function(directory) {
     })
 }
 
+# Materialize every owned series a theme declares. The return value is the
+# per-owner provenance the caller's outcome rows are built from: a named map of
+# owner to the content version this attempt computed (write_owned_series_artifact()
+# returns the semantic version even when the artifact already existed and the
+# pointer was left untouched). An attempt that fails before completing is not
+# reported owner by owner — the caller reports the whole family blocked rather
+# than risk presenting a retained generation as the current attempt's success.
 materialize_theme_series_artifacts <- function(payload, metadata, vintages, theme, directory) {
   if (is.null(metadata$owned_series_routes)) return(invisible(NULL))
   canonical <- list(indicateurs=payload$indicateurs, histoires=payload$histoires,
     vintages=vintages, habitat=list(indicateurs=payload$indicateurs),
     mobilite=list(indicateurs=payload$indicateurs))
+  published <- list()
   if (identical(theme, "milieux")) {
     reading <- project_conso_enaf_series_from_artifacts(payload$indicateurs, vintages, metadata)
     write_conso_enaf_reading_artifact(reading,
       file.path(directory, "series-reading", "conso_enaf_annuel"))
-    write_owned_series_artifact(owned_conso_enaf_projection(canonical, metadata),
+    published[["conso_enaf_annuel"]] <- write_owned_series_artifact(
+      owned_conso_enaf_projection(canonical, metadata),
       file.path(directory, "series-serving", "conso_enaf_annuel"), "conso_enaf_annuel")
-    write_owned_series_artifact(project_artif_m2m3_projection(payload$indicateurs,
-      payload$histoires, vintages, metadata), file.path(directory, "series-serving", "artif_par_habitant"),
+    published[["artif_par_habitant"]] <- write_owned_series_artifact(
+      project_artif_m2m3_projection(payload$indicateurs,
+        payload$histoires, vintages, metadata), file.path(directory, "series-serving", "artif_par_habitant"),
       "artif_par_habitant")
   } else if (identical(theme, "habitat")) {
-    write_owned_series_artifact(project_prix_m2_owned_series(payload$indicateurs,
-      vintages, metadata), file.path(directory, "series-serving", "prix_m2"), "prix_m2")
+    published[["prix_m2"]] <- write_owned_series_artifact(
+      project_prix_m2_owned_series(payload$indicateurs,
+        vintages, metadata), file.path(directory, "series-serving", "prix_m2"), "prix_m2")
   } else if (identical(theme, "mobilite") && "raccordement_courbe" %in% names(metadata$owned_series_routes)) {
-    write_owned_series_artifact(project_raccordement_owned_series(payload$indicateurs,
-      vintages, metadata, RECETTE_RACCORDEMENT_NATIONAL),
+    published[["raccordement_courbe"]] <- write_owned_series_artifact(
+      project_raccordement_owned_series(payload$indicateurs,
+        vintages, metadata, RECETTE_RACCORDEMENT_NATIONAL),
       file.path(directory, "series-serving", "raccordement_courbe"), "raccordement_courbe")
   }
-  invisible(NULL)
+  invisible(published)
 }
 
 register_conso_enaf_owned_publisher <- function(registry, metadata) {
