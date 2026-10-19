@@ -353,6 +353,16 @@ serving_input_state <- function(source, inputs) {
 # directory stays byte-identical.
 copy_serving_inputs <- function(source, target, inputs) {
   if (!dir.exists(target)) dir.create(target, recursive=TRUE)
+  # A name the caller already uses as a DIRECTORY holds the caller's own data, so it
+  # is refused before the first copy instead of being renamed aside (a non-recursive
+  # unlink cannot remove a non-empty directory, so it would survive hidden under a
+  # logical temp name while the run reported success). Checking every input up front
+  # means a refusal writes nothing at all.
+  occupied <- inputs[dir.exists(file.path(target, inputs))]
+  if (length(occupied))
+    stop("The work directory entry ", paste(file.path(target, occupied), collapse=", "),
+      " is a directory, but a committed payload input is installed there as a plain ",
+      "file. Move or remove it and rerun; nothing was written.", call.=FALSE)
   for (input in inputs) {
     from <- file.path(source, input)
     to <- file.path(target, input)
@@ -372,9 +382,16 @@ copy_serving_inputs <- function(source, target, inputs) {
 # already name: the existing entry is moved aside, the staged file renamed in, and
 # the aside unlinked only then — so a pre-existing alias (a hard link to a
 # canonical file above all) is never truncated, and an install that fails puts the
-# previous entry back.
+# previous entry back. A DIRECTORY at `to` is refused before anything moves: it is
+# the caller's own data, and moving it aside would only hide it (the non-recursive
+# unlink below cannot remove it). The aside is therefore always a regular file or a
+# link entry; a failed unlink leaves that name behind rather than deleting anything.
 install_serving_input <- function(staging, to) {
   previous <- NULL
+  if (dir.exists(to))
+    stop("The work directory entry ", to, " is a directory, but a committed payload ",
+      "input is installed there as a plain file. Move or remove it and rerun; nothing ",
+      "was displaced.", call.=FALSE)
   if (file.exists(to)) {
     previous <- tempfile(".previous-", tmpdir=dirname(to))
     if (!file.rename(to, previous)) return(FALSE)

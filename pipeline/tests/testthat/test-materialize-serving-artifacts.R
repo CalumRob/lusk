@@ -595,6 +595,145 @@ test_that("copie: un repertoire de travail ordinaire reste reutilisable tel quel
   expect_identical(serving_file_identity(file.path(source, inputs)), before)
 })
 
+# A caller directory under an input name ----------------------------------------
+# The work directory belongs to the caller: a name the materializer must install a
+# plain payload file at can already be a directory holding the caller's own files.
+# Installing there must not rename that directory aside — a non-recursive unlink
+# cannot remove it afterwards, so it would survive hidden under a logical temp name
+# while the run reports success. It is refused before anything moves.
+
+serving_directory_snapshot <- function(path) {
+  entries <- sort(list.files(path, recursive = TRUE, all.files = TRUE, no.. = TRUE))
+  full <- file.path(path, entries)
+  info <- file.info(full)
+  list(entries = entries,
+    files = data.frame(path = entries, size = info$size,
+      mtime = format(info$mtime, "%Y-%m-%d %H:%M:%OS6"),
+      md5 = as.character(tools::md5sum(full)), stringsAsFactors = FALSE),
+    mtime = format(file.info(path)$mtime, "%Y-%m-%d %H:%M:%OS6"))
+}
+
+test_that("copie: un repertoire a la place d'une entree est refuse sans etre deplace", {
+  root <- tempfile("serving-copy-directory-")
+  dir.create(root)
+  on.exit(unlink(root, recursive = TRUE, force = TRUE), add = TRUE)
+  source <- file.path(root, "snapshot")
+  work <- file.path(root, "work")
+  dir.create(source)
+  dir.create(work)
+  inputs <- c("theme_mobilite.json", "vintages.parquet")
+  writeLines("canonical theme", file.path(source, inputs[[1L]]))
+  writeLines("canonical vintages", file.path(source, inputs[[2L]]))
+  canonical <- serving_file_identity(file.path(source, inputs))
+
+  # The caller's own data sits under a directory named like a planned input file.
+  occupied <- file.path(work, inputs[[2L]])
+  dir.create(occupied)
+  writeLines("caller note", file.path(occupied, "note.txt"))
+  dir.create(file.path(occupied, "nested"))
+  writeLines("caller nested", file.path(occupied, "nested", "nested.txt"))
+  before <- serving_directory_snapshot(occupied)
+  entries <- sort(list.files(work, all.files = TRUE, no.. = TRUE))
+
+  expect_error(copy_serving_inputs(source, work, inputs),
+    "is a directory.*Move or remove")
+
+  # The caller's directory is still exactly where it was, with the same entries,
+  # bytes and mtimes ...
+  expect_true(dir.exists(occupied))
+  expect_identical(serving_directory_snapshot(occupied), before)
+  # ... nothing was displaced under a logical temp name and no staged copy is left.
+  expect_identical(sort(list.files(work, all.files = TRUE, no.. = TRUE)), entries)
+  expect_false(any(grepl("^\\.(previous|serving-input)-",
+    list.files(work, all.files = TRUE))))
+  # The committed snapshot is untouched, and the refusal wrote nothing: the
+  # pre-flight runs before the first input is copied.
+  expect_identical(serving_file_identity(file.path(source, inputs)), canonical)
+})
+
+test_that("copie: un repertoire vide a la place d'une entree est refuse aussi", {
+  root <- tempfile("serving-copy-empty-directory-")
+  dir.create(root)
+  on.exit(unlink(root, recursive = TRUE, force = TRUE), add = TRUE)
+  source <- file.path(root, "snapshot")
+  work <- file.path(root, "work")
+  dir.create(source)
+  dir.create(work)
+  inputs <- "vintages.parquet"
+  writeLines("canonical vintages", file.path(source, inputs))
+  occupied <- file.path(work, inputs)
+  dir.create(occupied)
+
+  expect_error(copy_serving_inputs(source, work, inputs),
+    "is a directory.*Move or remove")
+
+  expect_true(dir.exists(occupied))
+  expect_identical(list.files(occupied, all.files = TRUE, no.. = TRUE), character())
+  expect_identical(sort(list.files(work, all.files = TRUE, no.. = TRUE)), inputs)
+})
+
+test_that("copie: l'installateur refuse un repertoire et le laisse en place", {
+  root <- tempfile("serving-install-directory-")
+  dir.create(root)
+  on.exit(unlink(root, recursive = TRUE, force = TRUE), add = TRUE)
+  work <- file.path(root, "work")
+  dir.create(work)
+  to <- file.path(work, "vintages.parquet")
+  dir.create(to)
+  writeLines("kept", file.path(to, "kept.txt"))
+  before <- serving_directory_snapshot(to)
+  staging <- tempfile(".serving-input-", tmpdir = work)
+  writeLines("staged", staging)
+
+  expect_error(install_serving_input(staging, to), "is a directory.*Move or remove")
+
+  expect_true(dir.exists(to))
+  expect_identical(serving_directory_snapshot(to), before)
+  expect_identical(sort(list.files(work, all.files = TRUE, no.. = TRUE)),
+    sort(c("vintages.parquet", basename(staging))))
+  expect_false(any(grepl("^\\.previous-", list.files(work, all.files = TRUE))))
+})
+
+test_that("copie: l'entree refuse un repertoire present a un nom d'entree planifie", {
+  serving_skip()
+  real <- serving_payload_dir()
+  plan <- plan_serving_artifacts(real)
+  root <- tempfile("serving-directory-entry-")
+  dir.create(root)
+  on.exit(unlink(root, recursive = TRUE, force = TRUE), add = TRUE)
+  snapshot <- file.path(root, "snapshot")
+  dir.create(snapshot)
+  metadata_inputs <- paste0("theme_", THEMES_METADATA, ".json")
+  file.copy(file.path(real, metadata_inputs), snapshot)
+  for (input in setdiff(plan$inputs, metadata_inputs))
+    writeLines(paste("synthetic payload", input), file.path(snapshot, input))
+  work <- file.path(root, "work")
+  dir.create(work)
+  occupied <- file.path(work, plan$inputs[[length(plan$inputs)]])
+  dir.create(occupied)
+  writeLines("caller note", file.path(occupied, "note.txt"))
+  before <- serving_directory_snapshot(occupied)
+  canonical <- serving_file_identity(file.path(snapshot, plan$inputs))
+
+  # Captured rather than expect_error(): the pre-fix run gets past the copy and
+  # dies parsing the synthetic payload, and that deep condition is not a clean
+  # comparison target. The refusal itself is what this test asserts.
+  failure <- tryCatch({
+    materialize_serving_artifacts(snapshot, work, "materialize")
+    NULL
+  }, error = function(e) conditionMessage(e))
+  expect_type(failure, "character")
+  expect_match(failure, "is a directory.*Move or remove")
+
+  # Refused before the first copy: the directory is intact and is the only entry.
+  expect_true(dir.exists(occupied))
+  expect_identical(serving_directory_snapshot(occupied), before)
+  expect_setequal(list.files(work, all.files = TRUE, no.. = TRUE), basename(occupied))
+  expect_false(any(grepl("^\\.(previous|serving-input)-",
+    list.files(work, all.files = TRUE))))
+  expect_identical(serving_file_identity(file.path(snapshot, plan$inputs)), canonical)
+})
+
 test_that("isolation: l'inventaire couvre chaque fichier d'entree copie, pas seulement son repertoire", {
   serving_skip()
   plan <- plan_serving_artifacts(serving_payload_dir())
