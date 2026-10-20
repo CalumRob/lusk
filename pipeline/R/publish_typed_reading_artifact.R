@@ -75,7 +75,8 @@ typed_reading_projection <- function(reading, owner, metadata, vintages) {
   attributes(facts) <- attributes(reading)[c("names","row.names","class")]
   switch(owner,
     economie=list(facts=facts,source=economy_reading_source(metadata,vintages)),
-    demographie=list(facts=facts,descriptor=list(rate_unit=attr(reading,"rate_unit"))),
+    demographie=list(facts=facts,descriptor=list(rate_unit=attr(reading,"rate_unit"),
+      source_clock=as.list(attr(reading,"source_clock")[1L,,drop=FALSE]))),
     habitat=list(facts=facts,vintage=attr(reading,"vintage")),
     milieux=list(facts=facts,source_bindings=attr(reading,"source_bindings"),
       population_revisions=attr(reading,"population_revisions")),
@@ -90,7 +91,12 @@ assemble_typed_reading <- function(projection, owner) {
   facts <- projection$facts
   switch(owner,
     economie=facts,
-    demographie={attr(facts,"rate_unit") <- projection$descriptor$rate_unit; facts},
+    demographie={
+      attr(facts,"rate_unit") <- projection$descriptor$rate_unit
+      attr(facts,"source_clock") <- as.data.frame(projection$descriptor$source_clock,
+        stringsAsFactors=FALSE,optional=TRUE)
+      facts
+    },
     habitat={attr(facts,"vintage") <- projection$vintage; facts},
     milieux={
       attr(facts,"source_bindings") <- projection$source_bindings
@@ -141,12 +147,23 @@ validate_typed_reading_projection <- function(projection, owner) {
     },
     demographie={
       descriptor <- projection$descriptor
+      if (!is.list(descriptor))
+        stop("Typed demographic reading artifact has an invalid persisted source clock; rematerialize it",call.=FALSE)
       rate_unit <- descriptor$rate_unit
-      if (!is.list(descriptor) || !identical(names(descriptor),"rate_unit") ||
+      clock <- descriptor$source_clock
+      clock_fields <- c("source_id","source_name","version","reference_date","publication_date","vintage_id")
+      if (is.list(clock) && identical(names(clock),clock_fields) && is.data.frame(facts) &&
+          all(c("source_id","vintage_id") %in% names(facts)) &&
+          (any(facts$source_id!=clock$source_id) || any(facts$vintage_id!=clock$vintage_id) ||
+           !identical(clock$vintage_id,paste(clock$version,clock$reference_date,sep="/"))))
+        stop("Typed demographic reading disagrees with its canonical source clock",call.=FALSE)
+      if (!identical(sort(names(descriptor)),sort(c("rate_unit","source_clock"))) ||
           !is.character(rate_unit) || length(rate_unit)!=1L || is.na(rate_unit) || !nzchar(rate_unit) ||
+          !is.list(clock) || !identical(names(clock),clock_fields) ||
+          any(vapply(clock,function(value) !is.character(value) || length(value)!=1L || is.na(value) || !nzchar(value),logical(1))) ||
           !all(c("periode","solde_naturel","solde_migratoire","taux_solde_naturel",
             "taux_solde_migratoire","classification") %in% names(facts)))
-        stop("Typed demographic reading descriptor or facts are invalid",call.=FALSE)
+        stop("Typed demographic reading artifact has an invalid persisted source clock; rematerialize it",call.=FALSE)
     },
     habitat={
       vintage <- projection$vintage

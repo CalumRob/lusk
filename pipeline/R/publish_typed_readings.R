@@ -80,6 +80,11 @@ economy_reading_content_version <- function(histories,vintages,metadata) {
 
 project_demographic_reading <- function(histories, territories, vintages, metadata) {
   facts <- project_typed_reading_facts(histories, "demographie")
+  reading_sources <- unlist(lapply(metadata$semantic_resources %||% list(), function(resource) {
+    if (identical(resource$kind,"typed_reading")) resource$source_keys else NULL
+  }),use.names=FALSE)
+  if (length(reading_sources)!=1L || is.na(reading_sources[[1L]]) || !nzchar(reading_sources[[1L]]))
+    stop("Theme metadata must declare exactly one source for its typed demographic reading",call.=FALSE)
   reference <- territories[c("territoire", "type")]
   names(reference) <- c("territory_id", "territory_type")
   if (anyDuplicated(reference) || anyDuplicated(facts[c("territory_id", "territory_type", "groupe")]))
@@ -88,18 +93,24 @@ project_demographic_reading <- function(histories, territories, vintages, metada
   if (!setequal(paste(fact_territories$territory_id,fact_territories$territory_type),
                 paste(reference$territory_id,reference$territory_type)))
     stop("Demographic reading identities must exactly match the canonical territory reference",call.=FALSE)
-  source <- vintages[vintages$id == "serie_historique", , drop=FALSE]
+  source <- vintages[vintages$id == reading_sources[[1L]], , drop=FALSE]
   if (nrow(source) != 1L || anyNA(source[c("id", "source", "version", "date_reference", "date_publication")]))
     stop("The canonical vintage manifest has no unique demographic source clock", call.=FALSE)
   facts$status <- ifelse(is.na(facts$periode) | is.na(facts$solde_naturel) |
     is.na(facts$solde_migratoire) | is.na(facts$taux_solde_naturel) |
     is.na(facts$taux_solde_migratoire) | is.na(facts$classification), "unavailable", "measured")
   facts$source_id <- as.character(source$id[[1L]])
-  facts$vintage_id <- as.character(source$id[[1L]])
+  facts$vintage_id <- paste(as.character(source$version[[1L]]),
+    as.character(source$date_reference[[1L]]), sep="/")
   label <- metadata$param_labels$taux_solde_naturel
   unit <- sub("^.*\\(([^()]*)\\)$", "\\1", label)
   if (identical(unit,label) || !nzchar(unit)) stop("Theme metadata has no typed demographic rate unit",call.=FALSE)
   attr(facts,"rate_unit") <- unit
+  attr(facts,"source_clock") <- data.frame(source_id=as.character(source$id[[1L]]),
+    source_name=as.character(source$source[[1L]]),version=as.character(source$version[[1L]]),
+    reference_date=as.character(source$date_reference[[1L]]),
+    publication_date=as.character(source$date_publication[[1L]]),
+    vintage_id=as.character(facts$vintage_id[[1L]]),stringsAsFactors=FALSE)
   facts
 }
 
@@ -270,8 +281,14 @@ publish_registered_typed_reading <- function(registry, name, canonical, db) {
 
 publish_demographic_reading <- function(con, projection, canonical) {
   rate_unit <- attr(projection,"rate_unit")
+  source_clock <- attr(projection,"source_clock")
   if (is.null(rate_unit) || !nzchar(rate_unit)) stop("Typed reading projection has no source-owned rate unit",call.=FALSE)
+  if (!is.data.frame(source_clock) || nrow(source_clock)!=1L ||
+      !all(c("source_id","source_name","version","reference_date","publication_date","vintage_id") %in% names(source_clock)) ||
+      anyNA(source_clock)) stop("Typed demographic reading has no complete canonical source clock; rematerialize it",call.=FALSE)
   facts <- projection
+  if (any(facts$source_id!=source_clock$source_id[[1L]]) || any(facts$vintage_id!=source_clock$vintage_id[[1L]]))
+    stop("Typed demographic facts disagree with their canonical source clock; rematerialize the reading",call.=FALSE)
   facts <- facts[c("territory_id","territory_type","groupe","story_key","salience_reason","periode",
     "solde_naturel","solde_migratoire","taux_solde_naturel","taux_solde_migratoire",
     "classification","status","source_id","vintage_id")]
@@ -279,6 +296,14 @@ publish_demographic_reading <- function(con, projection, canonical) {
     "SELECT content_version FROM table_publication WHERE table_name='territory_reference'")$content_version
   if (length(reference_version) != 1L || is.na(reference_version) || !nzchar(reference_version))
     stop("Published territory reference is required for demographic readings", call.=FALSE)
+  stored_clock <- DBI::dbGetQuery(con,"SELECT d.name AS source_name,v.version,v.reference_date,v.publication_date
+    FROM source_dataset d JOIN source_vintage v USING(source_id)
+    WHERE v.source_id=$1 AND v.vintage_id=$2",params=list(source_clock$source_id[[1L]],source_clock$vintage_id[[1L]]))
+  if (nrow(stored_clock)!=1L || !identical(as.character(stored_clock$source_name[[1L]]),source_clock$source_name[[1L]]) ||
+      !identical(as.character(stored_clock$version[[1L]]),source_clock$version[[1L]]) ||
+      !identical(as.character(stored_clock$reference_date[[1L]]),source_clock$reference_date[[1L]]) ||
+      !identical(as.character(stored_clock$publication_date[[1L]]),source_clock$publication_date[[1L]]))
+    stop("Registered demographic source clock differs from the canonical artifact; rematerialize the reading",call.=FALSE)
   registered_territories <- DBI::dbGetQuery(con,"SELECT territory_id,territory_type FROM territory_reference")
   fact_territories <- unique(facts[c("territory_id","territory_type")])
   if (!setequal(paste(fact_territories$territory_id,fact_territories$territory_type),
