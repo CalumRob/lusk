@@ -8,6 +8,8 @@
 
 \set ON_ERROR_STOP on
 BEGIN READ ONLY;
+SET LOCAL statement_timeout = '15s';
+SET LOCAL lock_timeout = '3s';
 SET LOCAL search_path TO :"target_schema";
 
 -- Prove the connection identity, read-only transaction, and selected schema
@@ -16,9 +18,8 @@ SELECT current_database() AS database_name,current_user AS database_role,
        current_setting('transaction_read_only') AS transaction_read_only,
        current_schema() AS target_schema;
 
--- The expected sequence is absent/present/current independently per family:
--- base_relations is 0 or 3; current lineage columns/tables are all absent or
--- all present. Sentinel nullability must be coherent within each family.
+-- Advisory shape classification only. This does NOT validate constraints,
+-- defaults, indexes, triggers, or grants, and is never migration approval.
 WITH families(family, base_relations, lineage_relations, sentinels) AS (
   VALUES
     ('scalar',
@@ -56,19 +57,21 @@ WITH families(family, base_relations, lineage_relations, sentinels) AS (
 SELECT family, base_relation_count, lineage_relation_count, lineage_column_count,
        sentinel_not_null_count,
        sentinel_nullability,
-       CASE
-         WHEN base_relation_count=0 AND lineage_relation_count=0 AND lineage_column_count=0 THEN 'absent'
-         WHEN base_relation_count=3 AND lineage_relation_count=0 AND lineage_column_count=0 THEN 'present'
-         WHEN family='scalar' AND base_relation_count=3 AND lineage_relation_count=1
-              AND lineage_column_count=2 AND sentinel_not_null_count IN (0,2) THEN 'current'
-         WHEN family='ordered_series' AND base_relation_count=3 AND lineage_relation_count=2
-              AND lineage_column_count=2 AND sentinel_not_null_count IN (0,2)
+        false AS structural_validation_performed,
+        'ADVISORY ONLY: shape is not structural validation; do not apply 039 based on this result' AS advisory,
+        CASE
+          WHEN base_relation_count=0 AND lineage_relation_count=0 AND lineage_column_count=0 THEN 'ABSENT_SHAPE_ONLY'
+          WHEN base_relation_count=3 AND lineage_relation_count=0 AND lineage_column_count=0 THEN 'PRESENT_SHAPE_ONLY'
+          WHEN family='scalar' AND base_relation_count=3 AND lineage_relation_count=1
+               AND lineage_column_count=2 AND sentinel_not_null_count IN (0,2) THEN 'CURRENT_SHAPE_ONLY'
+          WHEN family='ordered_series' AND base_relation_count=3 AND lineage_relation_count=2
+               AND lineage_column_count=2 AND sentinel_not_null_count IN (0,2)
               AND EXISTS (SELECT 1 FROM pg_attribute a
                 JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace
                 WHERE n.nspname=current_schema() AND c.relname='ordered_series_comparison_publication'
-                  AND a.attname='comparison_axes' AND a.attnum>0 AND NOT a.attisdropped) THEN 'current'
-         ELSE 'INCOMPATIBLE / INVESTIGATE'
-       END AS observed_state
+                   AND a.attname='comparison_axes' AND a.attnum>0 AND NOT a.attisdropped) THEN 'CURRENT_SHAPE_ONLY'
+          ELSE 'INCOMPATIBLE_SHAPE_ONLY / INVESTIGATE'
+        END AS observed_shape_only_state
 FROM family_state ORDER BY family;
 
 -- Other comparison foundations owned by 030/032/035 are deliberately outside

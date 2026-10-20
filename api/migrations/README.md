@@ -535,16 +535,35 @@ psql "$READ_ONLY_DSN" -X -v ON_ERROR_STOP=1 -v target_schema=public `
   -f api/migrations/039_operator_state_inventory.sql
 ```
 
-The inventory reports each family's observed state, all columns/defaults,
+The inventory reports each family's **shape only**, all columns/defaults,
 constraints and FK actions, index validity/uniqueness, user triggers, effective
 reader/publisher grants, and exact row counts for comparison storage plus the
 protected fact/marker tables. Its owner-migration presence list separately
 reports the six 039 bases, the 034/035 lineage tables, the 030 profile and
 collection foundations, the 032 AEDAR foundations, and the 033 shared lineage
 table; 039 does not create or validate those separately owned families.
-Before application, each family must be wholly
-`absent`, exact `present`, or exact `current`; investigate rather than apply if
-it reports `INCOMPATIBLE / INVESTIGATE`. After the pack, every family must be
+The inventory performs exact `count(*)` scans (including scalar observations
+and ordered-series facts) for protected relations that exist. These are not
+catalog-only estimates and may be resource-intensive on a large serving schema.
+The read-only transaction sets a 15-second statement timeout and 3-second lock
+timeout; if a timeout aborts the transaction, treat that run as incomplete and
+retain no partial output as a valid pre/post inventory. Keep `ON_ERROR_STOP=1`
+so psql stops at the error. Do not raise the limits without an operator-approved
+read-only execution plan.
+Its `observed_shape_only_state` labels (`ABSENT_SHAPE_ONLY`,
+`PRESENT_SHAPE_ONLY`, `CURRENT_SHAPE_ONLY`, or
+`INCOMPATIBLE_SHAPE_ONLY / INVESTIGATE`) are presence/column-shape hints only;
+`structural_validation_performed` is always `false`. A shape classified as
+present or current is **never by itself evidence of structural validity, safe
+application, or a no-op**. This inventory is not a parallel contract validator.
+Before *any target-schema change*, migration 039's full pre-DDL structural
+contract validator remains required and authoritative for its two families;
+only a successful validator run is approval of those families' contract.
+Do not use this inventory's shape label alone to decide apply/skip/no-op, and do
+not apply on any incompatible shape. The separately owned 030/032/033/034/035
+objects still require their owners' full prechecks. After the approved pack,
+count and compare protected rows; do not infer safety from the report's shape
+labels. After the pack, every 039 family must be
 `current`; protected fact, descriptor, source, and publication-marker row
 counts must match the pre-run output, while only expected comparison/lineage
 rows may change through the separately authorized publisher operation. The

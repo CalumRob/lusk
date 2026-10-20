@@ -1679,6 +1679,32 @@ def test_migration_039_preserves_valid_independent_nonunique_index():
         assert _m039_catalog_snapshot(connection, schema) == before
 
 
+def test_migration_039_inventory_marks_malformed_family_as_shape_only():
+    """A right-shaped family with a broken FK is never reported as validated/current."""
+    import psycopg
+
+    publish_dsn, _ = _configuration()
+    root = Path(__file__).resolve().parents[2]
+    schema = f"it_m039_inventory_advisory_{uuid.uuid4().hex[:12]}"
+    inventory = (root / "migrations/039_operator_state_inventory.sql").read_text(encoding="utf-8")
+    query = inventory.split("WITH families(family, base_relations", 1)[1]
+    query = query.split("FROM family_state ORDER BY family;", 1)[0]
+    query = "WITH families(family, base_relations" + query
+    query += "FROM family_state ORDER BY family"
+    print(f"migration 039 retained advisory-inventory schema: {schema}")
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+        connection.execute(f'SET search_path TO "{schema}"')
+        connection.execute((root / "schema.sql").read_text(encoding="utf-8"))
+        fk = _m039_constraint_name(connection, "scalar_comparison_group", "f", "%scalar_descriptor%")
+        connection.execute(f'ALTER TABLE scalar_comparison_group DROP CONSTRAINT "{fk}"')
+        rows = connection.execute(query).fetchall()
+        scalar = next(row for row in rows if row[0] == "scalar")
+        assert scalar[-3] is False
+        assert "ADVISORY ONLY" in scalar[-2]
+        assert scalar[-1] == "CURRENT_SHAPE_ONLY"
+
+
 def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
     """Rehearse #806 absent/present/current/partial states and the documented chain."""
     import psycopg
