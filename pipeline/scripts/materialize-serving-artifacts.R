@@ -61,6 +61,9 @@
 # work directory. Delete the work directory to start clean; re-running reuses the
 # identical generations (the writers only replace a pointer when the content
 # version changes).
+# A typed-reading artifact rejected for a missing/stale persisted source clock
+# must be regenerated from the committed producer payload with this command; do
+# not edit its cached generation or relabel its vintage in place.
 if (!requireNamespace("pkgload", quietly=TRUE))
   stop("pkgload is required to load the pipeline", call.=FALSE)
 pkgload::load_all(".", quiet=TRUE)

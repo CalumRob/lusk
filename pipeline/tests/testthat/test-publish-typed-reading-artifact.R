@@ -34,7 +34,8 @@ fixture_demographic_reading_fixture <- function() {
   territories <- data.frame(territoire = c("35238", "35047"), type = "commune", stringsAsFactors = FALSE)
   vintages <- data.frame(id = "serie_historique", source = "Producer INSEE source", version = "2023",
     date_reference = "2023-01-01", date_publication = "2023-06-01", stringsAsFactors = FALSE)
-  metadata <- list(param_labels = list(taux_solde_naturel = "Taux de solde naturel (‰/an)"))
+  metadata <- list(param_labels = list(taux_solde_naturel = "Taux de solde naturel (‰/an)"),
+    semantic_resources=list(list(kind="typed_reading",source_keys="serie_historique")))
   list(histories = histories, territories = territories, vintages = vintages, metadata = metadata,
     reading = project_demographic_reading(histories, territories, vintages, metadata))
 }
@@ -171,6 +172,56 @@ test_that("every typed reading round-trips its owner generation as the projector
   expect_identical(again, typed_reading_content_version(fixtures$habitat$projection, "habitat"))
   expect_identical(readLines(file.path(root, "typed-reading-serving", "habitat", "current.json"),
     warn = FALSE), pointer)
+})
+
+test_that("demographic reading keeps the canonical source clock identity through projection and artifact validation", {
+  fixture <- fixture_demographic_reading_fixture()
+  materialized <- project_theme_typed_reading_artifact(
+    list(histoires=fixture$histories,territoires=fixture$territories),fixture$metadata,
+    fixture$vintages,"demographie")
+  facts <- assemble_typed_reading(materialized,"demographie")
+  expect_identical(facts$source_id, rep("serie_historique", nrow(facts)))
+  expect_identical(facts$vintage_id, rep("2023/2023-01-01", nrow(facts)))
+  projection <- typed_reading_projection(facts, "demographie", fixture$metadata, fixture$vintages)
+  expect_identical(projection$descriptor$source_clock$source_id, "serie_historique")
+  expect_identical(projection$descriptor$source_clock$version, "2023")
+  expect_identical(projection$descriptor$source_clock$reference_date, "2023-01-01")
+  expect_identical(projection$descriptor$source_clock$publication_date, "2023-06-01")
+  expect_silent(validate_typed_reading_projection(projection, "demographie"))
+  root <- typed_reading_root("demographic-clock")
+  on.exit(unlink(root,recursive=TRUE),add=TRUE)
+  directory <- typed_reading_artifact_directory(root,"demographie")
+  write_typed_reading_artifact(materialized,directory,"demographie")
+  reloaded <- read_typed_reading_publication(directory,"demographie")
+  expect_identical(reloaded$reading$vintage_id,rep("2023/2023-01-01",nrow(facts)))
+  expect_identical(attr(reloaded$reading,"source_clock"),
+    as.data.frame(materialized$descriptor$source_clock,stringsAsFactors=FALSE,optional=TRUE))
+
+  other <- fixture$vintages
+  other$version <- "2024"; other$date_reference <- "2024-01-01"
+  changed <- project_demographic_reading(fixture$histories, fixture$territories, other, fixture$metadata)
+  expect_identical(changed$vintage_id, rep("2024/2024-01-01", nrow(changed)))
+  version_only <- fixture$vintages; version_only$version <- "2024"
+  expect_identical(project_demographic_reading(fixture$histories,fixture$territories,
+    version_only,fixture$metadata)$vintage_id,rep("2024/2023-01-01",nrow(facts)))
+  date_only <- fixture$vintages; date_only$date_reference <- "2024-01-01"
+  expect_identical(project_demographic_reading(fixture$histories,fixture$territories,
+    date_only,fixture$metadata)$vintage_id,rep("2023/2024-01-01",nrow(facts)))
+  expect_false(identical(typed_reading_content_version(projection, "demographie"),
+    typed_reading_content_version(typed_reading_projection(changed, "demographie", fixture$metadata, other), "demographie")))
+
+  wrong_id <- projection
+  wrong_id$facts$vintage_id[] <- "serie_historique"
+  expect_error(validate_typed_reading_projection(wrong_id, "demographie"), "source clock")
+  wrong_source <- projection
+  wrong_source$facts$source_id[] <- "another_dataset"
+  expect_error(validate_typed_reading_projection(wrong_source, "demographie"), "source clock")
+  stale <- projection
+  stale$descriptor$source_clock$vintage_id <- "2022/2022-01-01"
+  expect_error(validate_typed_reading_projection(stale, "demographie"), "source clock")
+  missing_clock <- projection
+  missing_clock$descriptor$source_clock <- NULL
+  expect_error(validate_typed_reading_projection(missing_clock, "demographie"), "rematerialize")
 })
 
 test_that("reading pieces keep their selection row names and typed missing values", {
