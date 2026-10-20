@@ -1285,13 +1285,19 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         pool.close()
 
 
+_SCALAR_COMPARISON_BASES = (
+    "scalar_comparison_territory", "scalar_comparison_group",
+    "scalar_comparison_publication",
+)
+_ORDERED_SERIES_COMPARISON_BASES = (
+    "ordered_series_comparison_territory", "ordered_series_comparison_group",
+    "ordered_series_comparison_publication",
+)
+
+
 def _drop_pre_lineage_comparison_bases(connection):
     """Remove the six base relations from a pinned pre-lineage schema."""
-    for table in (
-        "scalar_comparison_territory", "scalar_comparison_group",
-        "scalar_comparison_publication", "ordered_series_comparison_territory",
-        "ordered_series_comparison_group", "ordered_series_comparison_publication",
-    ):
+    for table in _SCALAR_COMPARISON_BASES + _ORDERED_SERIES_COMPARISON_BASES:
         connection.execute(f"DROP TABLE {table}")
 
 
@@ -1401,7 +1407,7 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
     migration = (root / "migrations/039_comparison_base_objects.sql").read_text(encoding="utf-8")
     schemas = {
         state: f"it_m039_{state}_" + uuid.uuid4().hex[:12]
-        for state in ("upgrade", "fresh", "partial", "current")
+        for state in ("upgrade", "fresh", "partial", "current", "mixed")
     }
     print("migration 039 retained schemas:", schemas)
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
@@ -1553,6 +1559,22 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
         assert connection.execute("""SELECT count(*) FROM information_schema.columns
             WHERE table_schema=%s AND table_name='scalar_comparison_publication'
               AND column_name='unexpected_column'""", (schemas["partial"],)).fetchone()[0] == 1
+
+    # The families are independent: an exact present family plus an absent one
+    # is a supported mixed state in either direction.
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'SET search_path TO "{schemas["mixed"]}"')
+        connection.execute(baseline)
+        _drop_pre_lineage_comparison_bases(connection)
+        connection.execute(migration)
+        for table in _ORDERED_SERIES_COMPARISON_BASES:
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute(migration)
+        for table in _SCALAR_COMPARISON_BASES:
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute(migration)
+        for table in _SCALAR_COMPARISON_BASES + _ORDERED_SERIES_COMPARISON_BASES:
+            assert connection.execute("SELECT to_regclass(%s) IS NOT NULL", (table,)).fetchone()[0], table
 
     # Structural equivalence, excluding only the documented NULL sentinels.
     with psycopg.connect(publish_dsn) as connection:
