@@ -30,6 +30,7 @@ place.
 from __future__ import annotations
 
 import os
+import re
 import time
 import uuid
 from pathlib import Path
@@ -390,7 +391,7 @@ def test_migration_038_matches_fresh_schema_and_bounds_validation_work():
     text = migration.read_text(encoding="utf-8")
     # The migration replaces the validator function and nothing else.
     assert "CREATE OR REPLACE FUNCTION validate_series_dataset_publication()" in text
-    assert "EXCEPT" in text
+    assert re.search(r"\bEXCEPT\b", text), "set-based EXCEPT validator is missing"
     for forbidden in ("DROP ", "CREATE TRIGGER", "CREATE TABLE", "ALTER TABLE", "DELETE ", "INSERT "):
         assert forbidden not in text, forbidden
 

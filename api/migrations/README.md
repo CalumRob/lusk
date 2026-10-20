@@ -4,7 +4,9 @@
 > 001–035 describe their original change and verification context; many legacy
 > paths cited there have since been retired. The current retained schema is
 > `api/schema.sql`; the latest guarded upgrade proofs are migrations 036 through
-> 038 as described in [`api/tests/integration/README.md`](../tests/integration/README.md).
+> 039 as described in [`api/tests/integration/README.md`](../tests/integration/README.md).
+> For the scalar and ordered-series comparison repair, the dependency order is
+> **030 -> 039 -> 033 -> 034**; 039 itself creates no lineage columns.
 > Do not execute old commands in this chronology as current operating guidance.
 
 # Migration 016: bounded BPE profile evidence (historical)
@@ -464,4 +466,60 @@ integration proof installs migration 015's validator, applies 038, and compares
 the migrated function and its accepted/rejected outcomes with a fresh schema;
 the work regression is pinned by PostgreSQL tuple-visit counters rather than a
 wall-clock threshold. This migration does not publish data or authorize
+deployment.
+
+# Migration 039 — restore scalar and ordered-series comparison bases
+
+`039_comparison_base_objects.sql` repairs the retained upgrade gap behind #806:
+fresh installs receive the six scalar and ordered-series comparison base
+relations from `schema.sql`, but no retained migration creates them. Apply it
+in this dependency order:
+
+    030 -> 039 -> 033 -> 034
+
+Apply each step with `search_path` set to the target schema only; 039 uses
+`current_schema()` and unqualified relation names. Current 030 owns the profile
+and numeric-collection comparison bases that 033 also alters; the scalar base
+DDL instead comes from the deleted historical
+`030_scalar_comparison_aggregates.sql` (commit c6d29805), and the ordered-series
+base DDL from commit 7535ce9b. 039 owns only
+`scalar_comparison_{publication,group,territory}` and
+`ordered_series_comparison_{publication,group,territory}`. It deliberately
+creates the exact **pre-lineage** shapes; do not create the current lineage
+columns and then run 033/034 again.
+
+039 classifies each family independently:
+
+- `absent`: no base relations. 039 creates the pre-lineage contract. Run the
+  corresponding lineage migration next (033 for scalar, 034 for ordered series).
+- `present`: all three base relations with the exact pre-lineage columns. 039
+  is a structural no-op and grants the contract privileges. Run the
+  corresponding lineage migration next.
+- `current`: all three base relations plus the exact 033/034 lineage columns.
+  039 is a structural no-op. Do **not** run that family's lineage migration
+  again.
+- Any other shape — one or two base relations, mixed lineage columns, lineage
+  relations without their base family, a non-table relation, or an unexpected
+  column/type/nullability — aborts inside the migration transaction before the
+  target schema is mutated.
+
+The migration preserves all existing facts, descriptors, sources, publication
+markers, roles and unrelated objects; it creates no producer data and no
+lineage relations. It reproduces the base primary keys, foreign keys, checks
+and grants from the pinned pre-lineage contract. The retained 034
+`ordered_series_comparison_zero_reason` foreign key differs from fresh
+`schema.sql` (034 uses `ON DELETE CASCADE` and is not deferrable; fresh is
+deferrable and does not cascade). That pre-existing shape is deliberately not
+changed here; the R publisher deletes comparison groups directly before
+rewriting them, so 034's cascade is load-bearing on the upgrade path. The
+guarded proof records the difference rather than hiding it.
+
+The guarded upgrade proof starts from the pinned pre-lineage schema with real
+synthetic facts and markers, removes only the comparison storage, applies
+039 -> 033 -> 034, verifies facts/markers survive, exercises the R publisher and
+API readback, checks missing publications return 503 rather than 500 or stale
+data, and compares the resulting structural contract with a fresh `schema.sql`
+install. It also covers the current-state no-op, absent/present shapes, and
+transactional rejection of incompatible partial states. Fresh installs continue
+to use `schema.sql`. This migration does not publish data or authorize
 deployment.

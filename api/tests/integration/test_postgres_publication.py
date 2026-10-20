@@ -638,7 +638,27 @@ def _restore_populated_pre_lineage_comparisons(connection, root):
     return old_rows
 
 
-@pytest.mark.parametrize("publication_schema", ["fresh", "populated_upgrade"])
+def _remove_comparison_bases_for_upgrade(connection):
+    """Model an existing schema that never received the comparison bases.
+
+    The starting point is a fresh schema with real synthetically published
+    facts. Only comparison storage and the 033/034 lineage additions are
+    removed; every fact, descriptor, source, marker and unrelated relation
+    stays. This is the #806 production shape, not a table-presence simulation.
+    """
+    connection.execute("DROP TABLE scalar_comparison_territory")
+    connection.execute("DROP TABLE scalar_comparison_group")
+    connection.execute("DROP TABLE scalar_comparison_publication")
+    connection.execute("DROP TABLE ordered_series_comparison_zero_reason")
+    connection.execute("DROP TABLE ordered_series_comparison_lineage")
+    connection.execute("DROP TABLE ordered_series_comparison_territory")
+    connection.execute("DROP TABLE ordered_series_comparison_group")
+    connection.execute("DROP TABLE ordered_series_comparison_publication")
+    connection.execute("DROP TABLE comparison_source_lineage")
+    connection.execute("ALTER TABLE profile_comparison_group DROP COLUMN lineage_source_count")
+
+
+@pytest.mark.parametrize("publication_schema", ["fresh", "populated_upgrade", "bases_absent_upgrade"])
 def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, tmp_path, publication_schema):
     """Exercise R publishers through the semantic single/batch API against PostgreSQL."""
     from dataclasses import replace
@@ -760,34 +780,66 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         assert expected_batch.status_code == 200, expected_batch.text
         assert [row["data"] for row in expected_batch.json()["results"]] == [
             response.json() for response in expected_responses]
-        if publication_schema == "populated_upgrade":
+        if publication_schema in {"populated_upgrade", "bases_absent_upgrade"}:
             root = Path(__file__).resolve().parents[2]
             with psycopg.connect(publish_dsn) as publisher:
-                old_rows = _restore_populated_pre_lineage_comparisons(publisher, root)
+                if publication_schema == "populated_upgrade":
+                    old_rows = _restore_populated_pre_lineage_comparisons(publisher, root)
+                    untouched = None
+                else:
+                    untouched = {
+                        table: sorted(publisher.execute(f'SELECT * FROM "{table}"').fetchall(), key=repr)
+                        for table in ("territory_reference", "table_publication",
+                                      "scalar_observation", "scalar_observation_source",
+                                      "series_dataset_observation", "series_observation_provenance",
+                                      "observed_collection_comparison_publication")
+                    }
+                    _remove_comparison_bases_for_upgrade(publisher)
+                    old_rows = {}
                 reader = urlsplit(read_dsn).username
                 assert reader and re.fullmatch(r"[A-Za-z0-9_$-]+", reader)
                 publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{canonical_db_env["schema"]}" TO "{reader}"')
             # Unapplied storage must be intentionally unavailable, not a 500.
+            # The absent-bases case removes only the scalar and ordered-series
+            # families; the numeric-collection publication is untouched and must
+            # keep serving its own 200 responses.
+            expected_unavailable_statuses = (
+                [503, 503, 503, 503, 200, 200]
+                if publication_schema == "bases_absent_upgrade"
+                else [503] * len(comparison_items)
+            )
             unavailable_singles, unavailable_batch = read_comparisons()
-            assert [response.status_code for response in unavailable_singles] == [503] * len(comparison_items)
+            assert [response.status_code for response in unavailable_singles] == expected_unavailable_statuses
             assert unavailable_batch.status_code == 503
-            # A relation created by an incomplete/manual upgrade is also an
-            # unavailable publication, not an UndefinedColumn -> HTTP 500.
+            if publication_schema == "populated_upgrade":
+                # A relation created by an incomplete/manual upgrade is also an
+                # unavailable publication, not an UndefinedColumn -> HTTP 500.
+                with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+                    publisher.execute("""CREATE TABLE comparison_source_lineage(
+                        comparison_context text,group_id text,territory_type text,facet_id text,
+                        source_id text,vintage_id text,comparison_content_version text)""")
+                    publisher.execute(f'GRANT SELECT ON comparison_source_lineage TO "{reader}"')
+                unavailable_singles, unavailable_batch = read_comparisons()
+                assert [response.status_code for response in unavailable_singles] == [503] * len(comparison_items)
+                assert unavailable_batch.status_code == 503
+                with psycopg.connect(publish_dsn, autocommit=True) as publisher:
+                    publisher.execute("DROP TABLE comparison_source_lineage")
             with psycopg.connect(publish_dsn, autocommit=True) as publisher:
-                publisher.execute("""CREATE TABLE comparison_source_lineage(
-                    comparison_context text,group_id text,territory_type text,facet_id text,
-                    source_id text,vintage_id text,comparison_content_version text)""")
-                publisher.execute(f'GRANT SELECT ON comparison_source_lineage TO "{reader}"')
-            unavailable_singles, unavailable_batch = read_comparisons()
-            assert [response.status_code for response in unavailable_singles] == [503] * len(comparison_items)
-            assert unavailable_batch.status_code == 503
-            with psycopg.connect(publish_dsn, autocommit=True) as publisher:
-                publisher.execute("DROP TABLE comparison_source_lineage")
-            with psycopg.connect(publish_dsn, autocommit=True) as publisher:
-                for migration in ("033_comparison_source_lineage.sql",
-                                  "034_ordered_series_comparison_lineage.sql",
-                                  "035_numeric_collection_comparison_lineage.sql"):
+                migrations = (("039_comparison_base_objects.sql",
+                               "033_comparison_source_lineage.sql",
+                               "034_ordered_series_comparison_lineage.sql")
+                              if publication_schema == "bases_absent_upgrade" else
+                              ("033_comparison_source_lineage.sql",
+                               "034_ordered_series_comparison_lineage.sql",
+                               "035_numeric_collection_comparison_lineage.sql"))
+                for migration in migrations:
                     publisher.execute((root / "migrations" / migration).read_text(encoding="utf-8"))
+                if untouched is not None:
+                    # Migration 039 and the lineage steps are DDL-only: all
+                    # existing facts, descriptors, sources and markers survive.
+                    for table, expected in untouched.items():
+                        actual = sorted(publisher.execute(f'SELECT * FROM "{table}"').fetchall(), key=repr)
+                        assert actual == expected, table
                 # Migration must not rewrite or delete any previous result or marker.
                 for table, (columns, expected) in old_rows.items():
                     projection = ','.join(f'"{column}"' for column in columns)
@@ -795,13 +847,16 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                     assert sorted(actual, key=repr) == expected, table
                 for table in ("scalar_comparison_group", "profile_comparison_group",
                               "ordered_series_comparison_group"):
-                    assert publisher.execute(f'SELECT bool_and(lineage_source_count IS NULL) FROM "{table}"').fetchone()[0]
-                assert publisher.execute("SELECT bool_and(NOT lineage_complete) FROM observed_collection_comparison_publication").fetchone()[0]
+                    assert publisher.execute(
+                        f'SELECT count(*)=0 OR bool_and(lineage_source_count IS NULL) FROM "{table}"'
+                    ).fetchone()[0], table
+                if publication_schema == "populated_upgrade":
+                    assert publisher.execute("SELECT bool_and(NOT lineage_complete) FROM observed_collection_comparison_publication").fetchone()[0]
                 # Newly created lineage tables need the dedicated test reader grant;
                 # migration grants target the production role names, not this test role.
                 publisher.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{canonical_db_env["schema"]}" TO "{reader}"')
             unavailable_singles, unavailable_batch = read_comparisons()
-            assert [response.status_code for response in unavailable_singles] == [503] * len(comparison_items)
+            assert [response.status_code for response in unavailable_singles] == expected_unavailable_statuses
             assert unavailable_batch.status_code == 503
             republish_env = dict(env, LUSK_LINEAGE_TEST_REPUBLISH=str(bundle_path))
             # Two separate invocations prove the supported unchanged retry/no-op
@@ -821,8 +876,14 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
                 assert [row["data"] for row in actual_batch.json()["results"]] == [
                     response.json() for response in expected_responses]
                 with psycopg.connect(publish_dsn) as publisher:
+                    marker_tables = (old_rows if old_rows else {
+                        "scalar_comparison_publication": None,
+                        "profile_comparison_publication": None,
+                        "ordered_series_comparison_publication": None,
+                        "observed_collection_comparison_publication": None,
+                    })
                     markers = {table: sorted(publisher.execute(f'SELECT * FROM "{table}"').fetchall(), key=repr)
-                        for table in old_rows if table.endswith("_publication")}
+                        for table in marker_tables if table.endswith("_publication")}
                 if repaired_markers is not None:
                     assert markers == repaired_markers, "Unchanged retry must not republish markers"
                 repaired_markers = markers
@@ -1222,6 +1283,306 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         else:
             main.app.dependency_overrides[main.get_repository] = previous
         pool.close()
+
+
+def _drop_pre_lineage_comparison_bases(connection):
+    """Remove the six base relations from a pinned pre-lineage schema."""
+    for table in (
+        "scalar_comparison_territory", "scalar_comparison_group",
+        "scalar_comparison_publication", "ordered_series_comparison_territory",
+        "ordered_series_comparison_group", "ordered_series_comparison_publication",
+    ):
+        connection.execute(f"DROP TABLE {table}")
+
+
+def _table_snapshot(connection, tables):
+    return {
+        table: sorted(connection.execute(f'SELECT * FROM "{table}"').fetchall(), key=repr)
+        for table in tables
+    }
+
+
+_COMPARISON_CONTRACT_TABLES = (
+    "scalar_comparison_publication", "scalar_comparison_group", "scalar_comparison_territory",
+    "ordered_series_comparison_publication", "ordered_series_comparison_group",
+    "ordered_series_comparison_territory", "comparison_source_lineage",
+    "ordered_series_comparison_lineage", "ordered_series_comparison_zero_reason",
+)
+
+# Fresh schema.sql makes these count columns NOT NULL. Migrations 033/034 add
+# them nullable on purpose: NULL marks a pre-migration publication until the R
+# publisher replaces it. Keep that documented sentinel out of the structural
+# comparison, but do not hide any other column or constraint difference.
+_COMPARISON_NULLABLE_SENTINELS = {
+    "scalar_comparison_publication": ("lineage_row_count",),
+    "scalar_comparison_group": ("lineage_source_count",),
+    "ordered_series_comparison_publication": ("lineage_row_count",),
+    "ordered_series_comparison_group": ("lineage_source_count",),
+}
+
+
+def _scrub_relation_schema(text, schema):
+    text = " ".join((text or "").split())
+    return re.sub(rf'"{re.escape(schema)}"\.|\b{re.escape(schema)}\.', "", text)
+
+
+def _comparison_contract(connection, schema):
+    """Structural contract for both comparison families in one schema."""
+    contract = {}
+    for table in _COMPARISON_CONTRACT_TABLES:
+        columns = connection.execute("""
+            SELECT column_name,data_type,is_nullable,column_default
+            FROM information_schema.columns
+            WHERE table_schema=%s AND table_name=%s ORDER BY ordinal_position
+        """, (schema, table)).fetchall()
+        sentinels = set(_COMPARISON_NULLABLE_SENTINELS.get(table, ()))
+        columns = tuple(sorted(
+            (name, data_type, "YES" if name in sentinels and is_nullable == "NO" else is_nullable, default)
+            for name, data_type, is_nullable, default in columns
+        ))
+        constraints = set()
+        for contype, definition in connection.execute("""
+            SELECT c.contype, pg_get_constraintdef(c.oid)
+            FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+            JOIN pg_namespace n ON n.oid=t.relnamespace
+            WHERE n.nspname=%s AND t.relname=%s
+        """, (schema, table)).fetchall():
+            definition = _scrub_relation_schema(definition, schema)
+            if contype == "n" and definition in {f"NOT NULL {name}" for name in sentinels}:
+                continue
+            # Known retained-034 divergence, recorded separately below: fresh
+            # schema.sql declares the zero-reason group FK deferrable but not
+            # cascading; 034 declares it cascading but not deferrable. Neither
+            # form is introduced by 039, so compare the rest of the constraint.
+            if table == "ordered_series_comparison_zero_reason" and contype == "f":
+                definition = definition.replace(" ON DELETE CASCADE", "")
+            constraints.add((contype, definition.replace(" DEFERRABLE INITIALLY DEFERRED", "")))
+        indexes = {
+            _scrub_relation_schema(definition, schema)
+            for (definition,) in connection.execute("""
+                SELECT pg_get_indexdef(i.indexrelid)
+                FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid
+                JOIN pg_namespace n ON n.oid=t.relnamespace
+                WHERE n.nspname=%s AND t.relname=%s
+            """, (schema, table)).fetchall()
+        }
+        grants = tuple(connection.execute("""
+            SELECT grantee, privilege_type
+            FROM information_schema.role_table_grants
+            WHERE table_schema=%s AND table_name=%s
+              AND grantee IN ('lusk_reader','lusk_publisher')
+            ORDER BY grantee, privilege_type
+        """, (schema, table)).fetchall())
+        triggers = tuple(connection.execute("""
+            SELECT g.tgname
+            FROM pg_trigger g JOIN pg_class t ON t.oid=g.tgrelid
+            JOIN pg_namespace n ON n.oid=t.relnamespace
+            WHERE n.nspname=%s AND t.relname=%s AND NOT g.tgisinternal
+            ORDER BY g.tgname
+        """, (schema, table)).fetchall())
+        functions = tuple(connection.execute("""
+            SELECT p.proname, p.prosrc
+            FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+            WHERE n.nspname=%s AND p.prosrc LIKE %s ORDER BY p.proname
+        """, (schema, f"%{table}%")).fetchall())
+        contract[table] = (columns, constraints, indexes, grants, triggers, functions)
+    return contract
+
+
+def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
+    """Rehearse #806 absent/present/current/partial states and the documented chain."""
+    import psycopg
+
+    publish_dsn, _ = _configuration()
+    root = Path(__file__).resolve().parents[2]
+    baseline = subprocess.check_output(
+        ["git", "show", "d5832fcac665299156dff05b6ddd55d9c1d2f60a:api/schema.sql"],
+        cwd=root, text=True, encoding="utf-8")
+    migration = (root / "migrations/039_comparison_base_objects.sql").read_text(encoding="utf-8")
+    schemas = {
+        state: f"it_m039_{state}_" + uuid.uuid4().hex[:12]
+        for state in ("upgrade", "fresh", "partial", "current")
+    }
+    print("migration 039 retained schemas:", schemas)
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        for schema in schemas.values():
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+
+    # Fresh contract of record.
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'SET search_path TO "{schemas["fresh"]}"')
+        connection.execute((root / "schema.sql").read_text(encoding="utf-8"))
+
+    # Existing serving schema: pinned pre-lineage shape, real legacy facts, no bases.
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'SET search_path TO "{schemas["upgrade"]}"')
+        connection.execute(baseline)
+        _drop_pre_lineage_comparison_bases(connection)
+        with connection.transaction():
+            connection.execute("""
+                INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,
+                    density_class_code,density_class_label)
+                VALUES ('80601','commune','Legacy focal','22','e1','D1','Dense'),
+                       ('80602','commune','Legacy peer','22','e1','D1','Dense')""")
+            connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('m039_fixture','M039 fixture')")
+            connection.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+                VALUES ('m039_fixture','v1','2026-01','2025-01-01','2026-02-01')""")
+            connection.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,
+                allowed_levels,denominator_semantics,completeness,descriptor_version)
+                VALUES ('m039_scalar','test','M039 scalar','units','high',ARRAY['commune'],
+                'population','sparse','m039-d1')""")
+            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('m039_scalar','m039_fixture')")
+            connection.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status)
+                VALUES ('m039_scalar','80601','commune',2,'measured'),
+                       ('m039_scalar','80602','commune',1,'measured')""")
+            connection.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
+                VALUES ('m039_scalar','80601','m039_fixture','v1'),
+                       ('m039_scalar','80602','m039_fixture','v1')""")
+            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
+                VALUES ('territory_reference','m039-territory-v1',2)""")
+            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
+                VALUES ('scalar_observation','m039-scalar-v1',2,'m039-territory-v1')""")
+            connection.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,
+                comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+                VALUES ('m039_series','year',ARRAY['2022','2024'],'may_be_missing','2024',
+                ARRAY['commune'],'M039 series','units','high','m039_fixture','v1','m039-series-d1')""")
+            connection.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,
+                axis_value,observation_period,value,status,source_id,vintage_id)
+                VALUES ('m039_series','80601','commune','2022','2022',1,'measured','m039_fixture','v1'),
+                       ('m039_series','80601','commune','2024','2024',2,'measured','m039_fixture','v1'),
+                       ('m039_series','80602','commune','2024','2024',1,'measured','m039_fixture','v1')""")
+            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
+                VALUES ('ordered_series','m039-series-v1',3,'m039-territory-v1')""")
+        untouched_tables = (
+            "territory_reference", "table_publication", "scalar_descriptor",
+            "scalar_descriptor_source", "scalar_observation", "scalar_observation_source",
+            "series_descriptor", "ordered_series",
+        )
+        before = _table_snapshot(connection, untouched_tables)
+
+        # Absent -> 039 creates only the exact pre-lineage bases.
+        connection.execute(migration)
+        for table, expected in (
+            ("scalar_comparison_publication", {
+                "content_version", "group_row_count", "published_at",
+                "reference_content_version", "scalar_content_version", "singleton",
+                "territory_row_count"}),
+            ("ordered_series_comparison_publication", {
+                "content_version", "dataset_id", "group_row_count", "indicator_id",
+                "ordered_series_content_version", "published_at",
+                "reference_content_version", "territory_row_count"}),
+        ):
+            columns = {row[0] for row in connection.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_schema=%s AND table_name=%s""", (schemas["upgrade"], table)).fetchall()}
+            assert columns == expected, table
+        # Present -> a second 039 is a structural no-op.
+        connection.execute(migration)
+        for table in ("scalar_comparison_publication", "ordered_series_comparison_publication"):
+            assert connection.execute("""SELECT count(*) FROM information_schema.columns
+                WHERE table_schema=%s AND table_name=%s AND column_name LIKE 'lineage%%'""",
+                (schemas["upgrade"], table)).fetchone()[0] == 0
+
+        # Documented chain: 039 -> 033 -> 034.
+        connection.execute((root / "migrations/033_comparison_source_lineage.sql").read_text(encoding="utf-8"))
+        connection.execute((root / "migrations/034_ordered_series_comparison_lineage.sql").read_text(encoding="utf-8"))
+        assert _table_snapshot(connection, untouched_tables) == before
+        assert connection.execute("""SELECT count(*) FROM information_schema.columns
+            WHERE table_schema=%s AND table_name='scalar_comparison_publication'
+              AND column_name='lineage_row_count'""", (schemas["upgrade"],)).fetchone()[0] == 1
+        assert connection.execute("""SELECT count(*) FROM information_schema.columns
+            WHERE table_schema=%s AND table_name='ordered_series_comparison_publication'
+              AND column_name='comparison_axes'""", (schemas["upgrade"],)).fetchone()[0] == 1
+        # A migrated current family is a no-op on a later 039 invocation.
+        connection.execute(migration)
+        assert _table_snapshot(connection, untouched_tables) == before
+
+    # Current -> 039 leaves existing facts and markers untouched.
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'SET search_path TO "{schemas["current"]}"')
+        connection.execute((root / "schema.sql").read_text(encoding="utf-8"))
+        with connection.transaction():
+            connection.execute("""INSERT INTO territory_reference(territory_id,territory_type,name)
+                VALUES ('80603','commune','Current focal')""")
+            connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('m039_current','M039 current')")
+            connection.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+                VALUES ('m039_current','v1','2026-01','2025-01-01','2026-02-01')""")
+            connection.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,
+                allowed_levels,denominator_semantics,completeness,descriptor_version)
+                VALUES ('m039_current_scalar','test','Current scalar','units','high',ARRAY['commune'],
+                'population','sparse','m039-current-d1')""")
+            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('m039_current_scalar','m039_current')")
+            connection.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,
+                scalar_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count)
+                VALUES (true,'m039-comparison-v1','m039-scalar-v1','m039-territory-v1',1,1,1)""")
+            connection.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,
+                indicator_id,statistic,median,member_count,eligible_count,missing_count,lineage_source_count)
+                VALUES ('bretagne','m039','commune','m039_current_scalar','median',1.5,2,2,0,1)""")
+        current_before = _table_snapshot(connection, (
+            "scalar_comparison_publication", "scalar_comparison_group"))
+        connection.execute(migration)
+        assert _table_snapshot(connection, (
+            "scalar_comparison_publication", "scalar_comparison_group")) == current_before
+
+    # Partial states abort before mutation and leave the rest of the schema alone.
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'SET search_path TO "{schemas["partial"]}"')
+        connection.execute(baseline)
+        _drop_pre_lineage_comparison_bases(connection)
+        connection.execute("CREATE TABLE scalar_comparison_group(comparison_context text, group_id text)")
+        with pytest.raises(psycopg.errors.RaiseException, match="incompatible partial state"):
+            connection.execute(migration)
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'SET search_path TO "{schemas["partial"]}"')
+        assert connection.execute("SELECT to_regclass('scalar_comparison_publication')").fetchone()[0] is None
+        assert connection.execute("SELECT to_regclass('ordered_series_comparison_publication')").fetchone()[0] is None
+        assert connection.execute("""SELECT count(*) FROM information_schema.columns
+            WHERE table_schema=%s AND table_name='scalar_comparison_group'""",
+            (schemas["partial"],)).fetchone()[0] == 2
+        connection.execute("DROP TABLE scalar_comparison_group")
+        connection.execute(migration)
+        for table in ("ordered_series_comparison_territory", "ordered_series_comparison_group",
+                      "ordered_series_comparison_publication"):
+            connection.execute(f"DROP TABLE {table}")
+        connection.execute("ALTER TABLE scalar_comparison_publication ADD COLUMN unexpected_column text")
+        with pytest.raises(psycopg.errors.RaiseException, match="does not match the pre-lineage contract"):
+            connection.execute(migration)
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'SET search_path TO "{schemas["partial"]}"')
+        assert connection.execute("SELECT to_regclass('ordered_series_comparison_publication')").fetchone()[0] is None
+        assert connection.execute("""SELECT count(*) FROM information_schema.columns
+            WHERE table_schema=%s AND table_name='scalar_comparison_publication'
+              AND column_name='unexpected_column'""", (schemas["partial"],)).fetchone()[0] == 1
+
+    # Structural equivalence, excluding only the documented NULL sentinels.
+    with psycopg.connect(publish_dsn) as connection:
+        upgraded = _comparison_contract(connection, schemas["upgrade"])
+        fresh = _comparison_contract(connection, schemas["fresh"])
+        assert upgraded == fresh, {
+            table: (upgraded[table], fresh[table])
+            for table in _COMPARISON_CONTRACT_TABLES if upgraded[table] != fresh[table]
+        }
+        # Known retained-034 divergence, recorded rather than hidden: fresh
+        # schema.sql declares the zero-reason group FK deferrable but not
+        # cascading; 034 declares it cascading but not deferrable. The R
+        # publisher deletes comparison groups directly before rewriting them,
+        # so 034's cascade is load-bearing on the upgrade path. Changing either
+        # shape is outside #806; this test pins the difference for review.
+        def zero_reason_fks(schema):
+            return {definition for _, definition in connection.execute("""
+                SELECT c.contype, pg_get_constraintdef(c.oid)
+                FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+                JOIN pg_namespace n ON n.oid=t.relnamespace
+                WHERE n.nspname=%s AND t.relname='ordered_series_comparison_zero_reason'
+                  AND c.contype='f'
+            """, (schema,)).fetchall()}
+        upgrade_fks = zero_reason_fks(schemas["upgrade"])
+        fresh_fks = zero_reason_fks(schemas["fresh"])
+        assert len(upgrade_fks) == len(fresh_fks) == 1
+        assert "ON DELETE CASCADE" in next(iter(upgrade_fks))
+        assert "DEFERRABLE INITIALLY DEFERRED" not in next(iter(upgrade_fks))
+        assert "DEFERRABLE INITIALLY DEFERRED" in next(iter(fresh_fks))
+        assert "ON DELETE CASCADE" not in next(iter(fresh_fks))
 
 
 def test_migration_035_adds_collection_lineage_to_pre_migration_shape():

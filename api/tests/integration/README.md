@@ -180,29 +180,55 @@ python -m pytest api/tests/integration/test_postgres_publication.py -k synthetic
 The test creates and cleans up only its own random `it_*` schema. It does not
 modify the retained benchmark schema or publish to the serving database.
 
-The same selector runs both `fresh` and `populated_upgrade` cases. The latter
-reconstructs all twelve comparison result/marker tables and the old collection
-publication contracts from the pinned pre-lineage Git schema at `d5832fca`,
-preserving the real synthetic publisher's numerical rows. It then executes
-033, 034 and 035 in order, checks that the old rows survive but each family
-fails closed until republished, and invokes all four real R adapters with the
-same saved synthetic inputs. Responses must match the fresh publication exactly;
-a second unchanged invocation must preserve publication markers, including their
-timestamps. This is a populated comparison-storage upgrade rehearsal, not a
+The same selector runs `fresh`, `populated_upgrade`, and `bases_absent_upgrade`
+cases. `populated_upgrade` reconstructs all twelve comparison result/marker
+tables and the old collection publication contracts from the pinned
+pre-lineage Git schema at `d5832fca`, preserving the real synthetic publisher's
+numerical rows. It then executes 033, 034 and 035 in order, checks that the old
+rows survive but each family fails closed until republished, and invokes all
+four real R adapters with the same saved synthetic inputs. Responses must match
+the fresh publication exactly; a second unchanged invocation must preserve
+publication markers, including their timestamps.
+
+`bases_absent_upgrade` models the #806 serving shape: after the same synthetic
+publication it removes only the scalar and ordered-series base relations,
+their 033/034 lineage relations, and the profile lineage column. It verifies
+that the missing scalar/ordered families return 503 (not 500 or stale data)
+while the untouched numeric-collection publication still returns 200, applies
+**039 -> 033 -> 034**, confirms facts, descriptors, sources and unrelated
+markers survive, and then republishes through the real R adapters twice.
+039 must run before 033/034 because it creates the pre-lineage bases those
+migrations alter; 033/034 must not be run again for a family 039 reports as
+current.
+
+The focused `test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence`
+covers the per-family absent/present/current/partial states directly. It
+rehearses populated pre-lineage facts, exact pre-lineage and current no-ops,
+transactional rejection of mixed/partial shapes, and compares the
+039 -> 033 -> 034 structural contract (columns, constraints, indexes, grants,
+triggers and owned functions) with a fresh `schema.sql` install. The only
+normalized differences are the documented nullable lineage-count sentinel and
+the retained 034 zero-reason foreign-key shape described in
+[`migrations/README.md`](../../migrations/README.md#migration-039--restore-scalar-and-ordered-series-comparison-bases).
+This is a populated comparison-storage upgrade rehearsal, not a
 restored production-database or deployed-API rehearsal. The pinned Git object
 must be available locally; no network fetch or pipeline data is needed.
 
 ## Current retained model and migration selectors
 
 Migration 036 is the guarded populated-schema retirement rehearsal. Migration
-037 is applied and exercised by the exhaustive AEDAR publisher-to-HTTP proof;
-it has no standalone fast selector. Do not confuse these current selectors with
-the historical migration 009 procedure retained in
+039 is the scalar/ordered-series comparison base repair and follows the
+dependency order **030 -> 039 -> 033 -> 034**. Migration 037 is applied and
+exercised by the exhaustive AEDAR publisher-to-HTTP proof; it has no standalone
+fast selector. Do not confuse these current selectors with the historical
+migration 009 procedure retained in
 [`migrations/README.md`](../../migrations/README.md).
 
 ```powershell
 # From repository root; use the guarded DSNs above.
 python -m pytest api/tests/integration/test_postgres_publication.py -k test_migration_036 -q
+python -m pytest api/tests/integration/test_postgres_publication.py -k test_migration_039 -q
+python -m pytest "api/tests/integration/test_postgres_publication.py::test_synthetic_r_comparison_lineage_publish_to_api_reader[bases_absent_upgrade]" -q
 
 # Migration 037 is part of this comprehensive AEDAR proof (about 8 minutes).
 # Do not run it as part of quick harness iteration.
