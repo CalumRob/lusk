@@ -4,7 +4,9 @@
 > 001–035 describe their original change and verification context; many legacy
 > paths cited there have since been retired. The current retained schema is
 > `api/schema.sql`; the latest guarded upgrade proofs are migrations 036 through
-> 038 as described in [`api/tests/integration/README.md`](../tests/integration/README.md).
+> 039 as described in [`api/tests/integration/README.md`](../tests/integration/README.md).
+> For the scalar and ordered-series comparison repair, the dependency order is
+> **030 -> 039 -> 033 -> 034**; 039 itself creates no lineage columns.
 > Do not execute old commands in this chronology as current operating guidance.
 
 # Migration 016: bounded BPE profile evidence (historical)
@@ -464,4 +466,131 @@ integration proof installs migration 015's validator, applies 038, and compares
 the migrated function and its accepted/rejected outcomes with a fresh schema;
 the work regression is pinned by PostgreSQL tuple-visit counters rather than a
 wall-clock threshold. This migration does not publish data or authorize
+deployment.
+
+# Migration 039 — restore scalar and ordered-series comparison bases
+
+`039_comparison_base_objects.sql` repairs the retained upgrade gap behind #806:
+fresh installs receive the six scalar and ordered-series comparison base
+relations from `schema.sql`, but no retained migration creates them. Apply it
+in this dependency order:
+
+    030 -> 039 -> 033 -> 034
+
+Apply each step with `search_path` set to the target schema only; 039 uses
+`current_schema()` and unqualified relation names. Current 030 owns the profile
+and numeric-collection comparison bases that 033 also alters; the scalar base
+DDL instead comes from the deleted historical
+`030_scalar_comparison_aggregates.sql` (commit c6d29805), and the ordered-series
+base DDL from commit 7535ce9b. 039 owns only
+`scalar_comparison_{publication,group,territory}` and
+`ordered_series_comparison_{publication,group,territory}`. It deliberately
+creates the exact **pre-lineage** shapes; do not create the current lineage
+columns and then run 033/034 again.
+
+039 classifies each family independently and validates the full catalog contract
+for every existing `present` or `current` relation before target DDL: columns,
+types and nullability; defaults; all PK/FK/CHECK definitions and FK actions;
+constraint validation state; required valid backing indexes; user-trigger
+absence; and reader/publisher privileges. A missing required grant on an
+existing family is a hard failure, not a repair. Grants are issued only as
+part of creating an absent family.
+Extra valid non-unique independent indexes and grants to other roles are
+preserved; unexpected unique/invalid independent indexes, reader write access,
+reader grant options, and user triggers are rejected. Extra publisher privileges
+are preserved. No unrelated object is rewritten.
+
+039 classifies each family independently:
+
+- `absent`: no base relations. 039 creates the pre-lineage contract. Run the
+  corresponding lineage migration next (033 for scalar, 034 for ordered series).
+- `present`: all three base relations with the exact pre-lineage contract. 039
+  is a validated structural no-op. Run the corresponding lineage migration next.
+- `current`: all three base relations plus the exact 033/034 lineage columns.
+  039 is a structural no-op. Do **not** run that family's lineage migration
+  again.
+- Any other shape — one or two base relations, mixed lineage columns, lineage
+  relations without their base family, a non-table relation, or an unexpected
+  column/type/nullability — aborts inside the migration transaction before the
+  target schema is mutated.
+
+The migration preserves all existing facts, descriptors, sources, publication
+markers, roles and unrelated objects; it creates no producer data and no
+lineage relations. It reproduces the base primary keys, foreign keys, checks
+and grants from the pinned pre-lineage contract. The retained 034
+`ordered_series_comparison_zero_reason` foreign key differs from fresh
+`schema.sql` (034 uses `ON DELETE CASCADE` and is not deferrable; fresh is
+deferrable and does not cascade). That pre-existing shape is deliberately not
+changed here; the R publisher deletes comparison groups directly before
+rewriting them, so 034's cascade is load-bearing on the upgrade path. The
+guarded proof records the difference rather than hiding it.
+
+For a read-only before/after operator inventory (not a migration command), use
+[`039_operator_state_inventory.sql`](039_operator_state_inventory.sql) with an
+explicit target schema and a read-only connection. Run it before and after the
+approved pack, retaining both outputs:
+
+```powershell
+psql "$READ_ONLY_DSN" -X -v ON_ERROR_STOP=1 -v target_schema=public `
+  -f api/migrations/039_operator_state_inventory.sql
+```
+
+The inventory reports each family's **shape only**, all columns/defaults,
+constraints and FK actions, index validity/uniqueness, user triggers, effective
+reader/publisher grants, and exact row counts for comparison storage plus the
+protected fact/marker tables. Its owner-migration presence list separately
+reports the six 039 bases, the 034/035 lineage tables, the 030 profile and
+collection foundations, the 032 AEDAR foundations, and the 033 shared lineage
+table; 039 does not create or validate those separately owned families.
+The inventory performs exact `count(*)` scans (including scalar observations
+and ordered-series facts) for protected relations that exist. These are not
+catalog-only estimates and may be resource-intensive on a large serving schema.
+The read-only transaction sets a 15-second statement timeout and 3-second lock
+timeout; if a timeout aborts the transaction, treat that run as incomplete and
+retain no partial output as a valid pre/post inventory. Keep `ON_ERROR_STOP=1`
+so psql stops at the error. Do not raise the limits without an operator-approved
+read-only execution plan.
+Its `observed_shape_only_state` labels (`ABSENT_SHAPE_ONLY`,
+`PRESENT_SHAPE_ONLY`, `CURRENT_SHAPE_ONLY`, or
+`INCOMPATIBLE_SHAPE_ONLY / INVESTIGATE`) are presence/column-shape hints only;
+`structural_validation_performed` is always `false`. A shape classified as
+present or current is **never by itself evidence of structural validity, safe
+application, or a no-op**. This inventory is not a parallel contract validator.
+Before *any target-schema change*, migration 039's full pre-DDL structural
+contract validator remains required and authoritative for its two families;
+only a successful validator run is approval of those families' contract.
+Do not use this inventory's shape label alone to decide apply/skip/no-op, and do
+not apply on any incompatible shape. The separately owned 030/032/033/034/035
+objects still require their owners' full prechecks. After the approved pack,
+count and compare protected rows; do not infer safety from the report's shape
+labels. After the pack, every 039 family must be
+`current`; protected fact, descriptor, source, and publication-marker row
+counts must match the pre-run output, while only expected comparison/lineage
+rows may change through the separately authorized publisher operation. The
+two exact zero-reason FK definitions (fresh deferred/no cascade or retained
+034 cascade/non-deferrable) are the only allowed divergence. This inventory is
+not a production action and was not run against a production database.
+
+The operator has separately supplied a live read-only inventory reporting
+`current_database=lusk`, `current_user=postgres`, and `transaction_read_only=on`,
+with the 18 listed public relations
+absent: the six 039 bases, ordered-series lineage, three 030 profile bases,
+three 030 observed-collection bases plus its 035 lineage, three 032 AEDAR
+bases, and the 033 shared `comparison_source_lineage`. This is owner-provided
+evidence, not a connection or verification performed by this migration work.
+It confirms the production starting shape is the absent-base path and that the
+030 foundations (and the separately owned 032/035 foundations) must also be
+accounted for in an approved operator plan. It does not prove their functions,
+triggers, grants, or partial states; those remain mandatory read-only
+preconditions in each owner's pack. The 039 order remains **030 -> 039 -> 033
+-> 034**. No production connection or migration was made here.
+
+The guarded upgrade proof starts from the pinned pre-lineage schema with real
+synthetic facts and markers, removes only the comparison storage, applies
+039 -> 033 -> 034, verifies facts/markers survive, exercises the R publisher and
+API readback, checks missing publications return 503 rather than 500 or stale
+data, and compares the resulting structural contract with a fresh `schema.sql`
+install. It also covers the current-state no-op, absent/present shapes, and
+transactional rejection of incompatible partial states. Fresh installs continue
+to use `schema.sql`. This migration does not publish data or authorize
 deployment.
