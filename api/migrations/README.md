@@ -488,13 +488,24 @@ base DDL from commit 7535ce9b. 039 owns only
 creates the exact **pre-lineage** shapes; do not create the current lineage
 columns and then run 033/034 again.
 
+039 classifies each family independently and validates the full catalog contract
+for every existing `present` or `current` relation before target DDL: columns,
+types and nullability; defaults; all PK/FK/CHECK definitions and FK actions;
+constraint validation state; required valid backing indexes; user-trigger
+absence; and reader/publisher privileges. A missing required grant on an
+existing family is a hard failure, not a repair. Grants are issued only as
+part of creating an absent family.
+Extra valid non-unique independent indexes and grants to other roles are
+preserved; unexpected unique/invalid independent indexes, reader write access,
+reader grant options, and user triggers are rejected. Extra publisher privileges
+are preserved. No unrelated object is rewritten.
+
 039 classifies each family independently:
 
 - `absent`: no base relations. 039 creates the pre-lineage contract. Run the
   corresponding lineage migration next (033 for scalar, 034 for ordered series).
-- `present`: all three base relations with the exact pre-lineage columns. 039
-  is a structural no-op and grants the contract privileges. Run the
-  corresponding lineage migration next.
+- `present`: all three base relations with the exact pre-lineage contract. 039
+  is a validated structural no-op. Run the corresponding lineage migration next.
 - `current`: all three base relations plus the exact 033/034 lineage columns.
   039 is a structural no-op. Do **not** run that family's lineage migration
   again.
@@ -513,6 +524,47 @@ deferrable and does not cascade). That pre-existing shape is deliberately not
 changed here; the R publisher deletes comparison groups directly before
 rewriting them, so 034's cascade is load-bearing on the upgrade path. The
 guarded proof records the difference rather than hiding it.
+
+For a read-only before/after operator inventory (not a migration command), use
+[`039_operator_state_inventory.sql`](039_operator_state_inventory.sql) with an
+explicit target schema and a read-only connection. Run it before and after the
+approved pack, retaining both outputs:
+
+```powershell
+psql "$READ_ONLY_DSN" -X -v ON_ERROR_STOP=1 -v target_schema=public `
+  -f api/migrations/039_operator_state_inventory.sql
+```
+
+The inventory reports each family's observed state, all columns/defaults,
+constraints and FK actions, index validity/uniqueness, user triggers, effective
+reader/publisher grants, and exact row counts for comparison storage plus the
+protected fact/marker tables. Its owner-migration presence list separately
+reports the six 039 bases, the 034/035 lineage tables, the 030 profile and
+collection foundations, the 032 AEDAR foundations, and the 033 shared lineage
+table; 039 does not create or validate those separately owned families.
+Before application, each family must be wholly
+`absent`, exact `present`, or exact `current`; investigate rather than apply if
+it reports `INCOMPATIBLE / INVESTIGATE`. After the pack, every family must be
+`current`; protected fact, descriptor, source, and publication-marker row
+counts must match the pre-run output, while only expected comparison/lineage
+rows may change through the separately authorized publisher operation. The
+two exact zero-reason FK definitions (fresh deferred/no cascade or retained
+034 cascade/non-deferrable) are the only allowed divergence. This inventory is
+not a production action and was not run against a production database.
+
+The operator has separately supplied a live read-only inventory reporting
+`current_database=lusk`, `current_user=postgres`, and `transaction_read_only=on`,
+with the 18 listed public relations
+absent: the six 039 bases, ordered-series lineage, three 030 profile bases,
+three 030 observed-collection bases plus its 035 lineage, three 032 AEDAR
+bases, and the 033 shared `comparison_source_lineage`. This is owner-provided
+evidence, not a connection or verification performed by this migration work.
+It confirms the production starting shape is the absent-base path and that the
+030 foundations (and the separately owned 032/035 foundations) must also be
+accounted for in an approved operator plan. It does not prove their functions,
+triggers, grants, or partial states; those remain mandatory read-only
+preconditions in each owner's pack. The 039 order remains **030 -> 039 -> 033
+-> 034**. No production connection or migration was made here.
 
 The guarded upgrade proof starts from the pinned pre-lineage schema with real
 synthetic facts and markers, removes only the comparison storage, applies

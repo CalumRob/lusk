@@ -210,6 +210,18 @@ triggers and owned functions) with a fresh `schema.sql` install. The only
 normalized differences are the documented nullable lineage-count sentinel and
 the retained 034 zero-reason foreign-key shape described in
 [`migrations/README.md`](../../migrations/README.md#migration-039--restore-scalar-and-ordered-series-comparison-bases).
+`test_migration_039_rejects_broken_contract_without_mutation` separately breaks
+present/current PKs, FK targets/actions, CHECKs, defaults, a unique index,
+triggers, lineage constraints, and required grants. Each case asserts that 039
+fails and leaves both fact/marker rows and the complete relation catalog
+unchanged. Run the focused migration tests serially with:
+
+```powershell
+python -m pytest api/tests/integration/test_postgres_publication.py -k test_migration_039 -q
+```
+
+The read-only pre/post operator inventory and its required state checks are
+documented in [`migrations/README.md`](../../migrations/README.md#migration-039--restore-scalar-and-ordered-series-comparison-bases).
 This is a populated comparison-storage upgrade rehearsal, not a
 restored production-database or deployed-API rehearsal. The pinned Git object
 must be available locally; no network fetch or pipeline data is needed.

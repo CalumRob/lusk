@@ -670,6 +670,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
 
     publish_dsn = canonical_db_env["publish_dsn"]
     read_dsn = canonical_db_env["read_dsn"]
+    print(f"retained synthetic lineage schema ({publication_schema}): {canonical_db_env['schema']}")
     publish = urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
     manifest_path = tmp_path / "lineage-manifest.json"
     bundle_path = tmp_path / "lineage-inputs.rds"
@@ -1395,6 +1396,289 @@ def _comparison_contract(connection, schema):
     return contract
 
 
+_M039_FACT_TABLES = (
+    "territory_reference", "table_publication", "scalar_descriptor",
+    "scalar_descriptor_source", "scalar_observation", "scalar_observation_source",
+    "series_descriptor", "ordered_series",
+)
+
+
+def _seed_m039_facts(connection):
+    """Real legacy scalar and ordered-series facts plus their publication markers."""
+    with connection.transaction():
+        connection.execute("""
+            INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,
+                density_class_code,density_class_label)
+            VALUES ('80601','commune','Legacy focal','22','e1','D1','Dense'),
+                   ('80602','commune','Legacy peer','22','e1','D1','Dense')""")
+        connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('m039_fixture','M039 fixture')")
+        connection.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+            VALUES ('m039_fixture','v1','2026-01','2025-01-01','2026-02-01')""")
+        connection.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,
+            allowed_levels,denominator_semantics,completeness,descriptor_version)
+            VALUES ('m039_scalar','test','M039 scalar','units','high',ARRAY['commune'],
+            'population','sparse','m039-d1')""")
+        connection.execute("INSERT INTO scalar_descriptor_source VALUES ('m039_scalar','m039_fixture')")
+        connection.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status)
+            VALUES ('m039_scalar','80601','commune',2,'measured'),
+                   ('m039_scalar','80602','commune',1,'measured')""")
+        connection.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
+            VALUES ('m039_scalar','80601','m039_fixture','v1'),
+                   ('m039_scalar','80602','m039_fixture','v1')""")
+        connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
+            VALUES ('territory_reference','m039-territory-v1',2)""")
+        connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
+            VALUES ('scalar_observation','m039-scalar-v1',2,'m039-territory-v1')""")
+        connection.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,
+            comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
+            VALUES ('m039_series','year',ARRAY['2022','2024'],'may_be_missing','2024',
+            ARRAY['commune'],'M039 series','units','high','m039_fixture','v1','m039-series-d1')""")
+        connection.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,
+            axis_value,observation_period,value,status,source_id,vintage_id)
+            VALUES ('m039_series','80601','commune','2022','2022',1,'measured','m039_fixture','v1'),
+                   ('m039_series','80601','commune','2024','2024',2,'measured','m039_fixture','v1'),
+                   ('m039_series','80602','commune','2024','2024',1,'measured','m039_fixture','v1')""")
+        connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
+            VALUES ('ordered_series','m039-series-v1',3,'m039-territory-v1')""")
+
+
+def _m039_catalog_snapshot(connection, schema):
+    """Full target-relation catalog state, including names and grant options."""
+    relations = list(_COMPARISON_CONTRACT_TABLES)
+    existing = {row[0] for row in connection.execute("""
+        SELECT c.relname FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
+        WHERE n.nspname=%s AND c.relname=ANY(%s)""", (schema, relations)).fetchall()}
+    columns = connection.execute("""
+        SELECT table_name,column_name,data_type,is_nullable,column_default,ordinal_position
+        FROM information_schema.columns WHERE table_schema=%s AND table_name=ANY(%s)
+        ORDER BY table_name,ordinal_position""", (schema, relations)).fetchall()
+    constraints = connection.execute("""
+        SELECT t.relname,c.conname,c.contype,pg_get_constraintdef(c.oid),c.convalidated,c.condeferrable
+        FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+        JOIN pg_namespace n ON n.oid=t.relnamespace
+        WHERE n.nspname=%s AND t.relname=ANY(%s) ORDER BY t.relname,c.contype,c.conname""",
+        (schema, relations)).fetchall()
+    indexes = connection.execute("""
+        SELECT t.relname,i.indexrelid::regclass::text,pg_get_indexdef(i.indexrelid),
+               i.indisvalid,i.indisready,i.indislive,i.indisunique,i.indisprimary
+        FROM pg_index i JOIN pg_class t ON t.oid=i.indrelid
+        JOIN pg_namespace n ON n.oid=t.relnamespace
+        WHERE n.nspname=%s AND t.relname=ANY(%s) ORDER BY t.relname,2""",
+        (schema, relations)).fetchall()
+    triggers = connection.execute("""
+        SELECT t.relname,g.tgname,pg_get_triggerdef(g.oid)
+        FROM pg_trigger g JOIN pg_class t ON t.oid=g.tgrelid
+        JOIN pg_namespace n ON n.oid=t.relnamespace
+        WHERE n.nspname=%s AND t.relname=ANY(%s) AND NOT g.tgisinternal
+        ORDER BY t.relname,g.tgname""", (schema, relations)).fetchall()
+    grants = connection.execute("""
+        SELECT table_name,grantee,privilege_type,is_grantable
+        FROM information_schema.role_table_grants
+        WHERE table_schema=%s AND table_name=ANY(%s)
+        ORDER BY table_name,grantee,privilege_type,is_grantable""", (schema, relations)).fetchall()
+    column_grants = connection.execute("""
+        SELECT table_name,column_name,grantee,privilege_type,is_grantable
+        FROM information_schema.column_privileges
+        WHERE table_schema=%s AND table_name=ANY(%s)
+        ORDER BY table_name,column_name,grantee,privilege_type,is_grantable""",
+        (schema, relations)).fetchall()
+    functions = tuple(connection.execute("""
+        SELECT p.oid::regprocedure::text,pg_get_functiondef(p.oid)
+        FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
+        WHERE n.nspname=%s ORDER BY p.oid::regprocedure::text""",
+        (schema,)).fetchall())
+    def grouped(rows):
+        result = {table: [] for table in relations}
+        for row in rows:
+            result[row[0]].append(row[1:])
+        return {table: tuple(result[table]) for table in relations}
+
+    columns_by_table = grouped(columns)
+    constraints_by_table = grouped(constraints)
+    indexes_by_table = grouped(indexes)
+    triggers_by_table = grouped(triggers)
+    grants_by_table = grouped(grants)
+    column_grants_by_table = grouped(column_grants)
+    snapshot = {}
+    for table in relations:
+        if table not in existing:
+            snapshot[table] = None
+            continue
+        snapshot[table] = (
+            columns_by_table[table], constraints_by_table[table], indexes_by_table[table],
+            triggers_by_table[table], grants_by_table[table], column_grants_by_table[table], functions)
+    return snapshot
+
+
+def _m039_constraint_name(connection, table, kind, definition_pattern):
+    row = connection.execute("""
+        SELECT c.conname FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+        JOIN pg_namespace n ON n.oid=t.relnamespace
+        WHERE n.nspname=current_schema() AND t.relname=%s AND c.contype=%s
+          AND pg_get_constraintdef(c.oid) LIKE %s
+        ORDER BY c.conname LIMIT 1""", (table, kind, definition_pattern)).fetchone()
+    assert row is not None, (table, kind, definition_pattern)
+    return row[0]
+
+
+def _break_m039_contract(connection, break_name):
+    """Apply exactly one catalog breakage to a validated family."""
+    if break_name == "drop_primary_key":
+        name = _m039_constraint_name(connection, "scalar_comparison_publication", "p", "%")
+        connection.execute(f'ALTER TABLE scalar_comparison_publication DROP CONSTRAINT "{name}"')
+    elif break_name == "alter_fk_target":
+        name = _m039_constraint_name(connection, "scalar_comparison_group", "f", "%scalar_descriptor%")
+        connection.execute(f'ALTER TABLE scalar_comparison_group DROP CONSTRAINT "{name}"')
+        connection.execute("""ALTER TABLE scalar_comparison_group ADD CONSTRAINT m039_broken_fk
+            FOREIGN KEY (indicator_id) REFERENCES territory_reference(territory_id)""")
+    elif break_name == "alter_fk_action":
+        name = _m039_constraint_name(connection, "scalar_comparison_territory", "f", "%scalar_comparison_group%")
+        connection.execute(f'ALTER TABLE scalar_comparison_territory DROP CONSTRAINT "{name}"')
+        connection.execute("""ALTER TABLE scalar_comparison_territory ADD CONSTRAINT m039_broken_fk
+            FOREIGN KEY (comparison_context,group_id,territory_type,indicator_id)
+            REFERENCES scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id)
+            ON DELETE RESTRICT""")
+    elif break_name == "alter_check":
+        name = _m039_constraint_name(connection, "scalar_comparison_group", "c", "%statistic%")
+        connection.execute(f'ALTER TABLE scalar_comparison_group DROP CONSTRAINT "{name}"')
+        connection.execute("""ALTER TABLE scalar_comparison_group ADD CONSTRAINT m039_broken_check
+            CHECK (statistic IN ('median','mean'))""")
+    elif break_name == "not_valid_check":
+        name = _m039_constraint_name(connection, "scalar_comparison_group", "c", "%statistic%")
+        connection.execute(f'ALTER TABLE scalar_comparison_group DROP CONSTRAINT "{name}"')
+        connection.execute("""ALTER TABLE scalar_comparison_group ADD CONSTRAINT m039_unvalidated_check
+            CHECK (statistic='median') NOT VALID""")
+    elif break_name == "alter_default":
+        connection.execute("""ALTER TABLE scalar_comparison_publication
+            ALTER COLUMN published_at SET DEFAULT '2020-01-01'::timestamptz""")
+    elif break_name == "extra_trigger":
+        connection.execute("""CREATE FUNCTION m039_broken_trigger_fn() RETURNS trigger
+            LANGUAGE plpgsql AS $$BEGIN RETURN NEW; END$$""")
+        connection.execute("""CREATE TRIGGER m039_broken_trigger BEFORE INSERT ON scalar_comparison_group
+            FOR EACH ROW EXECUTE FUNCTION m039_broken_trigger_fn()""")
+    elif break_name == "extra_unique_index":
+        connection.execute("""CREATE UNIQUE INDEX m039_broken_unique
+            ON scalar_comparison_group(group_id)""")
+    elif break_name == "missing_grant":
+        connection.execute("REVOKE SELECT ON scalar_comparison_publication FROM lusk_reader")
+    elif break_name == "drop_lineage_primary_key":
+        name = _m039_constraint_name(connection, "comparison_source_lineage", "p", "%")
+        connection.execute(f'ALTER TABLE comparison_source_lineage DROP CONSTRAINT "{name}"')
+    elif break_name == "alter_lineage_check":
+        name = _m039_constraint_name(connection, "comparison_source_lineage", "c", "%comparison_family%")
+        connection.execute(f'ALTER TABLE comparison_source_lineage DROP CONSTRAINT "{name}"')
+        connection.execute("""ALTER TABLE comparison_source_lineage ADD CONSTRAINT m039_broken_check
+            CHECK (comparison_family IN
+              ('scalar','profile','ordered_series','period_detail','aedar','bogus'))""")
+    elif break_name == "alter_lineage_fk_target":
+        name = _m039_constraint_name(connection, "comparison_source_lineage", "f", "%source_vintage%")
+        connection.execute(f'ALTER TABLE comparison_source_lineage DROP CONSTRAINT "{name}"')
+        connection.execute("""ALTER TABLE comparison_source_lineage ADD CONSTRAINT m039_broken_fk
+            FOREIGN KEY (source_id) REFERENCES source_dataset(source_id)""")
+    elif break_name == "alter_zero_reason_fk_action":
+        name = _m039_constraint_name(connection,
+            "ordered_series_comparison_zero_reason", "f", "%ordered_series_comparison_group%")
+        connection.execute(f'ALTER TABLE ordered_series_comparison_zero_reason DROP CONSTRAINT "{name}"')
+        connection.execute("""ALTER TABLE ordered_series_comparison_zero_reason ADD CONSTRAINT m039_broken_fk
+            FOREIGN KEY (dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value)
+            REFERENCES ordered_series_comparison_group(dataset_id,indicator_id,comparison_context,
+              group_id,territory_type,axis_value) ON DELETE RESTRICT""")
+    elif break_name == "extra_lineage_trigger":
+        connection.execute("""CREATE FUNCTION m039_broken_lineage_trigger_fn() RETURNS trigger
+            LANGUAGE plpgsql AS $$BEGIN RETURN NEW; END$$""")
+        connection.execute("""CREATE TRIGGER m039_broken_lineage_trigger BEFORE INSERT
+            ON comparison_source_lineage FOR EACH ROW
+            EXECUTE FUNCTION m039_broken_lineage_trigger_fn()""")
+    elif break_name == "missing_lineage_grant":
+        connection.execute("REVOKE SELECT ON comparison_source_lineage FROM lusk_reader")
+    else:
+        raise AssertionError(break_name)
+
+
+_M039_BROKEN_CONTRACTS = (
+    ("present", "drop_primary_key"),
+    ("present", "alter_fk_target"),
+    ("present", "alter_fk_action"),
+    ("present", "alter_check"),
+    ("present", "not_valid_check"),
+    ("present", "alter_default"),
+    ("present", "extra_trigger"),
+    ("present", "extra_unique_index"),
+    ("present", "missing_grant"),
+    ("current", "drop_lineage_primary_key"),
+    ("current", "alter_lineage_check"),
+    ("current", "alter_lineage_fk_target"),
+    ("current", "alter_zero_reason_fk_action"),
+    ("current", "extra_lineage_trigger"),
+    ("current", "missing_lineage_grant"),
+)
+
+
+def test_migration_039_rejects_broken_contract_without_mutation():
+    """One malformed structure at a time must abort before target changes.
+
+    Each schema starts from a valid present or current family with real facts
+    and markers. The single breakage is snapshotted, 039 must fail, and both
+    the fact rows and the complete target catalog state must be unchanged.
+    """
+    import psycopg
+
+    publish_dsn, _ = _configuration()
+    root = Path(__file__).resolve().parents[2]
+    baseline = subprocess.check_output(
+        ["git", "show", "d5832fcac665299156dff05b6ddd55d9c1d2f60a:api/schema.sql"],
+        cwd=root, text=True, encoding="utf-8")
+    migration = (root / "migrations/039_comparison_base_objects.sql").read_text(encoding="utf-8")
+    for state, break_name in _M039_BROKEN_CONTRACTS:
+        schema = f"it_m039_reject_{state}_{break_name}_" + uuid.uuid4().hex[:12]
+        print(f"migration 039 retained broken-contract schema ({state}/{break_name}): {schema}")
+        with psycopg.connect(publish_dsn, autocommit=True) as connection:
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+            connection.execute(f'SET search_path TO "{schema}"')
+            connection.execute(baseline)
+            _drop_pre_lineage_comparison_bases(connection)
+            _seed_m039_facts(connection)
+            connection.execute(migration)
+            if state == "current":
+                connection.execute((root / "migrations/033_comparison_source_lineage.sql").read_text(encoding="utf-8"))
+                connection.execute((root / "migrations/034_ordered_series_comparison_lineage.sql").read_text(encoding="utf-8"))
+            _break_m039_contract(connection, break_name)
+            facts_before = _table_snapshot(connection, _M039_FACT_TABLES)
+            catalog_before = _m039_catalog_snapshot(connection, schema)
+            with pytest.raises(psycopg.errors.RaiseException, match="migration 039"):
+                connection.execute(migration)
+        with psycopg.connect(publish_dsn, autocommit=True) as connection:
+            connection.execute(f'SET search_path TO "{schema}"')
+            assert _table_snapshot(connection, _M039_FACT_TABLES) == facts_before, break_name
+            assert _m039_catalog_snapshot(connection, schema) == catalog_before, break_name
+
+
+def test_migration_039_preserves_valid_independent_nonunique_index():
+    """A caller-owned valid non-unique index is allowed and untouched."""
+    import psycopg
+
+    publish_dsn, _ = _configuration()
+    root = Path(__file__).resolve().parents[2]
+    baseline = subprocess.check_output(
+        ["git", "show", "d5832fcac665299156dff05b6ddd55d9c1d2f60a:api/schema.sql"],
+        cwd=root, text=True, encoding="utf-8")
+    migration = (root / "migrations/039_comparison_base_objects.sql").read_text(encoding="utf-8")
+    schema = f"it_m039_nonunique_index_{uuid.uuid4().hex[:12]}"
+    print("migration 039 retained caller-index schema:", schema)
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+        connection.execute(f'SET search_path TO "{schema}"')
+        connection.execute(baseline)
+        _drop_pre_lineage_comparison_bases(connection)
+        _seed_m039_facts(connection)
+        connection.execute(migration)
+        connection.execute("""CREATE INDEX m039_caller_lookup
+            ON scalar_comparison_group(indicator_id)""")
+        before = _m039_catalog_snapshot(connection, schema)
+        connection.execute(migration)
+        assert _m039_catalog_snapshot(connection, schema) == before
+
+
 def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
     """Rehearse #806 absent/present/current/partial states and the documented chain."""
     import psycopg
@@ -1424,46 +1708,8 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
         connection.execute(f'SET search_path TO "{schemas["upgrade"]}"')
         connection.execute(baseline)
         _drop_pre_lineage_comparison_bases(connection)
-        with connection.transaction():
-            connection.execute("""
-                INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,
-                    density_class_code,density_class_label)
-                VALUES ('80601','commune','Legacy focal','22','e1','D1','Dense'),
-                       ('80602','commune','Legacy peer','22','e1','D1','Dense')""")
-            connection.execute("INSERT INTO source_dataset(source_id,name) VALUES ('m039_fixture','M039 fixture')")
-            connection.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
-                VALUES ('m039_fixture','v1','2026-01','2025-01-01','2026-02-01')""")
-            connection.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,
-                allowed_levels,denominator_semantics,completeness,descriptor_version)
-                VALUES ('m039_scalar','test','M039 scalar','units','high',ARRAY['commune'],
-                'population','sparse','m039-d1')""")
-            connection.execute("INSERT INTO scalar_descriptor_source VALUES ('m039_scalar','m039_fixture')")
-            connection.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status)
-                VALUES ('m039_scalar','80601','commune',2,'measured'),
-                       ('m039_scalar','80602','commune',1,'measured')""")
-            connection.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
-                VALUES ('m039_scalar','80601','m039_fixture','v1'),
-                       ('m039_scalar','80602','m039_fixture','v1')""")
-            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
-                VALUES ('territory_reference','m039-territory-v1',2)""")
-            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
-                VALUES ('scalar_observation','m039-scalar-v1',2,'m039-territory-v1')""")
-            connection.execute("""INSERT INTO series_descriptor(indicator_id,axis_kind,axis_values,completeness,
-                comparison_point,allowed_levels,label,unit,direction,source_id,vintage_id,descriptor_version)
-                VALUES ('m039_series','year',ARRAY['2022','2024'],'may_be_missing','2024',
-                ARRAY['commune'],'M039 series','units','high','m039_fixture','v1','m039-series-d1')""")
-            connection.execute("""INSERT INTO ordered_series(indicator_id,territory_id,territory_type,
-                axis_value,observation_period,value,status,source_id,vintage_id)
-                VALUES ('m039_series','80601','commune','2022','2022',1,'measured','m039_fixture','v1'),
-                       ('m039_series','80601','commune','2024','2024',2,'measured','m039_fixture','v1'),
-                       ('m039_series','80602','commune','2024','2024',1,'measured','m039_fixture','v1')""")
-            connection.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
-                VALUES ('ordered_series','m039-series-v1',3,'m039-territory-v1')""")
-        untouched_tables = (
-            "territory_reference", "table_publication", "scalar_descriptor",
-            "scalar_descriptor_source", "scalar_observation", "scalar_observation_source",
-            "series_descriptor", "ordered_series",
-        )
+        _seed_m039_facts(connection)
+        untouched_tables = _M039_FACT_TABLES
         before = _table_snapshot(connection, untouched_tables)
 
         # Absent -> 039 creates only the exact pre-lineage bases.
@@ -1551,7 +1797,7 @@ def test_migration_039_comparison_base_upgrade_states_and_fresh_equivalence():
                       "ordered_series_comparison_publication"):
             connection.execute(f"DROP TABLE {table}")
         connection.execute("ALTER TABLE scalar_comparison_publication ADD COLUMN unexpected_column text")
-        with pytest.raises(psycopg.errors.RaiseException, match="does not match the pre-lineage contract"):
+        with pytest.raises(psycopg.errors.RaiseException, match="does not match the expected column contract"):
             connection.execute(migration)
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         connection.execute(f'SET search_path TO "{schemas["partial"]}"')

@@ -52,6 +52,24 @@ if (nzchar(republish_bundle)) {
   quit(save="no", status=0L)
 }
 
+# Mirror the scalar comparison owner's content-version contract after a
+# deliberate row mutation, so an invalid-provenance publish reaches the real
+# transaction and foreign key instead of being rejected by projection preflight.
+recompute_scalar_comparison <- function(projection) {
+  dependencies <- c("scalar_content_version", "reference_content_version", "content_version")
+  version <- scalar_content_version(list(
+    scalar_content_version=projection$scalar_content_version,
+    reference_content_version=projection$reference_content_version,
+    groups=projection$groups[setdiff(names(projection$groups), dependencies)],
+    territories=projection$territories[setdiff(names(projection$territories), dependencies)],
+    lineage=projection$lineage[setdiff(names(projection$lineage), "comparison_content_version")]))
+  projection$content_version <- version
+  projection$groups$content_version <- version
+  projection$territories$content_version <- version
+  projection$lineage$comparison_content_version <- version
+  projection
+}
+
 fixture <- readr::read_csv("tests/testthat/fixtures/demographie-fixture.csv",
   col_types=readr::cols(code=readr::col_character(), epci=readr::col_character()),
   show_col_types=FALSE)
@@ -180,6 +198,25 @@ DBI::dbExecute(con, "DROP FUNCTION reject_lineage_refresh()")
 scalar_retry <- publish_registered_scalar_comparison(new_scalar_comparisons, scalar_comparison_adapter)
 stopifnot(scalar_retry$changed)
 
+# Changed scalar content plus an unregistered source must fail inside the real
+# adapter transaction. The FK rejection cannot leave the new groups/territories
+# or lineage in place, nor advance the scalar publication marker.
+scalar_groups_after_retry <- DBI::dbGetQuery(con, "SELECT * FROM scalar_comparison_group ORDER BY comparison_context,group_id,territory_type,indicator_id")
+scalar_territories_after_retry <- DBI::dbGetQuery(con, "SELECT * FROM scalar_comparison_territory ORDER BY comparison_context,group_id,territory_type,indicator_id,territory_id")
+scalar_lineage_after_retry <- DBI::dbGetQuery(con, scalar_lineage_query)
+scalar_marker_after_retry <- DBI::dbGetQuery(con, "SELECT * FROM scalar_comparison_publication WHERE singleton")
+invalid_scalar <- new_scalar_comparisons
+invalid_scalar$groups$median[[1L]] <- invalid_scalar$groups$median[[1L]] + 0.5
+invalid_scalar$lineage$source_id[[1L]] <- "m039_unregistered_source"
+invalid_scalar <- recompute_scalar_comparison(invalid_scalar)
+invalid_scalar_result <- try(
+  publish_registered_scalar_comparison(invalid_scalar, scalar_comparison_adapter), silent=TRUE)
+stopifnot(inherits(invalid_scalar_result, "try-error"),
+  identical(DBI::dbGetQuery(con, "SELECT * FROM scalar_comparison_group ORDER BY comparison_context,group_id,territory_type,indicator_id"), scalar_groups_after_retry),
+  identical(DBI::dbGetQuery(con, "SELECT * FROM scalar_comparison_territory ORDER BY comparison_context,group_id,territory_type,indicator_id,territory_id"), scalar_territories_after_retry),
+  identical(DBI::dbGetQuery(con, scalar_lineage_query), scalar_lineage_after_retry),
+  identical(DBI::dbGetQuery(con, "SELECT * FROM scalar_comparison_publication WHERE singleton"), scalar_marker_after_retry))
+
 # An injected profile lineage failure during the same reference rebind must
 # lineage failure must roll back profile facts, both comparison grains, lineage
 # and marker together; an unchanged retry then commits the complete snapshot.
@@ -289,6 +326,19 @@ shared_scalar_before <- DBI::dbGetQuery(con,"SELECT o.indicator_id,o.territory_i
 series_marker_before_clock_reject <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count,published_at
   FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset))
 clock_conflict <- series_projection
+# Change real series content as well as the provenance clock: a rejected clock
+# rewrite must roll back both fact and comparison writes, not merely stop before
+# them. Snapshot every affected grain and marker for the post-failure proof.
+clock_conflict$points$value <- clock_conflict$points$value + 0.5
+series_facts_before_clock_reject <- list(
+  marker=DBI::dbGetQuery(con,"SELECT * FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset)),
+  descriptor=DBI::dbGetQuery(con,"SELECT * FROM series_dataset_descriptor WHERE dataset_id=$1",params=list(series_dataset)),
+  observations=DBI::dbGetQuery(con,"SELECT * FROM series_dataset_observation WHERE dataset_id=$1 ORDER BY territory_id,axis_value",params=list(series_dataset)),
+  provenance=DBI::dbGetQuery(con,"SELECT * FROM series_observation_provenance WHERE dataset_id=$1 ORDER BY territory_id,axis_value,provenance_revision_id",params=list(series_dataset)),
+  comparison_marker=DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_publication WHERE dataset_id=$1",params=list(series_dataset)),
+  comparison_groups=DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_group WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value",params=list(series_dataset)),
+  comparison_territories=DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_territory WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,territory_id",params=list(series_dataset)),
+  comparison_lineage=DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_lineage WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,provenance_revision_id",params=list(series_dataset)))
 shared_index <- match(shared_revision$provenance_revision_id,clock_conflict$provenance$provenance_revision_id)
 clock_conflict$provenance$reference_date[[shared_index]] <- as.Date("2030-01-01")
 clock_conflict$provenance$publication_date[[shared_index]] <- as.Date("2030-02-01")
@@ -321,6 +371,15 @@ stopifnot(inherits(clock_conflict_result,"try-error"),
     params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]])),check.attributes=FALSE)),
   isTRUE(all.equal(series_marker_before_clock_reject,DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count,published_at
     FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset)),check.attributes=FALSE)))
+stopifnot(
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset)),series_facts_before_clock_reject$marker),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_dataset_descriptor WHERE dataset_id=$1",params=list(series_dataset)),series_facts_before_clock_reject$descriptor),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_dataset_observation WHERE dataset_id=$1 ORDER BY territory_id,axis_value",params=list(series_dataset)),series_facts_before_clock_reject$observations),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_observation_provenance WHERE dataset_id=$1 ORDER BY territory_id,axis_value,provenance_revision_id",params=list(series_dataset)),series_facts_before_clock_reject$provenance),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_publication WHERE dataset_id=$1",params=list(series_dataset)),series_facts_before_clock_reject$comparison_marker),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_group WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value",params=list(series_dataset)),series_facts_before_clock_reject$comparison_groups),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_territory WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,territory_id",params=list(series_dataset)),series_facts_before_clock_reject$comparison_territories),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_lineage WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,provenance_revision_id",params=list(series_dataset)),series_facts_before_clock_reject$comparison_lineage))
 
 # A genuinely new vintage for the same source identity is valid and repeatable;
 # it is additive rather than a rewrite of the shared vintage.
