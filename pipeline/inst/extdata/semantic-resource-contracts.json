@@ -9,7 +9,7 @@
       "source_id": "aedar_bretagne",
       "allowed_levels": ["commune", "epci", "departement", "region"],
       "axes": {"typequ": "producer_typequ_registry", "measure": "AEDAR_AGGREGATE_MEASURES", "context": ["density_class", "epci", "bretagne", "same_level"]},
-      "fields": ["group_value", "value", "rank", "rank_size", "member_count", "eligible_count", "missing_count"],
+      "fields": ["group_value", "value"],
       "intents": ["facts", "fixed_comparison"]
     }
   ]

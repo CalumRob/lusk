@@ -35,6 +35,13 @@ retiennent une grammaire commune sans imposer un stockage universel.
   `fixed_comparison`. Les deux routes GET AEDAR historiques
   (`/api/aedar/territories/{type}/{id}/aggregates` et `/comparisons`) sont
   retirées ; elles ne sont pas conservées comme alias.
+- **Amendement AEDAR (#810, 2026-10-21) :** la même ressource sémantique
+  expose ses références sans projection par pair. Les valeurs EPCI/Bretagne
+  communales sont lues dans l'agrégat source; la densité utilise le regroupement
+  mutualisé par `density_class_code` et l'artefact poolé; les médianes
+  EPCI/département restent dans `aedar_comparison_group`. Les rangs et champs
+  de pairs AEDAR ne sont pas servis. Les cinq opérations publiques actuelles
+  restent inchangées et aucun endpoint GET AEDAR n'est réintroduit.
 
 ## Conséquences
 

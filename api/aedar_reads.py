@@ -6,7 +6,7 @@ from api.aedar_models import AEDAR_MEASURE_KEYS
 from api.field_selection import normalize_field_selection
 
 _AEDAR_COMPARISON_OPTIONAL_FIELDS = {
-    "group_value", "value", "rank", "rank_size", "member_count", "eligible_count", "missing_count",
+    "group_value", "value",
 }
 _AEDAR_COMPARISON_MANDATORY_FIELDS = {
     "comparison_context", "group_id", "territory_type", "typequ", "typequ_label",
@@ -78,12 +78,13 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
     selected = set(_AEDAR_COMPARISON_OPTIONAL_FIELDS) if selected_fields is None else set(selected_fields)
     marker = conn.execute("""SELECT p.content_version,p.source_snapshot_id,p.aedar_content_version,
               p.reference_content_version,p.input_content_version,p.input_identity,p.group_row_count,p.territory_row_count,
+              p.publication_mode,
               a.content_version,r.content_version
               FROM aedar_comparison_publication p
               JOIN table_publication a ON a.table_name='aedar_territorial_aggregate'
               JOIN table_publication r ON r.table_name='territory_reference'
               WHERE p.singleton""").fetchone()
-    if not marker or marker[2] != marker[8] or marker[3] != marker[9] or marker[6] < 1 or marker[7] < 1 or marker[1] != "2026-v1":
+    if not marker or marker[2] != marker[9] or marker[3] != marker[10] or marker[6] < 1 or marker[7] != 0 or marker[8] != "reference_only" or marker[1] != "2026-v1":
         raise HTTPException(503, "AEDAR comparison publication is unavailable or stale")
     territory = conn.execute("SELECT 1 FROM territory_reference WHERE territory_type=%s AND territory_id=%s",
                              (territory_type, territory_id)).fetchone()
@@ -91,32 +92,80 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
         raise HTTPException(404, "Unknown territory type/id")
     if preflight_only:
         return {"content_version": marker[0], "reference_content_version": marker[3]}
-    cursor = conn.execute("""SELECT g.comparison_context,g.group_id,g.territory_type,g.typequ,
-              a.typequ_label,a.source_id,a.vintage_id,a.source_url,a.licence,a.attribution,a.reference_date,a.publication_date,
-              g.measure,g.statistic,
-              CASE WHEN %s THEN g.value ELSE NULL::double precision END AS group_value,g.n_addresses AS group_n_addresses,
-              g.n_observed AS group_n_observed,g.coverage_status AS group_coverage_status,
-              CASE WHEN %s THEN g.member_count ELSE NULL::integer END AS member_count,
-              CASE WHEN %s THEN g.eligible_count ELSE NULL::integer END AS eligible_count,
-              CASE WHEN %s THEN g.missing_count ELSE NULL::integer END AS missing_count,
-              CASE WHEN %s THEN t.value ELSE NULL::double precision END AS value,
-              t.status,t.n_addresses,t.n_observed,t.coverage_status,
-              CASE WHEN %s THEN t.rank ELSE NULL::integer END AS rank,
-              CASE WHEN %s THEN t.rank_size ELSE NULL::integer END AS rank_size
-              FROM aedar_comparison_territory t JOIN aedar_comparison_group g USING
-                (comparison_context,group_id,territory_type,typequ,measure)
-              JOIN aedar_territorial_aggregate a ON (a.territory_type,a.territory_id,a.typequ)=
-                (t.territory_type,t.territory_id,t.typequ)
-              WHERE t.territory_type=%s AND t.territory_id=%s AND t.comparison_context=%s
-                AND t.typequ=%s AND t.measure=%s""",
-                 ("group_value" in selected,"member_count" in selected,"eligible_count" in selected,
-                 "missing_count" in selected,"value" in selected,"rank" in selected,"rank_size" in selected,
-                  territory_type,territory_id,context,typequ,measure))
-    row = cursor.fetchone()
-    if not row:
+    focal = conn.execute("""SELECT t.epci_id,r.territory_id
+        FROM territory_reference t CROSS JOIN territory_reference r
+        WHERE t.territory_type=%s AND t.territory_id=%s AND r.territory_type='region'""",
+        (territory_type,territory_id)).fetchone()
+    if not focal:
+        raise HTTPException(404, "Unknown territory type/id")
+    if context == "density_class":
+        from api.snapshot_reads import _comparison_cohort
+        _, _, scope = _comparison_cohort(conn, territory_type, territory_id, None)
+        if territory_type != "commune" or not scope or scope.get("kind") != "density_class":
+            raise HTTPException(422, "Density reference is available for commune scopes only")
+        group_id, reference_type = scope["density_class_code"], "commune"
+        group_row = conn.execute("""SELECT value,n_addresses,n_observed,coverage_status,statistic
+            FROM aedar_comparison_group WHERE comparison_context='density_class' AND group_id=%s
+              AND territory_type='commune' AND typequ=%s AND measure=%s""",
+            (group_id,typequ,measure)).fetchone()
+    elif context == "same_level":
+        from api.snapshot_reads import _comparison_cohort
+        _, _, scope = _comparison_cohort(conn, territory_type, territory_id, None)
+        if territory_type not in ("epci","departement") or not scope or scope.get("kind") != "same_level":
+            raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
+        group_id, reference_type = focal[1], territory_type
+        group_row = conn.execute("""SELECT value,n_addresses,n_observed,coverage_status,statistic
+            FROM aedar_comparison_group WHERE comparison_context='same_level' AND group_id=%s
+              AND territory_type=%s AND typequ=%s AND measure=%s""",
+            (group_id,reference_type,typequ,measure)).fetchone()
+    elif context in ("epci", "bretagne"):
+        if territory_type != "commune":
+            raise HTTPException(422, "Commune reference is unavailable for this territory scope")
+        reference_type = "epci" if context == "epci" else "region"
+        group_id = focal[0] if context == "epci" else focal[1]
+        if not group_id:
+            raise HTTPException(503, "Published AEDAR reference identity is unavailable")
+        group_row = conn.execute("""SELECT (measures->>%s)::double precision AS value,n_addresses,n_observed,coverage_status
+            FROM aedar_territorial_aggregate WHERE territory_type=%s AND territory_id=%s AND typequ=%s""",
+            (measure,reference_type,group_id,typequ)).fetchone()
+        if group_row:
+            group_row = (*group_row, "direct")
+    else:
+        raise HTTPException(422, "AEDAR comparison context is not declared")
+    if not group_row:
         raise HTTPException(404, "No published result for this fixed context")
-    names = [column.name for column in cursor.description]
-    result = dict(zip(names,row))
+    focal_row = conn.execute("""SELECT a.typequ_label,a.source_id,a.vintage_id,a.source_url,a.licence,
+        a.attribution,a.reference_date,a.publication_date,(a.measures->>%s)::double precision AS value,a.n_addresses,
+        a.n_observed,a.coverage_status FROM aedar_territorial_aggregate a
+        WHERE a.territory_type=%s AND a.territory_id=%s AND a.typequ=%s""",
+        (measure,territory_type,territory_id,typequ)).fetchone()
+    if not focal_row:
+        raise HTTPException(404, "No published focal AEDAR value")
+    result = {
+        "comparison_context": context,
+        "group_id": group_id,
+        "territory_type": reference_type,
+        "typequ": typequ,
+        "typequ_label": focal_row[0],
+        "source_id": focal_row[1],
+        "vintage_id": focal_row[2],
+        "source_url": focal_row[3],
+        "licence": focal_row[4],
+        "attribution": focal_row[5],
+        "reference_date": focal_row[6],
+        "publication_date": focal_row[7],
+        "measure": measure,
+        "statistic": group_row[4],
+        "group_value": group_row[0],
+        "group_n_addresses": group_row[1],
+        "group_n_observed": group_row[2],
+        "group_coverage_status": group_row[3],
+        "value": focal_row[8],
+        "status": "measured" if focal_row[8] is not None else "not_available",
+        "n_addresses": focal_row[9],
+        "n_observed": focal_row[10],
+        "coverage_status": focal_row[11],
+    }
     for key in _AEDAR_COMPARISON_OPTIONAL_FIELDS-selected:
         result.pop(key,None)
     return {"territory":{"territory_type":territory_type,"territory_id":territory_id},

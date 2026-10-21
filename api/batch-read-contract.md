@@ -23,6 +23,10 @@ The catalogue is the source of truth for identifiers, capabilities, field
 projection, coordinate values and target levels. AEDAR is a producer-declared
 source-grain resource in the same single/batch grammar: `typequ` and `measure`
 are coordinates and fixed comparisons use the declared comparison context.
+AEDAR reference reads use the canonical territory-reference scope: commune EPCI
+and Bretagne values are direct source aggregates, density-class values come from
+the pooled producer artifact, and EPCI/departement same-level presets use
+published medians. AEDAR does not serve peer rows or ranks.
 The four selected-reading resources for Démographie, Économie/Emploi, Habitat,
 and Milieux expose the already-published reading facts. Producer-declared ranked
 activity evidence, Milieux source absences, and Milieux source bindings are separate

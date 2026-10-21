@@ -144,6 +144,9 @@ Searches the retained published territory reference with bounded query inputs.
 - AEDAR aggregate and fixed-comparison reads are available only through the
   semantic single/batch grammar; the retired source-grain GET routes were
   adapters over the same caller-owned snapshot readers.
+  AEDAR comparisons return focal values and their selected reference only:
+  direct EPCI/Bretagne aggregates, pooled density-class references, or the
+  existing same-level medians. AEDAR peer/rank fields are not selectable.
 
 ## Retired route families
 

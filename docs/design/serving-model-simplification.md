@@ -1,5 +1,18 @@
 # Unified retained-resource serving and publication model
 
+## Implemented AEDAR amendment (#810, owner-approved 2026-10-21)
+
+This amendment supersedes the AEDAR peer/rank projection proposed below; other
+families and their comparison results are unchanged. Retain all official
+territorial source facts and measures. Commune EPCI/Bretagne references read
+directly from `aedar_territorial_aggregate`; density uses the canonical
+`territory_reference.density_class_code`, shared scope resolver and producer-
+owned pooled-density artifact; EPCI/departement same-level presets retain
+small median rows in `aedar_comparison_group`. AEDAR stores no peer territory or
+rank rows and serves no rank/member/eligibility/missing counts. Median source
+denominators and coverage remain unknown (NULL). Legacy publication markers are
+not success for the versioned reference-only mode; regeneration is explicit.
+
 **Status: ACCEPTED direction; integrated backend implementation and acceptance review are tracked by PR #798.**
 This is the documentation deliverable for [#795](https://github.com/CalumRob/lusk/issues/795),
 child of [#794](https://github.com/CalumRob/lusk/issues/794). The owner-approved
@@ -144,7 +157,7 @@ Examples of the closed descriptor rules (not caller-supplied schemas):
 |---|---|---|---|
 | `structure_age` | Optional `detail` from the declared ordered codes `Y_LT15`, `Y15T24`, `Y25T39`, `Y40T54`, `Y55T64`, `Y65T79`, `Y_GE80`; `sex` is `F` or `M`. | Omission returns all 14 cells in descriptor order; either axis may be selected from its closed values. Unknown code/sex, wrong scalar/list type, empty list, or unsupported axis combination rejects. | Resource and territory are identity; selected detail/sex coordinates remain in each returned observation and cannot be omitted with `fields`. Value/status/provenance fields may be projected only as allowed. |
 | `aedar_territorial_aggregate` (facts) | Optional list-valued `typequ` drawn from the pinned 235-code INSEE TYPEQU registry; optional list-valued `measure` from the registered measure keys. | Omission returns the full registered TYPEQU domain; an explicit selection is a non-empty subset with no coordinate-count cap — request work is bounded by preflight work units instead. Unknown code or an empty/ill-typed selection rejects. No client-defined mode/horizon axis is accepted: measure IDs encode those producer-registered variants. | Resource, territory and TYPEQU are identity; `fields` selects allowlisted `measures.<registered-id>` values. Counts, coverage, source snapshot and mandatory provenance remain. |
-| `aedar_territorial_aggregate` (fixed comparison) | List-valued `typequ` (exactly one) and `measure` (exactly one) from the registered vocabularies; comparison `context` is an `intent` member, not a coordinate. | A fixed comparison requires exactly one TYPEQU and one measure coordinate and a declared fixed context. An unregistered context or an undeclared coordinate/result selection rejects. | Resource, territory, context and TYPEQU identify the result; `measure` is a declared coordinate, not a projected field. `fields` projects `group_value`, focal `value`, `rank`, `rank_size`, `member_count`, `eligible_count` and `missing_count`; rank/status/count/lineage remain mandatory where declared. |
+| `aedar_territorial_aggregate` (fixed reference) | List-valued `typequ` (exactly one) and `measure` (exactly one) from the registered vocabularies; comparison `context` is an `intent` member, not a coordinate. | A fixed reference requires exactly one TYPEQU and one measure coordinate and a declared context. Commune `epci`/`bretagne` read source aggregates; commune `density_class` resolves through the canonical territory reference; EPCI/departement `same_level` uses the declared median preset. | Resource, target, context and TYPEQU identify the result; `measure` is a declared coordinate, not a projected field. `fields` projects only `group_value` and focal `value`; source counts/coverage and lineage stay mandatory, and unknown median denominators remain null. No AEDAR peer/rank fields are declared. |
 
 For all other resources the same descriptor table owns axis type, values,
 ordering, default, requiredness, and compatible combinations. Open-ended
@@ -269,10 +282,10 @@ free-form axis or treating the BPE registry string as retired serving logic:
 ```
 The result retains registered measure keys, `n_addresses`, `n_observed`,
 coverage and source snapshot identity. AEDAR fixed density-class comparison is
-a separate declared result identity/intent at address grain, preserving its
-published statistic, eligibility and weighting; it is never an average of
-commune aggregates. The illustrative 312-key map is not a license for
-unrestricted JSON or SQL-side calculation.
+a separate declared result identity/intent at address grain, using the
+producer-owned pooled artifact; it is never an average of commune aggregates.
+The illustrative 312-key map is not a license for unrestricted JSON or
+SQL-side calculation.
 
 The fixed AEDAR comparison is another item under the same read contract, not a
 second physical-family selector. The comparison context is part of `intent`,
@@ -284,14 +297,15 @@ and `fields` projects the registered result values:
 {"resource":"aedar_territorial_aggregate",
  "target":{"kind":"territory","type":"commune","id":"22001"},
  "coordinates":{"typequ":["<registered-TYPEQU>"],"measure":["<registered-measure>"]},
- "fields":["rank","member_count","eligible_count","missing_count"],
+  "fields":["group_value","value"],
  "intent":{"kind":"fixed_comparison","context":"density_class"}}
 ```
-Its result identifies the resolved group/context and statistic, focal value and
-status, rank/rank_size when available, address/observed counts and coverage,
-source snapshot, and aggregate/reference/comparison publication tokens. These
-values are read from the published address-grain comparison, not recomputed from
-territorial aggregates.
+Its result identifies the resolved group/context and statistic, focal and
+reference values, source-provided address/observed counts and coverage, source
+snapshot, and aggregate/reference/comparison publication tokens. Density values
+come from the pooled artifact; commune EPCI/Bretagne values are direct source
+aggregates; same-level median denominators are NULL. No AEDAR peer or rank fields
+are published.
 
 Sparse programme membership uses its actual relation semantics:
 
@@ -375,7 +389,7 @@ The names below are logical shape proposals, not DDL or approved table names.
 | `ordered_fact` | `(publication_owner, measure_id, target_kind, target_id, axis_key)`; typed axis value/role/order, value/status, observation period; observation→one-or-more immutable source revisions | Ordered points and independently refreshed owners. Preserve absent points and multiple clocks/source revisions per point; named references use a distinct target discriminator and cannot be ranked as territories. |
 | `relation_fact` | `(measure_id, territory_type, territory_id, category_or_anchor_id)`; explicit anchor identity, typed relation attributes, source association | Sparse relation semantics, anchor/source FKs, and absence ≠ false. Keep separate unless actual constrained coordinate shape proves equivalent without weakening relation integrity. |
 | AEDAR source-grain projection | Existing territory×TYPEQU row, counts/coverage/snapshot and source identity; retain the registered measure-key allowlist and source identity metadata | Avoids the illustrative 312× row expansion and preserves address-grain facts. **PROPOSED V1:** keep the current constrained measure map, validated against the 312-key producer registry; no unrestricted JSON and no SQL/browser calculations. DB cannot type-check each inner value, so publisher parity/schema tests remain mandatory. |
-| Comparison result projection | Shared publication/dependency protocol; result keys include measure ID, declared context/group, facet/axis and target; typed status, statistic, value, rank/ties/counts/denominators and lineage | Share result storage only where grain and statistic fit. AEDAR density-class comparison stays address-grain pooled, never an average of commune aggregates. Unsupported statistic/shape combinations fail validation. |
+| Comparison result projection | Shared publication/dependency protocol; result keys include measure ID, declared context/group, facet/axis and target; family-specific typed statistic, value, rank/ties/counts/denominators and lineage | Share result storage only where grain and statistic fit. AEDAR is reference-only: pooled density and same-level medians use `aedar_comparison_group`; direct EPCI/Bretagne facts remain in the source aggregate; there are no AEDAR peer/rank rows. Unsupported statistic/shape combinations fail validation. |
 
 ### Model comparison (PROPOSED)
 
@@ -432,7 +446,7 @@ current marker's owner, dependencies and retry behavior; none is deleted here.
 | Ordered/independent clocks | Ordered fact with explicit year/state-role/duration axis and observation-level source revision links | ENAF missing year stays absent; OCS M2/M3 departmental source windows coexist; population, source vintage, observation period and publication time remain distinct. |
 | Sparse grants and membership | Sparse coordinate facts for grants; constrained relation fact for anchored programme membership | Missing grant is not €0; missing membership is not false; preserve programme anchor, per-row source/vintage and relation key. |
 | Named references | Same ordered fact coordinates with target discriminator `named_reference` | Never confuse with territory fact or assign territory rank; independent publication token. |
-| AEDAR aggregate and comparison | Keep source-shaped territory×registered TYPEQU aggregate plus typed comparison-result shape | Preserve INSEE BPE TYPEQU registry, registered measure keys, identity, counts/coverage and address-grain pooling/statistic. Dense illustrative arithmetic: 1,268×235=297,980 rows wide vs 92,969,760 measure rows; not live counts or benchmark. |
+| AEDAR aggregate and reference | Keep source-shaped territory×registered TYPEQU aggregate plus bounded density/same-level reference summaries | Preserve INSEE BPE TYPEQU registry, registered measure keys, identity, counts/coverage and address-grain pooling. Direct EPCI/Bretagne refs are source reads; no territory×measure peer cube. Dense arithmetic is illustrative, not live counts or benchmark. |
 | Retained R-authored semantic evidence | Typed semantic/evidence attributes only where not exactly represented by retained facts | Preserve source absence, source/revision role, selected evidence/classification and exact dependency; do not recalculate in SQL/browser. Field-level proof determines duplicates. |
 
 ## 4. Complete retained-resource coverage and legacy disposition (PROPOSED)
@@ -470,7 +484,7 @@ must rerun that enumeration and account for every source-declared member.
 | AEDAR aggregate dataset and registered source contract | `aedar_aggregates.R` canonical aggregate + pinned INSEE TYPEQU registry and registered 312-measure metadata → AEDAR artifacts | `aedar_territorial_aggregate`, source/identity metadata and aggregate publication; read via the unified `/api/resources/read[-batch]` resource contract (the legacy `/api/aedar/...` GET routes are retired) | The current AEDAR prototype calls `fetchAedarAggregates` for focal/reference data through `TerritoireView.vue`; this is caller-impact evidence, not an app migration requirement. API tests establish backend behavior. | Retain valid AEDAR data, registered measures and TYPEQU contracts in the backend resource model. Future production integration of the current AEDAR prototype is a later app task; leave its UI and acquisition untouched. Document any breaking API contract; do not edit the prototype or infer additional AEDAR products. |
 | Independently approved AEDAR data/map contracts | AEDAR owner decisions and domain contracts recorded in `CONTEXT.md`: registered nomenclature, address-grain data semantics and separately approved map/grid definitions | AEDAR source artifacts, map products and their own publication/validation contracts | `CONTEXT.md` sections “Registre TYPEQU BPE 2025”, “Rampe temporelle AEDAR”, “Carte de perte de diversité AEDAR”, “Carte de diversité voiture AEDAR” and “Grille hexagonale AEDAR”; producer/API tests where applicable | Preserve the valid data and backend contracts under their independent approval; do not delete or redefine them by association with legacy accessibility-serving resources. Current prototype UI/acquisition is outside this backend proposal and remains untouched. Not every map product is necessarily a serving-catalogue resource. |
 | Historical Variant E label / current AEDAR prototype caller wiring (scope note, not a backend resource) | Existing app route/adapters; no distinct producer or data contract established by that UI label | Existing `TerritoireView.vue` query/watch and AEDAR client wiring have historically been described as Variant E | Caller references identify possible API impact only. The owner clarified this is the current AEDAR prototype intended for future production Mobility; conflating it with retired Variant E was incorrect. | **No app/UI action in this initiative.** Preserve the current AEDAR prototype untouched, including acquisition. Backend decisions follow retained data/resource contracts, not the UI label. Document any changed endpoint contract for later integration; old non-AEDAR frontend breakage is acceptable and not an acceptance gate. |
-| AEDAR fixed comparison result | `aedar_aggregates.R` comparison projection from address-grain source facts | AEDAR comparison publication/group/territory/lineage and dependencies | AEDAR comparison reader; consumer traffic is not established by static app inventory; publisher and API tests | Keep distinct semantic result identity and exact source/territory-reference tokens; preserve declared statistic/eligibility/weighting and pooled address-level computation. Document any changed API contract; do not modify the current prototype or gate on caller migration. |
+| AEDAR fixed reference result | `aedar_aggregates.R` pooled-density and same-level median projection; direct source aggregates remain canonical | Versioned AEDAR comparison publication and group summaries; retained peer table unserved and empty | AEDAR semantic reader; publisher/API tests | Keep exact source/territory-reference bindings and honest source counts; publish no peer rows or rank/eligibility counts. Document the changed API contract; do not modify the current prototype or gate on caller migration. |
 | Unique semantic evidence from retained products (non-legacy) | R-authored typed-reading/artifact producers; per-field canonical descriptor and source/revision inputs | `demographic_typed_reading`, `habitat_typed_reading`, `economy_typed_reading`, `milieux_typed_reading`, `selected_reading_*`, source absence/revision and activity evidence | Theme fact assembly and semantic content; `ThemeContent`, static `modeles_lecture.R`, app read-model selectors; typed-reading artifact/API/validation tests | Audit each field, not each table: move exact duplicate numeric value/status/support to canonical facts; retain only unique semantic selection, absence, period/source-role and lineage needed by active readers. Do not keep an old “theme facts” facade as target. |
 | Independent comparison projections (all retained eligible resources) | Scalar/profile/series/collection/AEDAR comparison producers | Shape-specific result/lineage/marker tables | Fixed comparison readers and bounded selected-comparison paths; ADR-0039 tests + shape-specific comparisons | Shared constrained comparison result contract/protocol where grain/statistic fit; retain typed validators for distinct rank/median/mean/pooled/axis rules. Fixed reads select published values; selected requests remain bounded and never recompute R transformations. |
 | Static acquisition/readiness metadata and non-fact operations | `publish.R`, `rapport_run.R`, reference/source metadata | Current static artifacts/bootstrap and separate territory/source operations | App acquisition/search/map references are impact inventory only | Not aliases for fact shapes. This initiative does not migrate app acquisition, static registries or UI readiness behavior. Preserve backend source/territory contracts that remain in scope; no static fallback to resource reads. |

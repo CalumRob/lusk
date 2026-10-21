@@ -4,6 +4,14 @@
 - **Parent:** ADR-0033; refines the comparison-serving direction in ADR-0035 and ADR-0038.
 - **Implementation:** #727, under publication/artifact-grain umbrella #751 and performance objective #726.
 
+**AEDAR scope amendment (#810, owner-approved 2026-10-21):** the AEDAR-specific
+peer/rank projection in this ADR is superseded. Keep the source-grain facts,
+serve commune EPCI/Bretagne references directly from `aedar_territorial_aggregate`,
+use the existing pooled density artifact with `aedar_comparison_group`, and retain
+only EPCI/departement same-level median summaries. AEDAR publishes no
+territory/member/rank rows or peer eligibility counts. Other comparison families
+and this ADR's shared publication approach are unchanged.
+
 ## Decision
 
 For every currently offered comparison context, compute its peer-derived numeric results from canonical pipeline data and publish them as a comparison projection. The API serves those published results for current contexts instead of loading all peer facts and recomputing their aggregates per request. This applies across current comparison families, including scalar/profile, ordered-series, numeric period/detail collections, and AEDAR fixed-context comparisons. The inventory is contract-tested so an in-scope family cannot silently be omitted.
