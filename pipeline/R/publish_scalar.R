@@ -1030,15 +1030,17 @@ scalar_postgres_adapter <- function(con) {
       retiring <- intersect(omitted, retired_indicator_ids)
       if (length(retiring)) {
         ids_sql <- paste(vapply(retiring, quote_value, character(1)), collapse=",")
-        # The existing comparison marker is deliberately left untouched: it
-        # remains stale against the scalar token (or its row counts) until the
-        # ordinary comparison publisher replaces the complete comparison set.
         DBI::dbExecute(con, paste0("DELETE FROM comparison_source_lineage ",
           "WHERE comparison_family='scalar' AND facet_id IN (", ids_sql, ")"))
         DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_territory ",
           "WHERE indicator_id IN (", ids_sql, ")"))
         DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_group ",
           "WHERE indicator_id IN (", ids_sql, ")"))
+        # Retiring a scalar can change the published comparison set even when
+        # the scalar content token is unchanged. Make only this family's
+        # publication unavailable until its normal publisher restores it.
+        DBI::dbExecute(con,
+          "DELETE FROM scalar_comparison_publication WHERE singleton")
       }
       for (row in seq_len(nrow(projection$datasets))) {
         d <- projection$datasets[row, , drop = FALSE]

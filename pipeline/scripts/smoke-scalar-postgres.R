@@ -192,6 +192,15 @@ tryCatch({
     scalar_comparison_postgres_adapter(connection))
   snapshot <- project_retained_scalar_snapshot(public, reference, artifacts)
   retired_ids <- snapshot$retired_indicator_ids
+  comparable_ids <- snapshot$scalar$descriptors$indicator_id[
+    !is.na(snapshot$scalar$descriptors$comparison_facet) &
+      snapshot$scalar$descriptors$comparison_facet == snapshot$scalar$descriptors$indicator_id &
+      snapshot$scalar$descriptors$direction %in% c("high", "low")]
+  comparison_candidates <- snapshot$comparison$territories[
+    snapshot$comparison$territories$territory_type == "commune" &
+      snapshot$comparison$territories$indicator_id %in% comparable_ids, , drop=FALSE]
+  stopifnot(nrow(comparison_candidates) > 0L)
+  api_comparison_candidate <- comparison_candidates[1L, , drop=FALSE]
   legacy_retired_ids <- intersect(retired_ids, legacy_scalar$descriptors$indicator_id)
   legacy_comparison_ids <- intersect(legacy_retired_ids, legacy_comparison$groups$indicator_id)
   stopifnot(legacy_publication$changed, length(legacy_retired_ids) > 0L,
@@ -247,7 +256,8 @@ tryCatch({
     "AND NOT EXISTS (SELECT 1 FROM scalar_observation_source WHERE indicator_id=", quoted_legacy_indicator, ") ",
     "AND NOT EXISTS (SELECT 1 FROM scalar_comparison_group WHERE indicator_id=", quoted_legacy_indicator, ") ",
     "AND NOT EXISTS (SELECT 1 FROM scalar_comparison_territory WHERE indicator_id=", quoted_legacy_indicator, ") ",
-    "AND NOT EXISTS (SELECT 1 FROM comparison_source_lineage WHERE comparison_family='scalar' AND facet_id=", quoted_legacy_indicator, ") THEN ",
+    "AND NOT EXISTS (SELECT 1 FROM comparison_source_lineage WHERE comparison_family='scalar' AND facet_id=", quoted_legacy_indicator, ") ",
+    "AND NOT EXISTS (SELECT 1 FROM scalar_comparison_publication WHERE singleton) THEN ",
     "RAISE EXCEPTION 'injected approved scalar retirement failure after deletes and marker update'; ",
     "END IF; RAISE EXCEPTION 'approved retirement delete phase was not observed before scalar marker update'; ",
     "END IF; RETURN NULL; END $$"))
@@ -269,9 +279,59 @@ tryCatch({
     identical(snapshot_sql(), legacy_state))
   cat("Approved retirement transaction rollback probe passed for:", legacy_indicator, "\n")
 
+  retained_registry <- register_scalar_publisher(list(), "retained_scalar_snapshot",
+    project=function(canonical) canonical,
+    publish=function(projection, db, version) db$replace(projection, version))
   setTimeLimit(elapsed=180, transient=TRUE)
-  published <- tryCatch(publish_retained_scalar_snapshot(connection, snapshot, tempdir())$scalar,
+  scalar_only <- tryCatch(publish_registered_scalar(retained_registry,
+    "retained_scalar_snapshot", snapshot$scalar, scalar_postgres_adapter(connection),
+    retired_indicator_ids=retired_ids),
     finally=setTimeLimit(cpu=Inf, elapsed=Inf, transient=FALSE))
+  scalar_clock_after_retirement <- DBI::dbGetQuery(connection,
+    "SELECT content_version,reference_content_version FROM table_publication WHERE table_name='scalar_observation'")
+  comparison_marker_after_retirement <- DBI::dbGetQuery(connection,
+    "SELECT * FROM scalar_comparison_publication WHERE singleton")
+  stopifnot(scalar_only$changed, scalar_only$retirement_repaired,
+    identical(scalar_clock_after_retirement$content_version[[1L]],
+      scalar_content_version(snapshot$scalar)),
+    identical(scalar_clock_after_retirement$reference_content_version[[1L]],
+      reference$content_version),
+    nrow(comparison_marker_after_retirement) == 0L)
+  cat("Scalar-only retirement committed; scalar comparison marker absent before republish.\n")
+
+  # Reuse this smoke's existing read-only API role/configuration to prove the
+  # public snapshot read fails closed in the marker-absent interval.
+  DBI::dbExecute(connection, paste0("GRANT USAGE ON SCHEMA ",
+    as.character(DBI::dbQuoteIdentifier(connection, schema)), " TO lusk_it_contract_read"))
+  DBI::dbExecute(connection, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ",
+    as.character(DBI::dbQuoteIdentifier(connection, schema)), " TO lusk_it_contract_read"))
+  Sys.setenv(LUSK_SCALAR_API_TEST_COMPARISON_INDICATOR=api_comparison_candidate$indicator_id[[1L]],
+    LUSK_SCALAR_API_TEST_COMPARISON_TERRITORY=api_comparison_candidate$territory_id[[1L]],
+    LUSK_SCALAR_API_TEST_COMPARISON_TYPE=api_comparison_candidate$territory_type[[1L]],
+    LUSK_SCALAR_API_TEST_SCHEMA=schema,
+    PGPASSFILE=passfile,
+    DATABASE_URL="postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract")
+  api_readiness_code <- paste(c(
+    "import os, sys; sys.path.insert(0, '..')",
+    "from fastapi.testclient import TestClient",
+    "from api.main import app",
+    "schema=os.environ['LUSK_SCALAR_API_TEST_SCHEMA']",
+    "os.environ['PGOPTIONS']='-c search_path='+schema+' -c statement_timeout=120000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=180000'",
+    "payload={'resource':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_INDICATOR'],'target':{'kind':'territory','type':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_TYPE'],'id':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_TERRITORY']},'intent':{'kind':'fixed_comparison','context':'default'}}",
+    "with TestClient(app) as client:",
+    " r=client.post('/api/resources/read', json=payload)",
+    " assert r.status_code==503, r.text",
+    " assert r.json().get('detail')=='Published scalar comparison is stale or incompatible', r.text"
+  ), collapse="\n")
+  api_readiness_status <- system2("python", c("-c", shQuote(api_readiness_code, type="cmd")), timeout=120)
+  stopifnot(identical(api_readiness_status, 0L))
+  cat("Public scalar comparison read failed closed with HTTP 503 while marker was absent.\n")
+
+  setTimeLimit(elapsed=180, transient=TRUE)
+  retained_result <- tryCatch(publish_retained_scalar_snapshot(connection, snapshot, tempdir()),
+    finally=setTimeLimit(cpu=Inf, elapsed=Inf, transient=FALSE))
+  published <- scalar_only
+  stopifnot(retained_result$comparison$changed, !retained_result$scalar$changed)
   actual_descriptor_ids <- DBI::dbGetQuery(connection,
     "SELECT indicator_id FROM scalar_descriptor")$indicator_id
   stopifnot(published$changed,
@@ -305,14 +365,28 @@ tryCatch({
     "WHERE table_name='scalar_observation'"))
   comparison_marker <- DBI::dbGetQuery(connection,
     "SELECT * FROM scalar_comparison_publication WHERE singleton")
+  comparison_actual_counts <- DBI::dbGetQuery(connection, paste(
+    "SELECT (SELECT count(*) FROM scalar_comparison_group) AS group_rows,",
+    "(SELECT count(*) FROM scalar_comparison_territory) AS territory_rows,",
+    "(SELECT count(*) FROM comparison_source_lineage",
+    "WHERE comparison_family='scalar') AS lineage_rows"))
+  stale_lineage_rows <- DBI::dbGetQuery(connection, paste(
+    "SELECT count(*) AS n FROM comparison_source_lineage",
+    "WHERE comparison_family='scalar' AND comparison_content_version<>$1"),
+    params=list(snapshot$comparison$content_version))$n[[1L]]
   stopifnot(identical(scalar_clock$content_version[[1L]], published$content_version),
     scalar_clock$row_count[[1L]] == nrow(snapshot$scalar$facts),
     identical(scalar_clock$reference_content_version[[1L]], reference$content_version),
+    identical(comparison_marker$content_version[[1L]], snapshot$comparison$content_version),
     identical(comparison_marker$scalar_content_version[[1L]], published$content_version),
     identical(comparison_marker$reference_content_version[[1L]], reference$content_version),
     comparison_marker$group_row_count[[1L]] == nrow(snapshot$comparison$groups),
     comparison_marker$territory_row_count[[1L]] == nrow(snapshot$comparison$territories),
     comparison_marker$lineage_row_count[[1L]] == nrow(snapshot$comparison$lineage),
+    comparison_actual_counts$group_rows[[1L]] == comparison_marker$group_row_count[[1L]],
+    comparison_actual_counts$territory_rows[[1L]] == comparison_marker$territory_row_count[[1L]],
+    comparison_actual_counts$lineage_rows[[1L]] == comparison_marker$lineage_row_count[[1L]],
+    stale_lineage_rows == 0L,
     !any(DBI::dbGetQuery(connection,
       "SELECT indicator_id FROM scalar_comparison_group")$indicator_id %in% retired_ids),
     !any(DBI::dbGetQuery(connection,
@@ -404,10 +478,6 @@ tryCatch({
 
   # Run the actual FastAPI scalar route against this same owned schema using the
   # separate read-only rehearsal role, rather than merely checking SQL text.
-  DBI::dbExecute(connection, paste0("GRANT USAGE ON SCHEMA ",
-    as.character(DBI::dbQuoteIdentifier(connection, schema)), " TO lusk_it_contract_read"))
-  DBI::dbExecute(connection, paste0("GRANT SELECT ON ALL TABLES IN SCHEMA ",
-    as.character(DBI::dbQuoteIdentifier(connection, schema)), " TO lusk_it_contract_read"))
   economy_fact <- snapshot$scalar$facts[
     snapshot$scalar$facts$territory_type == "commune" &
       snapshot$scalar$facts$status == "measured", , drop=FALSE][1L, , drop=FALSE]
@@ -426,7 +496,9 @@ tryCatch({
     "with TestClient(app) as client:",
     " r=client.get('/api/territories/commune/'+os.environ['LUSK_SCALAR_API_TEST_TERRITORY']+'/indicators/'+os.environ['LUSK_SCALAR_API_TEST_INDICATOR'])",
     " r=client.post('/api/resources/read', json={'resource':os.environ['LUSK_SCALAR_API_TEST_INDICATOR'],'target':{'kind':'territory','type':'commune','id':os.environ['LUSK_SCALAR_API_TEST_TERRITORY']},'intent':{'kind':'facts'}})",
+    " c=client.post('/api/resources/read', json={'resource':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_INDICATOR'],'target':{'kind':'territory','type':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_TYPE'],'id':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_TERRITORY']},'intent':{'kind':'fixed_comparison','context':'default'}})",
     " assert r.status_code==200, r.text",
+    " assert c.status_code==200, c.text",
     " d=r.json(); assert d['indicator_id']==os.environ['LUSK_SCALAR_API_TEST_INDICATOR']",
     " assert d['value']==float(os.environ['LUSK_SCALAR_API_TEST_VALUE'])",
     " assert d['sources'] and d['content_version']"

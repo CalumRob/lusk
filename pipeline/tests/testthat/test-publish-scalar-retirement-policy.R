@@ -39,7 +39,7 @@ test_that("scalar completeness is checked before a same-version no-op", {
   expect_true(checked)
 })
 
-test_that("approved live retirement forces same-version replacement and leaves comparison publication stale", {
+test_that("approved live retirement forces same-version replacement and invalidates scalar comparison publication", {
   projection <- list(
     facts=data.frame(indicator_id="fixture_scalar", territory_id="22001",
       territory_type="commune", value=1, status="measured", support_count=1L,
@@ -91,6 +91,8 @@ test_that("approved live retirement forces same-version replacement and leaves c
           !state$comparison_groups$indicator_id %in% omitted, , drop=FALSE]
         state$comparison_territories <- state$comparison_territories[
           !state$comparison_territories$indicator_id %in% omitted, , drop=FALSE]
+        if (length(omitted))
+          state$comparison_marker <- state$comparison_marker[FALSE, , drop=FALSE]
         invisible(NULL)
       },
       set_reference_version=function(version) stop("matching dependency must not rebind"))
@@ -101,30 +103,40 @@ test_that("approved live retirement forces same-version replacement and leaves c
     function(value, adapter, content_version) adapter$replace(value, content_version))
 
   strict <- new_adapter()
+  strict_marker <- strict$state$comparison_marker
   expect_error(publish_registered_scalar(registry, "same_version_retirement", NULL,
     strict$adapter), "omitted registered indicators")
   expect_identical(strict$state$replace_calls, 0L)
+  expect_identical(strict$state$comparison_marker, strict_marker)
 
   approved <- new_adapter()
   original_comparison_marker <- approved$state$comparison_marker
+  expect_identical(original_comparison_marker$scalar_content_version[[1L]], version)
+  expect_identical(approved$state$live_ids, c("fixture_scalar", retired_id))
   first <- publish_registered_scalar(registry, "same_version_retirement", NULL,
     approved$adapter, retired_indicator_ids=retired_id)
   expect_true(first$changed)
   expect_true(first$retirement_repaired)
   expect_identical(approved$state$replace_calls, 1L)
   expect_setequal(approved$state$live_ids, projection$descriptors$indicator_id)
-  expect_identical(approved$state$comparison_marker, original_comparison_marker)
+  expect_identical(nrow(approved$state$comparison_marker), 0L)
   expect_identical(approved$state$comparison_groups$indicator_id, "fixture_scalar")
   expect_identical(approved$state$comparison_territories$indicator_id, "fixture_scalar")
-  expect_gt(approved$state$comparison_marker$group_row_count[[1L]],
-    nrow(approved$state$comparison_groups))
-  expect_gt(approved$state$comparison_marker$territory_row_count[[1L]],
-    nrow(approved$state$comparison_territories))
 
   completed <- publish_registered_scalar(registry, "same_version_retirement", NULL,
     approved$adapter, retired_indicator_ids=retired_id)
   expect_false(completed$changed)
   expect_false(completed$retirement_repaired)
   expect_identical(approved$state$replace_calls, 1L)
-  expect_identical(approved$state$comparison_marker, original_comparison_marker)
+  expect_identical(nrow(approved$state$comparison_marker), 0L)
+
+  complete <- new_adapter()
+  complete$state$live_ids <- projection$descriptors$indicator_id
+  ready_comparison_marker <- complete$state$comparison_marker
+  no_retirement <- publish_registered_scalar(registry, "same_version_retirement", NULL,
+    complete$adapter)
+  expect_false(no_retirement$changed)
+  expect_false(no_retirement$retirement_repaired)
+  expect_identical(complete$state$replace_calls, 0L)
+  expect_identical(complete$state$comparison_marker, ready_comparison_marker)
 })
