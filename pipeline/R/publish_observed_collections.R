@@ -327,11 +327,12 @@ publish_observed_collection <- function(projection,con,artifact_directory=NULL) 
     artifact_paths <- if (identical(d$kind,"period_detail") && !is.null(artifact_directory))
       write_observed_collection_comparison_parquets(comparisons,artifact_directory,indicator) else NULL
     if (changed) {
+      # source_dataset.name is the current mutable label; vintage identity and
+      # its version/date contract remain strict in the following loop.
       for (i in seq_len(nrow(projection$datasets))) {
         r <- projection$datasets[i,,drop=FALSE]
-        DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT DO NOTHING",params=unname(as.list(r)))
-        same <- DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",params=list(r$source_id))
-        if (!identical(same$name,r$name)) stop("Observed source identity conflicts with an existing publication",call.=FALSE)
+        DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2)
+          ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",params=unname(as.list(r)))
       }
       for (i in seq_len(nrow(projection$vintages))) {
         r <- projection$vintages[i,,drop=FALSE]

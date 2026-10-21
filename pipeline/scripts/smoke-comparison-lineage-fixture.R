@@ -1,6 +1,9 @@
 #!/usr/bin/env Rscript
 # Synthetic scalar/profile comparison lineage publisher proof. The caller owns
 # and schema-scopes the disposable lusk_it_* test schema and its read grant.
+r_libs_user <- Sys.getenv("R_LIBS_USER", unset="")
+if (!nzchar(r_libs_user) || !dir.exists(r_libs_user))
+  stop("Guarded R publisher proof requires R_LIBS_USER to name an existing populated R library (Rscript uses --vanilla)", call.=FALSE)
 pkgload::load_all(".", quiet=TRUE)
 
 required <- c("HOST", "PORT", "DATABASE", "USER", "SCHEMA", "MANIFEST")
@@ -20,7 +23,60 @@ if (!nzchar(passfile) || !file.exists(passfile) ||
 con <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
   port=as.integer(config$PORT), dbname=config$DATABASE, user=config$USER)
 DBI::dbExecute(con, paste0("SET search_path TO ", as.character(DBI::dbQuoteIdentifier(con, config$SCHEMA))))
-stopifnot(DBI::dbGetQuery(con, "SELECT current_database() AS db")$db[[1L]] == config$DATABASE)
+identity <- DBI::dbGetQuery(con, "SELECT current_database() AS db,current_schema() AS schema")
+stopifnot(identity$db[[1L]] == config$DATABASE,identity$schema[[1L]] == config$SCHEMA)
+
+# Narrow retained-schema mode for the issue #814 collection rollback edge case.
+# It reconstructs the current projection from SQL, then attempts a changed fact
+# and producer label with a conflicting immutable vintage clock. No setup DDL,
+# fixture publication, or retained schema cleanup is performed in this mode.
+if (identical(Sys.getenv("LUSK_LINEAGE_TEST_COLLECTION_CONFLICT_ONLY", unset=""),"1")) {
+  indicator <- Sys.getenv("LUSK_LINEAGE_TEST_INDICATOR", unset="lineage_collection")
+  descriptor_row <- DBI::dbGetQuery(con,"SELECT indicator_id,theme_id,kind,label,unit,allowed_levels,
+    comparison_detail,comparison_period,direction,descriptor_version
+    FROM observed_collection_descriptor WHERE indicator_id=$1",params=list(indicator))
+  if (nrow(descriptor_row)!=1L || descriptor_row$kind[[1L]]!="period_detail")
+    stop("Retained schema lacks the expected period/detail collection descriptor",call.=FALSE)
+  categories <- DBI::dbGetQuery(con,"SELECT indicator_id,detail_key,label,ordinal,source_id
+    FROM observed_collection_category WHERE indicator_id=$1 ORDER BY detail_key",params=list(indicator))
+  facts <- DBI::dbGetQuery(con,"SELECT indicator_id,territory_id,territory_type,detail_key,
+    observation_period,value,source_id,vintage_id FROM period_detail_observation
+    WHERE indicator_id=$1 ORDER BY territory_id,detail_key,observation_period",params=list(indicator))
+  datasets <- DBI::dbGetQuery(con,"SELECT DISTINCT d.source_id,d.name FROM source_dataset d
+    JOIN period_detail_observation f USING(source_id) WHERE f.indicator_id=$1 ORDER BY d.source_id",params=list(indicator))
+  vintages <- DBI::dbGetQuery(con,"SELECT DISTINCT v.source_id,v.vintage_id,v.version,v.reference_date,v.publication_date
+    FROM source_vintage v JOIN period_detail_observation f USING(source_id,vintage_id)
+    WHERE f.indicator_id=$1 ORDER BY v.source_id,v.vintage_id",params=list(indicator))
+  if (nrow(categories)==0L || nrow(facts)==0L || nrow(datasets)==0L || nrow(vintages)==0L)
+    stop("Retained schema has incomplete collection facts, source labels, or vintage clocks",call.=FALSE)
+  descriptor <- as.list(descriptor_row[1L,,drop=FALSE])
+  descriptor$allowed_levels <- DBI::dbGetQuery(con,"SELECT unnest(allowed_levels) AS level
+    FROM observed_collection_descriptor WHERE indicator_id=$1 ORDER BY level",params=list(indicator))$level
+  projection <- list(descriptor=descriptor,categories=categories,facts=facts,
+    datasets=datasets,vintages=vintages)
+  if (!identical(as.character(vintages$source_id[[1L]]),as.character(datasets$source_id[[1L]])))
+    stop("Conflict projection must target the first collection's registered source clock",call.=FALSE)
+  actual_label <- DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",
+    params=list(datasets$source_id[[1L]]))$name[[1L]]
+  attempted_label <- paste0(actual_label," [rollback conflict attempt]")
+  if (identical(attempted_label,actual_label)) stop("Conflict attempt must change the current source label",call.=FALSE)
+  projection$datasets$name[[1L]] <- attempted_label
+  projection$facts$value[[1L]] <- as.numeric(projection$facts$value[[1L]])+1
+  projection$vintages$version[[1L]] <- paste0(as.character(projection$vintages$version[[1L]]),"-conflict")
+  projection$vintages$reference_date[[1L]] <- if (is.na(projection$vintages$reference_date[[1L]]))
+    as.Date("2099-01-01") else as.Date(projection$vintages$reference_date[[1L]])+1
+  projection$vintages$publication_date[[1L]] <- if (is.na(projection$vintages$publication_date[[1L]]))
+    as.Date("2099-01-02") else as.Date(projection$vintages$publication_date[[1L]])+1
+  conflict <- tryCatch({publish_observed_collection(projection,con);NULL},error=function(error) error)
+  expected_conflict <- "Observed source vintage conflicts with an existing publication"
+  if (!inherits(conflict,"error") || !identical(conditionMessage(conflict),expected_conflict))
+    stop("Expected strict observed source vintage conflict; got: ",
+      if (is.null(conflict)) "publication unexpectedly succeeded" else conditionMessage(conflict),call.=FALSE)
+  cat("expected vintage conflict rolled back changed source label and collection publication; attempted label differs from current label\n")
+  flush.console()
+  DBI::dbDisconnect(con)
+  quit(save="no",status=0L)
+}
 
 # Reuse the exact synthetic inputs after a caller-owned populated schema upgrade.
 # No comparison rows or lineage are seeded here: the normal adapters must repair
@@ -311,6 +367,89 @@ series_first <- publish_registered_series(series_registry,"lineage_series",serie
 series_noop <- publish_registered_series(series_registry,"lineage_series",series_projection,series_adapter)
 stopifnot(series_first$changed,!series_noop$changed)
 
+# A source registry label is mutable, but each provenance revision keeps the
+# label recorded when that revision was first published. The same source and
+# vintage identity, version, and dates are reused; only the owner label changes.
+cat("owned-series mutable-label proof: publishing the new producer label\n"); flush.console()
+old_shared_revision <- DBI::dbGetQuery(con,
+  "SELECT * FROM series_provenance_revision WHERE provenance_revision_id=$1",
+  params=list(shared_revision$provenance_revision_id[[1L]]))
+short_registry_label <- old_shared_revision$source_name[[1L]]
+source_label_before <- DBI::dbGetQuery(con,
+  "SELECT name FROM source_dataset WHERE source_id=$1",params=list(shared_revision$source_id[[1L]]))
+shared_scalar_before_label <- DBI::dbGetQuery(con,"SELECT o.indicator_id,o.territory_id,o.value,o.status,p.content_version,p.row_count,p.reference_content_version
+  FROM scalar_observation_source os JOIN scalar_observation o USING(indicator_id,territory_id)
+  CROSS JOIN table_publication p WHERE os.source_id=$1 AND os.vintage_id=$2
+    AND p.table_name='scalar_observation' ORDER BY o.indicator_id,o.territory_id LIMIT 1",
+  params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]]))
+shared_vintage_before_label <- DBI::dbGetQuery(con,
+  "SELECT source_id,vintage_id,version,reference_date,publication_date FROM source_vintage
+   WHERE source_id=$1 AND vintage_id=$2",
+  params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]]))
+label_upgrade <- series_projection
+label_index <- match(shared_revision$provenance_revision_id,
+  label_upgrade$provenance$provenance_revision_id)
+if (is.na(label_index)) stop("Synthetic source revision is missing from the series projection",call.=FALSE)
+old_label_revision_id <- label_upgrade$provenance$provenance_revision_id[[label_index]]
+producer_full_title <- "Synthetic producer's full title for the existing source"
+label_upgrade$provenance$source_name[[label_index]] <- producer_full_title
+label_upgrade$provenance$revision_hash[[label_index]] <- series_revision_hash(
+  label_upgrade$provenance$source_id[[label_index]],label_upgrade$provenance$vintage_id[[label_index]],
+  label_upgrade$provenance$source_name[[label_index]],label_upgrade$provenance$dataset_name[[label_index]],
+  label_upgrade$provenance$source_version[[label_index]],
+  as.character(label_upgrade$provenance$reference_date[[label_index]]),
+  as.character(label_upgrade$provenance$publication_date[[label_index]]))
+label_upgrade$provenance$provenance_revision_id[[label_index]] <- paste0(
+  label_upgrade$provenance$source_id[[label_index]],"-",
+  label_upgrade$provenance$vintage_id[[label_index]],"-",
+  substr(label_upgrade$provenance$revision_hash[[label_index]],1L,16L))
+new_label_revision_id <- label_upgrade$provenance$provenance_revision_id[[label_index]]
+label_upgrade$point_provenance$provenance_revision_id[
+  label_upgrade$point_provenance$provenance_revision_id==old_label_revision_id] <- new_label_revision_id
+validate_owned_series_projection(label_upgrade)
+label_upgrade_result <- publish_registered_series(series_registry,"lineage_series",label_upgrade,series_adapter)
+new_shared_revision <- DBI::dbGetQuery(con,
+  "SELECT * FROM series_provenance_revision WHERE provenance_revision_id=$1",
+  params=list(new_label_revision_id))
+updated_source_label <- DBI::dbGetQuery(con,
+  "SELECT source_id,name FROM source_dataset WHERE source_id=$1",
+  params=list(shared_revision$source_id[[1L]]))
+shared_vintage_after_label <- DBI::dbGetQuery(con,
+  "SELECT source_id,vintage_id,version,reference_date,publication_date FROM source_vintage
+   WHERE source_id=$1 AND vintage_id=$2",
+  params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]]))
+label_marker_after_update <- DBI::dbGetQuery(con,
+  "SELECT * FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset))
+shared_scalar_after_label <- DBI::dbGetQuery(con,"SELECT o.indicator_id,o.territory_id,o.value,o.status,p.content_version,p.row_count,p.reference_content_version
+  FROM scalar_observation_source os JOIN scalar_observation o USING(indicator_id,territory_id)
+  CROSS JOIN table_publication p WHERE os.source_id=$1 AND os.vintage_id=$2
+    AND p.table_name='scalar_observation' ORDER BY o.indicator_id,o.territory_id LIMIT 1",
+  params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]]))
+label_noop <- publish_registered_series(series_registry,"lineage_series",label_upgrade,series_adapter)
+stopifnot(label_upgrade_result$changed,!label_noop$changed,
+  identical(source_label_before$name[[1L]],short_registry_label),
+  identical(updated_source_label$name[[1L]],producer_full_title),
+  identical(old_shared_revision$source_name[[1L]],shared_revision$source_name[[1L]]),
+  identical(DBI::dbGetQuery(con,
+    "SELECT * FROM series_provenance_revision WHERE provenance_revision_id=$1",
+    params=list(old_label_revision_id)),old_shared_revision),
+  nrow(new_shared_revision)==1L,
+  identical(new_shared_revision$source_id[[1L]],shared_revision$source_id[[1L]]),
+  identical(new_shared_revision$vintage_id[[1L]],shared_revision$vintage_id[[1L]]),
+  identical(new_shared_revision$source_name[[1L]],producer_full_title),
+  identical(new_shared_revision$source_version[[1L]],shared_revision$source_version[[1L]]),
+  identical(as.Date(new_shared_revision$reference_date[[1L]]),as.Date(shared_revision$reference_date[[1L]])),
+  identical(as.Date(new_shared_revision$publication_date[[1L]]),as.Date(shared_revision$publication_date[[1L]])),
+  isTRUE(all.equal(shared_vintage_before_label,shared_vintage_after_label,check.attributes=FALSE)),
+  isTRUE(all.equal(shared_scalar_before_label,shared_scalar_after_label,check.attributes=FALSE)),
+  identical(label_marker_after_update,DBI::dbGetQuery(con,
+    "SELECT * FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset))))
+series_projection <- label_upgrade
+series_first <- label_upgrade_result
+shared_revision <- label_upgrade$provenance[label_index,,drop=FALSE]
+shared_fixture_revision <- new_label_revision_id
+series_registry <- list(lineage_series=list(owned=TRUE,project=function(canonical) series_projection))
+
 # A new projection that attempts to rewrite the source clock already referenced
 # by a scalar fact must fail inside the real owned-series RPostgres transaction.
 # The old scalar facts/marker and source registry stay byte-for-byte unchanged.
@@ -318,11 +457,7 @@ shared_source_before <- DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHE
   params=list(shared_revision$source_id[[1L]]))
 shared_vintage_before <- DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date FROM source_vintage
   WHERE source_id=$1 AND vintage_id=$2",params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]]))
-shared_scalar_before <- DBI::dbGetQuery(con,"SELECT o.indicator_id,o.territory_id,o.value,o.status,p.content_version,p.row_count,p.reference_content_version
-  FROM scalar_observation_source os JOIN scalar_observation o USING(indicator_id,territory_id)
-  CROSS JOIN table_publication p WHERE os.source_id=$1 AND os.vintage_id=$2
-    AND p.table_name='scalar_observation' ORDER BY o.indicator_id,o.territory_id LIMIT 1",
-  params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]]))
+shared_scalar_before <- shared_scalar_before_label
 series_marker_before_clock_reject <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count,published_at
   FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset))
 clock_conflict <- series_projection
@@ -340,6 +475,7 @@ series_facts_before_clock_reject <- list(
   comparison_territories=DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_territory WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,territory_id",params=list(series_dataset)),
   comparison_lineage=DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_lineage WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,provenance_revision_id",params=list(series_dataset)))
 shared_index <- match(shared_revision$provenance_revision_id,clock_conflict$provenance$provenance_revision_id)
+clock_conflict$provenance$source_name[[shared_index]] <- "Synthetic uncommitted label before vintage conflict"
 clock_conflict$provenance$reference_date[[shared_index]] <- as.Date("2030-01-01")
 clock_conflict$provenance$publication_date[[shared_index]] <- as.Date("2030-02-01")
 clock_conflict$provenance$source_version[[shared_index]] <- "changed-clock"
@@ -369,6 +505,8 @@ stopifnot(inherits(clock_conflict_result,"try-error"),
     CROSS JOIN table_publication p WHERE os.source_id=$1 AND os.vintage_id=$2
       AND p.table_name='scalar_observation' ORDER BY o.indicator_id,o.territory_id LIMIT 1",
     params=list(shared_revision$source_id[[1L]],shared_revision$vintage_id[[1L]])),check.attributes=FALSE)),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_provenance_revision WHERE provenance_revision_id=$1",
+    params=list(shared_revision$provenance_revision_id[[1L]])),new_shared_revision),
   isTRUE(all.equal(series_marker_before_clock_reject,DBI::dbGetQuery(con,"SELECT content_version,reference_content_version,row_count,published_at
     FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset)),check.attributes=FALSE)))
 stopifnot(
@@ -379,7 +517,52 @@ stopifnot(
   identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_publication WHERE dataset_id=$1",params=list(series_dataset)),series_facts_before_clock_reject$comparison_marker),
   identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_group WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value",params=list(series_dataset)),series_facts_before_clock_reject$comparison_groups),
   identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_territory WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,territory_id",params=list(series_dataset)),series_facts_before_clock_reject$comparison_territories),
-  identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_lineage WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,provenance_revision_id",params=list(series_dataset)),series_facts_before_clock_reject$comparison_lineage))
+   identical(DBI::dbGetQuery(con,"SELECT * FROM ordered_series_comparison_lineage WHERE dataset_id=$1 ORDER BY comparison_context,group_id,territory_type,axis_value,provenance_revision_id",params=list(series_dataset)),series_facts_before_clock_reject$comparison_lineage))
+
+# A pre-existing row with a reused revision ID but different immutable content
+# must still fail closed. Its failed owner transaction must not commit the
+# attempted registry-label update or any observation/marker writes.
+cat("owned-series mutable-label proof: rejecting vintage and revision conflicts\n"); flush.console()
+collision_projection <- series_projection
+collision_projection$points$value <- collision_projection$points$value + 0.125
+collision_index <- match(shared_revision$provenance_revision_id,
+  collision_projection$provenance$provenance_revision_id)
+collision_projection$provenance$source_name[[collision_index]] <- "Synthetic uncommitted label before revision collision"
+collision_projection$provenance$revision_hash[[collision_index]] <- series_revision_hash(
+  collision_projection$provenance$source_id[[collision_index]],collision_projection$provenance$vintage_id[[collision_index]],
+  collision_projection$provenance$source_name[[collision_index]],collision_projection$provenance$dataset_name[[collision_index]],
+  collision_projection$provenance$source_version[[collision_index]],
+  as.character(collision_projection$provenance$reference_date[[collision_index]]),
+  as.character(collision_projection$provenance$publication_date[[collision_index]]))
+collision_id <- paste0(collision_projection$provenance$source_id[[collision_index]],"-",
+  collision_projection$provenance$vintage_id[[collision_index]],"-",
+  substr(collision_projection$provenance$revision_hash[[collision_index]],1L,16L))
+collision_projection$provenance$provenance_revision_id[[collision_index]] <- collision_id
+collision_projection$point_provenance$provenance_revision_id[
+  collision_projection$point_provenance$provenance_revision_id==shared_revision$provenance_revision_id[[1L]]] <- collision_id
+validate_owned_series_projection(collision_projection)
+DBI::dbExecute(con,"INSERT INTO series_provenance_revision(provenance_revision_id,source_id,vintage_id,
+  source_name,dataset_name,source_version,reference_date,publication_date,revision_hash)
+  VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9)",params=list(collision_id,shared_revision$source_id[[1L]],
+    shared_revision$vintage_id[[1L]],"conflicting immutable history",shared_revision$dataset_name[[1L]],
+    shared_revision$source_version[[1L]],shared_revision$reference_date[[1L]],
+    shared_revision$publication_date[[1L]],"synthetic-collision-fixture"))
+revision_collision_before <- DBI::dbGetQuery(con,
+  "SELECT * FROM series_provenance_revision ORDER BY provenance_revision_id")
+collision_source_before <- DBI::dbGetQuery(con,
+  "SELECT source_id,name FROM source_dataset WHERE source_id=$1",params=list(shared_revision$source_id[[1L]]))
+collision_tables_before <- list(
+  marker=DBI::dbGetQuery(con,"SELECT * FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset)),
+  facts=DBI::dbGetQuery(con,"SELECT * FROM series_dataset_observation WHERE dataset_id=$1 ORDER BY territory_id,axis_value",params=list(series_dataset)))
+collision_registry <- list(lineage_series=list(owned=TRUE,project=function(canonical) collision_projection))
+revision_collision <- try(publish_registered_series(collision_registry,"lineage_series",NULL,series_adapter),silent=TRUE)
+stopifnot(inherits(revision_collision,"try-error"),
+  grepl("Immutable provenance revision ID collision",as.character(revision_collision),fixed=TRUE),
+  identical(DBI::dbGetQuery(con,"SELECT source_id,name FROM source_dataset WHERE source_id=$1",
+    params=list(shared_revision$source_id[[1L]])),collision_source_before),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset)),collision_tables_before$marker),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_dataset_observation WHERE dataset_id=$1 ORDER BY territory_id,axis_value",params=list(series_dataset)),collision_tables_before$facts),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_provenance_revision ORDER BY provenance_revision_id"),revision_collision_before))
 
 # A genuinely new vintage for the same source identity is valid and repeatable;
 # it is additive rather than a rewrite of the shared vintage.
@@ -444,10 +627,14 @@ series_sources <- DBI::dbGetQuery(con,"SELECT DISTINCT l.axis_value,p.source_id,
 collection_members <- as.character(reference$territory_id[reference$territory_type=="commune" &
   reference$territory_id!=empty_collection_territory])
 if (length(collection_members)<2L) stop("Numeric collection fixture needs two communes",call.=FALSE)
-collection_source <- "fixture_collection"
-collection_vintages <- data.frame(source_id=collection_source,vintage_id=c("v1","v2"),
-  version=c("2024-a","2025-b"),reference_date=as.Date(c("2024-12-31","2025-12-31")),
-  publication_date=as.Date(c("2025-02-01","2026-02-01")))
+collection_source <- shared_revision$source_id[[1L]]
+collection_vintages <- rbind(
+  data.frame(source_id=collection_source,vintage_id=shared_revision$vintage_id[[1L]],
+    version=shared_revision$source_version[[1L]],reference_date=shared_revision$reference_date[[1L]],
+    publication_date=shared_revision$publication_date[[1L]]),
+  data.frame(source_id=collection_source,vintage_id=new_vintage$vintage_id[[1L]],
+    version=new_vintage$source_version[[1L]],reference_date=new_vintage$reference_date[[1L]],
+    publication_date=new_vintage$publication_date[[1L]]))
 collection_projection <- list(
   descriptor=list(indicator_id="lineage_collection",theme_id="demographie",kind="period_detail",
     label="Fixture collection",unit="u",allowed_levels="commune",comparison_detail="total",
@@ -456,9 +643,21 @@ collection_projection <- list(
   facts=data.frame(indicator_id="lineage_collection",territory_id=collection_members,
     territory_type="commune",detail_key="total",observation_period="2025",
     value=seq_along(collection_members),source_id=collection_source,
-    vintage_id=rep(c("v1","v2"),length.out=length(collection_members))),
-  datasets=data.frame(source_id=collection_source,name="Synthetic collection fixture"),vintages=collection_vintages)
+    vintage_id=rep(c(shared_revision$vintage_id[[1L]],new_vintage$vintage_id[[1L]]),
+      length.out=length(collection_members))),
+  datasets=data.frame(source_id=collection_source,name=short_registry_label),vintages=collection_vintages)
+collection_label_before <- DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",params=list(collection_source))
+collection_vintage_before <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id=$1 ORDER BY vintage_id",
+  params=list(collection_source))
 collection_first <- publish_observed_collection(collection_projection,con)
+collection_label_after <- DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",params=list(collection_source))
+collection_vintage_after <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id=$1 ORDER BY vintage_id",
+  params=list(collection_source))
+stopifnot(identical(collection_label_before$name[[1L]],producer_full_title),
+  identical(collection_label_after$name[[1L]],short_registry_label),
+  isTRUE(all.equal(collection_vintage_before,collection_vintage_after,check.attributes=FALSE)),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_provenance_revision WHERE provenance_revision_id=$1",
+    params=list(new_label_revision_id)),new_shared_revision))
 collection_noop <- publish_observed_collection(collection_projection,con)
 stopifnot(collection_first$changed,!collection_noop$changed)
 collection_marker <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count,lineage_row_count,lineage_complete FROM observed_collection_comparison_publication WHERE indicator_id='lineage_collection'")
@@ -479,6 +678,45 @@ old_collection_marker <- collection_marker
 old_collection_groups <- collection_groups
 old_collection_territories <- collection_territories
 old_collection_lineage <- collection_lineage
+
+# The existing fresh label-upgrade state must still be atomic when the owner
+# also proposes a conflicting immutable vintage clock. The attempted label is
+# deliberately different from the current label; only the projection is changed
+# here, never the database's old source_vintage row.
+collection_clock_label_before <- DBI::dbGetQuery(con,
+  "SELECT source_id,name FROM source_dataset WHERE source_id=$1",params=list(collection_source))
+collection_clock_projection <- collection_projection
+collection_clock_projection$datasets$name[[1L]] <- paste0(collection_clock_label_before$name[[1L]],
+  " [conflicting producer label]")
+stopifnot(!identical(collection_clock_projection$datasets$name[[1L]],collection_clock_label_before$name[[1L]]))
+collection_clock_projection$facts$value[[1L]] <- collection_clock_projection$facts$value[[1L]]+10
+collection_clock_projection$vintages$version[[1L]] <- paste0(
+  as.character(collection_clock_projection$vintages$version[[1L]]),"-conflict")
+collection_clock_projection$vintages$reference_date[[1L]] <-
+  as.Date(collection_clock_projection$vintages$reference_date[[1L]])+1
+collection_clock_projection$vintages$publication_date[[1L]] <-
+  as.Date(collection_clock_projection$vintages$publication_date[[1L]])+1
+collection_clock_snapshot <- function() list(
+  source=DBI::dbGetQuery(con,"SELECT * FROM source_dataset WHERE source_id=$1 ORDER BY source_id",params=list(collection_source)),
+  vintage=DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id=$1 ORDER BY vintage_id",params=list(collection_source)),
+  provenance=DBI::dbGetQuery(con,"SELECT * FROM series_provenance_revision WHERE source_id=$1 ORDER BY provenance_revision_id",params=list(collection_source)),
+  descriptor=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_descriptor WHERE indicator_id='lineage_collection'"),
+  categories=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_category WHERE indicator_id='lineage_collection' ORDER BY detail_key"),
+  facts=DBI::dbGetQuery(con,"SELECT * FROM period_detail_observation WHERE indicator_id='lineage_collection' ORDER BY territory_id,detail_key,observation_period"),
+  publication=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_publication WHERE indicator_id='lineage_collection'"),
+  comparison_publication=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_publication WHERE indicator_id='lineage_collection'"),
+  comparison_groups=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_group WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period"),
+  comparison_territories=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_territory WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period,territory_id"),
+  comparison_lineage=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_lineage WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period,source_id,vintage_id")
+)
+collection_clock_before <- collection_clock_snapshot()
+collection_clock_failure <- tryCatch({publish_observed_collection(collection_clock_projection,con);NULL},
+  error=function(error) error)
+stopifnot(inherits(collection_clock_failure,"error"),
+  identical(conditionMessage(collection_clock_failure),"Observed source vintage conflicts with an existing publication"),
+  identical(collection_clock_snapshot(),collection_clock_before),
+  identical(collection_clock_before$source$name[[1L]],collection_clock_label_before$name[[1L]]))
+
 changed_collection <- collection_projection; changed_collection$facts$value[[1L]] <- changed_collection$facts$value[[1L]]+10
 DBI::dbExecute(con,"CREATE FUNCTION reject_collection_lineage() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected collection lineage failure'; END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_collection_lineage BEFORE INSERT ON observed_collection_comparison_lineage FOR EACH ROW EXECUTE FUNCTION reject_collection_lineage()")
@@ -502,6 +740,49 @@ DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_
 collection_rebind_back <- publish_observed_collection(changed_collection,con)
 stopifnot(collection_rebind_back$changed,
   DBI::dbGetQuery(con,"SELECT reference_content_version FROM observed_collection_publication WHERE indicator_id='lineage_collection'")$reference_content_version[[1L]]==collection_reference)
+
+# The series marker is already bound to immutable full-title provenance, while
+# a separate collection owner has legitimately restored the short current
+# registry label. A same-version retry leaves that label and marker alone; a
+# reference-only rebind then refreshes it from the series owner without adding
+# a revision or changing series content.
+label_rebind_registry_before <- DBI::dbGetQuery(con,
+  "SELECT source_id,name FROM source_dataset WHERE source_id=$1",params=list(shared_revision$source_id[[1L]]))
+series_noop_marker_before <- DBI::dbGetQuery(con,
+  "SELECT * FROM series_dataset_publication WHERE dataset_id=$1",params=list(series_dataset))
+label_rebind_revisions_before <- DBI::dbGetQuery(con,
+  "SELECT * FROM series_provenance_revision WHERE source_id=$1 ORDER BY provenance_revision_id",
+  params=list(shared_revision$source_id[[1L]]))
+stopifnot(identical(label_rebind_registry_before$name[[1L]],short_registry_label))
+label_owner_noop <- publish_registered_series(changed_registry,"lineage_series",NULL,series_adapter)
+stopifnot(!label_owner_noop$changed,!label_owner_noop$rebound,
+  identical(DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",
+    params=list(shared_revision$source_id[[1L]]))$name[[1L]],short_registry_label),
+  identical(DBI::dbGetQuery(con,"SELECT * FROM series_dataset_publication WHERE dataset_id=$1",
+    params=list(series_dataset)),series_noop_marker_before))
+label_rebind_reference <- "lineage-reference-label-rebind"
+DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_name='territory_reference'",
+  params=list(label_rebind_reference))
+label_rebind <- publish_registered_series(changed_registry,"lineage_series",NULL,series_adapter)
+label_rebind_marker <- DBI::dbGetQuery(con,
+  "SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=$1",
+  params=list(series_dataset))
+stopifnot(!label_rebind$changed,label_rebind$rebound,
+  identical(DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",
+    params=list(shared_revision$source_id[[1L]]))$name[[1L]],producer_full_title),
+  identical(label_rebind_marker$content_version[[1L]],series_retry$content_version),
+  identical(label_rebind_marker$reference_content_version[[1L]],label_rebind_reference),
+  identical(DBI::dbGetQuery(con,
+    "SELECT * FROM series_provenance_revision WHERE source_id=$1 ORDER BY provenance_revision_id",
+    params=list(shared_revision$source_id[[1L]])),label_rebind_revisions_before))
+DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_name='territory_reference'",
+  params=list(collection_reference))
+label_rebind_back <- publish_registered_series(changed_registry,"lineage_series",NULL,series_adapter)
+stopifnot(!label_rebind_back$changed,label_rebind_back$rebound,
+  DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",
+    params=list(shared_revision$source_id[[1L]]))$name[[1L]]==producer_full_title,
+  DBI::dbGetQuery(con,"SELECT reference_content_version FROM series_dataset_publication WHERE dataset_id=$1",
+    params=list(series_dataset))$reference_content_version[[1L]]==collection_reference)
 collection_pairs <- unique(collection_lineage[c("source_id","vintage_id")])
 
 manifest <- list(

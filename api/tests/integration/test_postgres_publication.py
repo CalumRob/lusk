@@ -13,6 +13,7 @@ from contextlib import contextmanager
 import os
 import re
 import subprocess
+import sys
 import threading
 import uuid
 from pathlib import Path
@@ -81,6 +82,38 @@ def _assert_aedar_server_identity(connection, expected_role):
         inet_server_addr()::text,inet_server_port()""").fetchone()
     if identity != ("lusk_it_contract", expected_role, "192.168.16.3/32", 5432):
         pytest.fail(f"AEDAR guarded server identity mismatch: {identity!r}")
+
+
+def _lineage_r_library_preflight():
+    """Validate retained-proof settings before any schema or database work."""
+    if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        pytest.fail("Issue #814 comparison proof always retains its schema; unset LUSK_TEST_ALLOW_SCHEMA_CLEANUP")
+    r_libs_user = os.environ.get("R_LIBS_USER", "")
+    if not r_libs_user or not Path(r_libs_user).is_dir():
+        pytest.fail("Guarded R publisher proof requires R_LIBS_USER to name an existing populated R library (Rscript uses --vanilla)")
+    return r_libs_user
+
+
+@pytest.fixture
+def lineage_r_library_preflight():
+    return _lineage_r_library_preflight()
+
+
+def test_issue_814_retained_fixture_refuses_cleanup_before_database_work(monkeypatch):
+    monkeypatch.setenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP", "1")
+    monkeypatch.delenv("R_LIBS_USER", raising=False)
+    monkeypatch.setattr(sys.modules[__name__], "_configuration",
+        lambda: pytest.fail("Database configuration must not be reached when cleanup is enabled"))
+    with pytest.raises(pytest.fail.Exception, match="always retains its schema"):
+        next(retained_canonical_db_env.__wrapped__(None))
+
+
+def test_generic_canonical_fixture_keeps_cleanup_opt_in_separate(monkeypatch):
+    monkeypatch.setenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP", "1")
+    monkeypatch.setattr(sys.modules[__name__], "_configuration",
+        lambda: (_ for _ in ()).throw(RuntimeError("generic canonical configuration reached")))
+    with pytest.raises(RuntimeError, match="generic canonical configuration reached"):
+        next(canonical_db_env.__wrapped__())
 
 
 def _dsn_with_schema(dsn: str, schema: str) -> str:
@@ -222,15 +255,37 @@ def db_env(tmp_path_factory):
 
 @pytest.fixture
 def canonical_db_env():
-    """A separate owned schema for comparisons sourced from tracked Parquet."""
+    """Generic owned schema; the documented cleanup opt-in applies to this fixture."""
     publish_dsn, read_dsn = _configuration()
     psycopg = pytest.importorskip("psycopg")
+    passfile = os.environ.get("PGPASSFILE")
+    if not passfile or not Path(passfile).is_file():
+        pytest.fail("Guarded comparison publication requires the existing private PGPASSFILE")
+    publish, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
+    expected_database = "lusk_it_contract"
+    expected_host = "192.168.1.120"
+    expected_port = 5432
+    expected_publisher = "lusk_it_contract_pub"
+    expected_reader = "lusk_it_contract_read"
+    if (os.environ.get("LUSK_TEST_DATABASE_NAME") != expected_database or
+            os.environ.get("LUSK_TEST_DATABASE_PREFIX") != "lusk_it_" or
+            (publish.hostname, publish.port, publish.path.lstrip("/"), publish.username) !=
+            (expected_host, expected_port, expected_database, expected_publisher) or
+            (reader.hostname, reader.port, reader.path.lstrip("/"), reader.username) !=
+            (expected_host, expected_port, expected_database, expected_reader)):
+        pytest.fail("Guarded comparison publication requires the exact test-only host, database, and roles")
     schema = "it_" + uuid.uuid4().hex[:20]
     scoped_publish = _dsn_with_schema(publish_dsn, schema)
     scoped_read = _dsn_with_schema(read_dsn, schema)
     schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
     created = False
     try:
+        for dsn, role in ((publish_dsn, expected_publisher), (read_dsn, expected_reader)):
+            with psycopg.connect(dsn, autocommit=True) as connection:
+                identity = connection.execute("""SELECT current_database(),current_user,
+                    inet_server_addr()::text,inet_server_port()""").fetchone()
+                if identity != (expected_database, role, "192.168.16.3/32", expected_port):
+                    pytest.fail(f"Guarded comparison database identity mismatch: {identity!r}")
         with psycopg.connect(publish_dsn, autocommit=True) as connection:
             connection.execute(f'CREATE SCHEMA "{schema}"')
             created = True
@@ -247,6 +302,118 @@ def canonical_db_env():
         if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(publish_dsn, autocommit=True) as connection:
                 connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+@pytest.fixture
+def retained_canonical_db_env(tmp_path_factory):
+    """Issue #814's guarded publisher schema and evidence are always retained."""
+    import json
+    _lineage_r_library_preflight()
+    publish_dsn, read_dsn = _configuration()
+    psycopg = pytest.importorskip("psycopg")
+    passfile = os.environ.get("PGPASSFILE")
+    if not passfile or not Path(passfile).is_file():
+        pytest.fail("Guarded comparison publication requires the existing private PGPASSFILE")
+    publish, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
+    expected_database = "lusk_it_contract"
+    expected_host = "192.168.1.120"
+    expected_port = 5432
+    expected_publisher = "lusk_it_contract_pub"
+    expected_reader = "lusk_it_contract_read"
+    if (os.environ.get("LUSK_TEST_DATABASE_NAME") != expected_database or
+            os.environ.get("LUSK_TEST_DATABASE_PREFIX") != "lusk_it_" or
+            (publish.hostname, publish.port, publish.path.lstrip("/"), publish.username) !=
+            (expected_host, expected_port, expected_database, expected_publisher) or
+            (reader.hostname, reader.port, reader.path.lstrip("/"), reader.username) !=
+            (expected_host, expected_port, expected_database, expected_reader)):
+        pytest.fail("Guarded comparison publication requires the exact test-only host, database, and roles")
+    schema = "it_" + uuid.uuid4().hex[:20]
+    scoped_publish = _dsn_with_schema(publish_dsn, schema)
+    scoped_read = _dsn_with_schema(read_dsn, schema)
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    for dsn, role in ((publish_dsn, expected_publisher), (read_dsn, expected_reader)):
+        with psycopg.connect(dsn, autocommit=True) as connection:
+            identity = connection.execute("""SELECT current_database(),current_user,
+                inet_server_addr()::text,inet_server_port()""").fetchone()
+            if identity != (expected_database, role, "192.168.16.3/32", expected_port):
+                pytest.fail(f"Guarded comparison database identity mismatch: {identity!r}")
+    configured_evidence_root = os.environ.get("LUSK_TEST_EVIDENCE_DIR", "")
+    if configured_evidence_root:
+        evidence_root = Path(configured_evidence_root)
+        evidence_root.mkdir(parents=True, exist_ok=True)
+    else:
+        evidence_root = tmp_path_factory.mktemp("issue-814-evidence")
+    evidence_dir = evidence_root / ("issue-814-mutable-source-labels-" + uuid.uuid4().hex[:12])
+    evidence_dir.mkdir(parents=True, exist_ok=False)
+    (evidence_dir / "schema-intent.json").write_text(json.dumps({
+        "schema": schema,
+        "database": expected_database,
+        "host": expected_host,
+        "port": expected_port,
+        "publisher_role": expected_publisher,
+        "reader_role": expected_reader,
+        "purpose": "issue #814 guarded mutable source-label publication proof",
+        "cleanup": "disabled; retain schema and evidence",
+    }, indent=2), encoding="utf-8")
+    print(f"issue #814 retained schema intent: {schema}; evidence: {evidence_dir}", flush=True)
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        connection.execute(f'CREATE SCHEMA "{schema}"')
+        connection.execute(f'SET search_path TO "{schema}"')
+        connection.execute(schema_path.read_text(encoding="utf-8"))
+        reader_role = urlsplit(read_dsn).username
+        if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
+            pytest.fail("Read DSN must identify a simple database role name")
+        quoted_role = '"' + reader_role.replace('"', '""') + '"'
+        connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+        connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+    yield {"publish_dsn": scoped_publish, "read_dsn": scoped_read, "schema": schema}
+
+
+@pytest.fixture
+def canonical_r_publisher_db_env(lineage_r_library_preflight, retained_canonical_db_env):
+    """Order R --vanilla configuration validation before guarded schema DDL."""
+    return retained_canonical_db_env
+
+
+@pytest.fixture
+def retained_lineage_schema_env():
+    """Use only an explicitly named, already-populated retained test schema."""
+    if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+        pytest.fail("Issue #814 comparison proof always retains its schema; unset LUSK_TEST_ALLOW_SCHEMA_CLEANUP")
+    schema = os.environ.get("LUSK_LINEAGE_TEST_SCHEMA", "")
+    if not schema:
+        pytest.skip("set LUSK_LINEAGE_TEST_SCHEMA to an existing retained lusk_it_contract it_* schema")
+    r_libs_user = _lineage_r_library_preflight()
+    if not re.fullmatch(r"it_[A-Za-z0-9_]+", schema):
+        pytest.fail("LUSK_LINEAGE_TEST_SCHEMA must name an existing it_* schema")
+    publish_dsn, read_dsn = _configuration()
+    passfile = os.environ.get("PGPASSFILE")
+    if not passfile or not Path(passfile).is_file():
+        pytest.fail("Retained lineage rollback check requires the existing private PGPASSFILE")
+    publish, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
+    if (os.environ.get("LUSK_TEST_DATABASE_NAME") != "lusk_it_contract" or
+            os.environ.get("LUSK_TEST_DATABASE_PREFIX") != "lusk_it_" or
+            (publish.hostname, publish.port, publish.path.lstrip("/"), publish.username) !=
+            ("192.168.1.120", 5432, "lusk_it_contract", "lusk_it_contract_pub") or
+            (reader.hostname, reader.port, reader.path.lstrip("/"), reader.username) !=
+            ("192.168.1.120", 5432, "lusk_it_contract", "lusk_it_contract_read")):
+        pytest.fail("Retained lineage rollback check requires the exact test-only host, database, and roles")
+    import psycopg
+    with psycopg.connect(_dsn_with_schema(read_dsn, schema), autocommit=True) as connection:
+        identity = connection.execute("""SELECT current_database(),current_user,
+            inet_server_addr()::text,inet_server_port(),current_schema()""").fetchone()
+        if identity != ("lusk_it_contract", "lusk_it_contract_read", "192.168.16.3/32", 5432, schema):
+            pytest.fail(f"Retained lineage schema identity mismatch: {identity!r}")
+        if connection.execute("SELECT count(*) FROM observed_collection_descriptor WHERE indicator_id='lineage_collection'").fetchone()[0] != 1:
+            pytest.fail("Retained schema does not contain the expected synthetic collection descriptor")
+        if connection.execute("SELECT count(*) FROM period_detail_observation WHERE indicator_id='lineage_collection'").fetchone()[0] == 0:
+            pytest.fail("Retained schema does not contain the expected synthetic collection facts")
+    return {
+        "publish_dsn": _dsn_with_schema(publish_dsn, schema),
+        "read_dsn": _dsn_with_schema(read_dsn, schema),
+        "schema": schema,
+        "r_libs_user": r_libs_user,
+    }
 
 
 def _write_artifacts(root: Path) -> tuple[Path, Path]:
@@ -789,7 +956,7 @@ def _remove_comparison_bases_for_upgrade(connection):
 
 
 @pytest.mark.parametrize("publication_schema", ["fresh", "populated_upgrade", "bases_absent_upgrade"])
-def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, tmp_path, publication_schema):
+def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_r_publisher_db_env, tmp_path, publication_schema):
     """Exercise R publishers through the semantic single/batch API against PostgreSQL."""
     from dataclasses import replace
     import psycopg
@@ -798,9 +965,10 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
     from api import main
     from api import snapshot_reads
 
+    canonical_db_env = canonical_r_publisher_db_env
     publish_dsn = canonical_db_env["publish_dsn"]
     read_dsn = canonical_db_env["read_dsn"]
-    print(f"retained synthetic lineage schema ({publication_schema}): {canonical_db_env['schema']}")
+    print(f"retained synthetic lineage schema ({publication_schema}): {canonical_db_env['schema']}", flush=True)
     publish = urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
     manifest_path = tmp_path / "lineage-manifest.json"
     bundle_path = tmp_path / "lineage-inputs.rds"
@@ -813,10 +981,11 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         "LUSK_LINEAGE_TEST_SCHEMA": canonical_db_env["schema"],
         "LUSK_LINEAGE_TEST_MANIFEST": str(manifest_path),
         "LUSK_LINEAGE_TEST_BUNDLE": str(bundle_path),
+        "R_LIBS_USER": os.environ["R_LIBS_USER"],
     })
     pipeline = Path(__file__).resolve().parents[3] / "pipeline"
     completed = subprocess.run(
-        ["Rscript", "scripts/smoke-comparison-lineage-fixture.R"],
+        ["Rscript", "--vanilla", "scripts/smoke-comparison-lineage-fixture.R"],
         cwd=pipeline, env=env, capture_output=True, text=True, timeout=120,
     )
     assert completed.returncode == 0, completed.stdout + "\n" + completed.stderr
@@ -995,7 +1164,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
             repaired_markers = None
             for _ in range(2):
                 repaired = subprocess.run(
-                    ["Rscript", "scripts/smoke-comparison-lineage-fixture.R"],
+                    ["Rscript", "--vanilla", "scripts/smoke-comparison-lineage-fixture.R"],
                     cwd=pipeline, env=republish_env, capture_output=True, text=True, timeout=120)
                 assert repaired.returncode == 0, repaired.stdout + "\n" + repaired.stderr
                 actual_responses, actual_batch = read_comparisons()
@@ -1437,6 +1606,51 @@ def _table_snapshot(connection, tables):
         table: sorted(connection.execute(f'SELECT * FROM "{table}"').fetchall(), key=repr)
         for table in tables
     }
+
+
+def test_collection_vintage_conflict_rolls_back_label_and_full_schema_snapshot(
+    retained_lineage_schema_env, tmp_path
+):
+    """Run only the vintage-conflict rollback against a retained synthetic schema."""
+    import psycopg
+
+    env_config = retained_lineage_schema_env
+    with psycopg.connect(env_config["read_dsn"], autocommit=True) as connection:
+        tables = tuple(row[0] for row in connection.execute("""
+            SELECT table_name FROM information_schema.tables
+            WHERE table_schema=current_schema() AND table_type='BASE TABLE'
+            ORDER BY table_name
+        """).fetchall())
+        if not tables:
+            pytest.fail("Retained synthetic schema has no base tables to snapshot")
+        before = _table_snapshot(connection, tables)
+    print(f"collection vintage-conflict rollback: retained schema {env_config['schema']}; snapshotting {len(tables)} tables", flush=True)
+
+    publish = urlsplit(os.environ["LUSK_TEST_PUBLISH_DSN"])
+    env = os.environ.copy()
+    env.update({
+        "LUSK_LINEAGE_TEST_HOST": publish.hostname or "",
+        "LUSK_LINEAGE_TEST_PORT": str(publish.port or ""),
+        "LUSK_LINEAGE_TEST_DATABASE": os.environ["LUSK_TEST_DATABASE_NAME"],
+        "LUSK_LINEAGE_TEST_USER": publish.username or "",
+        "LUSK_LINEAGE_TEST_SCHEMA": env_config["schema"],
+        "LUSK_LINEAGE_TEST_MANIFEST": str(tmp_path / "lineage-conflict-manifest.json"),
+        "LUSK_LINEAGE_TEST_COLLECTION_CONFLICT_ONLY": "1",
+        "R_LIBS_USER": env_config["r_libs_user"],
+    })
+    pipeline = Path(__file__).resolve().parents[3] / "pipeline"
+    completed = subprocess.run(
+        ["Rscript", "--vanilla", "scripts/smoke-comparison-lineage-fixture.R"],
+        cwd=pipeline, env=env, capture_output=True, text=True, timeout=120,
+    )
+    print(completed.stdout, flush=True)
+    if completed.stderr:
+        print(completed.stderr, flush=True)
+    with psycopg.connect(env_config["read_dsn"], autocommit=True) as connection:
+        after = _table_snapshot(connection, tables)
+    assert after == before, "The failed collection publish must leave every retained schema row unchanged"
+    assert completed.returncode == 0, completed.stdout + "\n" + completed.stderr
+    assert "expected vintage conflict rolled back changed source label and collection publication" in completed.stdout
 
 
 _COMPARISON_CONTRACT_TABLES = (
