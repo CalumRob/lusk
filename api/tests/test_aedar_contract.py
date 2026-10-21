@@ -41,7 +41,7 @@ def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_b
     comparison = ResourceReadItem.model_validate({
         "resource": "aedar_territorial_aggregate", "target": target,
         "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
-        "fields": ["group_value", "rank"], "intent": {"kind": "fixed_comparison", "context": "epci"},
+        "fields": ["group_value", "value"], "intent": {"kind": "fixed_comparison", "context": "epci"},
     })
     assert validate_resource_item(comparison, catalogue) == resource
     context_as_coordinate = ResourceReadItem.model_validate({
@@ -60,7 +60,7 @@ def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_b
     source = inspect.getsource(aedar_reads._aedar_comparison_snapshot)
     assert "aedar_content_version" in source
     assert "reference_content_version" in source
-    assert "aedar_comparison_territory" in source
+    assert "aedar_comparison_territory" not in source
     assert "rank_ties" not in source
     schema = (Path(__file__).resolve().parents[1] / "schema.sql").read_text(encoding="utf-8")
     migration = (Path(__file__).resolve().parents[1] / "migrations" / "032_aedar_fixed_comparisons.sql").read_text(encoding="utf-8")
@@ -71,7 +71,7 @@ def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_b
     assert "source_snapshot_id='2026-v1'" in migration
     assert "input_content_version text NOT NULL" in migration
     assert "input_identity jsonb NOT NULL" in migration
-    assert "statistic IN ('median','direct','pooled')" in schema
+    assert "statistic IN ('median','pooled')" in schema
     assert "statistic IN ('median','direct','pooled')" in migration
     assert "statistic='pooled'" in schema and "statistic='pooled'" in migration
     assert "FOREIGN KEY(comparison_context,group_id,territory_type,typequ,measure)" in migration
@@ -82,9 +82,7 @@ def test_aedar_semantic_coordinates_and_fixed_comparison_intent_are_closed_and_b
     # The retired route's open query surface is gone: the semantic item accepts
     # only the producer-declared axes and a closed comparison field vocabulary.
     assert "sql" not in resource.axes
-    assert set(resource.fields) == {
-        "group_value", "value", "rank", "rank_size",
-        "member_count", "eligible_count", "missing_count"}
+    assert set(resource.fields) == {"group_value", "value"}
 
 
 def test_aedar_source_measure_contract_has_312_fields_and_four_level_identity():
@@ -340,33 +338,42 @@ def test_aedar_malformed_request_is_422_before_any_publication_read(monkeypatch)
     assert consulted == []
 
 
-def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monkeypatch):
+def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_fields(monkeypatch):
     from contextlib import contextmanager
     from fastapi.testclient import TestClient
     import api.main as main
-    state={"stale":False,"statistic":"median","context":"epci","queries":[]}
+    state={"stale":False,"mode":"reference_only","context":"epci","queries":[]}
 
-    class Cursor:
-        description = [type("Column", (), {"name": n}) for n in
-            ("comparison_context","group_id","territory_type","typequ",
-             "typequ_label","source_id","vintage_id","source_url","licence","attribution","reference_date","publication_date",
-             "measure","statistic","group_value","group_n_addresses","group_n_observed","group_coverage_status",
-             "member_count","eligible_count","missing_count","value","status","n_addresses","n_observed","coverage_status","rank","rank_size")]
-        def __init__(self, row): self.row=row
-        def fetchone(self): return self.row
     class Rows:
         def __init__(self, rows): self.rows=rows
         def fetchall(self): return self.rows
     class Connection:
         def execute(self, sql, *_args, **_kwargs):
             state["queries"].append((sql,_args[0] if _args else None))
+            if sql.startswith("SET TRANSACTION"):
+                return None
             if "SELECT DISTINCT typequ" in sql:
                 return Rows([("A104",)])
             if "aedar_comparison_publication" in sql:
-                return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,8,"old-aedar" if state["stale"] else "aed-v1","ref-v1")})()
-            if "FROM territory_reference" in sql:
+                return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,0,state["mode"],"old-aedar" if state["stale"] else "aed-v1","ref-v1")})()
+            if "SELECT territory_id,territory_type,density_class_code FROM territory_reference" in sql:
+                return type("Territory",(),{"fetchone":lambda self:("22001","commune","1")})()
+            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
+                return Rows([("22001","commune","22","E1","1"),("E1","epci","22",None,None),("53","region",None,None,None)])
+            if "SELECT t.epci_id,t.density_class_code,r.territory_id" in sql:
+                return type("Territory",(),{"fetchone":lambda self:("E1","1","53")})()
+            if "SELECT 1 FROM territory_reference" in sql:
                 return type("Territory",(),{"fetchone":lambda self:(1,)})()
-            return Cursor((state["context"],"E1","commune","A104","Fixture","aedar_bretagne","2026-v1","https://example.test","ODbL","AEDAR",None,"2026-09-30","count_5_walk_mean",state["statistic"],4.0,None,None,None,2,2,0,5.0,"measured",10,8,"covered",1,2))
+            if "FROM aedar_territorial_aggregate" in sql:
+                if "a.typequ_label" in sql:
+                    return type("Focal",(),{"fetchone":lambda self:("Fixture","aedar_bretagne","2026-v1","https://example.test","ODbL","AEDAR",None,"2026-09-30",5.0,12,9,"covered")})()
+                expected_type,expected_id,value=("epci","E1",11.0) if state["context"]=="epci" else ("region","53",13.0)
+                assert _args[0] == ("count_5_walk_mean",expected_type,expected_id,"A104")
+                return type("Reference",(),{"fetchone":lambda self:(value,10,8,"covered")})()
+            if "FROM aedar_comparison_group" in sql:
+                values=(4.0,None,None,None,"pooled") if state["context"]=="density_class" else (8.0,10,8,"covered","direct")
+                return type("Reference",(),{"fetchone":lambda self:values})()
+            raise AssertionError(f"Unexpected AEDAR snapshot query: {sql}")
         @contextmanager
         def transaction(self): yield self
     class FakePool:
@@ -389,28 +396,32 @@ def test_aedar_fixed_comparison_http_read_is_versioned_and_has_no_rank_ties(monk
     assert body["aedar_content_version"]=="aed-v1"
     assert body["reference_content_version"]=="ref-v1"
     assert body["input_content_version"]=="inputs-v1"
-    assert body["comparison"]["rank"]==1
-    assert body["comparison"]["rank_size"]==2
-    assert body["comparison"]["statistic"]=="median"
-    assert "rank_ties" not in body["comparison"]
+    assert body["comparison"]["group_value"]==11.0
+    assert body["comparison"]["value"]==5.0
+    assert body["comparison"]["statistic"]=="direct"
+    assert not {"rank","rank_size","member_count","eligible_count","missing_count"} & set(body["comparison"])
     value_only=TestClient(main.app).post("/api/resources/read", json=payload(fields=["value"]))
-    rank_only=TestClient(main.app).post("/api/resources/read", json=payload(fields=["rank"]))
-    assert value_only.status_code==rank_only.status_code==200
+    group_only=TestClient(main.app).post("/api/resources/read", json=payload(fields=["group_value"]))
+    assert value_only.status_code==group_only.status_code==200
     assert value_only.json()["comparison"]["value"]==5.0
-    assert "group_value" not in value_only.json()["comparison"] and "rank" not in value_only.json()["comparison"]
-    assert rank_only.json()["comparison"]["rank"]==1
-    assert "value" not in rank_only.json()["comparison"] and "rank_size" not in rank_only.json()["comparison"]
-    projection_queries=[(sql,params) for sql,params in state["queries"] if "FROM aedar_comparison_territory" in sql]
-    assert "CASE WHEN %s THEN t.value" in projection_queries[-2][0] and projection_queries[-2][1][4] is True
-    assert projection_queries[-1][1][4] is False and projection_queries[-1][1][5] is True
+    assert "group_value" not in value_only.json()["comparison"]
+    assert group_only.json()["comparison"]["group_value"]==11.0
+    assert "value" not in group_only.json()["comparison"]
+    state["context"]="bretagne"
+    bretagne=TestClient(main.app).post("/api/resources/read",json=payload())
+    assert bretagne.status_code==200, bretagne.text
+    assert bretagne.json()["comparison"]["group_value"]==13.0
     before=len(state["queries"])
     invalid=TestClient(main.app).post("/api/resources/read", json=payload(fields=["not_a_field"]))
     assert invalid.status_code==422 and len(state["queries"])==before
-    state["statistic"]="pooled"
     state["context"]="density_class"
     pooled=TestClient(main.app).post("/api/resources/read", json=payload())
-    assert pooled.status_code==200
+    assert pooled.status_code==200, pooled.text
     assert pooled.json()["comparison"]["statistic"]=="pooled"
     state["stale"]=True
     stale=TestClient(main.app).post("/api/resources/read", json=payload())
     assert stale.status_code==503
+    state["stale"]=False
+    state["mode"]="legacy_rank"
+    legacy=TestClient(main.app).post("/api/resources/read",json=payload())
+    assert legacy.status_code==503

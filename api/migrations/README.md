@@ -571,6 +571,52 @@ two exact zero-reason FK definitions (fresh deferred/no cascade or retained
 034 cascade/non-deferrable) are the only allowed divergence. This inventory is
 not a production action and was not run against a production database.
 
+# Migration 040 — publish AEDAR reference aggregates only
+
+`040_aedar_reference_only_publication.sql` is an additive forward contract
+after 039. It marks existing AEDAR rank generations `legacy_rank` so API reads
+fail closed, removes group-level peer-eligibility columns, and changes the
+deferred publication invariant to require the reference-only mode, current
+AEDAR/reference bindings, exact group count, and zero rows in the retained
+unserved `aedar_comparison_territory` table. It performs no data publication or
+cleanup and uses no `CASCADE`. Fresh `schema.sql` expresses the same serving
+contract. Apply only in the separate owner-operated phase after review; this
+implementation does not run the migration against any database.
+In the already-approved rollout sequence it follows the committed migrations:
+
+    030 -> 039 -> 032 -> 033 -> 034 -> 035 -> 037 -> 038 -> 040
+
+Canonical AEDAR regeneration is performed by the existing pipeline entry point
+from `pipeline/` after the approved code/schema rollout:
+
+```powershell
+Rscript scripts/publish-aedar-aggregates.R --check
+```
+
+This reacquires/validates the official source aggregates and producer-owned
+pooled-density artifact, then atomically writes a versioned reference-only
+comparison manifest. A stale legacy manifest is not upgraded in place; rebuild
+it with `--check`. Database publication remains the separately gated explicit
+`--publish` operation and is not authorized by this migration or issue #810.
+
+The retained projection is one `aedar_comparison_group` row per
+`(comparison_context, group_id, territory_type, typequ, measure)` with ten
+columns: those five key columns plus `statistic`, `value`, `n_addresses`,
+`n_observed`, and `coverage_status`. The existing `aedar_territorial_aggregate`
+remains the complete source of commune/EPCI/département/Région facts. The old
+`aedar_comparison_territory` relation is retained for upgrade compatibility, is
+not reader-granted, and must contain zero rows in a current publication. The
+publication marker adds `publication_mode='reference_only'` and requires a zero
+territory-row count. This is 7 density-class groups + 2 same-level groups, each
+crossed with the registered TYPEQU and measure axes (currently 235 × 312), or
+659,880 summary rows; EPCI/Bretagne direct references are not duplicated.
+
+The guarded migration/fresh-schema integration proof reports a representative
+`pg_column_size` tuple estimate multiplied by that reference cardinality. It is
+explicitly a heap-row estimate (not a benchmark or production measurement) and
+excludes indexes, page fill and catalog overhead; it does not load a full
+reference cube.
+
 The operator has separately supplied a live read-only inventory reporting
 `current_database=lusk`, `current_user=postgres`, and `transaction_read_only=on`,
 with the 18 listed public relations

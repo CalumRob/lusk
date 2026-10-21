@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import concurrent.futures
+import csv
 from contextlib import contextmanager
 import os
 import re
@@ -55,6 +56,102 @@ def _dsn_with_schema(dsn: str, schema: str) -> str:
     # psycopg's libpq options set search_path for this connection only.
     query["options"] = [f"-csearch_path={schema}"]
     return urlunsplit((parts.scheme, parts.netloc, parts.path, urlencode(query, doseq=True), parts.fragment))
+
+
+def test_migration_040_aedar_reference_contract_matches_fresh_schema():
+    """Upgrade the pinned pre-040 AEDAR shape and compare it with fresh DDL."""
+    import psycopg
+
+    publish_dsn, _ = _configuration()
+    root = Path(__file__).resolve().parents[2]
+    baseline = subprocess.check_output(
+        ["git", "show", "75b6ad661d8ab677c33c73152598d097590c7886:api/schema.sql"],
+        cwd=root, text=True, encoding="utf-8")
+    migration = (root / "migrations/040_aedar_reference_only_publication.sql").read_text(encoding="utf-8")
+    schemas = {"upgrade": "it_810_aedar_upgrade_" + uuid.uuid4().hex[:12],
+               "fresh": "it_810_aedar_fresh_" + uuid.uuid4().hex[:12]}
+    evidence_dir = Path("E:/Temp/opencode") / ("issue-810-migration-040-" + uuid.uuid4().hex[:12])
+    evidence_dir.mkdir(parents=True, exist_ok=False)
+    (evidence_dir / "schema-intent.json").write_text(json.dumps({
+        "schemas": schemas, "database": os.environ["LUSK_TEST_DATABASE_NAME"],
+        "publisher_role": urlsplit(publish_dsn).username,
+        "purpose": "issue-810 guarded migration and fresh-schema parity",
+    }, indent=2), encoding="utf-8")
+    print(f"migration 040 retained schemas: {schemas}; evidence: {evidence_dir}", flush=True)
+
+    tables=["aedar_comparison_publication","aedar_comparison_group","aedar_comparison_territory"]
+    def contract(connection, schema):
+        columns=connection.execute("""SELECT table_name,column_name,data_type,is_nullable,column_default
+            FROM information_schema.columns WHERE table_schema=%s AND table_name=ANY(%s)
+            ORDER BY table_name,ordinal_position""",(schema,tables)).fetchall()
+        constraints=connection.execute("""SELECT t.relname,c.conname,c.contype,
+            pg_get_constraintdef(c.oid),c.convalidated,c.condeferrable
+            FROM pg_constraint c JOIN pg_class t ON t.oid=c.conrelid
+            JOIN pg_namespace n ON n.oid=t.relnamespace
+            WHERE n.nspname=%s AND t.relname=ANY(%s) ORDER BY t.relname,c.conname""",
+            (schema,tables)).fetchall()
+        triggers=connection.execute("""SELECT t.relname,g.tgname,pg_get_triggerdef(g.oid)
+            FROM pg_trigger g JOIN pg_class t ON t.oid=g.tgrelid
+            JOIN pg_namespace n ON n.oid=t.relnamespace
+            WHERE n.nspname=%s AND t.relname=ANY(%s) AND NOT g.tgisinternal
+            ORDER BY t.relname,g.tgname""",(schema,tables)).fetchall()
+        grants=connection.execute("""SELECT table_name,grantee,privilege_type,is_grantable
+            FROM information_schema.role_table_grants WHERE table_schema=%s AND table_name=ANY(%s)
+            ORDER BY table_name,grantee,privilege_type,is_grantable""",(schema,tables)).fetchall()
+        function=connection.execute("""SELECT pg_get_functiondef(p.oid) FROM pg_proc p
+            JOIN pg_namespace n ON n.oid=p.pronamespace
+            WHERE n.nspname=%s AND p.proname='check_aedar_comparison_publication'""",
+            (schema,)).fetchall()
+        triggers=[(table,name,re.sub(r"\s+"," ",definition.replace(f'"{schema}".',"")))
+            for table,name,definition in triggers]
+        function=[re.sub(r"\s+"," ",row[0]) for row in function]
+        return columns,constraints,triggers,grants,function
+
+    with psycopg.connect(publish_dsn, autocommit=True) as connection:
+        parts = urlsplit(publish_dsn)
+        assert connection.execute("SELECT current_database(),current_user").fetchone() == (
+            os.environ["LUSK_TEST_DATABASE_NAME"], parts.username)
+        for schema in schemas.values():
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+        connection.execute(f'SET search_path TO "{schemas["upgrade"]}"')
+        connection.execute(baseline)
+        before = connection.execute("""SELECT
+            (SELECT count(*) FROM aedar_comparison_publication),
+            (SELECT count(*) FROM aedar_comparison_group),
+            (SELECT count(*) FROM aedar_comparison_territory)""").fetchone()
+        connection.execute(migration)
+        upgraded = contract(connection, schemas["upgrade"])
+        after = connection.execute("""SELECT
+            (SELECT count(*) FROM aedar_comparison_publication),
+            (SELECT count(*) FROM aedar_comparison_group),
+            (SELECT count(*) FROM aedar_comparison_territory)""").fetchone()
+        assert after == before == (0, 0, 0)
+        connection.execute(f'SET search_path TO "{schemas["fresh"]}"')
+        connection.execute((root / "schema.sql").read_text(encoding="utf-8"))
+        fresh = contract(connection, schemas["fresh"])
+        assert upgraded == fresh
+        with (root.parent / "pipeline/inst/extdata/aedar-typequ-2025.csv").open(
+                newline="", encoding="utf-8") as typequ_file:
+            typequ_count = sum(1 for _ in csv.DictReader(typequ_file))
+        from api.aedar_models import AEDAR_MEASURE_KEYS
+        # Acceptance arithmetic for the current canonical seven-class registry
+        # and the two same-level reference kinds; not a serving-time constant.
+        expected_reference_rows = (7 + 2) * typequ_count * len(AEDAR_MEASURE_KEYS)
+        sample_tuple_bytes = connection.execute("""SELECT pg_column_size(
+            ROW('same_level','53','epci','A104',%s,'median',1.5,
+                NULL::bigint,NULL::bigint,NULL::text)::aedar_comparison_group)""",
+            (sorted(AEDAR_MEASURE_KEYS)[0],)).fetchone()[0]
+        print("AEDAR reference-only schema estimate:", {
+            "reference_group_rows": expected_reference_rows,
+            "sample_tuple_bytes": sample_tuple_bytes,
+            "estimated_group_heap_bytes": expected_reference_rows * sample_tuple_bytes,
+            "territory_peer_rows": 0,
+            "note": "representative tuple estimate; excludes indexes, page fill and catalog overhead",
+        }, flush=True)
+        assert connection.execute("""SELECT has_table_privilege('lusk_reader',%s,'SELECT'),
+            has_table_privilege('lusk_reader',%s,'SELECT')""",
+            (f'{schemas["fresh"]}.aedar_comparison_group',
+             f'{schemas["fresh"]}.aedar_comparison_territory')).fetchone() == (True, False)
 
 
 @pytest.fixture(scope="module")

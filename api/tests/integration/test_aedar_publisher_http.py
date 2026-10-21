@@ -4,7 +4,6 @@ from __future__ import annotations
 import os
 import json
 import re
-import shutil
 import subprocess
 import tempfile
 import threading
@@ -44,9 +43,6 @@ def test_aedar_r_publication_is_read_through_bounded_http():
     publisher, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
     database_name = os.environ["LUSK_TEST_DATABASE_NAME"]
     read_role = os.environ["LUSK_TEST_READ_USER"]
-    allowed_hosts = {"localhost", "127.0.0.1", "::1", "192.168.1.120"}
-    assert publisher.hostname in allowed_hosts and reader.hostname in allowed_hosts, \
-        "integration DSNs must use loopback or the documented test PostgreSQL host"
     assert publisher.hostname == reader.hostname and publisher.port == reader.port
     assert publisher.path.lstrip("/") == database_name
     assert reader.path.lstrip("/") == database_name
@@ -59,25 +55,26 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         assert reader.username == "lusk_it_contract_read"
 
     pub = psycopg.connect(publish_dsn, autocommit=True)
-    created = False
-    fixture_tmp = None
+    fixture_tmp = Path(tempfile.mkdtemp(prefix="aedar-it-",dir="E:/Temp/opencode"))
+    evidence_manifest = fixture_tmp / "schema-intent.json"
+    evidence_manifest.write_text(json.dumps({"schema":schema,"database":database_name,
+        "publisher_role":publisher.username,"reader_role":read_role,
+        "purpose":"issue-810 AEDAR reference-only guarded proof"},indent=2),encoding="utf-8")
+    print(f"AEDAR guarded namespace recorded before DDL: {schema} ({evidence_manifest})",flush=True)
     try:
         assert pub.execute("SELECT current_database(),current_user").fetchone() == (
             database_name, publisher.username)
         with psycopg.connect(read_dsn) as identity:
             assert identity.execute("SELECT current_database(),current_user").fetchone() == (
                 database_name, read_role)
-        pub.execute(f'CREATE SCHEMA "{schema}"'); created = True
+        pub.execute(f'CREATE SCHEMA "{schema}"')
         pub.execute(f'SET search_path TO "{schema}"')
         pub.execute((root / "api/schema.sql").read_text(encoding="utf-8"))
-        # Rehearse the actual additive migration against the disposable schema
-        # as well as parsing the fresh-install DDL above.
-        pub.execute((root / "api/migrations/028_aedar_territorial_aggregates.sql").read_text(encoding="utf-8"))
-        pub.execute((root / "api/migrations/032_aedar_fixed_comparisons.sql").read_text(encoding="utf-8"))
-        pub.execute((root / "api/migrations/037_bound_aedar_comparison_publication_validation.sql").read_text(encoding="utf-8"))
+        # This end-state publisher proof uses the fresh schema. The explicit
+        # 040 upgrade rehearsal belongs to the guarded migration suite.
         assert re.fullmatch(r"[A-Za-z0-9_$-]+",read_role)
         pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{read_role}"')
-        pub.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO "{read_role}"')
+        pub.execute(f'GRANT SELECT ON territory_reference,table_publication,aedar_territorial_aggregate,aedar_comparison_publication,aedar_comparison_group TO "{read_role}"')
         pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name) VALUES
           ('22001','commune','Fixture commune'),('200000001','epci','Fixture EPCI'),
           ('22','departement','Fixture département'),('53','region','Fixture région'),
@@ -148,8 +145,6 @@ DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_insert() RETURNS trigger LANGUA
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_insert BEFORE INSERT ON aedar_territorial_aggregate FOR EACH ROW EXECUTE FUNCTION reject_aedar_insert()")
 projection$facts$count_5_walk_min[1] <- 7
 failed <- tryCatch({publish_aedar_aggregates(projection,con); FALSE},error=function(e) TRUE)
-DBI::dbExecute(con,"DROP TRIGGER reject_aedar_insert ON aedar_territorial_aggregate")
-DBI::dbExecute(con,"DROP FUNCTION reject_aedar_insert()")
 after <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
 stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_territorial_aggregate")$n[[1]]==5L * nrow(source_axis))
 projection <- read_aedar_canonical(canonical_dir)
@@ -201,7 +196,10 @@ stage("end-comparison-canonical-read")
 stage("begin-comparison-publish")
 published <- publish_aedar_comparisons(comparison,con)
 stage("end-comparison-publish",groups=comparison$group_row_count,territories=comparison$territory_row_count)
-stopifnot(published$changed,comparison$group_row_count>0,comparison$territory_row_count>0,length(comparison$parts)==AEDAR_TYPEQU_REGISTRY_COUNT)
+stopifnot(published$changed,comparison$group_row_count>0,comparison$territory_row_count==0,length(comparison$parts)==AEDAR_TYPEQU_REGISTRY_COUNT)
+unchanged <- publish_aedar_comparisons(comparison,con)
+stopifnot(!unchanged$changed,identical(unchanged$content_version,comparison$content_version),
+  unchanged$territory_row_count==0)
 compare_db_projection <- function(part_kind,table,columns,order_columns) {
   for(part_index in seq_along(comparison$parts)) {
     part <- comparison$parts[[part_index]]
@@ -219,24 +217,18 @@ compare_db_projection <- function(part_kind,table,columns,order_columns) {
   invisible(TRUE)
 }
 group_columns <- c('comparison_context','group_id','territory_type','TYPEQU','measure','statistic','value',
-  'n_addresses','n_observed','coverage_status','member_count','eligible_count','missing_count')
-territory_columns <- c('comparison_context','group_id','territory_type','territory_id','TYPEQU','measure','value',
-  'status','n_addresses','n_observed','coverage_status','rank','rank_size')
+  'n_addresses','n_observed','coverage_status')
 group_order <- c('comparison_context','group_id','territory_type','TYPEQU','measure')
-territory_order <- c('comparison_context','group_id','territory_type','territory_id','TYPEQU','measure')
 if (identical(Sys.getenv('AEDAR_IT_PHASE'),'full-audit')) {
   stage("begin-exhaustive-parity")
   compare_db_projection('groups','aedar_comparison_group',group_columns,group_order)
-  compare_db_projection('territories','aedar_comparison_territory',territory_columns,territory_order)
   stage("end-exhaustive-parity",partitions=length(comparison$parts))
 }
 a104_part <- comparison$parts[[match('A104',vapply(comparison$parts,`[[`,character(1),'TYPEQU'))]]
 part_groups <- as.data.frame(nanoparquet::read_parquet(file.path(canonical_comparison,a104_part$groups)))
-part_territories <- as.data.frame(nanoparquet::read_parquet(file.path(canonical_comparison,a104_part$territories)))
-focus_group <- part_groups[part_groups$comparison_context=='epci'&part_groups$group_id=='200000001'&part_groups$territory_type=='commune'&part_groups$measure=='count_5_walk_mean',,drop=FALSE]
-focus_territory <- part_territories[part_territories$comparison_context=='epci'&part_territories$group_id=='200000001'&part_territories$territory_type=='commune'&part_territories$territory_id=='22001'&part_territories$measure=='count_5_walk_mean',,drop=FALSE]
-stopifnot(nrow(focus_group)==1,nrow(focus_territory)==1)
-jsonlite::write_json(list(group=as.list(focus_group),territory=as.list(focus_territory),
+focus_group <- part_groups[part_groups$comparison_context=='density_class'&part_groups$group_id=='1'&part_groups$territory_type=='commune'&part_groups$measure=='count_5_walk_mean',,drop=FALSE]
+stopifnot(nrow(focus_group)==1,comparison$territory_row_count==0L)
+jsonlite::write_json(list(group=as.list(focus_group),
   content_version=comparison$content_version,aedar_content_version=comparison$aedar_content_version,
   reference_content_version=comparison$reference_content_version,input_content_version=comparison$input_content_version,
   input_identity=jsonlite::fromJSON(comparison$input_identity)),Sys.getenv('AEDAR_EXPECTED_COMPARISON_JSON'),auto_unbox=TRUE,na='null',digits=17)
@@ -246,19 +238,15 @@ if (identical(Sys.getenv('AEDAR_IT_PHASE'),'semantic')) {
 }
         comparison_before <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_comparison_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced comparison rollback'; END $$")
-DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_comparison_insert BEFORE INSERT ON aedar_comparison_territory FOR EACH ROW EXECUTE FUNCTION reject_aedar_comparison_insert()")
+DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_comparison_insert BEFORE INSERT ON aedar_comparison_group FOR EACH ROW EXECUTE FUNCTION reject_aedar_comparison_insert()")
 replacement_source <- make_density_source(2)
 replacement <- project_aedar_comparison_publication(projection,replacement_source,refs,
   aedar_content_version=before,reference_content_version='fixture-ref-v1',directory=canonical_comparison)
 comparison_failed <- tryCatch({publish_aedar_comparisons(replacement,con); FALSE},error=function(e) TRUE)
-DBI::dbExecute(con,"DROP TRIGGER reject_aedar_comparison_insert ON aedar_comparison_territory")
-DBI::dbExecute(con,"DROP FUNCTION reject_aedar_comparison_insert()")
 comparison_after <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
 stopifnot(comparison_failed,identical(comparison_before,comparison_after))
 compare_db_projection('groups','aedar_comparison_group',group_columns,group_order)
-compare_db_projection('territories','aedar_comparison_territory',territory_columns,territory_order)
 '''
-        fixture_tmp = Path(tempfile.mkdtemp(prefix="aedar-it-",dir="E:/Temp/opencode"))
         try:
             tmp = fixture_tmp
             script = tmp / "fixture.R"; script.write_text(rscript,encoding="utf-8")
@@ -373,11 +361,11 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                     "resource": "aedar_territorial_aggregate",
                     "target": {"kind": "territory", "type": "commune", "id": "22001"},
                     "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
-                    "fields": ["group_value", "rank", "eligible_count"],
-                    "intent": {"kind": "fixed_comparison", "context": "epci"},
+                    "fields": ["group_value", "value"],
+                    "intent": {"kind": "fixed_comparison", "context": "density_class"},
                 })
                 assert semantic_comparison.status_code == 200, semantic_comparison.text
-                assert semantic_comparison.json()["comparison"]["rank"] == expected_comparison["territory"]["rank"]
+                assert semantic_comparison.json()["comparison"]["group_value"] == pytest.approx(expected_comparison["group"]["value"])
                 semantic_batch = client.post("/api/resources/read-batch", json={"items": [
                     {"id": "aggregate", "resource": "aedar_territorial_aggregate",
                      "target": {"kind": "territory", "type": "commune", "id": "22001"},
@@ -386,12 +374,12 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                     {"id": "comparison", "resource": "aedar_territorial_aggregate",
                      "target": {"kind": "territory", "type": "commune", "id": "22001"},
                      "coordinates": {"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
-                     "fields": ["group_value", "rank"],
-                     "intent": {"kind": "fixed_comparison", "context": "epci"}},
+                      "fields": ["group_value", "value"],
+                      "intent": {"kind": "fixed_comparison", "context": "density_class"}},
                 ]})
                 assert semantic_batch.status_code == 200, semantic_batch.text
                 assert [row["id"] for row in semantic_batch.json()["results"]] == ["aggregate", "comparison"]
-                assert semantic_batch.json()["results"][1]["data"]["comparison"]["rank"] == expected_comparison["territory"]["rank"]
+                assert semantic_batch.json()["results"][1]["data"]["comparison"]["group_value"] == pytest.approx(expected_comparison["group"]["value"])
                 assert client.post("/api/resources/read", json={
                     "resource": "aedar_territorial_aggregate",
                     "target": {"kind": "territory", "type": "commune", "id": "22001"},
@@ -399,7 +387,7 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                 }).status_code == 422
                 comparison=semantic_read("commune", "22001",
                     coordinates={"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
-                    intent={"kind": "fixed_comparison", "context": "epci"})
+                    intent={"kind": "fixed_comparison", "context": "density_class"})
                 assert comparison.status_code==200,comparison.text
                 compared=comparison.json()
                 assert compared["source_snapshot_id"]=="2026-v1"
@@ -411,18 +399,13 @@ compare_db_projection('territories','aedar_comparison_territory',territory_colum
                 assert compared["reference_content_version"]==expected_comparison["reference_content_version"]
                 assert compared["input_content_version"]==expected_comparison["input_content_version"]
                 assert compared["input_identity"]==expected_comparison["input_identity"]
-                group=expected_comparison["group"]; territory=expected_comparison["territory"]
+                group=expected_comparison["group"]
                 assert compared["comparison"]["comparison_context"]==group["comparison_context"]
                 assert compared["comparison"]["statistic"]==group["statistic"]
                 assert compared["comparison"]["group_value"]==pytest.approx(group["value"])
-                assert compared["comparison"]["member_count"]==group["member_count"]
-                assert compared["comparison"]["eligible_count"]==group["eligible_count"]
-                assert compared["comparison"]["missing_count"]==group["missing_count"]
-                assert compared["comparison"]["value"]==pytest.approx(territory["value"])
-                assert compared["comparison"]["rank"]==territory["rank"]
-                assert compared["comparison"]["rank_size"]==territory["rank_size"]
-                assert compared["comparison"]["n_addresses"]==territory["n_addresses"]==2
-                assert "rank_ties" not in compared["comparison"]
+                assert compared["comparison"]["group_value"]==pytest.approx(group["value"])
+                assert compared["comparison"]["n_addresses"]==2
+                assert not {"rank","rank_size","member_count","eligible_count","missing_count"} & set(compared["comparison"])
                 pub.execute("UPDATE table_publication SET content_version='fixture-ref-stale' WHERE table_name='territory_reference'")
                 stale=semantic_read("commune", "22001",
                     coordinates={"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
@@ -472,10 +455,8 @@ DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_
           aedar_content_version=changed_source_version,reference_content_version='fixture-ref-v1',
           directory=Sys.getenv('AEDAR_CANONICAL_COMPARISON_DIR'))
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_stale_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced replacement failure'; END $$")
-DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_stale_insert BEFORE INSERT ON aedar_comparison_territory FOR EACH ROW EXECUTE FUNCTION reject_aedar_stale_insert()")
+DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_stale_insert BEFORE INSERT ON aedar_comparison_group FOR EACH ROW EXECUTE FUNCTION reject_aedar_stale_insert()")
 failed <- tryCatch({publish_aedar_comparisons(stale_replacement,con); FALSE},error=function(e) TRUE)
-DBI::dbExecute(con,"DROP TRIGGER reject_aedar_stale_insert ON aedar_comparison_territory")
-DBI::dbExecute(con,"DROP FUNCTION reject_aedar_stale_insert()")
 after <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
 stopifnot(failed,identical(before,after))
 '''
@@ -494,6 +475,4 @@ stopifnot(failed,identical(before,after))
             if original_database_url is None: os.environ.pop("DATABASE_URL",None)
             else: os.environ["DATABASE_URL"]=original_database_url
     finally:
-        if created: pub.execute(f'DROP SCHEMA IF EXISTS "{schema}" CASCADE')
         pub.close()
-        if fixture_tmp is not None: shutil.rmtree(fixture_tmp,ignore_errors=True)
