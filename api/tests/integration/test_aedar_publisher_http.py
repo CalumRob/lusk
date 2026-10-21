@@ -25,8 +25,9 @@ def test_aedar_r_publication_is_read_through_bounded_http():
                 "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX")
     if not all(os.getenv(k) for k in required):
         pytest.skip("requires explicitly configured disposable PostgreSQL publisher/read DSNs")
-    assert os.environ["LUSK_TEST_DATABASE_PREFIX"] == "lusk_it_"
-    assert os.environ["LUSK_TEST_DATABASE_NAME"].startswith("lusk_it_")
+    from api.tests.integration.test_postgres_publication import (
+        _aedar_guarded_configuration, _assert_aedar_server_identity)
+    publish_dsn, read_dsn = _aedar_guarded_configuration()
     psycopg = pytest.importorskip("psycopg")
     from fastapi.testclient import TestClient
     from api.main import app, pool
@@ -39,7 +40,6 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         p = urlsplit(dsn); q = parse_qs(p.query); q["options"] = [f"-csearch_path={schema}"]
         return urlunsplit((p.scheme,p.netloc,p.path,urlencode(q,doseq=True),p.fragment))
 
-    publish_dsn, read_dsn = os.environ["LUSK_TEST_PUBLISH_DSN"], os.environ["LUSK_TEST_READ_DSN"]
     publisher, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
     database_name = os.environ["LUSK_TEST_DATABASE_NAME"]
     read_role = os.environ["LUSK_TEST_READ_USER"]
@@ -48,12 +48,6 @@ def test_aedar_r_publication_is_read_through_bounded_http():
     assert reader.path.lstrip("/") == database_name
     assert publisher.username and reader.username == read_role
     assert publisher.username != reader.username, "publisher and reader roles must differ"
-    if publisher.hostname == "192.168.1.120":
-        assert database_name == "lusk_it_contract"
-        assert publisher.port == 5432
-        assert publisher.username == "lusk_it_contract_pub"
-        assert reader.username == "lusk_it_contract_read"
-
     pub = psycopg.connect(publish_dsn, autocommit=True)
     fixture_tmp = Path(tempfile.mkdtemp(prefix="aedar-it-",dir="E:/Temp/opencode"))
     evidence_manifest = fixture_tmp / "schema-intent.json"
@@ -62,16 +56,15 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         "purpose":"issue-810 AEDAR reference-only guarded proof"},indent=2),encoding="utf-8")
     print(f"AEDAR guarded namespace recorded before DDL: {schema} ({evidence_manifest})",flush=True)
     try:
-        assert pub.execute("SELECT current_database(),current_user").fetchone() == (
-            database_name, publisher.username)
+        _assert_aedar_server_identity(pub, publisher.username)
         with psycopg.connect(read_dsn) as identity:
-            assert identity.execute("SELECT current_database(),current_user").fetchone() == (
-                database_name, read_role)
+            _assert_aedar_server_identity(identity, read_role)
         pub.execute(f'CREATE SCHEMA "{schema}"')
         pub.execute(f'SET search_path TO "{schema}"')
-        pub.execute((root / "api/schema.sql").read_text(encoding="utf-8"))
-        # This end-state publisher proof uses the fresh schema. The explicit
-        # 040 upgrade rehearsal belongs to the guarded migration suite.
+        baseline = subprocess.check_output(
+            ["git", "show", "75b6ad661d8ab677c33c73152598d097590c7886:api/schema.sql"],
+            cwd=root, text=True, encoding="utf-8")
+        pub.execute(baseline)
         assert re.fullmatch(r"[A-Za-z0-9_$-]+",read_role)
         pub.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO "{read_role}"')
         pub.execute(f'GRANT SELECT ON territory_reference,table_publication,aedar_territorial_aggregate,aedar_comparison_publication,aedar_comparison_group TO "{read_role}"')
@@ -81,6 +74,42 @@ def test_aedar_r_publication_is_read_through_bounded_http():
           ('mob-1','commune','Mobility unchanged')""")
         pub.execute("UPDATE territory_reference SET density_class_code=CASE WHEN territory_id='22001' THEN '1' ELSE '2' END,density_class_label='Fixture density',epci_id='200000001' WHERE territory_type='commune'")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',5)")
+        # Seed a one-row legacy generation on the pre-040 schema. Its marker
+        # and dependencies satisfy the old trigger without manufacturing peers.
+        pub.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
+            VALUES('aedar_territorial_aggregate',%s,0,'fixture-ref-v1')""", ("a"*64,))
+        pub.execute("""INSERT INTO aedar_comparison_group(comparison_context,group_id,territory_type,
+            typequ,measure,statistic,value,n_addresses,n_observed,coverage_status,
+            member_count,eligible_count,missing_count)
+            VALUES('density_class','1','commune','A135','count_5_walk_mean','pooled',1,2,1,'covered',0,0,0)""")
+        pub.execute("""INSERT INTO aedar_comparison_publication(singleton,content_version,
+            source_snapshot_id,aedar_content_version,reference_content_version,input_content_version,
+            input_identity,group_row_count,territory_row_count)
+            VALUES(true,%s,'2026-v1',%s,'fixture-ref-v1',%s,'{}'::jsonb,1,0)""",
+            ("b"*64,"a"*64,"c"*64))
+        pub.execute((root / "api/migrations/040_aedar_reference_only_publication.sql").read_text(encoding="utf-8"))
+        legacy_marker = pub.execute("SELECT publication_mode,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone()
+        assert legacy_marker == ("legacy_rank",1,0)
+        # The migrated reader must reject the retained old marker before the
+        # real R producer replaces it with a reference-only generation.
+        original_database_url = os.environ.get("DATABASE_URL")
+        os.environ["DATABASE_URL"] = scoped(read_dsn)
+        pool.cache_clear()
+        try:
+            with TestClient(app) as client:
+                legacy_read = client.post("/api/resources/read",json={
+                    "resource":"aedar_territorial_aggregate",
+                    "target":{"kind":"territory","type":"commune","id":"22001"},
+                    "coordinates":{"typequ":["A135"],"measure":["count_5_walk_mean"]},
+                    "intent":{"kind":"fixed_comparison","context":"density_class"},
+                })
+                assert legacy_read.status_code == 503, legacy_read.text
+        finally:
+            pool.cache_clear()
+            if original_database_url is None:
+                os.environ.pop("DATABASE_URL",None)
+            else:
+                os.environ["DATABASE_URL"] = original_database_url
 
         rscript = r'''started <- proc.time()[[3L]]
 stage <- function(name, ...) {cat(sprintf("AEDAR_STAGE elapsed=%.3fs name=%s %s\n",proc.time()[[3L]]-started,name,paste(...,collapse=" ")));flush.console()}

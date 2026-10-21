@@ -92,8 +92,6 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
         raise HTTPException(404, "Unknown territory type/id")
     if preflight_only:
         return {"content_version": marker[0], "reference_content_version": marker[3]}
-    from api.snapshot_reads import _comparison_cohort
-    _, _, scope = _comparison_cohort(conn, territory_type, territory_id, None)
     focal = conn.execute("""SELECT t.epci_id,t.density_class_code,r.territory_id
         FROM territory_reference t CROSS JOIN territory_reference r
         WHERE t.territory_type=%s AND t.territory_id=%s AND r.territory_type='region'""",
@@ -101,6 +99,8 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
     if not focal:
         raise HTTPException(404, "Unknown territory type/id")
     if context == "density_class":
+        from api.snapshot_reads import _comparison_cohort
+        _, _, scope = _comparison_cohort(conn, territory_type, territory_id, None)
         if territory_type != "commune" or not scope or scope.get("kind") != "density_class":
             raise HTTPException(422, "Density reference is available for commune scopes only")
         group_id, reference_type = scope["density_class_code"], "commune"
@@ -109,6 +109,8 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
               AND territory_type='commune' AND typequ=%s AND measure=%s""",
             (group_id,typequ,measure)).fetchone()
     elif context == "same_level":
+        from api.snapshot_reads import _comparison_cohort
+        _, _, scope = _comparison_cohort(conn, territory_type, territory_id, None)
         if territory_type not in ("epci","departement") or not scope or scope.get("kind") != "same_level":
             raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
         group_id, reference_type = focal[2], territory_type

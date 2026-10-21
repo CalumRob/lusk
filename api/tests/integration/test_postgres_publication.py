@@ -50,6 +50,39 @@ def _configuration():
     return publish_dsn, read_dsn
 
 
+def _aedar_guarded_configuration():
+    """Pin AEDAR DDL proofs to the documented operator-owned test target."""
+    publish_dsn, read_dsn = _configuration()
+    passfile = os.environ.get("PGPASSFILE")
+    if not passfile or not Path(passfile).is_file():
+        pytest.fail("AEDAR guarded tests require the existing private PGPASSFILE")
+    publish, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
+    expected = {
+        "database": "lusk_it_contract",
+        "host": "192.168.1.120",
+        "port": 5432,
+        "publisher": "lusk_it_contract_pub",
+        "reader": "lusk_it_contract_read",
+    }
+    if (os.environ.get("LUSK_TEST_DATABASE_NAME") != expected["database"] or
+            os.environ.get("LUSK_TEST_DATABASE_PREFIX") != "lusk_it_" or
+            publish.scheme not in {"postgres", "postgresql"} or
+            reader.scheme not in {"postgres", "postgresql"} or
+            (publish.hostname, publish.port, publish.path.lstrip("/"), publish.username) !=
+            (expected["host"], expected["port"], expected["database"], expected["publisher"]) or
+            (reader.hostname, reader.port, reader.path.lstrip("/"), reader.username) !=
+            (expected["host"], expected["port"], expected["database"], expected["reader"])):
+        pytest.fail("AEDAR guarded tests require the exact documented test host, database, and roles")
+    return publish_dsn, read_dsn
+
+
+def _assert_aedar_server_identity(connection, expected_role):
+    identity = connection.execute("""SELECT current_database(),current_user,
+        inet_server_addr()::text,inet_server_port()""").fetchone()
+    if identity != ("lusk_it_contract", expected_role, "192.168.16.3/32", 5432):
+        pytest.fail(f"AEDAR guarded server identity mismatch: {identity!r}")
+
+
 def _dsn_with_schema(dsn: str, schema: str) -> str:
     parts = urlsplit(dsn)
     query = parse_qs(parts.query, keep_blank_values=True)
@@ -62,7 +95,7 @@ def test_migration_040_aedar_reference_contract_matches_fresh_schema():
     """Upgrade the pinned pre-040 AEDAR shape and compare it with fresh DDL."""
     import psycopg
 
-    publish_dsn, _ = _configuration()
+    publish_dsn, _ = _aedar_guarded_configuration()
     root = Path(__file__).resolve().parents[2]
     baseline = subprocess.check_output(
         ["git", "show", "75b6ad661d8ab677c33c73152598d097590c7886:api/schema.sql"],
@@ -102,15 +135,15 @@ def test_migration_040_aedar_reference_contract_matches_fresh_schema():
             JOIN pg_namespace n ON n.oid=p.pronamespace
             WHERE n.nspname=%s AND p.proname='check_aedar_comparison_publication'""",
             (schema,)).fetchall()
-        triggers=[(table,name,re.sub(r"\s+"," ",definition.replace(f'"{schema}".',"")))
+        triggers=[(table,name,re.sub(r"\s+"," ",definition.replace(f'"{schema}".',"").replace(f'{schema}.',"")))
             for table,name,definition in triggers]
-        function=[re.sub(r"\s+"," ",row[0]) for row in function]
+        function=[re.sub(r"\s+"," ",row[0].replace(f'"{schema}".',"").replace(f'{schema}.',""))
+            for row in function]
         return columns,constraints,triggers,grants,function
 
     with psycopg.connect(publish_dsn, autocommit=True) as connection:
         parts = urlsplit(publish_dsn)
-        assert connection.execute("SELECT current_database(),current_user").fetchone() == (
-            os.environ["LUSK_TEST_DATABASE_NAME"], parts.username)
+        _assert_aedar_server_identity(connection, parts.username)
         for schema in schemas.values():
             connection.execute(f'CREATE SCHEMA "{schema}"')
         connection.execute(f'SET search_path TO "{schemas["upgrade"]}"')

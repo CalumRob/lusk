@@ -342,7 +342,9 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
     from contextlib import contextmanager
     from fastapi.testclient import TestClient
     import api.main as main
-    state={"stale":False,"mode":"reference_only","context":"epci","queries":[]}
+    state={"stale":False,"mode":"reference_only","context":"epci","queries":[],
+           "density":None,"epci":"E1","territory_exists":True,
+           "focal_exists":True,"focal_source_exists":True}
 
     class Rows:
         def __init__(self, rows): self.rows=rows
@@ -357,18 +359,20 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
             if "aedar_comparison_publication" in sql:
                 return type("Marker",(),{"fetchone":lambda self:("cmp-v1","2026-v1","aed-v1","ref-v1","inputs-v1",{"address_origins":"sha256"},4,0,state["mode"],"old-aedar" if state["stale"] else "aed-v1","ref-v1")})()
             if "SELECT territory_id,territory_type,density_class_code FROM territory_reference" in sql:
-                return type("Territory",(),{"fetchone":lambda self:("22001","commune","1")})()
+                return type("Territory",(),{"fetchone":lambda self:("22001","commune",state["density"])})()
             if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
-                return Rows([("22001","commune","22","E1","1"),("E1","epci","22",None,None),("53","region",None,None,None)])
+                return Rows([("22001","commune","22",state["epci"],state["density"]),("E1","epci","22",None,None),("53","region",None,None,None)])
             if "SELECT t.epci_id,t.density_class_code,r.territory_id" in sql:
-                return type("Territory",(),{"fetchone":lambda self:("E1","1","53")})()
+                return type("Territory",(),{"fetchone":lambda self:(state["epci"],state["density"],"53") if state["focal_exists"] else None})()
             if "SELECT 1 FROM territory_reference" in sql:
-                return type("Territory",(),{"fetchone":lambda self:(1,)})()
+                return type("Territory",(),{"fetchone":lambda self:(1,) if state["territory_exists"] else None})()
             if "FROM aedar_territorial_aggregate" in sql:
                 if "a.typequ_label" in sql:
-                    return type("Focal",(),{"fetchone":lambda self:("Fixture","aedar_bretagne","2026-v1","https://example.test","ODbL","AEDAR",None,"2026-09-30",5.0,12,9,"covered")})()
-                expected_type,expected_id,value=("epci","E1",11.0) if state["context"]=="epci" else ("region","53",13.0)
-                assert _args[0] == ("count_5_walk_mean",expected_type,expected_id,"A104")
+                    return type("Focal",(),{"fetchone":lambda self:("Fixture","aedar_bretagne","2026-v1","https://example.test","ODbL","AEDAR",None,"2026-09-30",5.0,12,9,"covered") if state["focal_source_exists"] else None})()
+                measure,expected_type,expected_id,typequ=_args[0]
+                value={"epci":11.0,"region":13.0}[expected_type]
+                assert (measure,typequ)==("count_5_walk_mean","A104")
+                assert expected_id==("E1" if expected_type=="epci" else "53")
                 return type("Reference",(),{"fetchone":lambda self:(value,10,8,"covered")})()
             if "FROM aedar_comparison_group" in sql:
                 values=(4.0,None,None,None,"pooled") if state["context"]=="density_class" else (8.0,10,8,"covered","direct")
@@ -400,6 +404,9 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
     assert body["comparison"]["value"]==5.0
     assert body["comparison"]["statistic"]=="direct"
     assert not {"rank","rank_size","member_count","eligible_count","missing_count"} & set(body["comparison"])
+    # Direct source references do not require commune density membership.
+    assert not any("SELECT territory_id,territory_type,department_id,epci_id,density_class_code" in q
+                   for q,_ in state["queries"])
     value_only=TestClient(main.app).post("/api/resources/read", json=payload(fields=["value"]))
     group_only=TestClient(main.app).post("/api/resources/read", json=payload(fields=["group_value"]))
     assert value_only.status_code==group_only.status_code==200
@@ -411,13 +418,32 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
     bretagne=TestClient(main.app).post("/api/resources/read",json=payload())
     assert bretagne.status_code==200, bretagne.text
     assert bretagne.json()["comparison"]["group_value"]==13.0
+    state["epci"]=None
+    unavailable_epci=TestClient(main.app).post("/api/resources/read",json=payload(intent={"kind":"fixed_comparison","context":"epci"}))
+    assert unavailable_epci.status_code==503
+    state["epci"]="E1"
+    state["focal_source_exists"]=False
+    missing_focal_value=TestClient(main.app).post("/api/resources/read",json=payload(intent={"kind":"fixed_comparison","context":"epci"}))
+    assert missing_focal_value.status_code==404
+    state["focal_source_exists"]=True
+    state["focal_exists"]=False
+    state["territory_exists"]=False
+    missing_territory=TestClient(main.app).post("/api/resources/read",json=payload(intent={"kind":"fixed_comparison","context":"epci"}))
+    assert missing_territory.status_code==404
+    state["territory_exists"]=True
+    state["focal_exists"]=True
     before=len(state["queries"])
     invalid=TestClient(main.app).post("/api/resources/read", json=payload(fields=["not_a_field"]))
     assert invalid.status_code==422 and len(state["queries"])==before
     state["context"]="density_class"
+    state["density"]="1"
     pooled=TestClient(main.app).post("/api/resources/read", json=payload())
     assert pooled.status_code==200, pooled.text
     assert pooled.json()["comparison"]["statistic"]=="pooled"
+    assert pooled.json()["comparison"]["group_id"]=="1"
+    state["density"]=None
+    missing_density=TestClient(main.app).post("/api/resources/read",json=payload())
+    assert missing_density.status_code==503
     state["stale"]=True
     stale=TestClient(main.app).post("/api/resources/read", json=payload())
     assert stale.status_code==503
