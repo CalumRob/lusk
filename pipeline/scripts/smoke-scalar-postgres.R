@@ -10,6 +10,10 @@ stopifnot(all(vapply(config, nzchar, logical(1))),
           !tolower(config$DATABASE) %in% c("lusk", "postgres", "template0", "template1"),
           grepl("^[A-Za-z0-9_.:-]+$", config$HOST),
           grepl("^[0-9]+$", config$PORT))
+expected_config <- c(HOST="192.168.1.120", PORT="5432",
+  DATABASE="lusk_it_contract", USER="lusk_it_contract_pub")
+if (!identical(unlist(config), expected_config))
+  stop("Refusing scalar smoke: only the documented lusk_it_contract publisher target is allowed", call.=FALSE)
 if (!requireNamespace("RPostgres", quietly=TRUE) || !requireNamespace("DBI", quietly=TRUE))
   stop("DBI and RPostgres are required")
 passfile <- Sys.getenv("PGPASSFILE", unset="")
@@ -18,8 +22,31 @@ if (!nzchar(passfile) || !file.exists(passfile) ||
       tolower(normalizePath("..", winslash="/"))))
   stop("PGPASSFILE must point to the existing private libpq file outside the repository", call.=FALSE)
 
+Sys.setenv(PGCONNECT_TIMEOUT="5",
+  PGOPTIONS="-c statement_timeout=120000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=180000")
 connection <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
   port=as.integer(config$PORT), dbname=config$DATABASE, user=config$USER)
+identity <- DBI::dbGetQuery(connection, paste(
+  "SELECT current_database() AS database, current_user AS role,",
+  "inet_server_addr()::text AS server_address"))
+if (nrow(identity) != 1L || identity$database[[1L]] != "lusk_it_contract" ||
+    identity$role[[1L]] != "lusk_it_contract_pub" ||
+    identity$server_address[[1L]] != "192.168.16.3/32") {
+  DBI::dbDisconnect(connection)
+  stop("Refusing scalar smoke: publisher connection identity does not match the guarded test server", call.=FALSE)
+}
+reader_connection <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
+  port=as.integer(config$PORT), dbname=config$DATABASE, user="lusk_it_contract_read")
+reader_identity <- DBI::dbGetQuery(reader_connection, paste(
+  "SELECT current_database() AS database, current_user AS role,",
+  "inet_server_addr()::text AS server_address"))
+DBI::dbDisconnect(reader_connection)
+if (nrow(reader_identity) != 1L || reader_identity$database[[1L]] != "lusk_it_contract" ||
+    reader_identity$role[[1L]] != "lusk_it_contract_read" ||
+    reader_identity$server_address[[1L]] != "192.168.16.3/32") {
+  DBI::dbDisconnect(connection)
+  stop("Refusing scalar smoke: reader connection identity does not match the guarded test server", call.=FALSE)
+}
 schema <- paste0("scalar_it_", Sys.getpid(), "_", sprintf("%08x", sample.int(.Machine$integer.max, 1L)))
 created <- FALSE
 smoke_failure <- NULL
@@ -120,8 +147,8 @@ tryCatch({
     identical(DBI::dbGetQuery(connection, "SELECT value,status FROM scalar_observation WHERE indicator_id='densite' ORDER BY territory_id LIMIT 1"), previous_fact),
     identical(DBI::dbGetQuery(connection, "SELECT content_version FROM table_publication WHERE table_name='scalar_observation'")$content_version[[1L]], previous_marker))
 
-  # Exercise the retained producer-owned scalar artifacts against a fresh
-  # post-036 schema; no legacy service/building relation is part of this path.
+  # Exercise the retained producer-owned scalar artifacts against the current
+  # schema, starting from a valid populated scalar publication (no migration replay).
   DBI::dbExecute(connection, "DROP TRIGGER reject_smoke_value ON scalar_observation")
   DBI::dbExecute(connection, "DROP FUNCTION reject_smoke_value()")
   DBI::dbExecute(connection, "DELETE FROM scalar_observation_source")
@@ -134,23 +161,119 @@ tryCatch({
   artifacts <- tempfile("retained-scalar-artifacts-"); dir.create(artifacts)
   territories <- nanoparquet::read_parquet(file.path(public, "territoires.parquet"))
   vintages <- nanoparquet::read_parquet(file.path(public, "vintages.parquet"))
-  for (theme in c("economie", "demographie", "mobilite", "habitat")) {
+  themes <- retained_scalar_artifact_owners()
+  for (theme in themes) {
     payload <- list(indicateurs=lire_indicateurs_commis(theme, public), territoires=territories)
-    metadata <- lire_theme_metadata(theme)
+    # The committed public Parquets are paired with their own producer metadata
+    # vintage; current in-package metadata may have moved source vintages on.
+    metadata <- jsonlite::fromJSON(file.path(public, paste0("theme_", theme, ".json")),
+      simplifyVector=FALSE)
     materialize_theme_scalar_artifact(payload, metadata, vintages, theme, artifacts)
   }
   reference <- project_territory_reference(territories)
   publish_territory_reference_projection(reference,
     territory_reference_postgres_adapter(connection))
+
+  # Start from a valid populated scalar publication assembled from the actual
+  # producer artifacts, including metadata-declared legacy descriptors.
+  legacy_cohorts <- lapply(themes, function(theme)
+    read_scalar_serving_artifact(file.path(artifacts, "scalar-serving", theme)))
+  legacy_scalar <- assemble_scalar_snapshot(legacy_cohorts[[1L]], legacy_cohorts[-1L])
+  legacy_registry <- register_scalar_publisher(list(), "legacy_populated",
+    project=function(x) legacy_scalar,
+    publish=function(p, db, version) db$replace(p, version))
+  legacy_publication <- publish_registered_scalar(legacy_registry, "legacy_populated",
+    NULL, scalar_postgres_adapter(connection))
+  legacy_comparison <- project_scalar_comparisons(legacy_scalar, reference$rows,
+    scalar_content_version(legacy_scalar), reference$content_version)
+  publish_registered_scalar_comparison(legacy_comparison,
+    scalar_comparison_postgres_adapter(connection))
   snapshot <- project_retained_scalar_snapshot(public, reference, artifacts)
-  published <- publish_retained_scalar_snapshot(connection, snapshot, tempdir())$scalar
+  retired_ids <- snapshot$retired_indicator_ids
+  legacy_retired_ids <- intersect(retired_ids, legacy_scalar$descriptors$indicator_id)
+  legacy_comparison_ids <- intersect(legacy_retired_ids, legacy_comparison$groups$indicator_id)
+  stopifnot(legacy_publication$changed, length(legacy_retired_ids) > 0L,
+    length(legacy_comparison_ids) > 0L)
+  legacy_indicator <- legacy_comparison_ids[[1L]]
+  stopifnot(DBI::dbGetQuery(connection,
+    "SELECT count(*) AS n FROM scalar_descriptor WHERE indicator_id=$1",
+    params=list(legacy_indicator))$n[[1L]] == 1L,
+    DBI::dbGetQuery(connection,
+      "SELECT count(*) AS n FROM scalar_observation_source WHERE indicator_id=$1",
+      params=list(legacy_indicator))$n[[1L]] > 0L,
+    DBI::dbGetQuery(connection,
+      "SELECT count(*) AS n FROM scalar_comparison_group WHERE indicator_id=$1",
+      params=list(legacy_indicator))$n[[1L]] > 0L,
+    DBI::dbGetQuery(connection,
+      "SELECT count(*) AS n FROM scalar_comparison_territory WHERE indicator_id=$1",
+      params=list(legacy_indicator))$n[[1L]] > 0L)
+
+  snapshot_sql <- function() list(
+    facts=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation ORDER BY indicator_id,territory_id"),
+    descriptors=DBI::dbGetQuery(connection, "SELECT * FROM scalar_descriptor ORDER BY indicator_id"),
+    descriptor_sources=DBI::dbGetQuery(connection, "SELECT * FROM scalar_descriptor_source ORDER BY indicator_id,source_id"),
+    sources=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation_source ORDER BY indicator_id,territory_id,source_id,vintage_id"),
+    datasets=DBI::dbGetQuery(connection, "SELECT * FROM source_dataset ORDER BY source_id"),
+    vintages=DBI::dbGetQuery(connection, "SELECT * FROM source_vintage ORDER BY source_id,vintage_id"),
+    marker=DBI::dbGetQuery(connection, "SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='scalar_observation'"),
+    clocks=DBI::dbGetQuery(connection, "SELECT * FROM table_publication ORDER BY table_name"),
+    comparison_groups=DBI::dbGetQuery(connection, "SELECT * FROM scalar_comparison_group ORDER BY comparison_context,group_id,territory_type,indicator_id"),
+    comparison_territories=DBI::dbGetQuery(connection, "SELECT * FROM scalar_comparison_territory ORDER BY comparison_context,group_id,territory_type,indicator_id,territory_id"),
+    comparison_lineage=DBI::dbGetQuery(connection, "SELECT * FROM comparison_source_lineage ORDER BY comparison_family,comparison_context,group_id,territory_type,facet_id,source_id,vintage_id"),
+    comparison_marker=DBI::dbGetQuery(connection, "SELECT * FROM scalar_comparison_publication WHERE singleton"))
+  legacy_state <- snapshot_sql()
+  stopifnot(legacy_state$comparison_marker$scalar_content_version[[1L]] ==
+      scalar_content_version(legacy_scalar),
+    nrow(legacy_state$comparison_groups) > 0L,
+    nrow(legacy_state$comparison_territories) > 0L)
+  setTimeLimit(elapsed=180, transient=TRUE)
+  published <- tryCatch(publish_retained_scalar_snapshot(connection, snapshot, tempdir())$scalar,
+    finally=setTimeLimit(cpu=Inf, elapsed=Inf, transient=FALSE))
+  actual_descriptor_ids <- DBI::dbGetQuery(connection,
+    "SELECT indicator_id FROM scalar_descriptor")$indicator_id
   stopifnot(published$changed,
-    setequal(DBI::dbGetQuery(connection, "SELECT indicator_id FROM scalar_descriptor")$indicator_id,
-      snapshot$scalar$descriptors$indicator_id),
-    !any(grepl("^(share_|iso_)", DBI::dbGetQuery(connection,
-      "SELECT indicator_id FROM scalar_descriptor")$indicator_id)),
+    setequal(actual_descriptor_ids, snapshot$scalar$descriptors$indicator_id),
+    !any(actual_descriptor_ids %in% retired_ids),
     DBI::dbGetQuery(connection, "SELECT count(*) AS n FROM scalar_observation")$n[[1L]] ==
       nrow(snapshot$scalar$facts))
+
+  retained_facts <- snapshot$scalar$facts[
+    order(snapshot$scalar$facts$indicator_id, snapshot$scalar$facts$territory_id), , drop=FALSE]
+  actual_facts <- DBI::dbGetQuery(connection, paste(
+    "SELECT indicator_id,territory_id,territory_type,value,status,support_count,denominator_count",
+    "FROM scalar_observation ORDER BY indicator_id,territory_id"))
+  stopifnot(identical(as.character(actual_facts$indicator_id), retained_facts$indicator_id),
+    identical(as.character(actual_facts$territory_id), retained_facts$territory_id),
+    identical(as.character(actual_facts$territory_type), retained_facts$territory_type),
+    isTRUE(all.equal(as.numeric(actual_facts$value), retained_facts$value)),
+    identical(as.character(actual_facts$status), retained_facts$status),
+    identical(as.integer(actual_facts$support_count), retained_facts$support_count),
+    identical(as.integer(actual_facts$denominator_count), retained_facts$denominator_count))
+  retained_sources <- snapshot$scalar$provenance[
+    do.call(order, snapshot$scalar$provenance[
+      c("indicator_id", "territory_id", "source_id", "vintage_id")]), , drop=FALSE]
+  rownames(retained_sources) <- NULL
+  actual_sources <- DBI::dbGetQuery(connection, paste(
+    "SELECT indicator_id,territory_id,source_id,vintage_id FROM scalar_observation_source",
+    "ORDER BY indicator_id,territory_id,source_id,vintage_id"))
+  stopifnot(identical(actual_sources, retained_sources))
+  scalar_clock <- DBI::dbGetQuery(connection, paste(
+    "SELECT content_version,row_count,reference_content_version FROM table_publication",
+    "WHERE table_name='scalar_observation'"))
+  comparison_marker <- DBI::dbGetQuery(connection,
+    "SELECT * FROM scalar_comparison_publication WHERE singleton")
+  stopifnot(identical(scalar_clock$content_version[[1L]], published$content_version),
+    scalar_clock$row_count[[1L]] == nrow(snapshot$scalar$facts),
+    identical(scalar_clock$reference_content_version[[1L]], reference$content_version),
+    identical(comparison_marker$scalar_content_version[[1L]], published$content_version),
+    identical(comparison_marker$reference_content_version[[1L]], reference$content_version),
+    comparison_marker$group_row_count[[1L]] == nrow(snapshot$comparison$groups),
+    comparison_marker$territory_row_count[[1L]] == nrow(snapshot$comparison$territories),
+    comparison_marker$lineage_row_count[[1L]] == nrow(snapshot$comparison$lineage),
+    !any(DBI::dbGetQuery(connection,
+      "SELECT indicator_id FROM scalar_comparison_group")$indicator_id %in% retired_ids),
+    !any(DBI::dbGetQuery(connection,
+      "SELECT facet_id FROM comparison_source_lineage WHERE comparison_family='scalar'")$facet_id %in% retired_ids))
   stopifnot("part_passoires" %in% snapshot$scalar$descriptors$indicator_id)
   housing_rows <- DBI::dbGetQuery(connection,
     "SELECT o.territory_id,o.value,o.status,o.support_count,o.denominator_count FROM scalar_observation o WHERE o.indicator_id='part_passoires' ORDER BY o.territory_id")
@@ -162,14 +285,10 @@ tryCatch({
     identical(as.integer(housing_rows$support_count), expected_housing$support_count),
     identical(as.integer(housing_rows$denominator_count), expected_housing$denominator_count))
 
-  snapshot_sql <- function() list(
-    facts=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation ORDER BY indicator_id,territory_id"),
-    descriptors=DBI::dbGetQuery(connection, "SELECT * FROM scalar_descriptor ORDER BY indicator_id"),
-    sources=DBI::dbGetQuery(connection, "SELECT * FROM scalar_observation_source ORDER BY indicator_id,territory_id,source_id,vintage_id"),
-    marker=DBI::dbGetQuery(connection, "SELECT content_version,row_count,reference_content_version,published_at FROM table_publication WHERE table_name='scalar_observation'"))
   committed <- snapshot_sql()
   no_op <- publish_retained_scalar_snapshot(connection, snapshot, tempdir())$scalar
-  stopifnot(!no_op$changed, identical(snapshot_sql(), committed))
+  stopifnot(!no_op$changed, !no_op$retirement_repaired,
+    identical(snapshot_sql(), committed))
 
   # Inject failure after DELETE/reinsert begins; PostgreSQL transaction rollback
   # must preserve facts, descriptors, provenance, content version, and timestamp.
@@ -184,6 +303,56 @@ tryCatch({
   stopifnot(inherits(failed_combined, "try-error"), identical(snapshot_sql(), committed))
   DBI::dbExecute(connection, "DROP TRIGGER reject_combined_smoke_value ON scalar_observation")
   DBI::dbExecute(connection, "DROP FUNCTION reject_combined_smoke_value()")
+
+  # Publish one valid but undeclared scalar through the generic publisher, then
+  # prove both the generic strict path and retained policy reject dropping it
+  # without changing facts, provenance, comparison rows, markers, or clocks.
+  source_indicator <- snapshot$scalar$descriptors$indicator_id[[1L]]
+  unapproved_id <- "unapproved_test_scalar"
+  unapproved <- snapshot$scalar
+  new_descriptor <- unapproved$descriptors[1L, , drop=FALSE]
+  new_descriptor$indicator_id <- unapproved_id
+  new_descriptor$descriptor_version <- "issue-812-test"
+  if (!is.na(new_descriptor$comparison_facet[[1L]]))
+    new_descriptor$comparison_facet <- unapproved_id
+  new_facts <- unapproved$facts[unapproved$facts$indicator_id == source_indicator, , drop=FALSE]
+  new_facts$indicator_id <- unapproved_id
+  new_provenance <- unapproved$provenance[
+    unapproved$provenance$indicator_id == source_indicator, , drop=FALSE]
+  new_provenance$indicator_id <- unapproved_id
+  unapproved$descriptors <- rbind(unapproved$descriptors, new_descriptor)
+  unapproved$facts <- rbind(unapproved$facts, new_facts)
+  unapproved$provenance <- rbind(unapproved$provenance, new_provenance)
+  validate_scalar_projection(unapproved$facts, unapproved$descriptors,
+    unapproved$eligible_territories)
+  unapproved_registry <- register_scalar_publisher(list(), "unapproved_extension",
+    project=function(x) unapproved,
+    publish=function(p, db, version) db$replace(p, version))
+  unapproved_publication <- publish_registered_scalar(unapproved_registry,
+    "unapproved_extension", NULL, scalar_postgres_adapter(connection))
+  stopifnot(unapproved_publication$changed)
+  unapproved_state <- snapshot_sql()
+  generic_guard <- try(scalar_postgres_adapter(connection)$validate_snapshot(
+    snapshot$scalar, character()), silent=TRUE)
+  retained_guard <- try(scalar_postgres_adapter(connection)$validate_snapshot(
+    snapshot$scalar, retired_ids), silent=TRUE)
+  guard_message <- function(value) conditionMessage(attr(value, "condition"))
+  stopifnot(unapproved_id %in% unapproved_state$descriptors$indicator_id,
+    inherits(generic_guard, "try-error"),
+    grepl("Refusing partial scalar snapshot", guard_message(generic_guard), fixed=TRUE),
+    inherits(retained_guard, "try-error"),
+    grepl("Refusing partial scalar snapshot", guard_message(retained_guard), fixed=TRUE),
+    identical(snapshot_sql(), unapproved_state))
+  generic_rejection <- try(publish_registered_scalar(
+    register_scalar_publisher(list(), "strict_retained", identity,
+      function(p, db, version) db$replace(p, version)),
+    "strict_retained", snapshot$scalar, scalar_postgres_adapter(connection)), silent=TRUE)
+  stopifnot(inherits(generic_rejection, "try-error"),
+    identical(snapshot_sql(), unapproved_state))
+  retained_rejection <- try(publish_retained_scalar_snapshot(
+    connection, snapshot, tempdir()), silent=TRUE)
+  stopifnot(inherits(retained_rejection, "try-error"),
+    identical(snapshot_sql(), unapproved_state))
 
   stopifnot(is.na(DBI::dbGetQuery(connection,
     "SELECT to_regclass('service_registry') AS name")$name[[1L]]),
@@ -210,7 +379,7 @@ tryCatch({
     "from fastapi.testclient import TestClient",
     "from api.main import app",
     "schema=os.environ['LUSK_SCALAR_API_TEST_SCHEMA']",
-    "os.environ['PGOPTIONS']='-c search_path='+schema",
+    "os.environ['PGOPTIONS']='-c search_path='+schema+' -c statement_timeout=120000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=180000'",
     "with TestClient(app) as client:",
     " r=client.get('/api/territories/commune/'+os.environ['LUSK_SCALAR_API_TEST_TERRITORY']+'/indicators/'+os.environ['LUSK_SCALAR_API_TEST_INDICATOR'])",
     " r=client.post('/api/resources/read', json={'resource':os.environ['LUSK_SCALAR_API_TEST_INDICATOR'],'target':{'kind':'territory','type':'commune','id':os.environ['LUSK_SCALAR_API_TEST_TERRITORY']},'intent':{'kind':'facts'}})",
@@ -219,7 +388,7 @@ tryCatch({
     " assert d['value']==float(os.environ['LUSK_SCALAR_API_TEST_VALUE'])",
     " assert d['sources'] and d['content_version']"
   ), collapse="\n")
-  api_status <- system2("python", c("-c", shQuote(api_code, type="cmd")))
+  api_status <- system2("python", c("-c", shQuote(api_code, type="cmd")), timeout=120)
   stopifnot(identical(api_status, 0L))
   cat("Scalar PostgreSQL and combined snapshot smoke passed; schema:", schema, "\n")
 }, error=function(e) {
