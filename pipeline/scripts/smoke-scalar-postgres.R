@@ -421,6 +421,37 @@ tryCatch({
   DBI::dbExecute(connection, "DROP TRIGGER reject_combined_smoke_value ON scalar_observation")
   DBI::dbExecute(connection, "DROP FUNCTION reject_combined_smoke_value()")
 
+  # Check public reads while the retained scalar and comparison markers still
+  # describe the same committed snapshot, before the deliberate extension below.
+  economy_fact <- snapshot$scalar$facts[
+    snapshot$scalar$facts$territory_type == "commune" &
+      snapshot$scalar$facts$status == "measured", , drop=FALSE][1L, , drop=FALSE]
+  Sys.setenv(LUSK_SCALAR_API_TEST_TERRITORY=economy_fact$territory_id[[1L]],
+    LUSK_SCALAR_API_TEST_INDICATOR=economy_fact$indicator_id[[1L]],
+    LUSK_SCALAR_API_TEST_VALUE=as.character(economy_fact$value[[1L]]),
+    LUSK_SCALAR_API_TEST_SCHEMA=schema,
+    PGPASSFILE=passfile,
+    DATABASE_URL="postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract")
+  api_code <- paste(c(
+    "import os, sys; sys.path.insert(0, '..')",
+    "from fastapi.testclient import TestClient",
+    "from api.main import app",
+    "schema=os.environ['LUSK_SCALAR_API_TEST_SCHEMA']",
+    "os.environ['PGOPTIONS']='-c search_path='+schema+' -c statement_timeout=120000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=180000'",
+    "with TestClient(app) as client:",
+    " r=client.get('/api/territories/commune/'+os.environ['LUSK_SCALAR_API_TEST_TERRITORY']+'/indicators/'+os.environ['LUSK_SCALAR_API_TEST_INDICATOR'])",
+    " r=client.post('/api/resources/read', json={'resource':os.environ['LUSK_SCALAR_API_TEST_INDICATOR'],'target':{'kind':'territory','type':'commune','id':os.environ['LUSK_SCALAR_API_TEST_TERRITORY']},'intent':{'kind':'facts'}})",
+    " c=client.post('/api/resources/read', json={'resource':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_INDICATOR'],'target':{'kind':'territory','type':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_TYPE'],'id':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_TERRITORY']},'intent':{'kind':'fixed_comparison','context':'default'}})",
+    " assert r.status_code==200, r.text",
+    " assert c.status_code==200, c.text",
+    " d=r.json(); assert d['indicator_id']==os.environ['LUSK_SCALAR_API_TEST_INDICATOR']",
+    " assert d['value']==float(os.environ['LUSK_SCALAR_API_TEST_VALUE'])",
+    " assert d['sources'] and d['content_version']"
+  ), collapse="\n")
+  api_status <- system2("python", c("-c", shQuote(api_code, type="cmd")), timeout=120)
+  stopifnot(identical(api_status, 0L))
+  cat("Public scalar facts and comparison reads passed before unapproved extension; schema:", schema, "\n")
+
   # Publish one valid but undeclared scalar through the generic publisher, then
   # prove both the generic strict path and retained policy reject dropping it
   # without changing facts, provenance, comparison rows, markers, or clocks.
@@ -470,41 +501,14 @@ tryCatch({
     connection, snapshot, tempdir()), silent=TRUE)
   stopifnot(inherits(retained_rejection, "try-error"),
     identical(snapshot_sql(), unapproved_state))
+  api_stale_status <- system2("python", c("-c", shQuote(api_readiness_code, type="cmd")), timeout=120)
+  stopifnot(identical(api_stale_status, 0L))
+  cat("Public scalar comparison read failed closed with HTTP 503 after unapproved extension changed the scalar token.\n")
 
   stopifnot(is.na(DBI::dbGetQuery(connection,
     "SELECT to_regclass('service_registry') AS name")$name[[1L]]),
     is.na(DBI::dbGetQuery(connection,
     "SELECT to_regclass('building_ramp') AS name")$name[[1L]]))
-
-  # Run the actual FastAPI scalar route against this same owned schema using the
-  # separate read-only rehearsal role, rather than merely checking SQL text.
-  economy_fact <- snapshot$scalar$facts[
-    snapshot$scalar$facts$territory_type == "commune" &
-      snapshot$scalar$facts$status == "measured", , drop=FALSE][1L, , drop=FALSE]
-  Sys.setenv(LUSK_SCALAR_API_TEST_TERRITORY=economy_fact$territory_id[[1L]],
-    LUSK_SCALAR_API_TEST_INDICATOR=economy_fact$indicator_id[[1L]],
-    LUSK_SCALAR_API_TEST_VALUE=as.character(economy_fact$value[[1L]]),
-    LUSK_SCALAR_API_TEST_SCHEMA=schema,
-    PGPASSFILE=passfile,
-    DATABASE_URL="postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract")
-  api_code <- paste(c(
-    "import os, sys; sys.path.insert(0, '..')",
-    "from fastapi.testclient import TestClient",
-    "from api.main import app",
-    "schema=os.environ['LUSK_SCALAR_API_TEST_SCHEMA']",
-    "os.environ['PGOPTIONS']='-c search_path='+schema+' -c statement_timeout=120000 -c lock_timeout=5000 -c idle_in_transaction_session_timeout=180000'",
-    "with TestClient(app) as client:",
-    " r=client.get('/api/territories/commune/'+os.environ['LUSK_SCALAR_API_TEST_TERRITORY']+'/indicators/'+os.environ['LUSK_SCALAR_API_TEST_INDICATOR'])",
-    " r=client.post('/api/resources/read', json={'resource':os.environ['LUSK_SCALAR_API_TEST_INDICATOR'],'target':{'kind':'territory','type':'commune','id':os.environ['LUSK_SCALAR_API_TEST_TERRITORY']},'intent':{'kind':'facts'}})",
-    " c=client.post('/api/resources/read', json={'resource':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_INDICATOR'],'target':{'kind':'territory','type':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_TYPE'],'id':os.environ['LUSK_SCALAR_API_TEST_COMPARISON_TERRITORY']},'intent':{'kind':'fixed_comparison','context':'default'}})",
-    " assert r.status_code==200, r.text",
-    " assert c.status_code==200, c.text",
-    " d=r.json(); assert d['indicator_id']==os.environ['LUSK_SCALAR_API_TEST_INDICATOR']",
-    " assert d['value']==float(os.environ['LUSK_SCALAR_API_TEST_VALUE'])",
-    " assert d['sources'] and d['content_version']"
-  ), collapse="\n")
-  api_status <- system2("python", c("-c", shQuote(api_code, type="cmd")), timeout=120)
-  stopifnot(identical(api_status, 0L))
   cat("Scalar PostgreSQL and combined snapshot smoke passed; schema:", schema, "\n")
 }, error=function(e) {
   smoke_failure <<- conditionMessage(e)
