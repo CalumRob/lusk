@@ -572,9 +572,13 @@ collection_members <- as.character(reference$territory_id[reference$territory_ty
   reference$territory_id!=empty_collection_territory])
 if (length(collection_members)<2L) stop("Numeric collection fixture needs two communes",call.=FALSE)
 collection_source <- shared_revision$source_id[[1L]]
-collection_vintages <- data.frame(source_id=collection_source,vintage_id=shared_revision$vintage_id[[1L]],
-  version=shared_revision$source_version[[1L]],reference_date=shared_revision$reference_date[[1L]],
-  publication_date=shared_revision$publication_date[[1L]])
+collection_vintages <- rbind(
+  data.frame(source_id=collection_source,vintage_id=shared_revision$vintage_id[[1L]],
+    version=shared_revision$source_version[[1L]],reference_date=shared_revision$reference_date[[1L]],
+    publication_date=shared_revision$publication_date[[1L]]),
+  data.frame(source_id=collection_source,vintage_id=new_vintage$vintage_id[[1L]],
+    version=new_vintage$source_version[[1L]],reference_date=new_vintage$reference_date[[1L]],
+    publication_date=new_vintage$publication_date[[1L]]))
 collection_projection <- list(
   descriptor=list(indicator_id="lineage_collection",theme_id="demographie",kind="period_detail",
     label="Fixture collection",unit="u",allowed_levels="commune",comparison_detail="total",
@@ -583,15 +587,16 @@ collection_projection <- list(
   facts=data.frame(indicator_id="lineage_collection",territory_id=collection_members,
     territory_type="commune",detail_key="total",observation_period="2025",
     value=seq_along(collection_members),source_id=collection_source,
-    vintage_id=rep(shared_revision$vintage_id[[1L]],length.out=length(collection_members))),
+    vintage_id=rep(c(shared_revision$vintage_id[[1L]],new_vintage$vintage_id[[1L]]),
+      length.out=length(collection_members))),
   datasets=data.frame(source_id=collection_source,name=short_registry_label),vintages=collection_vintages)
 collection_label_before <- DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",params=list(collection_source))
-collection_vintage_before <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
-  params=list(collection_source,shared_revision$vintage_id[[1L]]))
+collection_vintage_before <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id=$1 ORDER BY vintage_id",
+  params=list(collection_source))
 collection_first <- publish_observed_collection(collection_projection,con)
 collection_label_after <- DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",params=list(collection_source))
-collection_vintage_after <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
-  params=list(collection_source,shared_revision$vintage_id[[1L]]))
+collection_vintage_after <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id=$1 ORDER BY vintage_id",
+  params=list(collection_source))
 stopifnot(identical(collection_label_before$name[[1L]],producer_full_title),
   identical(collection_label_after$name[[1L]],short_registry_label),
   isTRUE(all.equal(collection_vintage_before,collection_vintage_after,check.attributes=FALSE)),
