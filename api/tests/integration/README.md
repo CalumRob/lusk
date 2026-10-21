@@ -162,8 +162,9 @@ test. It invokes the real R publishers and PostgreSQL adapters for scalar,
 declared-profile, ordered-series, and numeric period/detail collection
 comparisons, then reads them through the API using the dedicated read role.
 It checks source/vintage parity (including mixed collection vintages), no-op
-publication, stale/truncated fail-closed behavior, and rollback/retry after an
-injected collection-lineage write failure. It needs no canonical artifact
+publication, stale/truncated fail-closed behavior, rollback of a changed source
+label when the collection's immutable vintage clock conflicts, and rollback/retry
+after an injected collection-lineage write failure. It needs no canonical artifact
 directory or pipeline data:
 
 ```powershell
@@ -172,13 +173,34 @@ $env:LUSK_TEST_DATABASE_PREFIX = 'lusk_it_'
 $env:LUSK_TEST_DATABASE_NAME = 'lusk_it_contract'
 $env:LUSK_TEST_PUBLISH_DSN = 'postgresql://lusk_it_contract_pub@192.168.1.120:5432/lusk_it_contract'
 $env:LUSK_TEST_READ_DSN = 'postgresql://lusk_it_contract_read@192.168.1.120:5432/lusk_it_contract'
-$env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP = '1'
+# Set this to an existing, populated R library provisioned for this machine.
+# No renv restore/install is performed by the guarded proof.
+$env:R_LIBS_USER = $env:LUSK_TEST_R_LIBS_USER
+if (-not $env:R_LIBS_USER -or -not (Test-Path $env:R_LIBS_USER -PathType Container)) {
+  throw 'Set LUSK_TEST_R_LIBS_USER to an existing populated R library before running the proof.'
+}
+Remove-Item Env:LUSK_TEST_ALLOW_SCHEMA_CLEANUP -ErrorAction SilentlyContinue
 $env:PYTHONPATH = '.'
 python -m pytest api/tests/integration/test_postgres_publication.py -k synthetic_r_comparison_lineage_publish_to_api_reader -q
 ```
 
-The test creates and cleans up only its own random `it_*` schema. It does not
-modify the retained benchmark schema or publish to the serving database.
+The test creates a random `it_*` schema and always retains that schema and its
+evidence; `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1` is rejected before connection or
+DDL. It does not modify the retained benchmark schema or publish to the serving
+database.
+
+The focused vintage-clock rollback regression can be run without replaying the
+full publisher proof by setting `LUSK_LINEAGE_TEST_SCHEMA` to an existing,
+populated retained `it_*` schema, then selecting only:
+
+```powershell
+python -m pytest api/tests/integration/test_postgres_publication.py -k test_collection_vintage_conflict_rolls_back_label_and_full_schema_snapshot -q
+```
+
+It attempts a changed collection label and facts with an incompatible vintage
+version/date, expects the exact immutable-vintage conflict, and compares every
+base-table row in the retained schema before and after. The failed publication
+must leave the full SQL snapshot unchanged.
 
 The same selector runs `fresh`, `populated_upgrade`, and `bases_absent_upgrade`
 cases. `populated_upgrade` reconstructs all twelve comparison result/marker

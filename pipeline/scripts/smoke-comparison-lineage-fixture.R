@@ -1,6 +1,9 @@
 #!/usr/bin/env Rscript
 # Synthetic scalar/profile comparison lineage publisher proof. The caller owns
 # and schema-scopes the disposable lusk_it_* test schema and its read grant.
+r_libs_user <- Sys.getenv("R_LIBS_USER", unset="")
+if (!nzchar(r_libs_user) || !dir.exists(r_libs_user))
+  stop("Guarded R publisher proof requires R_LIBS_USER to name an existing populated R library (Rscript uses --vanilla)", call.=FALSE)
 pkgload::load_all(".", quiet=TRUE)
 
 required <- c("HOST", "PORT", "DATABASE", "USER", "SCHEMA", "MANIFEST")
@@ -20,7 +23,60 @@ if (!nzchar(passfile) || !file.exists(passfile) ||
 con <- DBI::dbConnect(RPostgres::Postgres(), host=config$HOST,
   port=as.integer(config$PORT), dbname=config$DATABASE, user=config$USER)
 DBI::dbExecute(con, paste0("SET search_path TO ", as.character(DBI::dbQuoteIdentifier(con, config$SCHEMA))))
-stopifnot(DBI::dbGetQuery(con, "SELECT current_database() AS db")$db[[1L]] == config$DATABASE)
+identity <- DBI::dbGetQuery(con, "SELECT current_database() AS db,current_schema() AS schema")
+stopifnot(identity$db[[1L]] == config$DATABASE,identity$schema[[1L]] == config$SCHEMA)
+
+# Narrow retained-schema mode for the issue #814 collection rollback edge case.
+# It reconstructs the current projection from SQL, then attempts a changed fact
+# and producer label with a conflicting immutable vintage clock. No setup DDL,
+# fixture publication, or retained schema cleanup is performed in this mode.
+if (identical(Sys.getenv("LUSK_LINEAGE_TEST_COLLECTION_CONFLICT_ONLY", unset=""),"1")) {
+  indicator <- Sys.getenv("LUSK_LINEAGE_TEST_INDICATOR", unset="lineage_collection")
+  descriptor_row <- DBI::dbGetQuery(con,"SELECT indicator_id,theme_id,kind,label,unit,allowed_levels,
+    comparison_detail,comparison_period,direction,descriptor_version
+    FROM observed_collection_descriptor WHERE indicator_id=$1",params=list(indicator))
+  if (nrow(descriptor_row)!=1L || descriptor_row$kind[[1L]]!="period_detail")
+    stop("Retained schema lacks the expected period/detail collection descriptor",call.=FALSE)
+  categories <- DBI::dbGetQuery(con,"SELECT indicator_id,detail_key,label,ordinal,source_id
+    FROM observed_collection_category WHERE indicator_id=$1 ORDER BY detail_key",params=list(indicator))
+  facts <- DBI::dbGetQuery(con,"SELECT indicator_id,territory_id,territory_type,detail_key,
+    observation_period,value,source_id,vintage_id FROM period_detail_observation
+    WHERE indicator_id=$1 ORDER BY territory_id,detail_key,observation_period",params=list(indicator))
+  datasets <- DBI::dbGetQuery(con,"SELECT DISTINCT d.source_id,d.name FROM source_dataset d
+    JOIN period_detail_observation f USING(source_id) WHERE f.indicator_id=$1 ORDER BY d.source_id",params=list(indicator))
+  vintages <- DBI::dbGetQuery(con,"SELECT DISTINCT v.source_id,v.vintage_id,v.version,v.reference_date,v.publication_date
+    FROM source_vintage v JOIN period_detail_observation f USING(source_id,vintage_id)
+    WHERE f.indicator_id=$1 ORDER BY v.source_id,v.vintage_id",params=list(indicator))
+  if (nrow(categories)==0L || nrow(facts)==0L || nrow(datasets)==0L || nrow(vintages)==0L)
+    stop("Retained schema has incomplete collection facts, source labels, or vintage clocks",call.=FALSE)
+  descriptor <- as.list(descriptor_row[1L,,drop=FALSE])
+  descriptor$allowed_levels <- DBI::dbGetQuery(con,"SELECT unnest(allowed_levels) AS level
+    FROM observed_collection_descriptor WHERE indicator_id=$1 ORDER BY level",params=list(indicator))$level
+  projection <- list(descriptor=descriptor,categories=categories,facts=facts,
+    datasets=datasets,vintages=vintages)
+  if (!identical(as.character(vintages$source_id[[1L]]),as.character(datasets$source_id[[1L]])))
+    stop("Conflict projection must target the first collection's registered source clock",call.=FALSE)
+  actual_label <- DBI::dbGetQuery(con,"SELECT name FROM source_dataset WHERE source_id=$1",
+    params=list(datasets$source_id[[1L]]))$name[[1L]]
+  attempted_label <- paste0(actual_label," [rollback conflict attempt]")
+  if (identical(attempted_label,actual_label)) stop("Conflict attempt must change the current source label",call.=FALSE)
+  projection$datasets$name[[1L]] <- attempted_label
+  projection$facts$value[[1L]] <- as.numeric(projection$facts$value[[1L]])+1
+  projection$vintages$version[[1L]] <- paste0(as.character(projection$vintages$version[[1L]]),"-conflict")
+  projection$vintages$reference_date[[1L]] <- if (is.na(projection$vintages$reference_date[[1L]]))
+    as.Date("2099-01-01") else as.Date(projection$vintages$reference_date[[1L]])+1
+  projection$vintages$publication_date[[1L]] <- if (is.na(projection$vintages$publication_date[[1L]]))
+    as.Date("2099-01-02") else as.Date(projection$vintages$publication_date[[1L]])+1
+  conflict <- tryCatch({publish_observed_collection(projection,con);NULL},error=function(error) error)
+  expected_conflict <- "Observed source vintage conflicts with an existing publication"
+  if (!inherits(conflict,"error") || !identical(conditionMessage(conflict),expected_conflict))
+    stop("Expected strict observed source vintage conflict; got: ",
+      if (is.null(conflict)) "publication unexpectedly succeeded" else conditionMessage(conflict),call.=FALSE)
+  cat("expected vintage conflict rolled back changed source label and collection publication; attempted label differs from current label\n")
+  flush.console()
+  DBI::dbDisconnect(con)
+  quit(save="no",status=0L)
+}
 
 # Reuse the exact synthetic inputs after a caller-owned populated schema upgrade.
 # No comparison rows or lineage are seeded here: the normal adapters must repair
@@ -622,6 +678,45 @@ old_collection_marker <- collection_marker
 old_collection_groups <- collection_groups
 old_collection_territories <- collection_territories
 old_collection_lineage <- collection_lineage
+
+# The existing fresh label-upgrade state must still be atomic when the owner
+# also proposes a conflicting immutable vintage clock. The attempted label is
+# deliberately different from the current label; only the projection is changed
+# here, never the database's old source_vintage row.
+collection_clock_label_before <- DBI::dbGetQuery(con,
+  "SELECT source_id,name FROM source_dataset WHERE source_id=$1",params=list(collection_source))
+collection_clock_projection <- collection_projection
+collection_clock_projection$datasets$name[[1L]] <- paste0(collection_clock_label_before$name[[1L]],
+  " [conflicting producer label]")
+stopifnot(!identical(collection_clock_projection$datasets$name[[1L]],collection_clock_label_before$name[[1L]]))
+collection_clock_projection$facts$value[[1L]] <- collection_clock_projection$facts$value[[1L]]+10
+collection_clock_projection$vintages$version[[1L]] <- paste0(
+  as.character(collection_clock_projection$vintages$version[[1L]]),"-conflict")
+collection_clock_projection$vintages$reference_date[[1L]] <-
+  as.Date(collection_clock_projection$vintages$reference_date[[1L]])+1
+collection_clock_projection$vintages$publication_date[[1L]] <-
+  as.Date(collection_clock_projection$vintages$publication_date[[1L]])+1
+collection_clock_snapshot <- function() list(
+  source=DBI::dbGetQuery(con,"SELECT * FROM source_dataset WHERE source_id=$1 ORDER BY source_id",params=list(collection_source)),
+  vintage=DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id=$1 ORDER BY vintage_id",params=list(collection_source)),
+  provenance=DBI::dbGetQuery(con,"SELECT * FROM series_provenance_revision WHERE source_id=$1 ORDER BY provenance_revision_id",params=list(collection_source)),
+  descriptor=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_descriptor WHERE indicator_id='lineage_collection'"),
+  categories=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_category WHERE indicator_id='lineage_collection' ORDER BY detail_key"),
+  facts=DBI::dbGetQuery(con,"SELECT * FROM period_detail_observation WHERE indicator_id='lineage_collection' ORDER BY territory_id,detail_key,observation_period"),
+  publication=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_publication WHERE indicator_id='lineage_collection'"),
+  comparison_publication=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_publication WHERE indicator_id='lineage_collection'"),
+  comparison_groups=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_group WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period"),
+  comparison_territories=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_territory WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period,territory_id"),
+  comparison_lineage=DBI::dbGetQuery(con,"SELECT * FROM observed_collection_comparison_lineage WHERE indicator_id='lineage_collection' ORDER BY comparison_context,group_id,territory_type,detail_key,observation_period,source_id,vintage_id")
+)
+collection_clock_before <- collection_clock_snapshot()
+collection_clock_failure <- tryCatch({publish_observed_collection(collection_clock_projection,con);NULL},
+  error=function(error) error)
+stopifnot(inherits(collection_clock_failure,"error"),
+  identical(conditionMessage(collection_clock_failure),"Observed source vintage conflicts with an existing publication"),
+  identical(collection_clock_snapshot(),collection_clock_before),
+  identical(collection_clock_before$source$name[[1L]],collection_clock_label_before$name[[1L]]))
+
 changed_collection <- collection_projection; changed_collection$facts$value[[1L]] <- changed_collection$facts$value[[1L]]+10
 DBI::dbExecute(con,"CREATE FUNCTION reject_collection_lineage() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'injected collection lineage failure'; END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_collection_lineage BEFORE INSERT ON observed_collection_comparison_lineage FOR EACH ROW EXECUTE FUNCTION reject_collection_lineage()")
