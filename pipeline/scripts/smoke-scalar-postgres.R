@@ -50,6 +50,8 @@ if (nrow(reader_identity) != 1L || reader_identity$database[[1L]] != "lusk_it_co
 schema <- paste0("scalar_it_", Sys.getpid(), "_", sprintf("%08x", sample.int(.Machine$integer.max, 1L)))
 created <- FALSE
 smoke_failure <- NULL
+cat("Scalar smoke schema intent (retained):", schema, "\n")
+flush.console()
 tryCatch({
   DBI::dbExecute(connection, paste0("CREATE SCHEMA ", as.character(DBI::dbQuoteIdentifier(connection, schema))))
   created <- TRUE
@@ -199,6 +201,9 @@ tryCatch({
     "SELECT count(*) AS n FROM scalar_descriptor WHERE indicator_id=$1",
     params=list(legacy_indicator))$n[[1L]] == 1L,
     DBI::dbGetQuery(connection,
+      "SELECT count(*) AS n FROM scalar_descriptor_source WHERE indicator_id=$1",
+      params=list(legacy_indicator))$n[[1L]] > 0L,
+    DBI::dbGetQuery(connection,
       "SELECT count(*) AS n FROM scalar_observation_source WHERE indicator_id=$1",
       params=list(legacy_indicator))$n[[1L]] > 0L,
     DBI::dbGetQuery(connection,
@@ -226,6 +231,44 @@ tryCatch({
       scalar_content_version(legacy_scalar),
     nrow(legacy_state$comparison_groups) > 0L,
     nrow(legacy_state$comparison_territories) > 0L)
+
+  # Fail at deferred commit, after the retained publisher has deleted the
+  # approved legacy descriptor and its comparison/provenance dependencies and
+  # updated the scalar clock. The trigger's distinct fallback error proves the
+  # injected failure cannot pass merely by hitting an earlier validation path.
+  quoted_legacy_indicator <- as.character(DBI::dbQuoteString(connection, legacy_indicator))
+  quoted_retained_version <- as.character(DBI::dbQuoteString(connection,
+    scalar_content_version(snapshot$scalar)))
+  DBI::dbExecute(connection, paste0(
+    "CREATE FUNCTION reject_retirement_commit() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN ",
+    "IF NEW.table_name='scalar_observation' AND NEW.content_version=", quoted_retained_version, " THEN ",
+    "IF NOT EXISTS (SELECT 1 FROM scalar_descriptor WHERE indicator_id=", quoted_legacy_indicator, ") ",
+    "AND NOT EXISTS (SELECT 1 FROM scalar_descriptor_source WHERE indicator_id=", quoted_legacy_indicator, ") ",
+    "AND NOT EXISTS (SELECT 1 FROM scalar_observation_source WHERE indicator_id=", quoted_legacy_indicator, ") ",
+    "AND NOT EXISTS (SELECT 1 FROM scalar_comparison_group WHERE indicator_id=", quoted_legacy_indicator, ") ",
+    "AND NOT EXISTS (SELECT 1 FROM scalar_comparison_territory WHERE indicator_id=", quoted_legacy_indicator, ") ",
+    "AND NOT EXISTS (SELECT 1 FROM comparison_source_lineage WHERE comparison_family='scalar' AND facet_id=", quoted_legacy_indicator, ") THEN ",
+    "RAISE EXCEPTION 'injected approved scalar retirement failure after deletes and marker update'; ",
+    "END IF; RAISE EXCEPTION 'approved retirement delete phase was not observed before scalar marker update'; ",
+    "END IF; RETURN NULL; END $$"))
+  DBI::dbExecute(connection, paste0(
+    "CREATE CONSTRAINT TRIGGER reject_retirement_commit AFTER INSERT OR UPDATE ON table_publication ",
+    "DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION reject_retirement_commit()"))
+  setTimeLimit(elapsed=180, transient=TRUE)
+  failed_retirement <- tryCatch(
+    publish_retained_scalar_snapshot(connection, snapshot, tempdir()),
+    error=function(e) e,
+    finally={
+      setTimeLimit(cpu=Inf, elapsed=Inf, transient=FALSE)
+      DBI::dbExecute(connection, "DROP TRIGGER reject_retirement_commit ON table_publication")
+      DBI::dbExecute(connection, "DROP FUNCTION reject_retirement_commit()")
+    })
+  stopifnot(inherits(failed_retirement, "error"),
+    grepl("injected approved scalar retirement failure after deletes and marker update",
+      conditionMessage(failed_retirement), fixed=TRUE),
+    identical(snapshot_sql(), legacy_state))
+  cat("Approved retirement transaction rollback probe passed for:", legacy_indicator, "\n")
+
   setTimeLimit(elapsed=180, transient=TRUE)
   published <- tryCatch(publish_retained_scalar_snapshot(connection, snapshot, tempdir())$scalar,
     finally=setTimeLimit(cpu=Inf, elapsed=Inf, transient=FALSE))
