@@ -285,6 +285,37 @@ test_that("owned series publication retries, rebinds and replaces only its datas
   no_op <- publish_owned_series_projection(projection, db)
   expect_false(no_op$changed)
   expect_identical(state$units$enaf, after_first)
+
+  # A producer label is part of the immutable provenance revision. Its change
+  # publishes a new revision while an unchanged retry remains a true no-op.
+  label_update <- projection
+  old_revision_id <- label_update$provenance$provenance_revision_id[[1L]]
+  label_update$provenance$source_name[[1L]] <- "Cerema — complete producer title"
+  label_update$provenance$revision_hash[[1L]] <- series_revision_hash(
+    label_update$provenance$source_id[[1L]],label_update$provenance$vintage_id[[1L]],
+    label_update$provenance$source_name[[1L]],label_update$provenance$dataset_name[[1L]],
+    label_update$provenance$source_version[[1L]],
+    as.character(label_update$provenance$reference_date[[1L]]),
+    as.character(label_update$provenance$publication_date[[1L]]))
+  label_update$provenance$provenance_revision_id[[1L]] <- paste0(
+    label_update$provenance$source_id[[1L]],"-",label_update$provenance$vintage_id[[1L]],"-",
+    substr(label_update$provenance$revision_hash[[1L]],1L,16L))
+  label_revision_id <- label_update$provenance$provenance_revision_id[[1L]]
+  label_update$point_provenance$provenance_revision_id[
+    label_update$point_provenance$provenance_revision_id==old_revision_id] <- label_revision_id
+  expect_false(identical(scalar_content_version(projection),scalar_content_version(label_update)))
+  label_publish <- publish_owned_series_projection(label_update,db)
+  expect_true(label_publish$changed)
+  expect_identical(state$units$enaf$provenance$source_name[[1L]],"Cerema — complete producer title")
+  expect_identical(state$units$enaf$provenance$provenance_revision_id[[1L]],label_revision_id)
+  label_published_state <- state$units$enaf
+  label_no_op <- publish_owned_series_projection(label_update,db)
+  expect_false(label_no_op$changed)
+  expect_identical(state$units$enaf,label_published_state)
+  projection <- label_update
+  rev_id <- label_revision_id
+  after_first <- label_published_state
+
   state$reference <- "ref2"
   rebound <- publish_owned_series_projection(projection, db)
   expect_true(rebound$rebound)

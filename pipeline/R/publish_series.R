@@ -822,6 +822,9 @@ owned_series_postgres_adapter <- function(con) {
           stop("Dense-complete duration publication contains unregistered territory/territories: ",
             describe(unexpected),call.=FALSE)
       }
+       # source_dataset.name is a mutable current label, updated only here after
+       # the owner no-op decision. Vintage clocks remain strict below, and each
+       # immutable provenance revision keeps the label recorded at publication.
        # Revision records are insert-only; a reused ID/hash with different content is rejected.
        for (i in seq_len(nrow(projection$provenance))) {
          p <- projection$provenance[i,,drop=FALSE]
@@ -830,14 +833,8 @@ owned_series_postgres_adapter <- function(con) {
          # absences). Publish these canonical source records in the same
          # transaction as the immutable series revision.
           DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2)
-            ON CONFLICT(source_id) DO NOTHING",
+            ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
             params=list(p$source_id[[1L]],p$source_name[[1L]]))
-          registered_source <- DBI::dbGetQuery(con,
-            "SELECT name FROM source_dataset WHERE source_id=$1",params=list(p$source_id[[1L]]))
-          if(nrow(registered_source)!=1L ||
-             !identical(as.character(registered_source$name[[1L]]),as.character(p$source_name[[1L]])))
-            stop("Immutable source identity conflicts with the registered source dataset: ",
-              p$source_id[[1L]],call.=FALSE)
           DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
             VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING",
             params=unname(as.list(p[c("source_id","vintage_id","source_version","reference_date","publication_date")])))

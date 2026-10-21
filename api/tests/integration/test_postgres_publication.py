@@ -223,14 +223,50 @@ def db_env(tmp_path_factory):
 @pytest.fixture
 def canonical_db_env():
     """A separate owned schema for comparisons sourced from tracked Parquet."""
+    import json
     publish_dsn, read_dsn = _configuration()
     psycopg = pytest.importorskip("psycopg")
+    passfile = os.environ.get("PGPASSFILE")
+    if not passfile or not Path(passfile).is_file():
+        pytest.fail("Guarded comparison publication requires the existing private PGPASSFILE")
+    publish, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
+    expected_database = "lusk_it_contract"
+    expected_host = "192.168.16.3"
+    expected_port = 5432
+    expected_publisher = "lusk_it_contract_pub"
+    expected_reader = "lusk_it_contract_read"
+    if (os.environ.get("LUSK_TEST_DATABASE_NAME") != expected_database or
+            os.environ.get("LUSK_TEST_DATABASE_PREFIX") != "lusk_it_" or
+            (publish.hostname, publish.port, publish.path.lstrip("/"), publish.username) !=
+            (expected_host, expected_port, expected_database, expected_publisher) or
+            (reader.hostname, reader.port, reader.path.lstrip("/"), reader.username) !=
+            (expected_host, expected_port, expected_database, expected_reader)):
+        pytest.fail("Guarded comparison publication requires the exact test-only host, database, and roles")
     schema = "it_" + uuid.uuid4().hex[:20]
     scoped_publish = _dsn_with_schema(publish_dsn, schema)
     scoped_read = _dsn_with_schema(read_dsn, schema)
     schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
     created = False
     try:
+        for dsn, role in ((publish_dsn, expected_publisher), (read_dsn, expected_reader)):
+            with psycopg.connect(dsn, autocommit=True) as connection:
+                identity = connection.execute("""SELECT current_database(),current_user,
+                    inet_server_addr()::text,inet_server_port()""").fetchone()
+                if identity != (expected_database, role, "192.168.16.3/32", expected_port):
+                    pytest.fail(f"Guarded comparison database identity mismatch: {identity!r}")
+        evidence_dir = Path("E:/Temp/opencode") / ("issue-814-mutable-source-labels-" + uuid.uuid4().hex[:12])
+        evidence_dir.mkdir(parents=True, exist_ok=False)
+        (evidence_dir / "schema-intent.json").write_text(json.dumps({
+            "schema": schema,
+            "database": expected_database,
+            "host": expected_host,
+            "port": expected_port,
+            "publisher_role": expected_publisher,
+            "reader_role": expected_reader,
+            "purpose": "issue #814 guarded mutable source-label publication proof",
+            "cleanup": "disabled; retain schema and evidence",
+        }, indent=2), encoding="utf-8")
+        print(f"issue #814 retained schema intent: {schema}; evidence: {evidence_dir}", flush=True)
         with psycopg.connect(publish_dsn, autocommit=True) as connection:
             connection.execute(f'CREATE SCHEMA "{schema}"')
             created = True
@@ -813,10 +849,11 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
         "LUSK_LINEAGE_TEST_SCHEMA": canonical_db_env["schema"],
         "LUSK_LINEAGE_TEST_MANIFEST": str(manifest_path),
         "LUSK_LINEAGE_TEST_BUNDLE": str(bundle_path),
+        "R_LIBS_USER": "C:/Users/calum/AppData/Local/R/cache/R/renv/library/pipeline-fc1859c3/windows/R-4.4/x86_64-w64-mingw32",
     })
     pipeline = Path(__file__).resolve().parents[3] / "pipeline"
     completed = subprocess.run(
-        ["Rscript", "scripts/smoke-comparison-lineage-fixture.R"],
+        ["Rscript", "--vanilla", "scripts/smoke-comparison-lineage-fixture.R"],
         cwd=pipeline, env=env, capture_output=True, text=True, timeout=120,
     )
     assert completed.returncode == 0, completed.stdout + "\n" + completed.stderr
@@ -995,7 +1032,7 @@ def test_synthetic_r_comparison_lineage_publish_to_api_reader(canonical_db_env, 
             repaired_markers = None
             for _ in range(2):
                 repaired = subprocess.run(
-                    ["Rscript", "scripts/smoke-comparison-lineage-fixture.R"],
+                    ["Rscript", "--vanilla", "scripts/smoke-comparison-lineage-fixture.R"],
                     cwd=pipeline, env=republish_env, capture_output=True, text=True, timeout=120)
                 assert repaired.returncode == 0, repaired.stdout + "\n" + repaired.stderr
                 actual_responses, actual_batch = read_comparisons()
