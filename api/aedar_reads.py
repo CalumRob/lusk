@@ -92,7 +92,7 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
         raise HTTPException(404, "Unknown territory type/id")
     if preflight_only:
         return {"content_version": marker[0], "reference_content_version": marker[3]}
-    focal = conn.execute("""SELECT t.epci_id,t.density_class_code,r.territory_id
+    focal = conn.execute("""SELECT t.epci_id,r.territory_id
         FROM territory_reference t CROSS JOIN territory_reference r
         WHERE t.territory_type=%s AND t.territory_id=%s AND r.territory_type='region'""",
         (territory_type,territory_id)).fetchone()
@@ -113,7 +113,7 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
         _, _, scope = _comparison_cohort(conn, territory_type, territory_id, None)
         if territory_type not in ("epci","departement") or not scope or scope.get("kind") != "same_level":
             raise HTTPException(422, "Same-level reference is unavailable for this territory scope")
-        group_id, reference_type = focal[2], territory_type
+        group_id, reference_type = focal[1], territory_type
         group_row = conn.execute("""SELECT value,n_addresses,n_observed,coverage_status,statistic
             FROM aedar_comparison_group WHERE comparison_context='same_level' AND group_id=%s
               AND territory_type=%s AND typequ=%s AND measure=%s""",
@@ -122,7 +122,7 @@ def _aedar_comparison_snapshot(conn, territory_type, territory_id, context,
         if territory_type != "commune":
             raise HTTPException(422, "Commune reference is unavailable for this territory scope")
         reference_type = "epci" if context == "epci" else "region"
-        group_id = focal[0] if context == "epci" else focal[2]
+        group_id = focal[0] if context == "epci" else focal[1]
         if not group_id:
             raise HTTPException(503, "Published AEDAR reference identity is unavailable")
         group_row = conn.execute("""SELECT (measures->>%s)::double precision AS value,n_addresses,n_observed,coverage_status

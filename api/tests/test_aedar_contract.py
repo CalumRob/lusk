@@ -362,8 +362,8 @@ def test_aedar_fixed_comparison_http_read_returns_direct_reference_without_peer_
                 return type("Territory",(),{"fetchone":lambda self:("22001","commune",state["density"])})()
             if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
                 return Rows([("22001","commune","22",state["epci"],state["density"]),("E1","epci","22",None,None),("53","region",None,None,None)])
-            if "SELECT t.epci_id,t.density_class_code,r.territory_id" in sql:
-                return type("Territory",(),{"fetchone":lambda self:(state["epci"],state["density"],"53") if state["focal_exists"] else None})()
+            if "SELECT t.epci_id,r.territory_id" in sql:
+                return type("Territory",(),{"fetchone":lambda self:(state["epci"],"53") if state["focal_exists"] else None})()
             if "SELECT 1 FROM territory_reference" in sql:
                 return type("Territory",(),{"fetchone":lambda self:(1,) if state["territory_exists"] else None})()
             if "FROM aedar_territorial_aggregate" in sql:
