@@ -99,12 +99,20 @@ def lineage_r_library_preflight():
     return _lineage_r_library_preflight()
 
 
-def test_issue_814_r_publisher_preflight_refuses_cleanup_before_database_work(monkeypatch):
+def test_issue_814_retained_fixture_refuses_cleanup_before_database_work(monkeypatch):
     monkeypatch.setenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP", "1")
     monkeypatch.delenv("R_LIBS_USER", raising=False)
     monkeypatch.setattr(sys.modules[__name__], "_configuration",
         lambda: pytest.fail("Database configuration must not be reached when cleanup is enabled"))
     with pytest.raises(pytest.fail.Exception, match="always retains its schema"):
+        next(retained_canonical_db_env.__wrapped__(None))
+
+
+def test_generic_canonical_fixture_keeps_cleanup_opt_in_separate(monkeypatch):
+    monkeypatch.setenv("LUSK_TEST_ALLOW_SCHEMA_CLEANUP", "1")
+    monkeypatch.setattr(sys.modules[__name__], "_configuration",
+        lambda: (_ for _ in ()).throw(RuntimeError("generic canonical configuration reached")))
+    with pytest.raises(RuntimeError, match="generic canonical configuration reached"):
         next(canonical_db_env.__wrapped__())
 
 
@@ -247,10 +255,60 @@ def db_env(tmp_path_factory):
 
 @pytest.fixture
 def canonical_db_env():
-    """A separate owned schema for comparisons sourced from tracked Parquet."""
+    """Generic owned schema; the documented cleanup opt-in applies to this fixture."""
+    publish_dsn, read_dsn = _configuration()
+    psycopg = pytest.importorskip("psycopg")
+    passfile = os.environ.get("PGPASSFILE")
+    if not passfile or not Path(passfile).is_file():
+        pytest.fail("Guarded comparison publication requires the existing private PGPASSFILE")
+    publish, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
+    expected_database = "lusk_it_contract"
+    expected_host = "192.168.1.120"
+    expected_port = 5432
+    expected_publisher = "lusk_it_contract_pub"
+    expected_reader = "lusk_it_contract_read"
+    if (os.environ.get("LUSK_TEST_DATABASE_NAME") != expected_database or
+            os.environ.get("LUSK_TEST_DATABASE_PREFIX") != "lusk_it_" or
+            (publish.hostname, publish.port, publish.path.lstrip("/"), publish.username) !=
+            (expected_host, expected_port, expected_database, expected_publisher) or
+            (reader.hostname, reader.port, reader.path.lstrip("/"), reader.username) !=
+            (expected_host, expected_port, expected_database, expected_reader)):
+        pytest.fail("Guarded comparison publication requires the exact test-only host, database, and roles")
+    schema = "it_" + uuid.uuid4().hex[:20]
+    scoped_publish = _dsn_with_schema(publish_dsn, schema)
+    scoped_read = _dsn_with_schema(read_dsn, schema)
+    schema_path = Path(__file__).resolve().parents[2] / "schema.sql"
+    created = False
+    try:
+        for dsn, role in ((publish_dsn, expected_publisher), (read_dsn, expected_reader)):
+            with psycopg.connect(dsn, autocommit=True) as connection:
+                identity = connection.execute("""SELECT current_database(),current_user,
+                    inet_server_addr()::text,inet_server_port()""").fetchone()
+                if identity != (expected_database, role, "192.168.16.3/32", expected_port):
+                    pytest.fail(f"Guarded comparison database identity mismatch: {identity!r}")
+        with psycopg.connect(publish_dsn, autocommit=True) as connection:
+            connection.execute(f'CREATE SCHEMA "{schema}"')
+            created = True
+            connection.execute(f'SET search_path TO "{schema}"')
+            connection.execute(schema_path.read_text(encoding="utf-8"))
+            reader_role = urlsplit(read_dsn).username
+            if not reader_role or not re.fullmatch(r"[A-Za-z0-9_$-]+", reader_role):
+                pytest.fail("Read DSN must identify a simple database role name")
+            quoted_role = '"' + reader_role.replace('"', '""') + '"'
+            connection.execute(f'GRANT USAGE ON SCHEMA "{schema}" TO {quoted_role}')
+            connection.execute(f'GRANT SELECT ON ALL TABLES IN SCHEMA "{schema}" TO {quoted_role}')
+        yield {"publish_dsn": scoped_publish, "read_dsn": scoped_read, "schema": schema}
+    finally:
+        if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
+            with psycopg.connect(publish_dsn, autocommit=True) as connection:
+                connection.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+@pytest.fixture
+def retained_canonical_db_env(tmp_path_factory):
+    """Issue #814's guarded publisher schema and evidence are always retained."""
     import json
-    if os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
-        pytest.fail("Issue #814 comparison proof always retains its schema; unset LUSK_TEST_ALLOW_SCHEMA_CLEANUP")
+    _lineage_r_library_preflight()
     publish_dsn, read_dsn = _configuration()
     psycopg = pytest.importorskip("psycopg")
     passfile = os.environ.get("PGPASSFILE")
@@ -279,7 +337,13 @@ def canonical_db_env():
                 inet_server_addr()::text,inet_server_port()""").fetchone()
             if identity != (expected_database, role, "192.168.16.3/32", expected_port):
                 pytest.fail(f"Guarded comparison database identity mismatch: {identity!r}")
-    evidence_dir = Path("E:/Temp/opencode") / ("issue-814-mutable-source-labels-" + uuid.uuid4().hex[:12])
+    configured_evidence_root = os.environ.get("LUSK_TEST_EVIDENCE_DIR", "")
+    if configured_evidence_root:
+        evidence_root = Path(configured_evidence_root)
+        evidence_root.mkdir(parents=True, exist_ok=True)
+    else:
+        evidence_root = tmp_path_factory.mktemp("issue-814-evidence")
+    evidence_dir = evidence_root / ("issue-814-mutable-source-labels-" + uuid.uuid4().hex[:12])
     evidence_dir.mkdir(parents=True, exist_ok=False)
     (evidence_dir / "schema-intent.json").write_text(json.dumps({
         "schema": schema,
@@ -306,9 +370,9 @@ def canonical_db_env():
 
 
 @pytest.fixture
-def canonical_r_publisher_db_env(lineage_r_library_preflight, canonical_db_env):
+def canonical_r_publisher_db_env(lineage_r_library_preflight, retained_canonical_db_env):
     """Order R --vanilla configuration validation before guarded schema DDL."""
-    return canonical_db_env
+    return retained_canonical_db_env
 
 
 @pytest.fixture

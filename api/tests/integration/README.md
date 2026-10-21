@@ -187,7 +187,13 @@ python -m pytest api/tests/integration/test_postgres_publication.py -k synthetic
 The test creates a random `it_*` schema and always retains that schema and its
 evidence; `LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1` is rejected before connection or
 DDL. It does not modify the retained benchmark schema or publish to the serving
-database.
+database. Evidence is written under `LUSK_TEST_EVIDENCE_DIR` when configured;
+otherwise it uses a pytest temporary directory.
+
+This retention rule is scoped to the #814 proof's `retained_canonical_db_env`.
+Unrelated tests using the generic `canonical_db_env` keep the documented
+cleanup opt-in: their schemas are retained by default and dropped only when
+`LUSK_TEST_ALLOW_SCHEMA_CLEANUP=1` is explicitly set.
 
 The focused vintage-clock rollback regression can be run without replaying the
 full publisher proof by setting `LUSK_LINEAGE_TEST_SCHEMA` to an existing,
