@@ -856,11 +856,32 @@ owned_series_postgres_adapter <- function(con) {
           stop("Immutable provenance revision ID collision: ",p$provenance_revision_id[[1L]],call.=FALSE)
         }
       }
-      DBI::dbExecute(con,"DELETE FROM series_dataset_publication WHERE dataset_id=$1",params=list(dataset_id))
-      published_count <- nrow(projection$points) + if (is.null(projection$named_reference)) 0L else nrow(projection$named_reference)
-      DBI::dbExecute(con,"INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count,published_at) VALUES($1,$2,$3,$4,now())",
-        params=list(dataset_id,version,reference$content_version[[1L]],published_count))
-      array_literal <- function(x) paste0("{",paste0('"',gsub('"','\\\\"',as.character(x),fixed=TRUE),'"',collapse=","),"}")
+       published_count <- nrow(projection$points) + if (is.null(projection$named_reference)) 0L else nrow(projection$named_reference)
+       # The publication row is the stable owner key. Refresh it in place before
+       # any owned child write so write guards see this transaction's timestamp
+       # while external FK consumers (for example Milieux source bindings) keep
+       # referencing the same parent row.
+       DBI::dbExecute(con,"INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count,published_at) VALUES($1,$2,$3,$4,transaction_timestamp())
+         ON CONFLICT(dataset_id) DO UPDATE SET content_version=EXCLUDED.content_version,
+           reference_content_version=EXCLUDED.reference_content_version,row_count=EXCLUDED.row_count,
+           published_at=transaction_timestamp()",
+         params=list(dataset_id,version,reference$content_version[[1L]],published_count))
+       # Zero-reason rows have an actual NO ACTION FK to the group (unlike the
+       # cascading territory/lineage descendants), so clear them first. Drop
+       # the comparison marker inside the same transaction before replacing its
+       # groups; a missing/failed rebuild then cannot commit a ready stale token.
+       DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_publication WHERE dataset_id=$1",
+         params=list(dataset_id))
+       DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_zero_reason WHERE dataset_id=$1",
+         params=list(dataset_id))
+       DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_group WHERE dataset_id=$1",
+         params=list(dataset_id))
+       # Descriptor-owned observations/provenance, named references and context
+       # policy are cleared only through this dataset's existing FK cascades.
+       # Immutable series_provenance_revision rows are deliberately untouched.
+       DBI::dbExecute(con,"DELETE FROM series_dataset_descriptor WHERE dataset_id=$1",
+         params=list(dataset_id))
+       array_literal <- function(x) paste0("{",paste0('"',gsub('"','\\\\"',as.character(x),fixed=TRUE),'"',collapse=","),"}")
       numeric_axis <- if (is.null(d$axis_numeric_values)) NA_character_ else paste0("{",paste(d$axis_numeric_values,collapse=","),"}")
        DBI::dbExecute(con,"INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,axis_numeric_values,theme_id,comparison_statistic,comparison_scope,observation_period_kind) VALUES($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10::text[],$11,$12,$13::integer[],$14,$15,$16,$17)",
         params=list(dataset_id,d$indicator_id,d$axis_kind,array_literal(d$axis_values),d$completeness,
