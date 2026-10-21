@@ -70,9 +70,51 @@ test_that("legacy service-share source declarations are excluded from retained s
   reference <- project_territory_reference(territories)
   snapshot <- project_retained_scalar_snapshot(root, reference, artifacts)
   expect_false(any(snapshot$scalar$descriptors$indicator_id %in% excluded))
+  expect_setequal(snapshot$retired_indicator_ids, excluded)
+  expect_false("retired_indicator_ids" %in% names(snapshot$scalar))
+  expect_identical(snapshot$comparison$scalar_content_version,
+    scalar_content_version(snapshot$scalar))
   expect_false(any(grepl("^(share_|iso_)", snapshot$scalar$descriptors$indicator_id)))
   expect_true(all(snapshot$scalar$provenance$indicator_id %in%
     snapshot$scalar$descriptors$indicator_id))
+
+  legacy_cohorts <- lapply(c("economie", "demographie", "mobilite", "habitat"),
+    function(theme) read_scalar_serving_artifact(file.path(artifacts, "scalar-serving", theme)))
+  legacy_scalar <- assemble_scalar_snapshot(legacy_cohorts[[1L]], legacy_cohorts[-1L])
+  legacy_comparison <- project_scalar_comparisons(legacy_scalar, reference$rows,
+    scalar_content_version(legacy_scalar), reference$content_version)
+  legacy_retired <- intersect(excluded, legacy_scalar$descriptors$indicator_id)
+  expect_gt(length(legacy_retired), 0L)
+  expect_true(any(legacy_scalar$facts$indicator_id %in% legacy_retired))
+  expect_true(any(legacy_scalar$provenance$indicator_id %in% legacy_retired))
+  expect_true(any(legacy_comparison$groups$indicator_id %in% legacy_retired))
+})
+
+test_that("retained scalar retirement is metadata-derived and leaves undeclared omissions strict", {
+  metadata_directory <- testthat::test_path("../../inst/extdata/theme-metadata")
+  files <- sort(list.files(metadata_directory, pattern="^theme_.*\\.json$", full.names=TRUE))
+  declared_retirements <- unlist(lapply(files, function(path) {
+    metadata <- jsonlite::fromJSON(path, simplifyVector=FALSE)
+    ids <- names(metadata$sources %||% list())
+    ids[vapply(ids, function(id) {
+      source_id <- metadata$sources[[id]]
+      source <- (metadata$source_records %||% list())[[source_id]]
+      identical(source$serving_disposition, "excluded_legacy_accessibility")
+    }, logical(1))]
+  }), use.names=FALSE)
+  retirements <- retained_scalar_retirement_ids(metadata_directory)
+  expect_setequal(retirements, declared_retirements)
+  expect_length(retirements, 29L)
+
+  projection <- list(descriptors=data.frame(indicator_id="densite"))
+  expect_silent(assert_complete_scalar_snapshot(
+    c("densite", retirements[[1L]]), projection, retirements))
+  expect_error(assert_complete_scalar_snapshot(
+    c("densite", "unapproved_live_indicator"), projection, retirements),
+    "omitted registered indicators")
+  expect_error(assert_complete_scalar_snapshot(
+    c("densite", retirements[[1L]]), projection),
+    "omitted registered indicators")
 })
 
 test_that("retained scalar snapshot combines exact producer-declared owners deterministically", {

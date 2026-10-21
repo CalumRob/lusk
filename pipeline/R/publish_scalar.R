@@ -337,11 +337,16 @@ combine_scalar_projections <- function(...) {
   result
 }
 
-assert_complete_scalar_snapshot <- function(published_indicator_ids, projection) {
+assert_complete_scalar_snapshot <- function(published_indicator_ids, projection,
+                                            retired_indicator_ids=character()) {
+  if (!is.character(retired_indicator_ids) || anyNA(retired_indicator_ids) ||
+      any(!nzchar(retired_indicator_ids)) || anyDuplicated(retired_indicator_ids))
+    stop("Invalid explicit scalar retirement policy", call.=FALSE)
   omitted <- setdiff(as.character(published_indicator_ids), as.character(projection$descriptors$indicator_id))
-  if (length(omitted)) stop("Refusing partial scalar snapshot; omitted registered indicators: ",
-    paste(sort(omitted), collapse=", "), call.=FALSE)
-  invisible(TRUE)
+  unapproved <- setdiff(omitted, retired_indicator_ids)
+  if (length(unapproved)) stop("Refusing partial scalar snapshot; omitted registered indicators: ",
+    paste(sort(unapproved), collapse=", "), call.=FALSE)
+  invisible(omitted)
 }
 
 register_fixture_scalar_publisher <- function(registry, descriptor, completeness) {
@@ -892,9 +897,13 @@ cleanup_serving_smoke_schema <- function(connection, schema, kind) {
 
 # db is a narrow transaction adapter (transaction, marker, replace). Keeping
 # it injectable makes retry/rollback behavior testable without a live service.
-publish_registered_scalar <- function(registry, name, canonical, db) {
+publish_registered_scalar <- function(registry, name, canonical, db,
+                                      retired_indicator_ids=character()) {
   publisher <- registry[[name]]
   if (is.null(publisher)) stop("Unregistered scalar publisher", call. = FALSE)
+  if (!is.character(retired_indicator_ids) || anyNA(retired_indicator_ids) ||
+      any(!nzchar(retired_indicator_ids)) || anyDuplicated(retired_indicator_ids))
+    stop("Invalid explicit scalar retirement policy", call.=FALSE)
   if (!is.function(db$transaction) || !is.function(db$marker) || !is.function(db$replace) ||
       !is.function(db$reference_marker) || !is.function(db$validate_territories) ||
       !is.function(db$set_reference_version))
@@ -934,21 +943,41 @@ publish_registered_scalar <- function(registry, name, canonical, db) {
           paste(vintages$source_id, vintages$vintage_id)))
     stop("Scalar provenance refers to an undeclared dataset or vintage", call. = FALSE)
   version <- scalar_content_version(projection)
+  publication_db <- db
+  if (length(retired_indicator_ids)) {
+    if (!"retired_indicator_ids" %in% names(formals(db$replace)))
+      stop("Scalar database adapter does not support the explicit retirement policy", call.=FALSE)
+    replace_with_policy <- db$replace
+    publication_db$replace <- function(projection_arg, version_arg)
+      replace_with_policy(projection_arg, version_arg,
+        retired_indicator_ids=retired_indicator_ids)
+  }
+  validation_state <- new.env(parent=emptyenv())
+  validation_state$pending_retirement <- FALSE
   result <- publish_owner_snapshot(
     db = db, owner = "scalar_observation", content_version = version,
     dependency_name = "territory_reference",
     read_dependency = db$reference_marker,
     validate_dependency = function(reference) {
-    if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
-        !nzchar(reference$content_version[[1L]]) ||
-        (all(c("row_count", "actual_rows") %in% names(reference)) &&
-         reference$row_count[[1L]] != reference$actual_rows[[1L]]))
-      stop("Territory reference has no committed publication marker", call. = FALSE)
-    db$validate_territories(projection$eligible_territories, projection$descriptors)
-    },
-    publish_content = function(version_arg, dependency_arg) publisher$publish(projection, db, version),
-    rebind_dependency = db$set_reference_version)
-  invisible(list(changed = result$changed,
+     if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
+         !nzchar(reference$content_version[[1L]]) ||
+         (all(c("row_count", "actual_rows") %in% names(reference)) &&
+          reference$row_count[[1L]] != reference$actual_rows[[1L]]))
+       stop("Territory reference has no committed publication marker", call. = FALSE)
+     if (is.function(db$validate_snapshot)) {
+       validation <- db$validate_snapshot(projection, retired_indicator_ids)
+       validation_state$pending_retirement <- isTRUE(validation$pending_retirement)
+     } else if (length(retired_indicator_ids)) {
+       stop("Scalar database adapter cannot validate the explicit retirement policy", call.=FALSE)
+     }
+     db$validate_territories(projection$eligible_territories, projection$descriptors)
+     },
+    publish_content = function(version_arg, dependency_arg)
+      publisher$publish(projection, publication_db, version),
+    rebind_dependency = db$set_reference_version,
+    requires_republish=function(marker, dependency) validation_state$pending_retirement)
+  invisible(list(changed = result$changed || result$republished_for_dependency,
+                 retirement_repaired=result$republished_for_dependency,
                  compatibility_updated = result$rebound,
                  content_version = result$content_version))
 }
@@ -971,16 +1000,47 @@ scalar_postgres_adapter <- function(con) {
                     paste(actual$territory_id, actual$territory_type)))
         stop("Scalar eligible territory universe differs from the committed reference", call. = FALSE)
     },
+    validate_snapshot = function(projection, retired_indicator_ids=character()) {
+      present <- DBI::dbGetQuery(con,
+        "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
+      assert_complete_scalar_snapshot(present, projection, retired_indicator_ids)
+      omitted <- setdiff(as.character(present),
+        as.character(projection$descriptors$indicator_id))
+      list(pending_retirement=length(intersect(omitted, retired_indicator_ids)) > 0L)
+    },
     set_reference_version = function(version) DBI::dbExecute(con,
       "UPDATE table_publication SET reference_content_version=$1 WHERE table_name='scalar_observation'",
       params = list(version)),
-    replace = function(projection, version) {
+    replace = function(projection, version, retired_indicator_ids=character()) {
       facts <- projection$facts
       descriptors <- projection$descriptors
       provenance <- projection$provenance
       quote_value <- function(x) {
         if (length(x) == 1L && is.na(x)) return("NULL")
         as.character(DBI::dbQuoteString(con, as.character(x)))
+      }
+      # Validate before any write. This repeats the no-op-path guard under the
+      # same publication lock/transaction so a changed live inventory cannot
+      # slip between validation and replacement.
+      present <- DBI::dbGetQuery(con,
+        "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
+      assert_complete_scalar_snapshot(present, projection, retired_indicator_ids)
+      omitted <- setdiff(as.character(present),
+        as.character(projection$descriptors$indicator_id))
+      retiring <- intersect(omitted, retired_indicator_ids)
+      if (length(retiring)) {
+        ids_sql <- paste(vapply(retiring, quote_value, character(1)), collapse=",")
+        DBI::dbExecute(con, paste0("DELETE FROM comparison_source_lineage ",
+          "WHERE comparison_family='scalar' AND facet_id IN (", ids_sql, ")"))
+        DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_territory ",
+          "WHERE indicator_id IN (", ids_sql, ")"))
+        DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_group ",
+          "WHERE indicator_id IN (", ids_sql, ")"))
+        # Retiring a scalar can change the published comparison set even when
+        # the scalar content token is unchanged. Make only this family's
+        # publication unavailable until its normal publisher restores it.
+        DBI::dbExecute(con,
+          "DELETE FROM scalar_comparison_publication WHERE singleton")
       }
       for (row in seq_len(nrow(projection$datasets))) {
         d <- projection$datasets[row, , drop = FALSE]
@@ -992,13 +1052,16 @@ scalar_postgres_adapter <- function(con) {
         DBI::dbExecute(con, "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
                        params = unname(as.list(v[c("source_id", "vintage_id", "version", "reference_date", "publication_date")])))
       }
-      # The scalar table is one table-owned snapshot. Refuse an incomplete
-      # replacement before deleting anything if it would drop a live cohort.
-      present <- DBI::dbGetQuery(con, "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
-      assert_complete_scalar_snapshot(present, projection)
+      # The scalar table is one table-owned snapshot; the only permitted live
+      # omissions were explicitly checked above and retire their comparison
+      # dependencies before descriptor deletion (their FK is not cascading).
       DBI::dbExecute(con, "DELETE FROM scalar_observation")
       DBI::dbExecute(con, "DELETE FROM scalar_descriptor_source")
-      DBI::dbExecute(con, "DELETE FROM scalar_descriptor")
+      if (length(retiring)) {
+        ids_sql <- paste(vapply(retiring, quote_value, character(1)), collapse=",")
+        DBI::dbExecute(con, paste0("DELETE FROM scalar_descriptor WHERE indicator_id IN (",
+          ids_sql, ")"))
+      }
       for (i in seq_len(nrow(descriptors))) {
         d <- descriptors[i, , drop = FALSE]
         levels <- as.character(d$allowed_levels[[1L]])
@@ -1007,7 +1070,10 @@ scalar_postgres_adapter <- function(con) {
                     "comparison_facet", "denominator_semantics", "completeness", "descriptor_version")
         values <- vapply(fields, function(field) quote_value(d[[field]][[1L]]), character(1))
         sql <- paste0("INSERT INTO scalar_descriptor(", paste(fields, collapse=","), ",allowed_levels) VALUES (",
-          paste(c(values, array_sql), collapse=","), ")")
+          paste(c(values, array_sql), collapse=","), ") ON CONFLICT(indicator_id) DO UPDATE SET ",
+          paste(vapply(setdiff(fields, "indicator_id"), function(field)
+            paste0(field, "=EXCLUDED.", field), character(1)), collapse=","),
+          ",allowed_levels=EXCLUDED.allowed_levels")
         DBI::dbExecute(con, sql)
         allowed_sources <- as.character(d$allowed_sources[[1L]])
         for (source_id in allowed_sources) {
