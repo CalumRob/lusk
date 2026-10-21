@@ -231,7 +231,7 @@ def canonical_db_env():
         pytest.fail("Guarded comparison publication requires the existing private PGPASSFILE")
     publish, reader = urlsplit(publish_dsn), urlsplit(read_dsn)
     expected_database = "lusk_it_contract"
-    expected_host = "192.168.16.3"
+    expected_host = "192.168.1.120"
     expected_port = 5432
     expected_publisher = "lusk_it_contract_pub"
     expected_reader = "lusk_it_contract_read"
