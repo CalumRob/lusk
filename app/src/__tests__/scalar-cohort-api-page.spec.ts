@@ -7,7 +7,7 @@ import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { indicateursDemographieFixture, indicateursEconomieFixture, territoiresFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { validerThemeMetadata } from '../payload/validate'
-import { chargerCohorteScalaire, chargerCohortesScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires, validerEnregistrementScalaires } from '../payload/scalarCohort'
+import { chargerCohorteScalaire, chargerCohortesScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled, validerEnregistrementScalaires } from '../payload/scalarCohort'
 import { formaterRang } from '../payload/selectors'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
@@ -22,6 +22,15 @@ const productionThemeMetadata = { economie: economyMetadata, demographie: demogr
 const canonicalEconomyFacts = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'indicateurs_economie.json'), 'utf8')) as Array<Record<string, unknown>>
 const canonicalRank = (indicator: string, territoryId: string) => canonicalEconomyFacts.find((fact) =>
   fact.key === indicator && fact.type === 'commune' && fact.territoire === territoryId)
+
+describe('scalarCohortEnabled', () => {
+  it('enables API acquisition by default and keeps an explicit opt-out', () => {
+    expect(scalarCohortEnabled({})).toBe(true)
+    expect(scalarCohortEnabled({ VITE_SCALAR_COHORT_API: '0' })).toBe(false)
+    expect(scalarCohortEnabled({ VITE_SCALAR_COHORT_API: '1' })).toBe(true)
+  })
+})
+
 beforeEach(() => { localStorage.clear(); vi.stubEnv('VITE_SCALAR_COHORT_API', '1') })
 afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
