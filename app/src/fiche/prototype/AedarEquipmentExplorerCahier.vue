@@ -38,18 +38,35 @@ const detailStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const detailRetry = ref(0)
 const retryDetail = () => { detailRetry.value += 1 }
 let detailRequest = 0
-watch([selectedTypequ, detailRetry], async ([typequ]) => {
+const selectedBaseFact = computed(() => props.evidence.facts.find((fact) => fact.typequ === selectedTypequ.value) ?? null)
+const detailIdentity = computed(() => {
+  const fact = selectedBaseFact.value
+  return JSON.stringify([fact?.territory_type, fact?.territory_id, selectedTypequ.value,
+    props.evidence.contentVersion, props.evidence.referenceContentVersion,
+    fact?.source_id, fact?.vintage_id, fact?.source_url, fact?.licence, fact?.attribution,
+    fact?.reference_date, fact?.publication_date, fact?.identity])
+})
+watch([selectedTypequ, detailRetry, detailIdentity], async ([typequ, , identityAtStart], _old, onCleanup) => {
   const request = ++detailRequest
+  let invalidated = false
+  onCleanup(() => { invalidated = true })
   selectedDetail.value = null
   detailStatus.value = 'loading'
-  const first = props.evidence.facts[0]
-  if (!first) return
-  const result = await fetchAedarAggregates(first.territory_type, first.territory_id,
-    { typequ: [typequ], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS })
-  if (request === detailRequest) {
+  const identity = selectedBaseFact.value
+  if (!identity) { detailStatus.value = 'error'; return }
+  const requestedTerritory = { type: identity.territory_type, id: identity.territory_id }
+  const requestedContentVersion = props.evidence.contentVersion
+  const requestedReferenceVersion = props.evidence.referenceContentVersion
+  const result = await fetchAedarAggregates(requestedTerritory.type, requestedTerritory.id,
+    { typequ: [typequ], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS,
+      expectedContentVersion: requestedContentVersion, expectedReferenceContentVersion: requestedReferenceVersion })
+  if (!invalidated && request === detailRequest && detailIdentity.value === identityAtStart
+    && selectedTypequ.value === typequ) {
     if (result.status === 'ready' && result.facts[0]
-      && result.contentVersion === props.evidence.contentVersion
-      && result.referenceContentVersion === props.evidence.referenceContentVersion) {
+      && result.facts[0].territory_type === requestedTerritory.type
+      && result.facts[0].territory_id === requestedTerritory.id
+      && result.contentVersion === requestedContentVersion
+      && result.referenceContentVersion === requestedReferenceVersion) {
       selectedDetail.value = result.facts[0]
       detailStatus.value = 'ready'
     }
@@ -64,7 +81,7 @@ const pickerOpen = ref(false)
 const search = ref('')
 
 const selectedFact = computed(() => {
-  const base = props.evidence.facts.find((fact) => fact.typequ === selectedTypequ.value) ?? null
+  const base = selectedBaseFact.value
   return base && selectedDetail.value?.typequ === base.typequ
     ? { ...base, measures: { ...base.measures, ...selectedDetail.value.measures } } : base
 })

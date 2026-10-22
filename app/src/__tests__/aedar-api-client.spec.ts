@@ -86,6 +86,48 @@ describe('AEDAR API client', () => {
     expect(fetchMock.mock.calls.map(([, init]) => JSON.parse(init.body).items[0].fields.length)).toEqual([32, 8])
   })
 
+  it.each(['typequ_label', 'identity', 'n_addresses', 'n_observed', 'coverage_status', 'source_id', 'vintage_id',
+    'source_url', 'licence', 'attribution', 'reference_date', 'publication_date'] as const)(
+    'rejects projected chunks with incompatible producer %s metadata', async (key) => {
+      const measures = measureKeys().slice(0, 40)
+      const fetchMock = vi.fn().mockImplementation((_url: string, init: RequestInit) => {
+        const item = JSON.parse(init.body as string).items[0]
+        const selected = item.fields.map((field: string) => field.slice('measures.'.length))
+        const source = { ...fact('B207'), territory_id: item.target.id }
+        const dataFact: Record<string, unknown> = { ...source,
+          measures: Object.fromEntries(selected.map((measure: string) => [measure, source.measures[measure]])) }
+        if (item.fields.length === 8) {
+          if (key === 'identity') dataFact.identity = { changed: 'value' }
+          else if (key === 'n_addresses' || key === 'n_observed') dataFact[key] = 11
+          else if (key === 'coverage_status') dataFact[key] = 'partial'
+          else if (key.endsWith('_date')) dataFact[key] = '2025-01-01'
+          else dataFact[key] = `changed-${key}`
+        }
+        return Promise.resolve(jsonResponse({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, data: {
+          resource: item.resource, target: item.target, ...response([dataFact], {
+            limit: 100, territory: { territory_type: 'commune', territory_id: item.target.id },
+          }),
+        } }] }))
+      })
+      vi.stubGlobal('fetch', fetchMock)
+      expect(await fetchAedarAggregates('commune', `metadata-${key}`, { typequ: ['B207'], measures }))
+        .toMatchObject({ status: 'error', error: { code: 'invalid-response' } })
+    })
+
+  it('keeps expected publication versions in local cache identity and rejects a read from another version', async () => {
+    const measures = ['count_15_car_min']
+    const source = { ...fact('B207'), territory_id: 'expected-version', measures: { count_15_car_min: 1 } }
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue(jsonResponse({
+      contract: 'semantic-read-batch-v1',
+      results: [{ id: 'aedar-0', data: { resource: 'aedar_territorial_aggregate',
+        target: { kind: 'territory', type: 'commune', id: 'expected-version' },
+        ...response([source], { limit: 100, territory: { territory_type: 'commune', territory_id: 'expected-version' } }) } }],
+    })))
+    expect(await fetchAedarAggregates('commune', 'expected-version', {
+      typequ: ['B207'], measures, expectedContentVersion: 'v2', expectedReferenceContentVersion: 'r2',
+    })).toMatchObject({ status: 'error', error: { code: 'invalid-response' } })
+  })
+
   it('reuses successful reads for the same territory and TYPEQU selection', async () => {
     const fetchMock = vi.fn().mockResolvedValue(jsonResponse({
       contract: 'semantic-read-batch-v1',

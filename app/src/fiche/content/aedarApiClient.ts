@@ -47,6 +47,9 @@ export type AedarFetchResult =
 export interface AedarFetchOptions {
   typequ?: string[]
   measures?: string[]
+  /** Local cache/compatibility guard; not an API request field. */
+  expectedContentVersion?: string
+  expectedReferenceContentVersion?: string
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -103,6 +106,16 @@ function errorResult(code: Extract<AedarFetchResult, { status: 'error' }>['error
   return { status: 'error', error: { code, message } }
 }
 
+/** All non-measure producer-owned attributes must agree when field chunks are reassembled. */
+function sameAedarFactMetadata(left: AedarFact, right: AedarFact): boolean {
+  const scalarKeys = ['territory_id', 'territory_type', 'typequ', 'typequ_label', 'n_addresses', 'n_observed',
+    'coverage_status', 'source_id', 'vintage_id', 'source_url', 'licence', 'attribution', 'reference_date',
+    'publication_date'] as const
+  return scalarKeys.every((key) => left[key] === right[key])
+    && JSON.stringify(Object.entries(left.identity).sort(([a], [b]) => a.localeCompare(b)))
+      === JSON.stringify(Object.entries(right.identity).sort(([a], [b]) => a.localeCompare(b)))
+}
+
 const MAX_CACHED_READS = 8
 interface AedarReadCache {
   successful: Map<string, Extract<AedarFetchResult, { status: 'ready' }>>
@@ -142,16 +155,15 @@ export async function fetchAedarAggregates(
     for (const part of ready) for (const fact of part.facts) {
       const key = fact.typequ
       const prior = facts.get(key)
-      if (prior && (prior.source_id !== fact.source_id || prior.vintage_id !== fact.vintage_id
-        || prior.n_addresses !== fact.n_addresses || prior.n_observed !== fact.n_observed
-        || prior.coverage_status !== fact.coverage_status)) {
+      if (prior && !sameAedarFactMetadata(prior, fact)) {
         return errorResult('invalid-response', 'Métadonnées AEDAR incompatibles entre projections')
       }
       facts.set(key, { ...prior, ...fact, measures: { ...prior?.measures, ...fact.measures } })
     }
     return { ...first, facts: [...facts.values()] }
   }
-  const cacheKey = JSON.stringify([territoryType, territoryId, options.typequ ?? null, options.measures ?? null])
+  const cacheKey = JSON.stringify([territoryType, territoryId, options.typequ ?? null, options.measures ?? null,
+    options.expectedContentVersion ?? null, options.expectedReferenceContentVersion ?? null])
   const fetcher = globalThis.fetch
   const cache = cacheFor(fetcher)
   const cached = cache.successful.get(cacheKey)
@@ -261,6 +273,10 @@ async function readAedarAggregates(
     licence: fact.licence, attribution: fact.attribution,
     reference_date: fact.reference_date, publication_date: fact.publication_date,
   })
+  if ((options.expectedContentVersion !== undefined && options.expectedContentVersion !== contentVersion)
+    || (options.expectedReferenceContentVersion !== undefined && options.expectedReferenceContentVersion !== referenceContentVersion)) {
+    return errorResult('invalid-response', 'Publication AEDAR incompatible avec les faits déjà affichés')
+  }
   return { status: 'ready', facts, contentVersion: contentVersion!, referenceContentVersion: referenceContentVersion!,
     provenance: { contentVersion: contentVersion!, sources: [...sources.values()] } }
 }

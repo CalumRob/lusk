@@ -29,6 +29,7 @@ import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
 import ProductionMobilite from '@/fiche/mobilite/ProductionMobilite.vue'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
+import { AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU } from '@/fiche/content/aedarAccessSection'
 import { AEDAR_CORE_MEASURE_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
@@ -109,12 +110,14 @@ watch([productionMobilite, typeRoute, idRoute, retryAedarCount], async ([active,
   const result = await fetchAedarAggregates(identity.type, id, { measures: AEDAR_CORE_MEASURE_KEYS })
   if (!cancelled) { aedarData.value = result; aedarStatus.value = result.status === 'ready' ? 'ready' : 'error' }
   if (result.status === 'ready') {
-    const detail = await fetchAedarAggregates(identity.type, id, { typequ: ['B207'], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS })
+    const detail = await fetchAedarAggregates(identity.type, id,
+      { typequ: [AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS,
+        expectedContentVersion: result.contentVersion, expectedReferenceContentVersion: result.referenceContentVersion })
     if (!cancelled && detail.status === 'ready' && aedarData.value?.status === 'ready'
       && aedarData.value.contentVersion === detail.contentVersion
       && aedarData.value.referenceContentVersion === detail.referenceContentVersion) {
       const detailFact = detail.facts[0]
-      aedarData.value = { ...aedarData.value, facts: aedarData.value.facts.map((fact) => fact.typequ === 'B207' && detailFact
+      aedarData.value = { ...aedarData.value, facts: aedarData.value.facts.map((fact) => fact.typequ === AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU && detailFact
         ? { ...fact, measures: { ...fact.measures, ...detailFact.measures } } : fact) }
     }
   }
