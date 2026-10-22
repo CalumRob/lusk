@@ -1,10 +1,11 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, ref, watch } from 'vue'
 
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
+import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
-import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES, AEDAR_RAMP_MODE_LABELS, AEDAR_RAMP_MODES, readAedarCountMeasure, toggleAedarRampModeSelection } from '@/fiche/content/aedarTimeRampFacts'
+import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, AEDAR_RAMP_MODE_LABELS, AEDAR_RAMP_MODES, readAedarCountMeasure, toggleAedarRampModeSelection } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { AedarEquipmentExplorerEvidence } from '@/fiche/content/themeContent'
 import type { FactAvailability, TimeRampFigureData } from '@/fiche/content/territoryFacts'
@@ -32,6 +33,46 @@ const emit = defineEmits<{
 const HORIZONS = AEDAR_EQUIPMENT_BUCKET_HORIZONS
 
 const selectedTypequ = ref(props.evidence.initialTypequ)
+const selectedDetail = ref<AedarFact | null>(null)
+const detailStatus = ref<'loading' | 'ready' | 'error'>('loading')
+const detailRetry = ref(0)
+const retryDetail = () => { detailRetry.value += 1 }
+let detailRequest = 0
+const selectedBaseFact = computed(() => props.evidence.facts.find((fact) => fact.typequ === selectedTypequ.value) ?? null)
+const detailIdentity = computed(() => {
+  const fact = selectedBaseFact.value
+  return JSON.stringify([fact?.territory_type, fact?.territory_id, selectedTypequ.value,
+    props.evidence.contentVersion, props.evidence.referenceContentVersion,
+    fact?.source_id, fact?.vintage_id, fact?.source_url, fact?.licence, fact?.attribution,
+    fact?.reference_date, fact?.publication_date, fact?.identity])
+})
+watch([selectedTypequ, detailRetry, detailIdentity], async ([typequ, , identityAtStart], _old, onCleanup) => {
+  const request = ++detailRequest
+  let invalidated = false
+  onCleanup(() => { invalidated = true })
+  selectedDetail.value = null
+  detailStatus.value = 'loading'
+  const identity = selectedBaseFact.value
+  if (!identity) { detailStatus.value = 'error'; return }
+  const requestedTerritory = { type: identity.territory_type, id: identity.territory_id }
+  const requestedContentVersion = props.evidence.contentVersion
+  const requestedReferenceVersion = props.evidence.referenceContentVersion
+  const result = await fetchAedarAggregates(requestedTerritory.type, requestedTerritory.id,
+    { typequ: [typequ], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS,
+      expectedContentVersion: requestedContentVersion, expectedReferenceContentVersion: requestedReferenceVersion })
+  if (!invalidated && request === detailRequest && detailIdentity.value === identityAtStart
+    && selectedTypequ.value === typequ) {
+    if (result.status === 'ready' && result.facts[0]
+      && result.facts[0].territory_type === requestedTerritory.type
+      && result.facts[0].territory_id === requestedTerritory.id
+      && result.contentVersion === requestedContentVersion
+      && result.referenceContentVersion === requestedReferenceVersion) {
+      selectedDetail.value = result.facts[0]
+      detailStatus.value = 'ready'
+    }
+    else detailStatus.value = 'error'
+  }
+}, { immediate: true })
 const localHorizonMinutes = ref<AedarEquipmentHorizon>(props.evidence.initialHorizonMinutes)
 const horizonMinutes = computed(() => props.selectedHorizon ?? localHorizonMinutes.value)
 const localSelectedModes = ref<AedarRampMode[]>([...AEDAR_DEFAULT_VISIBLE_RAMP_MODES])
@@ -39,7 +80,11 @@ const selectedModes = computed(() => props.selectedModes ?? localSelectedModes.v
 const pickerOpen = ref(false)
 const search = ref('')
 
-const selectedFact = computed(() => props.evidence.facts.find((fact) => fact.typequ === selectedTypequ.value) ?? null)
+const selectedFact = computed(() => {
+  const base = selectedBaseFact.value
+  return base && selectedDetail.value?.typequ === base.typequ
+    ? { ...base, measures: { ...base.measures, ...selectedDetail.value.measures } } : base
+})
 const selectedTypeLabel = computed(() => selectedFact.value
   ? `${selectedFact.value.typequ_label} (${selectedFact.value.typequ})`
   : 'Type d’équipement indisponible')
@@ -123,6 +168,10 @@ function chooseType(fact: AedarFact): void {
         @update:model-value="setHorizonMinutes"
       />
     </div>
+    <p v-if="detailStatus === 'loading'" class="aedar-equipment-explorer-load-state" role="status">Chargement des valeurs pour ce type d’équipement…</p>
+    <p v-else-if="detailStatus === 'error'" class="aedar-equipment-explorer-load-state" role="alert">
+      Valeurs indisponibles pour ce type d’équipement. <button type="button" @click="retryDetail">Réessayer</button>
+    </p>
 
     <div class="aedar-equipment-explorer-figures">
       <figure class="aedar-equipment-explorer-figure">

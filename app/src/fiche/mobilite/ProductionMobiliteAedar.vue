@@ -2,6 +2,7 @@
 import { computed, ref, watch } from 'vue'
 import VarianteCahierLibre from '../prototype/VarianteCahierLibre.vue'
 import { aedarPrototypeSections } from '@/fiche/content/aedarAccessSection'
+import { aedarDiversityLossSection } from '@/fiche/content/aedarDiversityLossMaps'
 import { fetchAedarDiversityLossMapLegend } from '@/fiche/content/aedarDiversityLossMaps'
 import type { AedarDiversityLossMapMetadata } from '@/fiche/content/aedarDiversityLossMaps'
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
@@ -42,7 +43,16 @@ watch(() => `${props.content.territory.type}/${props.content.territory.code}`, a
 }, { immediate: true })
 
 const transformed = computed(() => {
-  if (!props.aedarData || props.aedarData.status !== 'ready') return props.content
+  if (!props.aedarData || props.aedarData.status !== 'ready') {
+    // The published map legend is independently available from aggregate facts.
+    // Keep the map/editorial page in place while numeric sections hydrate.
+    const first = props.content.units[0]
+    if (!first || !props.content.territory) return props.content
+    const map = aedarDiversityLossSection(lossMapMetadata.value, props.content.territory)
+    const sections = first.sections.filter((section) => String(section.key) !== map.key)
+    const units = [{ ...first, sections: [...sections.slice(0, 1), map, ...sections.slice(1)] }, ...props.content.units.slice(1)]
+    return { ...props.content, units } as unknown as ThemeContent
+  }
   const focal = props.aedarData
   const referenceTerritoire = props.aedarReferenceTerritoire ?? null
   const referenceData = props.aedarReferenceData ?? null

@@ -46,6 +46,10 @@ export type AedarFetchResult =
 
 export interface AedarFetchOptions {
   typequ?: string[]
+  measures?: string[]
+  /** Local cache/compatibility guard; not an API request field. */
+  expectedContentVersion?: string
+  expectedReferenceContentVersion?: string
 }
 
 const isRecord = (value: unknown): value is Record<string, unknown> =>
@@ -69,7 +73,7 @@ const measureKeys = expectedMeasureKeys()
 function invalid(): never { throw new Error('Réponse AEDAR invalide') }
 
 /** Validate one page against the requested territory and the complete published measure schema. */
-export function validateAedarResponse(response: unknown, expectedTerritory: AedarTerritoryIdentity): AedarApiResponse {
+export function validateAedarResponse(response: unknown, expectedTerritory: AedarTerritoryIdentity, selectedMeasures?: readonly string[]): AedarApiResponse {
   if (!isRecord(response) || !isRecord(response.territory) || !Array.isArray(response.facts) ||
       !isText(response.content_version) || !response.content_version.trim() ||
       !isText(response.reference_content_version) || !response.reference_content_version.trim() ||
@@ -87,8 +91,8 @@ export function validateAedarResponse(response: unknown, expectedTerritory: Aeda
         !Number.isInteger(value.n_addresses) || (value.n_addresses as number) < 0 ||
         !Number.isInteger(value.n_observed) || (value.n_observed as number) < 0 ||
         !isText(value.coverage_status) || !isRecord(value.measures) ||
-        Object.keys(value.measures).length !== measureKeys.size ||
-        Object.keys(value.measures).some((key) => !measureKeys.has(key)) ||
+        Object.keys(value.measures).length !== (selectedMeasures ?? [...measureKeys]).length ||
+        Object.keys(value.measures).some((key) => !(selectedMeasures ?? [...measureKeys]).includes(key) || !measureKeys.has(key)) ||
         Object.values(value.measures).some((item) => item !== null && (typeof item !== 'number' || !Number.isFinite(item))) ||
         !isText(value.source_id) || !isText(value.vintage_id) || !isText(value.source_url) ||
         !isText(value.licence) || !isText(value.attribution) ||
@@ -100,6 +104,16 @@ export function validateAedarResponse(response: unknown, expectedTerritory: Aeda
 
 function errorResult(code: Extract<AedarFetchResult, { status: 'error' }>['error']['code'], message: string): AedarFetchResult {
   return { status: 'error', error: { code, message } }
+}
+
+/** All non-measure producer-owned attributes must agree when field chunks are reassembled. */
+function sameAedarFactMetadata(left: AedarFact, right: AedarFact): boolean {
+  const scalarKeys = ['territory_id', 'territory_type', 'typequ', 'typequ_label', 'n_addresses', 'n_observed',
+    'coverage_status', 'source_id', 'vintage_id', 'source_url', 'licence', 'attribution', 'reference_date',
+    'publication_date'] as const
+  return scalarKeys.every((key) => left[key] === right[key])
+    && JSON.stringify(Object.entries(left.identity).sort(([a], [b]) => a.localeCompare(b)))
+      === JSON.stringify(Object.entries(right.identity).sort(([a], [b]) => a.localeCompare(b)))
 }
 
 const MAX_CACHED_READS = 8
@@ -124,7 +138,32 @@ export async function fetchAedarAggregates(
   territoryId: string,
   options: AedarFetchOptions = {},
 ): Promise<AedarFetchResult> {
-  const cacheKey = JSON.stringify([territoryType, territoryId, options.typequ ?? null])
+  if (options.measures && options.measures.length > 32) {
+    const chunks = Array.from({ length: Math.ceil(options.measures.length / 32) }, (_, index) =>
+      options.measures!.slice(index * 32, (index + 1) * 32))
+    const parts = await Promise.all(chunks.map((measures) => fetchAedarAggregates(territoryType, territoryId,
+      { ...options, measures })))
+    const failed = parts.find((part) => part.status === 'error')
+    if (failed?.status === 'error') return failed
+    const ready = parts as Extract<AedarFetchResult, { status: 'ready' }>[]
+    const first = ready[0]
+    if (!first || ready.some((part) => part.contentVersion !== first.contentVersion
+      || part.referenceContentVersion !== first.referenceContentVersion)) {
+      return errorResult('invalid-response', 'Publications AEDAR incompatibles entre projections')
+    }
+    const facts = new Map<string, AedarFact>()
+    for (const part of ready) for (const fact of part.facts) {
+      const key = fact.typequ
+      const prior = facts.get(key)
+      if (prior && !sameAedarFactMetadata(prior, fact)) {
+        return errorResult('invalid-response', 'Métadonnées AEDAR incompatibles entre projections')
+      }
+      facts.set(key, { ...prior, ...fact, measures: { ...prior?.measures, ...fact.measures } })
+    }
+    return { ...first, facts: [...facts.values()] }
+  }
+  const cacheKey = JSON.stringify([territoryType, territoryId, options.typequ ?? null, options.measures ?? null,
+    options.expectedContentVersion ?? null, options.expectedReferenceContentVersion ?? null])
   const fetcher = globalThis.fetch
   const cache = cacheFor(fetcher)
   const cached = cache.successful.get(cacheKey)
@@ -163,7 +202,9 @@ async function readAedarAggregates(
   const limit = 100
   if (!territoryTypes.has(territoryType) || !territoryId ||
       (options.typequ !== undefined && (!options.typequ.length || options.typequ.some((code) => !code)
-        || new Set(options.typequ).size !== options.typequ.length))) {
+        || new Set(options.typequ).size !== options.typequ.length)) ||
+      (options.measures !== undefined && (!options.measures.length || options.measures.some((key) => !measureKeys.has(key))
+        || new Set(options.measures).size !== options.measures.length))) {
     return errorResult('invalid-response', 'Paramètres AEDAR invalides')
   }
   const expected = { territory_type: territoryType, territory_id: territoryId }
@@ -177,6 +218,7 @@ async function readAedarAggregates(
       id: `aedar-${items.length}`, resource: 'aedar_territorial_aggregate',
       target: { kind: 'territory', type: territoryType, id: territoryId },
       intent: { kind: 'facts' }, coordinates: { typequ: codes.slice(start, start + limit) },
+      ...(options.measures ? { fields: options.measures.map((key) => `measures.${key}`) } : {}),
     })
   }
   try {
@@ -210,7 +252,7 @@ async function readAedarAggregates(
         const data = results.get(item.id)
         if (!isRecord(data) || data.resource !== item.resource || !isRecord(data.target)
           || data.target.kind !== 'territory' || data.target.type !== territoryType || data.target.id !== territoryId) invalid()
-        const page = validateAedarResponse(data, expected)
+        const page = validateAedarResponse(data, expected, options.measures)
         if (page.offset !== 0 || page.limit !== 100
           || (contentVersion !== undefined && contentVersion !== page.content_version)
           || (referenceContentVersion !== undefined && referenceContentVersion !== page.reference_content_version)) invalid()
@@ -231,6 +273,10 @@ async function readAedarAggregates(
     licence: fact.licence, attribution: fact.attribution,
     reference_date: fact.reference_date, publication_date: fact.publication_date,
   })
+  if ((options.expectedContentVersion !== undefined && options.expectedContentVersion !== contentVersion)
+    || (options.expectedReferenceContentVersion !== undefined && options.expectedReferenceContentVersion !== referenceContentVersion)) {
+    return errorResult('invalid-response', 'Publication AEDAR incompatible avec les faits déjà affichés')
+  }
   return { status: 'ready', facts, contentVersion: contentVersion!, referenceContentVersion: referenceContentVersion!,
     provenance: { contentVersion: contentVersion!, sources: [...sources.values()] } }
 }

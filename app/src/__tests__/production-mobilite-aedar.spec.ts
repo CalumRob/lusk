@@ -371,6 +371,26 @@ describe('VarianteCahierLibre — AEDAR access', () => {
 })
 
 describe('ProductionMobiliteAedar', () => {
+  it('keeps maps/editorial structure mounted while the aggregate request is pending', async () => {
+    const content = baseContent()
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push({ path: '/territoire/commune/22001' })
+    await router.isReady()
+    vi.stubGlobal('fetch', vi.fn(async (input: string) => {
+      const mode = lossMapModes.find((candidate) => input.endsWith(`22001-${candidate}-inline.json`))
+      if (!mode) throw new Error(`Unexpected request: ${input}`)
+      return { ok: true, json: async () => lossInlineLegend(mode) }
+    }))
+    const wrapper = mount(ProductionMobiliteAedar, { props: {
+      content, pagination: cahierPaginationFor(payload, content), comparisonOptions: [],
+      aedarData: null, aedarStatus: 'loading', retryAedar: () => {},
+    }, global: { plugins: [router] } })
+    await flushPromises()
+    expect(wrapper.find('.cahier-page').exists()).toBe(true)
+    expect(wrapper.find('.aedar-diversity-loss-map').exists()).toBe(true)
+    expect(wrapper.text()).not.toContain('Les données AEDAR ne sont pas disponibles.')
+  })
+
   it('renders production loss maps and metadata-driven legend', async () => {
     const base = baseContent()
     const content = {
@@ -406,7 +426,7 @@ describe('ProductionMobiliteAedar', () => {
     await flushPromises()
     await flushPromises()
 
-    expect(fetchMock.mock.calls.map(([url]) => url)).toEqual([...lossMapModes, 'car'].map((mode) =>
+    expect(fetchMock.mock.calls.map(([url]) => url).filter((url) => !String(url).startsWith('/api/'))).toEqual([...lossMapModes, 'car'].map((mode) =>
       `https://images.calumrobertson.fr/maps/aedar/v1/22001-${mode}-inline.json`))
     expect(wrapper.findAll('.figure-stack > [data-section]')
       .slice(0, 5)

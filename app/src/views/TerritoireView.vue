@@ -29,6 +29,8 @@ import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
 import ProductionMobilite from '@/fiche/mobilite/ProductionMobilite.vue'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
+import { AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU } from '@/fiche/content/aedarAccessSection'
+import { AEDAR_CORE_MEASURE_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
 import {
@@ -104,8 +106,21 @@ function retryAedar(): void { retryAedarCount.value++ }
 watch([productionMobilite, typeRoute, idRoute, retryAedarCount], async ([active, type, id], _old, onCleanup) => {
   if (!active || !['commune','epci','departement','region'].includes(type)) { aedarData.value = null; aedarStatus.value = 'loading'; return }
   let cancelled = false; onCleanup(() => { cancelled = true }); aedarStatus.value = 'loading'; aedarData.value = null
-  const result = await fetchAedarAggregates(type as 'commune'|'epci'|'departement'|'region', id)
+  const identity = { type: type as AedarTerritoryType, id }
+  const result = await fetchAedarAggregates(identity.type, id, { measures: AEDAR_CORE_MEASURE_KEYS })
   if (!cancelled) { aedarData.value = result; aedarStatus.value = result.status === 'ready' ? 'ready' : 'error' }
+  if (result.status === 'ready') {
+    const detail = await fetchAedarAggregates(identity.type, id,
+      { typequ: [AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU], measures: AEDAR_EXPLORER_DETAIL_MEASURE_KEYS,
+        expectedContentVersion: result.contentVersion, expectedReferenceContentVersion: result.referenceContentVersion })
+    if (!cancelled && detail.status === 'ready' && aedarData.value?.status === 'ready'
+      && aedarData.value.contentVersion === detail.contentVersion
+      && aedarData.value.referenceContentVersion === detail.referenceContentVersion) {
+      const detailFact = detail.facts[0]
+      aedarData.value = { ...aedarData.value, facts: aedarData.value.facts.map((fact) => fact.typequ === AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU && detailFact
+        ? { ...fact, measures: { ...fact.measures, ...detailFact.measures } } : fact) }
+    }
+  }
 }, { immediate: true })
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
 const themeMigre = (theme: Theme | null): boolean =>
@@ -213,7 +228,7 @@ watch([productionMobilite, aedarReferenceKey, retryAedarCount], async ([active, 
   let cancelled = false; onCleanup(() => { cancelled = true })
   aedarReferenceStatus.value = 'loading'; aedarReferenceData.value = null
   const [type, id] = key.split('/')
-  const result = await fetchAedarAggregates(type as AedarTerritoryType, id)
+  const result = await fetchAedarAggregates(type as AedarTerritoryType, id, { measures: AEDAR_CORE_MEASURE_KEYS })
   if (!cancelled) { aedarReferenceData.value = result; aedarReferenceStatus.value = result.status === 'ready' ? 'ready' : 'error' }
 }, { immediate: true })
 
