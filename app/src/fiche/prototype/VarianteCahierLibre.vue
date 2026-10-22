@@ -1591,18 +1591,20 @@ onBeforeUnmount(() => {
   }
   .cahier-page,
   .sources-page {
-    --page-left-inset: 16px;
-    --page-right-inset: 16px;
-    padding-inline: 16px;
+    --page-left-inset: var(--space-4);
+    --page-right-inset: var(--space-4);
+    padding-inline: var(--space-4);
   }
   .cahier-spine { display: none; }
   .mobile-index { display: block; padding: 0 24px; border-bottom: 1px solid var(--red-soft); background: var(--paper); }
   .mobile-index summary { padding: 17px 0; color: var(--cahier-theme-strong); cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
   .mobile-index nav { display: grid; gap: 2px; padding: 0 0 18px 18px; }
   .mobile-index a { display: flex; gap: 12px; padding: 8px 0; color: var(--muted); font-size: 14px; text-decoration: none; }
-  .page-margin { width: 58px; }
-  .cahier--sans-grille .page-margin { right: 10px; left: auto; }
-  .cahier-page, .sources-page { --page-left-inset: 16px; --page-right-inset: 16px; padding-right: 16px; padding-left: 16px; }
+  .page-margin { position: static; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; width: auto; margin: 0 0 var(--space-5); text-align: left; }
+  .margin-sources { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 6px 12px; }
+  .margin-sources .margin-label { flex-basis: 100%; text-align: right; }
+  .margin-sources a { font-size: 14px; line-height: 1.4; }
+  .page-number { font-size: 24px; }
 }
 @media (max-width: 600px) {
   .cahier--sans-grille { --cahier-page-left-inset: 18px; --cahier-page-right-inset: 96px; }
@@ -1618,12 +1620,7 @@ onBeforeUnmount(() => {
   .cover-bottom-rule { margin-top: 52px; }
   .cahier-reader { padding: 0 0 88px; }
   .cahier-pages { gap: 64px; }
-  .cahier-page, .sources-page { --page-left-inset: 16px; --page-right-inset: 16px; padding: 36px 16px 40px; }
-  .page-margin { position: static; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; width: auto; margin: 0 0 var(--space-5); text-align: left; }
-  .margin-sources { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 6px 12px; }
-  .margin-sources .margin-label { flex-basis: 100%; text-align: right; }
-  .margin-sources a { font-size: 14px; line-height: 1.4; }
-  .page-number { font-size: 24px; }
+  .cahier-page, .sources-page { --page-left-inset: var(--space-4); --page-right-inset: var(--space-4); padding: 36px var(--space-4) 40px; }
   .page-heading h2 { font-size: clamp(1.35rem, 7vw, 1.85rem); }
   .cahier--indexed-sections {
     --cahier-indexed-heading-index-column: 36px;

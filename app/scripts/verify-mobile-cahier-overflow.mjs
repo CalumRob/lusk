@@ -25,7 +25,11 @@ let browser
 try {
   await server.listen()
   const baseUrl = server.resolvedUrls.local[0]
-  const { validerModeleTerritoire } = await server.ssrLoadModule('/src/payload/territoryReadModel.ts')
+  const { payloadDepuisModeleTerritoire, validerModeleTerritoire } =
+    await server.ssrLoadModule('/src/payload/territoryReadModel.ts')
+  const { territoryFactsFor } = await server.ssrLoadModule('/src/fiche/content/territoryFacts.ts')
+  const { resolveMobiliteThemeContent } = await server.ssrLoadModule('/src/fiche/content/themeContent.ts')
+  const { cahierPaginationFor } = await server.ssrLoadModule('/src/fiche/prototype/cahierPagination.ts')
   const { reponseThemeMobiliteApi } = await server.ssrLoadModule('/src/__tests__/helpers/mobiliteThemeApiStub.ts')
   const { AEDAR_TYPEQU_REGISTRY } = await server.ssrLoadModule('/src/fiche/content/aedarTypequRegistry.ts')
   const semanticContracts = JSON.parse(await readFile(
@@ -40,6 +44,11 @@ try {
     type: 'commune', territoire: '35238',
   })
   model.cohortTerritories = JSON.parse(await readFile(resolve(repoRoot, 'public/data/territoires.json'), 'utf8'))
+  const plainPayload = payloadDepuisModeleTerritoire(model)
+  const plainFacts = territoryFactsFor(plainPayload, '35238')
+  assert(plainFacts, 'Published territory model must resolve Mobilité facts for the plain Cahier check')
+  const plainContent = resolveMobiliteThemeContent(plainFacts, plainPayload.themeMetadata?.mobilite)
+  const plainPagination = cahierPaginationFor(plainPayload, plainContent, true)
   const mobilityFacts = reponseThemeMobiliteApi(model, 'commune', '35238', null)
   const fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
   await mkdir(evidenceDir, { recursive: true })
@@ -103,7 +112,7 @@ try {
 
   browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
   const reports = []
-  for (const width of [320, 360, 390, 760, 1440, 1800]) {
+  for (const width of [320, 360, 390, 601, 760, 1440, 1800]) {
     const page = await browser.newPage({ viewport: { width, height: 844 }, deviceScaleFactor: 1 })
     const readCalls = { mobilityFacts: 0, aedarBatches: 0, aedarItems: [] }
     await page.route('**/api/territories/commune/35238/themes/mobilite/facts', async (route) => {
@@ -127,6 +136,23 @@ try {
     await page.goto(`${baseUrl}territoire/commune/35238?theme=mobilite`, { waitUntil: 'networkidle' })
     await page.locator('#section-aedar-car-overview').waitFor({ state: 'visible' })
     await page.locator('#section-aedar-equipment-explorer').waitFor({ state: 'visible' })
+
+    let mobileIndexInteraction = null
+    if (width <= 760) {
+      const mobileIndex = page.locator('.mobile-index')
+      const summary = mobileIndex.locator('summary')
+      assert(await summary.isVisible(), `Mobile Cahier index must be visible at ${width}px`)
+      assert.equal(await mobileIndex.evaluate((element) => element.open), false,
+        `Mobile index should begin collapsed at ${width}px`)
+      await summary.click()
+      assert.equal(await mobileIndex.evaluate((element) => element.open), true,
+        `Tapping the mobile index should open it at ${width}px`)
+      assert(await mobileIndex.locator('nav').isVisible(), `Opened mobile index links should be visible at ${width}px`)
+      await summary.click()
+      assert.equal(await mobileIndex.evaluate((element) => element.open), false,
+        `Tapping the mobile index again should close it at ${width}px`)
+      mobileIndexInteraction = { control: 'Sommaire du cahier', opened: true, closedAgain: true }
+    }
 
     assert.equal(readCalls.mobilityFacts, 1,
       `Expected exactly one theme-facts fixture request at ${width}px; got ${readCalls.mobilityFacts}. The theme-facts route may not have been requested or matched.`)
@@ -279,7 +305,7 @@ try {
         `Wide desktop paper must remain on the 560419f indexed baseline, not a mobile-PR width cap: ${JSON.stringify(metrics.paperRect)}`)
     }
 
-    if ([320, 360, 390, 760, 1440, 1800].includes(width)) {
+    if ([320, 360, 390, 601, 760, 1440, 1800].includes(width)) {
       await page.locator('#section-aedar-car-overview').scrollIntoViewIfNeeded()
       await page.screenshot({ path: resolve(evidenceDir, `issue823-aedar-populated-${width}.png`), fullPage: false })
     }
@@ -299,9 +325,59 @@ try {
       assert.deepEqual(restored, [width, width], 'restoring the mutation should restore mobile geometry')
     }
 
+    let plainMarginLayout = null
+    if (width === 601 || width === 760) {
+      await page.evaluate(() => {
+        const app = document.querySelector('#app')
+        if (!app) throw new Error('Production app root must exist before mounting the plain Cahier fixture')
+        app.style.display = 'none'
+        const root = document.createElement('div')
+        root.id = 'plain-cahier-layout-fixture'
+        root.style.marginInline = 'var(--grid-margin-mobile)'
+        document.body.append(root)
+      })
+      await page.evaluate(async ({ baseUrl, content, pagination }) => {
+        const fixture = await import(new URL('src/__tests__/helpers/mobileCahierBrowserFixture.ts', baseUrl).href)
+        const root = document.querySelector('#plain-cahier-layout-fixture')
+        if (!root) throw new Error('Plain Cahier fixture root was not mounted')
+        await fixture.mountPlainCahier(root, content, pagination)
+      }, { baseUrl, content: plainContent, pagination: plainPagination })
+      plainMarginLayout = await page.evaluate(() => {
+        const fixture = document.querySelector('#plain-cahier-layout-fixture')
+        const page = fixture?.querySelector('.cahier-page')
+        const main = page?.querySelector('.page-main')
+        const heading = page?.querySelector('.page-heading')
+        const margin = page?.querySelector('.page-margin')
+        if (!page || !main || !heading || !margin) throw new Error('Plain, non-indexed Cahier margin markup is incomplete')
+        const bounds = (element) => {
+          const { x, y, right, bottom, width, height } = element.getBoundingClientRect()
+          return { x, y, right, bottom, width, height }
+        }
+        return {
+          viewport: innerWidth,
+          paper: bounds(page),
+          heading: bounds(heading),
+          pageMain: bounds(main),
+          margin: bounds(margin),
+          marginPosition: getComputedStyle(margin).position,
+        }
+      })
+      assert.equal(plainMarginLayout.viewport, width)
+      assert(plainMarginLayout.paper.x >= -1 && plainMarginLayout.paper.right <= width + 1,
+        `Non-indexed plain Cahier paper should fit at ${width}px: ${JSON.stringify(plainMarginLayout)}`)
+      assert.equal(plainMarginLayout.marginPosition, 'static',
+        `Plain Cahier metadata should participate in flow at ${width}px: ${JSON.stringify(plainMarginLayout)}`)
+      assert(plainMarginLayout.margin.y >= plainMarginLayout.pageMain.bottom - 1,
+        `Plain Cahier margin must follow, not overlap, page content at ${width}px: ${JSON.stringify(plainMarginLayout)}`)
+      assert(plainMarginLayout.margin.y >= plainMarginLayout.heading.bottom,
+        `Plain Cahier margin must not collide with its heading at ${width}px: ${JSON.stringify(plainMarginLayout)}`)
+    }
+
     reports.push({
       width,
       ...metrics,
+      mobileIndexInteraction,
+      plainMarginLayout,
       oversizedMutationDetected,
       readCalls: {
         mobilityFacts: readCalls.mobilityFacts,

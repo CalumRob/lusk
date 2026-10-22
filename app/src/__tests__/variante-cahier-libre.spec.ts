@@ -46,6 +46,18 @@ function regleCss(css: string, selector: string): string {
   return match[1]
 }
 
+function blocCss(css: string, atRule: string): string {
+  const start = css.lastIndexOf(atRule)
+  if (start < 0) throw new Error(`CSS at-rule not found: ${atRule}`)
+  const open = css.indexOf('{', start)
+  let depth = 0
+  for (let index = open; index < css.length; index += 1) {
+    if (css[index] === '{') depth += 1
+    if (css[index] === '}' && --depth === 0) return css.slice(open + 1, index)
+  }
+  throw new Error(`Unclosed CSS at-rule: ${atRule}`)
+}
+
 function totalLossRows(): Indicateur[] {
   return [
     {
@@ -909,6 +921,20 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
 })
 
 describe('Variante E — partage de l’espace public', () => {
+  it('uses the spacing token for mobile Cahier page insets', () => {
+    const mobileStyles = blocCss(varianteCahierLibreStyles, '@media (max-width: 760px)')
+
+    expect(mobileStyles).toContain('--page-left-inset: var(--space-4);')
+    expect(mobileStyles).toContain('--page-right-inset: var(--space-4);')
+    expect(mobileStyles).toContain('padding-inline: var(--space-4);')
+  })
+
+  it('flows plain Cahier marginalia below the page content through the mobile breakpoint', () => {
+    const mobileStyles = blocCss(varianteCahierLibreStyles, '@media (max-width: 760px)')
+
+    expect(regleCss(mobileStyles, '\\.page-margin')).toContain('position: static;')
+  })
+
   it('routes Cahier reading and title styles through semantic font roles', () => {
     expect(regleCss(varianteCahierLibreStyles, '\\.cahier')).toContain(
       'font-family: var(--font-body);',
