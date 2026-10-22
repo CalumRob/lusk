@@ -1581,7 +1581,20 @@ onBeforeUnmount(() => {
   .cahier--sans-grille { --cahier-page-left-inset: 28px; --cahier-page-right-inset: 116px; }
   .cahier--indexed-sections { --cahier-page-right-inset: var(--cahier-page-left-inset); }
   .cahier { --margin-line: 82px; }
-  .cahier-reader { grid-template-columns: 1fr; padding-top: 36px; }
+  .cahier-page,
+  .sources-page { border: 0; box-shadow: none; }
+  .cahier-reader {
+    width: calc(100% + 2 * var(--grid-margin-mobile));
+    margin-inline: calc(0px - var(--grid-margin-mobile));
+    grid-template-columns: 1fr;
+    padding: 0 0 64px;
+  }
+  .cahier--indexed-sections .cahier-page,
+  .cahier--indexed-sections .sources-page {
+    --page-left-inset: 16px;
+    --page-right-inset: 16px;
+    padding-inline: 16px;
+  }
   .cahier-spine { display: none; }
   .mobile-index { display: block; padding: 0 24px; border-bottom: 1px solid var(--red-soft); background: var(--paper); }
   .mobile-index summary { padding: 17px 0; color: var(--cahier-theme-strong); cursor: pointer; font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
@@ -1603,7 +1616,7 @@ onBeforeUnmount(() => {
   .cover-lead { font-size: 18px; }
   .cover-signature { margin-top: 48px; font-size: 9px; }
   .cover-bottom-rule { margin-top: 52px; }
-  .cahier-reader { padding: 48px 20px 88px; }
+  .cahier-reader { padding: 0 0 88px; }
   .cahier-pages { gap: 64px; }
   .cahier-page, .sources-page { --page-left-inset: 96px; --page-right-inset: 18px; padding: 36px var(--page-right-inset) 40px var(--page-left-inset); }
   .page-margin { position: static; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; width: auto; margin: 0 0 var(--space-5); text-align: left; }
@@ -1623,6 +1636,9 @@ onBeforeUnmount(() => {
   .cahier--indexed-sections .page-heading-context { max-width: 34vw; font-size: 10px; }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; }
+}
+@media (min-width: 761px) {
+  .cahier-pages { width: 100%; max-width: var(--content-max-width); justify-self: center; }
 }
 @media (prefers-reduced-motion: reduce) {
   .cahier * { scroll-behavior: auto !important; }

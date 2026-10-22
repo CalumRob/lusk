@@ -98,7 +98,7 @@ try {
 
   browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
   const reports = []
-  for (const width of [320, 360, 390, 1440]) {
+  for (const width of [320, 360, 390, 760, 1440, 1800]) {
     const page = await browser.newPage({ viewport: { width, height: 844 }, deviceScaleFactor: 1 })
     const readCalls = { mobilityFacts: 0, aedarBatches: 0, aedarItems: [] }
     await page.route('**/api/territories/commune/35238/themes/mobilite/facts', async (route) => {
@@ -153,6 +153,13 @@ try {
       }
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
       const cahier = document.querySelector('.cahier')
+      const rect = (selector) => {
+        const el = document.querySelector(selector)
+        if (!el) return null
+        const box = el.getBoundingClientRect()
+        return { x: box.x, right: box.right, width: box.width, center: box.x + box.width / 2 }
+      }
+      const paperStyle = getComputedStyle(document.querySelector('.cahier-page'))
       const figures = [...cahier.querySelectorAll('figure')].filter((el) => {
         const rect = el.getBoundingClientRect()
         return rect.width > 0 && rect.height > 0
@@ -177,6 +184,18 @@ try {
         bodyScrollWidth: body.scrollWidth,
         cahierWidth: cahier.getBoundingClientRect().width,
         pageWidth: document.querySelector('.cahier-page').getBoundingClientRect().width,
+        readerRect: rect('.cahier-reader'),
+        pagesRect: rect('.cahier-pages'),
+        paperRect: rect('.cahier-page'),
+        indexRect: rect('.mobile-index'),
+        contentRect: rect('.cahier-page .page-main'),
+        paperContentInset: {
+          left: parseFloat(paperStyle.paddingLeft),
+          right: parseFloat(paperStyle.paddingRight),
+          borderLeft: parseFloat(paperStyle.borderLeftWidth),
+          borderRight: parseFloat(paperStyle.borderRightWidth),
+          boxShadow: paperStyle.boxShadow,
+        },
         productionAedarCahier: cahier.classList.contains('cahier--indexed-sections') &&
           document.querySelector('.aedar-equipment-explorer') !== null,
         figureCount: figures.length,
@@ -205,7 +224,34 @@ try {
     assert(metrics.hasFixtureProvenance, `Expected fixture provenance at ${width}px`)
     assert.deepEqual(metrics.overflowing, [], `Visible Cahier descendants overflow at ${width}px`)
 
-    if (width === 320 || width === 360 || width === 390 || width === 1440) {
+    if (width <= 760) {
+      assert(Math.abs(metrics.readerRect.x) <= 1 && Math.abs(metrics.readerRect.width - width) <= 1,
+        `Mobile Cahier reader must span the viewport at ${width}px: ${JSON.stringify(metrics.readerRect)}`)
+      assert(Math.abs(metrics.paperRect.x) <= 1 && Math.abs(metrics.paperRect.width - width) <= 1,
+        `Mobile paper must be edge-to-edge at ${width}px: ${JSON.stringify(metrics.paperRect)}`)
+      assert(Math.abs(metrics.contentRect.x - metrics.paperRect.x - 16) <= 1,
+        `Mobile content should start 16px inside the paper at ${width}px: ${JSON.stringify(metrics)}`)
+      assert.equal(metrics.paperContentInset.left, 16,
+        `Mobile paper content inset should be 16px at ${width}px: ${JSON.stringify(metrics.paperContentInset)}`)
+      assert.equal(metrics.paperContentInset.right, 16,
+        `Mobile paper content inset should be 16px at ${width}px: ${JSON.stringify(metrics.paperContentInset)}`)
+      assert.equal(metrics.paperContentInset.borderLeft, 0, `Mobile paper should have no framing border at ${width}px`)
+      assert.equal(metrics.paperContentInset.borderRight, 0, `Mobile paper should have no framing border at ${width}px`)
+      assert.equal(metrics.paperContentInset.boxShadow, 'none', `Mobile paper should have no outside sheet shadow at ${width}px`)
+    } else {
+      assert(metrics.paperRect.width <= 1202,
+        `Desktop paper exceeds the 1200px content cap at ${width}px: ${JSON.stringify(metrics.paperRect)}`)
+      assert(metrics.paperRect.x > 0 && metrics.paperRect.right < width,
+        `Desktop outer site ground should remain visible around the paper at ${width}px: ${JSON.stringify(metrics.paperRect)}`)
+      assert(Math.abs(metrics.paperRect.center - metrics.pagesRect.center) <= 1,
+        `Desktop paper should be centered in its sheet column at ${width}px: ${JSON.stringify(metrics)}`)
+      if (width === 1440) assert(metrics.paperRect.width > 1000,
+        `Paper was unnecessarily reduced when the available desktop column is narrower than 1200px: ${JSON.stringify(metrics.paperRect)}`)
+      if (width > 1440) assert(Math.abs(metrics.paperRect.width - 1200) <= 2,
+        `Wide desktop paper should reach the 1200px cap at ${width}px: ${JSON.stringify(metrics.paperRect)}`)
+    }
+
+    if ([320, 360, 390, 760, 1440, 1800].includes(width)) {
       await page.locator('#section-aedar-car-overview').scrollIntoViewIfNeeded()
       await page.screenshot({ path: resolve(evidenceDir, `issue823-aedar-populated-${width}.png`), fullPage: false })
     }
@@ -225,7 +271,21 @@ try {
       assert.deepEqual(restored, [width, width], 'restoring the mutation should restore mobile geometry')
     }
 
-    reports.push({ width, ...metrics, oversizedMutationDetected, readCalls })
+    reports.push({
+      width,
+      ...metrics,
+      oversizedMutationDetected,
+      readCalls: {
+        mobilityFacts: readCalls.mobilityFacts,
+        aedarBatches: readCalls.aedarBatches,
+        aedarItems: readCalls.aedarItems.map((item) => ({
+          id: item.id,
+          count: item.typequ.length,
+          firstTypequ: item.typequ[0],
+          lastTypequ: item.typequ.at(-1),
+        })),
+      },
+    })
     await page.close()
   }
   console.log(JSON.stringify({
