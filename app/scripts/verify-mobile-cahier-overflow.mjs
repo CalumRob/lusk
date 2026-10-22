@@ -100,7 +100,7 @@ try {
   const reports = []
   for (const width of [320, 360, 390, 1440]) {
     const page = await browser.newPage({ viewport: { width, height: 844 }, deviceScaleFactor: 1 })
-    const readCalls = { mobilityFacts: 0, aedarBatches: 0 }
+    const readCalls = { mobilityFacts: 0, aedarBatches: 0, aedarItems: [] }
     await page.route('**/api/territories/commune/35238/themes/mobilite/facts', async (route) => {
       readCalls.mobilityFacts += 1
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mobilityFacts) })
@@ -110,11 +110,36 @@ try {
     })
     await page.route('**/api/resources/read-batch', async (route) => {
       readCalls.aedarBatches += 1
-      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(aedarBatchResponse(route.request().postDataJSON())) })
+      const request = route.request().postDataJSON()
+      readCalls.aedarItems.push(...request.items.map((item) => ({
+        id: item.id,
+        resource: item.resource,
+        target: item.target,
+        typequ: item.coordinates.typequ,
+      })))
+      await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(aedarBatchResponse(request)) })
     })
     await page.goto(`${baseUrl}territoire/commune/35238?theme=mobilite`, { waitUntil: 'networkidle' })
     await page.locator('#section-aedar-car-overview').waitFor({ state: 'visible' })
     await page.locator('#section-aedar-equipment-explorer').waitFor({ state: 'visible' })
+
+    assert.equal(readCalls.mobilityFacts, 1,
+      `Expected exactly one theme-facts fixture request at ${width}px; got ${readCalls.mobilityFacts}. The theme-facts route may not have been requested or matched.`)
+    const expectedAedarBatches = Math.ceil(AEDAR_TYPEQU_REGISTRY.length / 100)
+    assert.equal(readCalls.aedarBatches, 1,
+      `Expected exactly one semantic read-batch POST at ${width}px; got ${readCalls.aedarBatches}. The AEDAR fixture route may not have been requested or matched.`)
+    assert.equal(readCalls.aedarItems.length, expectedAedarBatches,
+      `Expected ${expectedAedarBatches} AEDAR resource items at ${width}px; got ${readCalls.aedarItems.length}.`)
+    for (const [index, item] of readCalls.aedarItems.entries()) {
+      const start = index * 100
+      const expectedCodes = AEDAR_TYPEQU_REGISTRY.slice(start, start + 100).map(({ code }) => code)
+      assert.equal(item.id, `aedar-${index}`, `Unexpected AEDAR item id at ${width}px, index ${index}`)
+      assert.equal(item.resource, 'aedar_territorial_aggregate', `Unexpected AEDAR resource at ${width}px, item ${index}`)
+      assert.deepEqual(item.target, { kind: 'territory', type: 'commune', id: '35238' },
+        `Unexpected AEDAR target at ${width}px, item ${index}`)
+      assert.deepEqual(item.typequ, expectedCodes,
+        `AEDAR TYPEQU range mismatch at ${width}px, item ${index}; fixture must cover the registered codes in producer order.`)
+    }
 
     // Disable the inherited clipping while measuring; otherwise scrollWidth can
     // falsely pass even when an oversized Cahier child sticks out of the page.
