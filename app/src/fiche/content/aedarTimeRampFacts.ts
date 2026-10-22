@@ -6,7 +6,9 @@ import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 
 type Row = Record<string, unknown>
 const horizons = [5, 10, 15, 20] as const
-const modes = ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'] as const
+const allMeasureKeys = horizons.flatMap((horizon) => ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car']
+  .flatMap((mode) => ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, index) => `decile${index + 1}`), 'mean']
+    .map((statistic) => `count_${horizon}_${mode}_${statistic}`)))
 export const AEDAR_EQUIPMENT_QUANTILE_STATISTICS: readonly AedarEquipmentQuantileStatistic[] = [
   { key: 'min', label: 'Minimum', axisLabel: 'Min' },
   ...Array.from({ length: 9 }, (_, index) => ({
@@ -16,7 +18,6 @@ export const AEDAR_EQUIPMENT_QUANTILE_STATISTICS: readonly AedarEquipmentQuantil
   })),
   { key: 'max', label: 'Maximum', axisLabel: 'Max' },
 ]
-const statistics = ['share', ...AEDAR_EQUIPMENT_QUANTILE_STATISTICS.map(({ key }) => key), 'mean']
 const isRecord = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isText = (value: unknown): value is string => typeof value === 'string' && value.length > 0
 const isFinite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
@@ -30,6 +31,16 @@ export const AEDAR_RAMP_MODES: readonly AedarRampMode[] = ['car', 'bike_lts2', '
 
 /** Existing, legible first-view selection shared by AEDAR time figures. */
 export const AEDAR_DEFAULT_VISIBLE_RAMP_MODES: readonly AedarRampMode[] = ['car', 'transit', 'bike_lts2']
+
+/** Exact fact columns consumed by the complete-universe ramp/profile/overview computations. */
+export const AEDAR_CORE_MEASURE_KEYS = [...new Set([5, 10, 15, 20].flatMap((horizon) =>
+  ['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk'].flatMap((mode) =>
+    ['share', 'mean'].map((statistic) => `count_${horizon}_${mode}_${statistic}`))))]
+/** Quantile columns consumed by the selected TYPEQU sandbox's current figures. */
+export const AEDAR_EXPLORER_DETAIL_MEASURE_KEYS = [5, 10, 15, 20].flatMap((horizon) =>
+  ['walk', 'transit', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) =>
+    ['min', ...Array.from({ length: 9 }, (_, index) => `decile${index + 1}`), 'max']
+      .map((statistic) => `count_${horizon}_${mode}_${statistic}`)))
 
 export function toggleAedarRampModeSelection(
   selectedModes: readonly AedarRampMode[],
@@ -95,10 +106,18 @@ export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampO
         value.coverage_status !== 'covered' || !isRecord(value.measures) ||
         !(value.reference_date === null || typeof value.reference_date === 'string') ||
         !(value.publication_date === null || typeof value.publication_date === 'string')) invalid()
-    const keys = horizons.flatMap((horizon) => modes.flatMap((mode) => statistics.map((stat) => `count_${horizon}_${mode}_${stat}`)))
+    const keys = AEDAR_CORE_MEASURE_KEYS
     const measures = value.measures
-    if (Object.keys(measures).length !== 312 || keys.some((key) => !(key in measures)) ||
-        keys.some((key) => measures[key] !== null && !isFinite(measures[key]))) invalid()
+    const returnedKeys = Object.keys(measures)
+    const isExplorerDetailProjection = returnedKeys.length === AEDAR_EXPLORER_DETAIL_MEASURE_KEYS.length
+      && AEDAR_EXPLORER_DETAIL_MEASURE_KEYS.every((key) => key in measures)
+    const validProjection = [AEDAR_CORE_MEASURE_KEYS.length, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS.length,
+      AEDAR_CORE_MEASURE_KEYS.length + AEDAR_EXPLORER_DETAIL_MEASURE_KEYS.length, allMeasureKeys.length]
+      .includes(returnedKeys.length)
+      && (isExplorerDetailProjection || AEDAR_CORE_MEASURE_KEYS.every((key) => key in measures))
+      && returnedKeys.every((key) => allMeasureKeys.includes(key))
+    if (!validProjection || (!isExplorerDetailProjection && keys.some((key) => !(key in measures))) ||
+        returnedKeys.some((key) => measures[key] !== null && !isFinite(measures[key]))) invalid()
     typeIds.add(value.typequ)
     parsed.push(value as Row & { measures: Record<string, unknown> })
   }

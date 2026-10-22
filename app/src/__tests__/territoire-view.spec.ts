@@ -320,8 +320,9 @@ const aedarMeasureKeys = [5, 10, 15, 20].flatMap((duration) =>
   ),
 )
 
-function reponsePageAedar(type: string, id: string, typequ: readonly string[]) {
-  const measures = Object.fromEntries(aedarMeasureKeys.map((key) => [
+function reponsePageAedar(type: string, id: string, typequ: readonly string[], fields?: readonly string[]) {
+  const selectedKeys = fields?.map((field) => field.replace(/^measures\./, '')) ?? aedarMeasureKeys
+  const measures = Object.fromEntries(selectedKeys.map((key) => [
     key,
     key.endsWith('_share') ? 0.5 : key.endsWith('_mean') ? 1 : 0,
   ]))
@@ -1985,12 +1986,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         const { items } = JSON.parse(String(options?.body))
         return { ok: true, status: 200, json: async () => ({
           contract: 'semantic-read-batch-v1',
-          results: items.map((item: { id: string; resource: string; target: { type: string; id: string }; coordinates: { typequ: string[] } }) => ({
+            results: items.map((item: { id: string; resource: string; target: { type: string; id: string }; coordinates: { typequ: string[] }; fields?: string[] }) => ({
             id: item.id,
             data: {
               resource: item.resource,
               target: { kind: 'territory', ...item.target },
-              ...reponsePageAedar(item.target.type, item.target.id, item.coordinates.typequ),
+              ...reponsePageAedar(item.target.type, item.target.id, item.coordinates.typequ, item.fields),
             },
           })),
         }) }
@@ -2010,10 +2011,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
     expect(wrapper.find('[data-section="aedar-access"]').exists()).toBe(true)
     expect(wrapper.find('.page-heading-index').exists()).toBe(true)
-    const semanticRead = fetchApi.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')
-    expect(semanticRead).toBeDefined()
-    expect(JSON.parse(String(semanticRead?.[1]?.body)).items.map((item: { coordinates: { typequ: string[] } }) => item.coordinates.typequ.length))
-      .toEqual([100, 100, 35])
+    const semanticReads = fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
+    expect(semanticReads.length).toBeGreaterThanOrEqual(6)
+    const projectedBodies = semanticReads.map(([, init]) => JSON.parse(String(init?.body)))
+    expect(projectedBodies.every((body) => body.items.every((item: { fields: string[] }) => item.fields.length <= 32))).toBe(true)
+    expect(projectedBodies.some((body) => body.items.some((item: { coordinates: { typequ: string[] } }) => item.coordinates.typequ.length === 100))).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/api/aedar/territories/'))).toBe(false)
     wrapper.unmount()
   })

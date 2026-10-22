@@ -180,6 +180,8 @@ export interface AedarEquipmentQuantileStatistic {
 
 export interface AedarEquipmentExplorerEvidence {
   kind: 'aedar-equipment-explorer'
+  contentVersion: string
+  referenceContentVersion: string
   facts: readonly AedarFact[]
   initialTypequ: string
   initialHorizonMinutes: 5 | 10 | 15 | 20

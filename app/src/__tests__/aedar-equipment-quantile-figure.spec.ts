@@ -36,6 +36,8 @@ function fact(): AedarFact {
 function explorerEvidence(overrides: Partial<AedarEquipmentExplorerEvidence> = {}): AedarEquipmentExplorerEvidence {
   return {
     kind: 'aedar-equipment-explorer',
+    contentVersion: 'test-content-v1',
+    referenceContentVersion: 'test-reference-v1',
     facts: [],
     initialTypequ: 'B207',
     initialHorizonMinutes: 15,

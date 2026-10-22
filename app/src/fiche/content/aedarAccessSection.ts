@@ -325,6 +325,8 @@ export function aedarEquipmentExplorerSection(data: AedarReady): AedarEquipmentE
     indicators: [],
     evidence: {
       kind: 'aedar-equipment-explorer',
+      contentVersion: data.contentVersion,
+      referenceContentVersion: data.referenceContentVersion,
       facts: data.facts,
       initialTypequ: AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU,
       initialHorizonMinutes: AEDAR_PROTOTYPE_HORIZON_MINUTES,
