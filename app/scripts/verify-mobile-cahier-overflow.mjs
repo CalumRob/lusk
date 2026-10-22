@@ -1,6 +1,7 @@
 import assert from 'node:assert/strict'
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, readFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
 
@@ -13,7 +14,7 @@ import { createServer } from 'vite'
 process.env.VITE_THEME_ACQUISITION_API = '1'
 const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
-const evidenceDir = process.env.CAHIER_EVIDENCE_DIR ?? 'E:/Temp/opencode'
+const evidenceDir = resolve(process.env.CAHIER_EVIDENCE_DIR ?? join(tmpdir(), 'lusk-mobile-cahier-evidence'))
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
 const server = await createServer({
   configFile: resolve(appRoot, 'vite.config.ts'),
@@ -35,7 +36,8 @@ try {
   })
   model.cohortTerritories = JSON.parse(await readFile(resolve(repoRoot, 'public/data/territoires.json'), 'utf8'))
   const mobilityFacts = reponseThemeMobiliteApi(model, 'commune', '35238', null)
-  const statisticKeys = ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, i) => `decile${i + 1}`), 'mean']
+  const fixtureAttribution = 'Synthetic browser fixture; not published AEDAR facts'
+  await mkdir(evidenceDir, { recursive: true })
 
   function aedarBatchResponse(request) {
     return {
@@ -50,15 +52,24 @@ try {
           reference_content_version: 'fixture-823-territories-v1',
           limit: 100,
           offset: 0,
-          facts: item.coordinates.typequ.map((code) => {
+          facts: item.coordinates.typequ.map((code, typeIndex) => {
             const equipment = AEDAR_TYPEQU_REGISTRY.find(({ code: candidate }) => candidate === code)
             assert(equipment, `TYPEQU ${code} absent du registre producteur`)
             const measures = {}
-            for (const horizon of [5, 10, 15, 20]) {
-              for (const mode of ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car']) {
-                for (const statistic of statisticKeys) {
-                  measures[`count_${horizon}_${mode}_${statistic}`] = statistic === 'mean' ? 12.4 : 0.62
+            for (const [horizonIndex, horizon] of [5, 10, 15, 20].entries()) {
+              for (const [modeIndex, mode] of ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].entries()) {
+                const minimum = 1 + horizonIndex + modeIndex / 10 + (typeIndex % 4) / 10
+                measures[`count_${horizon}_${mode}_share`] = Math.min(0.95, 0.35 + horizonIndex * 0.12 + modeIndex * 0.03 + (typeIndex % 7) * 0.01)
+                measures[`count_${horizon}_${mode}_min`] = minimum
+                measures[`count_${horizon}_${mode}_max`] = minimum + 8
+                for (let decile = 1; decile <= 9; decile += 1) {
+                  measures[`count_${horizon}_${mode}_decile${decile}`] = minimum + decile * 0.8
                 }
+                measures[`count_${horizon}_${mode}_mean`] = minimum + 4
+                const distribution = [minimum, ...Array.from({ length: 9 }, (_, index) => minimum + (index + 1) * 0.8), minimum + 8]
+                assert(distribution.every((value, index) => index === 0 || distribution[index - 1] <= value))
+                assert(distribution[0] <= measures[`count_${horizon}_${mode}_mean`] &&
+                  measures[`count_${horizon}_${mode}_mean`] <= distribution.at(-1))
               }
             }
             return {
@@ -75,7 +86,7 @@ try {
               vintage_id: '2026-v1',
               source_url: 'https://example.test/aedar-fixture',
               licence: 'Licence Ouverte 2.0',
-              attribution: 'AEDAR browser fixture for #823',
+              attribution: fixtureAttribution,
               reference_date: '2026-01-01',
               publication_date: '2026-10-22',
             }
@@ -141,13 +152,18 @@ try {
         bodyScrollWidth: body.scrollWidth,
         cahierWidth: cahier.getBoundingClientRect().width,
         pageWidth: document.querySelector('.cahier-page').getBoundingClientRect().width,
+        productionAedarCahier: cahier.classList.contains('cahier--indexed-sections') &&
+          document.querySelector('.aedar-equipment-explorer') !== null,
         figureCount: figures.length,
         controlCount: controls.length,
         populatedSections: ['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer']
           .filter((key) => document.querySelector(`#section-${key}`)),
         hasExpectedReading: cahier.innerText.includes('Base permanente des équipements') &&
           cahier.innerText.includes('TYPES D’ÉQUIPEMENTS ACCESSIBLES'),
-        hasFixtureProvenance: cahier.innerText.includes('AEDAR browser fixture for #823'),
+        hasFixtureProvenance: cahier.innerText.includes('Synthetic browser fixture; not published AEDAR facts'),
+        errorOrLoadingShells: [...cahier.querySelectorAll('[role="alert"], [role="status"]:not(.aedar-equipment-explorer-selected), .aedar-state')]
+          .filter((el) => { const rect = el.getBoundingClientRect(); return rect.width > 0 && rect.height > 0 })
+          .map((el) => ({ role: el.getAttribute('role'), text: el.innerText.slice(0, 120), className: el.className })),
         overflowing,
       }
     })
@@ -155,7 +171,9 @@ try {
     assert.equal(metrics.clientWidth, width)
     assert.equal(metrics.documentScrollWidth, width, `document overflow at ${width}px: ${JSON.stringify(metrics)}`)
     assert.equal(metrics.bodyScrollWidth, width, `body overflow at ${width}px`)
-    assert(metrics.populatedSections.length >= 4, `AEDAR sections did not populate at ${width}px`)
+    assert(metrics.productionAedarCahier, `Expected the production AEDAR Cahier at ${width}px`)
+    assert.deepEqual(metrics.populatedSections, ['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer'])
+    assert.deepEqual(metrics.errorOrLoadingShells, [], `Loading/error shells are not populated content at ${width}px`)
     assert(metrics.figureCount >= 7, `Expected real figures at ${width}px, got ${metrics.figureCount}`)
     assert(metrics.controlCount >= 10, `Expected interactive controls at ${width}px, got ${metrics.controlCount}`)
     assert(metrics.hasExpectedReading, `Expected populated figure reading at ${width}px`)
@@ -185,7 +203,11 @@ try {
     reports.push({ width, ...metrics, oversizedMutationDetected, readCalls })
     await page.close()
   }
-  console.log(JSON.stringify({ fixture: 'checked-in Rennes read model + existing theme-facts fixture builder + contract-valid AEDAR read-batch fixture', reports }, null, 2))
+  console.log(JSON.stringify({
+    fixture: 'checked-in Rennes read model + existing theme-facts fixture builder + synthetic contract-valid AEDAR scenario (not published facts)',
+    evidenceDir,
+    reports,
+  }, null, 2))
 } finally {
   await browser?.close()
   await server.close()
