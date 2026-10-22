@@ -28,7 +28,6 @@ import FiligraneFiche from '@/components/fiche/FiligraneFiche.vue'
 import OngletTheme from '@/components/fiche/OngletTheme.vue'
 import ThemeTabs from '@/components/ThemeTabs.vue'
 import ProductionMobilite from '@/fiche/mobilite/ProductionMobilite.vue'
-import VarianteCahierLibreAedar from '@/fiche/prototype/VarianteCahierLibreAedar.vue'
 import { fetchAedarAggregates } from '@/fiche/content/aedarApiClient'
 import type { AedarFetchResult, AedarTerritoryType } from '@/fiche/content/aedarApiClient'
 import { cahierPaginationFor } from '@/fiche/prototype/cahierPagination'
@@ -96,15 +95,13 @@ const selection = computed<Theme | null>(() => {
   return THEME_DEFAUT
 })
 const productionMobilite = computed(() => selection.value === 'mobilite')
-const aedarPrototypeActive = computed(() => route.query['aedar-proto'] === '1')
 const aedarData = ref<AedarFetchResult | null>(null)
 const aedarStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const aedarReferenceData = ref<AedarFetchResult | null>(null)
 const aedarReferenceStatus = ref<'unavailable' | 'loading' | 'ready' | 'error'>('unavailable')
 const retryAedarCount = ref(0)
 function retryAedar(): void { retryAedarCount.value++ }
-function toggleAedarPrototype(active: boolean): void { const query = { ...route.query }; if (active) query['aedar-proto'] = '1'; else delete query['aedar-proto']; void router.replace({ query }) }
-watch([aedarPrototypeActive, typeRoute, idRoute, retryAedarCount], async ([active, type, id], _old, onCleanup) => {
+watch([productionMobilite, typeRoute, idRoute, retryAedarCount], async ([active, type, id], _old, onCleanup) => {
   if (!active || !['commune','epci','departement','region'].includes(type)) { aedarData.value = null; aedarStatus.value = 'loading'; return }
   let cancelled = false; onCleanup(() => { cancelled = true }); aedarStatus.value = 'loading'; aedarData.value = null
   const result = await fetchAedarAggregates(type as 'commune'|'epci'|'departement'|'region', id)
@@ -197,7 +194,7 @@ const optionsComparaison = computed(() => optionsContexteComparaison({
 }))
 
 /**
- * The prototype's comparison lines read the same AEDAR aggregates on a single
+ * The AEDAR comparison lines read the same aggregates on a single
  * published reference territory (EPCI or région Bretagne) — never a cohort.
  * A density-class comparison has no single-territory reference and the
  * comparison stays honestly unavailable.
@@ -211,7 +208,7 @@ const aedarReferenceKey = computed(() => {
   const reference = aedarReferenceTerritoire.value
   return reference ? `${reference.type}/${reference.id}` : ''
 })
-watch([aedarPrototypeActive, aedarReferenceKey, retryAedarCount], async ([active, key], _old, onCleanup) => {
+watch([productionMobilite, aedarReferenceKey, retryAedarCount], async ([active, key], _old, onCleanup) => {
   if (!active || !key) { aedarReferenceData.value = null; aedarReferenceStatus.value = 'unavailable'; return }
   let cancelled = false; onCleanup(() => { cancelled = true })
   aedarReferenceStatus.value = 'loading'; aedarReferenceData.value = null
@@ -835,19 +832,14 @@ watch(
             :id="idPanneau(selection)"
             :aria-labelledby="idOnglet(selection)"
           >
-            <!-- The production cahier owns Mobilité's editorial body. -->
-            <nav v-if="productionMobilite" class="prototype-toggle" aria-label="Version de la fiche Mobilité">
-              <a v-if="aedarPrototypeActive" href="#" role="button" @click.prevent="toggleAedarPrototype(false)">Version de production</a>
-              <a v-else href="#" role="button" @click.prevent="toggleAedarPrototype(true)">Prototype AEDAR</a>
-            </nav>
-            <VarianteCahierLibreAedar v-if="aedarPrototypeActive && productionMobilite && contenuMobilite && paginationCahier"
-              :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
-              :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
-              :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData" :aedar-reference-status="aedarReferenceStatus" />
-            <ProductionMobilite v-else-if="productionMobilite && contenuMobilite && paginationCahier"
+            <!-- The production cahier owns Mobilité's editorial body and AEDAR evidence. -->
+            <ProductionMobilite v-if="productionMobilite && contenuMobilite && paginationCahier"
               :content="contenuMobilite" :pagination="paginationCahier" :comparison-options="optionsComparaison"
               :access-status="statutAccesApi" :retry-access="rechargerMobilityFacts"
-              :building-status="buildingStatus" :retry-building="rechargerMobilityFacts" />
+              :building-status="buildingStatus" :retry-building="rechargerMobilityFacts"
+              :aedar-data="aedarData" :aedar-status="aedarStatus" :retry-aedar="retryAedar"
+              :aedar-reference-territoire="aedarReferenceTerritoire" :aedar-reference-data="aedarReferenceData"
+              :aedar-reference-status="aedarReferenceStatus" />
             <!-- #408 : le premier onglet (et le défaut) est le sixième thème —
                  sa présentation propre (badges à trois voix, ventilation
                  pliée) lit SA paire hermétique ; les autres thèmes passent
@@ -1064,26 +1056,4 @@ watch(
   max-width: 1640px;
 }
 
-.prototype-toggle {
-  display: flex;
-  justify-content: flex-end;
-  margin-bottom: var(--space-4);
-}
-
-.prototype-toggle a {
-  padding: var(--space-1) var(--space-3);
-  border: 1px solid var(--border-default);
-  border-radius: var(--radius-full);
-  background: var(--surface-primary);
-  color: var(--text-secondary);
-  font: var(--text-body-sm)/1.4 var(--font-sans);
-  text-decoration: none;
-  cursor: pointer;
-}
-
-.prototype-toggle a:hover {
-  color: var(--text-primary);
-  border-color: var(--brand-500);
-  background: var(--brand-50);
-}
 </style>

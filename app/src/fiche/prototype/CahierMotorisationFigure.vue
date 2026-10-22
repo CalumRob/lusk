@@ -26,7 +26,9 @@ function number(value: number | null): string {
   </div>
 </template>
 
-<style src="./cahierFigure.css"></style>
+<style>
+@import "./cahierFigure.css";
+</style>
 <style scoped>
 .motorisation-figure { display: grid; gap: var(--space-5); }
 .motorisation-composition { display: grid; gap: var(--space-3); }

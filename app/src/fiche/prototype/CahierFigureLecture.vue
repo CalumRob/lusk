@@ -16,7 +16,9 @@ withDefaults(
   </details>
 </template>
 
-<style src="./cahierFigure.css"></style>
+<style>
+@import "./cahierFigure.css";
+</style>
 
 <style>
 .cahier-figure-lecture {

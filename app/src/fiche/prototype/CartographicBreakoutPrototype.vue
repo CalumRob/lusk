@@ -4,9 +4,7 @@
  * Production Atlas circulaire plate for the Mobilité cahier.
  */
 import { Bike, CarFront, Footprints } from 'lucide-vue-next'
-import Viewer from 'viewerjs'
-import 'viewerjs/dist/viewer.css'
-import { computed, nextTick, onBeforeUnmount, onMounted, ref, shallowRef } from 'vue'
+import { computed, ref } from 'vue'
 import type { Component } from 'vue'
 import type { RouteLocationRaw } from 'vue-router'
 import { mapAssetUrl } from '@/fiche/mapAssetUrl'
@@ -23,6 +21,8 @@ import CahierProse from './CahierProse.vue'
 import CahierComparisonNote from './CahierComparisonNote.vue'
 import type { CahierNetworkBarRow } from './CahierNetworkBarChart.vue'
 import CahierNetworkBarChart from './CahierNetworkBarChart.vue'
+import CahierMapGallery from './CahierMapGallery.vue'
+import CahierMapPanel from './CahierMapPanel.vue'
 
 type ModeKey = 'walk' | 'bike' | 'car'
 
@@ -40,14 +40,7 @@ const modeToEvidence: Readonly<Record<ModeKey, SharingNetworksEvidence['networks
 }
 const activeMode = ref<ModeKey | null>(null)
 const tooltipTop = ref<string | null>(null)
-const gallerySource = ref<HTMLElement | null>(null)
-const galleryInstance = shallowRef<Viewer | null>(null)
-const galleryImage = ref<HTMLImageElement | null>(null)
-const galleryOpen = ref(false)
-const galleryAtNaturalSize = ref(false)
-let galleryPointerStart: { x: number; y: number } | null = null
-let galleryIgnoreNextClick = false
-let galleryIgnoreResetTimer: ReturnType<typeof setTimeout> | null = null
+const mapGallery = ref<InstanceType<typeof CahierMapGallery> | null>(null)
 
 const territoryLabel = computed(() => props.territory.name)
 const borderLegendEntries = computed<readonly FigureLegendEntry[]>(() => [{ key: 'territory-boundary', label: territoryLabel.value, marker: 'line' }])
@@ -218,98 +211,15 @@ const figureLectureBlocks = computed(() => [
 ])
 const hasFigureLecture = computed(() => figureLectureBlocks.value.length > 0 || Boolean(props.sources?.length))
 
-function removeGalleryImageClick(): void {
-  galleryImage.value?.removeEventListener('click', onGalleryImageClick)
-  galleryImage.value?.removeEventListener('pointerdown', onGalleryPointerDown)
-  stopGalleryPointerTracking()
-  if (galleryIgnoreResetTimer) clearTimeout(galleryIgnoreResetTimer)
-  galleryIgnoreResetTimer = null
-  galleryIgnoreNextClick = false
-  galleryImage.value = null
-}
-
-function stopGalleryPointerTracking(): void {
-  document.removeEventListener('pointermove', onGalleryPointerMove)
-  document.removeEventListener('pointerup', onGalleryPointerUp)
-  document.removeEventListener('pointercancel', onGalleryPointerUp)
-  galleryPointerStart = null
-}
-
-function onGalleryPointerDown(event: PointerEvent): void {
-  galleryPointerStart = { x: event.clientX, y: event.clientY }
-  galleryIgnoreNextClick = false
-  document.addEventListener('pointermove', onGalleryPointerMove)
-  document.addEventListener('pointerup', onGalleryPointerUp)
-  document.addEventListener('pointercancel', onGalleryPointerUp)
-}
-
-function onGalleryPointerMove(event: PointerEvent): void {
-  if (!galleryPointerStart) return
-  if (Math.hypot(event.clientX - galleryPointerStart.x, event.clientY - galleryPointerStart.y) > 3) {
-    galleryIgnoreNextClick = true
-  }
-}
-
-function onGalleryPointerUp(): void {
-  stopGalleryPointerTracking()
-  if (!galleryIgnoreNextClick) return
-  if (galleryIgnoreResetTimer) clearTimeout(galleryIgnoreResetTimer)
-  galleryIgnoreResetTimer = setTimeout(() => {
-    galleryIgnoreNextClick = false
-    galleryIgnoreResetTimer = null
-  }, 0)
-}
-
-function onGalleryImageClick(event: MouseEvent): void {
-  const gallery = galleryInstance.value
-  const image = galleryImage.value
-  if (!gallery || !image) return
-  if (galleryIgnoreNextClick) {
-    galleryIgnoreNextClick = false
-    if (galleryIgnoreResetTimer) clearTimeout(galleryIgnoreResetTimer)
-    galleryIgnoreResetTimer = null
-    return
-  }
-  if (galleryAtNaturalSize.value) {
-    gallery.reset()
-    galleryAtNaturalSize.value = false
-    image.closest('.viewer-container')?.classList.remove('lusk-map-gallery--zoomed')
-    return
-  }
-  const canvas = image.closest('.viewer-canvas')
-  const canvasRect = canvas?.getBoundingClientRect()
-  gallery.zoomTo(1, true, {
-    x: event.clientX - (canvasRect?.left ?? 0),
-    y: event.clientY - (canvasRect?.top ?? 0),
-  })
-  galleryAtNaturalSize.value = true
-  image.closest('.viewer-container')?.classList.add('lusk-map-gallery--zoomed')
-}
-
-function onGalleryViewed(event: Viewer.ViewedEvent): void {
-  removeGalleryImageClick()
-  galleryImage.value = event.detail.image
-  galleryImage.value.addEventListener('click', onGalleryImageClick)
-  galleryImage.value.addEventListener('pointerdown', onGalleryPointerDown)
-  galleryAtNaturalSize.value = false
-  galleryImage.value.closest('.viewer-container')?.classList.remove('lusk-map-gallery--zoomed')
-}
-
-function onGalleryHidden(): void {
-  galleryOpen.value = false
-  galleryAtNaturalSize.value = false
-  galleryImage.value?.closest('.viewer-container')?.classList.remove('lusk-map-gallery--zoomed')
-  removeGalleryImageClick()
-}
-
-function galleryIndexFor(mode: ModeKey): number {
-  return inspectionModes.value.findIndex((candidate) => candidate.key === mode)
-}
-
 const inspectionModes = computed(() => modes.filter((mode) => {
   const network = networkFor(mode.key)
   return network !== null && network.length.fact.value !== 0 && !unavailableInspectionModes.value.has(mode.key)
 }))
+const inspectionImages = computed(() => inspectionModes.value.map((mode) => ({
+  key: mode.key,
+  src: inspectionUrl(mode.key),
+  alt: `${modeLabel(mode.key)} — ${props.territory.name}`,
+})))
 
 function isModeKey(value: string): value is ModeKey {
   return value === 'car' || value === 'walk' || value === 'bike'
@@ -341,14 +251,14 @@ function inspectionUrl(mode: ModeKey): string { return mapAssetUrl(props.territo
 const unavailableInlineModes = ref(new Set<ModeKey>())
 const loadedInlineModes = ref(new Set<ModeKey>())
 const unavailableInspectionModes = ref(new Set<ModeKey>())
-const galleryOpened = ref(false)
 const failedInspectionMode = ref<ModeKey | null>(null)
 function inlineLoaded(mode: ModeKey): void { loadedInlineModes.value = new Set(loadedInlineModes.value).add(mode) }
 function inlineFailed(mode: ModeKey): void { unavailableInlineModes.value = new Set([...unavailableInlineModes.value, mode]) }
-function inspectionFailed(mode: ModeKey): void {
+function inspectionFailed(key: string): void {
+  if (!isModeKey(key)) return
+  const mode = key
   unavailableInspectionModes.value = new Set([...unavailableInspectionModes.value, mode])
   failedInspectionMode.value = mode
-  galleryInstance.value?.update()
 }
 
 async function inspect(mode: ModeKey): Promise<void> {
@@ -358,48 +268,9 @@ async function inspect(mode: ModeKey): Promise<void> {
     return
   }
   failedInspectionMode.value = null
-  galleryOpened.value = true
-  await nextTick()
-  galleryInstance.value?.update()
-  galleryInstance.value?.view(galleryIndexFor(mode))
+  const opened = await mapGallery.value?.open(mode)
+  if (!opened) failedInspectionMode.value = mode
 }
-
-function onKeydown(event: KeyboardEvent): void {
-  const target = event.target
-  if (target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || (target instanceof HTMLElement && target.isContentEditable)) return
-  if (galleryOpen.value) return
-}
-
-onMounted(() => {
-  if (gallerySource.value) {
-    galleryInstance.value = new Viewer(gallerySource.value, {
-      backdrop: true,
-      button: true,
-      className: 'lusk-map-gallery',
-      fullscreen: false,
-      initialCoverage: 0.9,
-      navigation: true,
-      navbar: { show: true, size: 'large', visibleItemCount: modes.length },
-      rotatable: false,
-      scalable: false,
-      slideOnWheel: false,
-      title: [1, (image) => image.alt],
-      toggleOnDblclick: false,
-      toolbar: false,
-      transition: { move: false, zoom: true },
-      viewed: onGalleryViewed,
-      shown: () => { galleryOpen.value = true },
-      hidden: onGalleryHidden,
-    })
-  }
-  window.addEventListener('keydown', onKeydown)
-})
-onBeforeUnmount(() => {
-  window.removeEventListener('keydown', onKeydown)
-  removeGalleryImageClick()
-  galleryInstance.value?.destroy()
-  galleryInstance.value = null
-})
 </script>
 
 <template>
@@ -435,19 +306,20 @@ onBeforeUnmount(() => {
             <component :is="mode.icon" :size="16" :stroke-width="1.8" />
             <span>{{ modeLabel(mode.key) }}</span>
           </div>
-          <button
-            type="button"
-            class="map-viewport"
-            :aria-label="`Agrandir : ${modeLabel(mode.key)} à ${props.territory.name}`"
+          <CahierMapPanel
+            :image-url="mapUrl(mode.key)"
+            :image-alt="`${modeLabel(mode.key)} — ${props.territory.name}`"
+            :accessible-name="`Agrandir : ${modeLabel(mode.key)} à ${props.territory.name}`"
+            :number="String(index + 1).padStart(2, '0')"
+            :loaded="loadedInlineModes.has(mode.key)"
+            :unavailable="unavailableInlineModes.has(mode.key)"
+            :cycling="mode.key === 'bike'"
             @focus="setActiveMode(mode.key)"
             @blur="clearActiveMode"
-            @click="inspect(mode.key)"
-          >
-            <span class="map-panel-number" aria-hidden="true">{{ String(index + 1).padStart(2, '0') }}</span>
-            <img v-if="!unavailableInlineModes.has(mode.key)" :src="mapUrl(mode.key)" :alt="`${modeLabel(mode.key)} — ${props.territory.name}`" @load="inlineLoaded(mode.key)" @error="inlineFailed(mode.key)" />
-            <span v-if="!loadedInlineModes.has(mode.key) && !unavailableInlineModes.has(mode.key)" role="status" class="map-loading">Chargement de la carte…</span>
-            <span v-else-if="unavailableInlineModes.has(mode.key)" role="status">Carte indisponible</span>
-          </button>
+            @loaded="inlineLoaded(mode.key)"
+            @unavailable="inlineFailed(mode.key)"
+            @inspect="inspect(mode.key)"
+          />
         </section>
 
         <div class="plate-keys">
@@ -515,16 +387,7 @@ onBeforeUnmount(() => {
     </CahierFigureFrame>
   </figure>
 
-  <div ref="gallerySource" class="map-gallery-source" aria-hidden="true">
-    <template v-for="mode in modes" :key="mode.key">
-      <img
-        v-if="inspectionModes.some((available) => available.key === mode.key)"
-        :src="galleryOpened ? inspectionUrl(mode.key) : undefined"
-        :alt="`${modeLabel(mode.key)} — ${props.territory.name}`"
-        @error="inspectionFailed(mode.key)"
-      />
-    </template>
-  </div>
+  <CahierMapGallery ref="mapGallery" :images="inspectionImages" @unavailable="inspectionFailed" />
   <p v-if="failedInspectionMode && numericContentFact(networkFor(failedInspectionMode)?.length ?? null) === 0" role="status" class="inspection-unavailable">Aucune carte détaillée : {{ modeLabel(failedInspectionMode) }} sans réseau recensé.</p>
   <p v-else-if="failedInspectionMode" role="status" class="inspection-unavailable">Carte détaillée indisponible pour {{ modeLabel(failedInspectionMode) }}.</p>
 
@@ -592,45 +455,6 @@ onBeforeUnmount(() => {
 
 .map-breakout--c .map-panel-label { justify-content: center; }
 
-.map-panel-number {
-  position: absolute;
-  z-index: 1;
-  top: 9px;
-  left: 11px;
-  color: var(--cahier-theme-strong);
-  text-shadow: 0 1px 4px var(--paper);
-  font-size: 9px;
-  font-variant-numeric: tabular-nums;
-  letter-spacing: .08em;
-}
-
-.map-panel--car .map-panel-number { color: var(--cahier-mode-car); }
-.map-panel--walk .map-panel-number { color: var(--cahier-mode-foot); }
-.map-panel--bike .map-panel-number { color: var(--cahier-mode-bike); }
-
-.map-viewport {
-  position: relative;
-  display: block;
-  width: 100%;
-  padding: 0;
-  border: 0;
-  background: transparent;
-  cursor: zoom-in;
-}
-
-.map-viewport:focus-visible {
-  outline: 2px solid var(--cahier-theme-strong);
-  outline-offset: 3px;
-}
-
-.map-panel img {
-  display: block;
-  width: 100%;
-  height: auto;
-  border: 3px solid var(--mode-ring);
-  background: #f8fbfb;
-}
-
 .map-breakout--a .plate {
   grid-template-columns: var(--cahier-map-columns);
   align-items: start;
@@ -665,31 +489,6 @@ onBeforeUnmount(() => {
 .map-breakout--c .map-panel {
   width: min(100%, 360px);
   justify-self: center;
-}
-
-.map-breakout--c .map-viewport {
-  position: relative;
-  display: grid;
-  aspect-ratio: 1;
-  place-items: center;
-  overflow: hidden;
-  border: var(--cahier-map-circle-border) solid var(--mode-ring);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--cahier-theme) 8%, var(--paper));
-}
-
-.map-breakout--c .map-panel img {
-  width: 100%;
-  height: 100%;
-  border: 0;
-  border-radius: inherit;
-  object-fit: cover;
-}
-
-.map-breakout--c .map-panel--bike .map-viewport {
-  border-color: transparent;
-  background: linear-gradient(var(--paper), var(--paper)) padding-box,
-    linear-gradient(135deg, var(--cahier-cycle-protected), var(--cahier-cycle-shared)) border-box;
 }
 
 .plate-apparatus {
@@ -855,42 +654,6 @@ onBeforeUnmount(() => {
 
 .shared-scale small { font-size: 8px; font-weight: 600; letter-spacing: .04em; }
 
-.map-gallery-source {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
-
-:global(.lusk-map-gallery.viewer-container) {
-  z-index: 2015;
-  color: #fff;
-  background: #18201f;
-}
-
-:global(.lusk-map-gallery .viewer-canvas) {
-  background: #18201f;
-}
-
-:global(.lusk-map-gallery .viewer-canvas > img) {
-  cursor: zoom-in;
-  touch-action: none;
-}
-
-:global(.lusk-map-gallery--zoomed .viewer-canvas > img) { cursor: grab; }
-:global(.lusk-map-gallery .viewer-footer) { background: linear-gradient(transparent, rgb(24 31 30 / 94%)); }
-:global(.lusk-map-gallery .viewer-title) { color: #fff; font: 600 12px/1.25 var(--font-sans); }
-:global(.lusk-map-gallery .viewer-navbar) { background: rgb(24 31 30 / 86%); }
-:global(.lusk-map-gallery .viewer-button) { background-color: rgb(24 31 30 / 72%); }
-:global(.lusk-map-gallery .viewer-button:hover),
-:global(.lusk-map-gallery .viewer-button:focus) { background-color: rgb(24 31 30 / 96%); }
-:global(.lusk-map-gallery .viewer-prev),
-:global(.lusk-map-gallery .viewer-next) { background-color: rgb(24 31 30 / 72%); }
-:global(.lusk-map-gallery .viewer-prev:hover),
-:global(.lusk-map-gallery .viewer-next:hover) { background-color: rgb(24 31 30 / 96%); }
-
 .plate-switcher {
   position: fixed;
   right: var(--space-5);
@@ -926,7 +689,7 @@ onBeforeUnmount(() => {
   .map-breakout--c .plate { grid-template-columns: 1fr; }
   .map-breakout--c .plate { grid-template-areas: 'header' 'title' 'car' 'walk' 'bike' 'keys' 'apparatus'; }
   .plate-apparatus { padding-inline: 0; }
-  .map-breakout--c .map-viewport { max-width: 520px; margin-inline: auto; }
+  .map-breakout--c .map-panel { max-width: 520px; margin-inline: auto; }
   .map-breakout--c .plate-keys { grid-template-columns: 1fr; }
   .plate-switcher { right: 50%; transform: translateX(50%); }
 }

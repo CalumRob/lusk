@@ -30,6 +30,7 @@ import type { ChargerModeleTerritoire } from '../payload/territoryReadModel'
 import { PayloadError } from '../payload/validate'
 import { payloadDepuisModeleTerritoire } from '../payload/territoryReadModel'
 import { territoryFactsFor } from '../fiche/content/territoryFacts'
+import { AEDAR_TYPEQU_REGISTRY } from '../fiche/content/aedarTypequRegistry'
 import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '../fiche/content/mobilityThemeApiFacts'
 import { applyAccessApiFacts } from '../fiche/content/accessApiFacts'
 import { applyInitialBuildingApiFacts } from '../fiche/content/initialBuildingApiFacts'
@@ -310,6 +311,48 @@ async function monter(
   })
   await flushPromises()
   return { router, wrapper, charger }
+}
+
+const aedarMeasureKeys = [5, 10, 15, 20].flatMap((duration) =>
+  ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) =>
+    ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, index) => `decile${index + 1}`), 'mean']
+      .map((statistic) => `count_${duration}_${mode}_${statistic}`),
+  ),
+)
+
+function reponsePageAedar(type: string, id: string, typequ: readonly string[]) {
+  const measures = Object.fromEntries(aedarMeasureKeys.map((key) => [
+    key,
+    key.endsWith('_share') ? 0.5 : key.endsWith('_mean') ? 1 : 0,
+  ]))
+  return {
+    territory: { territory_type: type, territory_id: id },
+    content_version: 'aedar-v1',
+    reference_content_version: 'aedar-v1',
+    limit: 100,
+    offset: 0,
+    facts: typequ.map((code) => {
+      const { label } = AEDAR_TYPEQU_REGISTRY.find((entry) => entry.code === code)!
+      return {
+      territory_id: id,
+      territory_type: type,
+      typequ: code,
+      typequ_label: label,
+      identity: {},
+      n_addresses: 100,
+      n_observed: 100,
+      coverage_status: 'covered',
+      measures,
+      source_id: 'aedar-test',
+      vintage_id: '2026-v1',
+      source_url: 'https://example.test/aedar',
+      licence: 'Licence Ouverte',
+      attribution: 'AEDAR',
+      reference_date: '2026-01-01',
+      publication_date: '2026-09-30',
+      }
+    }),
+  }
 }
 
 describe('TerritoireView — modèle atomique par territoire', () => {
@@ -673,9 +716,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const scope = modeleAvecContextesComparaison().themes.mobilite!.comparisons.epci!.scope
     let accessCalls = 0
     const model = modeleAvecContextesComparaison()
-    const fetchApi = vi.fn((_url: string) => ++accessCalls === 1
+    const fetchApi = vi.fn((url: string) => {
+      if (url.startsWith('/api/aedar/')) return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
+      if (url.endsWith('/themes/mobilite/facts')) return ++accessCalls === 1
         ? Promise.reject(new Error('API indisponible'))
-        : Promise.resolve({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', scope.kind, scope.label) }))
+        : Promise.resolve({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', scope.kind, scope.label) })
+      return Promise.resolve({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', scope.kind, scope.label) })
+    })
     vi.stubGlobal('fetch', fetchApi)
     try {
       const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci',
@@ -1930,6 +1977,67 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
+  it('renders the approved AEDAR cahier from the normal Mobility route', async () => {
+    const model = modeleAvecContextesComparaison()
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(options?.body))
+        return { ok: true, status: 200, json: async () => ({
+          contract: 'semantic-read-batch-v1',
+          results: items.map((item: { id: string; resource: string; target: { type: string; id: string }; coordinates: { typequ: string[] } }) => ({
+            id: item.id,
+            data: {
+              resource: item.resource,
+              target: { kind: 'territory', ...item.target },
+              ...reponsePageAedar(item.target.type, item.target.id, item.coordinates.typequ),
+            },
+          })),
+        }) }
+      }
+      if (String(url).includes('/themes/mobilite/')) {
+        return { ok: true, status: 200, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
+      }
+      return { ok: false, status: 404, json: async () => ({}) }
+    })
+    vi.stubGlobal('fetch', fetchApi)
+
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    await flushPromises()
+
+    expect(wrapper.find('.prototype-toggle').exists()).toBe(false)
+    expect(wrapper.find('.aedar-state').exists()).toBe(false)
+    expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
+    expect(wrapper.find('[data-section="aedar-access"]').exists()).toBe(true)
+    expect(wrapper.find('.page-heading-index').exists()).toBe(true)
+    const semanticRead = fetchApi.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')
+    expect(semanticRead).toBeDefined()
+    expect(JSON.parse(String(semanticRead?.[1]?.body)).items.map((item: { coordinates: { typequ: string[] } }) => item.coordinates.typequ.length))
+      .toEqual([100, 100, 35])
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/api/aedar/territories/'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('shows loading, not unavailable copy, while the production AEDAR read is pending', async () => {
+    const model = modeleAvecContextesComparaison()
+    const fetchApi = vi.fn(async (url: string) => {
+      if (url === '/api/resources/read-batch') return await new Promise<Response>(() => {})
+      return { ok: false, status: 404, json: async () => ({}) } as Response
+    })
+    vi.stubGlobal('fetch', fetchApi)
+
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    const firstPage = wrapper.find('.cahier-page')
+    const text = firstPage.text()
+
+    expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch')).toBe(true)
+    expect(text).toContain('Chargement des donn\u00e9es AEDAR\u2026')
+    expect(text).not.toContain('Contenu indisponible pour ce territoire.')
+    expect(firstPage.find('[role="status"]').exists()).toBe(true)
+    expect(wrapper.findAll('.cahier-page')[1]!.text()).toContain('Contenu indisponible pour ce territoire.')
+    wrapper.unmount()
+  })
+
   it('rend Mobilité et sa figure depuis les bins servis, mais garde la figure absente sans bins', async () => {
     const model = modeleAvecContextesComparaison()
     const context = model.themes.mobilite!.comparisons.densite!
@@ -2089,7 +2197,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const model = modeleAvecContextesComparaison()
     const context = model.themes.mobilite!.comparisons.densite!
     let echecs = 0
-    const fetchApi = vi.fn(async () => {
+    const fetchApi = vi.fn(async (url: string) => {
+      if (url.startsWith('/api/aedar/')) return { ok: false, status: 503, json: async () => ({}) }
+      if (!url.endsWith('/themes/mobilite/facts')) return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
       if (++echecs === 1) throw new Error('API indisponible')
       return { ok: true, json: async () =>
         reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
@@ -2099,10 +2209,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     // Le cahier plié rend ses états honnêtes par section — aucun numérique statique.
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('100%Alimentation')
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Impossible de charger les données')
-    await wrapper.get('[role="alert"] button').trigger('click')
+    const accessSection = wrapper.get('[data-section="services-essentiels"]')
+    expect(accessSection.text()).toContain('Impossible de charger les données')
+    await accessSection.get('[role="alert"] button').trigger('click')
     await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(accessSection.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
     wrapper.unmount()
   })
@@ -2114,6 +2225,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       item.type === 'commune' && item.epci === model.territory.epci)
       .map((item: any) => ({ territory_type: item.type, territory_id: item.territoire }))
     const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
+      if (String(url).startsWith('/api/aedar/')) return { ok: false, status: 503, json: async () => ({}) }
       if (String(url).endsWith('/facts')) return { ok: true, json: async () =>
         reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
       const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
@@ -2155,6 +2267,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       selection, scope: { kind: 'explicit_selection', member_count: (Array.isArray(selection) ? selection.length : 0) },
       results: [], profile_comparisons: [], reading_content_version: 'mobilite-v1', reading_cloud: null })
     const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
+      if (String(url).startsWith('/api/aedar/')) return { ok: false, status: 503, json: async () => ({}) }
       if (String(url).endsWith('/facts')) return { ok: true, json: async () =>
         reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
       const demandee = JSON.parse(String(options?.body)).selection
@@ -2165,12 +2278,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci', vi.fn(async () => model))
     await flushPromises()
-    // Le premier POST échoue sur tokens incompatibles : l'état comparé du cahier
-    // est réessayable, les faits focaux restent rendus.
+    // La comparaison incompatible ne retire pas les faits focaux, et le
+    // sélecteur de portée reste utilisable indépendamment de l’état AEDAR.
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
-    await wrapper.get('[role="tabpanel"] button').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    await wrapper.get('.cahier-comparison-note__trigger').trigger('click')
+    expect(wrapper.get('.cahier-comparison-note__trigger').attributes('aria-expanded')).toBe('true')
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
     // La sélection bretagne lance une requête qui traîne ; on REPART vers epci
     // (la comparaison acquise en cache, aucune nouvelle requête) — puis la
     // réponse bretagne arrive TARD avec un écho vide : requête périmée, rejetée
@@ -2182,7 +2295,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(3)
     resolveBretagne?.(reponseComparaison([]))
     await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
     wrapper.unmount()

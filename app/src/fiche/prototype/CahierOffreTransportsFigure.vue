@@ -121,7 +121,9 @@ function yPosition(value: number): number {
   </div>
 </template>
 
-<style src="./cahierFigure.css"></style>
+<style>
+@import "./cahierFigure.css";
+</style>
 <style scoped>
 .transit-trajectory { display: grid; gap: var(--space-5); }
 .transit-offer { display: grid; gap: var(--space-2); justify-items: start; }

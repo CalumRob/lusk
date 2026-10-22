@@ -6,6 +6,7 @@ import {
 import { comparisonScopeLabel as resolveComparisonScopeLabel } from './comparisonScopeLabel'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
 import type { ThemeMetadata, TrajectoryMetadata } from '@/payload/types'
+import type { AedarFact } from './aedarApiClient'
 import type {
   BpeAccessProfileFact,
   ComparisonScope,
@@ -69,6 +70,8 @@ export type TextEmphasisTone =
 export type TextSegment =
   | { kind: 'text'; value: string }
   | { kind: 'emphasis'; tone: TextEmphasisTone; value: string }
+  | { kind: 'mode-emphasis'; mode: AedarRampMode; value: string }
+  | { kind: 'link'; href: string; value: string }
 
 export type TextBlock = readonly TextSegment[]
 
@@ -82,13 +85,121 @@ export interface AedarAccessEvidence {
   territory: { code: string; name: string }
   horizonMinutes: number
   /** Figure title of the blank map slots, owned by the semantic content layer. */
-  mapFigureTitle: string
-  /** Reading rendered under the blank map slots (honest empty state, provisional horizon). */
-  mapLecture: readonly TextBlock[]
+  mapFigureTitle: TextBlock
   ramps: readonly AedarTimeRampEvidence[]
+  comparisonLabel: string | null
+  sectionProse: readonly TextBlock[]
+  diversityGap: { value: number | null; horizonMinutes: number; territoryLead: string; prose: TextBlock | null }
+  source: AedarEvidenceSource | null
   availability: FactAvailability
   provenance: readonly string[]
-  figureLecture: readonly TextBlock[]
+}
+
+export interface AedarCarAccessOverviewScalar {
+  key: 'meanDiversity' | 'meanVolume'
+  label: string
+  value: number | null
+  unit: string
+  reference: import('./territoryFacts').TerritorialScalarReference | null
+}
+
+export interface AedarCarAccessOverviewEvidence {
+  kind: 'aedar-car-overview'
+  territory: Pick<TerritoryIdentity, 'type' | 'code' | 'name'>
+  horizonMinutes: number
+  mapModes: readonly ['car']
+  mapFigureTitle: TextBlock
+  meanDiversity: number | null
+  meanVolume: number | null
+  nAddresses: number | null
+  scalarFigureTitle: string
+  scalars: readonly AedarCarAccessOverviewScalar[]
+  comparisonLabel: string | null
+  /** Replaces the incumbent building/20-minute introduction in the opt-in unit. */
+  unitIntroduction: readonly TextBlock[]
+  prose: readonly TextBlock[]
+  source: AedarEvidenceSource | null
+  availability: FactAvailability
+}
+
+export type AedarDiversityLossMapMode = 'walk' | 'transit' | 'bike_lts2' | 'bike_lts4'
+
+export interface AedarDiversityLossMapEvidence {
+  mode: AedarDiversityLossMapMode
+  label: string
+  inlineAvailable: boolean
+  inspectionAvailable: boolean
+}
+
+export interface AedarDiversityLossLegendEvidence {
+  title: string
+  colors: readonly string[]
+  tickLabels: readonly string[]
+  note: string
+  ariaLabel: string
+}
+
+export interface AedarDiversityLossComparisonGroup {
+  key: 'walk-transit' | 'bike-lts2-lts4'
+  label: string
+  mapModes: readonly [AedarDiversityLossMapMode, AedarDiversityLossMapMode]
+  prompt: readonly TextBlock[]
+}
+
+export interface AedarDiversityLossEvidence {
+  kind: 'aedar-diversity-loss'
+  territory: { code: string; name: string }
+  source: AedarEvidenceSource | null
+  horizonMinutes: number
+  mapModes: readonly AedarDiversityLossMapMode[]
+  introduction: readonly TextBlock[]
+  mapFigureTitle: TextBlock
+  maps: readonly AedarDiversityLossMapEvidence[]
+  comparisonGroups: readonly AedarDiversityLossComparisonGroup[]
+  legend: AedarDiversityLossLegendEvidence | null
+  metadataState: 'loading' | 'ready' | 'unavailable'
+  metadataNote: string | null
+}
+
+export interface AedarEquipmentProfileEvidence {
+  kind: 'aedar-equipment-profile'
+  facts: readonly AedarFact[]
+  threshold: number
+  initialHorizonMinutes: 5 | 10 | 15 | 20
+  figureTitle: string
+  /** Prose surrounding the first-mode classification, resolved by theme content. */
+  prose: readonly TextBlock[]
+  source: AedarEvidenceSource | null
+}
+
+export interface AedarEquipmentQuantileStatistic {
+  key: string
+  label: string
+  axisLabel: string
+}
+
+export interface AedarEquipmentExplorerEvidence {
+  kind: 'aedar-equipment-explorer'
+  facts: readonly AedarFact[]
+  initialTypequ: string
+  initialHorizonMinutes: 5 | 10 | 15 | 20
+  introduction: readonly TextBlock[]
+  volumeFigureTitle: string
+  volumeYAxisTitle: string
+  distributionFigureTitle: string
+  distributionStatistics: readonly AedarEquipmentQuantileStatistic[]
+  distributionAxisTitle: string
+  distributionYAxisTitle: string
+  distributionDescription: string
+  distributionUnavailableDescription: string
+  source: AedarEvidenceSource | null
+}
+
+export interface AedarEvidenceSource {
+  label: string
+  version: string
+  url: string
+  credit: string | null
 }
 
 export interface DistributionEvidence {
@@ -117,7 +228,7 @@ export type AedarRampMode = 'walk' | 'transit' | 'bike_lts2' | 'bike_lts4' | 'ca
 
 export interface AedarTimeRampEvidence {
   kind: 'aedar-time-ramp'
-  rampKey: 'diversity' | 'count-per-type'
+  rampKey: 'diversity' | 'volume'
   /** Figure title owned by the semantic content layer, never the renderer. */
   figureTitle: string
   xAxis: { values: readonly number[]; labels: readonly string[]; unit: string; label: string }
@@ -128,7 +239,6 @@ export interface AedarTimeRampEvidence {
   reference: Readonly<Record<AedarRampMode, readonly (number | null)[]>> | null
   /** Explicit reference-territory label (e.g. an EPCI or region name), never a fabricated cohort. */
   referenceLabel: string | null
-  highlightedHorizon: number
   availability: FactAvailability
   provenance: FactProvenance | null
   sourceCoverage: string
@@ -232,7 +342,11 @@ export interface SharingParkingEvidence {
 
 export type ContentEvidence =
   | DistributionEvidence
+  | AedarCarAccessOverviewEvidence
+  | AedarDiversityLossEvidence
   | AedarAccessEvidence
+  | AedarEquipmentProfileEvidence
+  | AedarEquipmentExplorerEvidence
   | BpeProfilesEvidence
   | SummaryEvidence
   | AccessEvidence
@@ -255,6 +369,10 @@ interface ContentSectionBase<Key extends string, Evidence> {
 }
 
 export interface AedarAccessSection extends ContentSectionBase<'aedar-access', AedarAccessEvidence> { label: string }
+export interface AedarCarAccessOverviewSection extends ContentSectionBase<'aedar-car-overview', AedarCarAccessOverviewEvidence> { label: string }
+export interface AedarDiversityLossSection extends ContentSectionBase<'aedar-diversity-loss', AedarDiversityLossEvidence> { label: string }
+export interface AedarEquipmentProfileSection extends ContentSectionBase<'aedar-equipment-profile', AedarEquipmentProfileEvidence> { label: string }
+export interface AedarEquipmentExplorerSection extends ContentSectionBase<'aedar-equipment-explorer', AedarEquipmentExplorerEvidence> { label: string }
 
 export interface ResumeSection extends ContentSectionBase<'resume', SummaryEvidence> {
   label: 'Résumé'
@@ -294,7 +412,11 @@ export interface MotorisationSection extends ContentSectionBase<'motorisation', 
 export interface OffreTransportsSection extends ContentSectionBase<'offre-transports-commun', Extract<ContentEvidence, {kind:'public-transport'}>> { label: string }
 
 export type MobiliteContentSection =
+  | AedarCarAccessOverviewSection
+  | AedarDiversityLossSection
   | AedarAccessSection
+  | AedarEquipmentProfileSection
+  | AedarEquipmentExplorerSection
   | ResumeSection
   | ProfilsAccesParModeSection
   | ServicesEssentielsSection
@@ -683,8 +805,16 @@ export function text(value: string): TextSegment {
   return { kind: 'text', value }
 }
 
-function emphasis(value: string): TextSegment {
-  return { kind: 'emphasis', tone: 'theme', value }
+export function emphasis(value: string, tone: TextEmphasisTone = 'theme'): TextSegment {
+  return { kind: 'emphasis', tone, value }
+}
+
+export function modeEmphasis(value: string, mode: AedarRampMode): TextSegment {
+  return { kind: 'mode-emphasis', mode, value }
+}
+
+export function link(value: string, href: string): TextSegment {
+  return { kind: 'link', href, value }
 }
 
 function regionalEmphasis(value: string): TextSegment {
@@ -806,9 +936,22 @@ function territoryLeadParts(
   }
 }
 
-function territoryLead(territory: TerritoryIdentity, capitalized = true): string {
+export function territoryLead(territory: TerritoryIdentity, capitalized = true): string {
   const parts = territoryLeadParts(territory, capitalized)
   return `${parts.lead} ${parts.name}`
+}
+
+/** Full, type-aware territory label for prose that needs to name the administrative unit. */
+export function territoryTypeLabel(territory: TerritoryIdentity): string {
+  const name = territory.name.trim()
+  const designation = {
+    commune: 'la commune',
+    epci: 'l’EPCI',
+    departement: 'le département',
+    region: 'la région',
+  }[territory.type]
+  const connector = /^[aeiouyàâäéèêëîïôöùûü]/iu.test(name) ? 'd’' : 'de '
+  return `${designation} ${connector}${name}`
 }
 
 function profilesFigureLecture(

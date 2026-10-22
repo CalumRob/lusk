@@ -1,10 +1,22 @@
 import type { FactAvailability, FactProvenance } from './territoryFacts'
-import type { AedarRampMode, AedarTimeRampEvidence } from './themeContent'
+import type { AedarFact } from './aedarApiClient'
+import type { AedarEquipmentHorizon } from './aedarEquipmentBuckets'
+import type { AedarEquipmentQuantileStatistic, AedarRampMode, AedarTimeRampEvidence } from './themeContent'
+import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
 
 type Row = Record<string, unknown>
 const horizons = [5, 10, 15, 20] as const
 const modes = ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'] as const
-const statistics = ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, i) => `decile${i + 1}`), 'mean']
+export const AEDAR_EQUIPMENT_QUANTILE_STATISTICS: readonly AedarEquipmentQuantileStatistic[] = [
+  { key: 'min', label: 'Minimum', axisLabel: 'Min' },
+  ...Array.from({ length: 9 }, (_, index) => ({
+    key: `decile${index + 1}`,
+    label: `Décile ${index + 1}`,
+    axisLabel: `D${index + 1}`,
+  })),
+  { key: 'max', label: 'Maximum', axisLabel: 'Max' },
+]
+const statistics = ['share', ...AEDAR_EQUIPMENT_QUANTILE_STATISTICS.map(({ key }) => key), 'mean']
 const isRecord = (value: unknown): value is Row => typeof value === 'object' && value !== null && !Array.isArray(value)
 const isText = (value: unknown): value is string => typeof value === 'string' && value.length > 0
 const isFinite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
@@ -14,12 +26,35 @@ function invalid(): never { throw new Error('Réponse des agrégats AEDAR invali
  * The five normal access modes rendered as ramp lines, in legend order.
  * `transit_gain` is a net-difference reading, not an ordinary access mode.
  */
-export const AEDAR_RAMP_MODES: readonly AedarRampMode[] = ['car', 'bike_lts4', 'bike_lts2', 'transit', 'walk']
+export const AEDAR_RAMP_MODES: readonly AedarRampMode[] = ['car', 'bike_lts2', 'bike_lts4', 'transit', 'walk']
+
+/** Existing, legible first-view selection shared by AEDAR time figures. */
+export const AEDAR_DEFAULT_VISIBLE_RAMP_MODES: readonly AedarRampMode[] = ['car', 'transit', 'bike_lts2']
+
+export function toggleAedarRampModeSelection(
+  selectedModes: readonly AedarRampMode[],
+  mode: AedarRampMode,
+): AedarRampMode[] {
+  const selected = new Set(selectedModes)
+  if (selected.has(mode)) selected.delete(mode)
+  else selected.add(mode)
+  return AEDAR_RAMP_MODES.filter((candidate) => selected.has(candidate))
+}
+
+export function readAedarCountMeasure(
+  fact: AedarFact | null,
+  horizon: AedarEquipmentHorizon,
+  mode: AedarRampMode,
+  statistic: string,
+): number | null {
+  const value = fact?.measures[`count_${horizon}_${mode}_${statistic}`]
+  return typeof value === 'number' && Number.isFinite(value) && value >= 0 ? value : null
+}
 
 export const AEDAR_RAMP_MODE_LABELS: Readonly<Record<AedarRampMode, string>> = {
   car: 'Voiture',
-  bike_lts4: 'Vélo (LTS4)',
   bike_lts2: 'Vélo (LTS2)',
+  bike_lts4: 'Vélo (LTS4)',
   transit: 'Transports en commun',
   walk: 'À pied',
 }
@@ -30,7 +65,7 @@ export interface AedarTimeRampOptions {
 
 /** Per-rampKey, per-mode territory values derived from one validated AEDAR response. */
 export interface AedarTimeRampValues {
-  rampKey: 'diversity' | 'count-per-type'
+  rampKey: AedarTimeRampEvidence['rampKey']
   xAxis: AedarTimeRampEvidence['xAxis']
   yAxis: AedarTimeRampEvidence['yAxis']
   territory: Record<AedarRampMode, readonly (number | null)[]>
@@ -71,16 +106,21 @@ export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampO
   if (parsed.some((row) => row.source_id !== first.source_id || row.vintage_id !== first.vintage_id ||
       row.reference_date !== first.reference_date || row.publication_date !== first.publication_date)) invalid()
   const provenance = rowProvenance(first)
-  const build = (rampKey: 'diversity' | 'count-per-type'): AedarTimeRampValues => {
+  const compatiblePopulation = parsed.length === AEDAR_TYPEQU_REGISTRY.length
+    && AEDAR_TYPEQU_REGISTRY.every(({ code }) => typeIds.has(code))
+    && (first.n_addresses as number) > 0
+    && parsed.every((row) => row.n_addresses === first.n_addresses
+      && (row.n_observed as number) >= 0 && (row.n_observed as number) <= (row.n_addresses as number))
+  const build = (rampKey: AedarTimeRampEvidence['rampKey']): AedarTimeRampValues => {
     const statistic = rampKey === 'diversity' ? 'share' : 'mean'
     const seriesFor = (mode: AedarRampMode): readonly (number | null)[] => horizons.map((horizon) => {
+      if (!compatiblePopulation) return null
       const cells = parsed.map((row) => row.measures![`count_${horizon}_${mode}_${statistic}`])
       // Never publish a partial universe aggregate or silently coerce missing measures to zero.
-      if (cells.some((value) => value === null)) return null
+      if (cells.some((value) => !isFinite(value) || value < 0 || (statistic === 'share' && value > 1))) return null
       const numeric = cells as number[]
-      return rampKey === 'diversity'
-        ? numeric.reduce((sum, value) => sum + value, 0)
-        : numeric.reduce((sum, value) => sum + value, 0) / numeric.length
+      const sum = numeric.reduce((sum, value) => sum + value, 0)
+      return Number.isFinite(sum) ? sum : null
     })
     const territory: Record<AedarRampMode, readonly (number | null)[]> = {
       car: seriesFor('car'),
@@ -95,11 +135,11 @@ export function aedarTimeRampEvidence(response: unknown, options: AedarTimeRampO
     return {
       rampKey,
       xAxis: { values: horizons, labels: horizons.map((value) => `${value} min`), unit: 'minutes', label: 'Temps d’accès' },
-      yAxis: rampKey === 'diversity' ? { label: 'Types d’équipements', unit: '' } : { label: 'Équipements par type', unit: 'équipements / type' },
+      yAxis: rampKey === 'diversity' ? { label: 'Diversité de l’offre', unit: '' } : { label: 'Volume de l’offre', unit: '' },
       territory,
       availability,
       provenance,
     }
   }
-  return [build('diversity'), build('count-per-type')]
+  return [build('diversity'), build('volume')]
 }

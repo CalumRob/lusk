@@ -1,12 +1,14 @@
 <script setup lang="ts">
 import type { RouteLocationRaw } from 'vue-router'
 
-import type { NumericFact } from '@/fiche/content/territoryFacts'
+import type { NumericFact, TerritorialScalarReference } from '@/fiche/content/territoryFacts'
 import CahierRank from './CahierRank.vue'
 
 const props = withDefaults(
   defineProps<{
-    fact: NumericFact
+    fact?: NumericFact
+    /** A named territory mean is not a peer-group median or a ranked comparison. */
+    namedReference?: TerritorialScalarReference | null
     to?: RouteLocationRaw | null
     maximumFractionDigits?: number
   }>(),
@@ -17,10 +19,10 @@ function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
 }
 
-function comparisonText(fact: NumericFact): string | null {
-  const value = fact.comparison?.reference?.value
+function comparisonText(): string | null {
+  const value = props.namedReference?.value ?? props.fact?.comparison?.reference?.value
   if (value === undefined) return null
-  return fact.unit === '%'
+  return (props.namedReference?.unit ?? props.fact?.unit) === '%'
     ? `${formatNumber(value * 100, 0)} %`
     : formatNumber(value, props.maximumFractionDigits)
 }
@@ -28,14 +30,15 @@ function comparisonText(fact: NumericFact): string | null {
 
 <template>
   <p
-    v-if="comparisonText(fact) || fact.comparison?.rank"
+    v-if="comparisonText() || fact?.comparison?.rank"
     class="cahier-comparison-value cahier-figure-comparison"
+    :class="{ 'cahier-comparison-value--named': namedReference }"
   >
-    <span v-if="comparisonText(fact)" class="cahier-comparison-value__reference">
+    <span v-if="comparisonText()" class="cahier-comparison-value__reference">
       Groupe comparé :
-      <strong class="region-emphasis">{{ comparisonText(fact) }}</strong>
+      <strong class="region-emphasis">{{ comparisonText() }}</strong>
     </span>
-    <span v-if="fact.comparison" class="cahier-comparison-value__rank">
+    <span v-if="fact?.comparison && !namedReference" class="cahier-comparison-value__rank">
       <CahierRank
         v-if="fact.comparison.rank"
         :fact="fact"
@@ -60,6 +63,8 @@ function comparisonText(fact: NumericFact): string | null {
   letter-spacing: normal;
   text-align: center;
 }
+
+.cahier-comparison-value--named { grid-template-rows: auto; }
 
 .cahier-comparison-value__reference {
   min-width: 0;
