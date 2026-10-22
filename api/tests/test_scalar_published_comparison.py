@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from api import main
+from api import snapshot_reads as main
 
 
 class Cursor:
@@ -55,11 +55,11 @@ def test_published_scalar_comparison_reads_group_and_focal_result_without_peer_f
                 return Cursor(("comparison-v1", "scalar-v1", "reference-v1", 1, 2,
                     "scalar-v1", "reference-v1", "reference-v1"))
             if "FROM scalar_comparison_group" in sql:
-                return Cursor(rows=[("population", "median", 7.5, 3, 2, 1)])
+                return Cursor(rows=[("population", "median", 7.5, 3, 2, 1, 1, True)])
             if "FROM scalar_comparison_territory" in sql:
-                return Cursor(rows=[("population", 10.0, "measured", 1, 1, 2)])
-            if "FROM scalar_observation_source os" in sql:
-                return Cursor(rows=[("population", "census", "2020", "Census", "2020", None, None)])
+                return Cursor(rows=[("population", 10.0, "measured", 1, 1, 2, True)])
+            if "FROM comparison_source_lineage l" in sql:
+                return Cursor(rows=[("population", "census", "2020", "Census", "2020", None, None, "comparison-v1")])
             raise AssertionError(sql)
 
     conn = Connection()
@@ -76,6 +76,16 @@ def test_published_scalar_comparison_reads_group_and_focal_result_without_peer_f
     }
     assert not any("scalar_observation o" in sql and "o.value" in sql for sql, _ in conn.sql)
 
+    selected = main._published_scalar_comparison_results(conn, descriptors,
+        ("density_class", "A", "commune"), "commune", ("c1", "c2", "c3"), "c1",
+        selected_fields={"median"})["population"]
+    assert selected["median"] == 7.5 and selected["status"] == "available"
+    assert "rank" not in selected and "focal_value" not in selected
+    group_query = [(sql,params) for sql,params in conn.sql if "FROM scalar_comparison_group" in sql][-1]
+    territory_query = [(sql,params) for sql,params in conn.sql if "FROM scalar_comparison_territory" in sql][-1]
+    assert "CASE WHEN %s THEN median" in group_query[0] and group_query[1][0] is True
+    assert all(value is False for value in territory_query[1][:4])
+
 
 def test_published_scalar_comparison_fails_closed_on_stale_inputs_or_missing_results():
     class Connection:
@@ -91,10 +101,10 @@ def test_published_scalar_comparison_fails_closed_on_stale_inputs_or_missing_res
                 return Cursor(("comparison-v1", "old-scalar" if self.stale else "scalar-v1",
                     "reference-v1", 1, 1, "scalar-v1", "reference-v1", "reference-v1"))
             if "FROM scalar_comparison_group" in sql:
-                return Cursor(rows=[] if self.missing else [("population", "median", 1.0, 1, 1, 0)])
+                return Cursor(rows=[] if self.missing else [("population", "median", 1.0, 1, 1, 0, 1, True)])
             if "FROM scalar_comparison_territory" in sql:
                 rank = 2 if self.invalid else 1
-                return Cursor(rows=[] if self.missing else [("population", 1.0, "measured", rank, 1, 1)])
+                return Cursor(rows=[] if self.missing else [("population", 1.0, "measured", rank, 1, 1, not self.invalid)])
             raise AssertionError(sql)
 
     descriptor = [("population", "Population", "persons", "high", "population", ["commune"], "d-v1")]
@@ -136,9 +146,9 @@ def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_
     monkeypatch.setattr(main, "_demographic_reading_marker", lambda _conn: None)
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_args: (
         "commune", ("c1", "c2"), {"kind": "density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args: (
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: (
         "density_class", "A", "commune") if _args[3] is None else None)
-    monkeypatch.setattr(main, "_published_scalar_comparison_results", lambda *_args: (
+    monkeypatch.setattr(main, "_published_scalar_comparison_results", lambda *_args, **_kwargs: (
         published_calls.append(True) or {"population": {"status": "available", "reason": None,
             "selected_member_count": 2, "eligible_count": 2, "missing_count": 0,
             "focal_value": 10.0, "median": 7.5, "rank": 1, "rank_size": 2,
@@ -154,14 +164,14 @@ def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_
     assert published_calls == [True]
     assert dynamic_calls == []
 
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args: None)
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: None)
     dynamic = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie", [("commune", "c2")])
     assert dynamic["results"][0]["median"] == 7.5
     assert dynamic_calls == [True]
 
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_args: (
         "commune", ("c2",), {"kind": "explicit_selection"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args: (
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: (
         "density_class", "A", "commune"))
     outside = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie", [("commune", "c2")])
     assert outside["results"][0]["rank"] is None

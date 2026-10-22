@@ -11,7 +11,8 @@ test_that("profile publication requires both opt-ins and the complete canonical 
   expect_match(command, "publie_demographie", fixed = TRUE)
   expect_match(command, "publie_habitat", fixed = TRUE)
   expect_match(command, "publie_mobilite", fixed = TRUE)
-  expect_match(command, "publie_tables_service", fixed = TRUE)
+  expect_match(command, "publie_backend_retained", fixed = TRUE)
+  expect_match(command, "profile_serving_artifacts", fixed = TRUE)
   expect_match(command, "publier_declared_profiles_postgres", fixed = TRUE)
 })
 

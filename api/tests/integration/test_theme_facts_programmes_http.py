@@ -15,6 +15,17 @@ def test_programmes_selected_facts_http_snapshot():
         route=common(client,checked,'programmes')
         response=client.post(route,json={'theme_id':'programmes'})
         assert response.status_code==200,response.text
+        anchors=client.get(route+'?fields=anchor_count')
+        riders=client.get(route+'?fields=rider')
+        assert anchors.status_code==200 and riders.status_code==200
+        anchor_collection=anchors.json()['collections'][0]
+        rider_collection=riders.json()['collections'][0]
+        assert anchor_collection['summaries'][0]['anchor_count']==1
+        assert 'rider' not in anchor_collection['entries'][0]
+        assert rider_collection['entries'][0]['rider']=='Aid rider'
+        assert 'anchor_count' not in rider_collection['summaries'][0]
+        assert anchor_collection['entries'][0]['detail']=='grant'
+        assert anchor_collection['entries'][0]['sources']==response.json()['collections'][0]['entries'][0]['sources']
         item=response.json()['collections'][0]
         assert item['indicator_id']=='programme_membership'
         assert item['content_version']=='c1'

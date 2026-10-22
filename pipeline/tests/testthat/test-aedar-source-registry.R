@@ -168,6 +168,11 @@ test_that("source-faithful hierarchy fixture and individual TYPEQU workbook pars
   sources <- read_aedar_typequ_metadata_sources(hierarchy_path,workbook)
   expected <- readr::read_csv(testthat::test_path("fixtures","aedar-typequ-hierarchy-2025.csv"),
     col_types=readr::cols(.default=readr::col_character()),trim_ws=FALSE,show_col_types=FALSE)
+  # The source-faithful CSV fixture may be checked out with CRLF line endings;
+  # readr retains the carriage return when trim_ws=FALSE. Normalize only that
+  # transport artifact so the assertions compare the actual source labels.
+  for (column in c("LIB_TYPEQU", "description", "domain_label", "subdomain_label"))
+    expected[[column]] <- gsub("\r", "", expected[[column]], fixed=TRUE)
   expect_equal(nrow(sources$hierarchy),235L)
   expect_equal(length(unique(sources$hierarchy$domain_code)),7L)
   expect_equal(length(unique(paste(sources$hierarchy$domain_code,sources$hierarchy$subdomain_code))),27L)

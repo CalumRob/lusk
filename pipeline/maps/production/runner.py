@@ -1,14 +1,17 @@
 """Shared, composable map production contract (no family facts in foundation)."""
 from dataclasses import dataclass, field
 from hashlib import sha256
+import hmac
 import json
 from pathlib import Path
 import struct
 import os
+import pickle
 import tempfile
 from typing import Mapping, Protocol, Sequence
 import zlib
 from time import perf_counter
+from cartographic_policy import CartographicPolicy
 
 
 @dataclass(frozen=True)
@@ -18,6 +21,15 @@ class Foundation:
     geography: Mapping = field(default_factory=dict)
     ground: Mapping = field(default_factory=dict)
     composition: Mapping = field(default_factory=dict)
+    cartographic_policy: CartographicPolicy | None = None
+
+
+def _foundation_contract(foundation):
+    return {"version": foundation.version, "framing": foundation.framing,
+        "geography": foundation.geography, "ground": foundation.ground,
+        "composition": foundation.composition,
+        "cartographic_policy": (foundation.cartographic_policy.contract()
+            if foundation.cartographic_policy is not None else None)}
 
 
 @dataclass(frozen=True)
@@ -70,6 +82,179 @@ class RunResult:
     outputs: tuple[Mapping, ...]
     manifest: Mapping
     qa: Mapping
+
+
+@dataclass(frozen=True)
+class FullBatchAdmission:
+    """Verified full-inventory/approval identity; never a caller-selected scope."""
+    recipe_identity: str
+    renderer_identity: str
+    input_identity: str
+    inventory_identity: str
+    profiles_identity: str
+    artifact_matrix_identity: str
+    approval_identity: str
+    members: tuple
+    worker_count: int = 0
+    assignments: tuple = ()
+
+
+@dataclass(frozen=True)
+class FullBatchShard:
+    """Exact whole-territory subset delegated from one admitted full inventory."""
+    admission: FullBatchAdmission
+    worker_index: int
+    worker_count: int
+    members: tuple
+
+
+def delegate_full_batch(admission, shards, worker_count):
+    if not isinstance(admission, FullBatchAdmission):
+        raise ValueError("worker delegation requires verified full-batch admission")
+    if worker_count not in (1, 2, 4) or len(shards) != worker_count:
+        raise ValueError("delegation worker count must be 1, 2 or 4 and match the shard set")
+    if admission.worker_count and admission.worker_count != worker_count:
+        raise ValueError("delegation worker count differs from the admitted full plan")
+    seen = []
+    assignments = []
+    for index, indices in enumerate(shards):
+        if len(indices) != len(set(indices)) or any(not isinstance(i, int) or i < 0 or i >= len(admission.members) for i in indices):
+            raise ValueError("delegated shard contains invalid or duplicate inventory indexes")
+        if not indices:
+            raise ValueError("delegated shard cannot be empty")
+        members = tuple(admission.members[i] for i in sorted(indices))
+        seen.extend(members)
+        assignments.append(members)
+    if sorted(seen) != sorted(admission.members):
+        raise ValueError("delegated shards must cover the admitted full inventory exactly once")
+    if admission.assignments and admission.assignments != tuple(assignments):
+        raise ValueError("worker shards differ from the deterministic full-plan assignment")
+    admitted = FullBatchAdmission(**{**admission.__dict__, "worker_count": worker_count,
+        "assignments": tuple(assignments)})
+    return tuple(FullBatchShard(admitted, index, worker_count, assignments[index])
+        for index in range(worker_count))
+
+
+def verify_full_batch_shard(delegation, current_admission):
+    if not isinstance(delegation, FullBatchShard):
+        raise ValueError("invalid full-batch delegation")
+    admitted = delegation.admission
+    if not isinstance(current_admission, FullBatchAdmission) or any(
+        getattr(admitted, name) != getattr(current_admission, name)
+        for name in ("recipe_identity", "renderer_identity", "input_identity",
+                     "inventory_identity", "profiles_identity", "artifact_matrix_identity",
+                     "approval_identity", "members", "worker_count")):
+        raise ValueError("full-batch delegation does not match current inventory, sources, renderer and approval")
+    if not 0 <= delegation.worker_index < delegation.worker_count or delegation.worker_count not in (1, 2, 4):
+        raise ValueError("delegation worker index/count is invalid")
+    assignments = admitted.assignments
+    flattened = [member for shard in assignments for member in shard]
+    if (len(assignments) != delegation.worker_count or any(not shard for shard in assignments)
+            or sorted(flattened) != sorted(current_admission.members)
+            or len(flattened) != len(set(flattened))):
+        raise ValueError("delegation assignments do not exactly cover whole territories once")
+    if delegation.members != assignments[delegation.worker_index]:
+        raise ValueError("delegated shard does not match its exact planned worker assignment")
+    if current_admission.assignments and assignments != current_admission.assignments:
+        raise ValueError("delegated assignment differs from deterministic current full plan")
+    return delegation.members
+
+
+def write_signed_batch_plan(path, admission, delegations, key):
+    payload = pickle.dumps((admission, delegations), protocol=4)
+    signature = hmac.new(key, payload, "sha256").digest()
+    Path(path).write_bytes(signature + payload)
+
+
+def read_signed_batch_plan(path, key):
+    data = Path(path).read_bytes()
+    signature, payload = data[:32], data[32:]
+    if not hmac.compare_digest(signature, hmac.new(key, payload, "sha256").digest()):
+        raise ValueError("full-batch plan signature is invalid")
+    admission, delegations = pickle.loads(payload)
+    if not isinstance(admission, FullBatchAdmission) or not all(isinstance(item, FullBatchShard) for item in delegations):
+        raise ValueError("full-batch plan has an invalid contract")
+    return admission, delegations
+
+
+def _stable_identity(value):
+    return sha256(json.dumps(value, sort_keys=True, separators=(",", ":"),
+        ensure_ascii=False, default=str).encode("utf-8")).hexdigest()
+
+
+def full_batch_admission(recipe, binding, requested_profiles, adapter, approval, output_dir,
+                         *, worker_count=None):
+    """Run the canonical full-run admission gate and capture its bound identities.
+
+    This must be called against a complete authoritative binding before any
+    worker layout, source preparation, or output directory is created.
+    """
+    if not approval:
+        raise ValueError("full production requires explicit human approval")
+    if set(requested_profiles) != {"inspection", "inline"}:
+        raise ValueError("full production approval requires both inspection and inline profiles")
+    if approval.get("human_approved") is not True:
+        raise ValueError("approval record must explicitly record human_approved=true")
+    # Admission is itself the authority boundary; callers cannot mint an
+    # admission from a partial binding by forgetting the ordinary runner gate.
+    preflight(recipe, binding, "full", requested_profiles, adapter)
+    renderer = adapter.render_identity()
+    from approval import validate_approval_claim, require_approval
+    cohort_hook = getattr(adapter, "approval_pairs", None)
+    representative_pairs = cohort_hook() if callable(cohort_hook) else None
+    validate_approval_claim(approval, recipe, renderer, representative_pairs=representative_pairs)
+    bounded_check = getattr(adapter, "prepare_current_approval_members", None)
+    if not callable(bounded_check):
+        raise ValueError("adapter cannot independently prepare current representative identities")
+    current_members = bounded_check(recipe, binding, tuple(requested_profiles), renderer, output_dir)
+    require_approval({"scope": "representative", "approval_pairs_complete": True,
+        "recipe": recipe.name, "recipe_version": recipe.version,
+        "foundation_version": recipe.foundation.version, "renderer_identity": renderer,
+        "approval_members": current_members}, approval, representative_pairs=representative_pairs)
+    inputs = adapter.input_identity()
+    features = [feature for rows in binding.map_set.layers.values() for feature in rows]
+    by_territory = {}
+    for feature in features:
+        key = (str(feature["territory"]["kind"]), str(feature["territory"]["code"]))
+        by_territory.setdefault(key, set()).add(str(feature["mode"]))
+    inventory = tuple((kind, code, tuple(sorted(modes)))
+        for (kind, code), modes in sorted(by_territory.items()))
+    if not inventory or len(inventory) != len(set(inventory)):
+        raise ValueError("full inventory must be nonempty and contain unique territory/mode members")
+    artifact_matrix = []
+    expected_path = getattr(adapter, "expected_output_path", None)
+    feature_by_key = {(str(feature["territory"]["kind"]), str(feature["territory"]["code"]),
+                       str(feature["mode"])): feature for feature in features}
+    for kind, code, modes in inventory:
+        for mode in modes:
+            feature = feature_by_key[(kind, code, mode)]
+            for profile_name in sorted(requested_profiles):
+                profile = PROFILES[profile_name]
+                artifact_matrix.append({"territory": [kind, code], "mode": mode,
+                    "profile": profile_name,
+                    "path": (Path(expected_path(feature, profile, Path(output_dir))).name
+                             if callable(expected_path) else None),
+                    "contract": _output_contract(adapter, profile)})
+    assignments = ()
+    if worker_count is not None:
+        if worker_count not in (1, 2, 4):
+            raise ValueError("Worker count must be 1, 2 or 4")
+        from batch_execution import partition_territories
+        first_feature = {}
+        for feature in features:
+            key = (str(feature["territory"]["kind"]), str(feature["territory"]["code"]))
+            first_feature.setdefault(key, feature)
+        rows = [{"key": key, "feature": feature} for key, feature in sorted(first_feature.items())]
+        cost = getattr(adapter, "batch_cost", None)
+        if not callable(cost):
+            raise ValueError("Full network adapter must provide a family-owned workload cost")
+        indexes = partition_territories(rows, worker_count, lambda row: cost(row["feature"]))
+        assignments = tuple(tuple(inventory[i] for i in sorted(group)) for group in indexes)
+    return FullBatchAdmission(_stable_identity({"name": recipe.name, "version": recipe.version,
+        "family": recipe.family, "foundation": _foundation_contract(recipe.foundation)}),
+        _stable_identity(renderer), _stable_identity(inputs), _stable_identity(inventory),
+        _stable_identity(sorted(requested_profiles)), _stable_identity(artifact_matrix),
+         _stable_identity(approval), inventory, worker_count or 0, assignments)
 
 
 def _canonical_input(value, geometry_hashes: dict[int, tuple[str, int]]):
@@ -132,10 +317,14 @@ def _profile_foundation(recipe: Recipe, profile: Profile) -> Mapping:
     if profile.name == "inline":
         return {"version": recipe.foundation.version,
                 "ground": {key: ground[key] for key in ("inline_surface", "water") if key in ground},
-                "composition": {"inline": composition.get("inline", {})}}
+                "composition": {"inline": composition.get("inline", {})},
+                "cartographic_policy": (recipe.foundation.cartographic_policy.profile_contract(profile.name)
+                    if recipe.foundation.cartographic_policy is not None else None)}
     return {"version": recipe.foundation.version,
             "ground": {key: ground[key] for key in ("inspection_surface", "water") if key in ground},
-            "composition": {"inspection": composition.get("inspection")}}
+            "composition": {"inspection": composition.get("inspection")},
+            "cartographic_policy": (recipe.foundation.cartographic_policy.profile_contract(profile.name)
+                if recipe.foundation.cartographic_policy is not None else None)}
 
 
 def _effective_identity_for(recipe, adapter, renderer_identity, feature, profile,
@@ -172,13 +361,7 @@ def _render_identity(recipe: Recipe, scope: str, profiles: Sequence[str],
             "version": recipe.version,
             "family": recipe.family,
             "required_fields": recipe.required_fields,
-            "foundation": {
-                "version": recipe.foundation.version,
-                "framing": recipe.foundation.framing,
-                "geography": recipe.foundation.geography,
-                "ground": recipe.foundation.ground,
-                "composition": recipe.foundation.composition,
-            },
+            "foundation": _foundation_contract(recipe.foundation),
         },
         "scope": scope,
         "profiles": [
@@ -299,7 +482,8 @@ def _alpha_values(raw: bytes, width: int) -> bytes:
     return bytes(alpha)
 
 
-def preflight(recipe: Recipe, binding: Binding, scope: str, profiles: Sequence[str], adapter: FamilyAdapter) -> None:
+def preflight(recipe: Recipe, binding: Binding, scope: str, profiles: Sequence[str], adapter: FamilyAdapter,
+              *, delegation=None) -> None:
     if recipe.version < 1 or not recipe.name or not recipe.foundation.version:
         raise ValueError("recipe and foundation must be versioned")
     if binding.family != recipe.family:
@@ -317,6 +501,11 @@ def preflight(recipe: Recipe, binding: Binding, scope: str, profiles: Sequence[s
         if not features:
             raise ValueError(f"map-set layer {layer} has no territory coverage")
         for feature in features:
+            declared_policy = feature.get("cartographic_policy")
+            policy = recipe.foundation.cartographic_policy
+            if declared_policy is not None:
+                if policy is None or declared_policy != policy.contract():
+                    raise ValueError("map-ready frame policy differs from the recipe's resolved family policy")
             missing = set(recipe.required_fields) - feature.keys()
             if missing: raise ValueError(f"{layer} missing map-ready fields {sorted(missing)}")
             if not feature.get("geometry"):
@@ -335,17 +524,22 @@ def preflight(recipe: Recipe, binding: Binding, scope: str, profiles: Sequence[s
         adapter.preflight(recipe, binding)
     scoped_preflight = getattr(adapter, "preflight_scope", None)
     if callable(scoped_preflight):
-        scoped_preflight(recipe, binding, scope, tuple(profiles))
+        if delegation is not None:
+            scoped_preflight(recipe, binding, scope, tuple(profiles), delegation=delegation)
+        else:
+            scoped_preflight(recipe, binding, scope, tuple(profiles))
 
 
 def run_production(recipe: Recipe, binding: Binding, scope: str,
                    requested_profiles: Sequence[str], adapter: FamilyAdapter,
                    output_dir: str | Path, *, refresh: bool = False,
-                   approval: Mapping | None = None) -> RunResult:
+                   approval: Mapping | None = None, admission: FullBatchAdmission | None = None,
+                   delegation: FullBatchShard | None = None,
+                   full_binding: Binding | None = None) -> RunResult:
     """Validate first; render each feature/profile and return checked evidence."""
     run_started = perf_counter()
     preflight_started = perf_counter()
-    preflight(recipe, binding, scope, requested_profiles, adapter)
+    preflight(recipe, binding, scope, requested_profiles, adapter, delegation=delegation)
     for name in requested_profiles:
         if _output_contract(adapter, PROFILES[name]).get("format") == "webp":
             from webp_encoding import require_webp_encoder
@@ -354,27 +548,16 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
     if scope == "full":
         # A missing human record is rejected before output directories, shared
         # preparation, or any render work can be scheduled.
-        if not approval:
-            raise ValueError("full production requires explicit human approval")
-        if set(requested_profiles) != {"inspection", "inline"}:
-            raise ValueError("full production approval requires both inspection and inline profiles")
-        if approval.get("human_approved") is not True:
-            raise ValueError("approval record must explicitly record human_approved=true")
-        from approval import validate_approval_claim, require_approval
-        cohort_hook = getattr(adapter, "approval_pairs", None)
-        representative_pairs = cohort_hook() if callable(cohort_hook) else None
-        validate_approval_claim(approval, recipe, renderer_identity,
-                                representative_pairs=representative_pairs)
-        bounded_identity_check = getattr(adapter, "prepare_current_approval_members", None)
-        if not callable(bounded_identity_check):
-            raise ValueError("adapter cannot independently prepare current representative identities")
-        current_members = bounded_identity_check(recipe, binding, tuple(requested_profiles),
-                                                 renderer_identity, output_dir)
-        require_approval({"scope": "representative", "approval_pairs_complete": True,
-            "recipe": recipe.name, "recipe_version": recipe.version,
-            "foundation_version": recipe.foundation.version,
-            "renderer_identity": renderer_identity, "approval_members": current_members}, approval,
-            representative_pairs=representative_pairs)
+        if delegation is None:
+            admission = full_batch_admission(recipe, binding, requested_profiles, adapter, approval, output_dir)
+        else:
+            if full_binding is None:
+                raise ValueError("delegated full run requires the complete authoritative binding")
+            current_admission = full_batch_admission(recipe, full_binding, requested_profiles,
+                adapter, approval, output_dir, worker_count=delegation.worker_count)
+            if admission is not None and admission != current_admission:
+                raise ValueError("caller admission differs from independently recomputed complete full plan")
+            verify_full_batch_shard(delegation, current_admission)
     preflight_seconds = perf_counter() - preflight_started
     print(f"[maps] input preflight: {preflight_seconds:.1f}s", flush=True)
     authoritative_inputs = adapter.input_identity()
@@ -598,13 +781,13 @@ def run_production(recipe: Recipe, binding: Binding, scope: str,
                             observe_hook(feature)
                         output_sha256 = sha256(path.read_bytes()).hexdigest()
                         inline_legend_metadata = None
-                        if recipe.family == "aedar" and name == "inline":
-                            from aedar_legend import inline_legend
-                            from aedar_map_plan import family_config
-                            cfg = family_config()
-                            image_key = cfg["prefix"] + path.name
-                            inline_legend_metadata = inline_legend(
-                                feature, image_key, output_sha256, path.stat().st_size)
+                        # Metadata is an opt-in family capability: historical
+                        # AEDAR recipes do not necessarily carry selected scale
+                        # semantics, even though they share the family label.
+                        metadata_hook = getattr(adapter, "inline_legend_metadata", None)
+                        if name == "inline" and callable(metadata_hook):
+                            inline_legend_metadata = metadata_hook(
+                                feature, path, output_sha256)
                         cache_entry = {"path": str(path), "effective_identity": effective_identity,
                             "output_sha256": output_sha256, "artifact_contract": artifact_contract}
                         next_cached_outputs[key] = cache_entry

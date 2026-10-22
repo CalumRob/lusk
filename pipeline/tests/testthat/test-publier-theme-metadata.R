@@ -83,9 +83,7 @@ test_that("changer les métadonnées ne réécrit PAS les tables de faits", {
             n = file.info(file.path(cible, fichier))$size)
   }
   faits_avant <- lapply(c("indicateurs_demographie.json",
-                          "indicateurs_demographie.parquet",
                           "histoires_demographie.json",
-                          "histoires_demographie.parquet",
                           "territoires.json"), octets)
 
   # 2) la publication des métadonnées — un contenu DIFFÉRENT du précédent
@@ -97,9 +95,7 @@ test_that("changer les métadonnées ne réécrit PAS les tables de faits", {
   # les tables de faits restent byte-identical : l'étape métadonnées n'écrit
   # QUE theme_<theme>.json, jamais un recompute ni une réécriture des faits
   faits_apres <- lapply(c("indicateurs_demographie.json",
-                          "indicateurs_demographie.parquet",
                           "histoires_demographie.json",
-                          "histoires_demographie.parquet",
                           "territoires.json"), octets)
   for (i in seq_along(faits_avant)) expect_identical(faits_apres[[i]], faits_avant[[i]])
 

@@ -35,12 +35,8 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
                           sortie = "public/data",
                           mode = c("full", "cron"),
                           noms_epci_geo_api = lire_noms_epci_geo_api(),
-                          connexion_service = NULL,
-                          publier_bpe = FALSE) {
+                          connexion_service = NULL) {
   mode <- match.arg(mode)
-  if (isTRUE(publier_bpe) && is.null(connexion_service)) {
-    stop("Explicit BPE publication requires the service connection.", call.=FALSE)
-  }
   if (!is.null(connexion_service) && !identical(theme$theme, "mobilite")) {
     stop("La publication SQL de service exige le thème Mobilité.", call. = FALSE)
   }
@@ -155,6 +151,7 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   # le run passe AUSSI les directions du module (theme$directions) — la
   # direction déclarée par chaque page d'indicateur est croisée contre celle
   # qui classe les rangs publiés, la contradiction échoue à l'écriture.
+  metadata <- NULL
   if ("metadata" %in% names(theme)) {
     metadata <- theme$metadata()
     publier_theme_metadata(metadata, sortie,
@@ -191,20 +188,38 @@ run_pipeline <- function(theme = theme_demographie(), cache = "data/raw",
   ecrire_json_si_modifie(vintages, file.path(sortie, "vintages.json"),
                          dataframe = "rows", na = "null",
                          digits = 17, pretty = TRUE)
+  # Canonical scalar facts are materialized only once the current theme payload,
+  # its in-memory descriptors, and the merged source-vintage universe agree.
+  # Each theme owns its own immutable generation; no old theme-Parquet inputs
+  # participate in this serving-grain publication.
+  if (is.list(metadata) && length(metadata$scalar_contracts)) {
+    materialize_theme_scalar_artifact(payload, metadata, vintages, theme$theme, sortie)
+  }
+  materialize_theme_series_artifacts(payload, metadata %||% list(), vintages, theme$theme, sortie)
+  # Typed-reading serving grains share the same in-memory payload, validated
+  # metadata and merged vintages. A theme without a reading materializes
+  # nothing; the publication readers below consume only these artifacts.
+  materialize_theme_typed_reading_artifacts(payload, metadata %||% list(), vintages, theme$theme, sortie)
+  # Declared-profile serving grains share the same in-memory payload, validated
+  # metadata and merged vintages. The DPE owner is scalar-backed: its binding is
+  # computed only when the full scalar universe is locally present, so a partial
+  # or cron run materializes the declared detail profiles and skips DPE instead
+  # of failing.
+  if (is.list(metadata) && length(profile_serving_owners(metadata))) {
+    profile_binding <- NULL
+    if (length(profile_serving_scalar_owners(metadata)) &&
+        profile_scalar_binding_inputs_available(sortie)) {
+      profile_binding <- profile_scalar_binding(sortie)
+      cache_profile_scalar_binding(profile_binding, sortie)
+    }
+    materialize_theme_profile_artifacts(payload, metadata, vintages, theme$theme, sortie,
+      profile_binding)
+  }
   # Optional operator-owned desktop connection (usually via SSH tunnel). The
   # pipeline writes canonical Parquet here first; the DB publisher compares
   # per-table markers even when none of those files changed in this run.
   if (!is.null(connexion_service)) {
-    service <- preparer_tables_service(sortie)
-    publier_tables_postgres(connexion_service, service$tables, service$versions,
-                            access_scope = service$access_scope,
-                            building_contract = service$building_contract,
-                            building_sources = service$building_sources)
-    # BPE is independently opt-in; connecting the unrelated service publisher
-    # must not imply publication of this separately owned evidence family.
-    if (isTRUE(publier_bpe)) {
-      publier_bpe_si_optin(publier_bpe, sortie, connexion_service)
-    }
+    publish_retained_backend_snapshot(connexion_service, sortie)
   }
   # Le rapport du run réussi, écrit après la publication — il décrit un run
   # complet. Le diagnostic de couverture (issue #233) y voyage quand le thème

@@ -78,6 +78,13 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
   local_mocked_bindings(
     download_sources = function(manifest, cache, mode) statuts_milieux(),
     lire_epci = function(chemin) base_epci_milieux,
+    # ce cache n'a PAS les archives OCS-GE (#237) : les lignes d'état artif
+    # sont publiées sans roles typés ni lineage — la materialisation des
+    # séries annuelles (qui exige ces colonnes) est hors boucle de ce test,
+    # comme pour le test Habitat stubé, et celle du grain de lecture exige en
+    # plus les faits de lecture sélectionnés.
+    materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     publier_geometrie = function(cible = "public/data", fetch = NULL)
       invisible(NULL),
     .package = "lusk"
@@ -110,26 +117,27 @@ test_that("run_pipeline(theme = theme_milieux()) : le run Milieux complet, de bo
   # L'Aperçu est vide par design : le fichier partagé apercu n'est NI écrit
   # NI écrasé par un thème sans aperçu (issue #116). Issue #311 : les
   # métadonnées du thème partent avec le run (theme_milieux.json).
-  for (f in c("indicateurs_milieux.parquet", "indicateurs_milieux.json",
-              "histoires_milieux.parquet", "histoires_milieux.json",
+  for (f in c("indicateurs_milieux.json", "histoires_milieux.json",
               "territoires.parquet", "territoires.json",
               "vintages.parquet", "run-report.json",
               "theme_milieux.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }
+  # #757 : le parquet par-thème est retiré pour les cinq thèmes non-mobilité
+  expect_false(file.exists(file.path(cible, "indicateurs_milieux.parquet")))
+  expect_false(file.exists(file.path(cible, "histoires_milieux.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.json")))
 
-  # le parquet relit exactement le payload publié
-  ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_milieux.parquet"))
+  # #757 : les faits partent en JSON seul — le JSON relit exactement le payload
+  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_milieux.json"))
   expect_equal(nrow(ind), nrow(payload$indicateurs))
   expect_equal(ind$value, payload$indicateurs$value)
   # les histoires se relisent : une ligne par territoire, la lecture et les
-  # forces de l'Histoire (#174)
-  hist <- nanoparquet::read_parquet(file.path(cible, "histoires_milieux.parquet"))
-  expect_equal(nrow(hist), nrow(payload$histoires))
-  expect_equal(hist$territoire, payload$histoires$territoire)
-  expect_equal(hist$classification, payload$histoires$classification)
+  # forces de l'Histoire (#174) — #757 : plus de parquet, la projection JSON se
+  # compare à la table EN MÉMOIRE (le helper gère les colonnes entièrement NA)
+  hist <- jsonlite::fromJSON(file.path(cible, "histoires_milieux.json"))
+  verifier_projection_sur_table(payload$histoires, hist, "histoires_milieux")
 
   # vintages.parquet : une ligne par source du manifeste Milieux (les quatorze,
   # OCS-GE et patchs correctifs compris — #234 amendé #243), et les ids RETIRÉS
@@ -165,6 +173,11 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
   local_mocked_bindings(
     download_sources = function(manifest, cache, mode) statuts_milieux(),
     lire_epci = function(chemin) base_epci_milieux,
+    # cache sans archives OCS-GE (#237) : pas de materialisation de séries
+    # annuelles ici (les roles typés sont absents du payload rétro-compatible),
+    # ni de grain de lecture (il exige ces roles et les faits sélectionnés).
+    materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     publier_geometrie = function(cible = "public/data", fetch = NULL)
       invisible(NULL),
     .package = "lusk"
@@ -176,7 +189,8 @@ test_that("un re-run Milieux écrase sans dupliquer (upsert, idempotence)", {
                noms_epci_geo_api = NULL)
 
   # le payload EST l'état complet : relancer écrase, ne duplique jamais
-  ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_milieux.parquet"))
+  # #757 : les faits Milieux partent en JSON seul
+  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_milieux.json"))
   ref <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
   expect_equal(nrow(ind), 160)  # 10 territoires x (2 lignes d'état + 14 annuels)
   expect_equal(anyDuplicated(ind[c("territoire", "key", "detail")]), 0L)

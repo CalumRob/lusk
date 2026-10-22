@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 from aedar_map_content import loss_map_content
-from runner import Binding, MapSet
+from runner import Binding, Foundation, MapSet, Recipe
 
 
 PRODUCTION = Path(__file__).resolve().parent
@@ -17,12 +17,15 @@ def family_config():
 
 
 def build_aedar_static_map_set(raw_dir, facts_path, *, facts, family_config=None,
-                               territory_registry_path=None):
+                               aedar_family_config=None, territory_registry_path=None):
     """Build all source-derived territory bases, omitting only empty fact memberships."""
     from network import build_full_map_set
+    from cartographic_policy import family_policy
 
-    config = globals()["family_config"]()
-    source = build_full_map_set(raw_dir, family_config=family_config, territory_registry_path=territory_registry_path)
+    config = aedar_family_config or globals()["family_config"]()
+    policy = family_policy(config.get("cartographic_policy", {}))
+    source = build_full_map_set(raw_dir, family_config=family_config,
+        territory_registry_path=territory_registry_path, resolved_cartographic_policy=policy)
     bases = [feature for rows in source.map_set.layers.values() for feature in rows if feature["mode"] == "car"]
     supported, skipped = [], []
     for base in bases:
@@ -90,8 +93,10 @@ def encode_plan(bases, facts, input_signatures, config=None, workers=4):
             extent = feature[field]
             row[field] = [extent.xMinimum(), extent.yMinimum(), extent.xMaximum(), extent.yMaximum()]
         rows.append(row)
+    from cartographic_policy import family_policy
     result = {"version": 1, "input_signatures": input_signatures, "territories": rows,
         "territory_count": len(rows), "geometries": geometries,
+        "cartographic_policy": family_policy(config.get("cartographic_policy", {})).contract(),
         "expected_webps": len(rows) * len(config["modes"]) * len(config["profiles"]),
         "q80": None, "shards": partition({"territories": rows}, workers)}
     return result
@@ -111,9 +116,13 @@ def decode_plan(plan):
             raise ValueError("AEDAR plan contains invalid geometry WKB")
         geometries[key] = geometry
     decoded = []
+    policy = plan.get("cartographic_policy")
     for row in plan["territories"]:
         feature = {"territory": dict(row["territory"]),
-                   "territory_codes": tuple(row["territory_codes"])}
+                   "territory_codes": tuple(row["territory_codes"]),
+                   "cartographic_policy": policy} if policy is not None else {
+                       "territory": dict(row["territory"]),
+                       "territory_codes": tuple(row["territory_codes"])}
         feature.update({field: QgsGeometry(geometries[row[field]])
                         for field in ("geometry", "analytical_geometry", "region_geometry")})
         feature.update({field: QgsRectangle(*row[field]) for field in ("extent", "inspection_extent")})
@@ -122,19 +131,22 @@ def decode_plan(plan):
 
 
 def partition(plan, workers):
-    """Greedy largest-processing-time territory partition; never split a territory."""
-    if workers not in (1, 2, 4):
-        raise ValueError("Worker count must be 1, 2 or 4")
-    weights = [(1 + row["addresses"] ** 0.5 / 300, index)
-               for index, row in enumerate(plan["territories"])]
-    shards, totals = [[] for _ in range(workers)], [0.0] * workers
-    for weight, index in sorted(weights, reverse=True):
-        shard = min(range(workers), key=totals.__getitem__)
-        shards[shard].append(index)
-        totals[shard] += weight
-    return [sorted(shard) for shard in shards]
+    """AEDAR's family cost estimate supplied to common whole-territory scheduling."""
+    from batch_execution import partition_territories
+    return partition_territories(plan["territories"], workers,
+                                 lambda row: 1 + row["addresses"] ** 0.5 / 300)
 
 
-def selected_aedar_recipe():
-    from aedar_maps import aedar_loss_recipe
-    return aedar_loss_recipe()
+def selected_aedar_recipe(config=None):
+    from cartographic_policy import family_policy
+    config = config or family_config()
+    policy = family_policy(config.get("cartographic_policy", {}))
+    return Recipe(name="aedar-selected-static", version=1, family=config["family"],
+        foundation=Foundation(version="aedar-selected-foundation-v1",
+            framing=policy.framing(),
+            geography={"territory": config["geography_contract"]},
+            ground=policy.ground(inline=False),
+            composition=config["cartography"], cartographic_policy=policy),
+        required_fields=("geometry", "territory", "mode", "analytical_geometry", "extent",
+            "facts_path", "value_field", "measure", "horizon", "scale_breaks",
+            "comparison", "title_prefix", "title_mode", "legend_label"))

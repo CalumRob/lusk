@@ -1,6 +1,6 @@
 # Structured product-data consumer inventory (#589)
 
-Status: discovery baseline for #590, reviewed against checked-in app, API and pipeline code on 2026-09-28. “Migrate” is a serving direction, not approval of catalogue membership. R transformations and canonical Parquet remain authoritative (ADR-0033/0035/0037); no physical layout below is a commitment. CONTEXT.md retires Story selection: legacy `histoires` is a payload/schema name, not a live editorial selection contract. Active app semantic content is `ThemeContent`/data-deterministic presentation; do not infer that every legacy `histoires_*` field is consumed.
+Status: discovery baseline for #590, reviewed against checked-in app, API and pipeline code on 2026-09-28; #757 serving-grain cutover completed on branch `issue/757-serving-grain-cutover` (scalar, ordered-series, declared-profile and typed-reading grains; theme-grouped Parquet writes retired for the migrated themes). “Migrate” is a serving direction, not approval of catalogue membership. R transformations and canonical Parquet remain authoritative (ADR-0033/0035/0037); no physical layout below is a commitment. CONTEXT.md retires Story selection: legacy `histoires` is a payload/schema name, not a live editorial selection contract. Active app semantic content is `ThemeContent`/data-deterministic presentation; do not infer that every legacy `histoires_*` field is consumed.
 
 ## Inventory and disposition
 
@@ -36,7 +36,7 @@ Live API evidence comprises shared territory reference plus service registry, se
 | Indicator comparison renderer (`app/src/fiche` and payload read-model selectors; ADR-0015 contract) | Browser consumer | Shows rank in context and group size; confirm exact renderer via references when its API slice is planned. |
 | `pipeline/R/verification_donnees_reelles.R` and tests | Producer tests/assertions, not product consumers | Validate rank domain, nulls and group sizes. Tests must be updated with a deliberate contract migration, but are not a reason to serve ranks forever. |
 
-`modeles_lecture.R` is an actual non-browser consumer of static structured inputs, but this search found no direct `rang_*` read in its source. No proven direct non-browser downstream consumer of rank fields was located in `pipeline/R` or `pipeline/scripts` in this pass; rank producers, contract/validation and tests were found, but these are not consumers. Whether generated read models project ranks remains an open inspection item. Repeat searches across pipeline scripts/export workflows before deleting columns. API scoped comparisons calculate the declared requested scope from facts, never consume fixed ranks. No rank-output deletion is authorized here.
+`modeles_lecture.R` is an actual non-browser consumer of static structured inputs, but this search found no direct `rang_*` read in its source. No proven direct non-browser downstream consumer of rank fields was located in `pipeline/R` or `pipeline/scripts` in this pass; rank producers, contract/validation and tests were found, but these are not consumers. Whether generated read models project ranks remains an open inspection item. Repeat searches across pipeline scripts/export workflows before deleting columns. API arbitrary-selection comparisons calculate the requested scope from facts; current fixed contexts use dedicated published comparison projections below, not historical static `rang_*` outputs. No rank-output deletion is authorized here.
 
 ## Concrete static artifact consumers (representative contracts)
 
@@ -51,7 +51,60 @@ Live API evidence comprises shared territory reference plus service registry, se
 | Map boundaries/masks/style | `/carte` modules `app/src/components/carte/MapExplorer.vue`, `app/src/geo/chargerMasques.ts`; mask GeoJSON and `positron-nolabels.json` are geometry/style assets, distinct from numeric theme facts | R boundary/mask outputs + application style asset. Retain mask consumer through map migration; exclude style, tiles, icons, media. |
 | Run report | `run-report.json`: top-level `mode`, `timestamp`, `statuts[]` with `id`, `mode` (`cron`/`manuel`), `status` (`frais`/`échec`/`à traiter à la main`) in `app/src/payload/types.ts`; `ligneFraicheur()` in `app/src/payload/selectors.ts` renders timestamp and counts failed/manual sources, not per-source IDs. | `pipeline/R/rapport_run.R` (`rapport_run`, `ecrire_rapport_run`) serializes mode, timestamp and source statuses; `_targets.R` run-report targets and `graphe_cron.R`/`run_pipeline.R` call it. `download.R` supplies per-source statuses; `diff_skip.R` explicitly excludes the report from rebuild-skip decisions. `publish.R` publishes payload artifacts. `loader.ts` validates and `usePayload.ts` assembles it. | Active structured metadata, migrate/retain for freshness promise. `AppHeader.vue`, `AppFooter.vue`, `AccueilView.vue`, `CarteView.vue` wait for `territoires` + `run-report`; this wait-set is readiness gating, not proof every view renders fields. Header/footer call `ligneFraicheur` (visible freshness); home/map wait but are not established as field renderers. |
 
-Search and direct pointers were checked with code-reference searches; this is not a claim that the unresolved items have no consumers.
+## #757 serving-grain cutover (completed on this branch)
+
+Four serving grains are migrated to owner-scoped, immutable, checksummed artifacts under `public/data/`, all sharing the typed transport (`pipeline/R/publish_typed_artifact.R`: manifest, per-piece checksums, semantic-version re-verification on read, atomic `current.json` pointer via `fs::file_move`, path containment). Every grain is materialized in `run_pipeline()`/`_targets.R` from the current in-memory payload, metadata and merged vintages — no artifact build requires a database connection; DB publication retries consume the validated artifacts and fail closed on missing/stale/tampered/foreign-owner generations. Static JSON projections (`indicateurs_*`, `histoires_*`, `theme_*`, `vintages`, `territoires`, `run-report`) are byte-unchanged and remain the app/read-model contract.
+
+| Artifact | Serving grain / owner | Readers (no legacy fallback) | Notes |
+|---|---|---|---|
+| `scalar-serving/<theme>/scalar-current.json` → `scalar-<content-hash>/` | Typed scalar observation grain; per-theme publication owner (Économie, Démographie, Mobilité, Habitat) | `project_theme_scalar_cohort()` and the service scalar snapshot consume the validated artifact | Descriptor arrays are JSON with explicit typed reconstruction; other pieces are typed Parquet |
+| `series-reading/conso_enaf_annuel/` and `series-serving/<owner>/` → `generation-<hash>/` | Annual ENAF points and independently owned ordered-series datasets (ENAF, OCS-GE state, DVF price, raccordement curve/reference) | `read_conso_enaf_series_projection()`, `read_owned_series_projections()` read only validated generations with registered per-owner schemas | ENAF reporting-only exclusions stay reader metadata, separate from owned publication facts |
+| `profile-serving/<indicator_id>/current.json` → `generation-<hash>/` (+ `scalar-serving/binding.json`) | Declared-profile grain, one owner per `indicator_id` (structure_age, dense detail profiles, DPE scalar-backed facet) | `publier_declared_profiles_postgres()` consumes only validated artifacts and recomputes `profile_scalar_binding()`; readers fail closed on pointer/owner/checksum/binding/universe/provenance drift | DPE `required_scalar_version` binds to the recomputed scalar content version — a stale local artifact fails closed. Comparison groups/territories are not part of the artifact; `write_profile_comparison_parquets()` is unchanged |
+| `typed-reading-serving/<theme>/current.json` → `generation-<hash>/` | Typed reading grain, one owner per theme (Mobilité, Économie, Démographie, Habitat, Milieux) | `publish_canonical_{mobility,milieux,demographic,habitat}_reading()` publish from the artifact; missing artifact fails closed before any DB write | Milieux re-attaches DB-time CONSOENAF absence declarations and consumes `series-serving/artif_par_habitant`; shared `territoires`/`vintages` Parquets are intentional inputs |
+
+**Write retirement.** `publish()` no longer writes `indicateurs_<theme>.parquet`/`histoires_<theme>.parquet` for demographie, habitat, economie and milieux (`theme_parquet_retire()`, derived from `THEMES_METADATA`; pinned by the inventory test in `test-publish.R`). Programmes never had theme-grouped Parquets (its `programmes_membres`/`programmes_subventions` Parquets are dataset-grain and stay). The 8 committed theme Parquets were removed from `public/data`. **Mobilité is the documented exception**: `indicateurs_mobilite.parquet`/`histoires_mobilite.parquet` are still written and still read by legacy BPE paths (below), pending the #619 cleanup.
+
+**Published version moves (both deliberate, one-time marker rebinds, pinned by tests).** Economy: the reading rule now hashes only the persisted facts and source clock (the producer-metadata term is re-validated at projection time). Mobility: the legacy publisher hashed facts projected from `nanoparquet::read_parquet` inputs (class `c("tbl","data.frame")`); the artifact grain projects from the in-memory payload (dplyr tibble) — the version moved exactly for that class vector and nothing else (`test-publish-typed-reading-artifact.R`). Both republish once on first publication after cutover; no fail-closed deadlock.
+
+**Descoped by owner decision (legacy mobility BPE, cleanup under #619).** The service share_* access base (`preparer_tables_service`, `serving_tables.R`), the building ramp/grid consumers, the mobility density distribution (`publish_mobility_distribution.R`), and `verify-mobility-profile-parquet.R` are NOT migrated; they keep reading the mobility theme Parquets, which is why those two files are not retired. Consequently `profile_scalar_binding()` still reads `indicateurs_mobilite.parquet` for the share_* base — the documented residual.
+
+**Removed.** `pipeline/scripts/audit-milieux-series-artifact.R` (one-time migration audit of additive M2/M3 fields; superseded by the transport's integrity checks and the series test suite).
+
+**Kept intentionally.** `write_profile_comparison_parquets()` (comparisons are DB-only, already serving-grain, no production Parquet reader); the BPE dedicated artifacts (`profils_acces_bpe*`, `distribution/rampe_acces_batiments*`, `*_comparaisons`) — #619 scope; `modeles_lecture.R`, `app/src/payload/loader.ts`, `app/src/carte/coucheModel.ts` static-JSON consumers.
+
+**Open owner decision.** Generation retention: immutable generations under the cron-committed `public/data` are never pruned; a retention/GC policy is required before this is fully operable (see follow-ups below).
+
+## Fixed-comparison provenance serving — #787
+
+The current-context contract is ADR-0039, under #727/#751. A fixed read selects
+published group/focal results and actual group/facet source lineage, with cheap
+scope, shape and input-version checks. Publication validates cohort mathematics;
+the API does not reconstruct lineage or audit medians/ranks across peer facts.
+
+| Current family | API reader / routes | Publication-owned lineage |
+|---|---|---|
+| Scalar, including scalar-backed DPE | `_published_scalar_comparison_results`; theme and individual-indicator comparison routes | `publish_scalar.R` projects scalar observation/source associations into group/facet `comparison_source_lineage`, bound to comparison content version |
+| Declared detail profile | `_published_profile_comparison_results`; theme and individual-indicator comparisons | `publish_profile.R` projects actual profile observation sources into group/facet lineage; scalar-backed facets reuse scalar results rather than copying them |
+| Active owned ordered series | `_owned_series_comparison_results`; theme and individual-indicator comparisons, routed by `series_dataset_descriptor.active_read_route` | `publish_series.R` publishes group/axis revision links, declared comparison axes and support/zero-reason metadata; revisions retain actual territory windows and source clocks |
+| Numeric period/detail collection | `_published_collection_comparison` in `observed_collections.py`; theme and individual-indicator comparisons | `publish_observed_collections.R` publishes typed group/detail/period source-vintage links and explicit completeness metadata |
+| AEDAR fixed references | Semantic resource read contract: `POST /api/resources/read` for `aedar_territorial_aggregate` with `fixed_comparison` intent (legacy GET route retired); returns focal and selected reference values without peer/rank fields | Reference-only publication binds the aggregate and territory-reference versions; direct EPCI/Bretagne source lookups, pooled density artifact, and retained same-level medians |
+
+Arbitrary selections and raw visualization observations remain fact reads.
+Categorical `anchored_membership` is explicitly non-comparable. Legacy non-AEDAR
+BPE remains outside this cutover under #619. The `series_descriptor` fallback
+reader is retained compatibility, not the active owned-series route: current
+annual ENAF publication registers the owned descriptor first. The old writer
+and fallback must not be deleted without separate compatibility-reader proof.
+
+Migrations 033–035 preserve existing numeric results but leave old lineage
+unknown/incomplete, so upgraded readers fail closed until normal R republication.
+Freshly published empty lineage is distinct from an unpublished lineage set.
+The guarded synthetic publisher-to-API tests cover both fresh installation and
+the populated comparison-storage upgrade, including exact source/vintage
+response parity, unchanged retries and injected-refresh rollback. See
+`api/tests/integration/README.md` and `api/migrations/README.md` for guarded test
+commands and operator sequencing. This does not authorize production migration,
+publication or deployment, and does not establish deployed API latency/p95.
 
 ## Shape candidates and unknowns for #590
 
@@ -68,7 +121,8 @@ Search and direct pointers were checked with code-reference searches; this is no
 2. #590 maps each *active* consumer to constrained shared shape or justified dedicated evidence, with representative contracts and owner catalogue questions resolved.
 3. Migrate one existing scalar/detail/series surface at a time with canonical Parquet parity, provenance, outage state, representative Pi performance and scoped-comparison checks; remove its loader/artifact only once all readers are accounted for.
 4. Audit non-browser R/Parquet readers of each `rang_*` output before upstream deletion; separately prove browser parity. Establish monitoring/recovery/failover before the final static consumer is retired.
+5. **Retention of superseded serving generations — separate owner decision, not in this batch.** Every changed content hash lands a new immutable `scalar-<hash>/` or `generation-<hash>/` directory under the cron-committed `public/data`; nothing prunes the previous generations, so growth is unbounded until an owner sets a retention/GC policy. The scalar and ordered-series cutover only adds generations; it does not decide retention.
 
 ## Traceability
 
-Related decisions: [ADR-0033](adr/0033-unified-data-serving-api.md), [ADR-0035](adr/0035-serving-grains-and-scoped-comparisons.md), [ADR-0037](adr/0037-publish-tables-independently-from-r.md), [ADR-0015](adr/0015-rang-ordinal-directionnel.md), [ADR-0022](adr/0022-methodes-sources-dataset-granularite.md). Parent program: #587; sibling search issue: #582; dependent schema issue: #590. This inventory is a code-backed baseline, not proof every historical consumer was exhaustively found; refresh reference searches before artifact retirement.
+Related decisions: [ADR-0033](adr/0033-unified-data-serving-api.md), [ADR-0035](adr/0035-serving-grains-and-scoped-comparisons.md), [ADR-0037](adr/0037-publish-tables-independently-from-r.md), [ADR-0015](adr/0015-rang-ordinal-directionnel.md), [ADR-0022](adr/0022-methodes-sources-dataset-granularite.md), [ADR-0039](adr/0039-published-comparison-aggregates.md). Parent program: #587; sibling search issue: #582; dependent schema issue: #590; serving-grain cutover: #757 (branch `issue/757-serving-grain-cutover`), umbrella #751; legacy BPE cleanup: #619. This inventory is a code-backed baseline, not proof every historical consumer was exhaustively found; refresh reference searches before artifact retirement.

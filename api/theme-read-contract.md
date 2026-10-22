@@ -1,5 +1,12 @@
 # Theme read API (incremental contract)
 
+> **Historical, retired contract.** The routes and response shapes described
+> below are not supported by the current API. Use [`GET /api/resources` and the
+> semantic resource read contract](batch-read-contract.md), together with the
+> current [endpoint reference](ENDPOINTS.md). This page is retained only as
+> migration context; its examples and route descriptions do not define current
+> behavior.
+
 Named, bounded reads use producer descriptors and published facts; the API does
 not interpret physical table shape as product meaning. Responses keep
 `complete_theme: false` until active-catalogue coverage is proven. This is the

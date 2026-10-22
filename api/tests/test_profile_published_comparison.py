@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from api import main
+from api import snapshot_reads as main
 
 
 class Cursor:
@@ -26,25 +26,36 @@ _DEFAULT = object()
 
 class DetailConnection:
     def __init__(self, *, marker=_DEFAULT, members=("c1", "c2"), group=None, territory=None):
-        self.marker = (("pub-v1", "profile-v1", "ref-v1", 1, 2, "profile-v1", "ref-v1")
+        self.marker = (("pub-v1", "profile-v1", "ref-v1", 1, len(members), "profile-v1", "ref-v1")
             if marker is _DEFAULT else marker)
-        self.members, self.sql = members, []
-        self.group = group or [("housing_profile", "old", "", "median", 20.0, len(members), 2, 0, "profile-v1", "ref-v1")]
-        self.territory = territory or [("housing_profile", "old", "", member, value, "measured", rank, 1, 2, "profile-v1", "ref-v1")
-            for member, value, rank in zip(members, (10.0, 30.0), (1, 2))]
+        self.members, self.sql, self.comparison_rows_returned = members, [], 0
+        self.group = ([("housing_profile", "old", "", "median", 20.0, len(members), len(members), 0, 1, "profile-v1", "ref-v1")]
+            if group is None else group)
+        self.territory = ([("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, len(members), "profile-v1", "ref-v1")]
+            if territory is None else territory)
+        self.group = [row if len(row) > 11 else (*row,
+            (row[6] == 0 and row[4] is None) or (row[6] > 0 and row[4] is not None))
+            for row in self.group]
+        self.territory = [row if len(row) > 11 else (*row,
+            ((row[5] == "measured" and all(value is not None for value in (row[4],row[6],row[7],row[8]))) or
+             (row[5] != "measured" and all(value is None for value in (row[4],row[6],row[7],row[8])))))
+            for row in self.territory]
 
     def execute(self, sql, params=None):
-        self.sql.append(sql)
+        self.sql.append((sql, params))
         if "to_regclass('profile_comparison_publication')" in sql:
             return Cursor(("profile_comparison_publication",))
         if "FROM profile_comparison_publication p" in sql:
             return Cursor(self.marker)
-        if "SELECT count(*) FROM profile_comparison_group" in sql:
-            return Cursor((1, 2))
         if "FROM profile_comparison_group" in sql:
+            self.comparison_rows_returned += len(self.group)
             return Cursor(rows=self.group)
         if "FROM profile_comparison_territory" in sql:
+            assert "territory_id=%s" in sql
+            self.comparison_rows_returned += len(self.territory)
             return Cursor(rows=self.territory)
+        if "FROM comparison_source_lineage l" in sql:
+            return Cursor(rows=[("housing_profile", "housing", "2024", "Housing", "2024", None, None, "pub-v1")])
         if "FROM profile_observation_source" in sql:
             return Cursor()
         if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
@@ -52,13 +63,115 @@ class DetailConnection:
         raise AssertionError(sql)
 
 
-def test_fixed_detail_uses_published_values_and_complete_member_rows_only():
+def test_fixed_detail_uses_published_statistics_and_only_reads_focal_row():
     conn = DetailConnection()
     result = main._published_profile_comparison_results(conn, [PROFILE],
         ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1")
     assert result["housing_profile"]["median"] == 20.0
     assert result["housing_profile"]["rank_ties"] == 1
-    assert not any("o.value" in sql and "profile_observation o" in sql for sql in conn.sql)
+    assert "missing_count" not in result["housing_profile"]
+    sql = [statement for statement, _ in conn.sql]
+    assert not any("count(" in statement.lower() for statement in sql)
+    assert not any("o.value" in statement and "profile_observation o" in statement for statement in sql)
+    territory_read = next((statement, params) for statement, params in conn.sql
+        if "FROM profile_comparison_territory" in statement)
+    assert "territory_id=%s" in territory_read[0]
+    assert territory_read[1][-1] == "c1"
+
+
+def test_fixed_detail_selection_projects_result_columns_in_published_sql():
+    conn=DetailConnection()
+    result=main._published_profile_comparison_results(conn,[PROFILE],
+        ("density_class","A","commune"),"commune",("c1","c2"),"c1",
+        selected_fields=("median",))["housing_profile"]
+    assert result["median"]==20.0 and result["status"]=="available"
+    assert not {"focal_value","rank","rank_size","rank_ties","eligible_count"} & set(result)
+    group_sql,group_params=next((sql,params) for sql,params in conn.sql if "FROM profile_comparison_group" in sql)
+    focal_sql,focal_params=next((sql,params) for sql,params in conn.sql if "FROM profile_comparison_territory" in sql)
+    assert "CASE WHEN %s THEN median" in group_sql and group_params[0] is True
+    assert all(value is False for value in focal_params[:4])
+
+
+def test_profile_comparison_rejects_scalar_only_field_before_publication_reads():
+    conn=DetailConnection()
+    with pytest.raises(HTTPException) as error:
+        main._published_profile_comparison_results(conn,[PROFILE],
+            ("density_class","A","commune"),"commune",("c1","c2"),"c1",
+            selected_fields=("mean",))
+    assert error.value.status_code==422
+    assert not any("FROM profile_comparison_group" in sql for sql,_ in conn.sql)
+
+
+def test_selected_external_profile_keeps_support_count_internal_only(monkeypatch):
+    profile={"indicator":"housing_external","label":"Housing","unit":"%",
+        "descriptor_version":"pd1","comparison_scalar":"employment",
+        "required_scalar_version":"scalar-v1","denominator_semantics":"stock",
+        "comparison_point":{"direction":"high"}}
+    class Connection:
+        def execute(self,sql,params=None):
+            assert "FROM scalar_descriptor" in sql
+            return Cursor(rows=[("employment","Employment","count","high","employment",
+                ["commune"],"sd1")])
+    received={}
+    def published(_conn,_descriptors,_context,_cohort_type,_members,_territory_id,
+                  *,include_ties=False,selected_fields=None):
+        received["fields"]=selected_fields
+        result={"status":"unavailable","reason":"no_selected_comparable_values",
+            "comparison_sources":[]}
+        if "eligible_count" in selected_fields: result["eligible_count"]=0
+        return {"employment":result}
+    monkeypatch.setattr(main,"_published_scalar_comparison_results",published)
+    result=main._profile_comparison_results(Connection(),[profile],("c1","c2"),"commune","c1",
+        ("density_class","D1","commune"),selected_fields=("status",))[0]
+    assert "eligible_count" in received["fields"]
+    assert result["status"]=="unavailable"
+    assert not {"eligible_count","median","rank","rank_size","rank_ties"} & set(result)
+
+
+def test_fixed_detail_caller_reads_required_mixed_vintage_provenance_once():
+    sources = [
+        ("housing_profile", "housing", "2024", "Housing", "2024", None, None, "pub-v1"),
+        ("housing_profile", "housing", "2025", "Housing", "2025", None, None, "pub-v1"),
+    ]
+
+    class Connection(DetailConnection):
+        def execute(self, sql, params=None):
+            if "FROM profile_comparison_group" in sql:
+                self.sql.append((sql, params))
+                return Cursor(rows=[("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 2, "profile-v1", "ref-v1",True)])
+            if "FROM comparison_source_lineage l" in sql:
+                self.sql.append((sql, params))
+                return Cursor(rows=sources)
+            return super().execute(sql, params)
+
+    conn = Connection()
+    result = main._profile_comparison_results(conn, [PROFILE], ("c1", "c2"), "commune", "c1",
+        ("density_class", "A", "commune"))[0]
+    assert result["comparison_sources"] == [
+        {"source_id": "housing", "name": "Housing", "vintage_id": "2024",
+         "version": "2024", "reference_date": None, "publication_date": None},
+        {"source_id": "housing", "name": "Housing", "vintage_id": "2025",
+         "version": "2025", "reference_date": None, "publication_date": None},
+    ]
+    source_queries = [(sql, params) for sql, params in conn.sql if "FROM comparison_source_lineage l" in sql]
+    assert len(source_queries) == 1
+    assert source_queries[0][1] == ("profile", "density_class", "A", "commune", ["housing_profile"])
+
+
+def test_fixed_detail_published_comparison_read_work_is_bounded_as_cohort_grows():
+    returned_rows = []
+    for size in (2, 50, 1_202):
+        members = tuple(f"c{i}" for i in range(size))
+        conn = DetailConnection(members=members)
+        main._published_profile_comparison_results(conn, [PROFILE],
+            ("bretagne", "region", "commune"), "commune", members, "c1")
+        returned_rows.append(conn.comparison_rows_returned)
+        assert not any("count(" in statement.lower() for statement, _ in conn.sql)
+        territory_queries = [(statement, params) for statement, params in conn.sql
+            if "FROM profile_comparison_territory" in statement]
+        assert len(territory_queries) == 1
+        assert territory_queries[0][1][-1] == "c1"
+    assert returned_rows == [2, 2, 2]
 
 
 @pytest.mark.parametrize("marker,group,territory", [
@@ -66,8 +179,6 @@ def test_fixed_detail_uses_published_values_and_complete_member_rows_only():
     (("pub", "profile-v1", "wrong-ref", 1, 2, "profile-v1", "ref-v1"), None, None),
     (None, [], None),
     (("", "profile-v1", "ref-v1", 1, 2, "profile-v1", "ref-v1"), [], None),
-    (("pub", "profile-v1", "ref-v1", 1, 2, "profile-v1", "ref-v1"), None,
-     [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]),
 ])
 def test_fixed_detail_fails_closed_on_stale_or_incomplete_publication(marker, group, territory):
     conn = DetailConnection(marker=marker, group=group, territory=territory)
@@ -77,18 +188,17 @@ def test_fixed_detail_fails_closed_on_stale_or_incomplete_publication(marker, gr
     assert error.value.status_code == 503
 
 
-@pytest.mark.parametrize("corrupt", ["stale_peer", "invalid_peer", "extra_territory"])
-def test_fixed_detail_rejects_corrupt_or_extra_nonfocal_rows(corrupt):
-    rows = [
-        ("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1"),
-        ("housing_profile", "old", "", "c2", 11.0, "measured", 1, 1, 2, "profile-v1", "ref-v1"),
-    ]
-    if corrupt == "stale_peer":
-        rows[1] = (*rows[1][:-2], "old-profile", rows[1][-1])
-    elif corrupt == "invalid_peer":
-        rows[1] = (*rows[1][:6], None, None, None, *rows[1][9:])
-    else:
+@pytest.mark.parametrize("corrupt", ["stale_focal", "invalid_focal", "extra_focal", "wrong_group_key"])
+def test_fixed_detail_rejects_corrupt_or_extra_focal_rows(corrupt):
+    rows = [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]
+    if corrupt == "stale_focal":
+        rows[0] = (*rows[0][:-2], "old-profile", rows[0][-1])
+    elif corrupt == "invalid_focal":
+        rows[0] = (*rows[0][:6], None, None, None, *rows[0][9:])
+    elif corrupt == "extra_focal":
         rows.append(("housing_profile", "old", "", "stray", 11.0, "measured", 1, 1, 2, "profile-v1", "ref-v1"))
+    else:
+        rows[0] = ("housing_profile", "wrong-detail", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")
     conn = DetailConnection(territory=rows)
     with pytest.raises(HTTPException) as error:
         main._published_profile_comparison_results(conn, [PROFILE],
@@ -96,19 +206,37 @@ def test_fixed_detail_rejects_corrupt_or_extra_nonfocal_rows(corrupt):
     assert error.value.status_code == 503
 
 
-@pytest.mark.parametrize("corrupt", ["median", "rank", "ties"])
-def test_fixed_detail_rejects_aggregates_inconsistent_with_measured_peers(corrupt):
-    group = [("housing_profile", "old", "", "median", 20.0, 2, 2, 0, "profile-v1", "ref-v1")]
-    rows = [
-        ("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1"),
-        ("housing_profile", "old", "", "c2", 30.0, "measured", 2, 1, 2, "profile-v1", "ref-v1"),
-    ]
-    if corrupt == "median":
-        group[0] = (*group[0][:4], 25.0, *group[0][5:])
-    elif corrupt == "rank":
-        rows[1] = (*rows[1][:6], 1, *rows[1][7:])
+@pytest.mark.parametrize("stale", ["group_profile", "group_reference", "focal_profile", "focal_reference"])
+def test_fixed_detail_fails_closed_on_stale_group_or_focal_versions(stale):
+    group = [("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 1, "profile-v1", "ref-v1")]
+    territory = [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]
+    if stale == "group_profile":
+        group[0] = (*group[0][:-2], "old-profile", group[0][-1])
+    elif stale == "group_reference":
+        group[0] = (*group[0][:-1], "old-reference")
+    elif stale == "focal_profile":
+        territory[0] = (*territory[0][:-2], "old-profile", territory[0][-1])
     else:
-        rows[0] = (*rows[0][:7], 2, *rows[0][8:])
+        territory[0] = (*territory[0][:-1], "old-reference")
+    conn = DetailConnection(group=group, territory=territory)
+    with pytest.raises(HTTPException) as error:
+        main._published_profile_comparison_results(conn, [PROFILE],
+            ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1")
+    assert error.value.status_code == 503
+
+
+@pytest.mark.parametrize("corrupt", ["missing_group", "missing_focal", "group_member_count", "group_shape"])
+def test_fixed_detail_fails_closed_on_missing_or_invalid_local_publication_rows(corrupt):
+    group = [("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 1, "profile-v1", "ref-v1")]
+    rows = [("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 2, "profile-v1", "ref-v1")]
+    if corrupt == "missing_group":
+        group = []
+    elif corrupt == "missing_focal":
+        rows = []
+    elif corrupt == "group_member_count":
+        group[0] = (*group[0][:5], 3, 2, 1, *group[0][8:])
+    else:
+        group[0] = (*group[0][:4], None, *group[0][5:])
     conn = DetailConnection(group=group, territory=rows)
     with pytest.raises(HTTPException) as error:
         main._published_profile_comparison_results(conn, [PROFILE],
@@ -117,9 +245,8 @@ def test_fixed_detail_rejects_aggregates_inconsistent_with_measured_peers(corrup
 
 
 def test_profile_detail_preserves_unavailable_contract_below_two_eligible():
-    conn = DetailConnection(group=[("housing_profile", "old", "", "median", 10.0, 2, 1, 1, "profile-v1", "ref-v1")],
-        territory=[("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 1, "profile-v1", "ref-v1"),
-                   ("housing_profile", "old", "", "c2", None, "suppressed", None, None, None, "profile-v1", "ref-v1")])
+    conn = DetailConnection(group=[("housing_profile", "old", "", "median", 10.0, 2, 1, 1, 1, "profile-v1", "ref-v1")],
+        territory=[("housing_profile", "old", "", "c1", 10.0, "measured", 1, 1, 1, "profile-v1", "ref-v1")])
     result = main._published_profile_comparison_results(conn, [PROFILE],
         ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1")["housing_profile"]
     assert result["status"] == "unavailable"
@@ -145,7 +272,7 @@ def test_theme_uses_fixed_context_for_profile_only_filtered_default(monkeypatch)
     monkeypatch.setattr(main, "focal_profiles", lambda *_a, **_kw: ([PROFILE], "profile-v1"))
     monkeypatch.setattr(main, "collection_descriptors", lambda *_a, **_kw: [])
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_a: ("commune", ("c1", "c2"), {"kind": "density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a: ("density_class", "A", "commune"))
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a, **_kw: ("density_class", "A", "commune"))
     monkeypatch.setattr(main, "_profile_comparison_results", lambda *a: calls.append(a[-1]) or [])
     monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_a, **_kw: ([], {}, None, None, None))
     monkeypatch.setattr(main, "_demographic_reading_marker", lambda _c: None)
@@ -154,29 +281,42 @@ def test_theme_uses_fixed_context_for_profile_only_filtered_default(monkeypatch)
     assert calls == [("density_class", "A", "commune")]
 
 
-def test_dpe_profile_adapts_scalar_publication_and_keeps_metadata(monkeypatch):
+@pytest.mark.parametrize("with_detail", [False, True])
+def test_dpe_profile_adapts_scalar_publication_without_dynamic_source_reads(monkeypatch, with_detail):
     dpe = {**PROFILE, "indicator": "dpe_profile", "comparison_scalar": "part_passoires",
         "comparison_point": None, "required_scalar_version": "sv1"}
     scalar_rows = [("part_passoires", "Part passoires", "%", "low", "part_passoires", ["commune"], "sdv1")]
-    class Conn:
+    class Conn(DetailConnection):
         def execute(self, sql, params=None):
             if "FROM scalar_descriptor WHERE indicator_id=ANY" in sql:
                 return Cursor(rows=scalar_rows)
-            if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
-                return Cursor()
-            raise AssertionError(sql)
+            if "JOIN scalar_observation_source os" in sql:
+                pytest.fail("fixed DPE must use the scalar publication's provenance, not dynamic profile sources")
+            return super().execute(sql, params)
     scalar_calls = []
-    monkeypatch.setattr(main, "_published_profile_comparison_results", lambda *_a: pytest.fail("profile rows used for DPE"))
+    if not with_detail:
+        monkeypatch.setattr(main, "_published_profile_comparison_results", lambda *_a: pytest.fail("profile rows used for DPE"))
+    sources = [{"source_id": "ademe", "name": "ADEME", "vintage_id": "2025",
+        "version": "2025", "reference_date": None, "publication_date": None}]
     monkeypatch.setattr(main, "_published_scalar_comparison_results", lambda *a, **kw: scalar_calls.append(kw) or {
         "part_passoires": {"status": "available", "reason": None, "selected_member_count": 2,
             "eligible_count": 2, "missing_count": 0, "focal_value": 10, "median": 12,
-            "rank": 2, "rank_size": 2, "rank_ties": 1, "comparison_sources": []}})
-    result = main._profile_comparison_results(Conn(), [dpe], ("c1", "c2"), "commune", "c1",
-        ("density_class", "A", "commune"))[0]
+            "rank": 2, "rank_size": 2, "rank_ties": 1, "comparison_sources": sources}})
+    conn = Conn()
+    results = main._profile_comparison_results(conn, [dpe, PROFILE] if with_detail else [dpe],
+        ("c1", "c2"), "commune", "c1", ("density_class", "A", "commune"))
+    result = results[0]
     assert scalar_calls == [{"include_ties": True}]
     assert result["source_facet_label"] == "Part passoires"
     assert result["scalar_descriptor_version"] == "sdv1"
     assert result["rank_ties"] == 1
+    assert result["comparison_sources"] == sources
+    assert "missing_count" not in result
+    assert len(results) == (2 if with_detail else 1)
+    if with_detail:
+        assert results[1]["indicator"] == "housing_profile"
+        assert results[1]["median"] == 20.0
+        assert len([sql for sql, _ in conn.sql if "FROM comparison_source_lineage l" in sql]) == 1
 
 
 def test_profile_selection_resolves_exact_preset_but_custom_cohort_stays_dynamic(monkeypatch):
@@ -196,7 +336,7 @@ def test_profile_selection_resolves_exact_preset_but_custom_cohort_stays_dynamic
     monkeypatch.setattr(main, "collection_descriptors", lambda *_a, **_kw: [])
     monkeypatch.setattr(main, "_comparison_cohort", lambda _c, _tt, _tid, selection:
         ("commune", tuple(selection or ("c1", "c2")), {"kind": "explicit_selection" if selection else "density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda _c, _tt, _tid, selection, *_rest:
+    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda _c, _tt, _tid, selection, *_rest, **_kw:
         ("density_class", "A", "commune") if selection == ["c1", "c2"] else None)
     monkeypatch.setattr(main, "_profile_comparison_results", lambda *a: observed.append(a[-1]) or [])
     monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_a, **_kw: ([], {}, None, None, None))
@@ -228,3 +368,59 @@ def test_custom_profile_comparison_reads_peer_facts_without_published_tables():
     assert result["rank"] == 3
     assert any("profile_observation o" in sql and "o.value" in sql for sql in conn.sql)
     assert not any("profile_comparison_" in sql for sql in conn.sql)
+
+
+def test_mixed_detail_and_dpe_fixed_dynamic_parity_preserves_all_source_vintages():
+    dpe = {**PROFILE, "indicator": "dpe_profile", "comparison_scalar": "part_passoires",
+        "comparison_point": None, "required_scalar_version": "scalar-v1"}
+    scalar = ("part_passoires", "Part passoires", "%", "low", "part_passoires", ["commune"], "sdv1")
+    lineage = [("ademe", "2024", "ADEME", "2024", None, None),
+        ("ademe", "2025", "ADEME", "2025", None, None)]
+
+    class Connection(DetailConnection):
+        def execute(self, sql, params=None):
+            self.sql.append((sql, params))
+            if "FROM profile_comparison_group" in sql:
+                return Cursor(rows=[("housing_profile", "old", "", "median", 20.0, 2, 2, 0, 2, "profile-v1", "ref-v1", True)])
+            if "FROM scalar_descriptor WHERE indicator_id=ANY" in sql:
+                return Cursor(rows=[scalar])
+            if "to_regclass('scalar_comparison_publication')" in sql:
+                return Cursor(("scalar_comparison_publication",))
+            if "FROM scalar_comparison_publication p" in sql:
+                return Cursor(("pub", "scalar-v1", "ref-v1", 1, 2,
+                    "scalar-v1", "ref-v1", "ref-v1"))
+            if "FROM scalar_comparison_group" in sql:
+                return Cursor(rows=[("part_passoires", "median", 12.0, 2, 2, 0, 2, True)])
+            if "FROM scalar_comparison_territory" in sql:
+                return Cursor(rows=[("part_passoires", 10.0, "measured", 1, 1, 2, True)])
+            if "FROM comparison_source_lineage l" in sql:
+                if params and params[0] == "profile":
+                    return Cursor(rows=[("housing_profile", *source, "pub-v1") for source in lineage])
+                return Cursor(rows=[("part_passoires", *source, "pub") for source in lineage])
+            if "SELECT DISTINCT p.indicator_id,os.source_id" in sql:
+                indicator = "dpe_profile" if "JOIN scalar_observation_source os" in sql else "housing_profile"
+                return Cursor(rows=[(indicator, *source) for source in lineage])
+            if "SELECT p.indicator_id,s.label" in sql:
+                return Cursor(rows=[("dpe_profile", *scalar[1:], "c1", 10.0, "measured"),
+                    ("dpe_profile", *scalar[1:], "c2", 14.0, "measured")])
+            if "SELECT d.indicator_id,d.comparison_detail" in sql:
+                return Cursor(rows=[("housing_profile", "old", None, "%", "stock", "pd1", False, "%")])
+            if "SELECT d.indicator_id,o.territory_id,o.value,o.status" in sql:
+                return Cursor(rows=[("housing_profile", "c1", 10.0, "measured"),
+                    ("housing_profile", "c2", 30.0, "measured")])
+            self.sql.pop()
+            return super().execute(sql, params)
+
+    fixed, dynamic = Connection(), Connection()
+    args = ([dpe, PROFILE], ("c1", "c2"), "commune", "c1")
+    published = main._profile_comparison_results(fixed, *args, fixed_context=("density_class", "A", "commune"))
+    custom = main._profile_comparison_results(dynamic, *args)
+    assert published == custom
+    for result in published:
+        assert [source["vintage_id"] for source in result["comparison_sources"]] == ["2024", "2025"]
+    assert len([sql for sql, _ in fixed.sql if "FROM comparison_source_lineage l" in sql]) == 2
+    assert not any("JOIN scalar_observation_source os" in sql for sql, _ in fixed.sql)
+    assert not any("JOIN profile_observation_source os" in sql for sql, _ in fixed.sql)
+    assert len([sql for sql, _ in dynamic.sql if "JOIN scalar_observation_source os" in sql]) == 1
+    assert len([sql for sql, _ in dynamic.sql if "JOIN profile_observation_source os" in sql]) == 1
+    assert not any("comparison_publication" in sql for sql, _ in dynamic.sql)

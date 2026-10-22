@@ -31,7 +31,8 @@ test_that("demographic reading identities exactly match the supported territory 
   territories <- data.frame(territoire=c("a","b"),type="commune",stringsAsFactors=FALSE)
   vintages <- data.frame(id="serie_historique",source="INSEE",version="v1",
     date_reference="2021-01-01",date_publication="2022-01-01")
-  metadata <- list(param_labels=list(taux_solde_naturel="Taux (‰/an)"))
+  metadata <- list(param_labels=list(taux_solde_naturel="Taux (‰/an)"),
+    semantic_resources=list(list(kind="typed_reading",source_keys="serie_historique")))
   expect_s3_class(project_demographic_reading(histories,territories,vintages,metadata),"data.frame")
   expect_s3_class(project_demographic_reading(histories[1,,drop=FALSE],territories[1,,drop=FALSE],vintages,metadata),"data.frame")
   expect_error(project_demographic_reading(histories[1,,drop=FALSE],territories,vintages,metadata),

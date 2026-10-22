@@ -1,3 +1,13 @@
+# Load the shared publication protocol when sourced directly by a guarded
+# smoke script rather than through package load_all().
+if (!exists("publish_owner_snapshot", mode = "function", inherits = TRUE)) {
+  .publish_scalar_source <- tryCatch(sys.frame(1L)$ofile, error = function(e) NULL)
+  if (is.null(.publish_scalar_source)) stop("Cannot locate publication_protocol.R", call.=FALSE)
+  sys.source(file.path(dirname(normalizePath(.publish_scalar_source)), "publication_protocol.R"),
+             envir = environment())
+  rm(.publish_scalar_source)
+}
+
 # Contract validator for registered scalar projections. DBI adapters may
 # register a named projection; arbitrary SQL and inferred descriptors are not
 # part of this interface.
@@ -110,129 +120,6 @@ project_fixture_scalar <- function(payload, descriptor, completeness, indicator_
     allowed_levels=unlist(page$levels, use.names=FALSE), comparison_facet=NA_character_,
     counts_available=FALSE)
   project_scalar_canonical_rows(rows, descriptor, ids, eligible, fixture_policy)
-}
-
-# Project the canonical service-share relation into the shared scalar grain.
-# The Parquet key remains indicator_id; service/mode are grouping dimensions
-# only for the legacy bounded response and never replace the declared identity.
-project_service_share_scalars <- function(access, metadata, eligible_territories) {
-  required <- c("territory_id", "territory_type", "indicator_id", "value",
-    "unit", "label", "direction", "source_id", "source_name", "source_version",
-    "reference_date", "publication_date")
-  if (!is.data.frame(access) || !all(required %in% names(access)) || !is.list(metadata) ||
-      !is.data.frame(eligible_territories) ||
-      !setequal(names(eligible_territories), c("territory_id", "territory_type")))
-    stop("Canonical service shares are missing contract fields", call.=FALSE)
-  if (any(!grepl("^share_[a-z0-9]+_[tbc]$", access$indicator_id)))
-    stop("Canonical service share has an invalid indicator key", call.=FALSE)
-  declared <- unique(unlist(lapply(metadata$subgroups, `[[`, "indicators"), use.names=FALSE))
-  ids <- sort(declared[grepl("^share_", declared)])
-  scalar_contract <- metadata$service_share_scalar
-  if (length(ids) != 15L || anyDuplicated(ids) ||
-      !is.list(metadata$indicator_labels) || !is.list(metadata$indicator_directions) ||
-      !is.list(metadata$sources) || !is.list(scalar_contract) ||
-      !identical(scalar_contract$completeness, "dense_complete") ||
-      !is.character(scalar_contract$denominator_semantics) ||
-      length(scalar_contract$denominator_semantics) != 1L ||
-      !nzchar(trimws(scalar_contract$denominator_semantics)) ||
-      any(!ids %in% names(metadata$indicator_labels)) ||
-      any(!ids %in% names(metadata$indicator_directions)) || any(!ids %in% names(metadata$sources)))
-    stop("Metadata must declare fifteen complete service-share descriptors", call.=FALSE)
-  if (!setequal(unique(as.character(access$indicator_id)), ids) ||
-      any(!access$unit %in% "%"))
-    stop("Canonical service shares do not match declared metadata or percent unit", call.=FALSE)
-  if (length(ids) != 15L || anyDuplicated(access[c("territory_id", "indicator_id")]))
-    stop("Canonical service scalar projection must contain fifteen complete indicator keys", call.=FALSE)
-  access <- access[order(access$indicator_id, access$territory_id), , drop=FALSE]
-  eligible_territories <- unique(eligible_territories[c("territory_id", "territory_type")])
-  eligible_territories <- eligible_territories[order(eligible_territories$territory_type,
-                                                       eligible_territories$territory_id), , drop=FALSE]
-  group <- split(access, access$indicator_id)
-  descriptors <- do.call(rbind, lapply(ids, function(id) {
-    rows <- group[[id]]
-    sources <- as.character(metadata$sources[[id]])
-    if (length(sources) != 1L || !nzchar(sources) ||
-        !identical(unique(as.character(rows$source_id)), sources) ||
-        length(unique(rows$label)) != 1L || rows$label[[1L]] != metadata$indicator_labels[[id]] ||
-        length(unique(rows$direction)) != 1L || rows$direction[[1L]] != metadata$indicator_directions[[id]])
-      stop("Canonical service scalar descriptor is inconsistent", call.=FALSE)
-    theme_id <- as.character(metadata$theme)
-    if (length(theme_id) != 1L || is.na(theme_id) || !grepl("^[a-z][a-z0-9_]{0,63}$", theme_id))
-      stop("Canonical theme identity is missing for service scalar metadata", call.=FALSE)
-    data.frame(indicator_id=id, theme_id=theme_id, allowed_sources=I(list(sources)),
-      label=as.character(rows$label[[1L]]), unit=as.character(rows$unit[[1L]]),
-      direction=as.character(rows$direction[[1L]]),
-      comparison_facet=id, allowed_levels=I(list(unique(as.character(rows$territory_type)))),
-      denominator_semantics=scalar_contract$denominator_semantics,
-      completeness=scalar_contract$completeness, descriptor_version=scalar_content_version(list(
-         indicator_id=id, theme_id=theme_id,
-        label=metadata$indicator_labels[[id]], direction=metadata$indicator_directions[[id]],
-        source=sources, levels=unique(as.character(rows$territory_type)), unit=unique(as.character(rows$unit)),
-        scalar_contract=scalar_contract)),
-      stringsAsFactors=FALSE)
-  }))
-  facts <- data.frame(indicator_id=as.character(access$indicator_id),
-    territory_id=as.character(access$territory_id), territory_type=as.character(access$territory_type),
-    value=as.numeric(access$value), status=ifelse(is.na(access$value), "not_available", "measured"),
-    support_count=NA_integer_, denominator_count=NA_integer_, stringsAsFactors=FALSE)
-  provenance <- unique(data.frame(indicator_id=as.character(access$indicator_id),
-    territory_id=as.character(access$territory_id), source_id=as.character(access$source_id),
-    vintage_id=paste(access$source_version, access$reference_date, sep="/"), stringsAsFactors=FALSE))
-  datasets <- unique(data.frame(source_id=as.character(access$source_id),
-    name=as.character(access$source_name), stringsAsFactors=FALSE))
-  vintages <- unique(data.frame(source_id=as.character(access$source_id),
-    vintage_id=paste(access$source_version, access$reference_date, sep="/"),
-    version=as.character(access$source_version), reference_date=as.Date(access$reference_date),
-    publication_date=as.Date(access$publication_date), stringsAsFactors=FALSE))
-  eligible <- unique(eligible_territories[c("territory_id", "territory_type")])
-  list(facts=facts, descriptors=descriptors, provenance=provenance,
-    datasets=datasets, vintages=vintages, eligible_territories=eligible)
-}
-
-register_service_share_scalar_publisher <- function(registry, metadata) {
-  register_scalar_publisher(registry, "services_essentiels_scalar",
-    project=function(canonical) {
-      if (!is.list(canonical) || !is.data.frame(canonical$access))
-        stop("Service scalar publisher requires canonical access facts", call.=FALSE)
-      if (!is.data.frame(canonical$eligible_territories))
-        stop("Service scalar publisher requires the canonical territory universe", call.=FALSE)
-      project_service_share_scalars(canonical$access, metadata,
-                                    canonical$eligible_territories)
-    },
-    publish=function(projection, db, version) db$replace(projection, version))
-}
-
-publish_service_share_scalars <- function(con, access, metadata, eligible_territories,
-                                          additional_projections=list()) {
-  publisher <- register_service_share_scalar_publisher(list(), metadata)
-  if (!is.list(additional_projections)) stop("Additional scalar cohorts must be registered projections", call.=FALSE)
-  project <- publisher$services_essentiels_scalar$project
-  publisher$services_essentiels_scalar$project <- function(canonical) {
-    attach_essential_service_denominators(
-      assemble_scalar_snapshot(project(canonical), additional_projections))
-  }
-  db <- scalar_postgres_adapter(con)
-  publish_registered_scalar(publisher, "services_essentiels_scalar",
-    canonical=list(access=access, eligible_territories=eligible_territories), db=db)
-}
-
-attach_essential_service_denominators <- function(projection) {
-  service_rows <- grepl("^share_", projection$facts$indicator_id)
-  if (!any(service_rows)) return(projection)
-  building_rows <- projection$facts[projection$facts$indicator_id == "nb_buildings", , drop=FALSE]
-  if (!nrow(building_rows) || anyDuplicated(building_rows$territory_id) ||
-      any(building_rows$status == "measured" & (is.na(building_rows$value) |
-        building_rows$value < 0 | building_rows$value != floor(building_rows$value))))
-    stop("Canonical nb_buildings facts have invalid measured denominators", call.=FALSE)
-  denominator <- building_rows$value[match(projection$facts$territory_id[service_rows], building_rows$territory_id)]
-  unavailable_denominator <- is.na(denominator)
-  service_fact_status <- projection$facts$status[service_rows]
-  service_fact_value <- projection$facts$value[service_rows]
-  if (any(unavailable_denominator & service_fact_status == "measured" & !is.na(service_fact_value)))
-    stop("Measured essential-service fact has no canonical nb_buildings denominator", call.=FALSE)
-  projection$facts$denominator_count[service_rows] <- as.integer(denominator)
-  validate_scalar_projection(projection$facts, projection$descriptors, projection$eligible_territories)
-  projection
 }
 
 # Shared canonical fact-to-serving projection. Fixture-only completeness is
@@ -450,11 +337,16 @@ combine_scalar_projections <- function(...) {
   result
 }
 
-assert_complete_scalar_snapshot <- function(published_indicator_ids, projection) {
+assert_complete_scalar_snapshot <- function(published_indicator_ids, projection,
+                                            retired_indicator_ids=character()) {
+  if (!is.character(retired_indicator_ids) || anyNA(retired_indicator_ids) ||
+      any(!nzchar(retired_indicator_ids)) || anyDuplicated(retired_indicator_ids))
+    stop("Invalid explicit scalar retirement policy", call.=FALSE)
   omitted <- setdiff(as.character(published_indicator_ids), as.character(projection$descriptors$indicator_id))
-  if (length(omitted)) stop("Refusing partial scalar snapshot; omitted registered indicators: ",
-    paste(sort(omitted), collapse=", "), call.=FALSE)
-  invisible(TRUE)
+  unapproved <- setdiff(omitted, retired_indicator_ids)
+  if (length(unapproved)) stop("Refusing partial scalar snapshot; omitted registered indicators: ",
+    paste(sort(unapproved), collapse=", "), call.=FALSE)
+  invisible(omitted)
 }
 
 register_fixture_scalar_publisher <- function(registry, descriptor, completeness) {
@@ -472,22 +364,28 @@ scalar_content_version <- function(projection) {
 
 validate_scalar_comparison_projection <- function(projection) {
   group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
-    "statistic", "median", "member_count", "eligible_count", "missing_count",
+    "statistic", "median", "member_count", "eligible_count", "missing_count", "lineage_source_count",
     "scalar_content_version", "reference_content_version", "content_version")
   territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
     "territory_id", "value", "status", "rank", "tie_count", "rank_size",
     "scalar_content_version", "reference_content_version", "content_version")
-  if (!is.list(projection) || !all(c("groups", "territories", "scalar_content_version",
+  if (!is.list(projection) || !all(c("groups", "territories", "lineage", "scalar_content_version",
       "reference_content_version", "content_version") %in% names(projection)) ||
       !is.data.frame(projection$groups) || !is.data.frame(projection$territories) ||
       !setequal(names(projection$groups), group_fields) ||
-      !setequal(names(projection$territories), territory_fields))
+      !setequal(names(projection$territories), territory_fields) ||
+      !is.data.frame(projection$lineage) ||
+      !setequal(names(projection$lineage), c("comparison_context", "group_id", "territory_type",
+        "facet_id", "source_id", "vintage_id", "comparison_content_version")))
     stop("Scalar comparison projection is missing or contains undeclared fields", call.=FALSE)
   if (anyNA(projection[c("scalar_content_version", "reference_content_version", "content_version")]) ||
       any(!nzchar(unlist(projection[c("scalar_content_version", "reference_content_version", "content_version")]))))
     stop("Scalar comparison publication versions are invalid", call.=FALSE)
   groups <- projection$groups
   territories <- projection$territories
+  lineage <- projection$lineage
+  if (any(as.character(lineage$comparison_content_version) != projection$content_version))
+    stop("Scalar comparison lineage version is stale", call.=FALSE)
   contexts <- c("density_class", "epci", "bretagne", "same_level")
   levels <- c("commune", "epci", "departement")
   if (anyNA(groups[c("comparison_context", "group_id", "territory_type", "indicator_id", "statistic")]) ||
@@ -529,6 +427,22 @@ validate_scalar_comparison_projection <- function(projection) {
         !is.na(territories$rank_size))))
       stop("Scalar comparison ranks or tie counts are invalid", call.=FALSE)
   }
+  if (anyNA(lineage) || any(!lineage$comparison_context %in% contexts) ||
+      any(!lineage$territory_type %in% levels) ||
+      any(!grepl("^[a-z][a-z0-9_]{0,95}$", lineage$facet_id)) ||
+      any(!nzchar(trimws(lineage$group_id)) | !nzchar(trimws(lineage$source_id)) |
+        !nzchar(trimws(lineage$vintage_id))) ||
+      anyDuplicated(lineage) || any(!paste(lineage$comparison_context,lineage$group_id,
+        lineage$territory_type,lineage$facet_id,sep="\r") %in%
+        paste(groups$comparison_context,groups$group_id,groups$territory_type,groups$indicator_id,sep="\r")))
+    stop("Scalar comparison source lineage is invalid or has no published group", call.=FALSE)
+  lineage_key <- paste(lineage$comparison_context, lineage$group_id,
+    lineage$territory_type, lineage$facet_id, sep="\r")
+  group_lineage_key <- paste(groups$comparison_context, groups$group_id,
+    groups$territory_type, groups$indicator_id, sep="\r")
+  actual_lineage_counts <- tabulate(match(lineage_key, group_lineage_key), nbins=nrow(groups))
+  if (any(groups$lineage_source_count != actual_lineage_counts))
+    stop("Scalar comparison lineage counts do not match their groups", call.=FALSE)
   for (field in c("scalar_content_version", "reference_content_version", "content_version")) {
     if (any(as.character(groups[[field]]) != projection[[field]]) ||
         any(as.character(territories[[field]]) != projection[[field]]))
@@ -539,7 +453,8 @@ validate_scalar_comparison_projection <- function(projection) {
     scalar_content_version=projection$scalar_content_version,
     reference_content_version=projection$reference_content_version,
     groups=groups[setdiff(names(groups), dependency_columns)],
-    territories=territories[setdiff(names(territories), dependency_columns)]))
+    territories=territories[setdiff(names(territories), dependency_columns)],
+    lineage=lineage[setdiff(names(lineage), "comparison_content_version")]))
   if (!identical(computed_version, projection$content_version))
     stop("Scalar comparison content version does not match its rows and dependencies", call.=FALSE)
   invisible(projection)
@@ -617,6 +532,7 @@ project_scalar_comparisons <- function(scalar_projection, territory_reference,
 
   group_rows <- list()
   territory_rows <- list()
+  lineage_rows <- list()
   facts <- scalar_projection$facts
   for (descriptor_index in seq_len(nrow(descriptors))) {
     descriptor <- descriptors[descriptor_index, , drop=FALSE]
@@ -634,6 +550,17 @@ project_scalar_comparisons <- function(scalar_projection, territory_reference,
       selected <- indicator_facts[indicator_facts$territory_type == territory_type &
         indicator_facts$territory_id %in% ids, , drop=FALSE]
       selected <- selected[match(ids, selected$territory_id), , drop=FALSE]
+      source_rows <- scalar_projection$provenance[
+        scalar_projection$provenance$indicator_id == indicator_id &
+          scalar_projection$provenance$territory_id %in% ids, , drop=FALSE]
+      if (nrow(source_rows)) {
+        lineage_rows[[length(lineage_rows) + 1L]] <- unique(data.frame(
+          comparison_context=as.character(group$comparison_context[[1L]]),
+          group_id=as.character(group$group_id[[1L]]), territory_type=territory_type,
+          facet_id=indicator_id, source_id=as.character(source_rows$source_id),
+          vintage_id=as.character(source_rows$vintage_id), stringsAsFactors=FALSE))
+      }
+      source_count <- nrow(unique(source_rows[c("source_id", "vintage_id")]))
       status <- as.character(selected$status)
       status[is.na(status)] <- "not_published"
       value <- as.numeric(selected$value)
@@ -654,7 +581,8 @@ project_scalar_comparisons <- function(scalar_projection, territory_reference,
         indicator_id=indicator_id, statistic="median",
         median=if (length(values)) stats::median(values) else NA_real_,
         member_count=as.integer(length(ids)), eligible_count=as.integer(length(values)),
-        missing_count=as.integer(length(ids) - length(values)), stringsAsFactors=FALSE)
+        missing_count=as.integer(length(ids) - length(values)),
+        lineage_source_count=as.integer(source_count), stringsAsFactors=FALSE)
       territory_rows[[length(territory_rows) + 1L]] <- data.frame(
         comparison_context=as.character(group$comparison_context[[1L]]),
         group_id=as.character(group$group_id[[1L]]), territory_type=territory_type,
@@ -674,17 +602,23 @@ project_scalar_comparisons <- function(scalar_projection, territory_reference,
   }
   groups <- order_rows(groups, group_key)
   territories <- order_rows(territories, c(group_key, "territory_id"))
+  lineage <- if (length(lineage_rows)) do.call(rbind,lineage_rows) else data.frame(
+    comparison_context=character(),group_id=character(),territory_type=character(),
+    facet_id=character(),source_id=character(),vintage_id=character(),stringsAsFactors=FALSE)
+  lineage <- order_rows(unique(lineage),c("comparison_context","group_id","territory_type","facet_id","source_id","vintage_id"))
   version <- scalar_content_version(list(scalar_content_version=input_scalar_content_version,
-    reference_content_version=reference_content_version, groups=groups, territories=territories))
+    reference_content_version=reference_content_version, groups=groups, territories=territories,
+    lineage=lineage))
   add_versions <- function(x) {
     x$scalar_content_version <- input_scalar_content_version
     x$reference_content_version <- reference_content_version
     x$content_version <- version
     x
   }
-  result <- list(groups=add_versions(groups), territories=add_versions(territories),
+  result <- list(groups=add_versions(groups), territories=add_versions(territories), lineage=lineage,
     scalar_content_version=input_scalar_content_version,
     reference_content_version=reference_content_version, content_version=version)
+  result$lineage$comparison_content_version <- version
   validate_scalar_comparison_projection(result)
   result
 }
@@ -697,7 +631,7 @@ write_scalar_comparison_parquets <- function(projection, directory) {
     stop("Scalar comparison Parquet directory is invalid", call.=FALSE)
   dir.create(directory, recursive=TRUE, showWarnings=FALSE)
   targets <- file.path(directory, c("scalar_comparison_groups.parquet",
-    "scalar_comparison_territories.parquet"))
+    "scalar_comparison_territories.parquet", "scalar_comparison_lineage.parquet"))
   staged <- vapply(targets, function(path) tempfile(pattern="scalar-comparison-",
     tmpdir=dirname(path), fileext=".parquet"), character(1))
   backups <- vapply(targets, function(path) tempfile(pattern="scalar-comparison-backup-",
@@ -721,6 +655,7 @@ write_scalar_comparison_parquets <- function(projection, directory) {
   }, add=TRUE)
   nanoparquet::write_parquet(projection$groups, staged[[1L]])
   nanoparquet::write_parquet(projection$territories, staged[[2L]])
+  nanoparquet::write_parquet(projection$lineage, staged[[3L]])
   for (i in seq_along(targets)) {
     if (file.exists(targets[[i]])) {
       if (!file.rename(targets[[i]], backups[[i]]))
@@ -753,7 +688,8 @@ publish_registered_scalar_comparison <- function(projection, db) {
     changed <- !(is.data.frame(marker) && nrow(marker) == 1L &&
       identical(as.character(marker$content_version[[1L]]), projection$content_version) &&
       identical(as.character(marker$scalar_content_version[[1L]]), projection$scalar_content_version) &&
-      identical(as.character(marker$reference_content_version[[1L]]), projection$reference_content_version))
+      identical(as.character(marker$reference_content_version[[1L]]), projection$reference_content_version) &&
+      isTRUE(marker$lineage_row_count[[1L]] == nrow(projection$lineage)))
     if (changed) db$replace(projection)
     invisible(list(changed=changed, content_version=projection$content_version,
       scalar_content_version=projection$scalar_content_version,
@@ -774,30 +710,37 @@ scalar_comparison_postgres_adapter <- function(con) {
       "WHERE scalar.table_name='scalar_observation'",
       "AND reference.table_name='territory_reference'",
       "FOR SHARE OF scalar, reference")),
-    marker=function() DBI::dbGetQuery(con, "SELECT content_version, scalar_content_version,
+    marker=function() DBI::dbGetQuery(con, "SELECT content_version, scalar_content_version,lineage_row_count,
       reference_content_version FROM scalar_comparison_publication WHERE singleton"),
     replace=function(projection) {
+      DBI::dbExecute(con, "DELETE FROM comparison_source_lineage WHERE comparison_family='scalar'")
       DBI::dbExecute(con, "DELETE FROM scalar_comparison_territory")
       DBI::dbExecute(con, "DELETE FROM scalar_comparison_group")
       group_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
-        "statistic", "median", "member_count", "eligible_count", "missing_count")
+        "statistic", "median", "member_count", "eligible_count", "missing_count", "lineage_source_count")
       territory_fields <- c("comparison_context", "group_id", "territory_type", "indicator_id",
         "territory_id", "value", "status", "rank", "tie_count", "rank_size")
       DBI::dbWriteTable(con, "scalar_comparison_group",
         projection$groups[group_fields], append=TRUE, row.names=FALSE)
       DBI::dbWriteTable(con, "scalar_comparison_territory",
         projection$territories[territory_fields], append=TRUE, row.names=FALSE)
+      lineage <- projection$lineage
+      lineage$comparison_family <- "scalar"
+      lineage$comparison_content_version <- projection$content_version
+      DBI::dbWriteTable(con, "comparison_source_lineage",
+        lineage[c("comparison_family","comparison_context","group_id","territory_type",
+          "facet_id","source_id","vintage_id","comparison_content_version")], append=TRUE, row.names=FALSE)
       DBI::dbExecute(con, paste(
         "INSERT INTO scalar_comparison_publication(singleton, content_version, scalar_content_version,",
-        "reference_content_version, group_row_count, territory_row_count, published_at)",
-        "VALUES (true, $1, $2, $3, $4, $5, now())",
+        "reference_content_version, group_row_count, territory_row_count, lineage_row_count, published_at)",
+        "VALUES (true, $1, $2, $3, $4, $5, $6, now())",
         "ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,",
         "scalar_content_version=EXCLUDED.scalar_content_version,",
         "reference_content_version=EXCLUDED.reference_content_version,",
         "group_row_count=EXCLUDED.group_row_count,",
-        "territory_row_count=EXCLUDED.territory_row_count, published_at=EXCLUDED.published_at"),
+        "territory_row_count=EXCLUDED.territory_row_count, lineage_row_count=EXCLUDED.lineage_row_count, published_at=EXCLUDED.published_at"),
         params=list(projection$content_version, projection$scalar_content_version,
-        projection$reference_content_version, nrow(projection$groups), nrow(projection$territories)))
+        projection$reference_content_version, nrow(projection$groups), nrow(projection$territories), nrow(projection$lineage)))
       invisible(TRUE)
     }
   )
@@ -851,50 +794,47 @@ split_postgres_sql <- function(sql) {
 # owned schema using RESTRICT. Every object is schema-qualified.
 serving_smoke_schema_cleanup_sql <- function(quote_identifier, schema) {
   if (!is.function(quote_identifier) || length(schema) != 1L ||
-      !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical|it_building_publisher)_[A-Za-z0-9_]+$", schema))
+       !grepl("^(scalar_it|profile_it|series_it|reading_it|distribution_it|distribution_canonical|serving_it)_[A-Za-z0-9_]+$", schema))
     stop("Cleanup requires an owned smoke schema", call. = FALSE)
   qualified <- function(name) paste(as.character(quote_identifier(c(schema, name))), collapse=".")
-  tables <- c("observed_collection_comparison_territory", "observed_collection_comparison_group", "observed_collection_comparison_publication",
-    "profile_comparison_territory", "profile_comparison_group", "profile_comparison_publication",
+  tables <- c("comparison_source_lineage", "aedar_comparison_territory", "aedar_comparison_group",
+    "aedar_comparison_publication",
+   "observed_collection_comparison_territory", "observed_collection_comparison_lineage",
+   "observed_collection_comparison_group", "observed_collection_comparison_publication",
+   "profile_comparison_territory", "profile_comparison_group", "profile_comparison_publication",
     "scalar_comparison_territory", "scalar_comparison_group", "scalar_comparison_publication",
-    "ordered_series_comparison_territory", "ordered_series_comparison_group", "ordered_series_comparison_publication",
+   "ordered_series_comparison_territory", "ordered_series_comparison_lineage",
+   "ordered_series_comparison_zero_reason", "ordered_series_comparison_group",
+   "ordered_series_comparison_publication",
     "milieux_reading_absence", "aedar_territorial_aggregate",
     "milieux_reading_source", "series_observation_provenance", "series_dataset_observation", "series_named_reference_provenance", "series_named_reference",
-    "economy_activity_evidence", "economy_typed_reading", "milieux_typed_reading", "mobility_typed_reading",
-    "series_context_parent_policy", "habitat_typed_reading", "mobility_reading_clock", "mobility_reading_story", "mobility_reading_descriptor",
+    "economy_activity_evidence", "economy_typed_reading", "milieux_typed_reading",
+    "series_context_parent_policy", "habitat_typed_reading",
     "selected_reading_publication", "selected_reading_descriptor", "demographic_typed_reading", "demographic_reading_descriptor",
     "period_detail_observation", "anchored_membership", "observed_collection_category",
     "observed_collection_descriptor", "observed_collection_publication",
-    "mobility_density_distribution_point", "mobility_density_distribution_range", "mobility_density_distribution_descriptor",
-    "series_named_reference_descriptor", "series_dataset_descriptor",
+     "series_named_reference_descriptor", "series_dataset_descriptor",
     "series_dataset_publication", "series_provenance_revision", "milieux_population_provenance_revision", "ordered_series", "series_descriptor", "profile_observation_source",
     "profile_observation", "profile_descriptor_source", "profile_axis", "profile_descriptor",
-    "bpe_profile_evidence_source", "bpe_profile_evidence", "bpe_profile_class_axis", "bpe_profile_evidence_descriptor",
-    "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
-    "scalar_descriptor", "building_ramp", "building_grid", "building_evidence_descriptor_source",
-    "building_evidence_descriptor", "essential_service_access", "service_registry",
-    "territory_reference", "source_vintage", "source_dataset", "access_publication_metadata",
+     "scalar_observation_source", "scalar_observation", "scalar_descriptor_source",
+     "scalar_descriptor", "territory_reference", "source_vintage", "source_dataset",
     "table_publication")
-  functions <- c("reject_profile_insert()", "reject_smoke_value()", "reject_combined_smoke_value()", "reject_smoke_ramp()",
+  functions <- c("check_aedar_comparison_publication()", "reject_profile_insert()", "reject_smoke_value()", "reject_combined_smoke_value()", "reject_smoke_ramp()",
     "reject_series_smoke_insert()",
     "assert_profile_territory_level()", "assert_scalar_observation_has_source()",
     "assert_scalar_descriptor_sources()", "assert_scalar_levels()",
     "assert_scalar_descriptor_update()", "assert_scalar_territory_update()",
-    "assert_building_dataset_complete(integer, integer)", "assert_building_fact_source()",
-    "assert_building_descriptor_publication()", "assert_current_dataset_complete(integer)",
-    "validate_series_dataset_descriptor()", "validate_series_dataset_observation()",
+     "validate_series_dataset_descriptor()", "validate_series_dataset_observation()",
      "validate_series_dataset_publication()", "validate_series_observation_provenance()",
-     "assert_bpe_profile_evidence_complete()",
      "validate_series_named_reference()", "validate_series_named_reference_provenance()",
-      "validate_observed_collection_comparison_write()", "validate_observed_collection_comparison_publication()",
+       "validate_observed_collection_comparison_write()", "validate_observed_collection_comparison_publication()", "validate_observed_collection_comparison_lineage()",
       "validate_observed_collection_write()", "validate_anchored_membership()",
      "validate_period_detail_observation()", "validate_observed_collection_publication()",
       "validate_series_dataset_write()", "reject_series_provenance_revision_mutation()",
      "reject_milieux_population_provenance_mutation()",
     "validate_ordered_series()", "validate_anchored_membership()",
      "validate_period_detail_observation()", "validate_observed_collection_write()",
-      "validate_observed_collection_publication()", "assert_bpe_profile_evidence_complete()",
-      "assert_mobility_density_distribution_complete()", "validate_mobility_density_distribution_territory()")
+       "validate_observed_collection_publication()")
   c(paste("DROP TABLE IF EXISTS", vapply(tables, qualified, character(1)), "RESTRICT"),
     paste("DROP FUNCTION IF EXISTS", vapply(functions, function(signature) {
       split <- strsplit(signature, "(", fixed=TRUE)[[1L]]
@@ -937,8 +877,8 @@ cleanup_serving_smoke_schema <- function(connection, schema, kind) {
     reading="^reading_it_[A-Za-z0-9_]+$",
     distribution="^distribution_it_[A-Za-z0-9_]+$",
     distribution_canonical="^distribution_canonical_[A-Za-z0-9_]+$",
-    building="^it_building_publisher_[A-Za-z0-9_]+$",
-    series="^series_it_[A-Za-z0-9_]+$", NULL)
+    series="^series_it_[A-Za-z0-9_]+$",
+    serving="^serving_it_[A-Za-z0-9_]+$", NULL)
   if (length(kind) != 1L || is.na(kind) || is.null(expected_schema) ||
       length(schema) != 1L || is.na(schema) || !grepl(expected_schema, schema))
     stop("Cleanup requires an owned ", kind, " smoke schema; received ", schema, call. = FALSE)
@@ -957,9 +897,13 @@ cleanup_serving_smoke_schema <- function(connection, schema, kind) {
 
 # db is a narrow transaction adapter (transaction, marker, replace). Keeping
 # it injectable makes retry/rollback behavior testable without a live service.
-publish_registered_scalar <- function(registry, name, canonical, db) {
+publish_registered_scalar <- function(registry, name, canonical, db,
+                                      retired_indicator_ids=character()) {
   publisher <- registry[[name]]
   if (is.null(publisher)) stop("Unregistered scalar publisher", call. = FALSE)
+  if (!is.character(retired_indicator_ids) || anyNA(retired_indicator_ids) ||
+      any(!nzchar(retired_indicator_ids)) || anyDuplicated(retired_indicator_ids))
+    stop("Invalid explicit scalar retirement policy", call.=FALSE)
   if (!is.function(db$transaction) || !is.function(db$marker) || !is.function(db$replace) ||
       !is.function(db$reference_marker) || !is.function(db$validate_territories) ||
       !is.function(db$set_reference_version))
@@ -999,32 +943,50 @@ publish_registered_scalar <- function(registry, name, canonical, db) {
           paste(vintages$source_id, vintages$vintage_id)))
     stop("Scalar provenance refers to an undeclared dataset or vintage", call. = FALSE)
   version <- scalar_content_version(projection)
-  db$transaction({
-    if (is.function(db$lock)) db$lock()
-    reference <- db$reference_marker()
-    if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
-        !nzchar(reference$content_version[[1L]]) ||
-        (all(c("row_count", "actual_rows") %in% names(reference)) &&
-         reference$row_count[[1L]] != reference$actual_rows[[1L]]))
-      stop("Territory reference has no committed publication marker", call. = FALSE)
-    db$validate_territories(projection$eligible_territories, projection$descriptors)
-    marker <- db$marker("scalar_observation")
-    changed <- !(nrow(marker) && identical(as.character(marker$content_version[[1L]]), version))
-    reference_changed <- nrow(marker) && !identical(
-      as.character(marker$reference_content_version[[1L]]),
-      as.character(reference$content_version[[1L]]))
-    if (changed) publisher$publish(projection, db, version)
-    else if (reference_changed) db$set_reference_version(reference$content_version[[1L]])
-    invisible(list(changed = changed, compatibility_updated = reference_changed,
-                   content_version = version))
-  })
+  publication_db <- db
+  if (length(retired_indicator_ids)) {
+    if (!"retired_indicator_ids" %in% names(formals(db$replace)))
+      stop("Scalar database adapter does not support the explicit retirement policy", call.=FALSE)
+    replace_with_policy <- db$replace
+    publication_db$replace <- function(projection_arg, version_arg)
+      replace_with_policy(projection_arg, version_arg,
+        retired_indicator_ids=retired_indicator_ids)
+  }
+  validation_state <- new.env(parent=emptyenv())
+  validation_state$pending_retirement <- FALSE
+  result <- publish_owner_snapshot(
+    db = db, owner = "scalar_observation", content_version = version,
+    dependency_name = "territory_reference",
+    read_dependency = db$reference_marker,
+    validate_dependency = function(reference) {
+     if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
+         !nzchar(reference$content_version[[1L]]) ||
+         (all(c("row_count", "actual_rows") %in% names(reference)) &&
+          reference$row_count[[1L]] != reference$actual_rows[[1L]]))
+       stop("Territory reference has no committed publication marker", call. = FALSE)
+     if (is.function(db$validate_snapshot)) {
+       validation <- db$validate_snapshot(projection, retired_indicator_ids)
+       validation_state$pending_retirement <- isTRUE(validation$pending_retirement)
+     } else if (length(retired_indicator_ids)) {
+       stop("Scalar database adapter cannot validate the explicit retirement policy", call.=FALSE)
+     }
+     db$validate_territories(projection$eligible_territories, projection$descriptors)
+     },
+    publish_content = function(version_arg, dependency_arg)
+      publisher$publish(projection, publication_db, version),
+    rebind_dependency = db$set_reference_version,
+    requires_republish=function(marker, dependency) validation_state$pending_retirement)
+  invisible(list(changed = result$changed || result$republished_for_dependency,
+                 retirement_repaired=result$republished_for_dependency,
+                 compatibility_updated = result$rebound,
+                 content_version = result$content_version))
 }
 
 scalar_postgres_adapter <- function(con) {
   if (!requireNamespace("DBI", quietly = TRUE)) stop("DBI is required")
   list(
     transaction = function(expr) DBI::dbWithTransaction(con, expr),
-    lock = function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
+    lock = function(owner_arg) DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(594, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version, reference_content_version FROM table_publication WHERE table_name = $1", params = list(name)),
     reference_marker = function() DBI::dbGetQuery(con,
@@ -1038,16 +1000,47 @@ scalar_postgres_adapter <- function(con) {
                     paste(actual$territory_id, actual$territory_type)))
         stop("Scalar eligible territory universe differs from the committed reference", call. = FALSE)
     },
+    validate_snapshot = function(projection, retired_indicator_ids=character()) {
+      present <- DBI::dbGetQuery(con,
+        "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
+      assert_complete_scalar_snapshot(present, projection, retired_indicator_ids)
+      omitted <- setdiff(as.character(present),
+        as.character(projection$descriptors$indicator_id))
+      list(pending_retirement=length(intersect(omitted, retired_indicator_ids)) > 0L)
+    },
     set_reference_version = function(version) DBI::dbExecute(con,
       "UPDATE table_publication SET reference_content_version=$1 WHERE table_name='scalar_observation'",
       params = list(version)),
-    replace = function(projection, version) {
+    replace = function(projection, version, retired_indicator_ids=character()) {
       facts <- projection$facts
       descriptors <- projection$descriptors
       provenance <- projection$provenance
       quote_value <- function(x) {
         if (length(x) == 1L && is.na(x)) return("NULL")
         as.character(DBI::dbQuoteString(con, as.character(x)))
+      }
+      # Validate before any write. This repeats the no-op-path guard under the
+      # same publication lock/transaction so a changed live inventory cannot
+      # slip between validation and replacement.
+      present <- DBI::dbGetQuery(con,
+        "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
+      assert_complete_scalar_snapshot(present, projection, retired_indicator_ids)
+      omitted <- setdiff(as.character(present),
+        as.character(projection$descriptors$indicator_id))
+      retiring <- intersect(omitted, retired_indicator_ids)
+      if (length(retiring)) {
+        ids_sql <- paste(vapply(retiring, quote_value, character(1)), collapse=",")
+        DBI::dbExecute(con, paste0("DELETE FROM comparison_source_lineage ",
+          "WHERE comparison_family='scalar' AND facet_id IN (", ids_sql, ")"))
+        DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_territory ",
+          "WHERE indicator_id IN (", ids_sql, ")"))
+        DBI::dbExecute(con, paste0("DELETE FROM scalar_comparison_group ",
+          "WHERE indicator_id IN (", ids_sql, ")"))
+        # Retiring a scalar can change the published comparison set even when
+        # the scalar content token is unchanged. Make only this family's
+        # publication unavailable until its normal publisher restores it.
+        DBI::dbExecute(con,
+          "DELETE FROM scalar_comparison_publication WHERE singleton")
       }
       for (row in seq_len(nrow(projection$datasets))) {
         d <- projection$datasets[row, , drop = FALSE]
@@ -1059,13 +1052,16 @@ scalar_postgres_adapter <- function(con) {
         DBI::dbExecute(con, "INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO UPDATE SET version=EXCLUDED.version,reference_date=EXCLUDED.reference_date,publication_date=EXCLUDED.publication_date",
                        params = unname(as.list(v[c("source_id", "vintage_id", "version", "reference_date", "publication_date")])))
       }
-      # The scalar table is one table-owned snapshot. Refuse an incomplete
-      # replacement before deleting anything if it would drop a live cohort.
-      present <- DBI::dbGetQuery(con, "SELECT DISTINCT indicator_id FROM scalar_descriptor")$indicator_id
-      assert_complete_scalar_snapshot(present, projection)
+      # The scalar table is one table-owned snapshot; the only permitted live
+      # omissions were explicitly checked above and retire their comparison
+      # dependencies before descriptor deletion (their FK is not cascading).
       DBI::dbExecute(con, "DELETE FROM scalar_observation")
       DBI::dbExecute(con, "DELETE FROM scalar_descriptor_source")
-      DBI::dbExecute(con, "DELETE FROM scalar_descriptor")
+      if (length(retiring)) {
+        ids_sql <- paste(vapply(retiring, quote_value, character(1)), collapse=",")
+        DBI::dbExecute(con, paste0("DELETE FROM scalar_descriptor WHERE indicator_id IN (",
+          ids_sql, ")"))
+      }
       for (i in seq_len(nrow(descriptors))) {
         d <- descriptors[i, , drop = FALSE]
         levels <- as.character(d$allowed_levels[[1L]])
@@ -1074,7 +1070,10 @@ scalar_postgres_adapter <- function(con) {
                     "comparison_facet", "denominator_semantics", "completeness", "descriptor_version")
         values <- vapply(fields, function(field) quote_value(d[[field]][[1L]]), character(1))
         sql <- paste0("INSERT INTO scalar_descriptor(", paste(fields, collapse=","), ",allowed_levels) VALUES (",
-          paste(c(values, array_sql), collapse=","), ")")
+          paste(c(values, array_sql), collapse=","), ") ON CONFLICT(indicator_id) DO UPDATE SET ",
+          paste(vapply(setdiff(fields, "indicator_id"), function(field)
+            paste0(field, "=EXCLUDED.", field), character(1)), collapse=","),
+          ",allowed_levels=EXCLUDED.allowed_levels")
         DBI::dbExecute(con, sql)
         allowed_sources <- as.character(d$allowed_sources[[1L]])
         for (source_id in allowed_sources) {

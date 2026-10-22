@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from api.observed_collections import collection_comparison
+from api.observed_collections import collection_comparison, collection_snapshot
 
 
 class Cursor:
@@ -23,32 +23,37 @@ DESCRIPTOR = {"indicator_id": "grant_amount", "theme_id": "programmes",
 
 class PublishedConnection:
     def __init__(self, *, bad=None):
-        self.sql, self.bad = [], bad
+        self.sql, self.calls, self.bad = [], [], bad
 
     def execute(self, sql, params=None):
         self.sql.append(sql)
+        self.calls.append((sql,params))
+        if "to_regclass('observed_collection_comparison_lineage')" in sql:
+            return Cursor((None,False) if self.bad=="storage_missing" else ("observed_collection_comparison_lineage",True))
         if "FROM observed_collection_publication p" in sql:
             return Cursor(("collection-v1", "ref-v1", "ref-v1"))
         if "FROM observed_collection_comparison_publication" in sql:
             if self.bad == "marker_missing": return Cursor()
-            if self.bad == "marker_stale": return Cursor(("comparison-v1", "old", "ref-v1", 1, 2))
-            return Cursor(("comparison-v1", "collection-v1", "ref-v1", 1, 2))
-        if "SELECT count(*) FROM observed_collection_comparison_group" in sql:
-            return Cursor((1, 99) if self.bad == "count" else (1, 2))
-        if "FROM observed_collection_comparison_group" in sql:
-            row = ("median", 15.0, 2, 2, 0, "collection-v1", "ref-v1")
-            return Cursor(row)
+            if self.bad == "marker_stale": return Cursor(("comparison-v1", "old", "ref-v1", 1, 2, 1, True))
+            if self.bad == "lineage_unpublished": return Cursor(("comparison-v1", "collection-v1", "ref-v1", 1, 2, 1, False))
+            return Cursor(("comparison-v1", "collection-v1", "ref-v1", 1, 2, 1, True))
         if "FROM observed_collection_comparison_territory" in sql:
-            rows = [("c1", 10., "measured", 2, 1, 2, "collection-v1", "ref-v1"),
-                    ("c2", 20., "measured", 1, 1, 2, "collection-v1", "ref-v1")]
-            if self.bad == "missing": rows.pop()
-            if self.bad == "extra": rows.append(("c3", 30., "measured", 1, 1, 3, "collection-v1", "ref-v1"))
-            if self.bad == "bad_rank": rows[1] = (*rows[1][:3], 3, *rows[1][4:])
-            if self.bad == "bad_tie": rows[1] = (*rows[1][:4], 2, *rows[1][5:])
-            if self.bad == "bad_median": rows[1] = (rows[1][0], 21., *rows[1][2:])
-            if self.bad == "bad_version": rows[1] = (*rows[1][:6], "old", rows[1][7])
+            if "territory_id=%s" not in sql: raise AssertionError("focal-only comparison read expected")
+            row = ("c1", 10., "measured", 2, 1, 2, "collection-v1", "ref-v1", True)
+            if self.bad == "bad_rank": row = (*row[:3], 3, *row[4:])
+            if self.bad == "bad_tie": row = (*row[:4], 2, *row[5:])
+            if self.bad == "bad_version": row = (*row[:6], "old", row[7],row[8])
+            if self.bad == "bad_rank": row = (*row[:8],False)
+            return Cursor() if self.bad == "missing_focal" else Cursor(row)
+        if "FROM observed_collection_comparison_group\n" in sql:
+            row = ("median", 15.0, 2, 2, 0, 1, "collection-v1", "ref-v1", True)
+            return Cursor(row)
+        if "FROM observed_collection_comparison_lineage" in sql:
+            rows = [("source", "v1", "comparison-v1")]
+            if self.bad in ("lineage_missing", "empty_lineage"): rows = []
+            if self.bad == "lineage_stale": rows = [("source", "v1", "old")]
             return Cursor(rows=rows)
-        if "SELECT DISTINCT o.source_id" in sql:
+        if "FROM source_dataset sd JOIN source_vintage" in sql:
             return Cursor(rows=[("source", "Dataset", "v1", "2024", None, None)])
         raise AssertionError(sql)
 
@@ -60,10 +65,57 @@ def test_fixed_comparison_uses_published_sparse_facet_without_peer_values():
     assert (result["median"], result["rank"], result["rank_size"]) == (15., 2, 2)
     assert "focal_value" not in result and "rank_ties" not in result
     assert result["source_facet"] == {"detail": "housing", "observation_period": "2024"}
-    assert not any("period_detail_observation" in sql and "o.value" in sql for sql in conn.sql)
+    assert not any("period_detail_observation" in sql for sql in conn.sql)
+    assert not any("SELECT count(*)" in sql for sql in conn.sql)
+    assert not any("FROM observed_collection_comparison_territory" in sql and "territory_id=%s" not in sql for sql in conn.sql)
 
 
-@pytest.mark.parametrize("bad", ["missing", "extra", "bad_rank", "bad_tie", "bad_median", "bad_version", "count", "marker_missing", "marker_stale"])
+def test_fixed_collection_selects_median_in_sql_and_rejects_unsupported_fields_early():
+    conn=PublishedConnection()
+    result=collection_comparison(conn,DESCRIPTOR,"commune","c1","commune",("c1","c2"),
+        ("density_class","A","commune"),fields=("median",))
+    assert result["median"]==15.0 and result["status"]=="available"
+    assert "rank" not in result and "eligible_count" not in result
+    group_sql,group_params=next((sql,params) for sql,params in conn.calls
+        if "FROM observed_collection_comparison_group" in sql)
+    focal_sql,focal_params=next((sql,params) for sql,params in conn.calls
+        if "FROM observed_collection_comparison_territory" in sql)
+    assert "CASE WHEN %s THEN median" in group_sql and group_params[0] is True
+    assert all(value is False for value in focal_params[:4])
+    invalid=PublishedConnection()
+    with pytest.raises(HTTPException) as error:
+        collection_comparison(invalid,DESCRIPTOR,"commune","c1","commune",("c1","c2"),
+            ("density_class","A","commune"),fields=("focal_value",))
+    assert error.value.status_code==422 and not invalid.calls
+
+
+def test_fixed_read_work_is_independent_of_selected_cohort_size():
+    class Large(PublishedConnection):
+        def __init__(self, member_count):
+            super().__init__()
+            self.member_count = member_count
+
+        def execute(self, sql, params=None):
+            if "FROM observed_collection_comparison_group\n" in sql:
+                self.sql.append(sql); self.calls.append((sql,params))
+                return Cursor(("median",15.,self.member_count,2,self.member_count-2,1,"collection-v1","ref-v1",True))
+            return super().execute(sql,params)
+
+    sizes=[]
+    for count in (2,20000):
+        conn=Large(count)
+        result=collection_comparison(conn,DESCRIPTOR,"commune","c1","commune",
+            tuple(f"c{i}" for i in range(count)),("density_class","A","commune"))
+        sizes.append((len(conn.calls),result["selected_member_count"],
+            tuple(len(params) if isinstance(params,(tuple,list)) else 0 for _,params in conn.calls)))
+        assert not any("period_detail_observation" in sql for sql in conn.sql)
+        assert not any(isinstance(params,(tuple,list)) and any(isinstance(value,list) and len(value)>10
+            for value in params) for _,params in conn.calls)
+    assert sizes[0][0] == sizes[1][0]
+    assert sizes[0][1:] != sizes[1][1:]
+
+
+@pytest.mark.parametrize("bad", ["storage_missing", "missing_focal", "bad_rank", "bad_version", "lineage_missing", "lineage_stale", "lineage_unpublished", "marker_missing", "marker_stale"])
 def test_fixed_comparison_rejects_incomplete_or_invalid_rows(bad):
     with pytest.raises(HTTPException) as error:
         collection_comparison(PublishedConnection(bad=bad), DESCRIPTOR, "commune", "c1", "commune",
@@ -104,43 +156,99 @@ def test_custom_cohort_reads_peer_facts_not_comparison_tables():
 
 
 def test_theme_collection_only_route_passes_exact_fixed_context(monkeypatch):
-    from api import main
-
-    class ThemeConn:
-        def execute(self, sql, params=None):
-            if "SELECT indicator_id,label,unit,direction,comparison_facet" in sql: return Cursor(rows=[])
-            if "to_regclass('bpe_profile_evidence_descriptor')" in sql: return Cursor((None,))
-            if "to_regclass('series_dataset_descriptor')" in sql: return Cursor((None,))
-            if "table_name='territory_reference'" in sql: return Cursor(("ref",))
-            return Cursor()
-
+    from types import SimpleNamespace
+    from api import snapshot_reads
     observed = []
-    monkeypatch.setattr(main, "collection_descriptors", lambda *_a, **_kw: [DESCRIPTOR])
-    monkeypatch.setattr(main, "_comparison_cohort", lambda *_a: ("commune", ("c1", "c2"), {"kind":"density_class"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_a: ("density_class", "A", "commune"))
-    monkeypatch.setattr(main, "collection_comparison", lambda *a: observed.append(a[-1]) or {
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort_in_snapshot",
+        lambda *_a, **_kw: ("commune", ("c1", "c2"), {"kind":"density_class"}))
+    monkeypatch.setattr(snapshot_reads, "_fixed_scalar_comparison_context",
+        lambda *_a, **_kw: ("density_class", "A", "commune"))
+    monkeypatch.setattr(snapshot_reads, "collection_comparison", lambda *a, **_kw: observed.append(a[-1]) or {
         "content_version":"cv", "reference_content_version":"ref", "indicator_id":"grant_amount"})
-    monkeypatch.setattr(main, "_profile_comparison_results", lambda *_a: [])
-    monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_a, **_kw: ([], {}, None, None, None))
-    monkeypatch.setattr(main, "_demographic_reading_marker", lambda _c: None)
-    monkeypatch.setattr(main, "_milieux_reading_marker", lambda _c: None)
-    main._theme_comparison_snapshot(ThemeConn(), "commune", "c1", "programmes", None)
+    resource = snapshot_reads._ResolvedIndicatorResource(
+        None, (), None, (DESCRIPTOR,), None, None)
+    state = snapshot_reads._BatchReadSnapshotState()
+    state.indicator_resources["grant_amount"] = resource
+    class Connection:
+        def execute(self, sql, params=None): return Cursor(("commune",))
+    snapshot_reads._indicator_comparison_snapshot(
+        Connection(), "commune", "c1", "grant_amount", None, None, snapshot_state=state)
     assert observed == [("density_class", "A", "commune")]
 
 
 def test_fixed_comparison_preserves_sparse_unavailable_result():
     class Sparse(PublishedConnection):
         def execute(self, sql, params=None):
-            if "SELECT count(*) FROM observed_collection_comparison_group" in sql:
-                return Cursor((1, 2))
-            if "FROM observed_collection_comparison_group" in sql:
-                return Cursor(("median", 10., 2, 1, 1, "collection-v1", "ref-v1"))
+            if "FROM observed_collection_comparison_group\n" in sql:
+                return Cursor(("median", 10., 2, 1, 1, 1, "collection-v1", "ref-v1",True))
             if "FROM observed_collection_comparison_territory" in sql:
-                return Cursor(rows=[("c1", 10., "measured", 1, 1, 1, "collection-v1", "ref-v1"),
-                    ("c2", None, "not_published", None, None, None, "collection-v1", "ref-v1")])
+                return Cursor(("c1", 10., "measured", 1, 1, 1, "collection-v1", "ref-v1",True))
+            if "FROM observed_collection_comparison_lineage" in sql:
+                return Cursor(rows=[("source", "v1", "comparison-v1")])
             return super().execute(sql, params)
     result = collection_comparison(Sparse(), DESCRIPTOR, "commune", "c1", "commune", ("c1", "c2"),
                                    ("density_class", "A", "commune"))
     assert result["status"] == "unavailable"
     assert result["reason"] == "fewer_than_two_comparable_values"
     assert result["median"] is None and result["rank"] is None
+
+
+def test_period_detail_field_selection_projects_value_and_keeps_sparse_provenance():
+    class SnapshotConnection:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "to_regclass('observed_collection_descriptor')" in sql: return Cursor(("observed_collection_descriptor",))
+            if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
+            if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            if "FROM period_detail_observation o" in sql:
+                return Cursor(rows=[("housing", "Housing", "2024", None, "source", "Dataset", "v1", "2024", None, None)])
+            raise AssertionError(sql)
+
+    conn = SnapshotConnection()
+    projected = collection_snapshot(conn, DESCRIPTOR, "commune", "c1", fields=["status"])
+    entry = projected["entries"][0]
+    assert "value" not in entry and entry["status"] == "measured"
+    assert entry["detail"] == "housing" and entry["observation_period"] == "2024"
+    assert entry["sources"][0]["vintage_id"] == "v1"
+    select_sql, params = next((sql, params) for sql, params in conn.calls if "FROM period_detail_observation o" in sql)
+    assert "CASE WHEN %s THEN o.value" in select_sql and params[0] is False
+
+    full = collection_snapshot(SnapshotConnection(), DESCRIPTOR, "commune", "c1")
+    assert full["entries"][0]["value"] is None
+
+
+def test_period_detail_preflight_counts_actual_focal_rows():
+    class CountConnection:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "to_regclass('observed_collection_descriptor')" in sql: return Cursor(("observed_collection_descriptor",))
+            if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
+            if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            if "SELECT count(*) FROM period_detail_observation" in sql: return Cursor((37,))
+            raise AssertionError(sql)
+
+    conn = CountConnection()
+    estimate = collection_snapshot(conn, DESCRIPTOR, "commune", "c1", preflight_only=True)
+    assert estimate["work_units"] == 37
+    assert not any("SELECT o.detail_key" in sql for sql, _ in conn.calls)
+
+
+def test_anchored_membership_preflight_counts_resolved_anchor_rows():
+    descriptor = {**DESCRIPTOR, "kind": "anchored_membership"}
+
+    class CountConnection:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=None):
+            self.calls.append((sql, params))
+            if "SELECT count(*) FROM anchored_membership" in sql: return Cursor((241,))
+            if "to_regclass('observed_collection_descriptor')" in sql: return Cursor(("observed_collection_descriptor",))
+            if "FROM territory_reference" in sql: return Cursor(("Focal", "commune"))
+            if "FROM observed_collection_publication" in sql: return Cursor(("collection-v1", "ref-v1", "ref-v1"))
+            raise AssertionError(sql)
+
+    conn = CountConnection()
+    estimate = collection_snapshot(conn, descriptor, "commune", "c1", preflight_only=True)
+    assert estimate["work_units"] == 241
+    assert not any("SELECT t.territory_id" in sql for sql, _ in conn.calls)

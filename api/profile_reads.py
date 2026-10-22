@@ -1,8 +1,12 @@
 """Focal-only declared profiles inside the caller's read-only DB snapshot."""
 from fastapi import HTTPException
+from api.field_selection import normalize_field_selection
 
 
-def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicator_id=None, include_cells=True):
+def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicator_id=None, include_cells=True,
+                   fields=None, include_all_descriptors=False):
+    selection = normalize_field_selection(fields, {"value", "status"})
+    project_value = selection is None or "value" in selection
     descriptors = conn.execute("""SELECT indicator_id,label,unit,allowed_levels,descriptor_version,
         comparison_detail,comparison_sex,comparison_direction,comparison_scalar,required_scalar_version,denominator_semantics,detail_units_required
         FROM profile_descriptor WHERE (%s::text IS NULL OR theme_id=%s)
@@ -30,14 +34,16 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
                     or not set(d[3]).issubset(facet[2]) or facet[3] != d[8]):
                 raise HTTPException(503, 'Profile scalar dependency is stale or incompatible')
     if not include_cells:
-        return [{'indicator': d[0], 'comparison_scalar': d[8]} for d in descriptors if d[8]], marker[0]
+        return [{'indicator': d[0], 'comparison_scalar': d[8]} for d in descriptors
+                if include_all_descriptors or d[8]], marker[0]
     ids = [d[0] for d in descriptors]
     axes_by_id = {}
     for row in conn.execute("""SELECT indicator_id,axis_name,axis_key,label,ordinal,unit FROM profile_axis
         WHERE indicator_id=ANY(%s) ORDER BY indicator_id,axis_name,ordinal""", (ids,)).fetchall():
         axes_by_id.setdefault(row[0], []).append(row[1:])
     cells_by_id = {}
-    for row in conn.execute("""SELECT o.indicator_id,o.detail_key,o.sex_key,o.value,o.status,
+    for row in conn.execute("""SELECT o.indicator_id,o.detail_key,o.sex_key,
+        CASE WHEN %s THEN o.value ELSE NULL::double precision END AS value,o.status,
         COALESCE((SELECT json_agg(json_build_object('source_id',os.source_id,'vintage_id',os.vintage_id,
           'name',sd.name,'version',sv.version,'reference_date',sv.reference_date,'publication_date',sv.publication_date)
           ORDER BY os.source_id,os.vintage_id) FROM profile_observation_source os
@@ -45,7 +51,7 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
           WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id
             AND os.detail_key=o.detail_key AND os.sex_key=o.sex_key),'[]'::json)
         FROM profile_observation o WHERE o.indicator_id=ANY(%s) AND o.territory_id=%s AND o.territory_type=%s""",
-        (ids, territory_id, territory_type)).fetchall():
+        (project_value, ids, territory_id, territory_type)).fetchall():
         cells_by_id.setdefault(row[0], []).append(row[1:])
     profiles = []
     for d in descriptors:
@@ -83,12 +89,19 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
         if any(not row[4] for row in rows):
             raise HTTPException(503, 'Profile cell provenance is unavailable')
         comparison_unit = detail_units.get(d[5], d[2])
+        cell_results = []
+        for detail, sex in expected:
+            cell = {'detail': detail, 'sex': sex or None, 'unit': detail_units[detail],
+                    'denominator_semantics': d[10], 'status': cells[(detail,sex)][3],
+                    'sources': cells[(detail,sex)][4]}
+            if project_value:
+                cell['value'] = cells[(detail,sex)][2]
+            cell_results.append(cell)
         profiles.append({'indicator': d[0], 'label': d[1], 'unit': d[2], 'denominator_semantics': d[10], 'descriptor_version': d[4],
             'content_version': marker[0], 'comparison_scalar': d[8], 'required_scalar_version': d[9],
             'allowed_levels': d[3],
             'comparison_point': None if d[8] else {'detail': d[5], 'sex': d[6], 'direction': d[7], 'unit': comparison_unit},
             'axes': [{'name': name, 'key': key, 'label': label, 'order': order,
                       'unit': detail_units[key] if name == 'detail' else unit} for name,key,label,order,unit in axes],
-            'cells': [{'detail': detail, 'sex': sex or None, 'unit': detail_units[detail], 'denominator_semantics': d[10], 'value': cells[(detail,sex)][2],
-                       'status': cells[(detail,sex)][3], 'sources': cells[(detail,sex)][4]} for detail,sex in expected]})
+            'cells': cell_results})
     return profiles, marker[0]

@@ -1,7 +1,7 @@
 test_that("ADR-0039 comparison family inventory covers in-scope publisher families", {
   expect_setequal(ADR0039_COMPARISON_FAMILIES, c(
     "declared_profile", "numeric_period_collection",
-    "numeric_detail_collection", "scalar", "ordered_series"
+    "numeric_detail_collection", "scalar", "ordered_series", "aedar_fixed"
   ))
   themes <- lapply(c("habitat", "mobilite"), lire_theme_metadata)
   details <- unlist(lapply(themes, declared_detail_profile_ids), use.names=FALSE)
@@ -24,7 +24,7 @@ test_that("ADR-0039 comparison family inventory covers in-scope publisher famili
   expect_length(c("structure_age", details, "distribution_dpe"), 10L)
   root <- pkgload::pkg_path()
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(root, "..", "public", "data"))
-  habitat_rows <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_habitat.parquet"))
+  habitat_rows <- lire_indicateurs_commis("habitat", canonical_dir)
   habitat_canonical <- list(indicateurs=habitat_rows,
     territoires=unique(data.frame(territoire=as.character(habitat_rows$territoire),
       type=as.character(habitat_rows$type))))
@@ -56,6 +56,40 @@ test_that("declared profile comparison publishes fixed-context median, ranks and
   expect_setequal(unique(result$groups$comparison_context), c("density_class", "epci", "bretagne"))
 })
 
+test_that("profile comparison publication emits exact median and nonfocal ranks/ties from complete facts", {
+  profile <- list(descriptor=list(indicator_id="housing_profile", levels="commune",
+    comparison_detail="old", comparison_sex=NA_character_, comparison_direction="high"),
+    facts=data.frame(territory_id=c("a","b","c","d"), territory_type="commune",
+      detail="old", sex="", value=c(4,4,1,NA_real_),
+      status=c("measured","measured","measured","suppressed")))
+  reference <- data.frame(territory_id=c("a","b","c","d","r"),
+    territory_type=c(rep("commune",4),"region"),
+    epci_id=c(rep("epci-1",4),NA_character_),
+    density_class_code=c(rep("dense",4),NA_character_))
+
+  result <- project_declared_profile_comparisons(list(profile), reference, "profile-v1", "reference-v1")
+  group <- result$groups[result$groups$comparison_context == "bretagne",]
+  rows <- result$territories[result$territories$comparison_context == "bretagne",]
+
+  expect_equal(nrow(rows), 4L)
+  expect_setequal(rows$territory_id, c("a", "b", "c", "d"))
+  expect_equal(group$statistic, "median")
+  expect_equal(group$member_count, 4L)
+  expect_equal(group$eligible_count, 3L)
+  expect_equal(group$missing_count, 1L)
+  expect_equal(group$median, 4)
+  expect_equal(rows$rank[rows$territory_id == "a"], 1L)
+  expect_equal(rows$rank[rows$territory_id == "b"], 1L)
+  expect_equal(rows$rank[rows$territory_id == "c"], 3L)
+  expect_equal(rows$tie_count[rows$territory_id == "a"], 2L)
+  expect_equal(rows$rank_size[rows$territory_id == "a"], 3L)
+  unavailable <- rows[rows$territory_id == "d",]
+  expect_equal(unavailable$status, "suppressed")
+  expect_true(all(is.na(unavailable[c("value", "rank", "tie_count", "rank_size")])) )
+  expect_true(all(rows$profile_content_version == "profile-v1"))
+  expect_true(all(rows$reference_content_version == "reference-v1"))
+})
+
 test_that("profile comparison Parquet generations are immutable and version-keyed", {
   directory <- tempfile("profile-comparison-artifact-"); dir.create(directory)
   old <- list(groups=data.frame(indicator_id="old", profile_content_version="old-v"),
@@ -75,8 +109,8 @@ test_that("profile comparison Parquet generations are immutable and version-keye
 })
 
 test_that("serving publication script requests profile target only with explicit opt-in", {
-  expect_identical(serving_publication_target_names(FALSE), "publie_tables_service")
-  expect_identical(serving_publication_target_names(TRUE), c("publie_tables_service", "publie_profiles_declares"))
+  expect_identical(backend_publication_target_names(FALSE), "publie_backend_retained")
+  expect_identical(backend_publication_target_names(TRUE), c("publie_backend_retained", "publie_profiles_declares"))
 })
 
 test_that("dense profile validator rejects incomplete, duplicate, and undeclared cells", {
@@ -290,46 +324,11 @@ test_that("canonical regional Mobility producers feed complete profiles and supp
     "stationnement_velo_par_voiture")))
 })
 
-test_that("Mobility density signature preserves independent range, density and decile coordinates", {
-  metadata <- lire_theme_metadata("mobilite")
-  fields <- c("territoire", "type", "story_key", "dens_min", "dens_max",
-    paste0("dens_", 1:10), paste0("dec_", 1:10), "vintage_source", "vintage_version",
-    "vintage_date_reference", "vintage_date_publication")
-  history <- as.data.frame(setNames(rep(list(NA), length(fields)), fields), stringsAsFactors=FALSE)
-  history[1,] <- c(list("35238", "commune", "vingt-minutes-sans-voiture", 1, 52),
-    as.list(seq(.01,.10,.01)), as.list(c(1,4,8,12,18,NA,NA,33,42,52)),
-    list(metadata$source_records$mobilite_snapshot$dataset,"2026-02","2026-02-28","2026-08-06"))
-  vintage <- data.frame(id="mobilite_snapshot",source=metadata$source_records$mobilite_snapshot$dataset,
-    version="2026-02",date_reference="2026-02-28",date_publication="2026-08-06")
-  histories <- do.call(rbind, lapply(list(c("35238","commune"), c("200000001","epci"),
-    c("35","departement"), c("53","region")), function(identity) {
-      row <- history
-      row$territoire <- identity[[1L]]
-      row$type <- identity[[2L]]
-      row
-  }))
-  projected <- project_mobility_density_distribution(histories, vintage, metadata)
-  focal_range <- projected$ranges[projected$ranges$territory_id == "35238",]
-  focal_points <- projected$points[projected$points$territory_id == "35238",]
-  expect_equal(focal_range$range_min, 1)
-  expect_equal(focal_range$range_max, 52)
-  expect_equal(focal_points$density, seq(.01,.10,.01))
-  expect_equal(focal_points$decile, c(1,4,8,12,18,NA,NA,33,42,52))
-  expect_identical(focal_points$ordinal, 0:9)
-  expect_setequal(unique(projected$ranges$territory_type), c("commune","epci","departement","region"))
-  expect_identical(focal_points$decile_status[6:7], c("not_available","not_available"))
-  restricted <- metadata
-  restricted$distribution_contracts$mobilite_density_distribution$allowed_focal_levels <- "commune"
-  expect_error(project_mobility_density_distribution(histories, vintage, restricted), "outside.*producer-declared focal levels")
-  expect_error(project_mobility_density_distribution(history[c("territoire", "type")], vintage, metadata),
-    "fields are incomplete")
-})
-
 test_that("the four Habitat detail profiles project canonical cells including regional facts", {
   metadata <- lire_theme_metadata("habitat")
   root <- pkgload::pkg_path()
   canonical_dir <- Sys.getenv("LUSK_TEST_CANONICAL_DATA_DIR", unset=file.path(root, "..", "public", "data"))
-  rows <- nanoparquet::read_parquet(file.path(canonical_dir, "indicateurs_habitat.parquet"))
+  rows <- lire_indicateurs_commis("habitat", canonical_dir)
   territories <- unique(data.frame(territoire=as.character(rows$territoire), type=as.character(rows$type)))
   canonical <- list(indicateurs=rows, territoires=territories)
   for (id in c("mix_logements", "statut", "type", "age_du_bati")) {
@@ -571,7 +570,7 @@ test_that("registered publication keeps marker-bound immutable Parquet generatio
     profile_content_version(project_structure_age_profile(changed,metadata)), "ref-v1")
   orphan_version <- profile_content_version(expected_changed)
   orphan_paths <- file.path(state$artifact_dir,paste0("profile-comparison-",orphan_version),
-    c("groups.parquet","territories.parquet"))
+    c("groups.parquet","territories.parquet","lineage.parquet"))
   expect_identical(state$marker,old_marker); expect_identical(state$facts,old_facts)
   expect_identical(state$artifact_version,old_artifact); expect_true(all(file.exists(old_paths)))
   expect_true(all(file.exists(orphan_paths))); expect_false(identical(orphan_version,state$artifact_version))
@@ -593,6 +592,25 @@ test_that("registered publication keeps marker-bound immutable Parquet generatio
   expect_true(sum(file.exists(partial_paths)) == 1L)
   publish(changed_again)
   expect_true(all(file.exists(partial_paths)))
+})
+
+test_that("declared profile serving artifacts consume the same projection as the database publisher", {
+  metadata <- lire_theme_metadata("habitat")
+  payload <- payload_habitat()
+  root <- tempfile("profile-serving-"); dir.create(root)
+  on.exit(unlink(root, recursive = TRUE), add = TRUE)
+  binding <- strrep("1a", 16L)
+  published <- materialize_theme_profile_artifacts(payload, metadata, NULL, "habitat", root, binding)
+  expect_setequal(names(published), profile_serving_owners(metadata))
+  # The stored content version is exactly the version the database publisher
+  # recomputes from the same restored projection, so the artifact and the live
+  # marker can never diverge.
+  restored <- read_profile_serving_profiles(root, names(published), scalar_binding = binding)
+  for (owner in names(published))
+    expect_identical(published[[owner]], profile_content_version(restored[[owner]]))
+  # The verified scalar binding round-trips through the artifact directory.
+  cache_profile_scalar_binding(binding, root)
+  expect_identical(read_profile_scalar_binding(root), binding)
 })
 
 test_that("profile smoke cleanup removes only its owned schema in dependency order with RESTRICT", {

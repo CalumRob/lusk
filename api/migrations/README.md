@@ -1,4 +1,15 @@
-# Migration 016: bounded BPE profile evidence
+# PostgreSQL migration history
+
+> **Historical chronology, not a current runbook.** Sections for migrations
+> 001–035 describe their original change and verification context; many legacy
+> paths cited there have since been retired. The current retained schema is
+> `api/schema.sql`; the latest guarded upgrade proofs are migrations 036 through
+> 039 as described in [`api/tests/integration/README.md`](../tests/integration/README.md).
+> For the scalar and ordered-series comparison repair, the dependency order is
+> **030 -> 039 -> 033 -> 034**; 039 itself creates no lineage columns.
+> Do not execute old commands in this chronology as current operating guidance.
+
+# Migration 016: bounded BPE profile evidence (historical)
 
 Migration 016 adds a dedicated, registered `bpe_profile_evidence` publication;
 it does not put BPE class counts into the median-only declared-profile shape.
@@ -82,16 +93,24 @@ identity. Selected-theme scalar reads exclude legacy NULL identities. Fresh
 `schema.sql` requires a valid theme key. This additive migration does not activate
 a fiche consumer or authorize any live database application.
 
-The OCS-GE publisher requires canonical `indicateurs_milieux.parquet` to carry
-producer-emitted `state_role` and `source_components` columns. A stale artifact
-is rejected before the smoke script opens its disposable schema; do not
-reconstruct lineage by parsing `periode_artif`. Regenerate artifacts through the
-normal pipeline using its own data copy, then run focused fixtures and the
-documented slow byte-identical targets parity audit before treating the producer
-change as campaign-ready. A worktree without `pipeline/data/raw` cannot perform
-the final real-artifact/API rehearsal.
+The OCS-GE publisher requires the canonical Milieux series artifact
+(`series-serving/artif_par_habitant/`, materialized from the theme payload)
+to carry producer-emitted `state_role` and `source_components` lineage. A
+stale artifact is rejected before the smoke script opens its disposable
+schema; do not reconstruct lineage by parsing `periode_artif`. Regenerate
+artifacts through the normal pipeline using its own data copy, then run
+focused fixtures and the documented slow byte-identical targets parity audit
+before treating the producer change as campaign-ready. A worktree without
+`pipeline/data/raw` cannot perform the final real-artifact/API rehearsal.
+(#757 retired the theme-grouped `indicateurs_milieux.parquet`; the typed
+serving artifacts under `public/data/` are the canonical inputs now.)
 
-# Migration 009 operator procedure
+# Migration 009 operator procedure (historical; superseded)
+
+This procedure is retained as historical evidence only. It is not a current
+migration selector or supported operator instruction; consult the current
+036/037 guarded procedures and obtain owner/operator approval for any future
+production change.
 
 Migration 009 is reserved for issue #600 and is **not** part of fresh-install
 `schema.sql`. It removes only the retired `public.dataset_publication` relation.
@@ -351,6 +370,16 @@ publisher. Apply only after the separate restored-database upgrade rehearsal,
 backup, and operator approval. This source change does not apply serving DDL or
 publish production data.
 
+# Migration 031 — fixed-context AEDAR comparisons
+
+`032_aedar_fixed_comparisons.sql` adds source-shaped group and territory result
+tables plus an independently versioned publication marker. The marker pins the
+exact AEDAR aggregate and territory-reference publication versions; its deferred
+constraint validates row counts and eligible/missing membership before commit.
+The API rejects mismatched dependency markers. Fresh installs carry matching
+tables, constraints and grants in `schema.sql`. The migration is additive and
+does not publish production data.
+
 # Migration 031 — AEDAR TYPEQU metadata
 
 `031_aedar_typequ_metadata.sql` adds the official BPE 2025 domain/subdomain
@@ -362,3 +391,252 @@ must carry a complete hierarchy and a consistent `classified` / `hors_gamme` /
 `absent` state. Fresh installs enforce the same contract in `schema.sql`.
 Metadata is versioned coherently with the AEDAR aggregate publication; this
 migration does not publish data or imply production rollout.
+# Migration 034: ordered-series comparison provenance
+
+`034_ordered_series_comparison_lineage.sql` publishes ordered-series comparison
+axis metadata and immutable revision associations at resolved group/axis grain,
+plus Raccordement model-zero reason counts. The API fixed-context path reads
+these rows alongside the existing group/focal result; it no longer scans peer
+observations to rediscover declared axes, support or lineage. Existing marker
+rows retain NULL lineage counts, distinguishing an unrepublished legacy
+snapshot from a publisher-declared zero-lineage axis; fixed reads fail closed
+until the registered R publisher republishes the owned series. Arbitrary selections and raw series
+observations keep their existing request-time behavior. Fresh installs carry
+the same constrained relations and publication metadata in `schema.sql`.
+This migration is additive and does not publish data or authorize deployment.
+
+# Migration 033 — scalar/profile comparison provenance
+
+`033_comparison_source_lineage.sql` adds group/facet source-vintage associations
+for scalar and profile comparisons. Existing rows deliberately receive NULL
+lineage counts (rather than zero), so an old publication cannot be mistaken for
+a newly published, legitimately empty lineage. Fixed comparison reads fail
+closed until the normal R publisher replaces those comparison projections.
+Fresh installs carry the constrained lineage relation and non-null count
+contracts in `schema.sql`.
+
+# Migration 035 — numeric collection comparison provenance
+
+`035_numeric_collection_comparison_lineage.sql` adds collection source-vintage
+associations, support-shape checks, and deferred completeness validation.
+Existing publication rows start `lineage_complete=false`, so they remain
+unavailable until normal publisher replacement. A genuinely empty new
+comparison remains valid when the publisher declares zero eligible support and
+zero lineage. The migration is additive and does not publish data or authorize
+deployment.
+
+# Migration 036 — retire legacy accessibility serving objects
+
+`036_retire_legacy_accessibility_serving.sql` removes the BPE evidence, building
+access, service-access, and mobility-density distribution serving tables and
+their owned validation functions. It removes their obsolete publication tokens
+and narrows the shared publication-token constraints to retained owners. It
+does not use `CASCADE`: an unexpected dependent object aborts the transaction
+for explicit operator review. Retained canonical source records, scalar/profile/
+series/collection/AEDAR facts, provenance, and publication versions are preserved.
+The guarded integration proof applies this migration to a populated schema
+created from the pinned pre-retirement schema, verifies retained values and
+tokens, and checks that excluded tables/functions are absent. This migration
+only changes the serving schema; it does not authorize deployment.
+
+# Migration 038 — set-based owned-series provenance validation
+
+`038_owned_series_provenance_set_validation.sql` replaces only the
+`validate_series_dataset_publication()` trigger function. The focal
+observation-to-provenance check becomes one `EXCEPT` set difference over the
+exact `(dataset_id,indicator_id,territory_id,axis_value)` key instead of a
+correlated `NOT EXISTS`. The correlated form can plan as a nested loop that
+rescans a dataset's provenance rows once per observation row: on a freshly
+written, unanalyzed schema the guarded 4,745-row publication spent 11,264,631
+index-tuple fetches and 13.2 s in COMMIT; after the rewrite it spends 14,235
+fetches and 0.94 s, and a 28,105-row publication commits in 5.8 s. The two
+sets of figures are separate runs with different counter scopes: the
+real-publisher numbers count `idx_tup_fetch` on
+`series_observation_provenance` alone, while the guarded 4,744-observation
+regression counts `seq_tup_read + idx_tup_fetch` over both focal relations
+(37,952 visits). Counters are PostgreSQL 18.6 cumulative statistics read
+through `pg_stat_force_next_flush()` and `pg_stat_user_tables`; they record
+work, not a guaranteed physical plan. Every other
+check, error message, marker `row_count` contract, per-row provenance trigger
+and the `NEW.dataset_id` scope are unchanged, so per-owner atomic replacement
+and direct SQL rejection guarantees are preserved. The migration is additive:
+no table, column, index, trigger or data change, and it does not analyze shared
+tables. Fresh installs carry the same function body in `schema.sql`. The guarded
+integration proof installs migration 015's validator, applies 038, and compares
+the migrated function and its accepted/rejected outcomes with a fresh schema;
+the work regression is pinned by PostgreSQL tuple-visit counters rather than a
+wall-clock threshold. This migration does not publish data or authorize
+deployment.
+
+# Migration 039 — restore scalar and ordered-series comparison bases
+
+`039_comparison_base_objects.sql` repairs the retained upgrade gap behind #806:
+fresh installs receive the six scalar and ordered-series comparison base
+relations from `schema.sql`, but no retained migration creates them. Apply it
+in this dependency order:
+
+    030 -> 039 -> 033 -> 034
+
+Apply each step with `search_path` set to the target schema only; 039 uses
+`current_schema()` and unqualified relation names. Current 030 owns the profile
+and numeric-collection comparison bases that 033 also alters; the scalar base
+DDL instead comes from the deleted historical
+`030_scalar_comparison_aggregates.sql` (commit c6d29805), and the ordered-series
+base DDL from commit 7535ce9b. 039 owns only
+`scalar_comparison_{publication,group,territory}` and
+`ordered_series_comparison_{publication,group,territory}`. It deliberately
+creates the exact **pre-lineage** shapes; do not create the current lineage
+columns and then run 033/034 again.
+
+039 classifies each family independently and validates the full catalog contract
+for every existing `present` or `current` relation before target DDL: columns,
+types and nullability; defaults; all PK/FK/CHECK definitions and FK actions;
+constraint validation state; required valid backing indexes; user-trigger
+absence; and reader/publisher privileges. A missing required grant on an
+existing family is a hard failure, not a repair. Grants are issued only as
+part of creating an absent family.
+Extra valid non-unique independent indexes and grants to other roles are
+preserved; unexpected unique/invalid independent indexes, reader write access,
+reader grant options, and user triggers are rejected. Extra publisher privileges
+are preserved. No unrelated object is rewritten.
+
+039 classifies each family independently:
+
+- `absent`: no base relations. 039 creates the pre-lineage contract. Run the
+  corresponding lineage migration next (033 for scalar, 034 for ordered series).
+- `present`: all three base relations with the exact pre-lineage contract. 039
+  is a validated structural no-op. Run the corresponding lineage migration next.
+- `current`: all three base relations plus the exact 033/034 lineage columns.
+  039 is a structural no-op. Do **not** run that family's lineage migration
+  again.
+- Any other shape — one or two base relations, mixed lineage columns, lineage
+  relations without their base family, a non-table relation, or an unexpected
+  column/type/nullability — aborts inside the migration transaction before the
+  target schema is mutated.
+
+The migration preserves all existing facts, descriptors, sources, publication
+markers, roles and unrelated objects; it creates no producer data and no
+lineage relations. It reproduces the base primary keys, foreign keys, checks
+and grants from the pinned pre-lineage contract. The retained 034
+`ordered_series_comparison_zero_reason` foreign key differs from fresh
+`schema.sql` (034 uses `ON DELETE CASCADE` and is not deferrable; fresh is
+deferrable and does not cascade). That pre-existing shape is deliberately not
+changed here; the R publisher deletes comparison groups directly before
+rewriting them, so 034's cascade is load-bearing on the upgrade path. The
+guarded proof records the difference rather than hiding it.
+
+For a read-only before/after operator inventory (not a migration command), use
+[`039_operator_state_inventory.sql`](039_operator_state_inventory.sql) with an
+explicit target schema and a read-only connection. Run it before and after the
+approved pack, retaining both outputs:
+
+```powershell
+psql "$READ_ONLY_DSN" -X -v ON_ERROR_STOP=1 -v target_schema=public `
+  -f api/migrations/039_operator_state_inventory.sql
+```
+
+The inventory reports each family's **shape only**, all columns/defaults,
+constraints and FK actions, index validity/uniqueness, user triggers, effective
+reader/publisher grants, and exact row counts for comparison storage plus the
+protected fact/marker tables. Its owner-migration presence list separately
+reports the six 039 bases, the 034/035 lineage tables, the 030 profile and
+collection foundations, the 032 AEDAR foundations, and the 033 shared lineage
+table; 039 does not create or validate those separately owned families.
+The inventory performs exact `count(*)` scans (including scalar observations
+and ordered-series facts) for protected relations that exist. These are not
+catalog-only estimates and may be resource-intensive on a large serving schema.
+The read-only transaction sets a 15-second statement timeout and 3-second lock
+timeout; if a timeout aborts the transaction, treat that run as incomplete and
+retain no partial output as a valid pre/post inventory. Keep `ON_ERROR_STOP=1`
+so psql stops at the error. Do not raise the limits without an operator-approved
+read-only execution plan.
+Its `observed_shape_only_state` labels (`ABSENT_SHAPE_ONLY`,
+`PRESENT_SHAPE_ONLY`, `CURRENT_SHAPE_ONLY`, or
+`INCOMPATIBLE_SHAPE_ONLY / INVESTIGATE`) are presence/column-shape hints only;
+`structural_validation_performed` is always `false`. A shape classified as
+present or current is **never by itself evidence of structural validity, safe
+application, or a no-op**. This inventory is not a parallel contract validator.
+Before *any target-schema change*, migration 039's full pre-DDL structural
+contract validator remains required and authoritative for its two families;
+only a successful validator run is approval of those families' contract.
+Do not use this inventory's shape label alone to decide apply/skip/no-op, and do
+not apply on any incompatible shape. The separately owned 030/032/033/034/035
+objects still require their owners' full prechecks. After the approved pack,
+count and compare protected rows; do not infer safety from the report's shape
+labels. After the pack, every 039 family must be
+`current`; protected fact, descriptor, source, and publication-marker row
+counts must match the pre-run output, while only expected comparison/lineage
+rows may change through the separately authorized publisher operation. The
+two exact zero-reason FK definitions (fresh deferred/no cascade or retained
+034 cascade/non-deferrable) are the only allowed divergence. This inventory is
+not a production action and was not run against a production database.
+
+# Migration 040 — publish AEDAR reference aggregates only
+
+`040_aedar_reference_only_publication.sql` is an additive forward contract
+after 039. It marks existing AEDAR rank generations `legacy_rank` so API reads
+fail closed, removes group-level peer-eligibility columns, and changes the
+deferred publication invariant to require the reference-only mode, current
+AEDAR/reference bindings, exact group count, and zero rows in the retained
+unserved `aedar_comparison_territory` table. It performs no data publication or
+cleanup and uses no `CASCADE`. Fresh `schema.sql` expresses the same serving
+contract. Apply only in the separate owner-operated phase after review; this
+implementation does not run the migration against any database.
+In the already-approved rollout sequence it follows the committed migrations:
+
+    030 -> 039 -> 032 -> 033 -> 034 -> 035 -> 037 -> 038 -> 040
+
+Canonical AEDAR regeneration is performed by the existing pipeline entry point
+from `pipeline/` after the approved code/schema rollout:
+
+```powershell
+Rscript scripts/publish-aedar-aggregates.R --check
+```
+
+This reacquires/validates the official source aggregates and producer-owned
+pooled-density artifact, then atomically writes a versioned reference-only
+comparison manifest. A stale legacy manifest is not upgraded in place; rebuild
+it with `--check`. Database publication remains the separately gated explicit
+`--publish` operation and is not authorized by this migration or issue #810.
+
+The retained projection is one `aedar_comparison_group` row per
+`(comparison_context, group_id, territory_type, typequ, measure)` with ten
+columns: those five key columns plus `statistic`, `value`, `n_addresses`,
+`n_observed`, and `coverage_status`. The existing `aedar_territorial_aggregate`
+remains the complete source of commune/EPCI/département/Région facts. The old
+`aedar_comparison_territory` relation is retained for upgrade compatibility, is
+not reader-granted, and must contain zero rows in a current publication. The
+publication marker adds `publication_mode='reference_only'` and requires a zero
+territory-row count. This is 7 density-class groups + 2 same-level groups, each
+crossed with the registered TYPEQU and measure axes (currently 235 × 312), or
+659,880 summary rows; EPCI/Bretagne direct references are not duplicated.
+
+The guarded migration/fresh-schema integration proof reports a representative
+`pg_column_size` tuple estimate multiplied by that reference cardinality. It is
+explicitly a heap-row estimate (not a benchmark or production measurement) and
+excludes indexes, page fill and catalog overhead; it does not load a full
+reference cube.
+
+The operator has separately supplied a live read-only inventory reporting
+`current_database=lusk`, `current_user=postgres`, and `transaction_read_only=on`,
+with the 18 listed public relations
+absent: the six 039 bases, ordered-series lineage, three 030 profile bases,
+three 030 observed-collection bases plus its 035 lineage, three 032 AEDAR
+bases, and the 033 shared `comparison_source_lineage`. This is owner-provided
+evidence, not a connection or verification performed by this migration work.
+It confirms the production starting shape is the absent-base path and that the
+030 foundations (and the separately owned 032/035 foundations) must also be
+accounted for in an approved operator plan. It does not prove their functions,
+triggers, grants, or partial states; those remain mandatory read-only
+preconditions in each owner's pack. The 039 order remains **030 -> 039 -> 033
+-> 034**. No production connection or migration was made here.
+
+The guarded upgrade proof starts from the pinned pre-lineage schema with real
+synthetic facts and markers, removes only the comparison storage, applies
+039 -> 033 -> 034, verifies facts/markers survive, exercises the R publisher and
+API readback, checks missing publications return 503 rather than 500 or stale
+data, and compares the resulting structural contract with a fresh `schema.sql`
+install. It also covers the current-state no-op, absent/present shapes, and
+transactional rejection of incompatible partial states. Fresh installs continue
+to use `schema.sql`. This migration does not publish data or authorize
+deployment.

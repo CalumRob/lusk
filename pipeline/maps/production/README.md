@@ -2,6 +2,18 @@
 
 ## Selected AEDAR static family — durable generation and R2 staging
 
+`batch_execution.py` owns deterministic weighted whole-territory scheduling,
+worker-private `shard-N/`, `cache-N/`, and `source-N/` paths (including copies
+from validated immutable preparation seeds), subprocess lifecycle, flushed
+logs and progress, and failure preservation. AEDAR supplies its address-based
+cost estimate, validated seed evidence, worker command, expected artifact
+matrix, rendering and validation. The common executor does not replace the
+existing runner checkpoints or family QA/approval/publication semantics.
+Four workers remain the default; explicit overrides are 1/2/4. Worker progress
+continues to use the existing runner protocol `[maps] n/n`; the aggregate
+`TOTAL completed/expected validated WebPs` line is emitted at each 25-output
+milestone and completion.
+
 The owner-selected shared car/loss treatment from [#733](https://github.com/CalumRob/lusk/issues/733)
 now lives in this directory, not in temporary comparison scripts. `aedar-static-family.json`
 owns the mode-to-fact mapping, selected palette, profile sizes and publication namespace.
@@ -19,15 +31,33 @@ they do not override this selected shared-family contract.
   the exact unrounded boundaries. Missing-address territories are skipped and reported,
   never given fabricated zeros/ranges.
 
+### Cartographic ownership seam
+
+The validated `cartographic_policy.py` owns shared physical defaults such as
+the square-frame margin and inspection ground. Network and AEDAR recipes and
+frame construction consume that policy; family declarations retain thematic
+composition. `inspection_headings.py` composes the approved three network
+templates plus the selected-car template; the generic frame geometry accepts
+those measured headings and owns no family title/content imports. `runner.py`
+consumes map-ready inputs and adapter capabilities; it does not infer evidence
+semantics from a broad family label. Selected AEDAR inline legend metadata is
+declared by `AedarStaticAdapter`, whose selected facts include the scale
+contract. Historical AEDAR car/exploration adapters remain valid native callers
+but do not claim that capability; their evidence is not rewritten to satisfy
+the selected sidecar schema. Shared map framing, profile behavior and furniture
+mechanics remain foundation policy, while family recipes/adapters own thematic
+marks, scales and semantic content.
+
 ### Future generation (do not rerender just to stage the completed export)
 
 ```powershell
 $qgis = 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat'
-$maps = 'E:\Lusk\pipeline\maps\production'
+$maps = (Resolve-Path .\pipeline\maps\production).Path
+# Inspect the source-derived inventory and validate a completed export; neither renders.
 & $qgis -B "$maps\run_aedar_static_maps.py" --plan-only --workers 4
 & $qgis -B "$maps\run_aedar_static_maps.py" --check-only --workers 4
-# Only when deliberately starting a new batch; context acquisition is explicit:
-& $qgis -B "$maps\run_aedar_static_maps.py" --workers 4 --acquire-context
+# Deliberate new generation only, after inputs/context are ready:
+& $qgis -B "$maps\run_aedar_static_maps.py" --workers 4
 ```
 
 Default local output: `output/aedar-static-full/`; artifacts remain in private
@@ -35,7 +65,7 @@ Default local output: `output/aedar-static-full/`; artifacts remain in private
 provide flushed progress. In another PowerShell window:
 
 ```powershell
-Get-Content -LiteralPath 'E:\Lusk\pipeline\maps\production\output\aedar-static-full\run.log' -Encoding UTF8 -Tail 50 -Wait
+Get-Content -LiteralPath (Join-Path $maps 'output\aedar-static-full\run.log') -Encoding UTF8 -Tail 50 -Wait
 ```
 
 `--raw-dir`, `--facts-path`, `--output-dir`, `--context-cache-root` and `--workers 1|2|4`
@@ -46,11 +76,10 @@ seed, not mutable concurrent writes. Changed inputs cannot be mixed into complet
 The native runner's candidate `inspection-refresh` scope is not a claim of full production
 approval, and the command has no upload path.
 
-### Stage the existing images; use the usual R2 uploader
+### Package existing bytes; approval and publication
 
 ```powershell
 & $qgis -B "$maps\package_aedar_maps.py" --source-dir '<completed-export-directory>'
-& "$maps\upload-maps.ps1" -OutputDir "$maps\output\aedar-static-publish"
 ```
 
 The package is a **flat WebP directory**, not worker shards:
@@ -70,7 +99,27 @@ its existing `output/.r2-upload-runtime` (already containing boto3), independent
 `-OutputDir` selects the AEDAR package; omit it to retain the incumbent network selection.
 After the usual approval is recorded, add `-Upload` to that same command. No separate
 SDK installation or QGIS launcher is needed for upload.
-The old `output/upload-network-maps.ps1` path remains a compatibility alias.
+The ignored local `output/upload-network-maps.ps1` is not maintained source and is
+not a supported route. Use the tracked `upload-maps.ps1` only. Exact-package AEDAR
+approval is recorded with the maintained exact-package command (see
+[AEDAR_APPROVAL.md](AEDAR_APPROVAL.md) for its refusal and recovery contract):
+
+```powershell
+python -B "$maps\record_aedar_package_approval.py" `
+  --package-dir "$maps\output\aedar-static-publish" `
+  --reviewer '<human reviewer>' --outcome approved
+```
+
+Never substitute historical six-car or network approval. The canonical publisher's
+first invocation is dry-run and does not upload:
+
+```powershell
+& "$maps\upload-maps.ps1" -OutputDir "$maps\output\aedar-static-publish"
+# Only after reviewing dry-run and package approval, explicitly authorize upload:
+& "$maps\upload-maps.ps1" -OutputDir "$maps\output\aedar-static-publish" -Upload
+```
+
+No publication is performed as part of this documentation change.
 
 ### AEDAR inline legend metadata
 
@@ -79,6 +128,9 @@ For a preserved approved package, run the metadata-only backfill in the QGIS Pyt
 (it reads Parquet metrics only; it does not load geometry, render, or rewrite package evidence):
 
 ```powershell
+$qgis = 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat'
+$maps = (Resolve-Path .\pipeline\maps\production).Path
+$pipeline = (Resolve-Path (Join-Path $maps '..\..')).Path
 & $qgis -B "$maps\backfill_aedar_inline_legends.py" `
   --package-dir "$maps\output\aedar-static-publish" `
   --facts "$pipeline\data\processed\aedar\maps\bretagne-frame\address-access-metrics.parquet" `
@@ -241,184 +293,82 @@ geometry engines for the same boundary-distance and containment checks,
 including polygon holes; neither optimization simplifies the geometry or
 changes the approved rendering.
 
-## AEDAR building-level exploration
+## AEDAR preparation and resource contracts
 
-The AEDAR access-map exploration is an isolated map family. It uses the shared
-production runner, map-ground/context preparation, and exact inspection-plate
-title/branding compositor, but does not invoke the network-family renderer.
-Prepare and render Allineuc (rural commune), Redon Agglomération, and Bretagne maps (car, transit
-P1, and bike LTS2) in inspection and inline profiles with the QGIS Python launcher:
+The current owner-selected AEDAR profile contract is **points for inspection,
+hexes for inline** (see « Grille hexagonale AEDAR » in `CONTEXT.md`). For each
+territory, inline prepares hex geometry/address membership once for all modes,
+then computes bound metric medians on that shared grid. Hexes are 9 px wide at
+the 900 px source size (3 px at 300 px display size). Car colour represents
+median diversity; comparison modes represent median exact car-only TYPEQU loss.
+Values aggregate before each map's render cap. True zeros participate in
+medians and receive the lowest colour; cells without addresses have no thematic
+fill. Unexpected missing/non-finite values fail validation, never become zeros.
+Counts do not determine colour or opacity; no smoothing/interpolation fills
+unoccupied cells. The grid and medians are run-local and shared across modes.
+Manifest/QA stage rows expose grid identity, occupied/address counts, prepared
+metrics and built/reused decisions.
 
-```powershell
-& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' pipeline/maps/production/run_aedar_maps.py
-```
+Mode-neutral preparation is bounded and shared:
 
-The script reads the address-origin spine from
-`E:\batiments-equipements\data\matrice\full-bretagne-address-2026-09-14-current35-tobler-publication-2026v1\address-origins.parquet`,
-derives each territory's independent equal-width scale across car, transit and
-bike LTS2 diversity at 15 minutes, and writes only to the ignored exploratory
-output directory. Inspection includes address-origin points in the full map
-frame, with points outside the analytical territory desaturated; inline is a
-transparent territory cut-out with median-coloured hex cells and no map furniture. Equal-width breaks are
-shared by both profiles. Every territory/mode pair also has a continuous-ramp
-counterpart, interpolated within that mode's established colour family; the
-original stepped maps remain for comparison. Inline maps carry no embedded
-legend. It is not a publication step and does not establish production defaults. It writes
-`contact-sheet.png`, `manifest.json`, and `qa.json` alongside the artifacts.
-The default context cache reuses the validated representative-scope official
-context generation; the Allineuc frame is contained within the Bretagne frame
-already covered by that generation. Override `--context-cache-root` to select
-another validated generation.
-
-For equal-width maps of car diversity and exact car-only equipment
-losses by transit, bike LTS 2/LTS 4, and walking, run `run_aedar_loss_maps.py` with the same QGIS launcher. It writes to
-the separate ignored `output/aedar-bretagne-equipment-loss/` directory. Car uses
-the shared 0–218 diversity scale; transit, bike LTS 2/LTS 4, and walk count, per
-address, BPE types reachable by car but not by the comparison mode. All four
-loss maps use the same car-pink ramp, with darker colours for higher loss; title
-accents retain each mode's AEDAR prototype colour. The loss ramps use five equal-width classes and a shared cap per
-territory, calculated as the 95th percentile across all four loss scenarios;
-higher values saturate at the darkest colour and the legend endpoint uses a
-`+` (for example, `100+`). Every class boundary is labelled. Inspection titles
-name the mode, the lower helper states the 15-minute car comparison, and inline
-remains a furniture-free hex-grid cut-out. The 30 outputs have their own
-manifest, QA report and contact sheet; this exploratory comparison does not
-replace the stepped/continuous map set or define production defaults.
-
-The owner has since selected **margin-red for loss maps**, darker for greater
-loss, with the legend title **Types d'équipements BPE rendus inaccessibles**.
-The green trial was rejected because its marks compete with the OCS-GE ground.
-The isolated margin-red proof lives under ignored `output/aedar-red-loss-prototype/`;
-the exploratory adapter above still uses its original pink/content contracts
-until this decision is promoted into the production family. Car diversity
-remains in the car colour family. This palette decision does not authorize
-application publication or a full batch.
-
-The combined AEDAR exploration continues to export **PNG evidence**. The separate
-car-only production path below exports canonical WebPs through the shared
-`webp_encoding.py` contract; it does not promote the exploratory loss family,
-change its palette/content, or overwrite historical PNGs.
-
-The owner-selected AEDAR profile contract is **points for inspection, hexes
-for inline** (see « Grille hexagonale AEDAR » in `CONTEXT.md`). For each territory,
-inline prepares the hex geometry and address membership ONCE for all modes,
-then computes all bound metric medians on that shared grid. Subsequent modes
-reuse both geometry and medians. Hexes are 9 px wide at the 900 px source size
-(3 px at 300 px display size). Car colour represents median diversity; other
-modes use median exact car-only TYPEQU loss. Values are aggregated before
-applying each map's render cap. True zeros participate in medians and receive
-the lowest colour; cells without addresses have no thematic fill. Unexpected
-missing/non-finite values fail validation, never become zeros. Counts do not
-determine colour or opacity; no smoothing/interpolation fills unoccupied cells.
-The grid and medians are cached within the run, not persisted or prepared again
-for every mode. `manifest.json` and `qa.json` expose `aedar-hex-grid` stage rows
-with grid identity, occupied/address counts, all prepared metric fields, and
-`built`/`reused` decisions, so preparation cost is auditable.
-
-AEDAR rendering also shares the expensive mode-neutral work:
-
-- Bound metric fields, territory caps and normalized facts paths are indexed
-  in one binding scan. Frame/point/hex renders use lookups, not a scan over the
-  complete atlas binding for each output.
-- The authoritative commune source is read once into a run-owned spatial index.
-  Frame queries filter bounding-box candidates by real rectangle intersection,
-  preserving the OGR provider's selection for irregular polygons and source CRS.
-- Inspection creates each address geometry once per territory, with all bound
-  metric fields and their contract-derived caps. Each mode only selects its
-  field and renderer. Inline medians still use the uncapped facts.
+- Bound metric fields, territory caps and normalized facts paths are indexed in
+  one scan; frame/point/hex renders use lookups rather than rescanning the atlas.
+- The authoritative commune source is read once into a run-owned spatial index;
+  bounding-box candidates are filtered by exact intersection in the source CRS.
+- Inspection builds each address geometry once per territory with all bound
+  metrics/caps. Inline medians continue to use uncapped facts.
 - Inspection background/desaturation and outside-land coverage are prepared
-  once per territory and reused. Every plate paints onto an image copy; titles,
-  furniture and point colours remain mode-specific.
-- Inline omits the unused inspection land mask. Full-land masks shortcut only
-  valid, completely covered polygonal frames; partial coverage, holes and
-  overlapping/invalid polygon parts keep the exact original Qt rasterizer.
-- Engraved ink and furniture desaturation process only their mask's pixel
-  window, retaining the original arithmetic, rounding, alpha and edge relief.
+  once per territory. Inline omits the unused inspection land mask; only valid
+  fully covered polygonal frames take the uniform-mask shortcut.
+- Sparse engraving/desaturation touch only each mask's pixel window while
+  retaining original arithmetic, rounding, alpha and edge relief.
 - Territory-local rasters, coordinates, point layers and hex cells are released
-  at the runner's territory boundary, including on failures. Shared providers
-  and the commune index remain available for the run.
+  at the runner boundary, including failures; shared providers/index remain.
 
-The manifest exposes `aedar-bound-contracts`, `aedar-address-points`, `aedar-inspection-context`, and
-`aedar-territory-release` rows alongside hex preparation. Ignored diagnostic
-scripts under `output/aedar-performance/` measure cold-frame/fresh-output cost
-and require SHA-256 equality with accepted PNGs. Fresh outputs and cold source
-derivatives are different measurements: include binding, shared preparation,
-frontier preparation, render and QA costs when budgeting a complete run. Do
-not extrapolate a representative run that reused inspection outputs into a
-full-atlas ETA.
+The manifest also exposes `aedar-bound-contracts`, `aedar-address-points`,
+`aedar-inspection-context`, and `aedar-territory-release` alongside hex rows.
+Performance diagnostics under ignored `output/aedar-performance/` are historical
+measurement artefacts, not production input. Cold source derivatives and fresh
+outputs are distinct measurements; a representative warm run is not a full-atlas
+ETA.
 
-## Car-only AEDAR production (#730)
+## Retired AEDAR explorations and car-only launcher (historical)
 
-`aedar_car.py` binds the reviewed **absolute car diversity at 15 minutes**, five
-equal-width classes over 0–218. Inspection retains exact address points at
-2400×2400; inline retains occupied median hexes at 900×900 (9 px cells), true
-zeros, unfilled empty cells and the transparent cut-out/shadow. It reads only
-the prepared car metric, address identifiers, commune membership and coordinates;
-no loss fields, loss preparation or per-territory loss caps are required.
+The superseded command-line launchers `run_aedar_maps.py`, `run_aedar_loss_maps.py`,
+`run_aedar_car_maps.py`, and `record_aedar_car_approval.py` were retired after their
+tracked tests/callers were migrated. They are not runnable from this checkout.
+Their source at the pre-retirement baseline is available for audit with, for example,
+`git show dccc1bdd7479f748145666d18c09d4a2e49d1419:pipeline/maps/production/run_aedar_maps.py`.
+Do not use these historical recipes as an operator workflow or regenerate their ignored
+output directories; existing output/evidence is untouched.
 
-Both scopes use this same contract. Full inventory and analytical commune
-memberships come from the shared authoritative geography builder, configured
-departments and pinned EPCI metadata. Redon's administrative outline can extend
-outside Bretagne; its analytical geometry/address membership remains Breton.
-Inventory counts are derived from the current sources, never from filenames or
-fixed expected totals. Each territory releases its rasters, point layers, frame
-data and hex cells at its boundary; full-run stage diagnostics use the shared spool.
+The combined building-level exploration used address-origin **points** in inspection,
+median-coloured inline hexes, an equal-width stepped scale shared across profiles, and
+optional continuous-ramp comparison outputs. Its exploratory loss trial used car
+absolute diversity plus car-only TYPEQU losses, the pink ramp, five equal-width classes,
+and a per-territory shared 95th-percentile cap with a `+` endpoint. Those trial contracts
+are historical, not selected hex-map treatment or evidence of current output.
 
-The canonical encoder is pipeline-local Pillow 12.3.0, RGB quality 80/method 4,
-`exact=True`, lossless alpha quality 100. Encoding proves exact source alpha;
-decoded native dimensions/channel QA runs before atomic stage promotion. Failed
-encoding or QA preserves any previous canonical artifact and discards its stage.
-Retries verify identities, artifact hashes and decoded WebP contracts before reuse.
-Facts, scale, content, code/assets/runtime, encoding, profiles, official context,
-commune-frame source bytes and inspection OCS-GE source bytes enter effective
-identities. Automated QA is not a human visual acceptance.
+The separate historical car-only contract remains source-owned in `aedar_car.py` and its
+focused tests: absolute 15-minute car diversity (0–218), six native WebPs for the
+Allineuc/Redon/Bretagne review cohort, exact decoded WebP checks, and human approval bound
+to those six outputs. `record_car_approval()` is retained there as a tested historical
+car-only contract; it is not selected-package approval and does not authorize the selected
+family or any existing package. Full inventory, explicit approval admission, stale-input
+refusal, and human spot-check requirements remain enforced at `run_production()` and its
+source adapters. The selected family route above is independent and never changes the
+network uploader's defaults or publication namespace.
 
-Prepared `address-access-metrics.parquet` must already exist. A car-only parquet
-with the same required columns is also valid; use `--facts-path` to select it.
-This command never rebuilds address-routing facts. First render the exact
-Allineuc (`commune/22001`), Redon (`epci/243500741`) and Bretagne (`region/53`)
-six-artifact review cohort in a separate output directory:
-
-```powershell
-& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
-  pipeline/maps/production/run_aedar_car_maps.py `
-  --scope representative `
-  --output-dir pipeline/maps/production/output/aedar-car-review `
-  --source-cache-owner pipeline/maps/production/output/aedar-bretagne-equipment-loss
-```
-
-`--source-cache-owner` optionally reuses source derivatives at their existing
-owning paths, not output images; copying path-bound manifests into a fresh root
-is not valid reuse. Missing/stale derivatives rebuild under that owner. The
-existing `output/aedar-rennes-inspection/.stage-cache/official-context` generation
-remains the default official-context root. `--refresh` rebuilds outputs and
-source derivatives; omit it for an unchanged verified retry. The CLI writes
-manifest/QA evidence and exits nonzero for incomplete artifact coverage.
-
-After a human has inspected the **actual decoded native WebPs**, the operator
-may explicitly record that review (do not execute this step from automated rendering):
-
-```powershell
-& 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
-  pipeline/maps/production/record_aedar_car_approval.py `
-  --manifest pipeline/maps/production/output/aedar-car-review/manifest.json `
-  --qa pipeline/maps/production/output/aedar-car-review/qa.json `
-  --reviewer '<human reviewer>' --outcome approved `
-  --output pipeline/maps/production/output/aedar-car-review/human-approval.json
-```
-
-The recorder requires complete six-artifact QA, the current car recipe/native
-encoding, matching effective members, current artifact hashes and decoded QA.
-Old PNG evidence, the network's 18-artifact approval, partial cohorts, wrong
-territories/profiles and stale recipe/renderer/data cannot authorize this path.
-The default shared network approval contract remains unchanged.
-
-A separately authorized future full run uses `--scope full --approval <record>`
-and a separate full output directory. It independently recomputes the current
-representative identities before creating the full output directory or preparing
-full-scope sources. It uses shared checkpoint/retry and exact inventory QA, and
-leaves post-batch human spot checks pending. Neither command publishes/deploys
-assets. **#730 authorizes the bounded proof, not the full atlas run.**
+The retired #730 car-only command accepted prepared
+`address-access-metrics.parquet` (or a car-only parquet via `--facts-path`),
+representative/full scope, and explicit output/cache/context overrides. Its
+approval recorder required the complete six-WebP cohort, current car recipe and
+native Q80/method-4 encoding, matching effective members, current hashes and
+decoded QA; it could not accept historical PNGs, the network's 18-artifact
+approval, partial cohorts, or stale sources. Full scope independently
+recomputed representative identities before output mutation and left post-batch
+spot checks pending. The CLI is retired, but those source-owned contract
+semantics remain; no full run or approval is performed here.
 
 ## Verification
 
@@ -429,11 +379,32 @@ python -m unittest pipeline.maps.production.tests.test_contract pipeline.maps.pr
 python -m unittest pipeline.maps.production.tests.test_inline_contract -v
 python -m unittest pipeline.maps.production.tests.test_approval -v
 python -m unittest pipeline.maps.production.tests.test_checkpoint pipeline.maps.production.tests.test_webp_encoding -v
-python -m unittest pipeline.maps.production.tests.test_aedar_hex_grid pipeline.maps.production.tests.test_aedar_hex_rendering -v
+python -m unittest pipeline.maps.production.tests.test_aedar_hex_grid -v
+python -m unittest pipeline.maps.production.tests.test_aedar_hex_rendering -v
 python -m unittest pipeline.maps.production.tests.test_aedar_commune_frames pipeline.maps.production.tests.test_inspection_pixel_cost -v
 python -m unittest pipeline.maps.production.tests.test_aedar_car -v
 python -m unittest pipeline.maps.production.tests.test_inspection_frame -v
+python -m unittest pipeline.maps.production.tests.test_batch_execution pipeline.maps.production.tests.test_aedar_map_plan -v
+python -m unittest pipeline.maps.production.tests.test_aedar_batch_native -v
 ```
+
+For the repository worker proof, `test_aedar_batch_native` creates its own
+authoritative EPSG:2154 communes, official-land/context fixture, OCS-GE fixture
+sources, and Parquet metrics. It invokes the real `run_aedar_static_maps.py`
+entrypoint and its QGIS subprocess workers at 1, 2, and 4; checks exact selected
+five-mode × two-profile WebP coverage and private worker directories; then
+checks worker failure/retry, verified reuse, corrupt-output repair, and refusal
+of changed worker plans and input facts. It acquires no production context and
+does not read production data. This generated fixture evidence is distinct from
+the retained 1,266-territory/12,660-WebP export and the historical 40/40 byte
+parity; neither retained record is rewritten by this test.
+
+The bounded recovery case uses a test-only entrypoint driver to fail one
+four-worker command at dispatch; three other real QGIS workers finish with a
+partial matrix. The observed fixture run preserved 40 validated WebPs, resumed
+the 10 missing WebPs, and completed the exact 50-output matrix. Previously
+successful paths retained their hashes and modification times and were marked
+`reused-output` on resume.
 
 Run QGIS-owning test modules in separate Python processes: some older fixtures
 call `exitQgis()` in teardown, so one combined discovery process is not safe.
@@ -474,13 +445,17 @@ official-context generation. `--read-only-source-cache` fails closed on any
 missing/invalid source generation instead of creating or mutating one:
 
 ```powershell
+$repo = (Resolve-Path .).Path
+$raw = Join-Path $repo 'pipeline\data\raw'
+$networkCache = Join-Path $repo 'pipeline\maps\.cache\network-sources'
+$contextCache = Join-Path $repo 'pipeline\maps\production\output\.stage-cache\official-context'
 & 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
   pipeline/maps/production/tests/render_representative.py `
   --output-dir pipeline/maps/production/output/webp-native-review `
-  --raw-dir E:\Lusk\pipeline\data\raw `
-  --network-cache-root E:\Lusk\pipeline\maps\.cache\network-sources `
+  --raw-dir $raw `
+  --network-cache-root $networkCache `
   --read-only-source-cache `
-  --context-cache-root E:\Lusk\pipeline\maps\production\output\.stage-cache\official-context
+  --context-cache-root $contextCache
 ```
 
 Run this proof only after scoped implementation review; then inspect its fresh
@@ -505,6 +480,9 @@ python pipeline/maps/production/tests/render_representative.py
 python pipeline/maps/production/record_network_approval.py --manifest pipeline/maps/production/output/manifest.json --qa pipeline/maps/production/output/qa.json --reviewer NAME --outcome approved --output pipeline/maps/production/output/human-approval.json
 python pipeline/maps/production/prepare_mainland_context.py --scope full
 python pipeline/maps/production/run_full_network.py --approval pipeline/maps/production/output/human-approval.json
+# Optional bounded overrides; the supported default is four workers.
+python pipeline/maps/production/run_full_network.py --approval pipeline/maps/production/output/human-approval.json --workers 1
+python pipeline/maps/production/run_full_network.py --approval pipeline/maps/production/output/human-approval.json --workers 2
 python pipeline/maps/production/record_spot_check.py --qa pipeline/maps/production/output/full-qa.json --reviewer NAME --outcome approved --output pipeline/maps/production/output/human-spot-check.json
 ```
 
@@ -516,8 +494,18 @@ recipe/renderer, partial-cohort or non-affirmative records cheaply. They then
 prepare only the bounded representative footprint in a temporary stage area,
 recompute all paired identities from live local inputs, and reject stale
 approval before creating/mutating the full output directory or starting full
-shared preparation. Only after that gate does `run_production()` prepare the
-full binding and render. Do not edit or synthesize approval JSON.
+shared preparation. Only after that gate does the parent prepare validated
+immutable network providers and sign the exact weighted whole-territory shard
+plan. Each child independently rebuilds and re-admits the complete authoritative
+inventory, current representative approval identities, source/renderer contract
+and artifact matrix before rendering its assigned territories with both modes
+and profiles. The signed worker plan cannot be changed between admission and
+execution. The shared `batch_execution.py` module owns 1/2/4 process scheduling,
+private shard/source-cache paths, logs, progress, failure preservation and
+resume; network owns its geometry-complexity workload estimate and rendering.
+No candidate/inspection-refresh scope is used for full workers. The usual
+`full-manifest.json` / `full-qa.json` names and flat full WebP output selection
+remain unchanged. Do not edit or synthesize approval JSON.
 
 The full-context hit-count feasibility probe is recorded at
 `E:\Temp\opencode\issue-611-full-context-hits.json`: the actual derived frame
@@ -532,7 +520,9 @@ non-transaction-safe service.
 Batch QA writes `full-manifest.json` and `full-qa.json` including the complete
 expected matrix and per-output failures. Successful unchanged files remain
 reusable on retry; missing, corrupt, changed or failed files are rebuilt and
-validated. `status=passed` is automated QA only; `production_status` remains
+validated. A changed full plan/source/approval/renderer or worker assignment is
+refused; use a new output directory rather than mixing provenance. `status=passed`
+is automated QA only; `production_status` remains
 `awaiting-human-spot-check` until the adapter-selected high-risk files have
 been visually reviewed and `record_spot_check.py` records the human outcome.
 The script also records a rejected outcome; rejection leaves production
@@ -629,14 +619,21 @@ isolated at `output/aedar-car-inspection-refresh/` by default.
 
 ```powershell
 & 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
-  pipeline/maps/production/run_aedar_car_inspection_refresh.py
+  pipeline/maps/production/run_aedar_car_inspection_refresh.py `
+  --previous-manifest "$maps\output\aedar-static-publish\full-manifest.json"
 ```
 
 The command writes a complete candidate `manifest.json`, `qa.json`, deterministic
-`spot-check-sheet.png`, and an AEDAR-namespace `replacement-plan.json` bound to the previous
-`aedar-car-full/full-manifest.json`. The plan
+`spot-check-sheet.png`, and an AEDAR-namespace `replacement-plan.json` bound to the selected
+publisher package's previous `output/aedar-static-publish/full-manifest.json` (the actual
+default for `--previous-manifest`). The historical car-only package is not the default or
+a substitute for this selected-package precondition. The plan
 contains only changed-frame car inspection keys and verifies both old and new local artifact
 hashes. QA stays pending until a human reviews the generated `qa.json` review-set artifacts:
+
+If `--previous-manifest` is overridden, it must be the same prior selected-package manifest
+whose old object hashes the replacement plan verifies; publication's `-PublicationManifest`
+must be that package's corresponding `upload-manifest.json`.
 
 ```powershell
 & 'E:\Program Files\QGIS 3.44.14\bin\python-qgis-ltr.bat' `
@@ -647,14 +644,14 @@ hashes. QA stays pending until a human reviews the generated `qa.json` review-se
 ```
 
 Only after approval, the usual R2 helper can dry-run and then explicitly upload the exact
-replacement plan, using the old car publication manifest as its precondition:
+replacement plan, using the same selected-package manifest bound into the replacement plan:
 
 ```powershell
 & .\pipeline\maps\production\upload-maps.ps1 `
-  -OutputDir .\pipeline\maps\production\output\aedar-car-full `
+  -OutputDir "$maps\output\aedar-static-publish" `
   -Manifest .\pipeline\maps\production\output\aedar-car-inspection-refresh\replacement-plan.json `
   -Qa .\pipeline\maps\production\output\aedar-car-inspection-refresh\qa.json `
-  -PublicationManifest .\pipeline\maps\production\output\aedar-car-full\upload-manifest.json
+  -PublicationManifest "$maps\output\aedar-static-publish\upload-manifest.json"
 # Add -Upload only after reviewing the dry-run and authorizing the replacement.
 ```
 

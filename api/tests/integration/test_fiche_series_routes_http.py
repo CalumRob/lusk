@@ -26,7 +26,13 @@ def test_canonical_owned_series_have_independent_fiche_routes(tmp_path):
     canonical = Path(os.environ["LUSK_TEST_CANONICAL_DATA_DIR"])
     expected = json.loads((canonical / "indicateurs_habitat.json").read_text(encoding="utf-8-sig"))
     import pandas as pd
-    habitat_parquet = pd.read_parquet(canonical / "indicateurs_habitat.parquet")
+    # #757 : le parquet par-thème n'est plus écrit pour les cinq thèmes
+    # non-mobilité — la vérification de parité reconstruit une fixture parquet
+    # LOCALE (tmp_path) depuis la projection JSON, jamais le fichier retiré.
+    habitat_parquet = pd.DataFrame(expected)
+    habitat_parquet_path = tmp_path / "indicateurs_habitat.parquet"
+    habitat_parquet.to_parquet(habitat_parquet_path)
+    habitat_parquet = pd.read_parquet(habitat_parquet_path)
     habitat_metadata = json.loads((root / "pipeline/inst/extdata/theme-metadata/theme_habitat.json").read_text(encoding="utf-8"))
     milieux_metadata = json.loads((root / "pipeline/inst/extdata/theme-metadata/theme_milieux.json").read_text(encoding="utf-8"))
     schema = "it_" + uuid.uuid4().hex[:20]
@@ -120,7 +126,10 @@ def test_canonical_owned_series_have_independent_fiche_routes(tmp_path):
                         assert str(ref_date) == row["vintage_date_reference"] == canonical_row.vintage_date_reference
                         assert str(pub_date) == row["vintage_date_publication"] == canonical_row.vintage_date_publication
                 milieux = json.loads((canonical / "indicateurs_milieux.json").read_text(encoding="utf-8-sig"))
-                typed_states = pd.read_parquet(canonical / "indicateurs_milieux.parquet")
+                # #757 : fixture parquet locale depuis la projection JSON
+                typed_states_path = tmp_path / "indicateurs_milieux.parquet"
+                pd.DataFrame(milieux).to_parquet(typed_states_path)
+                typed_states = pd.read_parquet(typed_states_path)
                 windows = json.loads((canonical / "histoires_milieux.json").read_text(encoding="utf-8-sig"))
                 vintages = pd.read_parquet(canonical / "vintages.parquet")
                 for indicator in ("conso_enaf_annuel","artif_par_habitant"):

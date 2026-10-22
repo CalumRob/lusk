@@ -557,6 +557,83 @@ fusion_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
   tar_target_raw("fusion_vintages", as.call(c(list(as.name("{")), corps)))
 }
 
+# Canonical scalar serving artifacts are built from each theme's in-memory
+# publication result, its validated metadata target, and the coherent merged
+# vintage target. This keeps legacy theme Parquets out of the scalar reader
+# path while preserving independent per-theme owner generations.
+scalar_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
+  expressions <- list(bquote(vintages_ <- fusion_vintages), bquote(result_ <- list()))
+  for (theme in themes) {
+    if (!"metadata" %in% names(theme)) next
+    name <- theme$theme
+    payload <- as.name(paste0("publie_", name))
+    metadata <- as.name(paste0("metadata_", name))
+    expressions <- c(expressions, list(bquote({
+      result_[[.(name)]] <- materialize_theme_scalar_artifact(
+        .(payload), .(metadata), vintages_, .(name), .(sortie))
+      materialize_theme_series_artifacts(.(payload), .(metadata), vintages_, .(name), .(sortie))
+    })))
+  }
+  expressions <- c(expressions, list(bquote(unlist(result_, use.names=TRUE))))
+  tar_target_raw("scalar_serving_artifacts",
+    as.call(c(list(as.name("{")), expressions)))
+}
+
+# Declared-profile serving artifacts are built from the same in-memory theme
+# publication results, validated metadata and merged vintages as the scalar and
+# series grains. The DPE owner is scalar-backed: it is materialized only when
+# the full scalar universe is locally available (the same guard the direct
+# publisher uses), so a partial or cron run degrades to the declared detail
+# profiles instead of failing.
+profile_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
+  expressions <- list(bquote(vintages_ <- fusion_vintages),
+                      bquote(scalar_artifacts_ <- scalar_serving_artifacts),
+                      bquote(result_ <- list()))
+  for (theme in themes) {
+    if (!"metadata" %in% names(theme)) next
+    name <- theme$theme
+    payload <- as.name(paste0("publie_", name))
+    metadata <- as.name(paste0("metadata_", name))
+    expressions <- c(expressions, list(bquote({
+      if (length(profile_serving_owners(.(metadata)))) {
+        binding_ <- if (length(profile_serving_scalar_owners(.(metadata))) &&
+            profile_scalar_binding_inputs_available(.(sortie))) {
+          profile_scalar_binding(.(sortie))
+        } else {
+          NULL
+        }
+        if (!is.null(binding_)) cache_profile_scalar_binding(binding_, .(sortie))
+        result_[[.(name)]] <- materialize_theme_profile_artifacts(
+          .(payload), .(metadata), vintages_, .(name), .(sortie), binding_)
+      }
+    })))
+  }
+  expressions <- c(expressions, list(bquote(unlist(result_, use.names=TRUE))))
+  tar_target_raw("profile_serving_artifacts",
+    as.call(c(list(as.name("{")), expressions)))
+}
+
+# Typed-reading serving artifacts are built from the same in-memory theme
+# publication results, validated metadata and merged vintages as the scalar,
+# series and declared-profile grains. A reading is projected once, here: the
+# theme Parquet histories are never re-projected by a publication reader.
+typed_reading_artifacts_themes <- function(themes = THEMES_RUN, sortie = SORTIE_RUN) {
+  expressions <- list(bquote(vintages_ <- fusion_vintages), bquote(result_ <- list()))
+  for (theme in themes) {
+    if (!"metadata" %in% names(theme)) next
+    name <- theme$theme
+    payload <- as.name(paste0("publie_", name))
+    metadata <- as.name(paste0("metadata_", name))
+    expressions <- c(expressions, list(bquote({
+      result_[[.(name)]] <- materialize_theme_typed_reading_artifacts(
+        .(payload), .(metadata), vintages_, .(name), .(sortie))
+    })))
+  }
+  expressions <- c(expressions, list(bquote(unlist(result_, use.names=TRUE))))
+  tar_target_raw("typed_reading_serving_artifacts",
+    as.call(c(list(as.name("{")), expressions)))
+}
+
 # rapport_theme -----------------------------------------------------------------
 # Le rapport de run d'UN thème : un target INDÉPENDANT des étapes aval
 # (aucune dépendance sur payload/publie/fusion), réestampillé à CHAQUE run
@@ -1202,33 +1279,25 @@ themes_fusion <- if (selection_complete) {
 }
 
 # Publication SQL explicite depuis le PC : jamais dans le cron/static par
-# défaut. Le leaf attend la dernière écriture du référentiel territorial, la
-# table fusionnée des vintages, les métadonnées Mobilité, et les publications
-# canoniques Habitat, Démographie et Économie consommées par le snapshot scalaire. Un marqueur DB en
+# défaut. Le leaf attend les artefacts scalaires et lectures canoniques retenus.
+# Il ne dépend d'aucun parquet de partage, profil BPE ou accessibilité bâtimentière. Un marqueur DB en
 # retard doit être retenté même quand tous les upstream targets sont à jour :
 # seul ce LEAF a cue=always, pas les calculs coûteux en amont.
-publication_service <- list()
+publication_retained_backend <- list()
 if (identical(Sys.getenv("LUSK_PUBLISH_DB", unset = ""), "1")) {
-  if (identical(MODE_RUN, "cron") ||
-      !all(c("mobilite", "economie", "demographie", "habitat") %in% names(THEMES_RUN))) {
-    stop("LUSK_PUBLISH_DB exige un run local incluant les thèmes Mobilité, Économie/Emploi, Démographie et Habitat; cron interdit.",
+  scalar_owners <- retained_scalar_artifact_owners()
+  if (identical(MODE_RUN, "cron") || !all(scalar_owners %in% names(THEMES_RUN))) {
+    stop("LUSK_PUBLISH_DB exige un run local couvrant tous les propriétaires scalaires déclarés; cron interdit.",
          call. = FALSE)
   }
-  derniere_publication <- as.name(paste0(
-    "publie_", THEMES_RUN[[length(THEMES_RUN)]]$theme
-  ))
-  publication_service <- list(tar_target_raw(
-    "publie_tables_service",
-    bquote({
-      .(derniere_publication)
-      publie_mobilite
-      publie_economie
-      publie_demographie
-      publie_habitat
-      metadata_mobilite
-      fusion_vintages
-      publier_tables_service_depuis_parquet(.(SORTIE_RUN))
-    }),
+  publication_dependencies <- c(
+    lapply(paste0("publie_", scalar_owners), as.name),
+    list(as.name("fusion_vintages"), as.name("scalar_serving_artifacts"),
+      as.name("typed_reading_serving_artifacts")))
+  publication_command <- as.call(c(list(as.name("{")), publication_dependencies,
+    list(as.call(list(as.name("publish_retained_backend_from_parquet"), SORTIE_RUN)))))
+  publication_retained_backend <- list(tar_target_raw(
+    "publie_backend_retained", publication_command,
     cue = tar_cue(mode = "always")
   ))
 }
@@ -1247,12 +1316,12 @@ if (identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset = ""), "1")) {
       publie_demographie
       publie_habitat
       publie_mobilite
-      publie_tables_service
-      publier_declared_profiles_postgres(publie_demographie, metadata_demographie,
-        publie_habitat, metadata_habitat, publie_tables_service$scalar$content_version,
-        mobilite=publie_mobilite, mobilite_metadata=metadata_mobilite,
-        mobilite_vintages=fusion_vintages, scalar_publication=publie_tables_service$scalar,
-        output_directory=SORTIE_RUN)
+      publie_backend_retained
+      profile_serving_artifacts
+      publier_declared_profiles_postgres(SORTIE_RUN,
+        unique(c(profile_serving_owners(metadata_demographie),
+                 profile_serving_owners(metadata_habitat),
+                 profile_serving_owners(metadata_mobilite))))
     }),
     cue = tar_cue(mode = "always")
   ))
@@ -1268,7 +1337,10 @@ list(
   targets_modeles_territoire,
   target_manifeste_modeles_lecture,
   fusion_themes(themes_fusion),
-  publication_service,
+  scalar_artifacts_themes(),
+  profile_artifacts_themes(),
+  typed_reading_artifacts_themes(),
+  publication_retained_backend,
   publication_profile,
   rapports,
   tar_target(geometrie, publier_geometrie(SORTIE_RUN)),

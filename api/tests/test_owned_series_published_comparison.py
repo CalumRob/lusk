@@ -1,7 +1,7 @@
 import pytest
 from fastapi import HTTPException
 
-from api import main
+from api import snapshot_reads as main
 
 
 class Cursor:
@@ -12,11 +12,18 @@ class Cursor:
 
 class FixedComparisonConnection:
     def __init__(self, *, context="density_class", stale=None, incomplete=False,
-                 stat="median", scope="default_group", custom=False, axis_kind=None, extra_member=False):
+                 stat="median", scope="default_group", custom=False, axis_kind=None, extra_member=False,
+                 eligible_count=None, focal_status="measured", bad_focal_rank=False,
+                 unsupported_comparison_level=False, empty_lineage=False):
         self.context=context; self.stale=stale; self.incomplete=incomplete
         self.stat=stat; self.scope=scope; self.custom=custom; self.sql=[]
         self.members=["c1","c2"] if context != "bretagne" else ["c1","c2","c3"]
         self.extra_member=extra_member
+        self.eligible_count=eligible_count; self.focal_status=focal_status
+        self.bad_focal_rank=bad_focal_rank
+        self.unsupported_comparison_level=unsupported_comparison_level
+        self.empty_lineage=empty_lineage
+        self.zero_reason=None; self.conflicting_zero_reason=False
         self.dataset="owned-v1"; self.indicator="series_x"
         self.axes=["2020","2021"] if stat!="mean" else ["t0000","t0005"]
         self.point=self.axes[-1]
@@ -38,12 +45,21 @@ class FixedComparisonConnection:
         if "FROM series_dataset_publication p LEFT JOIN table_publication" in sql:
             return Cursor(rows=[(self.dataset,"series-v1","ref-v1","ref-v1")])
         if "SELECT d.dataset_id,d.indicator_id,d.theme_id" in sql:
+            comparison_levels=["epci","departement"] if self.unsupported_comparison_level else ["commune","epci","departement"]
             descriptor=(self.dataset,self.indicator,"milieux",self.point,"Series","unit","high",
                 ["commune","epci","departement"],"d1",self.axes,self.stat,self.scope,
-                ["commune","epci","departement"],self.axis_kind)
+                comparison_levels,self.axis_kind)
             return Cursor(rows=[descriptor])
         if "LEFT JOIN series_dataset_observation o" in sql:
             ids=params[1]
+            if "o.value" not in sql:
+                return Cursor(rows=[(self.dataset,self.indicator,tid,
+                    self.focal_status if tid=="c1" else "measured",
+                    f"rev-{tid}-{axis}" if self.axis_kind=="declared_detail" else f"rev-{tid}",axis,
+                    ("no_modeled_endpoint_stops" if self.conflicting_zero_reason and axis==self.axes[0]
+                     else self.zero_reason))
+                    for tid in ids for axis in ( ["M3",self.point] if self.axis_kind=="declared_detail"
+                        else (self.axes if self.stat=="mean" else [self.point]))])
             if self.axis_kind=="declared_detail":
                 axes=["M3",self.point]
                 return Cursor(rows=[(self.dataset,self.indicator,tid,10.0 if tid=="c1" else 5.0,
@@ -59,21 +75,39 @@ class FixedComparisonConnection:
             source="old-series" if self.stale=="series" else "series-v1"
             reference="old-ref" if self.stale=="reference" else "ref-v1"
             group_count=1 if self.incomplete else len(self.axes)
+            comparison_axes=(['M2','M3'] if self.axis_kind=="declared_detail" else self.axes)
             return Cursor(row=("comparison-v1",source,reference,group_count,len(self.axes)*len(self.members),
-                "series-v1","ref-v1"))
+                "series-v1","ref-v1",comparison_axes))
+        if "FROM ordered_series_comparison_lineage" in sql:
+            if self.empty_lineage: return Cursor()
+            axes=params[-1]
+            return Cursor(rows=[(axis,f"rev-{tid}-{axis}" if self.axis_kind=="declared_detail" else f"rev-{tid}")
+                for axis in axes for tid in self.members])
+        if "FROM ordered_series_comparison_zero_reason" in sql:
+            if self.conflicting_zero_reason:
+                raise HTTPException(503,"Published mean-curve provenance zero reason conflicts across axes")
+            return Cursor(rows=[(self.zero_reason,len(self.members))] if self.zero_reason else [])
         if "FROM ordered_series_comparison_group" in sql:
             axes=["M2","M3"] if self.axis_kind=="declared_detail" else self.axes
             count=len(self.members)+(1 if self.extra_member else 0)
-            rows=[(axis,self.stat,7.5,count,count,0) for axis in axes]
+            eligible=count if self.eligible_count is None else self.eligible_count
+            lineage_count=0 if self.empty_lineage else len(self.members)
+            rows=[(axis,self.stat,None if eligible==0 else 7.5,count,eligible,count-eligible,lineage_count,
+                (eligible==0 or eligible>0)) for axis in axes]
             return Cursor(rows=rows[:1] if self.incomplete else rows)
         if "FROM ordered_series_comparison_territory" in sql:
-            member_ids=params[5]
-            if self.extra_member: member_ids=list(member_ids)+["c3"]
+            member_ids=[params[9]]
             axes=["M2","M3"] if self.axis_kind=="declared_detail" else self.axes
-            return Cursor(rows=[(axis,tid,10.0 if tid in ("c1","e1") else 5.0,"measured",
-                1 if tid in ("c1","e1") else 2,1,len(member_ids)) for axis in axes for tid in member_ids])
-        if "SELECT DISTINCT state_role" in sql:
-            return Cursor(rows=[("M2",),("M3",)] if self.axis_kind=="declared_detail" else [])
+            eligible=len(self.members) if self.eligible_count is None else self.eligible_count
+            rank=(None if self.bad_focal_rank=="missing_rank" else 1) if self.focal_status=="measured" else None
+            rank_size=(eligible+1 if self.bad_focal_rank=="wrong_rank_size" else eligible) if self.focal_status=="measured" else None
+            return Cursor(rows=[(axis,tid,10.0 if self.focal_status=="measured" else None,self.focal_status,
+                rank,
+                (1 if self.focal_status=="measured" else None),
+                rank_size,
+                ((self.focal_status=="measured" and rank is not None and rank_size==eligible) or
+                 (self.focal_status!="measured" and rank is None and rank_size is None)))
+                for axis in axes for tid in member_ids])
         raise AssertionError(sql)
 
 
@@ -88,18 +122,24 @@ def test_all_canonical_owned_series_contexts_read_published_axis_and_territory_r
     conn=FixedComparisonConnection(context=context)
     cohort_type="commune" if territory_type=="commune" else "epci"
     members=tuple(conn.members if cohort_type=="commune" else ["e1","e2"])
+    territory_id="c1" if territory_type=="commune" else "e1"
     results,markers,_,_,_ = main._owned_series_comparison_results(conn,
-        [(conn.dataset,"milieux",False,conn.indicator)],territory_type,"c1",selection,
+        [(conn.dataset,"milieux",False,conn.indicator)],territory_type,territory_id,selection,
         cohort=(cohort_type,members,scope))
     result=results[0]
     assert result["median"]==7.5
-    assert (result["rank"]==1) if territory_type=="commune" else result["rank"] is None
+    assert result["rank"]==1
     assert any("FROM series_provenance_revision" in sql for sql,_ in conn.sql)
     group_read=next(params for sql,params in conn.sql if "FROM ordered_series_comparison_group" in sql)
-    assert tuple(group_read[2:5])==expected
+    assert tuple(group_read[3:6])==expected
     assert markers[conn.dataset][1]=="series-v1"
     assert any("FROM ordered_series_comparison_group" in sql for sql,_ in conn.sql)
     assert any("FROM ordered_series_comparison_territory" in sql for sql,_ in conn.sql)
+    raw_rows=[sql for sql,_ in conn.sql if "LEFT JOIN series_dataset_observation o" in sql]
+    assert len(raw_rows)==0
+    published_territory=next((sql,params) for sql,params in conn.sql
+        if "FROM ordered_series_comparison_territory" in sql)
+    assert published_territory[1][9]==territory_id
 
 
 @pytest.mark.parametrize("stale",["missing","series","reference"])
@@ -134,6 +174,66 @@ def test_overbroad_published_cohort_fails_closed_but_custom_selection_stays_requ
                 {"kind":"density_class","density_class_code":"d1"}))
 
 
+@pytest.mark.parametrize("eligible,expected_status,expected_reason",[
+    (0,"unavailable","no_selected_comparable_values"),
+    (1,"unavailable","fewer_than_two_comparable_values"),
+    (2,"available",None),
+])
+def test_fixed_comparison_missing_focal_uses_published_eligible_count(eligible,expected_status,expected_reason):
+    conn=FixedComparisonConnection(eligible_count=eligible,focal_status="missing")
+    result=main._owned_series_comparison_results(conn,[(conn.dataset,"milieux",False,conn.indicator)],
+        "commune","c1",None,cohort=("commune",tuple(conn.members),
+            {"kind":"density_class","density_class_code":"d1"}))[0][0]
+    assert result["eligible_count"]==eligible
+    assert result["status"]==expected_status and result["reason"]==expected_reason
+    assert result["focal_value"] is None and result["rank"] is None
+
+
+def test_fixed_comparison_accepts_empty_lineage_for_a_legitimately_empty_comparison():
+    conn=FixedComparisonConnection(eligible_count=0,focal_status="missing",empty_lineage=True)
+    result=main._owned_series_comparison_results(conn,[(conn.dataset,"milieux",False,conn.indicator)],
+        "commune","c1",None,cohort=("commune",tuple(conn.members),
+            {"kind":"density_class","density_class_code":"d1"}))[0][0]
+    assert result["status"]=="unavailable"
+    assert result["reason"]=="no_selected_comparable_values"
+    assert result["comparison_sources"]==[]
+
+
+@pytest.mark.parametrize("eligible,expected_status,expected_reason",[
+    (1,"unavailable","fewer_than_two_comparable_values"),
+    (2,"available",None),
+])
+def test_fixed_comparison_measured_focal_still_uses_published_eligible_count(
+        eligible,expected_status,expected_reason):
+    conn=FixedComparisonConnection(eligible_count=eligible)
+    result=main._owned_series_comparison_results(conn,[(conn.dataset,"milieux",False,conn.indicator)],
+        "commune","c1",None,cohort=("commune",tuple(conn.members),
+            {"kind":"density_class","density_class_code":"d1"}))[0][0]
+    assert result["eligible_count"]==eligible
+    assert result["status"]==expected_status and result["reason"]==expected_reason
+    assert result["focal_value"]==10 and result["rank"]==1
+
+
+@pytest.mark.parametrize("bad_focal_rank",["missing_rank","wrong_rank_size"])
+def test_fixed_comparison_fails_closed_on_invalid_measured_focal_rank(bad_focal_rank):
+    conn=FixedComparisonConnection(bad_focal_rank=bad_focal_rank)
+    with pytest.raises(HTTPException,match="focal comparison result is incomplete or invalid"):
+        main._owned_series_comparison_results(conn,[(conn.dataset,"milieux",False,conn.indicator)],
+            "commune","c1",None,cohort=("commune",tuple(conn.members),
+                {"kind":"density_class","density_class_code":"d1"}))
+
+
+def test_fixed_context_with_unsupported_descriptor_preserves_unavailable_dynamic_contract():
+    conn=FixedComparisonConnection(unsupported_comparison_level=True)
+    result=main._owned_series_comparison_results(conn,[(conn.dataset,"milieux",False,conn.indicator)],
+        "commune","c1",None,cohort=("commune",tuple(conn.members),
+            {"kind":"density_class","density_class_code":"d1"}))[0][0]
+    assert result["status"]=="unavailable"
+    assert result["reason"]=="fewer_than_two_comparable_values"
+    assert result["focal_value"]==10 and result["comparison_sources"]
+    assert any("o.value" in sql for sql,_ in conn.sql if "LEFT JOIN series_dataset_observation o" in sql)
+
+
 def test_raccordement_fixed_default_uses_published_complete_mean_curve_contract():
     conn=FixedComparisonConnection(stat="mean",scope="selected_group",context="density_class")
     conn.indicator="raccordement_courbe"
@@ -158,6 +258,24 @@ def test_raccordement_fixed_default_uses_published_complete_mean_curve_contract(
         "commune","c1",None,cohort=("commune",tuple(conn.members),
             {"kind":"density_class","density_class_code":"d1"}))[0][0]
     assert generic["mean_curve"]["axis_kind"]=="fixture_curve_axis"
+
+
+def test_raccordement_fixed_counts_published_zero_reason_metadata_without_peer_values():
+    conn=FixedComparisonConnection(stat="mean",scope="selected_group")
+    conn.indicator="raccordement_courbe"; conn.zero_reason="endpoint_stops_but_no_permitted_first_boarding"
+    result=main._owned_series_comparison_result(conn,
+        (conn.dataset,"mobilite",False,conn.indicator),"commune","c1",conn.indicator,None)["result"]
+    assert result["mean_curve"]["model_zero_reason_counts"]=={
+        "endpoint_stops_but_no_permitted_first_boarding":2}
+    assert all("o.value" not in sql for sql,_ in conn.sql if "LEFT JOIN series_dataset_observation o" in sql)
+
+
+def test_raccordement_fixed_fails_closed_on_conflicting_zero_reason_metadata():
+    conn=FixedComparisonConnection(stat="mean",scope="selected_group")
+    conn.indicator="raccordement_courbe"; conn.conflicting_zero_reason=True
+    with pytest.raises(HTTPException,match="zero reason conflicts across axes"):
+        main._owned_series_comparison_result(conn,
+            (conn.dataset,"mobilite",False,conn.indicator),"commune","c1",conn.indicator,None)
 
 
 def test_ocsge_published_comparison_reports_the_m3_facet_sources_without_requiring_shared_vintages():

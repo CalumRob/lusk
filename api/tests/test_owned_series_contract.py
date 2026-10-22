@@ -4,28 +4,18 @@ import re
 import pytest
 from fastapi import HTTPException
 
-from api.main import ReadRepository, _complete_owned_mean_curve, _theme_owned_series_indicator, app
+from api.main import get_semantic_resource_reader
+from api.resource_catalogue import default_resource_catalogue
+from api.resource_requests import ResourceReadItem
+from api import snapshot_reads
+from api.snapshot_reads import _complete_owned_mean_curve
+from api.main import app
 
 
-def test_theme_owned_series_indicator_preserves_nullable_axis_metadata_and_point_coordinates():
-    source = {"source_name": "Canonical source", "vintage": "2025"}
-    categorical = _theme_owned_series_indicator(
-        {"indicator_id": "subventions_annuelles", "label": "Aides", "unit": "€",
-         "axis_values": ["2020", "2021"], "axis_numeric_values": None},
-        {"axis": "2021", "value": 0, "status": "measured", "provenance": [source],
-         "observation_period": "2021"},
-    )
-    assert categorical["dimensions"] == {"axis": "2021", "numeric_axis_value": None,
-        "observation_period": "2021"}
-    assert categorical["value"] == 0
-    assert categorical["sources"] == [{**source, "name": "Canonical source"}]
-
-    numeric = _theme_owned_series_indicator(
-        {"indicator_id": "prix_m2", "label": "Prix", "unit": "€/m²",
-         "axis_values": ["2024", "2025"], "axis_numeric_values": [2024, 2025]},
-        {"axis": "2025", "value": 525, "status": "measured", "provenance": []},
-    )
-    assert numeric["dimensions"] == {"axis": "2025", "numeric_axis_value": 2025}
+def test_retired_theme_series_route_is_not_reintroduced():
+    paths = app.openapi()["paths"]
+    assert not any(path.startswith("/api/themes/") or path.startswith("/api/series-datasets/")
+                   for path in paths)
 
 
 def test_raccordement_selected_mean_is_equal_weighted_and_requires_complete_zero_inclusive_curves():
@@ -61,105 +51,172 @@ def test_raccordement_mean_rejects_member_reason_that_changes_across_curve_axes(
             [row("t0000","no_modeled_endpoint_stops"),row("t0005","endpoint_stops_but_no_permitted_first_boarding")],
             territory_index=15,value_index=16,status_index=17,source_index=18,axis_index=27,reason_index=28)
 
-def test_owned_series_reader_serves_prix_m2_year_axis_and_point_vintage():
+def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_projection():
     class Cursor:
-        def __init__(self, rows): self.rows = rows
+        def __init__(self, rows=()): self.rows = list(rows)
         def fetchone(self): return self.rows[0] if self.rows else None
         def fetchall(self): return self.rows
-    class Transaction:
-        def __enter__(self): return self
-        def __exit__(self, *args): return False
+
     class Connection:
-        def transaction(self): return Transaction()
+        def __init__(self, *, reference_version="ref-v8", territory_type="commune"):
+            self.calls = []
+            self.reference_version = reference_version
+            self.territory_type = territory_type
         def execute(self, sql, params=()):
-            if sql.startswith("SET TRANSACTION"): return Cursor([])
-            if "FROM series_dataset_publication" in sql: return Cursor([("prix-v1", "ref-v1", 2, "2026-10-01T00:00:00Z")])
-            if "FROM table_publication" in sql: return Cursor([("ref-v1",)])
-            if "FROM series_dataset_descriptor" in sql:
-                assert params == ("dvf_prix_m2", "prix_m2")
-                return Cursor([("year", ["2021", "2022", "2023", "2024", "2025"], "may_be_missing", "2025",
-                    "Médiane prix au m²", "€/m²", "low", ["commune", "epci", "departement"], "1")])
-            if "SELECT name,territory_type,department_id,epci_id" in sql: return Cursor([("Commune A1", "commune", "22", "epci-a")])
-            if "SELECT t.territory_id FROM territory_reference" in sql: return Cursor([("22001",)])
-            if "SELECT territory_id FROM territory_reference WHERE territory_type='commune'" in sql:
-                return Cursor([("22001",)])
-            if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id" in sql:
-                return Cursor([("22001","commune","d1")])
-            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
-                return Cursor([("22001","commune","22","epci-a","d1")])
-            if "FROM series_dataset_observation" in sql:
+            sql = " ".join(sql.split())
+            self.calls.append((sql, params))
+            if "to_regclass('observed_collection_descriptor')" in sql:
+                return Cursor([(None,)])
+            if "SELECT to_regclass" in sql:
+                return Cursor([(True,)])
+            if "SELECT 1 FROM scalar_descriptor" in sql or "SELECT 1 FROM profile_descriptor" in sql or "SELECT 1 FROM series_descriptor" in sql:
+                return Cursor([])
+            if "to_regclass('series_dataset_descriptor')" in sql:
+                return Cursor([(True,)])
+            if "FROM series_dataset_descriptor WHERE indicator_id=%s LIMIT 1" in sql:
+                return Cursor([(1,)])
+            if "column_name='active_read_route'" in sql:
+                return Cursor([(True,)])
+            if "WHERE indicator_id=%s AND active_read_route" in sql:
+                return Cursor([("dvf_prix_m2", "theme", "prix_m2")])
+            if "to_regclass('series_named_reference_descriptor')" in sql:
+                return Cursor([(True,)])
+            if "WHERE d.reference_indicator_id=%s AND d.active_read_route" in sql:
+                return Cursor([])
+            if "WHERE reference_indicator_id=%s LIMIT 1" in sql:
+                return Cursor([])
+            if "FROM series_dataset_publication p CROSS JOIN table_publication" in sql:
+                return Cursor([("series-v2", self.reference_version, 6,
+                                "2026-10-01T00:00:00Z", "ref-v8")])
+            if "FROM series_dataset_descriptor WHERE" in sql:
+                return Cursor([("year", ["2024", "2025", "2026"], [2024, 2025, 2026],
+                    "may_be_missing", "Transactions", "€/m²", "low", "descriptor-v3",
+                    ["commune"], "2025", "theme", "year", "unavailable", "median", "default_group")])
+            if "FROM territory_reference WHERE territory_id=%s" in sql:
+                return Cursor([("Commune X", self.territory_type)])
+            if "FROM series_dataset_observation o LEFT JOIN" in sql:
                 return Cursor([
-                    ("22001", "Commune A1", "commune", "2024", None, "2024", None, "missing",
-                     "rev-2025", "dvf_2025_dep22", "2025", "Étalab", "DVF", "2025", "2025-12-31", "2026-05-18", "hash-2025"),
-                    ("22001", "Commune A1", "commune", "2025", None, "2025", 525.0, "measured",
-                     "rev-2025", "dvf_2025_dep22", "2025", "Étalab", "DVF", "2025", "2025-12-31", "2026-05-18", "hash-2025"),
+                    ("2025", "2025", 0.0, "measured", None, "rev-a", "source-a", "v1",
+                     "Source A", "dataset-a", "2025", "2025-01-01", "2025-02-01", "hash-a", None),
+                    ("2025", "2025", 0.0, "measured", None, "rev-b", "source-b", "v2",
+                     "Source B", "dataset-b", "2025", "2025-03-01", "2025-04-01", "hash-b", None),
+                    ("2024", "2024", 4.5, "measured", None, "rev-c", "source-c", "v3",
+                     "Source C", "dataset-c", "2024", "2024-01-01", "2024-02-01", "hash-c", None),
                 ])
+            if "FROM series_named_reference_descriptor d LEFT JOIN" in sql:
+                return Cursor([
+                    ("national_median", "National median", "benchmark", "median", "2024", "2024",
+                     8.0, "measured", None, "ref-r1", "reference-source", "r1", "Reference", "Official",
+                     "2026", "2026-01-01", "2026-02-01", "ref-hash-1", True),
+                    ("national_median", "National median", "benchmark", "median", "2025", "2025",
+                     9.0, "measured", None, "ref-r2", "reference-source", "r2", "Reference", "Official",
+                     "2026", "2026-01-01", "2026-02-01", "ref-hash-2", True),
+                    ("national_median", "National median", "benchmark", "median", "2026", "2026",
+                     10.0, "measured", None, "ref-r3", "reference-source", "r3", "Reference", "Official",
+                     "2026", "2026-01-01", "2026-02-01", "ref-hash-3", True),
+                ])
+            if "SELECT (SELECT count(*) FROM series_dataset_observation" in sql:
+                return Cursor([(6,)])
+            if "FROM series_context_parent_policy" in sql:
+                return Cursor([])
+            if "to_regclass('series_context_parent_policy')" in sql:
+                return Cursor([(None,)])
             raise AssertionError(sql)
-    class Connections:
-        def connection(self):
-            class Context:
-                def __enter__(self): return Connection()
-                def __exit__(self, *args): return False
-            return Context()
 
-    read = ReadRepository(Connections()).read_owned_series(
-        "dvf_prix_m2", "commune", "22001", "prix_m2", "commune", "22", None)
-    assert read["dataset_id"] == "dvf_prix_m2"
-    assert [point["axis"] for point in read["points"]] == ["2024", "2025"]
-    assert [(point["value"], point["status"]) for point in read["points"]] == [(None, "missing"), (525.0, "measured")]
-    assert all(point["observation_period"] == point["axis"] for point in read["points"])
-    assert all(point["provenance"][0]["version"] == "2025" for point in read["points"])
-    assert read["comparison"]["point"] == "2025"
+    connection = Connection()
+    item = ResourceReadItem.model_validate({
+        "resource": "prix_m2",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "intent": {"kind": "facts"},
+    })
+    reader = get_semantic_resource_reader()
+    catalogue = default_resource_catalogue()
+    reader.preflight(connection, item, catalogue)
+    response = reader.read(connection, item, catalogue)
+    read = {**response, "territory": {"id": "22001", "type": "commune", "name": "Commune X"},
+            "named_references": response.get("named_references", [])}
+    assert read["publication_id"] == "series-v2"
+    assert read["reference_content_version"] == "ref-v8"
+    assert read["axis_values"] == ["2024", "2025", "2026"]
+    assert [point["axis"] for point in read["points"]] == ["2024", "2025", "2026"]
+    assert [point["value"] for point in read["points"]] == [4.5, 0.0, None]
+    assert read["points"][1]["provenance"] == [
+        {"revision_id": "rev-a", "source_id": "source-a", "vintage_id": "v1",
+         "source_name": "Source A", "dataset_name": "dataset-a", "version": "2025",
+         "reference_date": "2025-01-01", "publication_date": "2025-02-01", "revision_hash": "hash-a"},
+        {"revision_id": "rev-b", "source_id": "source-b", "vintage_id": "v2",
+         "source_name": "Source B", "dataset_name": "dataset-b", "version": "2025",
+         "reference_date": "2025-03-01", "publication_date": "2025-04-01", "revision_hash": "hash-b"},
+    ]
+    assert read["named_references"][0]["statistic"] == "median"
+    assert [point["value"] for point in read["named_references"][0]["points"]] == [8.0, 9.0, 10.0]
+    assert read["points"][2]["status"] == "missing"
+    projected_item = ResourceReadItem.model_validate({
+        "resource": "prix_m2",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["status"], "intent": {"kind": "facts"},
+    })
+    projected = reader.read(connection, projected_item, catalogue)
+    assert all("value" not in point for point in projected["points"])
+    assert [point["axis"] for point in projected["points"]] == ["2024", "2025", "2026"]
+    with pytest.raises(HTTPException, match="stale or unavailable"):
+        reader.read(Connection(reference_version="ref-v7"), item, catalogue)
+    with pytest.raises(HTTPException, match="type does not match"):
+        reader.read(Connection(territory_type="epci"), item, catalogue)
 
 
-def test_owned_series_reader_rejects_consistent_published_superset(monkeypatch):
-    from api import main
+def test_owned_series_selected_comparison_uses_median_and_independent_publication_lineage(monkeypatch):
+    members = ("22001", "22002", "22003", "22004")
+    route = ("dvf_prix_m2", "theme", False, "prix_m2", None)
 
     class Cursor:
-        def __init__(self, rows=()): self.rows=list(rows)
+        def __init__(self, rows=()): self.rows = list(rows)
         def fetchone(self): return self.rows[0] if self.rows else None
         def fetchall(self): return self.rows
-    class Transaction:
-        def __enter__(self): return self
-        def __exit__(self, *args): return False
-    class Connection:
-        def transaction(self): return Transaction()
-        def execute(self, sql, params=()):
-            if sql.startswith("SET TRANSACTION"): return Cursor()
-            if "FROM series_dataset_publication" in sql: return Cursor([("v1", "ref", 1, "now")])
-            if "FROM table_publication" in sql: return Cursor([("ref",)])
-            if "FROM series_dataset_descriptor" in sql:
-                return Cursor([("year", ["2024"], "may_be_missing", "2024", "Series", "u", "high",
-                    ["commune"], "1", "median", "default_group")])
-            if "SELECT name,territory_type,department_id,epci_id" in sql:
-                return Cursor([("A", "commune", "22", "e")])
-            if "SELECT t.territory_id FROM territory_reference" in sql:
-                return Cursor([("a",), ("b",)])
-            if "FROM series_dataset_observation" in sql:
-                return Cursor([("a", "A", "commune", "2024", None, "2024", 1, "measured",
-                    "rev", "s", "v", "source", "dataset", "1", None, None, "hash", None)])
-            if "FROM ordered_series_comparison_publication" in sql:
-                return Cursor([("comparison-v1", "v1", "ref", 1, 3)])
-            if "FROM ordered_series_comparison_group" in sql:
-                return Cursor([("2024", "median", 1, 3, 3, 0)])
-            if "FROM ordered_series_comparison_territory" in sql:
-                return Cursor([("2024", member, 1, "measured", 1, 1, 3)
-                    for member in ("a", "b", "extra")])
-            raise AssertionError(sql)
-    class Connections:
-        def connection(self):
-            class Context:
-                def __enter__(self): return Connection()
-                def __exit__(self, *args): return False
-            return Context()
 
-    monkeypatch.setattr(main, "_comparison_cohort", lambda *args: ("commune", ("a", "b"),
-        {"kind": "density_class", "density_class_code": "d1"}))
-    monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *args: ("density_class", "d1", "commune"))
-    with pytest.raises(HTTPException) as error:
-        ReadRepository(Connections()).read_owned_series("dataset", "commune", "a", "indicator",
-            "commune", None, None)
-    assert error.value.status_code == 503
+    class Connection:
+        def __init__(self): self.calls = []
+        def execute(self, sql, params=()):
+            sql = " ".join(sql.split())
+            self.calls.append((sql, params))
+            if "FROM series_dataset_publication p LEFT JOIN table_publication" in sql:
+                return Cursor([("dvf_prix_m2", "owner-v17", "reference-v9", "reference-v9")])
+            if "FROM series_dataset_descriptor d WHERE" in sql:
+                return Cursor([("dvf_prix_m2", "prix_m2", "theme", "2025", "Price", "€/m²",
+                    "low", ["commune"], "descriptor-v4", ["2024", "2025"], "median",
+                    "default_group", ["commune"], "year")])
+            if "FROM series_dataset_descriptor d LEFT JOIN" in sql:
+                return Cursor([
+                    ("dvf_prix_m2", "prix_m2", "22001", 10.0, "measured", "rev-1", "2025", None),
+                    ("dvf_prix_m2", "prix_m2", "22002", 20.0, "measured", "rev-2", "2025", None),
+                    ("dvf_prix_m2", "prix_m2", "22003", 30.0, "measured", "rev-3", "2025", None),
+                    ("dvf_prix_m2", "prix_m2", "22004", 40.0, "measured", "rev-4", "2025", None),
+                ])
+            if "FROM series_provenance_revision WHERE provenance_revision_id=ANY" in sql:
+                return Cursor([(f"rev-{i}", f"source-{i}", f"v{i}", f"Source {i}", "DVF",
+                    f"202{i}", "2025-01-01", "2025-02-01", f"hash-{i}") for i in range(1, 5)])
+            raise AssertionError(sql)
+
+    monkeypatch.setattr(snapshot_reads, "_comparison_cohort",
+        lambda *_args, **_kwargs: ("commune", members, {"kind": "selected", "ids": members}))
+    monkeypatch.setattr(snapshot_reads, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: None)
+    result, markers, cohort_type, selected_members, _scope = snapshot_reads._owned_series_comparison_results(
+        Connection(), [route], "commune", "22001", None)
+    comparison = result[0]
+    assert cohort_type == "commune" and selected_members == members
+    assert markers["dvf_prix_m2"][1:3] == ("owner-v17", "reference-v9")
+    assert comparison["statistic"] == "median"
+    assert comparison["median"] == 25.0
+    assert comparison["rank"] == 1
+    assert comparison["eligible_count"] == 4
+    assert {source["source_id"] for source in comparison["comparison_sources"]} == {
+        "source-1", "source-2", "source-3", "source-4"}
+    assert [source["vintage_id"] for source in comparison["comparison_sources"]] == [
+        "v1", "v2", "v3", "v4"]
+
+
+
+
 
 def test_owned_series_migration_is_additive_and_fresh_schema_matches():
     root = Path(__file__).resolve().parents[1]
@@ -200,163 +257,3 @@ def test_owned_series_migration_is_additive_and_fresh_schema_matches():
     assert page["series_dataset_id"] == "ocsge_artif_etats"
     assert page["series_publication"] == "owned"
     assert page["comparison"]["detail"] in page["comparison"]["details"]
-
-
-def test_owned_reader_is_unit_scoped_snapshot_with_canonical_facet_and_peers():
-    assert any(route.path == "/api/series-datasets/{dataset_id}/territories/{territory_type}/{territory_id}/{indicator_id}"
-               for route in app.routes)
-    class Cursor:
-        def __init__(self, rows): self.rows = rows
-        def fetchone(self): return self.rows[0] if self.rows else None
-        def fetchall(self): return self.rows
-
-    class Tx:
-        def __enter__(self): return self
-        def __exit__(self, *args): return False
-
-    class Connection:
-        def __init__(self): self.queries=[]; self.no_comparison=False; self.missing_marker=False; self.stale_source=False; self.stale_reference=False; self.incomplete_comparison=False
-        def transaction(self): return Tx()
-        def execute(self, sql, params=()):
-            self.queries.append((sql,params))
-            if sql.startswith("SET TRANSACTION"): return Cursor([])
-            if "FROM series_dataset_publication" in sql:
-                return Cursor([("ocsge_v1","ref1",1,"2026-09-30T00:00:00Z")])
-            if "FROM ordered_series_comparison_publication" in sql:
-                return Cursor([] if self.missing_marker else [("cmp-v1","wrong-source" if self.stale_source else "ocsge_v1",
-                    "wrong-reference" if self.stale_reference else "ref1",8,10)])
-            if "FROM ordered_series_comparison_group" in sql:
-                context=params[2]; ids={"density_class":["35238","35239","35240","22001","35241"],
-                    "epci":["35238","35239"],"bretagne":["35238","35239","35240","22001","35241"]}[context]
-                rows=[("M2","median",0.0,len(ids),len(ids),0),
-                    ("M3","median",50.0,len(ids),len(ids)-int(context in ("density_class","bretagne")),
-                        int(context in ("density_class","bretagne")))]
-                return Cursor(rows[:1] if self.incomplete_comparison else rows)
-            if "FROM ordered_series_comparison_territory" in sql:
-                context=params[2]
-                ids={"density_class":["35238","35239","35240","22001","35241"],
-                    "epci":["35238","35239"],"bretagne":["35238","35239","35240","22001","35241"]}[context]
-                values={"35238":50.0,"35239":50.0,"35240":70.0,"22001":10.0,"35241":None}
-                rows=[]
-                for axis in ("M2","M3"):
-                    eligible=[0.0]*len(ids) if axis=="M2" else [values[i] for i in ids if values[i] is not None]
-                    for peer in ids:
-                        value=0.0 if axis=="M2" else values[peer]
-                        rank=1+sum(v>value for v in eligible) if value is not None else None
-                        ties=eligible.count(value) if value is not None else None
-                        rows.append((axis,peer,value,"missing" if value is None else "measured",rank,ties,len(eligible) if value is not None else None))
-                return Cursor(rows)
-            if "SELECT territory_id FROM territory_reference WHERE territory_type='region'" in sql:
-                return Cursor([("53",)])
-            if "FROM table_publication" in sql: return Cursor([("ref1",)])
-            if "FROM series_dataset_descriptor" in sql:
-                assert params == ("ocsge_artif_etats","artif_par_habitant")
-                return Cursor([("declared_detail",["M2","M3","2021","2025"],"may_be_missing",None if self.no_comparison else "2025","?tat", "m?/hab","none" if self.no_comparison else "low",["commune","epci","departement"],"1")])
-            if "SELECT name,territory_type,department_id,epci_id" in sql:
-                return Cursor([("Rennes","commune","35","243500139")])
-            if "SELECT t.territory_id FROM territory_reference" in sql:
-                department, epci = params[1], params[3]
-                if epci: return Cursor([("35238",),("35239",)])
-                if department: return Cursor([("35238",),("35239",),("35240",)])
-                return Cursor([("35238",),("35239",),("35240",),("22001",),("35241",)])
-            if "SELECT territory_id FROM territory_reference WHERE territory_type='commune'" in sql:
-                department, _, epci, _ = params[:4]
-                if epci: return Cursor([("35238",),("35239",)])
-                if department: return Cursor([("35238",),("35239",),("35240",)])
-                return Cursor([("35238",),("35239",),("35240",),("22001",),("35241",)])
-            if "SELECT territory_id,territory_type,density_class_code FROM territory_reference WHERE territory_id" in sql:
-                return Cursor([("35238","commune","d1")])
-            if "SELECT territory_id,epci_id,density_class_code" in sql and "territory_type='commune'" in sql:
-                return Cursor([(i,"243500139" if i in ("35238","35239") else "other","d1")
-                    for i in ("35238","35239","35240","22001","35241")])
-            if "SELECT territory_id,territory_type,department_id,epci_id,density_class_code FROM territory_reference" in sql:
-                return Cursor([(i,"commune","35" if i.startswith("35") else "22",
-                    "243500139" if i in ("35238","35239") else "other","d1")
-                    for i in ("35238","35239","35240","22001","35241")])
-            if "FROM series_dataset_observation" in sql:
-                ids=params[2]
-                values={"35238":50.0,"35239":50.0,"35240":70.0,"22001":10.0,"35241":None}
-                result=[]
-                for territory in ids:
-                    val=values[territory]
-                    for axis,role,value,status,source in (
-                        ("2021","M2",0.0,"measured","ocsge_artificialisation_29_2021"),
-                        ("2025","M3",val,"missing" if val is None else "measured","ocsge_artificialisation_29_2025"),
-                    ):
-                        result.append((territory,{"35238":"Rennes","35239":"Commune A","35240":"Commune B","22001":"Commune C","35241":"Commune D"}[territory],"commune",
-                            axis,role,"2021-2025",value,status,
-                            f"rev-{territory}-{axis}",source,axis,"IGN","OCS-GE",axis,"2021-01-01","2025-03-07",f"hash-{territory}-{axis}"))
-                return Cursor(result)
-            raise AssertionError(sql)
-    class Connections:
-        def __init__(self): self.connection_value=Connection()
-        def connection(self):
-            class Context:
-                def __enter__(inner): return self.connection_value
-                def __exit__(inner,*args): return False
-            return Context()
-
-    connections=Connections()
-    repository=ReadRepository(connections)
-    epci=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-        "commune",None,"243500139")
-    department=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-        "commune","35",None)
-    connections.connection_value.queries.clear()
-    repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-        "commune","35",None)
-    assert not any("ordered_series_comparison_" in q for q,_ in connections.connection_value.queries)
-    connections.connection_value.queries.clear()
-    density=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-        "commune",None,None)
-    assert epci["comparison_point"] == epci["comparison"]["point"] == "2025"
-    with pytest.raises(HTTPException,match="descriptor comparison point"):
-        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-            "commune",None,"243500139","2021")
-    assert epci["comparison"]["comparable_count"] == 2
-    assert epci["comparison"]["rank"] == 1 and epci["comparison"]["ties"] == 2
-    assert epci["comparison"]["median"] == 50.0
-    assert department["comparison"]["comparable_count"] == 3
-    assert department["comparison"]["median"] == 50.0
-    assert density["comparison"]["comparable_count"] == 4
-    assert density["comparison"]["rank"] == 2 and density["comparison"]["ties"] == 2
-    assert density["comparison"]["median"] == 50.0
-    assert epci["comparison"]["median"] != density["comparison"]["median"] or epci["comparison"]["comparable_count"] != density["comparison"]["comparable_count"]
-    assert epci["publication_id"] == "ocsge_v1"
-    assert epci["points"][0]["value"] == 0.0
-    assert "rank_epci" not in epci["points"][0]
-    facet=next(p for p in epci["scope_series"][0]["points"] if p["axis"]=="2025")
-    assert facet["comparison_rank"] == 1 and facet["comparison_ties"] == 2
-    assert epci["scope_series"][1]["points"][1]["value"] == 50.0
-    missing=next(p for p in density["scope_series"][-1]["points"] if p["axis"]=="2025")
-    assert missing["status"] == "missing" and missing["comparison_rank"] is None
-    connections.connection_value.no_comparison=True
-    no_comparison=repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-        "commune","35",None)
-    assert no_comparison["comparison"] is None
-    assert all("comparison_rank" not in point for territory in no_comparison["scope_series"] for point in territory["points"])
-    sql=" ".join(q for q,_ in connections.connection_value.queries)
-    assert "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY" in sql
-    assert "WHERE dataset_id=%s AND indicator_id=%s" in sql
-    assert any("FROM ordered_series_comparison_publication" in q for q,_ in connections.connection_value.queries)
-    assert any("FROM ordered_series_comparison_territory" in q for q,_ in connections.connection_value.queries)
-    # Department-filtered explicit selections were exercised above without querying fixed tables.
-    connections.connection_value.queries.clear(); connections.connection_value.no_comparison=False
-    connections.connection_value.stale_source=True
-    with pytest.raises(HTTPException,match="missing or stale"):
-        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-            "commune",None,"243500139")
-    connections.connection_value.stale_source=False; connections.connection_value.stale_reference=False
-    connections.connection_value.incomplete_comparison=True
-    with pytest.raises(HTTPException,match="incomplete"):
-        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-            "commune",None,"243500139")
-    connections.connection_value.incomplete_comparison=False; connections.connection_value.no_comparison=False
-    connections.connection_value.missing_marker=True
-    with pytest.raises(HTTPException,match="missing or stale"):
-        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-            "commune",None,"243500139")
-    connections.connection_value.stale_source=False; connections.connection_value.stale_reference=True
-    with pytest.raises(HTTPException,match="missing or stale"):
-        repository.read_owned_series("ocsge_artif_etats","commune","35238","artif_par_habitant",
-            "commune",None,"243500139")

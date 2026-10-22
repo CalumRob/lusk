@@ -2,14 +2,13 @@
 -- explicit operator migration procedure in README-deploy.md instead.
 CREATE TABLE table_publication (
     table_name text PRIMARY KEY CHECK (table_name IN (
-        'territory_reference', 'service_registry', 'essential_service_access',
-        'building_ramp', 'building_grid', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','mobility_typed_reading','mobility_density_distribution','aedar_territorial_aggregate')),
+        'territory_reference', 'scalar_observation', 'declared_profile', 'ordered_series', 'demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate')),
     content_version text NOT NULL,
     row_count integer NOT NULL CHECK (row_count >= 0),
     reference_content_version text,
     published_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT shared_fact_publication_requires_reference
-      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','bpe_profile_evidence','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','mobility_typed_reading','mobility_density_distribution','aedar_territorial_aggregate') OR reference_content_version IS NOT NULL)
+      CHECK (table_name NOT IN ('scalar_observation','declared_profile','ordered_series','demographic_typed_reading','selected_reading','economy_typed_reading','economy_activity_evidence','milieux_typed_reading','milieux_reading_absence','aedar_territorial_aggregate') OR reference_content_version IS NOT NULL)
 );
 
 -- Closed, dense declared-detail profiles (e.g. structure_age × sex). The
@@ -118,14 +117,6 @@ CREATE CONSTRAINT TRIGGER scalar_descriptor_source_set_not_empty
 AFTER INSERT OR UPDATE OR DELETE ON scalar_descriptor_source DEFERRABLE INITIALLY DEFERRED
 FOR EACH ROW EXECUTE FUNCTION assert_scalar_descriptor_sources();
 
--- The access descriptor is part of the validated access publication, not a
--- renderer constant. It is updated atomically with the access table marker.
-CREATE TABLE access_publication_metadata (
-    singleton boolean PRIMARY KEY DEFAULT true CHECK (singleton),
-    bretagne_kind text NOT NULL,
-    bretagne_label text NOT NULL
-);
-
 CREATE TABLE territory_reference (
     territory_id text PRIMARY KEY,
     territory_type text NOT NULL,
@@ -135,100 +126,6 @@ CREATE TABLE territory_reference (
     density_class_code text,
     density_class_label text
 );
--- BPE evidence is neither an ordinary median-profile nor raw TYPEQU matrix.
--- Four closed class rows carry producer-selected bounded exemplars; the actual
--- registered TYPEQU universe and its identity are kept with this publication.
-CREATE TABLE bpe_profile_evidence_descriptor (
-  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton),
-  indicator_id text NOT NULL UNIQUE CHECK(indicator_id='bpe_access_profile'),
-  descriptor_version text NOT NULL,
-  allowed_levels text[] NOT NULL CHECK(allowed_levels=ARRAY['commune','epci','departement','region']::text[]),
-  completeness text NOT NULL CHECK(completeness='dense_complete'), classification_id text NOT NULL CHECK(length(trim(classification_id))>0),
-  universe_count integer NOT NULL CHECK(universe_count>0), universe_sha256 text NOT NULL CHECK(universe_sha256 ~ '^[0-9a-f]{64}$'),
-  registry_filename text NOT NULL CHECK(length(trim(registry_filename))>0), registry_semantic_effect text NOT NULL CHECK(length(trim(registry_semantic_effect))>0),
-  membership_sha256 text NOT NULL CHECK(membership_sha256 ~ '^[0-9a-f]{64}$'),
-  source_id text NOT NULL REFERENCES source_dataset(source_id), vintage_id text NOT NULL,
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
-);
-CREATE TABLE bpe_profile_class_axis (
-  class_key text PRIMARY KEY CHECK(class_key ~ '^[a-z][a-z0-9-]{0,63}$'), label text NOT NULL CHECK(length(trim(label))>0),
-  ordinal smallint NOT NULL UNIQUE CHECK(ordinal>=0), direction text NOT NULL CHECK(direction IN ('high','low','none'))
-);
-CREATE TABLE bpe_profile_evidence (
-  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
-  class_key text NOT NULL REFERENCES bpe_profile_class_axis(class_key), class_label text NOT NULL,
-  class_count integer NOT NULL CHECK(class_count>=0), universe_count integer NOT NULL CHECK(universe_count>0),
-  exemplar_typequ text, exemplar_label text, exemplar_c double precision, exemplar_b double precision, exemplar_t double precision,
-  PRIMARY KEY(territory_type,territory_id,class_key), FOREIGN KEY(territory_id) REFERENCES territory_reference(territory_id),
-  CHECK((class_count=0 AND exemplar_typequ IS NULL AND exemplar_label IS NULL AND exemplar_c IS NULL AND exemplar_b IS NULL AND exemplar_t IS NULL) OR
-        (class_count>0 AND exemplar_typequ ~ '^[A-Z][0-9]{3}$' AND exemplar_label IS NOT NULL AND exemplar_c BETWEEN 0 AND 1 AND exemplar_b BETWEEN 0 AND 1 AND exemplar_t BETWEEN 0 AND 1)),
-  CHECK(universe_count>=class_count)
-);
-CREATE TABLE bpe_profile_evidence_source (
-  territory_type text NOT NULL, territory_id text NOT NULL, class_key text NOT NULL, source_id text NOT NULL, vintage_id text NOT NULL,
-  PRIMARY KEY(territory_type,territory_id,class_key,source_id,vintage_id),
-  FOREIGN KEY(territory_type,territory_id,class_key) REFERENCES bpe_profile_evidence(territory_type,territory_id,class_key) ON DELETE CASCADE,
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
-);
-CREATE FUNCTION assert_bpe_profile_evidence_complete() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected integer; axis_count integer; territory record; bad boolean; partition_rows integer;
-BEGIN
-  SELECT universe_count INTO expected FROM bpe_profile_evidence_descriptor WHERE singleton;
-  IF expected IS NULL THEN RAISE EXCEPTION 'BPE profile evidence descriptor is unavailable'; END IF;
-  SELECT count(*) INTO axis_count FROM bpe_profile_class_axis;
-  IF axis_count <> 4 THEN
-    RAISE EXCEPTION 'BPE evidence requires exactly four declared class axes';
-  END IF;
-  IF TG_TABLE_NAME <> 'bpe_profile_evidence' THEN
-    -- Descriptor and class-axis edits are rare; validate the whole snapshot
-    -- when those metadata rows change.
-    SELECT EXISTS (
-      SELECT 1 FROM bpe_profile_evidence e
-      GROUP BY e.territory_type,e.territory_id
-      HAVING count(*) <> axis_count OR sum(e.class_count) <> expected
-          OR min(e.universe_count) <> expected OR max(e.universe_count) <> expected
-    ) INTO bad;
-    IF bad THEN RAISE EXCEPTION 'BPE profile evidence universe/count partition is incomplete'; END IF;
-    IF EXISTS (SELECT 1 FROM bpe_profile_evidence e JOIN bpe_profile_class_axis a USING(class_key)
-               WHERE e.class_label<>a.label)
-    THEN RAISE EXCEPTION 'BPE fact class labels differ from the declared class axis'; END IF;
-  ELSE
-    -- Fact events are checked only against their affected territory group(s).
-    -- The primary key starts with (territory_type, territory_id), making this
-    -- bounded to the four rows that form one declared profile.
-    FOR territory IN
-      SELECT DISTINCT territory_type,territory_id FROM (
-        SELECT CASE WHEN TG_OP='DELETE' THEN OLD.territory_type ELSE NEW.territory_type END AS territory_type,
-               CASE WHEN TG_OP='DELETE' THEN OLD.territory_id ELSE NEW.territory_id END AS territory_id
-        UNION ALL
-        SELECT OLD.territory_type,OLD.territory_id WHERE TG_OP='UPDATE'
-      ) affected
-    LOOP
-      SELECT count(*) INTO partition_rows FROM bpe_profile_evidence
-        WHERE territory_type=territory.territory_type AND territory_id=territory.territory_id;
-      -- An eligible territory can leave the source universe entirely during
-      -- replacement; its complete removal is valid. Any surviving partition
-      -- must still be dense and a complete source-universe partition.
-      IF partition_rows = 0 THEN CONTINUE; END IF;
-      SELECT count(*) <> axis_count OR coalesce(sum(class_count),0) <> expected
-          OR min(universe_count) <> expected OR max(universe_count) <> expected
-        INTO bad FROM bpe_profile_evidence
-        WHERE territory_type=territory.territory_type AND territory_id=territory.territory_id;
-      IF bad THEN RAISE EXCEPTION 'BPE profile evidence is not dense or its universe/count partition is incomplete'; END IF;
-      IF EXISTS (SELECT 1 FROM bpe_profile_evidence e JOIN bpe_profile_class_axis a USING(class_key)
-                 WHERE e.territory_type=territory.territory_type AND e.territory_id=territory.territory_id
-                   AND e.class_label<>a.label)
-      THEN RAISE EXCEPTION 'BPE fact class labels differ from the declared class axis'; END IF;
-    END LOOP;
-  END IF;
-  RETURN NULL;
-END $$;
-CREATE CONSTRAINT TRIGGER bpe_profile_evidence_complete AFTER INSERT OR UPDATE OR DELETE ON bpe_profile_evidence
-  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION assert_bpe_profile_evidence_complete();
-CREATE CONSTRAINT TRIGGER bpe_profile_descriptor_complete AFTER INSERT OR UPDATE OR DELETE ON bpe_profile_evidence_descriptor
-  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION assert_bpe_profile_evidence_complete();
-CREATE CONSTRAINT TRIGGER bpe_profile_class_axis_complete AFTER INSERT OR UPDATE OR DELETE ON bpe_profile_class_axis
-  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION assert_bpe_profile_evidence_complete();
 ALTER TABLE profile_observation ADD CONSTRAINT profile_observation_territory_reference
   FOREIGN KEY (territory_id) REFERENCES territory_reference(territory_id);
 CREATE FUNCTION assert_profile_territory_level() RETURNS trigger LANGUAGE plpgsql AS $$
@@ -338,6 +235,7 @@ CREATE TABLE scalar_comparison_publication (
     reference_content_version text NOT NULL,
     group_row_count integer NOT NULL CHECK (group_row_count >= 0),
     territory_row_count integer NOT NULL CHECK (territory_row_count >= 0),
+    lineage_row_count integer NOT NULL CHECK (lineage_row_count >= 0),
     published_at timestamptz NOT NULL DEFAULT now()
 );
 CREATE TABLE scalar_comparison_group (
@@ -350,6 +248,7 @@ CREATE TABLE scalar_comparison_group (
     member_count integer NOT NULL CHECK (member_count > 0),
     eligible_count integer NOT NULL CHECK (eligible_count >= 0),
     missing_count integer NOT NULL CHECK (missing_count >= 0),
+    lineage_source_count integer NOT NULL CHECK (lineage_source_count >= 0),
     PRIMARY KEY (comparison_context,group_id,territory_type,indicator_id),
     CHECK (member_count=eligible_count+missing_count),
     CHECK ((eligible_count=0 AND median IS NULL) OR
@@ -375,8 +274,26 @@ CREATE TABLE scalar_comparison_territory (
       OR (status<>'measured' AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)),
     CHECK (status<>'measured' OR (rank<=rank_size AND tie_count<=rank_size))
 );
+-- Shared provenance projection at the resolved comparison group/facet grain.
+-- It stores only the source/vintage union for each published group, not one
+-- copy per focal territory or a read-time scan of peer observations.
+CREATE TABLE comparison_source_lineage (
+    comparison_family text NOT NULL CHECK (comparison_family IN
+      ('scalar','profile','ordered_series','period_detail','aedar')),
+    comparison_context text NOT NULL CHECK (comparison_context IN ('density_class','epci','bretagne','same_level')),
+    group_id text NOT NULL CHECK (length(trim(group_id)) > 0),
+    territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement')),
+    facet_id text NOT NULL CHECK (length(trim(facet_id)) > 0),
+    source_id text NOT NULL,
+    vintage_id text NOT NULL,
+    comparison_content_version text NOT NULL,
+    PRIMARY KEY (comparison_family,comparison_context,group_id,territory_type,facet_id,source_id,vintage_id),
+    FOREIGN KEY (source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)
+);
 GRANT SELECT ON scalar_comparison_publication,scalar_comparison_group,scalar_comparison_territory TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON scalar_comparison_publication,scalar_comparison_group,scalar_comparison_territory TO lusk_publisher;
+GRANT SELECT ON comparison_source_lineage TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON comparison_source_lineage TO lusk_publisher;
 
 -- Detail-backed declared profile facets only. Scalar-backed profiles (notably
 -- DPE) continue to reference scalar_comparison and are never copied here.
@@ -401,6 +318,7 @@ CREATE TABLE profile_comparison_group (
     member_count integer NOT NULL CHECK (member_count > 0),
     eligible_count integer NOT NULL CHECK (eligible_count >= 0),
     missing_count integer NOT NULL CHECK (missing_count >= 0),
+    lineage_source_count integer NOT NULL CHECK (lineage_source_count >= 0),
     profile_content_version text NOT NULL,
     reference_content_version text NOT NULL,
     PRIMARY KEY (comparison_context,group_id,territory_type,indicator_id,detail_key,sex_key),
@@ -427,197 +345,6 @@ CREATE TABLE profile_comparison_territory (
 );
 GRANT SELECT ON profile_comparison_publication,profile_comparison_group,profile_comparison_territory TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON profile_comparison_publication,profile_comparison_group,profile_comparison_territory TO lusk_publisher;
-
-CREATE TABLE service_registry (service text PRIMARY KEY);
-
-CREATE TABLE building_evidence_descriptor (
-    table_name text PRIMARY KEY CHECK (table_name IN ('building_ramp','building_grid')),
-    descriptor_version text NOT NULL,
-    contract jsonb NOT NULL CHECK (jsonb_typeof(contract)='object'),
-    CHECK (COALESCE((table_name='building_ramp' AND contract->>'shape'='building_ramp'
-            AND contract->>'peer_statistic'='building_count_weighted_mean'
-            AND jsonb_array_length(contract->'territory_levels')=4
-            AND jsonb_array_length(contract->'axes'->'mode')=3
-            AND jsonb_array_length(contract->'axes'->'quantile')=11), false) OR
-           COALESCE((table_name='building_grid' AND contract->>'shape'='building_grid'
-            AND contract->>'peer_statistic'='pooled_building_counts'
-            AND jsonb_array_length(contract->'territory_levels')=4
-            AND jsonb_typeof(contract->'axes'->'mode')='string'
-            AND jsonb_array_length(contract->'axes'->'breadth')=5
-            AND jsonb_array_length(contract->'axes'->'depth')=6), false))
-);
-CREATE TABLE building_evidence_descriptor_source (
-    table_name text NOT NULL REFERENCES building_evidence_descriptor(table_name) ON DELETE CASCADE,
-    source_id text NOT NULL REFERENCES source_dataset(source_id),
-    PRIMARY KEY(table_name,source_id)
-);
-
-CREATE TABLE essential_service_access (
-    territory_id text NOT NULL REFERENCES territory_reference(territory_id),
-    service text NOT NULL REFERENCES service_registry(service),
-    mode text NOT NULL CHECK (mode IN ('walk_transit', 'bike', 'car')),
-    share double precision CHECK (share IS NULL OR (share >= 0 AND share <= 1)),
-    indicator_label text NOT NULL,
-    effective_direction text NOT NULL CHECK (effective_direction IN ('high', 'low')),
-    source_id text NOT NULL,
-    source_name text NOT NULL,
-    source_version text NOT NULL,
-    reference_date date,
-    source_publication_date date,
-    PRIMARY KEY (territory_id, service, mode)
-);
-
-CREATE INDEX essential_service_access_territory_lookup
-    ON essential_service_access (territory_id, service);
-
--- The two building grains share territory_reference. -1 represents an explicit
--- absent sentinel, never a missing member or a measured zero.
-CREATE TABLE building_ramp (
-    territory_id text NOT NULL REFERENCES territory_reference(territory_id),
-    territory_type text NOT NULL CHECK (territory_type IN ('commune', 'epci', 'departement', 'region')),
-    availability text NOT NULL CHECK (availability IN ('complete', 'absent')),
-    mode text NOT NULL CHECK (mode IN ('c', 'b', 't')),
-    quantile_index smallint NOT NULL CHECK (quantile_index BETWEEN -1 AND 10),
-    quantile double precision,
-    accessible_types double precision,
-    total_buildings integer NOT NULL CHECK (total_buildings >= 0),
-    source_id text NOT NULL,
-    source_version text NOT NULL,
-    effective_direction text NOT NULL CHECK (effective_direction IN ('high', 'low')),
-    PRIMARY KEY (territory_type, territory_id, mode, quantile_index),
-    FOREIGN KEY (source_id,source_version) REFERENCES source_vintage(source_id,vintage_id),
-    CHECK ((availability = 'absent' AND quantile_index = -1 AND quantile IS NULL
-            AND accessible_types IS NULL AND total_buildings = 0)
-        OR (availability = 'complete' AND quantile_index >= 0 AND quantile IS NOT NULL
-            AND accessible_types IS NOT NULL AND total_buildings > 0))
-);
-
-CREATE TABLE building_grid (
-    territory_id text NOT NULL REFERENCES territory_reference(territory_id),
-    territory_type text NOT NULL CHECK (territory_type IN ('commune', 'epci', 'departement', 'region')),
-    availability text NOT NULL CHECK (availability IN ('complete', 'absent')),
-    mode text NOT NULL CHECK (mode = 't'),
-    cell_index smallint NOT NULL CHECK (cell_index BETWEEN -1 AND 29),
-    breadth_bucket text,
-    depth_bucket text,
-    building_count integer,
-    total_buildings integer NOT NULL CHECK (total_buildings >= 0),
-    source_id text NOT NULL,
-    source_version text NOT NULL,
-    PRIMARY KEY (territory_type, territory_id, cell_index),
-    FOREIGN KEY (source_id,source_version) REFERENCES source_vintage(source_id,vintage_id),
-    CHECK ((availability = 'absent' AND cell_index = -1 AND breadth_bucket IS NULL
-            AND depth_bucket IS NULL AND building_count IS NULL AND total_buildings = 0)
-        OR (availability = 'complete' AND cell_index >= 0 AND breadth_bucket IS NOT NULL
-            AND depth_bucket IS NOT NULL AND building_count >= 0 AND total_buildings > 0))
-);
-
-CREATE FUNCTION assert_building_fact_source() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE serving_table text; descriptor jsonb; expected_quantile jsonb;
-  breadth_ordinal integer; depth_ordinal integer; expected_cell_index integer;
-BEGIN
-  serving_table := TG_TABLE_NAME;
-  SELECT contract INTO descriptor FROM building_evidence_descriptor WHERE table_name=serving_table;
-  IF descriptor IS NULL THEN RAISE EXCEPTION 'building fact descriptor is missing'; END IF;
-  IF NOT EXISTS (SELECT 1 FROM building_evidence_descriptor_source s
-      WHERE s.table_name=serving_table AND s.source_id=NEW.source_id) THEN
-    RAISE EXCEPTION 'building fact source is not declared by its descriptor';
-  END IF;
-  IF NOT COALESCE(descriptor->'territory_levels' ? NEW.territory_type, false) THEN
-    RAISE EXCEPTION 'building fact territory level is not descriptor-eligible';
-  END IF;
-  IF serving_table='building_ramp' AND NEW.availability='complete' THEN
-    expected_quantile := descriptor->'axes'->'quantile'->(NEW.quantile_index::integer);
-    IF NOT COALESCE(descriptor->'axes'->'mode' ? NEW.mode, false)
-       OR expected_quantile IS NULL OR expected_quantile = 'null'::jsonb
-       -- R can emit 0.30000000000000004 for the declared 0.3 position.
-       OR NOT COALESCE(abs(NEW.quantile - (expected_quantile #>> '{}')::double precision) <= 1e-12, false)
-       OR NEW.effective_direction IS DISTINCT FROM (descriptor->>'direction') THEN
-      RAISE EXCEPTION 'ramp point is outside its declared axes';
-    END IF;
-  ELSIF serving_table='building_grid' AND NEW.availability='complete' THEN
-    IF NEW.mode IS DISTINCT FROM (descriptor->'axes'->>'mode') THEN
-      RAISE EXCEPTION 'grid cell mode is outside its declared axes';
-    END IF;
-    SELECT axis.ordinality::integer INTO breadth_ordinal
-      FROM jsonb_array_elements_text(descriptor->'axes'->'breadth')
-        WITH ORDINALITY AS axis(value, ordinality)
-      WHERE axis.value=NEW.breadth_bucket ORDER BY axis.ordinality LIMIT 1;
-    SELECT axis.ordinality::integer INTO depth_ordinal
-      FROM jsonb_array_elements_text(descriptor->'axes'->'depth')
-        WITH ORDINALITY AS axis(value, ordinality)
-      WHERE axis.value=NEW.depth_bucket ORDER BY axis.ordinality LIMIT 1;
-    IF breadth_ordinal IS NULL OR depth_ordinal IS NULL THEN
-      RAISE EXCEPTION 'grid cell is missing a declared breadth/depth axis';
-    END IF;
-    expected_cell_index := (breadth_ordinal - 1) * jsonb_array_length(descriptor->'axes'->'depth')
-                           + depth_ordinal - 1;
-    IF NEW.cell_index IS DISTINCT FROM expected_cell_index THEN
-      RAISE EXCEPTION 'grid cell index does not match its declared breadth/depth pair';
-    END IF;
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER building_ramp_source_declared BEFORE INSERT OR UPDATE ON building_ramp
-  FOR EACH ROW EXECUTE FUNCTION assert_building_fact_source();
-CREATE TRIGGER building_grid_source_declared BEFORE INSERT OR UPDATE ON building_grid
-  FOR EACH ROW EXECUTE FUNCTION assert_building_fact_source();
-
-CREATE FUNCTION assert_building_dataset_complete(expected_ramp integer, expected_grid integer)
-RETURNS void LANGUAGE plpgsql AS $$
-BEGIN
-    IF expected_ramp <> (SELECT count(*) FROM building_ramp)
-       OR expected_grid <> (SELECT count(*) FROM building_grid)
-       OR EXISTS (SELECT 1 FROM territory_reference t WHERE
-         (SELECT count(DISTINCT mode) FROM building_ramp r WHERE r.territory_type=t.territory_type AND r.territory_id=t.territory_id) <> 3
-         OR EXISTS (SELECT 1 FROM building_ramp r WHERE r.territory_type=t.territory_type AND r.territory_id=t.territory_id
-           GROUP BY r.territory_type,r.territory_id HAVING count(DISTINCT availability)<>1 OR count(DISTINCT total_buildings)<>1)
-         OR EXISTS (SELECT 1 FROM building_ramp r WHERE r.territory_type=t.territory_type AND r.territory_id=t.territory_id
-           GROUP BY r.mode HAVING NOT ((bool_and(availability='absent') AND count(*)=1)
-             OR (bool_and(availability='complete') AND count(*)=11)))
-         OR (SELECT count(*) FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id
-             AND g.availability='complete') NOT IN (0,30)
-         OR (SELECT count(*) FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id
-             AND g.availability='absent') NOT IN (0,1)
-         OR (SELECT count(*) FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id) NOT IN (1,30)
-         OR EXISTS (SELECT 1 FROM building_grid g WHERE g.territory_type=t.territory_type AND g.territory_id=t.territory_id
-            AND g.availability='complete' GROUP BY g.territory_type,g.territory_id
-            HAVING sum(g.building_count) <> min(g.total_buildings))) THEN
-        RAISE EXCEPTION 'incomplete building-access dataset';
-    END IF;
-END $$;
-
-CREATE FUNCTION assert_building_descriptor_publication() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NEW.table_name IN ('building_ramp','building_grid') AND
-     NOT EXISTS (SELECT 1 FROM building_evidence_descriptor d
-       JOIN building_evidence_descriptor_source s USING(table_name)
-       WHERE d.table_name=NEW.table_name AND d.descriptor_version=NEW.content_version) THEN
-    RAISE EXCEPTION 'building publication requires matching descriptor and source lineage';
-  END IF;
-  RETURN NEW;
-END $$;
-CREATE CONSTRAINT TRIGGER building_publication_descriptor
-  AFTER INSERT OR UPDATE ON table_publication DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW EXECUTE FUNCTION assert_building_descriptor_publication();
-
--- Called by the publisher inside the replacement transaction, before the
--- table_publication row is updated. The service list comes from metadata.
-CREATE FUNCTION assert_current_dataset_complete(expected_rows integer) RETURNS void LANGUAGE plpgsql AS $$
-BEGIN
-    IF NOT EXISTS (SELECT 1 FROM territory_reference)
-       OR NOT EXISTS (SELECT 1 FROM service_registry)
-       OR expected_rows <> (SELECT count(*) FROM essential_service_access)
-       OR EXISTS (
-           SELECT 1 FROM territory_reference t CROSS JOIN service_registry s
-           LEFT JOIN essential_service_access a
-             ON a.territory_id = t.territory_id AND a.service = s.service
-           GROUP BY t.territory_id, s.service
-           HAVING count(a.mode) <> 3
-       ) THEN
-        RAISE EXCEPTION 'incomplete essential-service dataset';
-    END IF;
-END $$;
 
 -- ADR-0038 declared series grain. Missing years are represented by omission;
 -- a present row with status='missing' is an explicit unavailable point.
@@ -664,6 +391,8 @@ CREATE TABLE ordered_series_comparison_publication (
  reference_content_version text NOT NULL,
  group_row_count integer NOT NULL CHECK(group_row_count>=0),
  territory_row_count integer NOT NULL CHECK(territory_row_count>=0),
+ lineage_row_count integer NOT NULL CHECK(lineage_row_count>=0),
+ comparison_axes text[] NOT NULL CHECK(cardinality(comparison_axes)>0),
  published_at timestamptz NOT NULL DEFAULT now(),
  PRIMARY KEY(dataset_id,indicator_id));
 CREATE TABLE ordered_series_comparison_group (
@@ -674,6 +403,7 @@ CREATE TABLE ordered_series_comparison_group (
  axis_value text NOT NULL, statistic text NOT NULL CHECK(statistic IN ('median','mean')),
  group_value double precision, member_count integer NOT NULL CHECK(member_count>0),
  eligible_count integer NOT NULL CHECK(eligible_count>=0), missing_count integer NOT NULL CHECK(missing_count>=0),
+ lineage_source_count integer NOT NULL CHECK(lineage_source_count>=0),
  PRIMARY KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value),
  CHECK(member_count=eligible_count+missing_count),
  CHECK((eligible_count=0 AND group_value IS NULL) OR (eligible_count>0 AND group_value IS NOT NULL AND group_value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))));
@@ -689,8 +419,23 @@ CREATE TABLE ordered_series_comparison_territory (
  REFERENCES ordered_series_comparison_group(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value) ON DELETE CASCADE,
  CHECK((status='measured' AND value IS NOT NULL AND value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8) AND rank>0 AND tie_count>0 AND rank_size>0 AND rank<=rank_size AND tie_count<=rank_size)
  OR (status<>'measured' AND value IS NULL AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)));
-GRANT SELECT ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory TO lusk_publisher;
+CREATE TABLE ordered_series_comparison_lineage (
+ dataset_id text NOT NULL, indicator_id text NOT NULL, comparison_context text NOT NULL,
+ group_id text NOT NULL, territory_type text NOT NULL, axis_value text NOT NULL,
+ provenance_revision_id text NOT NULL,
+ PRIMARY KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value,provenance_revision_id),
+ FOREIGN KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value)
+ REFERENCES ordered_series_comparison_group(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value) ON DELETE CASCADE);
+CREATE TABLE ordered_series_comparison_zero_reason (
+ dataset_id text NOT NULL, indicator_id text NOT NULL, comparison_context text NOT NULL,
+ group_id text NOT NULL, territory_type text NOT NULL, axis_value text NOT NULL,
+ reason text NOT NULL CHECK(length(trim(reason))>0),
+ member_count integer NOT NULL CHECK(member_count>0),
+ PRIMARY KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value,reason),
+ FOREIGN KEY(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value)
+ REFERENCES ordered_series_comparison_group(dataset_id,indicator_id,comparison_context,group_id,territory_type,axis_value) DEFERRABLE INITIALLY DEFERRED);
+GRANT SELECT ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory,ordered_series_comparison_lineage,ordered_series_comparison_zero_reason TO lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON ordered_series_comparison_publication,ordered_series_comparison_group,ordered_series_comparison_territory,ordered_series_comparison_lineage,ordered_series_comparison_zero_reason TO lusk_publisher;
 
 -- Additive dataset-owned contract (migration 011). Legacy ordered_series
 -- remains available for the ENAF reader during an explicit rollout.
@@ -699,6 +444,8 @@ CREATE TABLE series_provenance_revision (
  source_name text NOT NULL, dataset_name text NOT NULL, source_version text NOT NULL,
  reference_date date NOT NULL, publication_date date NOT NULL, revision_hash text NOT NULL,
  UNIQUE(source_id,vintage_id,revision_hash));
+ALTER TABLE ordered_series_comparison_lineage ADD CONSTRAINT ordered_series_comparison_lineage_revision
+ FOREIGN KEY(provenance_revision_id) REFERENCES series_provenance_revision(provenance_revision_id);
 CREATE FUNCTION reject_series_provenance_revision_mutation() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN RAISE EXCEPTION 'series provenance revisions are immutable'; END $$;
 CREATE TRIGGER series_provenance_revision_immutable BEFORE UPDATE OR DELETE ON series_provenance_revision
@@ -912,9 +659,12 @@ DECLARE actual_rows bigint; actual_descriptors bigint; BEGIN
    AND t.content_version=NEW.reference_content_version) THEN
    RAISE EXCEPTION 'owned series publication is bound to a stale territory reference';
  END IF;
- IF EXISTS(SELECT 1 FROM series_dataset_observation o WHERE o.dataset_id=NEW.dataset_id
-   AND NOT EXISTS(SELECT 1 FROM series_observation_provenance p WHERE p.dataset_id=o.dataset_id
-   AND p.indicator_id=o.indicator_id AND p.territory_id=o.territory_id AND p.axis_value=o.axis_value)) THEN
+ IF EXISTS(SELECT 1 FROM (
+   SELECT o.dataset_id,o.indicator_id,o.territory_id,o.axis_value FROM series_dataset_observation o
+     WHERE o.dataset_id=NEW.dataset_id
+   EXCEPT
+   SELECT p.dataset_id,p.indicator_id,p.territory_id,p.axis_value FROM series_observation_provenance p
+     WHERE p.dataset_id=NEW.dataset_id) AS missing) THEN
    RAISE EXCEPTION 'owned series observation is missing provenance association';
  END IF;
  IF EXISTS(SELECT 1 FROM series_named_reference r WHERE r.dataset_id=NEW.dataset_id AND NOT EXISTS(
@@ -1095,41 +845,6 @@ CREATE TABLE milieux_typed_reading (
  PRIMARY KEY(territory_id,territory_type,groupe),
  FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
  CHECK ((status='measured') = (periode_pop IS NOT NULL AND periode_artif IS NOT NULL AND classification IS NOT NULL)));
-CREATE TABLE mobility_typed_reading (
- territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
- groupe text NOT NULL, story_key text NOT NULL, salience_reason text NOT NULL,
- classification_saillance text, div_loss_t double precision, div_loss_b double precision,
- status text NOT NULL CHECK(status IN ('measured','unavailable')),
- source_id text NOT NULL, vintage_id text NOT NULL,
- PRIMARY KEY(territory_id,territory_type,groupe),
- FOREIGN KEY(territory_id,territory_type) REFERENCES territory_reference(territory_id,territory_type),
- FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
- CHECK ((status='measured') = (div_loss_t IS NOT NULL AND div_loss_b IS NOT NULL)),
- CHECK (div_loss_t IS NULL OR (div_loss_t >= 0 AND div_loss_t NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))),
- CHECK (div_loss_b IS NULL OR (div_loss_b >= 0 AND div_loss_b NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))),
- CHECK (div_loss_t IS NULL OR div_loss_b IS NULL OR div_loss_b <= div_loss_t));
-CREATE TABLE mobility_reading_descriptor (
- singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), descriptor_version text NOT NULL CHECK(length(descriptor_version)>0),
- source_id text NOT NULL, vintage_id text NOT NULL, source_name text NOT NULL CHECK(length(trim(source_name))>0),
- dataset_name text NOT NULL CHECK(length(trim(dataset_name))>0), source_version text NOT NULL CHECK(length(trim(source_version))>0),
- reference_date date, publication_date date,
- unit text NOT NULL CHECK(length(trim(unit))>0), direction text NOT NULL CHECK(direction IN ('high','low','none')),
- allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
- missing_status text NOT NULL CHECK(missing_status='unavailable'),
- classification_values text[] NOT NULL CHECK(cardinality(classification_values)>0),
- field_keys text[] NOT NULL CHECK(cardinality(field_keys)>0), story_count integer NOT NULL CHECK(story_count>0),
- clock_count integer NOT NULL CHECK(clock_count>0),
- FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
-CREATE TABLE mobility_reading_story (
- story_key text PRIMARY KEY, groupe text NOT NULL, salience_reason text NOT NULL, ordinal integer NOT NULL CHECK(ordinal>0),
- UNIQUE(groupe,story_key), UNIQUE(groupe,story_key,salience_reason), UNIQUE(ordinal),
- CHECK(length(trim(story_key))>0 AND length(trim(groupe))>0 AND length(trim(salience_reason))>0));
-ALTER TABLE mobility_typed_reading ADD CONSTRAINT mobility_reading_story_contract
- FOREIGN KEY(groupe,story_key,salience_reason) REFERENCES mobility_reading_story(groupe,story_key,salience_reason);
-CREATE TABLE mobility_reading_clock (
- ordinal integer PRIMARY KEY CHECK(ordinal>0), clock_name text NOT NULL CHECK(length(trim(clock_name))>0),
- frequency text NOT NULL CHECK(length(trim(frequency))>0), reference text NOT NULL CHECK(length(trim(reference))>0),
- trigger text NOT NULL CHECK(length(trim(trigger))>0), UNIQUE(clock_name));
 CREATE TABLE milieux_population_provenance_revision (
  population_revision_id text PRIMARY KEY,
  source_id text NOT NULL, vintage_id text NOT NULL, source_name text NOT NULL,
@@ -1164,8 +879,6 @@ GRANT SELECT ON milieux_typed_reading,milieux_reading_source TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_typed_reading,milieux_reading_source TO lusk_publisher;
 GRANT SELECT ON milieux_reading_absence TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON milieux_reading_absence TO lusk_publisher;
-GRANT SELECT ON mobility_typed_reading,mobility_reading_descriptor,mobility_reading_story,mobility_reading_clock TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON mobility_typed_reading,mobility_reading_descriptor,mobility_reading_story,mobility_reading_clock TO lusk_publisher;
 GRANT SELECT ON milieux_population_provenance_revision TO lusk_reader;
 GRANT SELECT,INSERT ON milieux_population_provenance_revision TO lusk_publisher;
 -- Sparse period/detail facts have real year coordinates, not dense profile zeros.
@@ -1212,18 +925,22 @@ CREATE TABLE observed_collection_comparison_publication (
   indicator_id text PRIMARY KEY REFERENCES observed_collection_publication(indicator_id) ON DELETE CASCADE,
   content_version text NOT NULL, collection_content_version text NOT NULL,
   reference_content_version text NOT NULL, group_row_count bigint NOT NULL CHECK(group_row_count>=0),
-  territory_row_count bigint NOT NULL CHECK(territory_row_count>=0), published_at timestamptz NOT NULL DEFAULT now());
+  territory_row_count bigint NOT NULL CHECK(territory_row_count>=0), lineage_row_count bigint NOT NULL DEFAULT 0 CHECK(lineage_row_count>=0),
+  lineage_complete boolean NOT NULL DEFAULT false, published_at timestamptz NOT NULL DEFAULT now());
 CREATE TABLE observed_collection_comparison_group (
   indicator_id text NOT NULL, comparison_context text NOT NULL CHECK(comparison_context IN ('density_class','epci','bretagne','same_level')),
   group_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
   detail_key text NOT NULL, observation_period text NOT NULL CHECK(observation_period ~ '^[0-9]{4}$'),
   statistic text NOT NULL CHECK(statistic='median'), median double precision,
-  member_count integer NOT NULL CHECK(member_count>=0), eligible_count integer NOT NULL CHECK(eligible_count>=0),
+  member_count integer NOT NULL CHECK(member_count>0), eligible_count integer NOT NULL CHECK(eligible_count>=0),
   missing_count integer NOT NULL CHECK(missing_count>=0 AND member_count=eligible_count+missing_count),
+  lineage_source_count integer NOT NULL DEFAULT 0 CHECK(lineage_source_count>=0),
   collection_content_version text NOT NULL, reference_content_version text NOT NULL,
   PRIMARY KEY(indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period),
   FOREIGN KEY(indicator_id,detail_key) REFERENCES observed_collection_category(indicator_id,detail_key) ON DELETE CASCADE,
   CHECK((eligible_count=0 AND median IS NULL) OR (eligible_count>0 AND median IS NOT NULL AND median NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))));
+ ALTER TABLE observed_collection_comparison_group ADD CONSTRAINT observed_collection_lineage_support_shape
+   CHECK((eligible_count=0 AND lineage_source_count=0) OR (eligible_count>0 AND lineage_source_count>0));
 CREATE TABLE observed_collection_comparison_territory (
   indicator_id text NOT NULL, comparison_context text NOT NULL, group_id text NOT NULL,
   territory_type text NOT NULL, detail_key text NOT NULL, observation_period text NOT NULL,
@@ -1237,8 +954,16 @@ CREATE TABLE observed_collection_comparison_territory (
   CHECK((status='measured' AND value IS NOT NULL AND rank>0 AND tie_count>0 AND rank_size>0) OR
         (status='not_published' AND value IS NULL AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)),
   CHECK(status<>'measured' OR (rank<=rank_size AND tie_count<=rank_size)));
-GRANT SELECT ON observed_collection_comparison_publication,observed_collection_comparison_group,observed_collection_comparison_territory TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON observed_collection_comparison_publication,observed_collection_comparison_group,observed_collection_comparison_territory TO lusk_publisher;
+ CREATE TABLE observed_collection_comparison_lineage (
+  indicator_id text NOT NULL, comparison_context text NOT NULL, group_id text NOT NULL,
+  territory_type text NOT NULL, detail_key text NOT NULL, observation_period text NOT NULL,
+  source_id text NOT NULL, vintage_id text NOT NULL, comparison_content_version text NOT NULL,
+  PRIMARY KEY(indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period,source_id,vintage_id),
+  FOREIGN KEY(indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period)
+    REFERENCES observed_collection_comparison_group(indicator_id,comparison_context,group_id,territory_type,detail_key,observation_period) ON DELETE CASCADE,
+  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
+ GRANT SELECT ON observed_collection_comparison_publication,observed_collection_comparison_group,observed_collection_comparison_territory,observed_collection_comparison_lineage TO lusk_reader;
+ GRANT SELECT,INSERT,UPDATE,DELETE ON observed_collection_comparison_publication,observed_collection_comparison_group,observed_collection_comparison_territory,observed_collection_comparison_lineage TO lusk_publisher;
 CREATE FUNCTION validate_observed_collection_comparison_write() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE id text; stamp timestamptz; BEGIN
   id:=COALESCE(NEW.indicator_id,OLD.indicator_id);
@@ -1250,15 +975,23 @@ DECLARE id text; stamp timestamptz; BEGIN
 END $$;
 CREATE TRIGGER observed_collection_comparison_group_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_comparison_group
   FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_write();
-CREATE TRIGGER observed_collection_comparison_territory_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_comparison_territory
-  FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_write();
+ CREATE TRIGGER observed_collection_comparison_territory_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_comparison_territory
+   FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_write();
+ CREATE TRIGGER observed_collection_comparison_lineage_owned_write BEFORE INSERT OR UPDATE OR DELETE ON observed_collection_comparison_lineage
+   FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_write();
 CREATE FUNCTION validate_observed_collection_comparison_publication() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
-  IF NOT EXISTS(SELECT 1 FROM observed_collection_publication p JOIN observed_collection_descriptor d USING(indicator_id)
+  IF NOT NEW.lineage_complete OR NOT EXISTS(SELECT 1 FROM observed_collection_publication p JOIN observed_collection_descriptor d USING(indicator_id)
     WHERE p.indicator_id=NEW.indicator_id AND d.kind='period_detail'
       AND p.content_version=NEW.collection_content_version AND p.reference_content_version=NEW.reference_content_version)
     OR NOT EXISTS(SELECT 1 FROM table_publication WHERE table_name='territory_reference' AND content_version=NEW.reference_content_version)
-    OR NEW.group_row_count<>(SELECT count(*) FROM observed_collection_comparison_group WHERE indicator_id=NEW.indicator_id)
-    OR NEW.territory_row_count<>(SELECT count(*) FROM observed_collection_comparison_territory WHERE indicator_id=NEW.indicator_id)
+     OR NEW.group_row_count<>(SELECT count(*) FROM observed_collection_comparison_group WHERE indicator_id=NEW.indicator_id)
+     OR NEW.territory_row_count<>(SELECT count(*) FROM observed_collection_comparison_territory WHERE indicator_id=NEW.indicator_id)
+     OR NEW.lineage_row_count<>(SELECT count(*) FROM observed_collection_comparison_lineage WHERE indicator_id=NEW.indicator_id)
+     OR EXISTS(SELECT 1 FROM observed_collection_comparison_lineage WHERE indicator_id=NEW.indicator_id AND comparison_content_version<>NEW.content_version)
+     OR EXISTS(SELECT 1 FROM observed_collection_comparison_group g WHERE g.indicator_id=NEW.indicator_id
+       AND g.lineage_source_count<>(SELECT count(*) FROM observed_collection_comparison_lineage l WHERE
+         (l.indicator_id,l.comparison_context,l.group_id,l.territory_type,l.detail_key,l.observation_period)=
+         (g.indicator_id,g.comparison_context,g.group_id,g.territory_type,g.detail_key,g.observation_period)))
     OR EXISTS(SELECT 1 FROM observed_collection_comparison_group WHERE indicator_id=NEW.indicator_id
       AND (collection_content_version<>NEW.collection_content_version OR reference_content_version<>NEW.reference_content_version))
     OR EXISTS(SELECT 1 FROM observed_collection_comparison_territory WHERE indicator_id=NEW.indicator_id
@@ -1288,6 +1021,18 @@ CREATE FUNCTION validate_observed_collection_comparison_publication() RETURNS tr
 END $$;
 CREATE CONSTRAINT TRIGGER observed_collection_comparison_publication_contract AFTER INSERT OR UPDATE ON observed_collection_comparison_publication
   DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_publication();
+CREATE FUNCTION validate_observed_collection_comparison_lineage() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+  IF NEW.lineage_row_count<>(SELECT count(*) FROM observed_collection_comparison_lineage WHERE indicator_id=NEW.indicator_id)
+    OR EXISTS(SELECT 1 FROM observed_collection_comparison_lineage WHERE indicator_id=NEW.indicator_id AND comparison_content_version<>NEW.content_version)
+    OR EXISTS(SELECT 1 FROM observed_collection_comparison_group g WHERE g.indicator_id=NEW.indicator_id
+      AND g.lineage_source_count<>(SELECT count(*) FROM observed_collection_comparison_lineage l WHERE
+        (l.indicator_id,l.comparison_context,l.group_id,l.territory_type,l.detail_key,l.observation_period)=
+        (g.indicator_id,g.comparison_context,g.group_id,g.territory_type,g.detail_key,g.observation_period)))
+  THEN RAISE EXCEPTION 'observed collection comparison lineage is incomplete or stale'; END IF;
+  RETURN NEW;
+END $$;
+CREATE CONSTRAINT TRIGGER observed_collection_comparison_lineage_contract AFTER INSERT OR UPDATE ON observed_collection_comparison_publication
+  DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION validate_observed_collection_comparison_lineage();
 CREATE FUNCTION validate_observed_collection_write() RETURNS trigger LANGUAGE plpgsql AS $$
 DECLARE id text; stamp timestamptz; BEGIN
   id:=COALESCE(NEW.indicator_id,OLD.indicator_id);
@@ -1367,80 +1112,6 @@ GRANT SELECT,INSERT,UPDATE,DELETE ON observed_collection_publication,observed_co
 
 -- Paired density/decile distribution consumed by the Mobilité focal figure.
 -- This is intentionally distinct from a median-comparison profile.
-CREATE TABLE mobility_density_distribution_descriptor (
-  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), descriptor_version text NOT NULL,
-  source_id text NOT NULL CHECK(source_id='mobilite_snapshot'), vintage_id text NOT NULL,
-  axis_count integer NOT NULL CHECK(axis_count>0),
-  allowed_levels text[] NOT NULL CHECK(cardinality(allowed_levels)>0 AND allowed_levels <@ ARRAY['commune','epci','departement','region']::text[]),
-  density_unit text NOT NULL CHECK(length(trim(density_unit))>0),
-  decile_unit text NOT NULL CHECK(length(trim(decile_unit))>0),
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id));
-CREATE TABLE mobility_density_distribution_range (
-  territory_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement','region')),
-  minimum double precision, maximum double precision, status text NOT NULL CHECK(status IN ('measured','not_available','unsupported')),
-  source_id text NOT NULL CHECK(source_id='mobilite_snapshot'), vintage_id text NOT NULL,
-  PRIMARY KEY(territory_type,territory_id),
-  FOREIGN KEY(territory_id) REFERENCES territory_reference(territory_id),
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
-  CHECK((status='measured' AND minimum IS NOT NULL AND maximum IS NOT NULL AND minimum<=maximum) OR
-        (status<>'measured' AND minimum IS NULL AND maximum IS NULL)),
-  CHECK(minimum IS NULL OR (minimum NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8) AND minimum>=0)),
-  CHECK(maximum IS NULL OR (maximum NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8) AND maximum>=0)));
-CREATE TABLE mobility_density_distribution_point (
-  territory_id text NOT NULL, territory_type text NOT NULL, ordinal integer NOT NULL CHECK(ordinal>=0),
-  density double precision, density_status text NOT NULL CHECK(density_status IN ('measured','not_available','unsupported')),
-  decile double precision, decile_status text NOT NULL CHECK(decile_status IN ('measured','not_available','unsupported')),
-  source_id text NOT NULL CHECK(source_id='mobilite_snapshot'), vintage_id text NOT NULL,
-  PRIMARY KEY(territory_type,territory_id,ordinal),
-  FOREIGN KEY(territory_type,territory_id) REFERENCES mobility_density_distribution_range(territory_type,territory_id) ON DELETE CASCADE,
-  FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id),
-  CHECK((density_status='measured')=(density IS NOT NULL)), CHECK((decile_status='measured')=(decile IS NOT NULL)),
-  CHECK(density IS NULL OR (density NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8) AND density>=0)),
-  CHECK(decile IS NULL OR decile NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8)));
-CREATE FUNCTION validate_mobility_density_distribution_territory() RETURNS trigger LANGUAGE plpgsql AS $$
-BEGIN
-  IF NOT EXISTS(SELECT 1 FROM territory_reference WHERE territory_id=NEW.territory_id AND territory_type=NEW.territory_type)
-  THEN RAISE EXCEPTION 'Mobility density distribution territory type differs from reference'; END IF;
-  IF NOT EXISTS(SELECT 1 FROM mobility_density_distribution_descriptor d WHERE d.singleton AND NEW.territory_type=ANY(d.allowed_levels))
-  THEN RAISE EXCEPTION 'Mobility distribution territory level is outside its active descriptor'; END IF;
-  RETURN NEW;
-END $$;
-CREATE TRIGGER mobility_density_distribution_territory_contract BEFORE INSERT OR UPDATE ON mobility_density_distribution_range
-  FOR EACH ROW EXECUTE FUNCTION validate_mobility_density_distribution_territory();
-CREATE FUNCTION assert_mobility_density_distribution_complete() RETURNS trigger LANGUAGE plpgsql AS $$
-DECLARE expected integer; territory text; territory_kind text; point_count integer; first_ordinal integer; last_ordinal integer;
-  impacted_types text[]; impacted_ids text[]; i integer; BEGIN
-  SELECT axis_count INTO expected FROM mobility_density_distribution_descriptor WHERE singleton;
-  IF expected IS NULL THEN RAISE EXCEPTION 'Mobility density distribution descriptor is unavailable'; END IF;
-  IF TG_OP='DELETE' THEN
-    impacted_types:=ARRAY[OLD.territory_type]; impacted_ids:=ARRAY[OLD.territory_id];
-  ELSIF TG_OP='UPDATE' AND (OLD.territory_type IS DISTINCT FROM NEW.territory_type OR OLD.territory_id IS DISTINCT FROM NEW.territory_id) THEN
-    impacted_types:=ARRAY[OLD.territory_type,NEW.territory_type]; impacted_ids:=ARRAY[OLD.territory_id,NEW.territory_id];
-  ELSE
-    impacted_types:=ARRAY[NEW.territory_type]; impacted_ids:=ARRAY[NEW.territory_id];
-  END IF;
-  FOR i IN 1..array_length(impacted_types,1) LOOP
-    territory_kind:=impacted_types[i]; territory:=impacted_ids[i];
-    IF EXISTS(SELECT 1 FROM mobility_density_distribution_range r WHERE r.territory_type=territory_kind AND r.territory_id=territory) THEN
-      SELECT count(*),min(ordinal),max(ordinal) INTO point_count,first_ordinal,last_ordinal FROM mobility_density_distribution_point p
-        WHERE p.territory_type=territory_kind AND p.territory_id=territory;
-      IF point_count<>expected OR first_ordinal<>0 OR last_ordinal<>expected-1
-      THEN RAISE EXCEPTION 'Mobility density distribution axis is incomplete for %/%',territory_kind,territory; END IF;
-    ELSIF EXISTS(SELECT 1 FROM mobility_density_distribution_point p WHERE p.territory_type=territory_kind AND p.territory_id=territory) THEN
-      RAISE EXCEPTION 'Mobility density distribution has orphan coordinates for %/%',territory_kind,territory;
-    END IF;
-  END LOOP;
-  RETURN NULL;
-END $$;
-CREATE CONSTRAINT TRIGGER mobility_density_distribution_points_complete AFTER INSERT OR UPDATE OR DELETE
-  ON mobility_density_distribution_point DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW EXECUTE FUNCTION assert_mobility_density_distribution_complete();
-CREATE CONSTRAINT TRIGGER mobility_density_distribution_ranges_complete AFTER INSERT OR UPDATE OR DELETE
-  ON mobility_density_distribution_range DEFERRABLE INITIALLY DEFERRED
-  FOR EACH ROW EXECUTE FUNCTION assert_mobility_density_distribution_complete();
-GRANT SELECT ON mobility_density_distribution_descriptor,mobility_density_distribution_range,mobility_density_distribution_point TO lusk_reader;
-GRANT SELECT,INSERT,UPDATE,DELETE ON mobility_density_distribution_descriptor,mobility_density_distribution_range,mobility_density_distribution_point TO lusk_publisher;
-
 -- Source-shaped AEDAR dense territory � TYPEQU aggregates (not indicator IDs).
 CREATE TABLE aedar_territorial_aggregate (
   territory_type text NOT NULL CHECK (territory_type IN ('commune','epci','departement','region')),
@@ -1471,3 +1142,70 @@ CREATE TABLE aedar_territorial_aggregate (
 CREATE INDEX aedar_territorial_aggregate_typequ_idx ON aedar_territorial_aggregate(territory_type,typequ);
 GRANT SELECT ON aedar_territorial_aggregate,table_publication TO lusk_reader;
 GRANT SELECT,INSERT,UPDATE,DELETE ON aedar_territorial_aggregate,table_publication TO lusk_publisher;
+
+-- AEDAR reference publication: pooled density/same-level medians only; no peers.
+CREATE TABLE aedar_comparison_publication (
+  singleton boolean PRIMARY KEY DEFAULT true CHECK(singleton), content_version text NOT NULL CHECK(content_version ~ '^[0-9a-f]{64}$'),
+  source_snapshot_id text NOT NULL CHECK(source_snapshot_id='2026-v1'),
+  aedar_content_version text NOT NULL, reference_content_version text NOT NULL,
+  input_content_version text NOT NULL CHECK(input_content_version ~ '^[0-9a-f]{64}$'),
+  input_identity jsonb NOT NULL CHECK(jsonb_typeof(input_identity)='object'),
+  group_row_count bigint NOT NULL CHECK(group_row_count>=0), territory_row_count bigint NOT NULL DEFAULT 0 CHECK(territory_row_count>=0),
+  published_at timestamptz NOT NULL DEFAULT now(),
+  publication_mode text NOT NULL DEFAULT 'legacy_rank' CHECK(publication_mode IN ('legacy_rank','reference_only')),
+  CONSTRAINT aedar_reference_only_has_no_territories CHECK(publication_mode<>'reference_only' OR territory_row_count=0)
+);
+CREATE TABLE aedar_comparison_group (
+  comparison_context text NOT NULL,
+  group_id text NOT NULL, territory_type text NOT NULL CHECK(territory_type IN ('commune','epci','departement')),
+  typequ text NOT NULL, measure text NOT NULL, statistic text NOT NULL,
+  value double precision, n_addresses bigint CHECK(n_addresses IS NULL OR n_addresses>=0),
+  n_observed bigint CHECK(n_observed IS NULL OR n_observed>=0 AND n_observed<=n_addresses), coverage_status text,
+  PRIMARY KEY(comparison_context,group_id,territory_type,typequ,measure),
+  CHECK(measure ~ '^count_(5|10|15|20)_(walk|transit|transit_gain|bike_lts2|bike_lts4|car)_(share|min|max|decile[1-9]|mean)$'),
+  CONSTRAINT aedar_reference_context_check CHECK(comparison_context IN ('density_class','same_level')),
+  CONSTRAINT aedar_reference_statistic_check CHECK(statistic IN ('median','pooled')),
+  CONSTRAINT aedar_reference_scope_check CHECK((comparison_context='density_class' AND territory_type='commune' AND statistic='pooled') OR
+        (comparison_context='same_level' AND territory_type IN ('epci','departement') AND statistic='median')),
+  CONSTRAINT aedar_reference_median_counts_check CHECK((statistic='median' AND n_addresses IS NULL AND n_observed IS NULL AND coverage_status IS NULL) OR statistic='pooled'),
+  CHECK(value IS NULL OR value NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))
+);
+CREATE TABLE aedar_comparison_territory (
+  comparison_context text NOT NULL, group_id text NOT NULL, territory_type text NOT NULL,
+  territory_id text NOT NULL, typequ text NOT NULL, measure text NOT NULL,
+  value double precision, status text NOT NULL CHECK(status IN ('measured','not_available')),
+  n_addresses bigint NOT NULL CHECK(n_addresses>=0), n_observed bigint NOT NULL CHECK(n_observed>=0 AND n_observed<=n_addresses),
+  coverage_status text NOT NULL,
+  rank integer, rank_size integer,
+  PRIMARY KEY(comparison_context,group_id,territory_type,territory_id,typequ,measure),
+  FOREIGN KEY(comparison_context,group_id,territory_type,typequ,measure)
+    REFERENCES aedar_comparison_group(comparison_context,group_id,territory_type,typequ,measure) ON DELETE CASCADE,
+  -- Source facts and comparison projections publish in separate transactions.
+  -- A source refresh retains the last complete comparison; API marker checks
+  -- fail closed until its replacement is published against the new versions.
+  CHECK(measure ~ '^count_(5|10|15|20)_(walk|transit|transit_gain|bike_lts2|bike_lts4|car)_(share|min|max|decile[1-9]|mean)$'),
+  CHECK((status='measured' AND value IS NOT NULL AND rank>0 AND rank_size>0 AND rank<=rank_size) OR
+        (status='not_available' AND value IS NULL AND rank IS NULL AND rank_size IS NULL))
+);
+GRANT SELECT ON aedar_comparison_publication,aedar_comparison_group TO lusk_reader;
+REVOKE ALL ON aedar_comparison_territory FROM lusk_reader;
+GRANT SELECT,INSERT,UPDATE,DELETE ON aedar_comparison_publication,aedar_comparison_group,aedar_comparison_territory TO lusk_publisher;
+CREATE FUNCTION check_aedar_comparison_publication() RETURNS trigger LANGUAGE plpgsql AS $$
+BEGIN
+  IF NEW.publication_mode<>'reference_only'
+    OR NOT EXISTS(SELECT 1 FROM table_publication WHERE table_name='aedar_territorial_aggregate' AND content_version=NEW.aedar_content_version)
+   OR NOT EXISTS(SELECT 1 FROM table_publication WHERE table_name='territory_reference' AND content_version=NEW.reference_content_version)
+   OR NEW.group_row_count<>(SELECT count(*) FROM aedar_comparison_group)
+     OR NEW.territory_row_count<>0
+     OR EXISTS(SELECT 1 FROM aedar_comparison_territory)
+  THEN RAISE EXCEPTION 'AEDAR reference publication is incomplete, stale, or contains peer rows'; END IF;
+  IF EXISTS(SELECT 1 FROM aedar_comparison_group g WHERE
+     (g.comparison_context='density_class' AND (g.territory_type<>'commune' OR g.statistic<>'pooled')) OR
+     (g.comparison_context='same_level' AND (g.territory_type NOT IN ('epci','departement') OR g.statistic<>'median')) OR
+     g.comparison_context NOT IN ('density_class','same_level') OR
+     (g.statistic='median' AND (g.n_addresses IS NOT NULL OR g.n_observed IS NOT NULL OR g.coverage_status IS NOT NULL)))
+  THEN RAISE EXCEPTION 'AEDAR reference group has an invalid scope or fabricated source counts'; END IF;
+ RETURN NEW;
+END $$;
+CREATE CONSTRAINT TRIGGER aedar_comparison_publication_contract AFTER INSERT OR UPDATE ON aedar_comparison_publication
+ DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE FUNCTION check_aedar_comparison_publication();

@@ -1,3 +1,13 @@
+# Load the shared owner protocol for guarded scripts that source this file
+# directly without first loading the package.
+if (!exists("publish_owner_snapshot", mode = "function", inherits = TRUE)) {
+  .publish_series_source <- tryCatch(sys.frame(1L)$ofile, error = function(e) NULL)
+  if (is.null(.publish_series_source)) stop("Cannot locate publication_protocol.R", call.=FALSE)
+  sys.source(file.path(dirname(normalizePath(.publish_series_source)), "publication_protocol.R"),
+             envir = environment())
+  rm(.publish_series_source)
+}
+
 # Validate the metadata-owned annual-series projection without filling gaps.
 `%||%` <- function(x, y) if (is.null(x)) y else x
 validate_series_projection <- function(points, descriptor) {
@@ -604,6 +614,128 @@ validate_owned_series_projection <- function(projection) {
   invisible(projection)
 }
 
+decode_owned_series_json <- function(value, field) {
+  if (field == "descriptor") jsonlite::fromJSON(jsonlite::toJSON(value, auto_unbox=TRUE), simplifyVector=TRUE)
+  else if (field == "excluded") {
+    decoded <- jsonlite::fromJSON(jsonlite::toJSON(value, auto_unbox=TRUE), simplifyVector=TRUE)
+    if (!is.null(decoded$region$keys) && !is.data.frame(decoded$region$keys))
+      decoded$region$keys <- as.data.frame(decoded$region$keys, stringsAsFactors=FALSE)
+    if (!is.null(decoded$not_eligible$rows) && !is.data.frame(decoded$not_eligible$rows)) {
+      rows <- decoded$not_eligible$rows
+      decoded$not_eligible$rows <- if (!length(rows)) data.frame(territoire=character(),
+        type=character(),detail=character(),stringsAsFactors=FALSE) else
+        as.data.frame(rows,stringsAsFactors=FALSE)
+    }
+    decoded
+  } else value
+}
+
+write_owned_series_artifact <- function(projection, directory, owner) {
+  validate_owned_series_projection(projection)
+  contract <- owned_series_artifact_fields(owner)
+  table_fields <- contract$table_fields
+  json_fields <- contract$json_fields
+  if (!identical(sort(names(projection)), sort(c(table_fields, json_fields))))
+    stop("Owned series projection does not match its registered artifact schema", call.=FALSE)
+  write_typed_artifact(projection, directory, "owned-series", owner,
+    table_fields, json_fields, scalar_content_version,
+    validate_owned_series_projection, decode_owned_series_json)
+}
+
+owned_series_artifact_fields <- function(owner) {
+  contracts <- list(
+    conso_enaf_annuel=list(table_fields=c("points","provenance","point_provenance"),
+      json_fields=c("dataset_id","descriptor")),
+    artif_par_habitant=list(table_fields=c("points","provenance","point_provenance"),
+      json_fields=c("dataset_id","descriptor","excluded")),
+    prix_m2=list(table_fields=c("points","provenance","point_provenance"),
+      json_fields=c("dataset_id","descriptor")),
+    raccordement_courbe=list(table_fields=c("points","provenance","point_provenance",
+      "named_reference","named_reference_descriptors","named_reference_provenance","vintage"),
+      json_fields=c("dataset_id","descriptor","dataset_name","excluded")))
+  contract <- contracts[[owner]]
+  if (is.null(contract)) stop("Unknown owned-series artifact family owner: ",owner,call.=FALSE)
+  contract
+}
+
+read_owned_series_artifact <- function(directory, owner) {
+  contract <- owned_series_artifact_fields(owner)
+  read_typed_artifact(directory, "owned-series", owner, contract$table_fields, contract$json_fields,
+    scalar_content_version, validate_owned_series_projection, decode_owned_series_json)
+}
+
+write_conso_enaf_reading_artifact <- function(projection, directory) {
+  validator <- function(value) {
+    validate_series_projection(value$points, value$descriptor)
+    if (!nrow(value$vintage) || !identical(as.character(value$vintage$vintage_id[[1L]]),
+        as.character(value$descriptor$vintage_id)))
+      stop("Annual reading vintage differs from descriptor", call.=FALSE)
+    invisible(value)
+  }
+  decode <- function(value, field) {
+    if (field == "descriptor") jsonlite::fromJSON(jsonlite::toJSON(value, auto_unbox=TRUE), simplifyVector=TRUE)
+    else if (field == "excluded") decode_owned_series_json(value, field)
+    else value
+  }
+  write_typed_artifact(projection, directory, "annual-series-reading", "conso_enaf_annuel",
+    c("points", "vintage"), c("descriptor", "dataset_name", "excluded", "canonical_vintage_source"),
+    scalar_content_version, validator, decode)
+}
+
+read_conso_enaf_reading_artifact <- function(directory) {
+  validator <- function(value) {
+    validate_series_projection(value$points, value$descriptor)
+    if (!nrow(value$vintage) || !identical(as.character(value$vintage$vintage_id[[1L]]),
+        as.character(value$descriptor$vintage_id)))
+      stop("Annual reading vintage differs from descriptor", call.=FALSE)
+    invisible(value)
+  }
+  read_typed_artifact(directory, "annual-series-reading", "conso_enaf_annuel",
+    c("points", "vintage"), c("descriptor", "dataset_name", "excluded", "canonical_vintage_source"),
+    scalar_content_version, validator, function(value, field) {
+      if (field == "descriptor") jsonlite::fromJSON(jsonlite::toJSON(value, auto_unbox=TRUE), simplifyVector=TRUE)
+      else if (field == "excluded") decode_owned_series_json(value, field)
+      else value
+    })
+}
+
+# Materialize every owned series a theme declares. The return value is the
+# per-owner provenance the caller's outcome rows are built from: a named map of
+# owner to the content version this attempt computed (write_owned_series_artifact()
+# returns the semantic version even when the artifact already existed and the
+# pointer was left untouched). An attempt that fails before completing is not
+# reported owner by owner — the caller reports the whole family blocked rather
+# than risk presenting a retained generation as the current attempt's success.
+materialize_theme_series_artifacts <- function(payload, metadata, vintages, theme, directory) {
+  if (is.null(metadata$owned_series_routes)) return(invisible(NULL))
+  canonical <- list(indicateurs=payload$indicateurs, histoires=payload$histoires,
+    vintages=vintages, habitat=list(indicateurs=payload$indicateurs),
+    mobilite=list(indicateurs=payload$indicateurs))
+  published <- list()
+  if (identical(theme, "milieux")) {
+    reading <- project_conso_enaf_series_from_artifacts(payload$indicateurs, vintages, metadata)
+    write_conso_enaf_reading_artifact(reading,
+      file.path(directory, "series-reading", "conso_enaf_annuel"))
+    published[["conso_enaf_annuel"]] <- write_owned_series_artifact(
+      owned_conso_enaf_projection(canonical, metadata),
+      file.path(directory, "series-serving", "conso_enaf_annuel"), "conso_enaf_annuel")
+    published[["artif_par_habitant"]] <- write_owned_series_artifact(
+      project_artif_m2m3_projection(payload$indicateurs,
+        payload$histoires, vintages, metadata), file.path(directory, "series-serving", "artif_par_habitant"),
+      "artif_par_habitant")
+  } else if (identical(theme, "habitat")) {
+    published[["prix_m2"]] <- write_owned_series_artifact(
+      project_prix_m2_owned_series(payload$indicateurs,
+        vintages, metadata), file.path(directory, "series-serving", "prix_m2"), "prix_m2")
+  } else if (identical(theme, "mobilite") && "raccordement_courbe" %in% names(metadata$owned_series_routes)) {
+    published[["raccordement_courbe"]] <- write_owned_series_artifact(
+      project_raccordement_owned_series(payload$indicateurs,
+        vintages, metadata, RECETTE_RACCORDEMENT_NATIONAL),
+      file.path(directory, "series-serving", "raccordement_courbe"), "raccordement_courbe")
+  }
+  invisible(published)
+}
+
 register_conso_enaf_owned_publisher <- function(registry, metadata) {
   registry <- register_series_publisher(registry, "conso_enaf_annuel_owned",
     project=function(canonical) owned_conso_enaf_projection(canonical, metadata),
@@ -659,7 +791,7 @@ owned_series_postgres_adapter <- function(con) {
       "SELECT content_version,reference_content_version FROM series_dataset_publication WHERE dataset_id=$1",
       params=list(dataset_id)),
     comparison_marker=function(dataset_id,indicator_id) DBI::dbGetQuery(con,
-      "SELECT ordered_series_content_version,reference_content_version FROM ordered_series_comparison_publication WHERE dataset_id=$1 AND indicator_id=$2",
+      "SELECT ordered_series_content_version,reference_content_version,lineage_row_count FROM ordered_series_comparison_publication WHERE dataset_id=$1 AND indicator_id=$2",
       params=list(dataset_id,indicator_id)),
     reference_marker=function() DBI::dbGetQuery(con,
       "SELECT content_version FROM table_publication WHERE table_name='territory_reference'"),
@@ -690,10 +822,33 @@ owned_series_postgres_adapter <- function(con) {
           stop("Dense-complete duration publication contains unregistered territory/territories: ",
             describe(unexpected),call.=FALSE)
       }
-      # Revision records are insert-only; a reused ID/hash with different content is rejected.
-      for (i in seq_len(nrow(projection$provenance))) {
-        p <- projection$provenance[i,,drop=FALSE]
-        DBI::dbExecute(con, "INSERT INTO series_provenance_revision(provenance_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,revision_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(provenance_revision_id) DO NOTHING",
+       # source_dataset.name is a mutable current label, updated only here after
+       # the owner no-op decision. Vintage clocks remain strict below, and each
+       # immutable provenance revision keeps the label recorded at publication.
+       # Revision records are insert-only; a reused ID/hash with different content is rejected.
+       for (i in seq_len(nrow(projection$provenance))) {
+         p <- projection$provenance[i,,drop=FALSE]
+         # The owner-scoped series publisher owns the source identity and
+         # vintage registry needed by dependent facts (including sparse source
+         # absences). Publish these canonical source records in the same
+         # transaction as the immutable series revision.
+          DBI::dbExecute(con,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2)
+            ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",
+            params=list(p$source_id[[1L]],p$source_name[[1L]]))
+          DBI::dbExecute(con,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+            VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING",
+            params=unname(as.list(p[c("source_id","vintage_id","source_version","reference_date","publication_date")])))
+          registered_vintage <- DBI::dbGetQuery(con,"SELECT version,reference_date,publication_date
+            FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",
+            params=list(p$source_id[[1L]],p$vintage_id[[1L]]))
+          expected_vintage <- p[c("source_version","reference_date","publication_date")]
+          if(nrow(registered_vintage)!=1L ||
+             !identical(as.character(registered_vintage$version[[1L]]),as.character(expected_vintage$source_version[[1L]])) ||
+             !identical(as.character(registered_vintage$reference_date[[1L]]),as.character(expected_vintage$reference_date[[1L]])) ||
+             !identical(as.character(registered_vintage$publication_date[[1L]]),as.character(expected_vintage$publication_date[[1L]])))
+            stop("Immutable source vintage conflicts with the registered source clock: ",
+              p$source_id[[1L]],"/",p$vintage_id[[1L]],call.=FALSE)
+         DBI::dbExecute(con, "INSERT INTO series_provenance_revision(provenance_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,reference_date,publication_date,revision_hash) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9) ON CONFLICT(provenance_revision_id) DO NOTHING",
           params=unname(as.list(p[1,c("provenance_revision_id","source_id","vintage_id","source_name","dataset_name","source_version","reference_date","publication_date","revision_hash")])) )
         same <- DBI::dbGetQuery(con, "SELECT count(*) AS n FROM series_provenance_revision WHERE provenance_revision_id=$1 AND source_id=$2 AND vintage_id=$3 AND source_name=$4 AND dataset_name=$5 AND source_version=$6 AND reference_date IS NOT DISTINCT FROM $7::date AND publication_date IS NOT DISTINCT FROM $8::date AND revision_hash=$9",
           params=unname(as.list(p[1,c("provenance_revision_id","source_id","vintage_id","source_name","dataset_name","source_version","reference_date","publication_date","revision_hash")])) )$n[[1L]]
@@ -701,11 +856,32 @@ owned_series_postgres_adapter <- function(con) {
           stop("Immutable provenance revision ID collision: ",p$provenance_revision_id[[1L]],call.=FALSE)
         }
       }
-      DBI::dbExecute(con,"DELETE FROM series_dataset_publication WHERE dataset_id=$1",params=list(dataset_id))
-      published_count <- nrow(projection$points) + if (is.null(projection$named_reference)) 0L else nrow(projection$named_reference)
-      DBI::dbExecute(con,"INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count,published_at) VALUES($1,$2,$3,$4,now())",
-        params=list(dataset_id,version,reference$content_version[[1L]],published_count))
-      array_literal <- function(x) paste0("{",paste0('"',gsub('"','\\\\"',as.character(x),fixed=TRUE),'"',collapse=","),"}")
+       published_count <- nrow(projection$points) + if (is.null(projection$named_reference)) 0L else nrow(projection$named_reference)
+       # The publication row is the stable owner key. Refresh it in place before
+       # any owned child write so write guards see this transaction's timestamp
+       # while external FK consumers (for example Milieux source bindings) keep
+       # referencing the same parent row.
+       DBI::dbExecute(con,"INSERT INTO series_dataset_publication(dataset_id,content_version,reference_content_version,row_count,published_at) VALUES($1,$2,$3,$4,transaction_timestamp())
+         ON CONFLICT(dataset_id) DO UPDATE SET content_version=EXCLUDED.content_version,
+           reference_content_version=EXCLUDED.reference_content_version,row_count=EXCLUDED.row_count,
+           published_at=transaction_timestamp()",
+         params=list(dataset_id,version,reference$content_version[[1L]],published_count))
+       # Zero-reason rows have an actual NO ACTION FK to the group (unlike the
+       # cascading territory/lineage descendants), so clear them first. Drop
+       # the comparison marker inside the same transaction before replacing its
+       # groups; a missing/failed rebuild then cannot commit a ready stale token.
+       DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_publication WHERE dataset_id=$1",
+         params=list(dataset_id))
+       DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_zero_reason WHERE dataset_id=$1",
+         params=list(dataset_id))
+       DBI::dbExecute(con,"DELETE FROM ordered_series_comparison_group WHERE dataset_id=$1",
+         params=list(dataset_id))
+       # Descriptor-owned observations/provenance, named references and context
+       # policy are cleared only through this dataset's existing FK cascades.
+       # Immutable series_provenance_revision rows are deliberately untouched.
+       DBI::dbExecute(con,"DELETE FROM series_dataset_descriptor WHERE dataset_id=$1",
+         params=list(dataset_id))
+       array_literal <- function(x) paste0("{",paste0('"',gsub('"','\\\\"',as.character(x),fixed=TRUE),'"',collapse=","),"}")
       numeric_axis <- if (is.null(d$axis_numeric_values)) NA_character_ else paste0("{",paste(d$axis_numeric_values,collapse=","),"}")
        DBI::dbExecute(con,"INSERT INTO series_dataset_descriptor(dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,label,unit,direction,allowed_levels,descriptor_version,active_read_route,axis_numeric_values,theme_id,comparison_statistic,comparison_scope,observation_period_kind) VALUES($1,$2,$3,$4::text[],$5,$6,$7,$8,$9,$10::text[],$11,$12,$13::integer[],$14,$15,$16,$17)",
         params=list(dataset_id,d$indicator_id,d$axis_kind,array_literal(d$axis_values),d$completeness,
@@ -742,14 +918,28 @@ owned_series_postgres_adapter <- function(con) {
         groups <- comparison$groups; groups$dataset_id <- dataset_id; groups$indicator_id <- d$indicator_id
         DBI::dbWriteTable(con,"ordered_series_comparison_group",groups[c("dataset_id","indicator_id",
           "comparison_context","group_id","territory_type","axis_value","statistic","group_value",
-          "member_count","eligible_count","missing_count")],append=TRUE,row.names=FALSE)
+          "member_count","eligible_count","missing_count","lineage_source_count")],append=TRUE,row.names=FALSE)
+        lineage <- comparison$lineage
+        if (nrow(lineage)) {
+          lineage$dataset_id <- dataset_id; lineage$indicator_id <- d$indicator_id
+          DBI::dbWriteTable(con,"ordered_series_comparison_lineage",lineage[
+            c("dataset_id","indicator_id","comparison_context","group_id","territory_type","axis_value","provenance_revision_id")],append=TRUE,row.names=FALSE)
+        }
+        zero_reasons <- comparison$zero_reasons
+        if (nrow(zero_reasons)) {
+          zero_reasons$dataset_id <- dataset_id; zero_reasons$indicator_id <- d$indicator_id
+          zero_reasons$axis_value <- comparison$axis_values[[1L]]
+          DBI::dbWriteTable(con,"ordered_series_comparison_zero_reason",zero_reasons[
+            c("dataset_id","indicator_id","comparison_context","group_id","territory_type","axis_value","reason","member_count")],append=TRUE,row.names=FALSE)
+        }
         territories <- comparison$territories; territories$dataset_id <- dataset_id; territories$indicator_id <- d$indicator_id
         DBI::dbWriteTable(con,"ordered_series_comparison_territory",territories[c("dataset_id","indicator_id",
           "comparison_context","group_id","territory_type","axis_value","territory_id","value","status",
           "rank","tie_count","rank_size")],append=TRUE,row.names=FALSE)
-        DBI::dbExecute(con,"INSERT INTO ordered_series_comparison_publication(dataset_id,indicator_id,content_version,ordered_series_content_version,reference_content_version,group_row_count,territory_row_count) VALUES($1,$2,$3,$4,$5,$6,$7) ON CONFLICT(dataset_id,indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,ordered_series_content_version=EXCLUDED.ordered_series_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=now()",
+        DBI::dbExecute(con,"INSERT INTO ordered_series_comparison_publication(dataset_id,indicator_id,content_version,ordered_series_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count,comparison_axes) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9::text[]) ON CONFLICT(dataset_id,indicator_id) DO UPDATE SET content_version=EXCLUDED.content_version,ordered_series_content_version=EXCLUDED.ordered_series_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,lineage_row_count=EXCLUDED.lineage_row_count,comparison_axes=EXCLUDED.comparison_axes,published_at=now()",
           params=list(dataset_id,d$indicator_id,comparison$content_version,version,
-            reference$content_version[[1L]],nrow(comparison$groups),nrow(comparison$territories)))
+            reference$content_version[[1L]],nrow(comparison$groups),nrow(comparison$territories),
+            nrow(comparison$lineage),array_literal(comparison$axis_values)))
       }
     })
 }
@@ -760,22 +950,36 @@ publish_owned_series_projection <- function(projection, db) {
       !is.function(db$dataset_marker) || !is.function(db$reference_marker) || !is.function(db$replace_dataset))
     stop("Invalid owned series database adapter",call.=FALSE)
   version <- scalar_content_version(projection); dataset <- projection$descriptor$dataset_id
-  db$transaction({
-    db$lock(dataset)
-    marker <- db$dataset_marker(dataset); ref <- db$reference_marker()
-    if (!nrow(ref)) stop("Territory reference publication is unavailable",call.=FALSE)
-    changed <- !nrow(marker) || !identical(as.character(marker$content_version[[1L]]),version)
-    rebound <- nrow(marker) && !identical(as.character(marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]]))
-    comparison_stale <- FALSE
-    if (!is.null(projection$descriptor$comparison_levels) && is.function(db$comparison_marker)) {
-      comparison_marker <- db$comparison_marker(dataset,projection$descriptor$indicator_id)
-      comparison_stale <- !nrow(comparison_marker) ||
-        !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]),version) ||
-        !identical(as.character(comparison_marker$reference_content_version[[1L]]),as.character(ref$content_version[[1L]]))
-    }
-    if (changed || rebound || comparison_stale) db$replace_dataset(projection,version)
-    invisible(list(changed=changed,rebound=rebound,content_version=version,dataset_id=dataset))
-  })
+  protocol_db <- list(transaction = db$transaction, lock = db$lock,
+                      marker = function(owner) db$dataset_marker(owner))
+  result <- publish_owner_snapshot(
+    db = protocol_db, owner = dataset, content_version = version,
+    dependency_name = "territory_reference",
+    read_dependency = db$reference_marker,
+    validate_dependency = function(ref) {
+      if (!nrow(ref) || is.na(ref$content_version[[1L]]) ||
+          !nzchar(as.character(ref$content_version[[1L]])))
+        stop("Territory reference publication is unavailable", call.=FALSE)
+    },
+    publish_content = function(version_arg, dependency_arg) db$replace_dataset(projection, version),
+    rebind_dependency = function(reference_version) db$replace_dataset(projection, version),
+    requires_republish = function(marker, ref) {
+      if (!is.data.frame(marker) || !nrow(marker) ||
+          !"reference_content_version" %in% names(marker)) return(TRUE)
+      if (!identical(as.character(marker$reference_content_version[[1L]]),
+                     as.character(ref$content_version[[1L]]))) return(TRUE)
+      if (is.null(projection$descriptor$comparison_levels) || !is.function(db$comparison_marker))
+        return(FALSE)
+      comparison_marker <- db$comparison_marker(dataset, projection$descriptor$indicator_id)
+      !nrow(comparison_marker) ||
+        !identical(as.character(comparison_marker$ordered_series_content_version[[1L]]), version) ||
+        !identical(as.character(comparison_marker$reference_content_version[[1L]]),
+                   as.character(ref$content_version[[1L]])) ||
+        !isTRUE(comparison_marker$lineage_row_count[[1L]] >= 0L)
+    })
+  invisible(list(changed=result$changed, rebound=result$rebound,
+    republished_for_dependency=result$republished_for_dependency,
+    content_version=result$content_version, dataset_id=dataset))
 }
 
 # Fingerprint all authoritative inputs on both sides of one read window. This
@@ -819,14 +1023,7 @@ project_conso_enaf_series_from_artifacts <- function(indicators, vintages, metad
 # Never invoke fixture builders or recompute canonical indicator values here.
 read_conso_enaf_series_projection <- function(sortie = "../public/data",
                                               metadata_path = "inst/extdata/theme-metadata/theme_milieux.json") {
-  paths <- c(indicators=file.path(sortie, "indicateurs_milieux.parquet"),
-    vintages=file.path(sortie, "vintages.parquet"), metadata=metadata_path)
-  read_stable_series_artifacts(paths, function(input) {
-    indicators <- nanoparquet::read_parquet(input[["indicators"]])
-    vintages <- nanoparquet::read_parquet(input[["vintages"]])
-    metadata <- jsonlite::read_json(input[["metadata"]], simplifyVector=FALSE)
-    project_conso_enaf_series_from_artifacts(indicators, vintages, metadata)
-  })
+  read_conso_enaf_reading_artifact(file.path(sortie, "series-reading", "conso_enaf_annuel"))
 }
 
 # Read one fingerprinted snapshot for the registered owned projections across
@@ -862,52 +1059,39 @@ read_owned_series_projections <- function(sortie="../public/data",
       if(identical(selected_metadata_path,mobility_metadata_path)) selected_metadata else NULL)
     if (!identical(resolved,owner)) stop("Owned-series selector does not match its metadata owner",call.=FALSE)
   }
-  required <- switch(owner %||% "all",conso_enaf_annuel=c("indicators","vintages","metadata"),
-    artif_par_habitant=c("indicators","histories","vintages","metadata"),
-    prix_m2=c("habitat_indicators","vintages","habitat_metadata"),
-    raccordement_courbe=c("indicators","mobility_indicators","vintages","mobility_metadata"),
-    all=c("indicators","histories","habitat_indicators","vintages","metadata","habitat_metadata"))
-  all_paths <- c(indicators=file.path(sortie,"indicateurs_milieux.parquet"), histories=file.path(sortie,"histoires_milieux.parquet"),
-    habitat_indicators=file.path(sortie,"indicateurs_habitat.parquet"), vintages=file.path(sortie,"vintages.parquet"),
-    metadata=metadata_path, habitat_metadata=habitat_metadata_path,
-    mobility_indicators=file.path(sortie,"indicateurs_mobilite.parquet"),mobility_metadata=mobility_metadata_path)
-  paths <- all_paths[required]
-  mobility_pair <- c(mobility_indicators=all_paths[["mobility_indicators"]],mobility_metadata=mobility_metadata_path)
-  if (is.null(owner) && any(file.exists(mobility_pair))) {
-    if (!all(file.exists(mobility_pair))) stop("Owned-series all-check requires both mobility indicators and mobility metadata",call.=FALSE)
-    paths <- c(paths,mobility_pair)
+  if (is.null(owner)) {
+    owner_metadata <- list(
+      jsonlite::read_json(metadata_path,simplifyVector=FALSE),
+      jsonlite::read_json(habitat_metadata_path,simplifyVector=FALSE),
+      jsonlite::read_json(mobility_metadata_path,simplifyVector=FALSE))
+    declared_routes <- unique(unlist(lapply(owner_metadata, function(x)
+      names(x$owned_series_routes %||% list())), use.names=FALSE))
+    unknown_routes <- setdiff(declared_routes,names(owner_file))
+    if (length(unknown_routes)) stop("No registered owned-series artifact schema for route(s): ",
+      paste(unknown_routes,collapse=", "),call.=FALSE)
+    owners <- names(owner_file)[names(owner_file) %in% declared_routes]
+  } else owners <- owner
+  result_names <- c(conso_enaf_annuel="conso_enaf_annuel_owned",
+    artif_par_habitant="artif_par_habitant_owned", prix_m2="prix_m2_owned",
+    raccordement_courbe="raccordement_courbe_owned")
+  projections <- lapply(owners, function(id)
+    read_owned_series_artifact(file.path(sortie, "series-serving", id), id))
+  names(projections) <- unname(result_names[owners])
+  if ("conso_enaf_annuel" %in% owners) {
+    annual <- read_conso_enaf_reading_artifact(file.path(sortie,"series-reading","conso_enaf_annuel"))
+    attr(projections,"excluded") <- list(conso_enaf_annuel_owned=annual$excluded)
   }
-  read_stable_series_artifacts(paths,function(input) {
-   canonical <- list(indicateurs=if("indicators" %in% names(input)) nanoparquet::read_parquet(input[["indicators"]]) else data.frame(),
-     histoires=if("histories" %in% names(input)) nanoparquet::read_parquet(input[["histories"]]) else data.frame(),
-     habitat=list(indicateurs=if("habitat_indicators" %in% names(input)) nanoparquet::read_parquet(input[["habitat_indicators"]]) else data.frame()),
-     mobilite=list(indicateurs=if("mobility_indicators" %in% names(input)) nanoparquet::read_parquet(input[["mobility_indicators"]]) else data.frame()),
-     vintages=nanoparquet::read_parquet(input[["vintages"]]))
-      metadata <- if("metadata" %in% names(input)) jsonlite::read_json(input[["metadata"]],simplifyVector=FALSE) else if(is.null(owner)) jsonlite::read_json(metadata_path,simplifyVector=FALSE) else selected_metadata
-      habitat_metadata <- if("habitat_metadata" %in% names(input)) jsonlite::read_json(input[["habitat_metadata"]],simplifyVector=FALSE) else if(is.null(owner)) jsonlite::read_json(habitat_metadata_path,simplifyVector=FALSE) else selected_metadata
-       registry <- if(is.null(owner)) register_owned_series_publishers(list(),metadata,habitat_metadata) else switch(owner,
-         conso_enaf_annuel=register_conso_enaf_owned_publisher(list(),selected_metadata),
-         artif_par_habitant=register_artif_m2m3_owned_publisher(list(),selected_metadata),
-         prix_m2=register_prix_m2_owned_publisher(list(),selected_metadata),list())
-       mobility_metadata <- if("mobility_metadata" %in% names(input)) jsonlite::read_json(input[["mobility_metadata"]],simplifyVector=FALSE) else if(identical(owner,"raccordement_courbe")) selected_metadata else NULL
-      if(!is.null(mobility_metadata)) registry <- register_raccordement_owned_publisher(registry,mobility_metadata)
-     if (!is.null(indicator_id)) {
-       selected <- names(registry)[vapply(registry,function(p) identical(p$owner_id,owner),logical(1))]
-       registry <- registry[selected]
-       if (!length(registry)) stop("Unknown owned-series indicator_id: ",indicator_id,call.=FALSE)
-     }
-     projections <- lapply(registry,function(publisher) publisher$project(canonical))
-    lapply(projections,validate_owned_series_projection)
-    # Reporting-only exclusion metadata belongs to the reader result, not the
-    # owned projection whose serialized identity is the publication version.
-     if (is.null(owner) || identical(owner,"conso_enaf_annuel")) {
-       serving_metadata <- metadata
-       serving_metadata$indicator_pages$conso_enaf_annuel$levels <- projections$conso_enaf_annuel_owned$descriptor$allowed_levels
-       enaf <- project_conso_enaf_series_from_artifacts(canonical$indicateurs,canonical$vintages,serving_metadata)
-       attr(projections,"excluded") <- list(conso_enaf_annuel_owned=enaf$excluded)
-     }
-    projections
-  })
+  if (!is.null(indicator_id)) {
+    expected_name <- unname(result_names[[owner]])
+    # `[` drops non-names attributes, so the reporting-only `excluded` marker
+    # must be carried across the scoped subset explicitly. It stays an
+    # attribute of the projection list, never part of the owned projection
+    # content, so the content version is untouched.
+    excluded <- attr(projections,"excluded")
+    projections <- projections[expected_name]
+    if (!is.null(excluded)) attr(projections,"excluded") <- excluded
+  }
+  projections
 }
 
 require_owned_series_publish_opt_in <- function(value=Sys.getenv("LUSK_PUBLISH_OWNED_SERIES",unset="")) {
@@ -1091,6 +1275,7 @@ project_ordered_series_comparisons <- function(series, territory_reference,
   group_rows <- list(); territory_rows <- list()
   for (g in groups) {
     if (!g$level %in% d$comparison_levels || !g$level %in% d$allowed_levels) next
+    if (!length(g$ids)) next
     obs <- point_rows[point_rows$territory_type==g$level & point_rows$territory_id %in% g$ids,,drop=FALSE]
     for (axis in comparison_axes) {
       p <- obs[as.character(obs[[axis_field]])==axis,,drop=FALSE]
@@ -1113,7 +1298,49 @@ project_ordered_series_comparisons <- function(series, territory_reference,
     }
   }
   if (!length(group_rows)) stop("No declared ordered-series comparison contexts",call.=FALSE)
-  out <- list(groups=do.call(rbind,group_rows),territories=do.call(rbind,territory_rows),
+  lineage_rows <- list(); zero_reason_rows <- list()
+  for (g in groups) {
+    if (!g$level %in% d$comparison_levels || !g$level %in% d$allowed_levels) next
+    if (!length(g$ids)) next
+    obs <- point_rows[point_rows$territory_type==g$level & point_rows$territory_id %in% g$ids,,drop=FALSE]
+    for (axis in comparison_axes) {
+      p <- obs[as.character(obs[[axis_field]])==axis,,drop=FALSE]
+      links <- series$point_provenance[series$point_provenance$territory_id %in% g$ids &
+        series$point_provenance$axis_value %in% as.character(p$axis_value),,drop=FALSE]
+      if (nrow(links)) for (revision in unique(links$provenance_revision_id))
+        lineage_rows[[length(lineage_rows)+1L]] <- data.frame(comparison_context=g$context,
+          group_id=g$group,territory_type=g$level,axis_value=axis,
+          provenance_revision_id=revision,stringsAsFactors=FALSE)
+    }
+    if (identical(d$comparison_scope,"selected_group") && statistic=="mean" &&
+        "missing_reason" %in% names(obs)) {
+      selected <- !is.na(obs$missing_reason) & nzchar(as.character(obs$missing_reason))
+      if (any(selected)) {
+        per_member <- tapply(as.character(obs$missing_reason[selected]),obs$territory_id[selected],
+          function(x) unique(x)[[1L]])
+        counts <- table(per_member)
+        for (reason in names(counts)) zero_reason_rows[[length(zero_reason_rows)+1L]] <-
+          data.frame(comparison_context=g$context,group_id=g$group,territory_type=g$level,
+            reason=reason,member_count=as.integer(counts[[reason]]),stringsAsFactors=FALSE)
+      }
+    }
+  }
+  lineage <- if(length(lineage_rows)) unique(do.call(rbind,lineage_rows)) else data.frame(
+    comparison_context=character(),group_id=character(),territory_type=character(),axis_value=character(),
+    provenance_revision_id=character(),stringsAsFactors=FALSE)
+  lineage_counts <- if(nrow(lineage)) aggregate(provenance_revision_id~comparison_context+group_id+
+    territory_type+axis_value,lineage,function(x) length(unique(x))) else data.frame(
+      comparison_context=character(),group_id=character(),territory_type=character(),axis_value=character(),
+      provenance_revision_id=integer(),stringsAsFactors=FALSE)
+  names(lineage_counts)[[5L]] <- "lineage_source_count"
+  out_groups <- merge(do.call(rbind,group_rows),lineage_counts,
+    by=c("comparison_context","group_id","territory_type","axis_value"),all.x=TRUE,sort=FALSE)
+  out_groups$lineage_source_count[is.na(out_groups$lineage_source_count)] <- 0L
+  zero_reasons <- if(length(zero_reason_rows)) unique(do.call(rbind,zero_reason_rows)) else data.frame(
+    comparison_context=character(),group_id=character(),territory_type=character(),reason=character(),
+    member_count=integer(),stringsAsFactors=FALSE)
+  out <- list(groups=out_groups,territories=do.call(rbind,territory_rows),
+    lineage=lineage,zero_reasons=zero_reasons,
     input_content_version=input_content_version,reference_content_version=reference_content_version,
     axis_values=comparison_axes,statistic=statistic,direction=d$direction,
     provenance=series$provenance,point_provenance=series$point_provenance)

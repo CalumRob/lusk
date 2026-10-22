@@ -11,7 +11,6 @@ import pyarrow.parquet as pq
 from qgis.core import QgsRectangle
 
 sys.path.insert(0, str(Path(__file__).parents[1]))
-import run_aedar_maps  # noqa: E402
 import aedar_maps  # noqa: E402
 from aedar_maps import (AedarMapAdapter, MODES, TERRITORIES, _continuous_palette,
                         aedar_recipe, aedar_loss_recipe,
@@ -238,25 +237,6 @@ class AedarMapCliTests(unittest.TestCase):
 
         open_file.assert_called_once_with("facts.parquet")
 
-    def test_cli_initializes_and_always_exits_the_qgis_application(self):
-        app = Mock()
-        with (patch.object(run_aedar_maps, "QgsApplication", return_value=app),
-              patch.object(run_aedar_maps, "main", return_value=0) as main):
-            self.assertEqual(run_aedar_maps.run_qgis(), 0)
-
-        app.initQgis.assert_called_once_with()
-        app.exitQgis.assert_called_once_with()
-        main.assert_called_once_with()
-
-    def test_cli_exits_qgis_even_if_the_map_run_raises(self):
-        app = Mock()
-        with (patch.object(run_aedar_maps, "QgsApplication", return_value=app),
-              patch.object(run_aedar_maps, "main", side_effect=RuntimeError("render failed"))):
-            with self.assertRaisesRegex(RuntimeError, "render failed"):
-                run_aedar_maps.run_qgis()
-
-        app.initQgis.assert_called_once_with()
-        app.exitQgis.assert_called_once_with()
 
 
 if __name__ == "__main__":

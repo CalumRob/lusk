@@ -94,7 +94,8 @@ class InspectionFrameBindingTests(unittest.TestCase):
         from inspection_frame import InspectionFramePolicy, OUTPUT_SIZE
         from network import _load_network_family_config
 
-        policy = InspectionFramePolicy(_load_network_family_config())
+        from inspection_headings import registered_inspection_headings
+        policy = InspectionFramePolicy(registered_inspection_headings(_load_network_family_config()))
         extent = QgsRectangle(0, 0, OUTPUT_SIZE, OUTPUT_SIZE)
 
         def geometry_at_pixels(left, top, right, bottom):
@@ -119,7 +120,8 @@ class InspectionFrameBindingTests(unittest.TestCase):
         from inspection_frame import InspectionFramePolicy, OUTPUT_SIZE
         from network import _load_network_family_config
 
-        policy = InspectionFramePolicy(_load_network_family_config())
+        from inspection_headings import registered_inspection_headings
+        policy = InspectionFramePolicy(registered_inspection_headings(_load_network_family_config()))
         extent = QgsRectangle(0, 0, OUTPUT_SIZE, OUTPUT_SIZE)
         short_name, long_name = "A", "A Very Long Territory Name"
         short_band = policy._subtitle_band(short_name)

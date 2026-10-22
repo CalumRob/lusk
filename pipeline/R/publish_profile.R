@@ -6,11 +6,11 @@
 # ADR-0039 comparison families represented by this constrained publisher set.
 ADR0039_COMPARISON_FAMILIES <- c(
   "declared_profile", "numeric_period_collection",
-  "numeric_detail_collection", "scalar", "ordered_series"
+  "numeric_detail_collection", "scalar", "ordered_series", "aedar_fixed"
 )
 
-serving_publication_target_names <- function(profile_opt_in = identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset=""), "1")) {
-  targets <- "publie_tables_service"
+backend_publication_target_names <- function(profile_opt_in = identical(Sys.getenv("LUSK_PUBLISH_PROFILE", unset=""), "1")) {
+  targets <- "publie_backend_retained"
   if (isTRUE(profile_opt_in)) c(targets, "publie_profiles_declares") else targets
 }
 
@@ -22,7 +22,7 @@ project_declared_profile_comparisons <- function(profiles, territory_reference,
   if (!is.list(profiles) || !length(profiles) ||
       any(!vapply(profiles, function(p) is.list(p) && !is.null(p$descriptor), logical(1))))
     stop("Declared profile comparison projections are required", call.=FALSE)
-  group_rows <- list(); territory_rows <- list()
+  group_rows <- list(); territory_rows <- list(); lineage_rows <- list()
   for (profile in profiles) {
     d <- profile$descriptor
     id <- d$indicator_id
@@ -53,6 +53,20 @@ project_declared_profile_comparisons <- function(profiles, territory_reference,
       if (anyDuplicated(selected$territory_id) || !setequal(selected$territory_id, ids))
         stop("Profile comparison membership differs from declared territory facts", call.=FALSE)
       selected <- selected[match(ids, selected$territory_id),,drop=FALSE]
+      provenance <- profile$provenance
+      lineage_source_count <- 0L
+      if (is.data.frame(provenance)) {
+        provenance <- provenance[provenance$indicator_id == id & provenance$territory_id %in% ids &
+          provenance$detail_key == detail & provenance$sex_key == ifelse(is.na(sex),"",sex),,drop=FALSE]
+        if (nrow(provenance)) {
+          provenance <- unique(provenance[c("source_id","vintage_id")])
+          lineage_source_count <- nrow(provenance)
+          lineage_rows[[length(lineage_rows)+1L]] <- data.frame(
+          comparison_context=as.character(g$comparison_context),group_id=as.character(g$group_id),
+          territory_type=type,facet_id=id,source_id=as.character(provenance$source_id),
+          vintage_id=as.character(provenance$vintage_id),stringsAsFactors=FALSE)
+        }
+      }
       selected$status[is.na(selected$status)] <- "not_published"
       if (any(!selected$status %in% c("measured", "suppressed", "unsupported", "not_available", "not_published")))
         stop("Invalid profile comparison availability state", call.=FALSE)
@@ -71,6 +85,7 @@ project_declared_profile_comparisons <- function(profiles, territory_reference,
       group_rows[[length(group_rows)+1L]] <- cbind(key,
         statistic="median", median=if(length(vals)) stats::median(vals) else NA_real_,
         member_count=length(ids), eligible_count=length(vals), missing_count=length(ids)-length(vals),
+        lineage_source_count=lineage_source_count,
         profile_content_version=profile_content_version, reference_content_version=reference_content_version)
       territory_rows[[length(territory_rows)+1L]] <- cbind(key,
         territory_id=ids, value=selected$value, status=selected$status, rank=ranks,
@@ -84,7 +99,12 @@ project_declared_profile_comparisons <- function(profiles, territory_reference,
     groups <- groups[order(groups$comparison_context, groups$group_id, groups$territory_type, groups$indicator_id, groups$detail_key, groups$sex_key),,drop=FALSE]
     territories <- territories[order(territories$comparison_context, territories$group_id, territories$territory_type, territories$indicator_id, territories$detail_key, territories$sex_key, territories$territory_id),,drop=FALSE]
   }
-  list(groups=groups, territories=territories,
+  lineage <- if(length(lineage_rows)) do.call(rbind,lineage_rows) else data.frame(
+    comparison_context=character(),group_id=character(),territory_type=character(),facet_id=character(),
+    source_id=character(),vintage_id=character(),stringsAsFactors=FALSE)
+  if(nrow(lineage)) lineage <- unique(lineage[order(lineage$comparison_context,lineage$group_id,
+    lineage$territory_type,lineage$facet_id,lineage$source_id,lineage$vintage_id),,drop=FALSE])
+  list(groups=groups, territories=territories, lineage=lineage,
        profile_content_version=profile_content_version,
        reference_content_version=reference_content_version)
 }
@@ -98,9 +118,12 @@ write_profile_comparison_parquets <- function(projection, directory,
   dir.create(directory, recursive=TRUE, showWarnings=FALSE)
   version <- profile_content_version(projection)
   generation <- file.path(directory, paste0("profile-comparison-", version))
-  targets <- file.path(generation, c("groups.parquet", "territories.parquet"))
+  targets <- file.path(generation, c("groups.parquet", "territories.parquet", "lineage.parquet"))
   dir.create(generation, recursive=TRUE, showWarnings=FALSE)
-  expected <- list(projection$groups, projection$territories)
+  lineage <- projection$lineage
+  if (is.null(lineage)) lineage <- data.frame(comparison_context=character(),group_id=character(),
+    territory_type=character(),facet_id=character(),source_id=character(),vintage_id=character())
+  expected <- list(projection$groups, projection$territories, lineage)
   present <- file.exists(targets)
   for (i in which(present)) {
     existing <- tryCatch(nanoparquet::read_parquet(targets[i]), error=function(e) NULL)
@@ -177,6 +200,27 @@ validate_declared_profile <- function(facts, descriptor, axes, eligible_territor
   invisible(facts)
 }
 
+# The declared-profile provenance contract is shared by the database publisher
+# and the offline serving artifact: every dense fact coordinate resolves to
+# exactly one declared source/vintage association, no more and no less.
+validate_profile_provenance <- function(profile) {
+  provenance <- profile$provenance
+  provenance_fields <- c("indicator_id", "territory_id", "detail_key", "sex_key", "source_id", "vintage_id")
+  fact_keys <- paste(profile$descriptor$indicator_id, profile$facts$territory_id, profile$facts$detail,
+    profile$facts$sex, sep="\r")
+  provenance_keys <- if (is.data.frame(provenance) && all(provenance_fields %in% names(provenance)))
+    paste(provenance$indicator_id, provenance$territory_id, provenance$detail_key, provenance$sex_key, sep="\r") else character()
+  if (!is.data.frame(provenance) || !setequal(names(provenance), provenance_fields) ||
+      anyNA(provenance[provenance_fields]) || anyDuplicated(provenance[provenance_fields]) ||
+      any(!provenance$source_id %in% profile$descriptor$source) ||
+      !setequal(fact_keys, provenance_keys) ||
+      any(!paste(provenance$source_id, provenance$vintage_id) %in%
+          paste(profile$vintages$source_id, profile$vintages$vintage_id)) ||
+      any(!provenance$source_id %in% profile$datasets$source_id))
+    stop("Invalid or incomplete profile provenance associations", call.=FALSE)
+  invisible(profile)
+}
+
 project_structure_age_profile <- function(indicateurs, metadata, territoires = NULL) {
   if (is.list(indicateurs) && !is.data.frame(indicateurs)) {
     territoires <- indicateurs$territoires
@@ -249,7 +293,8 @@ project_dpe_profile <- function(canonical, metadata, scalar_version) {
   if (!setequal(names(labels), details) || length(source_ids) != 1L)
     stop("DPE axes or source identity is not declared", call.=FALSE)
   rows <- rows[rows$key == page$indicator & rows$type %in% unlist(page$levels), , drop=FALSE]
-  if (!nrow(rows) || any(!is.na(rows$sex)) || any(rows$unit != page$unit) ||
+  has_sex_values <- "sex" %in% names(rows) && any(!is.na(rows$sex))
+  if (!nrow(rows) || has_sex_values || any(rows$unit != page$unit) ||
       !all(c("vintage_source","vintage_version","vintage_date_reference","vintage_date_publication") %in% names(rows)))
     stop("Canonical DPE facts do not match declared one-axis profile", call.=FALSE)
   if (!policy$support_count_field %in% names(rows)) stop("DPE support field is missing", call.=FALSE)
@@ -300,7 +345,8 @@ project_declared_detail_profile <- function(canonical, metadata, indicator, sour
     stop("Mobility profile axes, units or source are undeclared", call.=FALSE)
   levels <- if (!is.null(contract$allowed_levels)) unlist(contract$allowed_levels, use.names=FALSE) else unlist(page$levels, use.names=FALSE)
   rows <- rows[rows$key == indicator & rows$type %in% levels,,drop=FALSE]
-  if (!nrow(rows) || any(!rows$detail %in% details) || any(!is.na(rows$sex)) ||
+  has_sex_values <- "sex" %in% names(rows) && any(!is.na(rows$sex))
+  if (!nrow(rows) || any(!rows$detail %in% details) || has_sex_values ||
       !all(c("vintage_source","vintage_version","vintage_date_reference","vintage_date_publication") %in% names(rows)))
     stop("Canonical mobility profile rows do not match declared axes or provenance", call.=FALSE)
   if (!"unit" %in% names(rows) || anyNA(rows$unit) || any(!nzchar(as.character(rows$unit))) ||
@@ -386,76 +432,6 @@ project_declared_detail_profile <- function(canonical, metadata, indicator, sour
 # producer-declared detail projection with other themes.
 project_mobility_profile <- project_declared_detail_profile
 
-# The Mobilité density signature is not a declared detail profile: the input
-# carries one range and two distinct, paired ordinates (density and decile).
-# Keep that producer grain intact for its named figure consumer.
-project_mobility_density_distribution <- function(histories, vintages, metadata) {
-  required <- c("territoire", "type", "dens_min", "dens_max", "vintage_source",
-                "vintage_version", "vintage_date_reference", "vintage_date_publication")
-  if (!is.data.frame(histories) || !all(required %in% names(histories)))
-    stop("Canonical mobility distribution fields are incomplete", call.=FALSE)
-  density_cols <- grep("^dens_[0-9]+$", names(histories), value=TRUE)
-  decile_cols <- grep("^dec_[0-9]+$", names(histories), value=TRUE)
-  density_index <- as.integer(sub("^dens_", "", density_cols))
-  decile_index <- as.integer(sub("^dec_", "", decile_cols))
-  if (!length(density_cols) || !identical(sort(density_index), sort(decile_index)) ||
-      anyDuplicated(density_index) || anyDuplicated(decile_index))
-    stop("Canonical mobility density and decile axes do not match", call.=FALSE)
-  contract <- metadata$distribution_contracts$mobilite_density_distribution
-  source_id <- MOBILITE_SNAPSHOT_SOURCE_ID
-  allowed_levels <- as.character(unlist(contract$allowed_focal_levels, use.names=FALSE))
-  suffixes <- as.integer(unlist(contract$axis_ordinals, use.names=FALSE))
-  if (is.null(contract) || !identical(as.character(contract$source_id), source_id) ||
-      !length(allowed_levels) || anyNA(allowed_levels) || any(!nzchar(allowed_levels)) || anyDuplicated(allowed_levels) ||
-      !length(suffixes) || anyNA(suffixes) || anyDuplicated(suffixes) ||
-      !identical(sort(density_index), sort(suffixes)) || !identical(sort(decile_index), sort(suffixes)) ||
-      !is.character(contract$density_unit) || length(contract$density_unit)!=1L || !nzchar(contract$density_unit) ||
-      !is.character(contract$decile_unit) || length(contract$decile_unit)!=1L || !nzchar(contract$decile_unit))
-    stop("Mobility density distribution descriptor differs from its producer contract", call.=FALSE)
-  # The producer emits one canonical density signature for every history
-  # territory row. This includes the supported focal territories represented
-  # by either story; it does not project or reconstruct the separate peer cloud.
-  rows <- histories
-  if (!nrow(rows) || anyDuplicated(rows[c("territoire", "type")]) ||
-      any(!rows$type %in% allowed_levels))
-    stop("Canonical mobility distribution contains a territory outside producer-declared focal levels", call.=FALSE)
-  vintage <- vintages[vintages$id==source_id,,drop=FALSE]
-  if (nrow(vintage)!=1L || !all(c("id","source","version","date_reference","date_publication") %in% names(vintage)) ||
-      anyNA(vintage[c("source","version")]) || anyNA(rows[c("vintage_source", "vintage_version", "vintage_date_reference", "vintage_date_publication")]) ||
-      any(rows$vintage_source!=vintage$source[[1L]] | rows$vintage_version!=vintage$version[[1L]] |
-        rows$vintage_date_reference!=as.character(vintage$date_reference[[1L]]) |
-        rows$vintage_date_publication!=as.character(vintage$date_publication[[1L]])))
-    stop("Canonical Mobility distribution has incompatible snapshot provenance", call.=FALSE)
-  vintage_id <- paste(as.character(vintage$version[[1L]]),
-    if(is.na(vintage$date_reference[[1L]])) "NA" else as.character(vintage$date_reference[[1L]]),sep="/")
-  point_order <- order(density_index)
-  points <- do.call(rbind, lapply(seq_along(point_order), function(j) {
-    i <- density_index[[point_order[[j]]]]
-    density_value <- as.numeric(rows[[paste0("dens_", i)]])
-    decile_value <- as.numeric(rows[[paste0("dec_", i)]])
-    data.frame(territory_id=as.character(rows$territoire), territory_type=as.character(rows$type),
-      ordinal=as.integer(j-1L), density=density_value,
-      density_status=ifelse(is.na(density_value),"not_available","measured"),
-      decile=decile_value, decile_status=ifelse(is.na(decile_value),"not_available","measured"),
-      stringsAsFactors=FALSE)
-  }))
-  rownames(points) <- NULL
-  ranges <- data.frame(territory_id=as.character(rows$territoire), territory_type=as.character(rows$type),
-    range_min=as.numeric(rows$dens_min), range_max=as.numeric(rows$dens_max),
-    status=ifelse(!is.na(rows$dens_min) & !is.na(rows$dens_max),"measured","not_available"), stringsAsFactors=FALSE)
-  if (any(!is.na(points$density) & (!is.finite(points$density) | points$density < 0)) ||
-      any(!is.na(points$decile) & !is.finite(points$decile)) ||
-      any(ranges$status=="measured" & (!is.finite(ranges$range_min) | !is.finite(ranges$range_max) | ranges$range_min>ranges$range_max)) ||
-      any((ranges$status!="measured") & (!is.na(ranges$range_min) | !is.na(ranges$range_max))))
-    stop("Canonical mobility distribution contains invalid values", call.=FALSE)
-  list(points=points, ranges=ranges, source_id=source_id,
-    source_name=as.character(vintage$source[[1L]]), vintage_id=vintage_id,
-    source_version=as.character(vintage$version[[1L]]), reference_date=as.Date(vintage$date_reference[[1L]]),
-    publication_date=as.Date(vintage$date_publication[[1L]]), allowed_levels=allowed_levels, axis_count=length(suffixes),
-    density_unit=contract$density_unit, decile_unit=contract$decile_unit,
-    version=profile_content_version(list(points, ranges, contract, vintage)))
-}
-
 profile_content_version <- function(projection) {
   path <- tempfile("profile-version-")
   on.exit(unlink(path), add = TRUE)
@@ -479,28 +455,21 @@ publish_registered_profile <- function(registry, name, canonical, db, additional
   ids <- vapply(profiles, function(p) p$descriptor$indicator_id, character(1))
   if (anyDuplicated(ids)) stop("Duplicate profile snapshot identity", call.=FALSE)
   for (profile in profiles) {
-  validate_declared_profile(profile$facts, profile$descriptor,
-    profile$axes, profile$eligible_territories)
-  provenance <- profile$provenance
-  provenance_fields <- c("indicator_id", "territory_id", "detail_key", "sex_key", "source_id", "vintage_id")
-  fact_keys <- paste(profile$descriptor$indicator_id, profile$facts$territory_id, profile$facts$detail,
-    profile$facts$sex, sep="\r")
-  provenance_keys <- if (is.data.frame(provenance) && all(provenance_fields %in% names(provenance)))
-    paste(provenance$indicator_id, provenance$territory_id, provenance$detail_key, provenance$sex_key, sep="\r") else character()
-  if (!is.data.frame(provenance) || !setequal(names(provenance), provenance_fields) ||
-      anyNA(provenance[provenance_fields]) || anyDuplicated(provenance[provenance_fields]) ||
-      any(!provenance$source_id %in% profile$descriptor$source) ||
-      !setequal(fact_keys, provenance_keys) ||
-      any(!paste(provenance$source_id, provenance$vintage_id) %in%
-          paste(profile$vintages$source_id, profile$vintages$vintage_id)) ||
-      any(!provenance$source_id %in% profile$datasets$source_id))
-    stop("Invalid or incomplete profile provenance associations", call.=FALSE)
+    validate_declared_profile(profile$facts, profile$descriptor,
+      profile$axes, profile$eligible_territories)
+    validate_profile_provenance(profile)
   }
   if (length(profiles) > 1L) projection <- list(profiles=profiles[order(ids)])
   version <- profile_content_version(projection)
-  result <- db$transaction({
-    if (is.function(db$lock)) db$lock()
-    reference <- db$reference_marker()
+  protocol_db <- list(
+    transaction = db$transaction,
+    lock = if (is.function(db$lock)) function(owner) db$lock() else NULL,
+    marker = function(owner) db$marker(owner))
+  result <- publish_owner_snapshot(
+    db = protocol_db, owner = "declared_profile", content_version = version,
+    dependency_name = "territory_reference",
+    read_dependency = db$reference_marker,
+    validate_dependency = function(reference) {
     if (!nrow(reference) || is.na(reference$content_version[[1L]]) ||
         !nzchar(reference$content_version[[1L]]) ||
         (all(c("row_count", "actual_rows") %in% names(reference)) &&
@@ -516,20 +485,21 @@ publish_registered_profile <- function(registry, name, canonical, db, additional
         db$validate_scalar_facet(profile$descriptor)
       }
     }
-    marker <- db$marker("declared_profile")
-    changed <- !(nrow(marker) && identical(as.character(marker$content_version[[1L]]), version))
-    reference_changed <- !changed && "reference_content_version" %in% names(marker) &&
-      !identical(as.character(marker$reference_content_version[[1L]]), as.character(reference$content_version[[1L]]))
-    comparison_stale <- FALSE
-    if (is.function(db$prepare_comparisons)) {
+    },
+    publish_content = function(version_arg, reference_arg) publisher$publish(projection, db, version),
+    rebind_dependency = function(reference_version) publisher$publish(projection, db, version),
+    requires_republish = function(marker, reference) {
+      same_reference <- is.data.frame(marker) && nrow(marker) > 0L &&
+        "reference_content_version" %in% names(marker) &&
+        identical(as.character(marker$reference_content_version[[1L]]),
+                  as.character(reference$content_version[[1L]]))
+      if (!is.function(db$prepare_comparisons))
+        return(!same_reference)
       comparison_state <- db$prepare_comparisons(profiles, version, reference$content_version[[1L]])
-      comparison_stale <- isTRUE(comparison_state$stale)
-    }
-    if (changed || reference_changed || comparison_stale) publisher$publish(projection, db, version)
-    invisible(list(changed=changed || reference_changed || comparison_stale,
-      compatibility_updated=reference_changed, content_version=version))
-  })
-  result
+      !same_reference || isTRUE(comparison_state$stale)
+    })
+  invisible(list(changed = result$changed || result$rebound || result$republished_for_dependency,
+    compatibility_updated = result$rebound, content_version = version))
 }
 
 register_structure_age_profile_publisher <- function(registry, metadata) {
@@ -550,19 +520,22 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
       }
     },
     transaction = function(expr) DBI::dbWithTransaction(con, expr),
-    lock = function() DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(596, 1)"),
+    lock = function(owner) DBI::dbGetQuery(con, "SELECT pg_advisory_xact_lock(596, 1)"),
     marker = function(name) DBI::dbGetQuery(con,
       "SELECT content_version,reference_content_version FROM table_publication WHERE table_name=$1", params=list(name)),
     prepare_comparisons = function(profiles, version, reference_version) {
       refs <- DBI::dbGetQuery(con, "SELECT territory_id,territory_type,epci_id,density_class_code FROM territory_reference")
       comparisons <<- project_declared_profile_comparisons(profiles, refs, version, reference_version)
-      marker <- DBI::dbGetQuery(con, "SELECT content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count FROM profile_comparison_publication WHERE singleton=true")
+      marker <- DBI::dbGetQuery(con, "SELECT content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count,
+        EXISTS(SELECT 1 FROM profile_comparison_group WHERE lineage_source_count IS NULL) AS lineage_incomplete
+        FROM profile_comparison_publication WHERE singleton=true")
       comparison_version <- profile_content_version(comparisons)
       expected <- c(nrow(comparisons$groups), nrow(comparisons$territories))
       stale <- !nrow(marker) || !identical(as.character(marker$profile_content_version[[1L]]), as.character(version)) ||
         !identical(as.character(marker$reference_content_version[[1L]]), as.character(reference_version)) ||
         !identical(as.character(marker$content_version[[1L]]), comparison_version) ||
-        !identical(as.integer(c(marker$group_row_count[[1L]], marker$territory_row_count[[1L]])), as.integer(expected))
+        !identical(as.integer(c(marker$group_row_count[[1L]], marker$territory_row_count[[1L]])), as.integer(expected)) ||
+        isTRUE(marker$lineage_incomplete[[1L]])
       # Files are immutable generations. The DB marker is their pointer; a
       # rollback may leave an unreferenced orphan, but cannot invalidate the
       # prior committed generation. Never overwrite a referenced generation.
@@ -604,6 +577,7 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
       if (any(!existing %in% ids)) stop("Complete profile snapshot would discard an existing profile", call.=FALSE)
       DBI::dbExecute(con, "DELETE FROM profile_comparison_territory")
       DBI::dbExecute(con, "DELETE FROM profile_comparison_group")
+      DBI::dbExecute(con, "DELETE FROM comparison_source_lineage WHERE comparison_family='profile'")
       DBI::dbExecute(con, "DELETE FROM profile_observation")
       DBI::dbExecute(con, "DELETE FROM profile_descriptor_source")
       DBI::dbExecute(con, "DELETE FROM profile_descriptor")
@@ -645,6 +619,11 @@ profile_postgres_adapter <- function(con, artifact_directory = NULL) {
       }
       DBI::dbWriteTable(con, "profile_comparison_group", comparisons$groups, append=TRUE, row.names=FALSE)
       DBI::dbWriteTable(con, "profile_comparison_territory", comparisons$territories, append=TRUE, row.names=FALSE)
+      lineage <- comparisons$lineage
+      lineage$comparison_family <- "profile"
+      lineage$comparison_content_version <- comparison_version
+      DBI::dbWriteTable(con,"comparison_source_lineage",lineage[c("comparison_family","comparison_context",
+        "group_id","territory_type","facet_id","source_id","vintage_id","comparison_content_version")],append=TRUE,row.names=FALSE)
       DBI::dbExecute(con, "INSERT INTO profile_comparison_publication(singleton,content_version,profile_content_version,reference_content_version,group_row_count,territory_row_count,published_at) VALUES(true,$1,$2,$3,$4,$5,now()) ON CONFLICT(singleton) DO UPDATE SET content_version=EXCLUDED.content_version,profile_content_version=EXCLUDED.profile_content_version,reference_content_version=EXCLUDED.reference_content_version,group_row_count=EXCLUDED.group_row_count,territory_row_count=EXCLUDED.territory_row_count,published_at=EXCLUDED.published_at",
         params=list(comparison_version, version, reference_version, nrow(comparisons$groups), nrow(comparisons$territories)))
       reference <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
@@ -663,30 +642,32 @@ publier_structure_age_profile_postgres <- function(payload, metadata) {
   }, finally = DBI::dbDisconnect(con))
 }
 
-# Explicit complete snapshot; not wired to a live target until publication is
-# authorised. scalar_version is the verified canonical shared scalar token.
-publier_declared_profiles_postgres <- function(demography, demography_metadata,
-    habitat, habitat_metadata, scalar_version, con = NULL, mobilite = NULL, mobilite_metadata = NULL,
-    mobilite_vintages = NULL, scalar_publication = NULL, output_directory = NULL) {
-  if (is.null(scalar_publication) || !identical(as.character(scalar_publication$content_version), as.character(scalar_version)))
-    stop("Profile publication requires the same-run scalar publication token", call.=FALSE)
+# Explicit complete snapshot from the offline declared-profile serving
+# artifacts. The verified scalar binding is recomputed from the same canonical
+# Parquet the shared scalar publisher consumes, so a stale local DPE generation
+# (its required_scalar_version no longer matching) fails closed here before any
+# database write. The DPE facet is still cross-checked against the live
+# scalar_observation marker inside publish_registered_profile().
+publier_declared_profiles_postgres <- function(artifact_directory, owners, con = NULL) {
+  if (!is.character(owners) || !length(owners) || anyNA(owners) || anyDuplicated(owners))
+    stop("Declared profile owners are required", call.=FALSE)
+  if (!"structure_age" %in% owners)
+    stop("Declared profile publication requires the structure_age owner", call.=FALSE)
+  scalar_binding <- profile_scalar_binding(artifact_directory)
+  profiles <- read_profile_serving_profiles(artifact_directory, owners, scalar_binding = scalar_binding)
   owned <- is.null(con)
   if (owned) con <- do.call(DBI::dbConnect, c(list(drv=RPostgres::Postgres()), configuration_service_postgres()))
   if (owned) on.exit(DBI::dbDisconnect(con), add=TRUE)
-  registry <- register_structure_age_profile_publisher(list(), demography_metadata)
-  additional <- list(project_dpe_profile(habitat, habitat_metadata, scalar_version))
-  housing_ids <- declared_detail_profile_ids(habitat_metadata)
-  additional <- c(additional, lapply(housing_ids, function(id)
-    project_declared_detail_profile(habitat, habitat_metadata, id)))
-  if (!is.null(mobilite) || !is.null(mobilite_metadata)) {
-    if (is.null(mobilite) || is.null(mobilite_metadata)) stop("Canonical mobility payload and metadata must be supplied together", call.=FALSE)
-    if (is.null(mobilite_vintages)) stop("Canonical Mobility source vintages must be supplied", call.=FALSE)
-    additional <- c(additional, lapply(declared_detail_profile_ids(mobilite_metadata),
-      function(id) project_mobility_profile(mobilite, mobilite_metadata, id, mobilite_vintages)))
-  }
-  adapter <- profile_postgres_adapter(con, output_directory)
-  result <- publish_registered_profile(registry, "structure_age", demography, adapter, additional_projections=additional)
-  result
+  # The artifacts are already projected and validated; the identity publisher
+  # exists only to reuse the shared marker and comparison publication
+  # transaction.
+  registry <- register_profile_publisher(list(), "structure_age",
+    function(projection) projection,
+    function(projection, db, version) db$replace(projection, version))
+  additional <- profiles[setdiff(names(profiles), "structure_age")]
+  adapter <- profile_postgres_adapter(con, artifact_directory)
+  publish_registered_profile(registry, "structure_age", profiles$structure_age, adapter,
+    additional_projections = additional)
 }
 
 declared_detail_profile_ids <- function(metadata) {

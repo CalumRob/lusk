@@ -55,6 +55,14 @@ test_that("run_pipeline(theme = theme_habitat()) : le cache atteint les vintages
     ecrire_rapport_run = function(statuts, mode, cible, timestamp = NULL,
                                   couverture = NULL)
       invisible(NULL),
+    materialize_theme_scalar_artifact = function(...) invisible(NULL),
+    # le payload stubé ci-dessus ne porte aucun fait de profil déclaré :
+    # la matérialisation des profils est hors boucle, comme le scalar.
+    materialize_theme_profile_artifacts = function(...) invisible(NULL),
+    # le payload stubé ci-dessus n'a ni faits scalaires ni séries annuelles :
+    # les deux materialisations de projection sont hors boucle, comme le scalar.
+    materialize_theme_series_artifacts = function(...) invisible(NULL),
+    materialize_theme_typed_reading_artifacts = function(...) invisible(NULL),
     # issue #60 : la géométrie (ADR-0008) est publiée par le run — jamais de
     # réseau dans la boucle de test (le fetch WFS réel est hors de la boucle).
     publier_geometrie = function(cible = "public/data", fetch = NULL) {
@@ -98,6 +106,8 @@ test_that("run_pipeline(theme = theme_habitat()) : le run Habitat complet, de bo
 
   payload <- run_pipeline(theme = theme_habitat(), cache = cache, sortie = cible,
                           noms_epci_geo_api = NULL)
+  habitat_scalar <- read_scalar_serving_artifact(file.path(cible, "scalar-serving", "habitat"))
+  expect_true(all(c("part_passoires", "prix_m2") %in% habitat_scalar$descriptors$indicator_id))
 
   # le payload complet du thème
   expect_named(payload, c("indicateurs", "histoires", "territoires", "apercu"))
@@ -115,21 +125,23 @@ test_that("run_pipeline(theme = theme_habitat()) : le run Habitat complet, de bo
   # partagé apercu n'est NI écrit NI écrasé par un thème sans aperçu (seul
   # Démographie le peuple). Issue #311 : les métadonnées du thème partent
   # avec le run (theme_habitat.json).
-  for (f in c("indicateurs_habitat.parquet", "indicateurs_habitat.json",
-              "histoires_habitat.parquet", "histoires_habitat.json",
+  for (f in c("indicateurs_habitat.json", "histoires_habitat.json",
               "territoires.parquet", "territoires.json",
               "vintages.parquet", "run-report.json",
               "theme_habitat.json")) {
     expect_true(file.exists(file.path(cible, f)), info = f)
   }
+  # #757 : le parquet par-thème est retiré pour les cinq thèmes non-mobilité
+  expect_false(file.exists(file.path(cible, "indicateurs_habitat.parquet")))
+  expect_false(file.exists(file.path(cible, "histoires_habitat.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.parquet")))
   expect_false(file.exists(file.path(cible, "apercu.json")))
 
-  # le parquet relit exactement le payload publié
-  ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_habitat.parquet"))
+  # #757 : les faits partent en JSON seul — le JSON relit exactement le payload
+  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_habitat.json"))
   expect_equal(nrow(ind), nrow(payload$indicateurs))
   expect_equal(ind$value, payload$indicateurs$value)
-  hist <- nanoparquet::read_parquet(file.path(cible, "histoires_habitat.parquet"))
+  hist <- jsonlite::fromJSON(file.path(cible, "histoires_habitat.json"))
   expect_equal(hist$classification, payload$histoires$classification)
 
   # vintages.parquet : une ligne par source du manifeste Habitat
@@ -167,7 +179,8 @@ test_that("un re-run Habitat écrase sans dupliquer (upsert, issue #19)", {
                noms_epci_geo_api = NULL)
 
   # le payload EST l'état complet : relancer écrase, ne duplique jamais
-  ind <- nanoparquet::read_parquet(file.path(cible, "indicateurs_habitat.parquet"))
+  # #757 : les faits Habitat partent en JSON seul
+  ind <- jsonlite::fromJSON(file.path(cible, "indicateurs_habitat.json"))
   ref <- nanoparquet::read_parquet(file.path(cible, "territoires.parquet"))
   expect_equal(nrow(ind), nrow(payload_habitat()$indicateurs))
   expect_equal(nrow(ref), nrow(payload_habitat()$territoires))

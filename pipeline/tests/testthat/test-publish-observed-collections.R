@@ -91,7 +91,7 @@ test_that("sparse comparison projection emits every canonical context member wit
     vintage_id=p$vintages$vintage_id[[1L]])
   refs <- data.frame(territory_id=c("C_TEST","C_ORT","C_MISSING","E_TEST","D_TEST","BZH"),
     territory_type=c("commune","commune","commune","epci","departement","region"),
-    epci_id=c("E_TEST","E_TEST","E_TEST",NA,NA,NA),density_class_code=c("d","d","d",NA,NA,NA))
+    epci_id=c("E_TEST","E_TEST","E_TEST",NA,NA,NA),density_class_code=c("d","d","empty",NA,NA,NA))
   out <- project_observed_collection_comparisons(p,refs,"collection-v1","reference-v1")
   bretagne <- out$territories[out$territories$comparison_context=="bretagne",]
   expect_equal(nrow(bretagne),3L)
@@ -107,6 +107,14 @@ test_that("sparse comparison projection emits every canonical context member wit
   absent <- bretagne[bretagne$status=="not_published",]
   expect_true(all(is.na(absent[c("rank","tie_count","rank_size")])) )
   expect_equal(out$groups$median[out$groups$comparison_context=="bretagne"],150)
+  lineage <- out$lineage[out$lineage$comparison_context=="bretagne",]
+  actual_pairs <- unique(lineage[c("source_id","vintage_id")])
+  expected_pairs <- unique(p$facts[p$facts$territory_id %in% c("C_TEST","C_ORT"),c("source_id","vintage_id")])
+  rownames(actual_pairs) <- rownames(expected_pairs) <- NULL
+  expect_equal(actual_pairs,expected_pairs)
+  expect_true(all(out$groups$lineage_source_count[out$groups$eligible_count==0L]==0L))
+  expect_true(all(out$groups$eligible_count[out$groups$eligible_count==0L]==0L))
+  expect_equal(out$groups$member_count[out$groups$comparison_context=="density_class" & out$groups$group_id=="empty"],1L)
   low_tie <- p; low_tie$descriptor$direction <- "low"; low_tie$facts$value <- 100
   tied <- project_observed_collection_comparisons(low_tie,refs,"collection-v1","reference-v1")
   tied_bretagne <- tied$territories[tied$territories$comparison_context=="bretagne" & tied$territories$status=="measured",]
@@ -151,6 +159,7 @@ test_that("observed collection comparison Parquet generations are immutable and 
   old_bytes <- lapply(first,function(path) readBin(path,what="raw",n=file.info(path)$size))
   expect_true(isTRUE(all.equal(nanoparquet::read_parquet(first[[1L]]),comparison$groups,check.attributes=FALSE)))
   expect_true(isTRUE(all.equal(nanoparquet::read_parquet(first[[2L]]),comparison$territories,check.attributes=FALSE)))
+  expect_true(isTRUE(all.equal(nanoparquet::read_parquet(first[[3L]]),comparison$lineage,check.attributes=FALSE)))
 
   changed <- projection
   changed$facts$value[[1L]] <- changed$facts$value[[1L]]+10
@@ -175,17 +184,22 @@ test_that("observed collection publication repairs comparison state and rebuilds
     epci_id=c("E_TEST","E_TEST","E_TEST",NA,NA,NA),density_class_code=c("d","d","d",NA,NA,NA))
   state <- new.env(parent=emptyenv()); state$reference_version <- "r1"; state$territory_reference <- refs
   state$collection_version <- NULL; state$collection_reference_version <- NULL; state$comparison <- NULL
+  writes <- 0L
   adapter <- list(
     transaction=function(fn) { before <- as.list.environment(state); tryCatch(fn(),error=function(e) {rm(list=ls(state),envir=state);list2env(before,state);stop(e)}) },
     state=function(id) as.list.environment(state),
-    replace_base=function(x,v,r) {state$collection_version <- v;state$collection_reference_version <- r},
-    replace_comparisons=function(x,v,c,r) {state$comparison <- list(content_version=v,collection_content_version=c,
+    replace_base=function(x,v,r) {writes <<- writes+1L;state$collection_version <- v;state$collection_reference_version <- r},
+    replace_comparisons=function(x,v,c,r) {writes <<- writes+1L;state$comparison <- list(content_version=v,collection_content_version=c,
       reference_content_version=r,group_row_count=nrow(x$groups),territory_row_count=nrow(x$territories),
-      actual_group_rows=nrow(x$groups),actual_territory_rows=nrow(x$territories))}
+      lineage_row_count=nrow(x$lineage),lineage_complete=TRUE,
+      actual_group_rows=nrow(x$groups),actual_territory_rows=nrow(x$territories),
+      actual_lineage_rows=nrow(x$lineage))}
   )
   first <- publish_observed_collection_with_adapter(p,adapter)
   expect_true(first$changed)
+  expect_equal(writes,2L)
   expect_false(publish_observed_collection_with_adapter(p,adapter)$changed)
+  expect_equal(writes,2L)
   state$comparison$actual_group_rows <- 0L
   expect_true(publish_observed_collection_with_adapter(p,adapter)$changed)
   state$mismatched_group_versions <- 1L
