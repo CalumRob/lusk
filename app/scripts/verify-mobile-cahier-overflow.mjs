@@ -195,6 +195,12 @@ try {
         const rect = el.getBoundingClientRect()
         return rect.width > 0 && rect.height > 0
       })
+      const explorerFigureRects = [...cahier.querySelectorAll(
+        '.aedar-equipment-explorer-figures > .aedar-equipment-explorer-figure',
+      )].map((figure) => {
+        const { x, y, right, bottom, width, height } = figure.getBoundingClientRect()
+        return { x, y, right, bottom, width, height }
+      })
       const controls = [...cahier.querySelectorAll('button, input, select')].filter((el) => el.getBoundingClientRect().width > 0)
       const overflowing = [...cahier.querySelectorAll('*')].flatMap((el) => {
         const rect = el.getBoundingClientRect()
@@ -238,6 +244,7 @@ try {
           plainPresentation: cahier.classList.contains('cahier--sans-grille'),
         },
         figureCount: figures.length,
+        explorerFigureRects,
         controlCount: controls.length,
         populatedSections: ['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer']
           .filter((key) => document.querySelector(`#section-${key}`)),
@@ -260,6 +267,16 @@ try {
     assert.deepEqual(metrics.populatedSections, ['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer'])
     assert.deepEqual(metrics.errorOrLoadingShells, [], `Loading/error shells are not populated content at ${width}px`)
     assert(metrics.figureCount >= 7, `Expected real figures at ${width}px, got ${metrics.figureCount}`)
+    assert.equal(metrics.explorerFigureRects.length, 2,
+      `Expected both Bac à sable figures at ${width}px: ${JSON.stringify(metrics.explorerFigureRects)}`)
+    const [volumeFigure, quantileFigure] = metrics.explorerFigureRects
+    if (width <= 760) {
+      assert(quantileFigure.y >= volumeFigure.bottom - 1,
+        `Bac à sable volume and quantile figures should stack on mobile at ${width}px: ${JSON.stringify(metrics.explorerFigureRects)}`)
+    } else if (width === 1440) {
+      assert(Math.abs(quantileFigure.y - volumeFigure.y) <= 1 && quantileFigure.x >= volumeFigure.right - 1,
+        `Bac à sable figures should remain side-by-side on desktop at ${width}px: ${JSON.stringify(metrics.explorerFigureRects)}`)
+    }
     assert(metrics.controlCount >= 10, `Expected interactive controls at ${width}px, got ${metrics.controlCount}`)
     assert(metrics.hasExpectedReading, `Expected populated figure reading at ${width}px`)
     assert(metrics.hasFixtureProvenance, `Expected fixture provenance at ${width}px`)
