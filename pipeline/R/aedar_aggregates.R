@@ -1512,7 +1512,14 @@ publish_aedar_aggregates <- function(projection, db) {
     "measures text","source_id text","vintage_id text","source_url text","licence text","attribution text",
     "reference_date date","publication_date date"),collapse=",")
   source_columns <- paste(published_columns,collapse=",")
-  update_columns <- paste(paste0(payload_columns,"=EXCLUDED.",payload_columns),collapse=",")
+  update_assignments <- paste0(payload_columns,"=EXCLUDED.",payload_columns)
+  # Preserve unchanged JSONB datums during metadata-only reconciliation to avoid rewriting TOAST values.
+  json_columns <- c("identity","measures")
+  json_assignment_indices <- match(json_columns,payload_columns)
+  update_assignments[json_assignment_indices] <- paste0(json_columns,
+    "=CASE WHEN stored.",json_columns," IS DISTINCT FROM EXCLUDED.",json_columns,
+    " THEN EXCLUDED.",json_columns," ELSE stored.",json_columns," END")
+  update_columns <- paste(update_assignments,collapse=",")
   stored_row <- paste(paste0("stored.",payload_columns),collapse=",")
   incoming_row <- paste(paste0("EXCLUDED.",payload_columns),collapse=",")
   incoming_columns <- published_columns

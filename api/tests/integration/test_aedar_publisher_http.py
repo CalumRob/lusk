@@ -57,7 +57,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
     evidence_manifest = fixture_tmp / "schema-intent.json"
     evidence_manifest.write_text(json.dumps({"schema":schema,"database":database_name,
         "publisher_role":publisher.username,"reader_role":read_role,
-        "purpose":"issue-818 AEDAR fact reconciliation guarded proof"},indent=2),encoding="utf-8")
+        "purpose":"issue-820 AEDAR JSON reconciliation guarded proof"},indent=2),encoding="utf-8")
     print(f"AEDAR guarded namespace recorded before DDL: {schema} ({evidence_manifest})",flush=True)
     try:
         _assert_aedar_server_identity(pub, publisher.username)
@@ -167,12 +167,63 @@ con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.in
  dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'))
 on.exit(DBI::dbDisconnect(con))
 DBI::dbExecute(con,sprintf('SET search_path TO "%s"',schema))
+# Make unchanged JSONB values externally stored in this disposable fixture so
+# the metadata-only reconciliation has a deterministic TOAST-allocation signal.
+metadata_columns <- c("typequ_hierarchy_label","typequ_description","typequ_domain_code","typequ_domain_label",
+  "typequ_subdomain_code","typequ_subdomain_label","typequ_gamme","typequ_gamme_status","typequ_source_order")
+DBI::dbExecute(con,"ALTER TABLE aedar_territorial_aggregate ALTER COLUMN identity SET STORAGE EXTERNAL")
+DBI::dbExecute(con,"ALTER TABLE aedar_territorial_aggregate ALTER COLUMN measures SET STORAGE EXTERNAL")
+# The pinned fresh schema requires these fields, while migration 031 leaves
+# them nullable until the owner reconciles legacy facts; model that exact state
+# only inside this disposable, guarded schema.
+metadata_nullability_ddl <- paste("ALTER COLUMN",DBI::dbQuoteIdentifier(con,metadata_columns),"DROP NOT NULL")
+DBI::dbExecute(con,paste("ALTER TABLE aedar_territorial_aggregate",paste(metadata_nullability_ddl,collapse=",")))
+toast_bytes <- function() as.numeric(DBI::dbGetQuery(con,
+  "SELECT pg_relation_size(reltoastrelid)::bigint AS bytes FROM pg_class WHERE oid='aedar_territorial_aggregate'::regclass")$bytes[[1L]])
 stage("begin-aggregate-publish")
 first <- publish_aedar_aggregates(projection,con)
 stage("end-aggregate-publish",rows=first$row_count)
 second <- publish_aedar_aggregates(projection,con)
 stage("end-aggregate-noop",changed=second$changed)
 stopifnot(first$changed,!second$changed,first$row_count==5L * nrow(source_axis))
+# Reconstruct the migration-031 shape over a real, already-published canonical
+# fixture. The stale fact marker makes the real publisher perform reconciliation.
+json_before_metadata_upgrade <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,typequ,
+  identity::text AS identity,measures::text AS measures FROM aedar_territorial_aggregate
+  ORDER BY territory_type,territory_id,typequ")
+metadata_null_assignments <- paste(paste0(DBI::dbQuoteIdentifier(con,metadata_columns),"=NULL"),collapse=",")
+DBI::dbExecute(con,paste("UPDATE aedar_territorial_aggregate SET",metadata_null_assignments))
+canonical_version <- aedar_aggregate_content_version(projection)
+stale_version <- if (identical(canonical_version,paste(rep("0",64L),collapse=""))) paste(rep("1",64L),collapse="") else paste(rep("0",64L),collapse="")
+DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_name='aedar_territorial_aggregate'",params=list(stale_version))
+metadata_null_count <- DBI::dbGetQuery(con,"SELECT count(*) AS n FROM aedar_territorial_aggregate
+  WHERE typequ_hierarchy_label IS NOT NULL OR typequ_description IS NOT NULL OR typequ_domain_code IS NOT NULL OR
+    typequ_domain_label IS NOT NULL OR typequ_subdomain_code IS NOT NULL OR typequ_subdomain_label IS NOT NULL OR
+    typequ_gamme IS NOT NULL OR typequ_gamme_status IS NOT NULL OR typequ_source_order IS NOT NULL")$n[[1L]]
+toast_bytes_before_metadata_upgrade <- toast_bytes()
+stopifnot(metadata_null_count==0,toast_bytes_before_metadata_upgrade>0,
+  !identical(stale_version,canonical_version))
+stage("migration-031-state-ready",rows=nrow(json_before_metadata_upgrade),toast_bytes=toast_bytes_before_metadata_upgrade)
+metadata_upgrade <- publish_aedar_aggregates(projection,con)
+toast_bytes_after_metadata_upgrade <- toast_bytes()
+json_after_metadata_upgrade <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,typequ,
+  identity::text AS identity,measures::text AS measures FROM aedar_territorial_aggregate
+  ORDER BY territory_type,territory_id,typequ")
+metadata_upgrade_state <- DBI::dbGetQuery(con,"SELECT count(*) AS rows,
+  count(*) FILTER (WHERE typequ_hierarchy_label IS NOT NULL AND typequ_description IS NOT NULL AND
+    typequ_domain_code IS NOT NULL AND typequ_domain_label IS NOT NULL AND typequ_subdomain_code IS NOT NULL AND
+    typequ_subdomain_label IS NOT NULL AND typequ_gamme_status IS NOT NULL AND typequ_source_order IS NOT NULL) AS complete
+  FROM aedar_territorial_aggregate")
+metadata_upgrade_marker <- DBI::dbGetQuery(con,"SELECT content_version,reference_content_version FROM table_publication
+  WHERE table_name='aedar_territorial_aggregate'")
+stopifnot(metadata_upgrade$changed,identical(metadata_upgrade$content_version,canonical_version),
+  identical(json_before_metadata_upgrade,json_after_metadata_upgrade),
+  metadata_upgrade_state$complete==metadata_upgrade_state$rows,
+  identical(metadata_upgrade_marker$content_version,canonical_version),
+  identical(metadata_upgrade_marker$reference_content_version,"fixture-ref-v1"),
+  toast_bytes_after_metadata_upgrade==toast_bytes_before_metadata_upgrade)
+stage("migration-031-metadata-reconciliation-preserved-json",metadata_rows=metadata_upgrade_state$complete,
+  toast_bytes_before=toast_bytes_before_metadata_upgrade,toast_bytes_after=toast_bytes_after_metadata_upgrade)
 incomplete_projection <- projection
 incomplete_projection$facts <- incomplete_projection$facts[incomplete_projection$facts$territory_id!='22002',,drop=FALSE]
 incomplete_facts_before <- DBI::dbGetQuery(con,"SELECT * FROM aedar_territorial_aggregate ORDER BY territory_type,territory_id,typequ")
