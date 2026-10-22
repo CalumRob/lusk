@@ -10,7 +10,6 @@ import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilie
 import FigureTrajectoire from '../components/fiche/FigureTrajectoire.vue'
 import PuceRang from '../components/fiche/PuceRang.vue'
 import { varianteDeUrl } from '../fiche/prototype/variantes'
-import { histoiresDemographieNuage } from '../payload/themeFactsAdapter'
 import {
   histoiresDemographieFixture,
   histoiresHabitatFixture,
@@ -173,36 +172,6 @@ export function reponseThemeProgrammesApi(type = 'commune', code = '22001') {
       collection_content_versions: { programme_membership: 'membership-v1' } },
   }
 }
-function reponseThemeDemographieApi(model: any, type = 'commune', code = '22001', rates = [1.25, -0.75]) {
-  const theme = model.themes.demographie
-  const indicators = theme.indicators.filter((row: any) => row.territoire === code)
-  const reading = theme.histories.find((row: any) => row.territoire === code)
-  const source = { source_id: 'demo_api', name: 'Source API démographie', version: '2026', reference_date: null, publication_date: null }
-  const comparison = { contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'demographie',
-    content_version: 'demo-v1', reference_content_version: 'territories-v1', selection: null,
-    scope: { kind: 'density_class', member_count: 1 }, results: [], profile_comparisons: [],
-    reading_content_version: 'demo-v1', reading_cloud: { status: 'available', reason: null,
-      groupe: reading.groupe, story_key: 'trajectoire-demographique', scope: { kind: 'density_class' }, rate_unit: '‰',
-      source, content_version: 'demo-v1', points: [{ territory: { territory_id: '22002', territory_type: 'commune', name: 'Peer Demo' },
-        periode: '2020', taux_solde_naturel: rates[0], taux_solde_migratoire: rates[1] }] } }
-  return { contract: 'theme-facts-v1', complete_theme: false, theme_id: 'demographie',
-    content_version: 'demo-v1', reference_content_version: 'territories-v1', reading_content_version: 'demo-v1',
-    territory: { territory_id: code, territory_type: type }, indicator_metadata: [...new Set(indicators.map((row: any) => row.key))].map((key) => ({
-      indicator_id: key, axes: key === 'structure_age' ? [
-        ...[...new Set(indicators.filter((row: any) => row.key === key).map((row: any) => row.detail))].map((value) => ({ name: 'detail', key: value })),
-        ...[...new Set(indicators.filter((row: any) => row.key === key).map((row: any) => row.sex))].map((value) => ({ name: 'sex', key: value })),
-      ] : [],
-    })), named_reference_evidence: [],
-    indicators: indicators.map((row: any) => ({ indicator_id: row.key, label: row.key, unit: row.unit,
-      value: row.key === 'densite' ? 4321 : row.value, status: row.value === null ? 'suppressed' : 'measured',
-      dimensions: row.detail ? { detail: row.detail, ...(row.sex ? { sex: row.sex } : {}) } : {}, sources: [source] })),
-    readings: [{ groupe: reading.groupe, story_key: 'trajectoire-demographique', salience_reason: 'defaut',
-      periode: '2020', solde_naturel: reading.solde_naturel, solde_migratoire: reading.solde_migratoire,
-      taux_solde_naturel: 0.5, taux_solde_migratoire: -0.25, classification: reading.classification,
-      status: 'measured', rate_unit: '‰', provenance: { source_id: 'demo_api', source_name: source.name,
-        source_version: source.version, source_reference_date: null, source_publication_date: null } }], comparison }
-}
-
 /** Sert les POST faits/comparaison Mobilité comme la fiche montée les consomme :
  * faits complets sur /facts, comparaison sélectionnée répercutée sur /comparison. */
 export function stubApiThemeMobilite(model: any, type = 'commune', code = '22001') {
@@ -896,9 +865,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       if (url === '/api/territories/commune/22001/themes/habitat/facts') {
         return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
       }
-      if (url === '/api/territories/commune/22001/themes/demographie/facts') {
-        return { ok: true, json: async () => reponseThemeDemographieApi(model, 'commune', '22001') }
-      }
       const theme = url.match(/\/themes\/([^/]+)\/facts$/)?.[1]
       if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
         indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
@@ -916,11 +882,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
-    // Démographie acquiert désormais ses faits à la sélection explicite.
+    // Démographie uses producer discovery + semantic reads, never the retired theme route.
     await router.replace({ query: { theme: 'demographie' } })
     await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/demographie/facts'))).toHaveLength(1)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Densité de population')
+    expect(fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources').length).toBeGreaterThan(0)
+    expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch')).toBe(false)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/demographie/'))).toBe(false)
     // Revisite du thème acquis : le cache détient l'entrée, aucune nouvelle requête.
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
@@ -1171,27 +1138,92 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const published = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
     model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    const api = reponseThemeDemographieApi(model)
-    expect(histoiresDemographieNuage(api.comparison)).toHaveLength(1)
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => {
-      if (url.endsWith('/facts')) return api
-      const selection = JSON.parse(String(options?.body)).selection
-      return { ...api.comparison, selection, reading_cloud: { ...api.comparison.reading_cloud,
-        points: [{ ...api.comparison.reading_cloud.points[0], taux_solde_naturel: 8.5, taux_solde_migratoire: -9.5 }] } }
-    } }))
+    const demographie = model.themes.demographie!
+    const producer = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
+    const metadata = producer
+    const catalogue = { contract: 'semantic-resource-catalogue-v1', resources: [
+      ...Object.keys(metadata.indicator_pages).map((resource_id) => ({ resource_id, theme_id: 'demographie', resource_kind: 'indicator',
+        shapes: [resource_id === 'structure_age' ? 'declared_profile' : 'scalar'], intents: ['facts', 'fixed_comparison', 'selected_comparison'] })),
+      { resource_id: 'demographie_selected_reading', theme_id: 'demographie', resource_kind: 'typed_reading',
+        fields: ['groupe', 'story_key', 'status', 'source_id', 'vintage_id'] },
+    ] }
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
+      if (url === '/data/theme_demographie.json') return { ok: true, json: async () => metadata }
+      if (url === '/api/resources') return { ok: true, json: async () => catalogue }
+      if (url === '/api/resources/read-batch') {
+        const body = JSON.parse(String(options?.body))
+        return { ok: true, json: async () => ({ contract: 'semantic-read-batch-v1', results: body.items.map((item: any) => {
+          const resource = item.resource; const target = item.target
+          const observations = demographie.indicators.filter((row: any) => row.key === resource && row.territoire === target.id)
+          const fact = demographie.histories.find((row: any) => row.territoire === target.id)
+          const version = resource === 'structure_age' ? 'profile-v1' : `${resource}-v1`
+          const sourceKey = metadata.sources[resource]
+          const sourceRecord = metadata.source_records[sourceKey]
+          const sourceVintage = sourceRecord?.vintages?.[0]
+          const sources = sourceKey && sourceRecord && sourceVintage ? [{ source_id: sourceKey, name: sourceRecord.dataset,
+            version: sourceVintage.version, reference_date: sourceVintage.dateReference,
+            publication_date: sourceVintage.datePublication ?? null }] : []
+          let data: any
+          if (item.intent.kind === 'facts' && resource === 'demographie_selected_reading') {
+            data = { resource, target, content_version: 'reading-v1', facts: [{ groupe: fact?.groupe ?? 'trajectoire-demographique',
+              story_key: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2020', solde_naturel: 1,
+              solde_migratoire: 2, taux_solde_naturel: target.id === '22002' ? 8.5 : 0.5,
+              taux_solde_migratoire: target.id === '22002' ? -9.5 : -0.25, classification: 'attire-renouvelle',
+              status: 'measured', source_id: metadata.sources.evolution_1968,
+              vintage_id: metadata.source_records[metadata.sources.evolution_1968].vintages[0].id }] }
+          } else if (item.intent.kind === 'facts' && resource === 'structure_age') {
+            data = { resource, target, content_version: version, descriptor: { unit: '%', axes: [
+              ...new Set(observations.map((row: any) => row.detail)),
+            ].map((key) => ({ name: 'detail', key })).concat([...new Set(observations.map((row: any) => row.sex))]
+              .map((key) => ({ name: 'sex', key }))) }, observations: observations.map((row: any) => ({
+              detail: row.detail, sex: row.sex, value: row.value, status: row.observation_status ?? 'measured', sources })) }
+          } else if (item.intent.kind === 'facts') {
+            const row = observations[0]
+            data = { resource, target, content_version: version, value: row?.value ?? null,
+              status: row?.observation_status ?? 'not_available', unit: row?.unit ?? '%', sources }
+          } else {
+            data = { resource, target, contract: 'indicator-comparison-v1', shape: resource === 'structure_age' ? 'profile' : 'scalar',
+              content_version: version, profile_content_version: version, scalar_content_version: resource === 'structure_age' ? 'densite-v1' : null,
+              reference_content_version: 'territories-v1', selection: item.intent.kind === 'selected_comparison'
+                ? item.intent.members.map((member: any) => ({ territory_type: member.type, territory_id: member.id })) : null,
+              scope: { kind: 'density_class' }, result: { status: item.intent.kind === 'selected_comparison' && !item.intent.members.length ? 'unavailable' : 'available',
+                direction: 'high', rank: item.intent.kind === 'selected_comparison' && !item.intent.members.length ? null : 1,
+                rank_size: item.intent.kind === 'selected_comparison' ? item.intent.members.length : 10,
+                source_facet: resource === 'structure_age' ? { detail: observations[0]?.detail ?? '<15', sex: observations[0]?.sex ?? 'F' } : resource,
+                ...(resource === 'structure_age' ? { source_facet_indicator_id: 'densite' } : {}) } }
+          }
+          return { id: item.id, data }
+        }) }) }
+      }
+      return { ok: false, json: async () => ({}) }
+    })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
     await flushPromises()
-    expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/22001/themes/demographie/facts', expect.objectContaining({ method: 'POST', body: JSON.stringify({ theme_id: 'demographie' }) }))
-    const chart = wrapper.findComponent({ name: 'GraphiqueSoldes' })
-    expect(chart.exists()).toBe(true)
-    expect(chart.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22002', tauxNaturel: 1.25, tauxMigratoire: -0.75 }))
+    expect(fetchApi.mock.calls.some(([url]) => url === '/api/resources/read-batch')).toBe(true)
+    let chart = wrapper.findComponent({ name: 'GraphiqueSoldes' })
+    expect(chart.exists(), wrapper.text()).toBe(true)
+    expect(chart.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22001', tauxNaturel: 0.5, tauxMigratoire: -0.25 }))
     expect(chart.props('tauxNaturel')).toBe(0.5)
     await router.replace({ query: { theme: 'demographie', comparaison: 'epci' } })
     await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(1)
+    chart = wrapper.findComponent({ name: 'GraphiqueSoldes' })
+    expect(fetchApi.mock.calls.filter(([url]) => url === '/api/resources/read-batch').length).toBeGreaterThan(1)
     expect(chart.props('tauxNaturel')).toBe(0.5)
-    expect(chart.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22002', tauxNaturel: 8.5, tauxMigratoire: -9.5 }))
+    const selectedMembers = fetchApi.mock.calls.flatMap(([url, options]) => url === '/api/resources/read-batch'
+      ? JSON.parse(String(options?.body)).items.filter((item: any) => item.intent.kind === 'selected_comparison')
+        .flatMap((item: any) => item.intent.members.map((member: any) => member.id)) : [])
+    expect(selectedMembers.length).toBeGreaterThan(0)
+    expect(chart.props('nuage').filter((point: any) => point.territoire !== '22001').map((point: any) => point.territoire),
+      JSON.stringify(selectedMembers)).toEqual(expect.arrayContaining(selectedMembers.filter((id: string) => id !== '22001')))
+    model.cohortTerritories = []
+    await router.replace({ query: { theme: 'demographie', comparaison: 'bretagne' } })
+    await flushPromises()
+    const emptySelectionCalls = fetchApi.mock.calls.filter(([url, options]) => url === '/api/resources/read-batch' &&
+      JSON.parse(String(options?.body)).items.some((item: any) => item.intent.kind === 'selected_comparison' &&
+        item.intent.members.length === 0))
+    expect(emptySelectionCalls.length).toBeGreaterThan(0)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Densité de population')
     wrapper.unmount()
   })
 
@@ -2145,7 +2177,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // Retour sur 22001 : tout est en cache — aucune nouvelle requête de faits.
     await router.push('/territoire/commune/22001'); await flushPromises()
     await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(12)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(10)
     wrapper.unmount()
   })
 

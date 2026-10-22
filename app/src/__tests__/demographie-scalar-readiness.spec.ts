@@ -155,7 +155,9 @@ describe('Démographie scalar readiness on the territory fiche', () => {
       requests.push(url)
       if (url.startsWith('/data/')) return new Response(JSON.stringify(readData(url.slice('/data/'.length))), { status: 200 })
       if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [
-        ...Object.keys(metadata.indicator_pages).map((resource_id) => ({ resource_id, theme_id: 'demographie', resource_kind: 'indicator' })),
+       ...Object.keys(metadata.indicator_pages).map((resource_id) => ({ resource_id, theme_id: 'demographie', resource_kind: 'indicator',
+         shapes: [resource_id === 'structure_age' ? 'declared_profile' : 'scalar'],
+         intents: ['facts', 'fixed_comparison', 'selected_comparison'] })),
         { resource_id: 'demographie_selected_reading', theme_id: 'demographie', resource_kind: 'typed_reading',
           fields: ['status', 'source_id', 'vintage_id'] },
       ] }), { status: 200 })
@@ -167,7 +169,16 @@ describe('Démographie scalar readiness on the territory fiche', () => {
           const target = item.target
           const original = model.themes.demographie.indicateurs.find((row: any) => row.key === resource && row.territoire === target.id)
           let data: any
-          if (resource === 'demographie_selected_reading') {
+          if (item.intent.kind === 'fixed_comparison' || item.intent.kind === 'selected_comparison') {
+            const version = resource === 'structure_age' ? 'profile-v1' : `${resource}-v1`
+            data = { resource, target, contract: 'indicator-comparison-v1', shape: resource === 'structure_age' ? 'profile' : 'scalar',
+              content_version: version, profile_content_version: version,
+              reference_content_version: 'territories-v1', selection: null, scope: { kind: 'density_class' },
+              result: { indicator_id: resource, status: 'available', direction: 'high', rank: 2, rank_size: 10,
+                source_facet: resource === 'structure_age' ? { detail: '<15', sex: 'F' } : resource,
+                ...(resource === 'structure_age' ? { source_facet_indicator_id: 'densite', scalar_content_version: 'densite-v1' } : {}) },
+              ...(resource === 'structure_age' ? { scalar_content_version: 'densite-v1' } : {}) }
+          } else if (resource === 'demographie_selected_reading') {
             data = { resource, target, content_version: 'reading-v1', facts: [{ groupe: 'trajectoire-demographique',
               story_key: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023',
               solde_naturel: 1, solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2,
@@ -206,6 +217,7 @@ describe('Démographie scalar readiness on the territory fiche', () => {
     expect(semanticCalls[0].items.map((item: any) => item.resource)).toEqual(expect.arrayContaining([
       ...Object.keys(metadata.indicator_pages), 'demographie_selected_reading',
     ]))
+    expect(semanticCalls[0].items.filter((item: any) => item.intent.kind === 'fixed_comparison')).toHaveLength(4)
     expect(retiredDemographieCalls).toEqual([])
     expect(wrapper.find('[data-clef="densite"] .valeur-numerique').exists(), wrapper.text()).toBe(true)
     expect(wrapper.find('[data-clef="densite"] .valeur-numerique').text()).toContain('7 654')

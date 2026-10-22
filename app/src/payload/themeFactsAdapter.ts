@@ -529,6 +529,33 @@ export function themeFactsRowsFromApi(
   return { indicateurs, histoires }
 }
 
+/** Adapt producer-declared Démographie comparison resources to the shared fiche rank grammar. */
+export function demographieComparisonForFiche(response: unknown, portee: string | null): Row {
+  if (!isRecord(response) || !Array.isArray(response.resource_results)) {
+    throw new Error('Réponse sémantique de comparaison Démographie invalide')
+  }
+  const results: Row[] = []
+  const profile_comparisons: Row[] = []
+  for (const item of rows(response.resource_results, 'resource_results')) {
+    if (!texteNonVide(item.resource) || !isRecord(item.result)) throw new Error('Ressource de comparaison Démographie invalide')
+    const result = item.result
+    const common = { status: result.status, direction: result.direction, rank: result.rank,
+      rank_size: result.rank_size }
+    if (item.shape === 'profile') {
+      const facet = isRecord(result.source_facet) ? result.source_facet : {}
+      profile_comparisons.push({ indicator: item.resource,
+        facet: { detail: facet.detail ?? null, sex: facet.sex ?? null }, ...common })
+    } else {
+      results.push({ indicator_id: item.resource, ...common })
+    }
+  }
+  return { contract: 'theme-comparison-v1', theme_id: 'demographie', results, profile_comparisons,
+    selection: Array.isArray(response.selection) ? response.selection.map((member) => isRecord(member)
+      ? { territory_type: member.territory_type ?? member.type, territory_id: member.territory_id ?? member.id } : member) : [],
+    scope: isRecord(response.scope) ? response.scope : null, portee,
+    ...(isRecord(response.reading_cloud) ? { reading_cloud: response.reading_cloud } : {}) }
+}
+
 /** Convert the semantic resource response shapes for Démographie into the
  * existing fiche fact grammar. Each resource keeps its own publication version;
  * this deliberately does not synthesize a theme-wide token. */

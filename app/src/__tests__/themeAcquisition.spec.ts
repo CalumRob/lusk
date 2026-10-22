@@ -100,4 +100,26 @@ describe('theme acquisition cache', () => {
     await expect(cache.select('commune', '22001', 'milieux', [])).rejects.toThrow(/publication/i)
     expect((await cache.select('commune', '22001', 'milieux', [])).focal.focal).toBe(1)
   })
+
+  it('checks Démographie versions per resource, permits independent versions, and retries a same-resource mismatch', async () => {
+    const facts = { contract: 'semantic-demographie-v1', resource_results: [
+      { resource: 'densite', content_version: 'density-v2', reference_content_version: 'refs-v1' },
+      { resource: 'evolution_1968', content_version: 'evolution-v8', reference_content_version: 'refs-v1' },
+      { resource: 'structure_age', content_version: 'profile-v3', descriptor: { axes: [] }, reference_content_version: 'refs-v1' },
+    ] }
+    const makeComparison = (densityVersion: string) => ({ contract: 'semantic-demographie-comparison-v1', resource_results: [
+      { resource: 'densite', content_version: densityVersion, reference_content_version: 'refs-v1', result: {} },
+      { resource: 'evolution_1968', content_version: 'evolution-v8', reference_content_version: 'refs-v1', result: {} },
+      { resource: 'structure_age', content_version: 'profile-comparison-v1', profile_content_version: 'profile-v3',
+        reference_content_version: 'refs-v1', result: {} },
+    ] })
+    const acquireComparison = vi.fn().mockResolvedValueOnce(makeComparison('density-stale'))
+      .mockResolvedValueOnce(makeComparison('density-v2'))
+    const cache = new ThemeAcquisitionCache(async () => facts, acquireComparison)
+    await cache.get('commune', '22001', 'demographie')
+    await expect(cache.select('commune', '22001', 'demographie', [])).rejects.toThrow(/publication/i)
+    const selected = await cache.select('commune', '22001', 'demographie', [])
+    expect(selected.comparisons.get('[]')).toMatchObject({ contract: 'semantic-demographie-comparison-v1' })
+    expect(acquireComparison).toHaveBeenCalledTimes(2)
+  })
 })

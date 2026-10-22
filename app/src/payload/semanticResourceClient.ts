@@ -19,6 +19,12 @@ function cacheFor(fetcher: typeof fetch) {
   return cache
 }
 
+/** Clear successful semantic reads so a publication mismatch can be retried against a fresh snapshot. */
+export function invalidateSemanticReadCache(fetcher: typeof fetch = globalThis.fetch): void {
+  const cache = caches.get(fetcher)
+  cache?.values.clear()
+}
+
 /** Correlates by request id (not response order), validates identity, deduplicates and caches success only. */
 export async function readSemanticBatch(items: readonly SemanticReadItem[], fetcher: typeof fetch = globalThis.fetch): Promise<SemanticResult[]> {
   if (!items.length || items.length > 12) throw new Error('Semantic batch must contain 1 to 12 items')

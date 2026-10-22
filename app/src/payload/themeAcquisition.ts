@@ -1,6 +1,6 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
 import type { Theme } from './types'
-import { readSemanticBatch } from './semanticResourceClient'
+import { invalidateSemanticReadCache, readSemanticBatch } from './semanticResourceClient'
 import type { SemanticReadItem } from './semanticResourceClient'
 /** Every canonical theme is acquired (active priority, then background warm-up) unless an owner-owned flow handles it. */
 export const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux', 'mobilite']
@@ -93,13 +93,18 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     this.generations.set(cacheKey, generation)
     const comparison = await this.acquireComparison(selection, theme, key)
     if (generation !== this.generations.get(cacheKey)) throw new Error('Stale theme comparison response')
-    const actualTokens = normalizePublicationTokens(comparison)
-    const focalTokens = normalizePublicationTokens(focal.focal)
-    const compatible = 'reference_content_version' in actualTokens && 'reference_content_version' in focalTokens &&
+    const compatible = theme === 'demographie'
+      ? demographieComparisonCompatible(focal.focal, comparison)
+      : (() => {
+      const actualTokens = normalizePublicationTokens(comparison)
+      const focalTokens = normalizePublicationTokens(focal.focal)
+      return 'reference_content_version' in actualTokens && 'reference_content_version' in focalTokens &&
       actualTokens.reference_content_version === focalTokens.reference_content_version &&
       ['content_version', 'profile_content_version', 'reading_content_version'].every((name) =>
         !(name in actualTokens && name in focalTokens) || actualTokens[name] === focalTokens[name])
+      })()
     if (!compatible) {
+      if (theme === 'demographie') invalidateSemanticReadCache()
       throw new Error('Theme publication tokens do not match; retry comparison')
     }
     const result = { ...focal, comparisons: new Map(focal.comparisons).set(selectionKey, comparison) }
@@ -154,34 +159,164 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
  * together on the semantic API's atomic snapshot. Resource names are supplied
  * by the published read-model metadata, not a parallel UI registry. */
 export async function acquireDemographieFacts(type: string, id: string): Promise<ThemeResponse> {
-  const [metadataResponse, catalogueResponse] = await Promise.all([
-    fetch('/data/theme_demographie.json'), fetch('/api/resources'),
-  ])
-  if (!metadataResponse.ok || !catalogueResponse.ok) throw new Error('Démographie producer resource discovery unavailable')
-  const [metadata, catalogue]: [unknown, unknown] = await Promise.all([metadataResponse.json(), catalogueResponse.json()])
-  if (!isRecord(metadata) || !isRecord(metadata.indicator_pages) || !isRecord(catalogue) ||
-      catalogue.contract !== 'semantic-resource-catalogue-v1' || !Array.isArray(catalogue.resources) ||
-      !Array.isArray(metadata.subgroups)) throw new Error('Démographie resource metadata is incompatible')
+  const plan = await demographieReadPlan()
   const target = { kind: 'territory' as const, type: type as SemanticReadItem['target']['type'], id }
-  const declaredIndicators = Object.keys(metadata.indicator_pages)
-  const readingResources = catalogue.resources.filter((resource): resource is Record<string, unknown> =>
-    isRecord(resource) && resource.resource_kind === 'typed_reading' && resource.theme_id === 'demographie' &&
-      typeof resource.resource_id === 'string' && Array.isArray(resource.fields) &&
-      ['status', 'source_id', 'vintage_id'].every((field) => resource.fields.includes(field)))
-  if (!declaredIndicators.length || readingResources.length !== 1) throw new Error('Démographie resource declarations are incomplete')
   const items: SemanticReadItem[] = [
-    ...declaredIndicators.map((resource) => ({ resource, target, intent: { kind: 'facts' as const } })),
-    ...readingResources.map((resource) => {
-      const subgroup = metadata.subgroups.find((group: unknown) => isRecord(group) && isRecord(group.reading) &&
-        isRecord(group.figure) && group.figure.indicator === 'evolution_1968')
-      if (!isRecord(subgroup)) throw new Error('Démographie reading group is undeclared')
-      return { resource: String(resource.resource_id), target, coordinates: { groupe: [String(subgroup.key)] },
-        intent: { kind: 'facts' as const } }
-    }),
+    ...plan.indicatorResources.map((resource) => ({ resource: resource.resource_id, target, intent: { kind: 'facts' as const } })),
+    { resource: plan.reading.resource_id, target, coordinates: { groupe: [plan.reading.group] }, intent: { kind: 'facts' as const } },
+    ...plan.indicatorResources.map((resource) => ({ resource: resource.resource_id, target,
+      intent: { kind: 'fixed_comparison' as const, context: 'default' } })),
   ]
   const values = await readSemanticBatch(items)
+  const factsCount = plan.indicatorResources.length + 1
+  const facts = values.slice(0, factsCount)
+  const defaultComparisons = values.slice(factsCount)
+  if (!validerVersionsComparaisonDemographie(facts, defaultComparisons, plan.indicatorResources)) {
+    invalidateSemanticReadCache()
+    throw new Error('Démographie default comparison versions do not match their facts')
+  }
   return { contract: 'semantic-demographie-v1', theme_id: 'demographie', territory: { territory_id: id, territory_type: type },
-    resource_results: values }
+    resource_results: facts, default_comparisons: defaultComparisons }
+}
+
+export async function acquireDemographieComparison(type: string, id: string,
+  selection: readonly ThemeSelectionMember[] | undefined): Promise<ThemeResponse> {
+  if (selection === undefined) throw new Error('Default comparison is acquired with Démographie facts')
+  const plan = await demographieReadPlan()
+  const target = { kind: 'territory' as const, type: type as SemanticReadItem['target']['type'], id }
+  const members = selection.map(({ territory_type, territory_id }) => ({ type: territory_type, id: territory_id }))
+  const items = plan.indicatorResources.map((resource) => ({ resource: resource.resource_id, target,
+    intent: { kind: 'selected_comparison' as const, members } }))
+  const resourceResults = await readSemanticBatch(items)
+  for (const comparison of resourceResults) {
+    if (!isRecord(comparison) || !Array.isArray(comparison.selection) || comparison.selection.length !== members.length ||
+        comparison.selection.some((member: unknown, index: number) => !isRecord(member) ||
+          member.territory_type !== members[index]!.type || member.territory_id !== members[index]!.id)) {
+      throw new Error('Semantic Démographie comparison did not echo the requested member scope')
+    }
+  }
+  const reading_cloud = await acquireDemographieReadingCloudWithPlan(plan, members)
+  const result: ThemeResponse = { contract: 'semantic-demographie-comparison-v1', theme_id: 'demographie',
+    selection: isRecord(resourceResults[0]) ? resourceResults[0].selection : members, resource_results: resourceResults,
+    reading_cloud }
+  return result
+}
+
+/** Read only the declared typed reading facts for a scope already resolved by the territory model. */
+export async function acquireDemographieReadingCloud(
+  members: readonly ThemeSelectionMember[], focalResults?: unknown): Promise<ThemeResponse> {
+  const plan = await demographieReadPlan()
+  const typedMembers = members.map(({ territory_type, territory_id }) => ({ type: territory_type, id: territory_id }))
+  const focalReading = Array.isArray(focalResults) ? focalResults.find((item) => isRecord(item) &&
+    item.resource === plan.reading.resource_id) : null
+  const cloud = await acquireDemographieReadingCloudWithPlan(plan, typedMembers)
+  if (focalReading && isRecord(focalReading) && typeof focalReading.content_version === 'string' &&
+      cloud.content_version !== focalReading.content_version) {
+    invalidateSemanticReadCache()
+    throw new Error('Démographie reading cloud publication does not match focal reading')
+  }
+  return { reading_cloud: cloud }
+}
+
+async function acquireDemographieReadingCloudWithPlan(plan: Awaited<ReturnType<typeof demographieReadPlan>>,
+  members: ReadonlyArray<{ type: string; id: string }>) {
+  const items = members.map((member) => ({ resource: plan.reading.resource_id,
+    target: { kind: 'territory' as const, type: member.type as SemanticReadItem['target']['type'], id: member.id },
+    coordinates: { groupe: [plan.reading.group] }, intent: { kind: 'facts' as const } }))
+  const results: Record<string, any>[] = []
+  for (let offset = 0; offset < items.length; offset += 12) {
+    results.push(...await readSemanticBatch(items.slice(offset, offset + 12)) as Record<string, any>[])
+  }
+  if (results.some((item) => typeof item.content_version !== 'string' || !item.content_version)) {
+    throw new Error('Démographie reading cloud publication version is absent')
+  }
+  const versions = new Set(results.map((item) => item.content_version).filter((version) => typeof version === 'string'))
+  if (versions.size > 1) throw new Error('Démographie reading cloud spans incompatible resource versions')
+  const points = results.flatMap((item) => {
+    const fact = Array.isArray(item.facts) ? item.facts[0] : null
+    if (!isRecord(fact) || fact.status !== 'measured' ||
+        !Number.isFinite(fact.taux_solde_naturel) || !Number.isFinite(fact.taux_solde_migratoire)) return []
+    return [{ territory: { territory_id: item.target.id, territory_type: item.target.type },
+      periode: fact.periode ?? null, taux_solde_naturel: fact.taux_solde_naturel,
+      taux_solde_migratoire: fact.taux_solde_migratoire }]
+  })
+  return { status: points.length ? 'available' : 'unavailable', content_version: versions.values().next().value ?? null,
+    groupe: plan.reading.group,
+    story_key: plan.reading.story_key, points }
+}
+
+async function demographieReadPlan() {
+  const [metadataResponse, catalogueResponse] = await Promise.all([fetch('/data/theme_demographie.json'), fetch('/api/resources')])
+  if (!metadataResponse.ok || !catalogueResponse.ok) throw new Error('Démographie producer resource discovery unavailable')
+  const [metadata, catalogue]: [unknown, unknown] = await Promise.all([metadataResponse.json(), catalogueResponse.json()])
+  if (!isRecord(metadata) || !isRecord(metadata.indicator_pages) || !Array.isArray(metadata.subgroups) ||
+      !isRecord(catalogue) || catalogue.contract !== 'semantic-resource-catalogue-v1' || !Array.isArray(catalogue.resources)) {
+    throw new Error('Démographie resource metadata is incompatible')
+  }
+  const resources = catalogue.resources.filter((value): value is Record<string, any> => isRecord(value) && value.theme_id === 'demographie')
+  const indicatorResources = Object.keys(metadata.indicator_pages).map((id) => {
+    const found = resources.find((resource) => resource.resource_id === id && resource.resource_kind === 'indicator')
+    if (!found || !Array.isArray(found.intents) || !found.intents.includes('facts') ||
+        !found.intents.includes('fixed_comparison') || !found.intents.includes('selected_comparison')) {
+      throw new Error(`Démographie comparison capability is not declared for ${id}`)
+    }
+    return found
+  })
+  const readings = resources.filter((resource) => resource.resource_kind === 'typed_reading' &&
+    typeof resource.resource_id === 'string' && Array.isArray(resource.fields) &&
+    ['status', 'source_id', 'vintage_id'].every((field) => resource.fields.includes(field)))
+  const readingGroups = metadata.subgroups.filter((value: unknown) => isRecord(value) && isRecord(value.reading))
+  const group = readingGroups.length === 1 ? readingGroups[0] : null
+  const storyKey = isRecord(group) && isRecord(group.reading) && typeof group.reading.story_key === 'string'
+    ? group.reading.story_key : null
+  if (indicatorResources.length !== Object.keys(metadata.indicator_pages).length || readings.length !== 1 ||
+      !isRecord(group) || typeof group.key !== 'string' || !storyKey) throw new Error('Démographie resource declarations are incomplete')
+  return { indicatorResources, reading: { resource_id: readings[0]!.resource_id as string,
+    group: group.key as string, story_key: storyKey } }
+}
+
+function demographieComparisonCompatible(focal: ThemeResponse, comparison: ThemeResponse): boolean {
+  if (comparison.contract !== 'semantic-demographie-comparison-v1' || !Array.isArray(focal.resource_results) ||
+      !Array.isArray(comparison.resource_results)) return false
+  const declarations = (focal.resource_results as Record<string, any>[]).map((item) => ({
+    resource_id: item.resource, shapes: item.descriptor ? ['declared_profile'] : ['scalar'],
+  })).filter((item) => item.resource_id !== undefined &&
+    !(focal.resource_results as Record<string, any>[]).find((fact) => fact.resource === item.resource_id)?.facts)
+  const reading = (focal.resource_results as Record<string, any>[]).find((item) => Array.isArray(item.facts))
+  const cloud = isRecord(comparison.reading_cloud) ? comparison.reading_cloud : null
+  if (cloud?.content_version !== null && cloud?.content_version !== undefined &&
+      cloud.content_version !== reading?.content_version) return false
+  return validerVersionsComparaisonDemographie(focal.resource_results as Record<string, any>[],
+    comparison.resource_results as Record<string, any>[], declarations)
+}
+
+function validerVersionsComparaisonDemographie(facts: Record<string, any>[], comparisons: Record<string, any>[],
+  declarations: Record<string, any>[]): boolean {
+  if (comparisons.length !== declarations.length) return false
+  const factsByResource = new Map(facts.map((item) => [item.resource, item]))
+  const declarationsByResource = new Map(declarations.map((item) => [item.resource_id, item]))
+  const comparedResources = new Set<string>()
+  for (const comparison of comparisons) {
+    if (!isRecord(comparison)) return false
+    const resource = comparison.resource
+    if (typeof resource !== 'string' || comparedResources.has(resource)) return false
+    comparedResources.add(resource)
+    const fact = factsByResource.get(resource)
+    const declaration = declarationsByResource.get(resource)
+    if (!fact || !declaration || !isRecord(comparison.result)) return false
+    const sameResourceVersion = declaration.shapes?.includes('declared_profile')
+      ? comparison.profile_content_version === fact.content_version
+      : comparison.content_version === fact.content_version
+    if (!sameResourceVersion) return false
+    if (fact?.reference_content_version && comparison.reference_content_version !== fact.reference_content_version) return false
+    const dependency = comparison.result.source_facet_indicator_id
+    if (typeof dependency === 'string') {
+      const dependencyFact = factsByResource.get(dependency)
+      if (!dependencyFact || comparison.scalar_content_version !== dependencyFact.content_version) return false
+    }
+    if (typeof comparison.reference_content_version !== 'string' || !comparison.reference_content_version) return false
+  }
+  return comparisons.length > 0
 }
 
 function isRecord(value: unknown): value is Record<string, any> {
@@ -190,6 +325,7 @@ function isRecord(value: unknown): value is Record<string, any> {
 
 export function acquireThemeComparison(type: string, id: string, theme: ThemeKey,
   selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
+  if (theme === 'demographie') return acquireDemographieComparison(type, id, selection)
   const path = `/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(id)}/themes/${theme}/comparison`
   return postThemeResponse(path, { theme_id: theme, ...(selection === undefined ? {} : { selection }) }, theme)
 }

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
+import { demographieComparisonForFiche, histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 
 const cible = { territoire: '35238', type: 'commune' as const }
@@ -43,6 +43,17 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       value: 0.4, unit: '%', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }
     const comparison = { results: [], profile_comparisons: [{ indicator: 'structure_age', facet: { detail: 'ancien', sex: 'M' }, status: 'available', direction: 'high', rank: 1, rank_size: 10 }] }
     expect(lignesAvecComparaisonApi([row], comparison, null)[0]?.comparaisonApi).toBeUndefined()
+  })
+  it('adapte les comparaisons sémantiques Démographie sans perdre rang, portée, facette ou nuage', () => {
+    const comparison = demographieComparisonForFiche({ resource_results: [
+      { resource: 'densite', result: { status: 'available', direction: 'high', rank: 2, rank_size: 8 } },
+      { resource: 'structure_age', shape: 'profile', result: { status: 'available', direction: 'low', rank: 4,
+        rank_size: 8, source_facet: { detail: '<15', sex: 'F' } } },
+    ], selection: [{ type: 'commune', id: '35238' }], reading_cloud: { status: 'available', points: [] } }, 'communes EPCI')
+    expect(comparison).toMatchObject({ results: [{ indicator_id: 'densite', rank: 2, rank_size: 8 }],
+      profile_comparisons: [{ indicator: 'structure_age', facet: { detail: '<15', sex: 'F' }, rank: 4 }],
+      selection: [{ territory_type: 'commune', territory_id: '35238' }], portee: 'communes EPCI',
+      reading_cloud: { status: 'available' } })
   })
   it('projette les adhésions ancrées et les subventions depuis leurs collections/séries sans inventer absence', () => {
     // Trimmed served capture: E:/Temp/opencode/lusk-live-captured/programmes-facts.json;

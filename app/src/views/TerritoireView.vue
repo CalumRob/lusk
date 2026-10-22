@@ -42,10 +42,11 @@ import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFac
 import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
 import { applyInitialBuildingApiFacts } from '@/fiche/content/initialBuildingApiFacts'
 import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFacts'
+import { invalidateSemanticReadCache } from '@/payload/semanticResourceClient'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { chargerCohortesScalaires, indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
-import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
-import { demographieRowsFromSemantic, histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
+import { acquireDemographieReadingCloud, acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
+import { demographieComparisonForFiche, demographieRowsFromSemantic, histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ComparisonScopeKind, SelectedTrajectoryComparison, TerritoryFacts } from '@/fiche/content/territoryFacts'
@@ -141,9 +142,10 @@ const payloadPourRendu = computed<Payload | null>(() => {
       : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
         ...(theme === 'demographie' ? histoiresNuageDemographie.value : []),
         ...(theme === 'milieux' ? histoiresNuageMilieux.value : [])]
-    // Les pairs du nuage Milieux ont besoin de leur identité dans le référentiel
-    // du payload (le sélecteur résout leurs noms) — jamais d'autres territoires.
-    const peerIds = new Set(theme === 'milieux' ? histoiresNuageMilieux.value.map((row) => row.territoire) : [])
+    // Les pairs des nuages doivent exister dans le référentiel de rendu afin que
+    // les sélecteurs résolvent leur nom; seule l'identité sélectionnée est ajoutée.
+    const peerIds = new Set(theme === 'milieux' ? histoiresNuageMilieux.value.map((row) => row.territoire)
+      : theme === 'demographie' ? histoiresNuageDemographie.value.map((row) => row.territoire) : [])
     const peers = modeleTerritoire.model.value?.cohortTerritories
       ?.filter((territory) => peerIds.has(territory.territoire)) ?? []
     const territoires = [...payload.territoires, ...peers.filter((peer) =>
@@ -278,7 +280,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
         model.cohortTerritories ?? model.territories,
         scope)
       if (!cancelled && request === sequenceFicheScalaires) { ficheScalaires.value = facts; ficheScalairesStatus.value = 'ready' }
-    } catch {
+      } catch {
       if (!cancelled && request === sequenceFicheScalaires) ficheScalairesStatus.value = 'error'
     }
   }, { immediate: true })
@@ -337,11 +339,27 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
         : themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type }, {
         epci: target.epci, region: payloadModele.value?.territoires.find((item) => item.type === 'region')?.territoire ?? null,
       })
-       faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, acquired.focal.comparison,
-         resolutionComparaison.value?.contexte?.scope.label ?? null)
-      histoiresThemeRows.value = rows.histoires
-      histoiresNuageDemographie.value = themeActif === 'demographie' && isRecord(acquired.focal.comparison)
-        ? histoiresDemographieNuage(acquired.focal.comparison) : []
+       const defaultComparison = themeActif === 'demographie' && Array.isArray(acquired.focal.default_comparisons)
+         ? demographieComparisonForFiche({ resource_results: acquired.focal.default_comparisons },
+           resolutionComparaison.value?.contexte?.scope.label ?? null)
+         : acquired.focal.comparison
+       faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, defaultComparison,
+          resolutionComparaison.value?.contexte?.scope.label ?? null)
+       histoiresThemeRows.value = rows.histoires
+       if (themeActif === 'demographie' && target.type === 'commune' &&
+           (resolutionComparaison.value?.mode === 'densite' || !resolutionComparaison.value?.mode)) {
+         const densityCode = target.classe_densite_code
+         const members: ThemeSelectionMember[] = densityCode
+           ? (model.cohortTerritories ?? []).filter((item) => item.type === 'commune' &&
+             item.classe_densite_code === densityCode)
+             .map((item) => ({ territory_type: 'commune', territory_id: item.territoire })) : []
+         const cloud = await acquireDemographieReadingCloud(members, acquired.focal.resource_results)
+         if (cancelled || request !== sequenceAcquisition) return
+         histoiresNuageDemographie.value = histoiresDemographieNuage(cloud)
+       } else {
+         histoiresNuageDemographie.value = themeActif === 'demographie' && isRecord(acquired.focal.comparison)
+           ? histoiresDemographieNuage(acquired.focal.comparison) : []
+       }
       histoiresNuageMilieux.value = themeActif === 'milieux' && isRecord(acquired.focal.comparison)
         ? histoiresMilieuxDuNuage(acquired.focal.comparison) : []
       statutAcquisition.value = 'ready'
@@ -412,27 +430,38 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
     try {
       const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
       if (cancelled || request !== sequenceComparaison) return
-      validerReponseComparaisonTheme(themeActif,
-        acquired.comparisons.get(cleSelectionComparaison(selectionMembres)), selectionMembres)
-      if (themeActif === 'demographie') {
-        histoiresNuageDemographie.value = histoiresDemographieNuage(
-          acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
+       const selectedComparison = acquired.comparisons.get(cleSelectionComparaison(selectionMembres))
+       const ficheComparison = themeActif === 'demographie'
+         ? demographieComparisonForFiche(selectedComparison,
+           resolutionComparaison.value?.contexte?.scope.label ?? null)
+         : selectedComparison
+       validerReponseComparaisonTheme(themeActif, ficheComparison, selectionMembres)
+       if (themeActif === 'demographie') {
+         histoiresNuageDemographie.value = histoiresDemographieNuage(
+           ficheComparison)
       }
        if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(
          acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
        faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
-         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)),
+          ficheComparison,
          resolutionComparaison.value?.contexte?.scope.label ?? null)
        statutComparaison.value = 'ready'
-    } catch {
-       if (!cancelled && request === sequenceComparaison) {
+     } catch {
+        if (!cancelled && request === sequenceComparaison) {
          faitsThemeRows.value = faitsThemeRows.value?.map(({ comparaisonApi: _rank, ...row }) => row) ?? null
          statutComparaison.value = 'error'
        }
     }
   }, { immediate: true })
 
-function retryAcquisitionTheme(): void { retryAcquisition.value++ }
+function retryAcquisitionTheme(): void {
+  const theme = selection.value
+  if (theme && themeMigre(theme)) {
+    cacheAcquisition.invalidate(typeRoute.value, idRoute.value, theme)
+    if (theme === 'demographie') invalidateSemanticReadCache()
+  }
+  retryAcquisition.value++
+}
 
 
 const echelons = computed(() =>
