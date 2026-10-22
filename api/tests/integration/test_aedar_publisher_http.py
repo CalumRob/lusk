@@ -19,12 +19,16 @@ pytestmark = pytest.mark.integration
 
 def test_aedar_r_publication_is_read_through_bounded_http():
     phase = os.getenv("AEDAR_IT_PHASE", "semantic")
-    if phase not in {"semantic", "full-audit"}:
-        raise AssertionError("AEDAR_IT_PHASE must be semantic or full-audit")
+    if phase not in {"semantic", "full-audit", "reconciliation"}:
+        raise AssertionError("AEDAR_IT_PHASE must be semantic, full-audit, or reconciliation")
     required = ("LUSK_TEST_PUBLISH_DSN", "LUSK_TEST_READ_DSN", "LUSK_TEST_READ_USER",
                 "LUSK_TEST_DATABASE_NAME", "LUSK_TEST_DATABASE_PREFIX")
     if not all(os.getenv(k) for k in required):
         pytest.skip("requires explicitly configured disposable PostgreSQL publisher/read DSNs")
+    r_libs_user = os.environ.get("R_LIBS_USER")
+    pgpassfile = os.environ.get("PGPASSFILE")
+    assert r_libs_user and Path(r_libs_user).is_dir(), "set R_LIBS_USER to an existing populated R library"
+    assert pgpassfile and Path(pgpassfile).is_file(), "set PGPASSFILE to the private libpq passfile"
     from api.tests.integration.test_postgres_publication import (
         _aedar_guarded_configuration, _assert_aedar_server_identity)
     publish_dsn, read_dsn = _aedar_guarded_configuration()
@@ -53,7 +57,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
     evidence_manifest = fixture_tmp / "schema-intent.json"
     evidence_manifest.write_text(json.dumps({"schema":schema,"database":database_name,
         "publisher_role":publisher.username,"reader_role":read_role,
-        "purpose":"issue-810 AEDAR reference-only guarded proof"},indent=2),encoding="utf-8")
+        "purpose":"issue-818 AEDAR fact reconciliation guarded proof"},indent=2),encoding="utf-8")
     print(f"AEDAR guarded namespace recorded before DDL: {schema} ({evidence_manifest})",flush=True)
     try:
         _assert_aedar_server_identity(pub, publisher.username)
@@ -160,7 +164,7 @@ write_aedar_canonical(projection,canonical_dir)
 projection <- read_aedar_canonical(canonical_dir)
 stage("end-aggregate-serialization",files=length(list.files(canonical_dir,recursive=TRUE)))
 con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
- dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'),password=Sys.getenv('PGPASSWORD'))
+ dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'))
 on.exit(DBI::dbDisconnect(con))
 DBI::dbExecute(con,sprintf('SET search_path TO "%s"',schema))
 stage("begin-aggregate-publish")
@@ -169,21 +173,126 @@ stage("end-aggregate-publish",rows=first$row_count)
 second <- publish_aedar_aggregates(projection,con)
 stage("end-aggregate-noop",changed=second$changed)
 stopifnot(first$changed,!second$changed,first$row_count==5L * nrow(source_axis))
-before <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
-DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced rollback'; END $$")
-DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_insert BEFORE INSERT ON aedar_territorial_aggregate FOR EACH ROW EXECUTE FUNCTION reject_aedar_insert()")
-projection$facts$count_5_walk_min[1] <- 7
-failed <- tryCatch({publish_aedar_aggregates(projection,con); FALSE},error=function(e) TRUE)
-after <- DBI::dbGetQuery(con,"SELECT content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")$content_version[[1]]
-stopifnot(failed,identical(before,after),DBI::dbGetQuery(con,"SELECT count(*) n FROM aedar_territorial_aggregate")$n[[1]]==5L * nrow(source_axis))
+reader <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
+  dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGREADUSER'))
+on.exit(DBI::dbDisconnect(reader),add=TRUE)
+DBI::dbExecute(reader,sprintf('SET search_path TO "%s"',schema))
+DBI::dbBegin(reader)
+DBI::dbExecute(reader,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ READ ONLY")
+read_committed_view <- function(connection) DBI::dbGetQuery(connection,"SELECT p.content_version,p.reference_content_version,p.published_at::text AS published_at,
+  (SELECT content_version FROM table_publication WHERE table_name='territory_reference') AS live_reference_version,
+  (SELECT count(*) FROM aedar_territorial_aggregate) AS row_count,
+  (SELECT xmin::text FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id='22001' AND typequ='A135') AS changed_xmin,
+  (SELECT xmin::text FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id='22001' AND typequ='A104') AS unchanged_xmin,
+  (SELECT measures->>'count_5_walk_max' FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id='22001' AND typequ='A135') AS changed_value
+  FROM table_publication p WHERE p.table_name='aedar_territorial_aggregate'")
+old_snapshot <- read_committed_view(reader)
+replacement_inputs <- inputs
+replacement_inputs$commune <- replacement_inputs$commune[replacement_inputs$commune$code_insee!='mob-1',,drop=FALSE]
+replacement_commune <- make('commune','code_insee','mob-2','nom_commune','Mobility replacement')
+replacement_inputs$commune <- rbind(replacement_inputs$commune,replacement_commune)
+replacement_inputs$commune$count_5_walk_max[replacement_inputs$commune$code_insee=='22001' & replacement_inputs$commune$TYPEQU=='A135'] <- 0.9876543210987654
+replacement_projection <- project_aedar_aggregates(replacement_inputs,metadata)
+DBI::dbExecute(con,"DELETE FROM territory_reference WHERE territory_type='commune' AND territory_id='mob-1'")
+DBI::dbExecute(con,"INSERT INTO territory_reference(territory_id,territory_type,name,epci_id,density_class_code,density_class_label)
+  VALUES('mob-2','commune','Mobility replacement','200000001','2','Fixture density')")
+DBI::dbExecute(con,"UPDATE table_publication SET content_version='fixture-ref-v2',row_count=5,published_at=now() WHERE table_name='territory_reference'")
+failure_facts_before <- DBI::dbGetQuery(con,"SELECT * FROM aedar_territorial_aggregate ORDER BY territory_type,territory_id,typequ")
+failure_marker_before <- DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territorial_aggregate'")
+failure_dataset_before <- DBI::dbGetQuery(con,"SELECT * FROM source_dataset WHERE source_id='aedar_bretagne'")
+failure_vintage_before <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id='aedar_bretagne' AND vintage_id='2026-v1'")
+failure_reference_before <- DBI::dbGetQuery(con,"SELECT * FROM territory_reference ORDER BY territory_id")
+DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_after_reconcile() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
+  IF NEW.source_id='aedar_bretagne' THEN
+    IF NOT EXISTS(SELECT 1 FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id='mob-2') OR
+       EXISTS(SELECT 1 FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id='mob-1') THEN
+      RAISE EXCEPTION 'fact reconciliation did not complete before injected marker failure';
+    END IF;
+    RAISE EXCEPTION 'forced rollback after upserts, obsolete-key deletion and source metadata update';
+  END IF;
+  RETURN NEW;
+END $$")
+DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_after_reconcile AFTER UPDATE ON source_dataset FOR EACH ROW EXECUTE FUNCTION reject_aedar_after_reconcile()")
+failure_error <- tryCatch({publish_aedar_aggregates(replacement_projection,con); NULL},error=function(e) e)
+stopifnot(inherits(failure_error,"error"),grepl("forced rollback after upserts, obsolete-key deletion and source metadata update",conditionMessage(failure_error)),
+  identical(failure_facts_before,DBI::dbGetQuery(con,"SELECT * FROM aedar_territorial_aggregate ORDER BY territory_type,territory_id,typequ")),
+  identical(failure_marker_before,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territorial_aggregate'")),
+  identical(failure_dataset_before,DBI::dbGetQuery(con,"SELECT * FROM source_dataset WHERE source_id='aedar_bretagne'")),
+  identical(failure_vintage_before,DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id='aedar_bretagne' AND vintage_id='2026-v1'")),
+  identical(failure_reference_before,DBI::dbGetQuery(con,"SELECT * FROM territory_reference ORDER BY territory_id")))
+DBI::dbExecute(con,"DROP TRIGGER reject_aedar_after_reconcile ON source_dataset")
+DBI::dbExecute(con,"DROP FUNCTION reject_aedar_after_reconcile()")
+stage("reconciliation-failure-rolls-back",facts=TRUE,marker=TRUE,source_clocks=TRUE,reference_binding=TRUE)
+write_aedar_canonical(replacement_projection,canonical_dir)
 projection <- read_aedar_canonical(canonical_dir)
+stage("begin-reconcile-populated-snapshot",rows=nrow(projection$facts))
+replacement_result <- publish_aedar_aggregates(projection,con)
+stage("end-reconcile-populated-snapshot",rows=replacement_result$row_count,changed=replacement_result$changed)
+stopifnot(replacement_result$changed,identical(replacement_result$content_version,aedar_aggregate_content_version(projection)))
+old_after_commit <- read_committed_view(reader)
+stopifnot(identical(old_snapshot,old_after_commit))
+fresh_reader <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
+  dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGREADUSER'))
+on.exit(DBI::dbDisconnect(fresh_reader),add=TRUE)
+DBI::dbExecute(fresh_reader,sprintf('SET search_path TO "%s"',schema))
+new_snapshot <- read_committed_view(fresh_reader)
+stopifnot(new_snapshot$row_count==5L*nrow(source_axis),new_snapshot$content_version==aedar_aggregate_content_version(projection),
+  old_snapshot$live_reference_version=='fixture-ref-v1',old_snapshot$reference_content_version=='fixture-ref-v1',
+  new_snapshot$reference_content_version=='fixture-ref-v2',
+  new_snapshot$live_reference_version=='fixture-ref-v2',abs(as.numeric(new_snapshot$changed_value)-0.9876543210987654)<1e-12,
+  new_snapshot$changed_xmin!=old_snapshot$changed_xmin,new_snapshot$unchanged_xmin==old_snapshot$unchanged_xmin)
+source_clock <- DBI::dbGetQuery(con,"SELECT d.source_id,d.name,v.vintage_id,v.version,v.reference_date::text AS reference_date,
+  v.publication_date::text AS publication_date,d.xmin::text AS dataset_xmin,v.xmin::text AS vintage_xmin
+  FROM source_dataset d JOIN source_vintage v USING(source_id)
+  WHERE d.source_id='aedar_bretagne' AND v.vintage_id='2026-v1'")
+stopifnot(nrow(source_clock)==1L,source_clock$name==projection$source$name,
+  source_clock$version==projection$source$vintage,is.na(source_clock$reference_date),
+  source_clock$publication_date=='2026-09-30')
+reconciled_rows <- DBI::dbGetQuery(fresh_reader,"SELECT territory_id,typequ,typequ_label,typequ_hierarchy_label,typequ_description,
+  typequ_domain_code,typequ_domain_label,typequ_subdomain_code,typequ_subdomain_label,typequ_gamme,typequ_gamme_status,typequ_source_order,
+  identity->>'code_insee' AS identity_code,n_addresses,n_observed,coverage_status,
+  jsonb_typeof(measures->'count_5_walk_share') AS share_json_type,measures->>'count_5_walk_max' AS max_value,
+  source_id,vintage_id,source_url,licence,attribution,reference_date::text AS reference_date,publication_date::text AS publication_date,xmin::text AS row_xmin
+  FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id IN ('22001','mob-1','mob-2')
+    AND typequ IN ('A135','A104') ORDER BY territory_id,typequ")
+a135_metadata <- metadata[metadata$TYPEQU=='A135',,drop=FALSE]
+stopifnot(nrow(reconciled_rows)==4L,all(reconciled_rows$territory_id!='mob-1'),
+  all(reconciled_rows$typequ_label[reconciled_rows$typequ=='A135']=="COUR D'ASSISES"),
+  all(reconciled_rows$typequ_hierarchy_label[reconciled_rows$typequ=='A135']=='COUR D’ASSISES'),
+  all(reconciled_rows$typequ_description[reconciled_rows$typequ=='A135']=='Description 1'),
+  all(reconciled_rows$typequ_domain_code[reconciled_rows$typequ=='A135']==a135_metadata$domain_code),
+  all(reconciled_rows$typequ_domain_label[reconciled_rows$typequ=='A135']==a135_metadata$domain_label),
+  all(reconciled_rows$typequ_subdomain_code[reconciled_rows$typequ=='A135']==a135_metadata$subdomain_code),
+  all(reconciled_rows$typequ_subdomain_label[reconciled_rows$typequ=='A135']==a135_metadata$subdomain_label),
+  all(is.na(reconciled_rows$typequ_gamme)),all(reconciled_rows$typequ_gamme_status=='absent'),
+  all(reconciled_rows$typequ_source_order[reconciled_rows$typequ=='A135']==a135_metadata$source_order),
+  all(reconciled_rows$n_addresses==2L),all(reconciled_rows$n_observed==1L),all(reconciled_rows$coverage_status=='covered'),
+  all(reconciled_rows$share_json_type=='null'),all(reconciled_rows$source_id=='aedar_bretagne'),
+  all(reconciled_rows$vintage_id=='2026-v1'),all(reconciled_rows$licence=='ODbL'),
+  all(reconciled_rows$source_url==projection$source$url),all(reconciled_rows$attribution==projection$source$attribution),
+  all(is.na(reconciled_rows$reference_date)),all(reconciled_rows$publication_date=='2026-09-30'),
+  reconciled_rows$identity_code[reconciled_rows$territory_id=='mob-2' & reconciled_rows$typequ=='A135']=='mob-2',
+  abs(as.numeric(reconciled_rows$max_value[reconciled_rows$territory_id=='22001' & reconciled_rows$typequ=='A135'])-0.9876543210987654)<1e-12,
+  reconciled_rows$row_xmin[reconciled_rows$territory_id=='22001' & reconciled_rows$typequ=='A104']==old_snapshot$unchanged_xmin)
+    replacement_noop <- publish_aedar_aggregates(projection,con)
+source_clock_after_noop <- DBI::dbGetQuery(con,"SELECT d.source_id,d.name,v.vintage_id,v.version,v.reference_date::text AS reference_date,
+  v.publication_date::text AS publication_date,d.xmin::text AS dataset_xmin,v.xmin::text AS vintage_xmin
+  FROM source_dataset d JOIN source_vintage v USING(source_id) WHERE d.source_id='aedar_bretagne' AND v.vintage_id='2026-v1'")
+stopifnot(!replacement_noop$changed,identical(new_snapshot,read_committed_view(fresh_reader)),
+  identical(source_clock,source_clock_after_noop))
+DBI::dbCommit(reader)
+stage("reconciliation-regressions-pass",unchanged_row_preserved=TRUE,repeatable_read_old_snapshot=TRUE,rollback_after_deletes=TRUE)
+if (identical(Sys.getenv('AEDAR_IT_PHASE'),'reconciliation')) {
+  stage("reconciliation-fixture-ready")
+  quit(save="no",status=0L)
+}
 canonical_comparison <- Sys.getenv('AEDAR_CANONICAL_COMPARISON_DIR')
 refs <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference WHERE territory_type IN ('commune','epci','departement','region')")
 make_density_source <- function(walk_value=1) {
   registry <- registre_classes_densite(); codes <- as.character(registry[['classe_densite_code']])
   labels <- as.character(registry[['classe_densite_libelle_public']])
-  crosswalk <- data.frame(code_insee=c('22001','mob-1',paste0('unused-',3:7)),density_class_code=codes,
-    density_class_label=labels,stringsAsFactors=FALSE)
+  crosswalk <- data.frame(code_insee=c('22001','mob-2',paste0('unused-',seq_len(length(codes)-2L)+2L)),
+    density_class_code=codes,density_class_label=labels,stringsAsFactors=FALSE)
   density_ref <- list(crosswalk=crosswalk,identity=MANIFEST_CLASSES_DENSITE[['id']][[1]],
     sha256=MANIFEST_CLASSES_DENSITE[['sha256']][[1]],vintage=MANIFEST_CLASSES_DENSITE[['vintage']][[1]])
   axis <- read_aedar_typequ_registry(); grid <- expand.grid(density_class_code=codes,TYPEQU=axis[['TYPEQU']],stringsAsFactors=FALSE)
@@ -217,7 +326,7 @@ density_source <- make_density_source()
 saveRDS(density_source,Sys.getenv('AEDAR_DENSITY_FIXTURE'))
 stage("begin-comparison-projection",typequ=AEDAR_TYPEQU_REGISTRY_COUNT,measures=length(AEDAR_AGGREGATE_MEASURES),reference_rows=nrow(refs))
 comparison <- project_aedar_comparison_publication(projection,density_source,refs,
-  reference_content_version='fixture-ref-v1',directory=canonical_comparison)
+  reference_content_version='fixture-ref-v2',directory=canonical_comparison)
 stage("end-comparison-projection",groups=comparison$group_row_count,territories=comparison$territory_row_count,partitions=length(comparison$parts),files=length(list.files(canonical_comparison,recursive=TRUE)))
 stage("begin-comparison-canonical-read")
 comparison <- read_aedar_comparison_canonical(canonical_comparison)
@@ -270,7 +379,7 @@ DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_comparison_insert() RETURNS tri
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_comparison_insert BEFORE INSERT ON aedar_comparison_group FOR EACH ROW EXECUTE FUNCTION reject_aedar_comparison_insert()")
 replacement_source <- make_density_source(2)
 replacement <- project_aedar_comparison_publication(projection,replacement_source,refs,
-  aedar_content_version=before,reference_content_version='fixture-ref-v1',directory=canonical_comparison)
+  aedar_content_version=aedar_aggregate_content_version(projection),reference_content_version='fixture-ref-v2',directory=canonical_comparison)
 comparison_failed <- tryCatch({publish_aedar_comparisons(replacement,con); FALSE},error=function(e) TRUE)
 comparison_after <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
 stopifnot(comparison_failed,identical(comparison_before,comparison_after))
@@ -292,8 +401,10 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
             env["AEDAR_DENSITY_FIXTURE"] = str(Path(tmp) / "density-fixture.rds")
             env["PGHOST"] = parts.hostname or "localhost"; env["PGPORT"] = str(parts.port or 5432)
             env["PGDATABASE"] = parts.path.lstrip("/"); env["PGUSER"] = unquote(parts.username or "")
-            env["PGPASSWORD"] = unquote(parts.password or "")
-            child = subprocess.Popen(["Rscript",str(script)],cwd=pipeline,env=env,
+            env["R_LIBS_USER"] = r_libs_user
+            env["PGREADUSER"] = read_role
+            env.pop("PGPASSWORD", None)
+            child = subprocess.Popen(["Rscript","--vanilla",str(script)],cwd=pipeline,env=env,
                 stdout=subprocess.PIPE,stderr=subprocess.STDOUT,text=True,bufsize=1)
             output = []
             def capture_progress():
@@ -303,7 +414,7 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
             capture_thread = threading.Thread(target=capture_progress,daemon=True)
             capture_thread.start()
             try:
-                child.wait(timeout=275 if phase == "semantic" else 850)
+                child.wait(timeout=120 if phase == "reconciliation" else 275 if phase == "semantic" else 850)
             except subprocess.TimeoutExpired:
                 child.terminate()
                 try:
@@ -314,9 +425,41 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                 pytest.fail(f"AEDAR {phase} fixture exceeded its bounded child budget; incremental R stages:\n" + "".join(output))
             capture_thread.join(timeout=2)
             assert child.returncode == 0, "".join(output)
-            expected_comparison = json.loads(expected_comparison_path.read_text(encoding="utf-8"))
+            expected_comparison = (None if phase == "reconciliation" else
+                json.loads(expected_comparison_path.read_text(encoding="utf-8")))
         except Exception:
             raise
+
+        if phase == "reconciliation":
+            original_database_url = os.environ.get("DATABASE_URL")
+            os.environ["DATABASE_URL"] = scoped(read_dsn)
+            pool.cache_clear()
+            try:
+                with TestClient(app) as client:
+                    def reconciliation_read(level, territory_id, **item):
+                        return client.post("/api/resources/read",json={
+                            "resource":"aedar_territorial_aggregate",
+                            "target":{"kind":"territory","type":level,"id":territory_id},**item})
+                    changed = reconciliation_read("commune","22001",coordinates={"typequ":["A135"]},
+                        fields=["measures.count_5_walk_max"],intent={"kind":"facts"})
+                    replacement = reconciliation_read("commune","mob-2",coordinates={"typequ":["A135"]},
+                        fields=["measures.count_5_walk_max"],intent={"kind":"facts"})
+                    assert changed.status_code==200,changed.text
+                    assert changed.json()["facts"][0]["measures"]["count_5_walk_max"]==pytest.approx(0.9876543210987654,rel=1e-15)
+                    assert changed.json()["reference_content_version"]=="fixture-ref-v2"
+                    assert replacement.status_code==200,replacement.text
+                    assert replacement.json()["facts"][0]["measures"]["count_5_walk_max"]==pytest.approx(0.12345678901234566,rel=1e-15)
+                    stale = reconciliation_read("commune","22001",
+                        coordinates={"typequ":["A135"],"measure":["count_5_walk_mean"]},
+                        intent={"kind":"fixed_comparison","context":"density_class"})
+                    assert stale.status_code==503,stale.text
+                    assert "comparison" not in stale.json()
+                    print("AEDAR_STAGE reconciliation-http-read facts=200 stale-comparison=503",flush=True)
+            finally:
+                pool.cache_clear()
+                if original_database_url is None: os.environ.pop("DATABASE_URL",None)
+                else: os.environ["DATABASE_URL"]=original_database_url
+            return
 
         dbread = psycopg.connect(scoped(read_dsn))
         class Connections:
@@ -344,24 +487,25 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                         coordinates={"typequ": ["A135"]}, intent={"kind": "facts"})
                     assert resp.status_code == 200, resp.text
                     fact = resp.json()["facts"][0]
+                    expected_max = 0.9876543210987654 if level == "commune" else 0.12345678901234566
                     assert resp.json()["territory"] == {"territory_type": level, "territory_id": territory_id}
                     assert fact["typequ_hierarchy_label"] == "COUR D’ASSISES"
                     assert fact["typequ_description"] == "Description 1"
                     assert fact["typequ_label"] == "COUR D'ASSISES"
                     assert fact["measures"]["count_5_walk_share"] is None
                     assert fact["measures"]["count_5_walk_min"] == 0
-                    assert fact["measures"]["count_5_walk_max"] == pytest.approx(0.12345678901234566, rel=1e-15)
+                    assert fact["measures"]["count_5_walk_max"] == pytest.approx(expected_max, rel=1e-15)
                     projected = semantic_read(level, territory_id,
                         coordinates={"typequ": ["A135"]},
                         fields=["measures.count_5_walk_max"], intent={"kind": "facts"})
                     assert projected.status_code == 200, projected.text
-                    assert projected.json()["facts"][0]["measures"] == {"count_5_walk_max": pytest.approx(0.12345678901234566, rel=1e-15)}
+                    assert projected.json()["facts"][0]["measures"] == {"count_5_walk_max": pytest.approx(expected_max, rel=1e-15)}
                     assert projected.json()["facts"][0]["source_id"] == "aedar_bretagne"
                     assert projected.json()["facts"][0]["typequ"] == "A135"
                     assert fact["licence"] == "ODbL" and fact["publication_date"] == "2026-09-30"
                     assert fact["attribution"] == "© OpenStreetMap contributors; données AEDAR — licence ODbL"
                     assert resp.json()["content_version"]
-                    assert resp.json()["reference_content_version"] == "fixture-ref-v1"
+                    assert resp.json()["reference_content_version"] == "fixture-ref-v2"
                 # The retired legacy AEDAR GET compatibility routes are absent.
                 assert client.get("/api/aedar/territories/region/53/aggregates?typequ=A135&limit=1").status_code == 404
                 assert client.get("/api/aedar/territories/commune/22001/comparisons?context=epci&typequ=A104&measure=count_5_walk_mean").status_code == 404
@@ -385,7 +529,11 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                 print(f"AEDAR_STAGE first-semantic-http-read end elapsed={time.monotonic()-http_started:.3f}s status={semantic_facts.status_code}",flush=True)
                 assert semantic_facts.status_code == 200, semantic_facts.text
                 assert semantic_facts.json()["facts"][0]["measures"] == {
-                    "count_5_walk_max": pytest.approx(0.12345678901234566, rel=1e-15)}
+                    "count_5_walk_max": pytest.approx(0.9876543210987654, rel=1e-15)}
+                replacement_fact = semantic_read("commune", "mob-2", coordinates={"typequ": ["A135"]},
+                    fields=["measures.count_5_walk_max"], intent={"kind": "facts"})
+                assert replacement_fact.status_code == 200, replacement_fact.text
+                assert replacement_fact.json()["facts"][0]["measures"]["count_5_walk_max"] == pytest.approx(0.12345678901234566, rel=1e-15)
                 semantic_comparison = client.post("/api/resources/read", json={
                     "resource": "aedar_territorial_aggregate",
                     "target": {"kind": "territory", "type": "commune", "id": "22001"},
@@ -440,14 +588,30 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                     coordinates={"typequ": ["A104"], "measure": ["count_5_walk_mean"]},
                     intent={"kind": "fixed_comparison", "context": "epci"})
                 assert stale.status_code==503
-                pub.execute("UPDATE table_publication SET content_version='fixture-ref-v1' WHERE table_name='territory_reference'")
+                pub.execute("UPDATE table_publication SET content_version='fixture-ref-v2' WHERE table_name='territory_reference'")
                 last_complete = pub.execute("SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone()
                 last_group_rows = pub.execute("SELECT count(*) FROM aedar_comparison_group").fetchone()[0]
                 last_territory_rows = pub.execute("SELECT count(*) FROM aedar_comparison_territory").fetchone()[0]
-                # Source publication is a separate transaction: the fact delete must
-                # commit while the previous complete comparison remains available.
-                pub.execute("DELETE FROM aedar_territorial_aggregate")
-                pub.execute("UPDATE table_publication SET content_version='fixture-source-refreshed' WHERE table_name='aedar_territorial_aggregate'")
+                # Publish another complete source snapshot through the real owner
+                # function; the last complete comparison remains stored but stale.
+                source_refresh = r'''pkgload::load_all('.',quiet=TRUE)
+schema <- Sys.getenv('AEDAR_IT_SCHEMA')
+con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
+  dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'))
+on.exit(DBI::dbDisconnect(con))
+DBI::dbExecute(con,sprintf('SET search_path TO "%s"',schema))
+projection <- read_aedar_canonical(Sys.getenv('AEDAR_CANONICAL_AGGREGATE_DIR'))
+projection$facts$count_5_walk_mean[[1L]] <- 9
+result <- publish_aedar_aggregates(projection,con)
+stopifnot(result$changed,identical(result$content_version,aedar_aggregate_content_version(projection)))
+'''
+                source_refresh_path = fixture_tmp / "source-refresh.R"
+                source_refresh_path.write_text(source_refresh,encoding="utf-8")
+                source_env = env.copy()
+                source_refresh_run = subprocess.run(["Rscript","--vanilla",str(source_refresh_path)],cwd=pipeline,
+                    env=source_env,capture_output=True,text=True,timeout=110)
+                print(source_refresh_run.stdout,end="",flush=True)
+                assert source_refresh_run.returncode==0,source_refresh_run.stdout+source_refresh_run.stderr
                 assert pub.execute("SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton").fetchone() == last_complete
                 assert pub.execute("SELECT count(*) FROM aedar_comparison_group").fetchone()[0] == last_group_rows
                 assert pub.execute("SELECT count(*) FROM aedar_comparison_territory").fetchone()[0] == last_territory_rows
@@ -466,23 +630,24 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                     stale_script = r'''pkgload::load_all('.',quiet=TRUE)
 schema <- Sys.getenv('AEDAR_IT_SCHEMA')
 con <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
-  dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'),password=Sys.getenv('PGPASSWORD'))
+  dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGUSER'))
 on.exit(DBI::dbDisconnect(con))
 DBI::dbExecute(con,sprintf('SET search_path TO "%s"',schema))
 projection <- read_aedar_canonical(Sys.getenv('AEDAR_CANONICAL_AGGREGATE_DIR'))
 comparison <- read_aedar_comparison_canonical(Sys.getenv('AEDAR_CANONICAL_COMPARISON_DIR'))
-refs <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference WHERE territory_type IN ('commune','epci','departement','region')")
-before <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
-changed_projection <- projection
-changed_projection$facts$count_5_walk_mean[[1L]] <- 9
-changed_source_version <- aedar_aggregate_content_version(changed_projection)
-stopifnot(!identical(changed_source_version,comparison$aedar_content_version))
-DBI::dbExecute(con,"UPDATE table_publication SET content_version=$1 WHERE table_name='aedar_territorial_aggregate'",
-  params=list(changed_source_version))
+  refs <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_class_code FROM territory_reference WHERE territory_type IN ('commune','epci','departement','region')")
+  before <- DBI::dbGetQuery(con,"SELECT content_version,group_row_count,territory_row_count FROM aedar_comparison_publication WHERE singleton")
+  prior_fact_version <- aedar_aggregate_content_version(projection)
+  changed_projection <- projection
+  changed_projection$facts$count_5_walk_mean[[1L]] <- 9
+  changed_source_version <- aedar_aggregate_content_version(changed_projection)
+  stopifnot(!identical(changed_source_version,comparison$aedar_content_version))
+  changed_source <- publish_aedar_aggregates(changed_projection,con)
+  stopifnot(changed_source$changed,identical(changed_source$content_version,changed_source_version))
         density_source <- readRDS(Sys.getenv('AEDAR_DENSITY_FIXTURE'))
-        stale_replacement <- project_aedar_comparison_publication(changed_projection,density_source,refs,
-          aedar_content_version=changed_source_version,reference_content_version='fixture-ref-v1',
-          directory=Sys.getenv('AEDAR_CANONICAL_COMPARISON_DIR'))
+         stale_replacement <- project_aedar_comparison_publication(changed_projection,density_source,refs,
+           aedar_content_version=changed_source_version,reference_content_version='fixture-ref-v2',
+           directory=Sys.getenv('AEDAR_CANONICAL_COMPARISON_DIR'))
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_stale_insert() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN RAISE EXCEPTION 'forced replacement failure'; END $$")
 DBI::dbExecute(con,"CREATE TRIGGER reject_aedar_stale_insert BEFORE INSERT ON aedar_comparison_group FOR EACH ROW EXECUTE FUNCTION reject_aedar_stale_insert()")
 failed <- tryCatch({publish_aedar_comparisons(stale_replacement,con); FALSE},error=function(e) TRUE)
@@ -493,7 +658,7 @@ stopifnot(failed,identical(before,after))
                     stale_script_path.write_text(stale_script,encoding="utf-8")
                     stale_env = env.copy()
                     stale_env["AEDAR_IT_SCHEMA"] = schema
-                    stale_run = subprocess.run(["Rscript",str(stale_script_path)],cwd=pipeline,env=stale_env,capture_output=True,text=True)
+                    stale_run = subprocess.run(["Rscript","--vanilla",str(stale_script_path)],cwd=pipeline,env=stale_env,capture_output=True,text=True)
                     assert stale_run.returncode==0,stale_run.stdout+stale_run.stderr
                     stale_aedar=semantic_read("commune", "22001",
                         coordinates={"typequ": ["A104"], "measure": ["count_5_walk_mean"]},

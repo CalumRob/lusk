@@ -603,3 +603,9 @@ test_that("AEDAR canonical output and database publication require complete TYPE
   expect_error(write_aedar_canonical(projection,tempfile("aedar-metadata-required-")),"requires TYPEQU metadata")
   expect_error(publish_aedar_aggregates(projection,NULL),"requires canonical TYPEQU metadata")
 })
+
+test_that("AEDAR publication refuses an incomplete incoming TYPEQU snapshot before database access", {
+  projection <- project_aedar_aggregates(make_aedar_test_inputs(),make_aedar_test_typequ_metadata())
+  projection$facts <- projection$facts[-1L,,drop=FALSE]
+  expect_error(publish_aedar_aggregates(projection,NULL),"territory × TYPEQU coverage is not dense")
+})

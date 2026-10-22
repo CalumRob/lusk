@@ -1462,11 +1462,67 @@ read_aedar_aggregate_projection <- function(raw_dir=file.path("data","raw"))
   }
 
 publish_aedar_aggregates <- function(projection, db) {
+  progress_started <- proc.time()[[3L]]
+  timing <- new.env(parent=emptyenv())
+  timing$commit_started <- NA_real_
+  progress <- function(stage,...) if (identical(Sys.getenv("LUSK_AEDAR_PUBLISH_PROGRESS"),"1")) {
+    cat(sprintf("AEDAR_PUBLISH elapsed=%.3fs stage=%s %s\n",proc.time()[[3L]]-progress_started,
+      stage,paste(...,collapse=" ")))
+    flush.console()
+  }
+  progress("validate-canonical-facts")
   if (is.null(projection$typequ_metadata)) stop("AEDAR publication requires canonical TYPEQU metadata",call.=FALSE)
   projection$typequ_metadata <- validate_aedar_published_typequ_metadata(projection$typequ_metadata)
   facts <- projection$facts
+  if (!is.data.frame(facts) || !nrow(facts)) stop("AEDAR publication requires a non-empty complete canonical fact snapshot",call.=FALSE)
+  required_fact_columns <- unique(c("territory_type","territory_id",unlist(AEDAR_AGGREGATE_LEVEL_COLUMNS),AEDAR_AGGREGATE_MEASURES))
+  if (!setequal(required_fact_columns,names(facts)) || ncol(facts)!=length(required_fact_columns))
+    stop("AEDAR publication fact snapshot has unexpected or incomplete canonical columns",call.=FALSE)
+  keys <- facts[c("territory_type","territory_id","TYPEQU")]
+  if (anyNA(keys) || anyDuplicated(keys) || any(!keys$territory_type%in%AEDAR_AGGREGATE_LEVELS))
+    stop("AEDAR publication fact snapshot has invalid or duplicate keys",call.=FALSE)
+  typequ_axis <- projection$typequ_metadata$TYPEQU
+  for (level in AEDAR_AGGREGATE_LEVELS) {
+    level_keys <- keys[keys$territory_type==level,c("territory_id","TYPEQU"),drop=FALSE]
+    if (!nrow(level_keys) || any(!level_keys$TYPEQU%in%typequ_axis))
+      stop(paste("AEDAR territory × TYPEQU coverage is not dense at",level),call.=FALSE)
+    by_territory <- split(level_keys$TYPEQU,level_keys$territory_id,drop=TRUE)
+    if (any(!vapply(by_territory,function(axis) length(axis)==length(typequ_axis)&&setequal(axis,typequ_axis),logical(1))))
+      stop(paste("AEDAR territory × TYPEQU coverage is not dense at",level),call.=FALSE)
+  }
   version <- aedar_aggregate_content_version(projection)
-  DBI::dbWithTransaction(db, {
+  published_columns <- c("territory_type","territory_id","typequ","typequ_label","typequ_hierarchy_label",
+    "typequ_description","typequ_domain_code","typequ_domain_label","typequ_subdomain_code","typequ_subdomain_label",
+    "typequ_gamme","typequ_gamme_status","typequ_source_order","identity","n_addresses","n_observed",
+    "coverage_status","measures","source_id","vintage_id","source_url","licence","attribution",
+    "reference_date","publication_date")
+  payload_columns <- setdiff(published_columns,c("territory_type","territory_id","typequ"))
+  record_fields <- paste(c("territory_type text","territory_id text","typequ text","typequ_label text",
+    "typequ_hierarchy_label text","typequ_description text","typequ_domain_code text","typequ_domain_label text",
+    "typequ_subdomain_code text","typequ_subdomain_label text","typequ_gamme text","typequ_gamme_status text",
+    "typequ_source_order integer","identity text","n_addresses bigint","n_observed bigint","coverage_status text",
+    "measures text","source_id text","vintage_id text","source_url text","licence text","attribution text",
+    "reference_date date","publication_date date"),collapse=",")
+  source_columns <- paste(published_columns,collapse=",")
+  update_columns <- paste(paste0(payload_columns,"=EXCLUDED.",payload_columns),collapse=",")
+  stored_row <- paste(paste0("stored.",payload_columns),collapse=",")
+  incoming_row <- paste(paste0("EXCLUDED.",payload_columns),collapse=",")
+  incoming_columns <- published_columns
+  incoming_columns[match(c("identity","measures"),incoming_columns)] <- c("identity::jsonb AS identity","measures::jsonb AS measures")
+  incoming_select <- paste(incoming_columns,collapse=",")
+  upsert_sql <- paste0("WITH incoming AS MATERIALIZED (SELECT ",incoming_select,
+    " FROM jsonb_to_recordset($1::jsonb) AS batch(",record_fields,")) ",
+    "INSERT INTO aedar_territorial_aggregate AS stored(",source_columns,") ",
+    "SELECT ",source_columns," FROM incoming ",
+    "ON CONFLICT(territory_type,territory_id,typequ) DO UPDATE SET ",update_columns,
+    " WHERE ROW(",stored_row,") IS DISTINCT FROM ROW(",incoming_row,")")
+  delete_sql <- paste0("WITH expected AS MATERIALIZED (SELECT territory_type,territory_id,typequ ",
+    "FROM jsonb_to_recordset($1::jsonb) AS expected_keys(territory_type text,territory_id text,typequ text)) ",
+    "DELETE FROM aedar_territorial_aggregate AS stored WHERE NOT EXISTS (SELECT 1 FROM expected ",
+    "WHERE expected.territory_type=stored.territory_type AND expected.territory_id=stored.territory_id ",
+    "AND expected.typequ=stored.typequ)")
+  result <- DBI::dbWithTransaction(db, {
+    progress("begin-transaction")
     DBI::dbExecute(db,"SET TRANSACTION ISOLATION LEVEL REPEATABLE READ")
     reference <- DBI::dbGetQuery(db,"SELECT content_version FROM table_publication WHERE table_name='territory_reference'")
     if (nrow(reference)!=1L) stop("AEDAR publication requires published territory reference",call.=FALSE)
@@ -1476,8 +1532,11 @@ publish_aedar_aggregates <- function(projection, db) {
     existing <- DBI::dbGetQuery(db,"SELECT content_version,reference_content_version FROM table_publication WHERE table_name='aedar_territorial_aggregate'")
     unchanged <- nrow(existing) && identical(existing$content_version[[1L]],version) && identical(existing$reference_content_version[[1L]],ref_version)
     if (!unchanged) {
-      DBI::dbExecute(db,"DELETE FROM aedar_territorial_aggregate")
       chunk_size <- 2000L
+      attempted_rows <- 0L
+      affected_rows <- 0L
+      batch_number <- 0L
+      progress("begin-fact-upsert",rows=nrow(facts),chunk_size=chunk_size)
       for (level in AEDAR_AGGREGATE_LEVELS) {
         level_indices <- which(facts$territory_type==level)
         identity_columns <- setdiff(AEDAR_AGGREGATE_LEVEL_COLUMNS[[level]],
@@ -1502,18 +1561,39 @@ publish_aedar_aggregates <- function(projection, db) {
             attribution=projection$source$attribution,
             reference_date=as.Date(projection$source$reference_date),publication_date=as.Date(projection$source$publication_date),
             stringsAsFactors=FALSE)
-          DBI::dbWriteTable(db,"aedar_territorial_aggregate",rows,append=TRUE,row.names=FALSE)
+          batch_json <- as.character(jsonlite::toJSON(rows,dataframe="rows",auto_unbox=TRUE,na="null",digits=17))
+          affected <- DBI::dbExecute(db,upsert_sql,params=list(batch_json))
+          attempted_rows <- attempted_rows+nrow(rows)
+          affected_rows <- affected_rows+as.integer(affected)
+          batch_number <- batch_number+1L
+          progress("fact-upsert-batch",level=level,batch=batch_number,attempted=nrow(rows),affected=affected,
+            attempted_total=attempted_rows,affected_total=affected_rows)
         }
       }
+      expected_keys <- facts[c("territory_type","territory_id","TYPEQU")]
+      names(expected_keys)[[3L]] <- "typequ"
+      expected_json <- as.character(jsonlite::toJSON(expected_keys,dataframe="rows",auto_unbox=TRUE,na="null"))
+      delete_started <- proc.time()[[3L]]
+      progress("obsolete-key-delete-start",expected_keys=nrow(expected_keys))
+      deleted_rows <- DBI::dbExecute(db,delete_sql,params=list(expected_json))
+      progress("obsolete-key-delete-complete",deleted=deleted_rows,elapsed=sprintf("%.3fs",proc.time()[[3L]]-delete_started))
+      progress("fact-reconciliation-complete",attempted=attempted_rows,affected=affected_rows,deleted=deleted_rows)
       DBI::dbExecute(db,"INSERT INTO source_dataset(source_id,name) VALUES($1,$2) ON CONFLICT(source_id) DO UPDATE SET name=EXCLUDED.name",params=list(projection$source$source_id,projection$source$name))
       DBI::dbExecute(db,"INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) VALUES($1,$2,$3,$4,$5) ON CONFLICT(source_id,vintage_id) DO NOTHING",params=list(projection$source$source_id,projection$source$vintage,projection$source$vintage,as.Date(projection$source$reference_date),as.Date(projection$source$publication_date)))
       stored_source <- DBI::dbGetQuery(db,"SELECT version,reference_date,publication_date FROM source_vintage WHERE source_id=$1 AND vintage_id=$2",params=list(projection$source$source_id,projection$source$vintage))
       if (nrow(stored_source)!=1L || stored_source$version[[1L]]!=projection$source$vintage ||
           !identical(as.character(stored_source$reference_date[[1L]]),projection$source$reference_date) ||
-          !identical(as.character(stored_source$publication_date[[1L]]),projection$source$publication_date))
+         !identical(as.character(stored_source$publication_date[[1L]]),projection$source$publication_date))
         stop("AEDAR source vintage conflicts with stored provenance",call.=FALSE)
+      progress("before-publication-marker",rows=nrow(facts),reference=ref_version)
       DBI::dbExecute(db,"INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version,published_at) VALUES('aedar_territorial_aggregate',$1,$2,$3,now()) ON CONFLICT(table_name) DO UPDATE SET content_version=EXCLUDED.content_version,row_count=EXCLUDED.row_count,reference_content_version=EXCLUDED.reference_content_version,published_at=EXCLUDED.published_at",params=list(version,nrow(facts),ref_version))
+    } else {
+      progress("unchanged-publication",rows=nrow(facts),content_version=version,reference=ref_version)
     }
+    timing$commit_started <- proc.time()[[3L]]
+    progress("before-transaction-commit")
     list(changed=!unchanged,content_version=version,row_count=nrow(facts))
   })
+  progress("transaction-committed",commit_elapsed=sprintf("%.3fs",proc.time()[[3L]]-timing$commit_started))
+  result
 }
