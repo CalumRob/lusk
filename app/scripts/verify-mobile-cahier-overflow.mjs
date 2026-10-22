@@ -112,7 +112,7 @@ try {
 
   browser = await chromium.launch({ headless: true, ...(executablePath ? { executablePath } : {}) })
   const reports = []
-  for (const width of [320, 360, 390, 601, 760, 1440, 1800]) {
+  for (const width of [320, 360, 390, 601, 760, 761, 1440, 1800]) {
     const page = await browser.newPage({ viewport: { width, height: 844 }, deviceScaleFactor: 1 })
     const readCalls = { mobilityFacts: 0, aedarBatches: 0, aedarItems: [] }
     await page.route('**/api/territories/commune/35238/themes/mobilite/facts', async (route) => {
@@ -273,7 +273,7 @@ try {
     if (width <= 760) {
       assert(quantileFigure.y >= volumeFigure.bottom - 1,
         `Bac à sable volume and quantile figures should stack on mobile at ${width}px: ${JSON.stringify(metrics.explorerFigureRects)}`)
-    } else if (width === 1440) {
+    } else {
       assert(Math.abs(quantileFigure.y - volumeFigure.y) <= 1 && quantileFigure.x >= volumeFigure.right - 1,
         `Bac à sable figures should remain side-by-side on desktop at ${width}px: ${JSON.stringify(metrics.explorerFigureRects)}`)
     }
@@ -322,7 +322,7 @@ try {
         `Wide desktop paper must remain on the 560419f indexed baseline, not a mobile-PR width cap: ${JSON.stringify(metrics.paperRect)}`)
     }
 
-    if ([320, 360, 390, 601, 760, 1440, 1800].includes(width)) {
+    if ([320, 360, 390, 601, 760, 761, 1440, 1800].includes(width)) {
       await page.locator('#section-aedar-car-overview').scrollIntoViewIfNeeded()
       await page.screenshot({ path: resolve(evidenceDir, `issue823-aedar-populated-${width}.png`), fullPage: false })
     }

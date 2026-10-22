@@ -206,6 +206,7 @@ function chooseType(fact: AedarFact): void {
 .aedar-equipment-explorer :deep(.aedar-equipment-explorer-modes) { justify-content: center; margin: 0; }
 .aedar-equipment-explorer :deep(.cahier-figure-legend-toggle) { min-height: 36px; }
 .aedar-equipment-explorer-figures { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: start; gap: var(--space-8); }
+/* Match the shared Cahier mobile boundary rather than the generic 768px breakpoint. */
 @media (max-width: 760px) {
   .aedar-equipment-explorer-figures { grid-template-columns: minmax(0, 1fr); }
 }
