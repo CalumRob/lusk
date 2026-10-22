@@ -2004,6 +2004,26 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
+  it('shows loading, not unavailable copy, while the production AEDAR read is pending', async () => {
+    const model = modeleAvecContextesComparaison()
+    const fetchApi = vi.fn(async (url: string) => {
+      if (url === '/api/resources/read-batch') return await new Promise<Response>(() => {})
+      return { ok: false, status: 404, json: async () => ({}) } as Response
+    })
+    vi.stubGlobal('fetch', fetchApi)
+
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
+    const firstPage = wrapper.find('.cahier-page')
+    const text = firstPage.text()
+
+    expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch')).toBe(true)
+    expect(text).toContain('Chargement des donn\u00e9es AEDAR\u2026')
+    expect(text).not.toContain('Contenu indisponible pour ce territoire.')
+    expect(firstPage.find('[role="status"]').exists()).toBe(true)
+    expect(wrapper.findAll('.cahier-page')[1]!.text()).toContain('Contenu indisponible pour ce territoire.')
+    wrapper.unmount()
+  })
+
   it('rend Mobilité et sa figure depuis les bins servis, mais garde la figure absente sans bins', async () => {
     const model = modeleAvecContextesComparaison()
     const context = model.themes.mobilite!.comparisons.densite!

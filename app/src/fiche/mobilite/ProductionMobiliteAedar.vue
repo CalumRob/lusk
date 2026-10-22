@@ -95,6 +95,7 @@ const transformed = computed(() => {
     :retry-access="props.retryAccess"
     :building-status="props.buildingStatus"
     :retry-building="props.retryBuilding"
+    :aedar-status="props.aedarStatus"
     show-all-units
     presentation="plain"
     layout-variant="indexed-sections"

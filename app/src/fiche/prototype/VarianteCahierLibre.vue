@@ -99,6 +99,7 @@ const props = defineProps<{
   retryAccess?: () => void
   buildingStatus?: 'loading' | 'ready' | 'error'
   retryBuilding?: () => void
+  aedarStatus?: 'loading' | 'ready' | 'error'
 }>()
 const route = useRoute()
 
@@ -422,7 +423,12 @@ function anchorForEntry(key: string): string {
   return props.pagination.entries.find((entry) => entry.key === key)?.anchor ?? `figure-${key}`
 }
 
-function sectionState(section: ContentSection): string {
+function sectionIsLoading(unitKey: string): boolean {
+  return props.aedarStatus === 'loading' && unitKey === 'acces-aux-services'
+}
+
+function sectionState(section: ContentSection, unitKey: string): string {
+  if (sectionIsLoading(unitKey)) return 'Chargement des données AEDAR…'
   return section.availability === 'absent'
     ? 'Contenu indisponible pour ce territoire.'
     : 'Lecture indisponible avec les données disponibles.'
@@ -795,7 +801,7 @@ onBeforeUnmount(() => {
                       class="cahier-baseline-anchor"
                     />
                   </div>
-                  <p v-if="!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'" class="cahier-section-state" role="note">{{ sectionState(section) }}</p>
+                  <p v-if="!isAedarAccessSection(section) && !section.lecture && section.availability !== 'complete'" class="cahier-section-state" :role="sectionIsLoading(currentUnit.key) ? 'status' : 'note'">{{ sectionState(section, currentUnit.key) }}</p>
 
                 </div>
 
@@ -1198,8 +1204,8 @@ onBeforeUnmount(() => {
                     <CahierComparisonNote :label="section.evidence.comparisonLabel" />
                   </figure>
 
-                  <div v-else-if="!aedarAccessEvidenceFor(section) && !aedarEquipmentProfileEvidenceFor(section) && !aedarEquipmentExplorerEvidenceFor(section)" class="evidence-side evidence-placeholder" role="note">
-                  <span>{{ sectionState(section) }}</span>
+                  <div v-else-if="!aedarAccessEvidenceFor(section) && !aedarEquipmentProfileEvidenceFor(section) && !aedarEquipmentExplorerEvidenceFor(section)" class="evidence-side evidence-placeholder" :role="sectionIsLoading(currentUnit.key) ? 'status' : 'note'">
+                  <span>{{ sectionState(section, currentUnit.key) }}</span>
                 </div>
               </section>
               <div
