@@ -522,7 +522,7 @@ describe('ProductionMobiliteAedar', () => {
     expect(exploration.attributes('href')).toBeUndefined()
   })
 
-  it('shows loading state when AEDAR data is loading', async () => {
+  it('keeps the cahier stable without a loading banner while AEDAR data loads', async () => {
     const content = baseContent()
     const router = createRouter({ history: createMemoryHistory(), routes })
     const wrapper = mount(ProductionMobiliteAedar, {
@@ -539,8 +539,8 @@ describe('ProductionMobiliteAedar', () => {
     await router.isReady()
     await flushPromises()
 
-    expect(wrapper.find('.aedar-state').exists()).toBe(true)
-    expect(wrapper.text()).toContain('Chargement des agrégats AEDAR')
+    expect(wrapper.find('.aedar-state').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Chargement des agrégats AEDAR')
     expect(wrapper.findComponent(VarianteCahierLibre).exists()).toBe(true)
   })
 

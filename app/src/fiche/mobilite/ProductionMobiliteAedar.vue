@@ -83,12 +83,9 @@ const transformed = computed(() => {
 </script>
 
 <template>
-  <div v-if="props.aedarStatus !== 'ready'" class="aedar-state" :aria-busy="props.aedarStatus === 'loading'">
-    <p v-if="props.aedarStatus === 'loading'" role="status">Chargement des agrégats AEDAR…</p>
-    <div v-else role="alert">
-      <p>Les données AEDAR ne sont pas disponibles.</p>
-      <button type="button" @click="props.retryAedar">Réessayer</button>
-    </div>
+  <div v-if="props.aedarStatus === 'error'" class="aedar-state" role="alert">
+    <p>Les données AEDAR ne sont pas disponibles.</p>
+    <button type="button" @click="props.retryAedar">Réessayer</button>
   </div>
   <VarianteCahierLibre
     :content="transformed"
