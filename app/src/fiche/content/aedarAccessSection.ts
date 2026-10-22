@@ -19,6 +19,11 @@ export const AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU = 'B207'
 
 type AedarReady = Extract<AedarFetchResult, { status: 'ready' }>
 
+function sameAedarPublication(left: AedarReady, right: AedarReady): boolean {
+  return left.contentVersion === right.contentVersion
+    && left.referenceContentVersion === right.referenceContentVersion
+}
+
 /** Explicit single-territory reference evidence behind the comparison lines. */
 export interface AedarReferenceEvidence {
   data: AedarReady
@@ -90,7 +95,7 @@ export function aedarAccessSection(
   const candidate = options.reference
   const source = data.facts[0]
   const referenceSource = candidate?.data.facts[0]
-  const reference = candidate && source && referenceSource && candidate.data.contentVersion === data.contentVersion
+  const reference = candidate && source && referenceSource && sameAedarPublication(candidate.data, data)
     && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const)
       .every((key) => source[key] === referenceSource[key])
     ? candidate : null
@@ -214,7 +219,7 @@ export function aedarCarAccessOverviewSection(
   const sameSourceClock = source && referenceSource
     && (['source_id', 'vintage_id', 'reference_date', 'publication_date'] as const)
       .every((key) => source[key] === referenceSource[key])
-  const referenceMeans = reference && sameSourceClock && reference.data.contentVersion === data.contentVersion
+  const referenceMeans = reference && sameSourceClock && sameAedarPublication(reference.data, data)
     ? carAccessMeans(reference.data, reference.territory)
     : null
   const scalars = ([

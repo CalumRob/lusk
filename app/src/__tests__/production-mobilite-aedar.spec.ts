@@ -133,6 +133,7 @@ const aedarReady: Extract<AedarFetchResult, { status: 'ready' }> = {
   status: 'ready',
   facts: aedarFacts(10),
   contentVersion: 'test-version',
+  referenceContentVersion: 'test-reference-version',
   provenance: aedarProvenance('test-version'),
 }
 
@@ -140,6 +141,7 @@ const aedarReferenceReady: Extract<AedarFetchResult, { status: 'ready' }> = {
   status: 'ready',
   facts: aedarFacts(10, { territoryId: '200000001', territoryType: 'epci', value: 0.25 }),
   contentVersion: 'test-version',
+  referenceContentVersion: 'test-reference-version',
   provenance: aedarProvenance('test-version'),
 }
 

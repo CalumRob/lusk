@@ -1,3 +1,5 @@
+import { AEDAR_TYPEQU_REGISTRY } from './aedarTypequRegistry'
+
 export type AedarTerritoryType = 'commune' | 'epci' | 'departement' | 'region'
 
 export interface AedarTerritoryIdentity {
@@ -39,11 +41,10 @@ export interface AedarProvenance {
 }
 
 export type AedarFetchResult =
-  | { status: 'ready'; facts: AedarFact[]; contentVersion: string; provenance: AedarProvenance }
-  | { status: 'error'; error: { code: 'unknown-territory' | 'publication-unavailable' | 'network' | 'invalid-response' | 'pagination-limit'; message: string } }
+  | { status: 'ready'; facts: AedarFact[]; contentVersion: string; referenceContentVersion: string; provenance: AedarProvenance }
+  | { status: 'error'; error: { code: 'unknown-territory' | 'publication-unavailable' | 'network' | 'invalid-response'; message: string } }
 
 export interface AedarFetchOptions {
-  limit?: number
   typequ?: string[]
 }
 
@@ -101,31 +102,93 @@ function errorResult(code: Extract<AedarFetchResult, { status: 'error' }>['error
   return { status: 'error', error: { code, message } }
 }
 
-/** Read all AEDAR facts via bounded API pages. Fail closed: partial pages are never returned as ready. */
+const MAX_CACHED_READS = 8
+interface AedarReadCache {
+  successful: Map<string, Extract<AedarFetchResult, { status: 'ready' }>>
+  pending: Map<string, Promise<AedarFetchResult>>
+}
+const cachesByFetch = new WeakMap<typeof fetch, AedarReadCache>()
+
+function cacheFor(fetcher: typeof fetch): AedarReadCache {
+  let cache = cachesByFetch.get(fetcher)
+  if (!cache) {
+    cache = { successful: new Map(), pending: new Map() }
+    cachesByFetch.set(fetcher, cache)
+  }
+  return cache
+}
+
+/** Read explicit TYPEQU partitions through the semantic API; never accept a truncated universe. */
 export async function fetchAedarAggregates(
   territoryType: AedarTerritoryType,
   territoryId: string,
   options: AedarFetchOptions = {},
 ): Promise<AedarFetchResult> {
-  const limit = options.limit ?? 50
-  if (!territoryTypes.has(territoryType) || !territoryId || !Number.isInteger(limit) || limit < 1 || limit > 100 ||
-      (options.typequ !== undefined && (!options.typequ.length || options.typequ.length > 100 || options.typequ.some((code) => !code)))) {
+  const cacheKey = JSON.stringify([territoryType, territoryId, options.typequ ?? null])
+  const fetcher = globalThis.fetch
+  const cache = cacheFor(fetcher)
+  const cached = cache.successful.get(cacheKey)
+  if (cached) {
+    cache.successful.delete(cacheKey)
+    cache.successful.set(cacheKey, cached)
+    return Promise.resolve(cached)
+  }
+  const pending = cache.pending.get(cacheKey)
+  if (pending) return pending
+
+  const request = readAedarAggregates(fetcher, territoryType, territoryId, options)
+  cache.pending.set(cacheKey, request)
+  try {
+    const result = await request
+    if (result.status === 'ready') {
+      cache.successful.set(cacheKey, result)
+      while (cache.successful.size > MAX_CACHED_READS) {
+        const oldest = cache.successful.keys().next().value
+        if (oldest === undefined) break
+        cache.successful.delete(oldest)
+      }
+    }
+    return result
+  } finally {
+    if (cache.pending.get(cacheKey) === request) cache.pending.delete(cacheKey)
+  }
+}
+
+async function readAedarAggregates(
+  fetcher: typeof fetch,
+  territoryType: AedarTerritoryType,
+  territoryId: string,
+  options: AedarFetchOptions,
+): Promise<AedarFetchResult> {
+  const limit = 100
+  if (!territoryTypes.has(territoryType) || !territoryId ||
+      (options.typequ !== undefined && (!options.typequ.length || options.typequ.some((code) => !code)
+        || new Set(options.typequ).size !== options.typequ.length))) {
     return errorResult('invalid-response', 'Paramètres AEDAR invalides')
   }
   const expected = { territory_type: territoryType, territory_id: territoryId }
   const facts: AedarFact[] = []
   let contentVersion: string | undefined
-  let offset = 0
+  let referenceContentVersion: string | undefined
+  const codes = options.typequ ?? AEDAR_TYPEQU_REGISTRY.map(({ code }) => code)
+  const items = []
+  for (let start = 0; start < codes.length; start += limit) {
+    items.push({
+      id: `aedar-${items.length}`, resource: 'aedar_territorial_aggregate',
+      target: { kind: 'territory', type: territoryType, id: territoryId },
+      intent: { kind: 'facts' }, coordinates: { typequ: codes.slice(start, start + limit) },
+    })
+  }
   try {
-    while (true) {
-      if (offset > 10000) return errorResult('pagination-limit', 'Limite de pagination AEDAR atteinte')
-      const params = new URLSearchParams()
-      if (options.typequ) params.set('typequ', options.typequ.join(','))
-      params.set('limit', String(limit))
-      params.set('offset', String(offset))
-      const url = `/api/aedar/territories/${encodeURIComponent(territoryType)}/${encodeURIComponent(territoryId)}/aggregates?${params}`
+    for (let start = 0; start < items.length; start += 12) {
+      const batch = items.slice(start, start + 12)
       let response: Response
-      try { response = await fetch(url) } catch {
+      try {
+        response = await fetcher('/api/resources/read-batch', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ items: batch }),
+        })
+      } catch {
         return errorResult('network', 'Impossible de joindre la publication AEDAR')
       }
       if (response.status === 404) return errorResult('unknown-territory', 'Territoire inconnu pour la publication AEDAR')
@@ -135,17 +198,29 @@ export async function fetchAedarAggregates(
       try { body = await response.json() } catch {
         return errorResult('invalid-response', 'Réponse AEDAR illisible')
       }
-      let page: AedarApiResponse
-      try { page = validateAedarResponse(body, expected) } catch {
-        return errorResult('invalid-response', 'Réponse AEDAR invalide')
+      if (!isRecord(body) || body.contract !== 'semantic-read-batch-v1' || !Array.isArray(body.results)
+        || body.results.length !== batch.length) invalid()
+      const results = new Map<string, unknown>()
+      for (const result of body.results) {
+        if (!isRecord(result) || typeof result.id !== 'string' || results.has(result.id)
+          || !batch.some((item) => item.id === result.id)) invalid()
+        results.set(result.id, result.data)
       }
-      if (page.offset !== offset || page.limit !== limit || (contentVersion !== undefined && contentVersion !== page.content_version)) invalid()
-      contentVersion = page.content_version
-      facts.push(...page.facts)
-      if (page.facts.length < limit) break
-      offset += page.facts.length
-      // The server accepts offsets through 10000 inclusive; don't issue an unbounded or invalid request.
-      if (offset > 10000) return errorResult('pagination-limit', 'Limite de pagination AEDAR atteinte')
+      for (const item of batch) {
+        const data = results.get(item.id)
+        if (!isRecord(data) || data.resource !== item.resource || !isRecord(data.target)
+          || data.target.kind !== 'territory' || data.target.type !== territoryType || data.target.id !== territoryId) invalid()
+        const page = validateAedarResponse(data, expected)
+        if (page.offset !== 0 || page.limit !== 100
+          || (contentVersion !== undefined && contentVersion !== page.content_version)
+          || (referenceContentVersion !== undefined && referenceContentVersion !== page.reference_content_version)) invalid()
+        const returnedCodes = new Set(page.facts.map((fact) => fact.typequ))
+        if (page.facts.length !== item.coordinates.typequ.length || returnedCodes.size !== page.facts.length
+          || item.coordinates.typequ.some((code) => !returnedCodes.has(code))) invalid()
+        contentVersion = page.content_version
+        referenceContentVersion = page.reference_content_version
+        facts.push(...page.facts)
+      }
     }
   } catch {
     return errorResult('invalid-response', 'Réponse AEDAR invalide')
@@ -156,5 +231,6 @@ export async function fetchAedarAggregates(
     licence: fact.licence, attribution: fact.attribution,
     reference_date: fact.reference_date, publication_date: fact.publication_date,
   })
-  return { status: 'ready', facts, contentVersion: contentVersion!, provenance: { contentVersion: contentVersion!, sources: [...sources.values()] } }
+  return { status: 'ready', facts, contentVersion: contentVersion!, referenceContentVersion: referenceContentVersion!,
+    provenance: { contentVersion: contentVersion!, sources: [...sources.values()] } }
 }

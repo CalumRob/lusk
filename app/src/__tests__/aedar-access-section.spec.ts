@@ -47,6 +47,7 @@ function aedarReady(territoryId: string, territoryType: 'commune' | 'epci' = 'co
       publication_date: '2026-09-30',
     })),
     contentVersion: 'test-version',
+    referenceContentVersion: 'test-reference-version',
     provenance: {
       contentVersion: 'test-version',
       sources: [{
@@ -189,9 +190,10 @@ describe('aedarAccessSection', () => {
     expect(section.evidence.availability).toBe('complete')
   })
 
-  it.each(['publication', 'source vintage', 'reference date', 'publication date'])('keeps the focal ramps without an incompatible reference: %s', (kind) => {
+  it.each(['publication', 'reference publication', 'source vintage', 'reference date', 'publication date'])('keeps the focal ramps without an incompatible reference: %s', (kind) => {
     const reference = aedarReady('200000001', 'epci', 0.25)
     if (kind === 'publication') reference.contentVersion = 'other-version'
+    if (kind === 'reference publication') reference.referenceContentVersion = 'other-reference-version'
     for (const fact of reference.facts) {
       if (kind === 'source vintage') fact.vintage_id = 'other-vintage'
       if (kind === 'reference date') fact.reference_date = '2025-01-01'

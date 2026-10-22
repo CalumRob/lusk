@@ -41,7 +41,7 @@ function ready(): Extract<AedarFetchResult, { status: 'ready' }> {
   facts[1]!.measures.count_15_car_share = 2 / 3
   facts[1]!.measures.count_15_car_mean = 1
   return {
-    status: 'ready', contentVersion: 'worked-example', facts,
+    status: 'ready', contentVersion: 'worked-example', referenceContentVersion: 'reference-example', facts,
     provenance: { contentVersion: 'worked-example', sources: [{
       source_id: 'aedar_bretagne', vintage_id: '2026-v1', source_url: 'https://example.test/aedar',
       licence: 'ODbL', attribution: 'AEDAR', reference_date: null, publication_date: '2026-09-30',

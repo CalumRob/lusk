@@ -46,8 +46,8 @@ const transformed = computed(() => {
   const focal = props.aedarData
   const referenceTerritoire = props.aedarReferenceTerritoire ?? null
   const referenceData = props.aedarReferenceData ?? null
-  // The reference only backs comparison lines when it is the same published version as the focal aggregates.
-  const reference = referenceTerritoire && referenceData && referenceData.status === 'ready' && referenceData.contentVersion === focal.contentVersion
+  // The semantic builder checks both publication tokens before drawing reference lines.
+  const reference = referenceTerritoire && referenceData && referenceData.status === 'ready'
     ? { data: referenceData, territory: { type: referenceTerritoire.type, id: referenceTerritoire.id }, label: referenceTerritoire.nom }
     : null
   const sections = aedarPrototypeSections(focal, props.content.territory, {

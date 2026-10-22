@@ -320,7 +320,7 @@ const aedarMeasureKeys = [5, 10, 15, 20].flatMap((duration) =>
   ),
 )
 
-function reponsePageAedar(type: string, id: string, offset: number, limit: number) {
+function reponsePageAedar(type: string, id: string, typequ: readonly string[]) {
   const measures = Object.fromEntries(aedarMeasureKeys.map((key) => [
     key,
     key.endsWith('_share') ? 0.5 : key.endsWith('_mean') ? 1 : 0,
@@ -329,9 +329,11 @@ function reponsePageAedar(type: string, id: string, offset: number, limit: numbe
     territory: { territory_type: type, territory_id: id },
     content_version: 'aedar-v1',
     reference_content_version: 'aedar-v1',
-    limit,
-    offset,
-    facts: AEDAR_TYPEQU_REGISTRY.slice(offset, offset + limit).map(({ code, label }) => ({
+    limit: 100,
+    offset: 0,
+    facts: typequ.map((code) => {
+      const { label } = AEDAR_TYPEQU_REGISTRY.find((entry) => entry.code === code)!
+      return {
       territory_id: id,
       territory_type: type,
       typequ: code,
@@ -348,7 +350,8 @@ function reponsePageAedar(type: string, id: string, offset: number, limit: numbe
       attribution: 'AEDAR',
       reference_date: '2026-01-01',
       publication_date: '2026-09-30',
-    })),
+      }
+    }),
   }
 }
 
@@ -1977,13 +1980,20 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('renders the approved AEDAR cahier from the normal Mobility route', async () => {
     const model = modeleAvecContextesComparaison()
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const fetchApi = vi.fn(async (url: string) => {
-      const parsed = new URL(String(url), 'http://localhost')
-      const aedar = parsed.pathname.match(/^\/api\/aedar\/territories\/(commune|epci|departement|region)\/([^/]+)\/aggregates$/)
-      if (aedar) {
-        const limit = Number(parsed.searchParams.get('limit'))
-        const offset = Number(parsed.searchParams.get('offset'))
-        return { ok: true, status: 200, json: async () => reponsePageAedar(aedar[1]!, aedar[2]!, offset, limit) }
+    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(options?.body))
+        return { ok: true, status: 200, json: async () => ({
+          contract: 'semantic-read-batch-v1',
+          results: items.map((item: { id: string; resource: string; target: { type: string; id: string }; coordinates: { typequ: string[] } }) => ({
+            id: item.id,
+            data: {
+              resource: item.resource,
+              target: { kind: 'territory', ...item.target },
+              ...reponsePageAedar(item.target.type, item.target.id, item.coordinates.typequ),
+            },
+          })),
+        }) }
       }
       if (String(url).includes('/themes/mobilite/')) {
         return { ok: true, status: 200, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
@@ -2000,7 +2010,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('[data-section="aedar-car-overview"]').exists()).toBe(true)
     expect(wrapper.find('[data-section="aedar-access"]').exists()).toBe(true)
     expect(wrapper.find('.page-heading-index').exists()).toBe(true)
-    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/api/aedar/territories/'))).toBe(true)
+    const semanticRead = fetchApi.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')
+    expect(semanticRead).toBeDefined()
+    expect(JSON.parse(String(semanticRead?.[1]?.body)).items.map((item: { coordinates: { typequ: string[] } }) => item.coordinates.typequ.length))
+      .toEqual([100, 100, 35])
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/api/aedar/territories/'))).toBe(false)
     wrapper.unmount()
   })
 
