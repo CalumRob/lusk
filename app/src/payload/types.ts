@@ -167,6 +167,26 @@ export interface HistoireDemographie extends LectureResolueBase {
   periode: string | null
 }
 
+/** A comparison-cloud observation is not a complete fiche reading. Keep its
+ * availability and source lineage without fabricating unrelated reading facts. */
+export interface HistoireDemographieNuage {
+  territoire: string
+  type: TerritoireType
+  status: string
+  periode: string | null
+  taux_solde_naturel: number | null
+  taux_solde_migratoire: number | null
+  classification: string | null
+  provenance: {
+    source_id: string
+    vintage_id: string
+    source_name: string
+    source_version: string
+    source_reference_date: string | null
+    source_publication_date: string | null
+  } | null
+}
+
 export interface HistoireHabitat extends LectureResolueBase {
   theme: 'habitat'
   story_key: 'etat-energetique-du-parc'
@@ -563,6 +583,8 @@ export interface Payload {
   territoryMetadata?: TerritoryMetadata | null
   indicateurs: Indicateur[]
   histoires: Histoire[]
+  /** Comparison-only Démographie readings; not merged into focal story rows. */
+  demographieNuage?: HistoireDemographieNuage[]
   /**
    * The Aperçu basic-stats table (apercu.json) — optional; null = the file
    * is absent (404 — issue #122: since #116 the pipeline only publishes it

@@ -1139,14 +1139,18 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
     model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     const demographie = model.themes.demographie!
-    const producer = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
-    const metadata = producer
-    const catalogue = { contract: 'semantic-resource-catalogue-v1', resources: [
-      ...Object.keys(metadata.indicator_pages).map((resource_id) => ({ resource_id, theme_id: 'demographie', resource_kind: 'indicator',
-        shapes: [resource_id === 'structure_age' ? 'declared_profile' : 'scalar'], intents: ['facts', 'fixed_comparison', 'selected_comparison'] })),
-      { resource_id: 'demographie_selected_reading', theme_id: 'demographie', resource_kind: 'typed_reading',
-        fields: ['groupe', 'story_key', 'status', 'source_id', 'vintage_id'] },
-    ] }
+    // Exact /api/resources discovery shape, generated from API default_resource_catalogue() and
+    // the canonical pipeline producer contract; keep this separate from the deployed app metadata.
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
+    const catalogue = JSON.parse(readFileSync(resolve(process.cwd(), 'src/__tests__/fixtures/semantic-resource-catalogue-demographie.json'), 'utf8'))
+    const readingDeclaration = catalogue.resources.find((resource: any) => resource.resource_kind === 'typed_reading')
+    const canonical = JSON.parse(readFileSync(resolve(process.cwd(), '../pipeline/inst/extdata/theme-metadata/theme_demographie.json'), 'utf8'))
+    const canonicalReading = canonical.semantic_resources.find((resource: any) => resource.kind === 'typed_reading')
+    expect(readingDeclaration.resource_id).toBe(canonicalReading.resource_id)
+    expect(readingDeclaration.sources).toEqual(canonicalReading.source_keys.map((key: string) => canonical.sources[key] ?? key))
+    expect(catalogue.resources.filter((resource: any) => resource.resource_kind === 'indicator')
+      .map((resource: any) => resource.resource_id).sort()).toEqual(Object.keys(canonical.indicator_pages).sort())
+    expect(metadata.semantic_resources).toBeUndefined()
     const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
       if (url === '/data/theme_demographie.json') return { ok: true, json: async () => metadata }
       if (url === '/api/resources') return { ok: true, json: async () => catalogue }
@@ -1164,13 +1168,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
             version: sourceVintage.version, reference_date: sourceVintage.dateReference,
             publication_date: sourceVintage.datePublication ?? null }] : []
           let data: any
-          if (item.intent.kind === 'facts' && resource === 'demographie_selected_reading') {
+          if (item.intent.kind === 'facts' && resource === readingDeclaration.resource_id) {
             data = { resource, target, content_version: 'reading-v1', facts: [{ groupe: fact?.groupe ?? 'trajectoire-demographique',
               story_key: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2020', solde_naturel: 1,
               solde_migratoire: 2, taux_solde_naturel: target.id === '22002' ? 8.5 : 0.5,
               taux_solde_migratoire: target.id === '22002' ? -9.5 : -0.25, classification: 'attire-renouvelle',
-              status: 'measured', source_id: metadata.sources.evolution_1968,
-              vintage_id: metadata.source_records[metadata.sources.evolution_1968].vintages[0].id }] }
+              status: 'measured', source_id: readingDeclaration.sources[0],
+              vintage_id: metadata.source_records[readingDeclaration.sources[0]].vintages[0].id }] }
           } else if (item.intent.kind === 'facts' && resource === 'structure_age') {
             data = { resource, target, content_version: version, descriptor: { unit: '%', axes: [
               ...new Set(observations.map((row: any) => row.detail)),
@@ -1348,8 +1352,16 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(fetchApi.mock.calls.filter(x=>String(x[0]).endsWith('/comparison'))).toHaveLength(2); expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive'); wrapper.unmount()
   })
   it('Economie mounted: incompatible comparison tokens fail closed and retry without losing focal reading', async () => {
-    const model=economieModel(); let count=0; const fetchApi=vi.fn(async(url:string,options?:RequestInit)=>url.endsWith('/facts')?({ok:true,json:async()=>reponseThemeEconomieApi(model)}):({ok:true,json:async()=>({contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:++count===1?'stale':'territories-v1',reading_content_version:'economie-api-v1',selection:JSON.parse(String(options?.body)).selection,results:[],profile_comparisons:[]})}))
+    const model=economieModel(); let count=0; const fetchApi=vi.fn(async(url:string,options?:RequestInit)=>{
+      if (url.endsWith('/facts')) return {ok:true,json:async()=>reponseThemeEconomieApi(model)}
+      if (url === '/data/theme_demographie.json' || url === '/api/resources') {
+        return {ok:false,status:503,json:async()=>({error:'background Démographie catalogue unavailable'})}
+      }
+      return {ok:true,json:async()=>({contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:++count===1?'stale':'territories-v1',reading_content_version:'economie-api-v1',selection:JSON.parse(String(options?.body)).selection,results:[],profile_comparisons:[]})}
+    })
     vi.stubEnv('VITE_THEME_ACQUISITION_API','1');vi.stubGlobal('fetch',fetchApi);const {wrapper}=await monter('/territoire/commune/22001?theme=economie&comparaison=bretagne',vi.fn(async()=>model));await flushPromises()
+    expect(fetchApi.mock.calls.some(([url]) => url === '/api/resources')).toBe(true)
+    expect(count).toBe(1)
     expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons');expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive');await wrapper.get('[role="alert"] button').trigger('click');await flushPromises();expect(count).toBe(2);expect(wrapper.find('[role="alert"]').exists()).toBe(false);wrapper.unmount()
   })
   it('Economie mounted: ignores late stale comparison response after selection changes', async () => {

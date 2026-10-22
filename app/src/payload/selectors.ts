@@ -12,7 +12,6 @@ import type {
   ColonneRang,
   ColonneTailleRang,
   Histoire,
-  HistoireDemographie,
   HistoireEconomie,
   HistoireMobilite,
   Indicateur,
@@ -357,14 +356,14 @@ export function nuageComparaison(payload: Payload, territoire: string): PointNua
        tauxNaturel: histoire.taux_solde_naturel,
        tauxMigratoire: histoire.taux_solde_migratoire,
    })) ?? []
-  const api = payload.histoires.filter((row) => row.theme === 'demographie' &&
-    (row as unknown as { nuageDemographieApi?: boolean }).nuageDemographieApi)
-    .flatMap((row) => {
-      const point = row as HistoireDemographie & { nom?: string }
-      return point.nom ? [{ territoire: row.territoire, type: row.type, nom: point.nom,
-        tauxNaturel: (row as HistoireDemographie).taux_solde_naturel,
-        tauxMigratoire: (row as HistoireDemographie).taux_solde_migratoire }] : []
-    })
+  const api = (payload.demographieNuage ?? []).flatMap((point) => {
+    const territory = payload.territoires.find((item) => item.territoire === point.territoire && item.type === point.type)
+    return point.status === 'measured' && territory && typeof point.taux_solde_naturel === 'number' && Number.isFinite(point.taux_solde_naturel) &&
+      typeof point.taux_solde_migratoire === 'number' && Number.isFinite(point.taux_solde_migratoire)
+      ? [{ territoire: point.territoire, type: point.type, nom: territory.nom,
+        tauxNaturel: point.taux_solde_naturel, tauxMigratoire: point.taux_solde_migratoire }]
+      : []
+  })
   return [...incumbent.filter((point) => !api.some((peer) => peer.territoire === point.territoire)), ...api]
 }
 

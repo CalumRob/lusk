@@ -1,0 +1,241 @@
+{
+  "contract": "semantic-resource-catalogue-v1",
+  "resources": [
+    {
+      "resource_id": "demographie_selected_reading",
+      "theme_id": "demographie",
+      "indicator_id": "demographie_selected_reading",
+      "label": "Démographie",
+      "unit": "",
+      "direction": "none",
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement",
+        "region"
+      ],
+      "sources": [
+        "serie_historique"
+      ],
+      "shapes": [
+        "typed_reading"
+      ],
+      "axes": [
+        "groupe"
+      ],
+      "axis_values": [
+        [
+          "groupe",
+          [
+            "trajectoire-demographique"
+          ]
+        ]
+      ],
+      "target_kinds": [
+        "territory"
+      ],
+      "target_ids": [],
+      "dynamic_axes": [],
+      "fields": [
+        "groupe",
+        "story_key",
+        "salience_reason",
+        "periode",
+        "solde_naturel",
+        "solde_migratoire",
+        "taux_solde_naturel",
+        "taux_solde_migratoire",
+        "classification",
+        "status",
+        "source_id",
+        "vintage_id"
+      ],
+      "intents": [
+        "facts"
+      ],
+      "resource_kind": "typed_reading",
+      "context_values": [],
+      "evidence": []
+    },
+    {
+      "resource_id": "densite",
+      "theme_id": "demographie",
+      "indicator_id": "densite",
+      "label": "Densité de population",
+      "unit": "hab/km²",
+      "direction": "high",
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "serie_historique"
+      ],
+      "shapes": [
+        "scalar"
+      ],
+      "axes": [],
+      "axis_values": [],
+      "target_kinds": [
+        "territory"
+      ],
+      "target_ids": [],
+      "dynamic_axes": [],
+      "fields": [
+        "value",
+        "support_count",
+        "denominator_count"
+      ],
+      "intents": [
+        "facts",
+        "fixed_comparison",
+        "selected_comparison"
+      ],
+      "resource_kind": "indicator",
+      "context_values": [],
+      "evidence": []
+    },
+    {
+      "resource_id": "evolution_1968",
+      "theme_id": "demographie",
+      "indicator_id": "evolution_1968",
+      "label": "Évolution de la population depuis 1968",
+      "unit": "%",
+      "direction": "high",
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "serie_historique"
+      ],
+      "shapes": [
+        "scalar"
+      ],
+      "axes": [],
+      "axis_values": [],
+      "target_kinds": [
+        "territory"
+      ],
+      "target_ids": [],
+      "dynamic_axes": [],
+      "fields": [
+        "value",
+        "support_count",
+        "denominator_count"
+      ],
+      "intents": [
+        "facts",
+        "fixed_comparison",
+        "selected_comparison"
+      ],
+      "resource_kind": "indicator",
+      "context_values": [],
+      "evidence": []
+    },
+    {
+      "resource_id": "structure_age",
+      "theme_id": "demographie",
+      "indicator_id": "structure_age",
+      "label": "Structure par âge",
+      "unit": "%",
+      "direction": "high",
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "age_detail"
+      ],
+      "shapes": [
+        "declared_profile"
+      ],
+      "axes": [
+        "detail",
+        "sex"
+      ],
+      "axis_values": [
+        [
+          "detail",
+          [
+            "<15",
+            "15-24",
+            "25-39",
+            "40-54",
+            "55-64",
+            "65-79",
+            "80+"
+          ]
+        ],
+        [
+          "sex",
+          [
+            "F",
+            "M"
+          ]
+        ]
+      ],
+      "target_kinds": [
+        "territory"
+      ],
+      "target_ids": [],
+      "dynamic_axes": [
+        "detail",
+        "sex"
+      ],
+      "fields": [
+        "value"
+      ],
+      "intents": [
+        "facts",
+        "fixed_comparison",
+        "selected_comparison"
+      ],
+      "resource_kind": "indicator",
+      "context_values": [],
+      "evidence": []
+    },
+    {
+      "resource_id": "taille_menages",
+      "theme_id": "demographie",
+      "indicator_id": "taille_menages",
+      "label": "Taille moyenne des ménages",
+      "unit": "pers./ménage",
+      "direction": "high",
+      "allowed_levels": [
+        "commune",
+        "epci",
+        "departement"
+      ],
+      "sources": [
+        "menages"
+      ],
+      "shapes": [
+        "scalar"
+      ],
+      "axes": [],
+      "axis_values": [],
+      "target_kinds": [
+        "territory"
+      ],
+      "target_ids": [],
+      "dynamic_axes": [],
+      "fields": [
+        "value",
+        "support_count",
+        "denominator_count"
+      ],
+      "intents": [
+        "facts",
+        "fixed_comparison",
+        "selected_comparison"
+      ],
+      "resource_kind": "indicator",
+      "context_values": [],
+      "evidence": []
+    }
+  ]
+}

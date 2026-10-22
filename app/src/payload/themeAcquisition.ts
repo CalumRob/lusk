@@ -176,7 +176,7 @@ export async function acquireDemographieFacts(type: string, id: string): Promise
     throw new Error('Démographie default comparison versions do not match their facts')
   }
   return { contract: 'semantic-demographie-v1', theme_id: 'demographie', territory: { territory_id: id, territory_type: type },
-    resource_results: facts, default_comparisons: defaultComparisons }
+    reading_resource: plan.reading, resource_results: facts, default_comparisons: defaultComparisons }
 }
 
 export async function acquireDemographieComparison(type: string, id: string,
@@ -198,7 +198,7 @@ export async function acquireDemographieComparison(type: string, id: string,
   const reading_cloud = await acquireDemographieReadingCloudWithPlan(plan, members)
   const result: ThemeResponse = { contract: 'semantic-demographie-comparison-v1', theme_id: 'demographie',
     selection: isRecord(resourceResults[0]) ? resourceResults[0].selection : members, resource_results: resourceResults,
-    reading_cloud }
+    reading_resource: plan.reading, reading_cloud }
   return result
 }
 
@@ -211,11 +211,11 @@ export async function acquireDemographieReadingCloud(
     item.resource === plan.reading.resource_id) : null
   const cloud = await acquireDemographieReadingCloudWithPlan(plan, typedMembers)
   if (focalReading && isRecord(focalReading) && typeof focalReading.content_version === 'string' &&
-      cloud.content_version !== focalReading.content_version) {
+      typeof cloud.content_version === 'string' && cloud.content_version !== focalReading.content_version) {
     invalidateSemanticReadCache()
-    throw new Error('Démographie reading cloud publication does not match focal reading')
+    throw new Error(`Démographie reading cloud publication ${String(cloud.content_version)} does not match focal reading ${focalReading.content_version}`)
   }
-  return { reading_cloud: cloud }
+  return { reading_resource: plan.reading, reading_cloud: cloud }
 }
 
 async function acquireDemographieReadingCloudWithPlan(plan: Awaited<ReturnType<typeof demographieReadPlan>>,
@@ -234,11 +234,13 @@ async function acquireDemographieReadingCloudWithPlan(plan: Awaited<ReturnType<t
   if (versions.size > 1) throw new Error('Démographie reading cloud spans incompatible resource versions')
   const points = results.flatMap((item) => {
     const fact = Array.isArray(item.facts) ? item.facts[0] : null
-    if (!isRecord(fact) || fact.status !== 'measured' ||
-        !Number.isFinite(fact.taux_solde_naturel) || !Number.isFinite(fact.taux_solde_migratoire)) return []
+    if (!isRecord(fact)) return []
     return [{ territory: { territory_id: item.target.id, territory_type: item.target.type },
-      periode: fact.periode ?? null, taux_solde_naturel: fact.taux_solde_naturel,
-      taux_solde_migratoire: fact.taux_solde_migratoire }]
+      status: fact.status, periode: fact.periode ?? null,
+      taux_solde_naturel: fact.taux_solde_naturel ?? null,
+      taux_solde_migratoire: fact.taux_solde_migratoire ?? null,
+      classification: fact.classification ?? null, source_id: fact.source_id ?? null,
+      vintage_id: fact.vintage_id ?? null }]
   })
   return { status: points.length ? 'available' : 'unavailable', content_version: versions.values().next().value ?? null,
     groupe: plan.reading.group,
@@ -254,25 +256,35 @@ async function demographieReadPlan() {
     throw new Error('Démographie resource metadata is incompatible')
   }
   const resources = catalogue.resources.filter((value): value is Record<string, any> => isRecord(value) && value.theme_id === 'demographie')
-  const indicatorResources = Object.keys(metadata.indicator_pages).map((id) => {
-    const found = resources.find((resource) => resource.resource_id === id && resource.resource_kind === 'indicator')
-    if (!found || !Array.isArray(found.intents) || !found.intents.includes('facts') ||
+  const indicatorResources = resources.filter((resource) => resource.resource_kind === 'indicator')
+  if (indicatorResources.some((resource) => typeof resource.resource_id !== 'string' ||
+      !Object.hasOwn(metadata.indicator_pages, resource.resource_id))) {
+    throw new Error('Démographie API resources are missing published indicator metadata')
+  }
+  const pageIds = Object.keys(metadata.indicator_pages).sort()
+  const resourceIds = indicatorResources.map((resource) => resource.resource_id as string).sort()
+  if (pageIds.length !== resourceIds.length || pageIds.some((id, index) => id !== resourceIds[index])) {
+    throw new Error('Démographie published indicator metadata does not match the API resource catalogue')
+  }
+  for (const found of indicatorResources) {
+    if (!Array.isArray(found.intents) || !found.intents.includes('facts') ||
         !found.intents.includes('fixed_comparison') || !found.intents.includes('selected_comparison')) {
-      throw new Error(`Démographie comparison capability is not declared for ${id}`)
+      throw new Error(`Démographie comparison capability is not declared for ${found.resource_id}`)
     }
-    return found
-  })
+  }
   const readings = resources.filter((resource) => resource.resource_kind === 'typed_reading' &&
     typeof resource.resource_id === 'string' && Array.isArray(resource.fields) &&
-    ['status', 'source_id', 'vintage_id'].every((field) => resource.fields.includes(field)))
+    ['status', 'source_id', 'vintage_id'].every((field) => resource.fields.includes(field)) &&
+    Array.isArray(resource.sources) && resource.sources.length > 0 &&
+    resource.sources.every((source: unknown) => typeof source === 'string' && source.length > 0))
   const readingGroups = metadata.subgroups.filter((value: unknown) => isRecord(value) && isRecord(value.reading))
   const group = readingGroups.length === 1 ? readingGroups[0] : null
   const storyKey = isRecord(group) && isRecord(group.reading) && typeof group.reading.story_key === 'string'
     ? group.reading.story_key : null
-  if (indicatorResources.length !== Object.keys(metadata.indicator_pages).length || readings.length !== 1 ||
+  if (!indicatorResources.length || readings.length !== 1 ||
       !isRecord(group) || typeof group.key !== 'string' || !storyKey) throw new Error('Démographie resource declarations are incomplete')
   return { indicatorResources, reading: { resource_id: readings[0]!.resource_id as string,
-    group: group.key as string, story_key: storyKey } }
+    sources: readings[0]!.sources as string[], group: group.key as string, story_key: storyKey } }
 }
 
 function demographieComparisonCompatible(focal: ThemeResponse, comparison: ThemeResponse): boolean {

@@ -147,6 +147,8 @@ describe('Démographie scalar readiness on the territory fiche', () => {
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     const model = readData(`modeles-lecture/territoires/commune/${targetId}.json`)
     const metadata = readData('theme_demographie.json')
+    const catalogue = JSON.parse(readFileSync(resolve(process.cwd(), 'src/__tests__/fixtures/semantic-resource-catalogue-demographie.json'), 'utf8'))
+    const readingDeclaration = catalogue.resources.find((resource: any) => resource.resource_kind === 'typed_reading')
     const semanticCalls: any[] = []
     const retiredDemographieCalls: string[] = []
     const requests: string[] = []
@@ -154,13 +156,7 @@ describe('Démographie scalar readiness on the territory fiche', () => {
       const url = String(input)
       requests.push(url)
       if (url.startsWith('/data/')) return new Response(JSON.stringify(readData(url.slice('/data/'.length))), { status: 200 })
-      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [
-       ...Object.keys(metadata.indicator_pages).map((resource_id) => ({ resource_id, theme_id: 'demographie', resource_kind: 'indicator',
-         shapes: [resource_id === 'structure_age' ? 'declared_profile' : 'scalar'],
-         intents: ['facts', 'fixed_comparison', 'selected_comparison'] })),
-        { resource_id: 'demographie_selected_reading', theme_id: 'demographie', resource_kind: 'typed_reading',
-          fields: ['status', 'source_id', 'vintage_id'] },
-      ] }), { status: 200 })
+       if (url === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
       if (url === '/api/resources/read-batch') {
         const body = JSON.parse(String(init?.body))
         semanticCalls.push(body)
@@ -178,11 +174,12 @@ describe('Démographie scalar readiness on the territory fiche', () => {
                 source_facet: resource === 'structure_age' ? { detail: '<15', sex: 'F' } : resource,
                 ...(resource === 'structure_age' ? { source_facet_indicator_id: 'densite', scalar_content_version: 'densite-v1' } : {}) },
               ...(resource === 'structure_age' ? { scalar_content_version: 'densite-v1' } : {}) }
-          } else if (resource === 'demographie_selected_reading') {
+          } else if (resource === readingDeclaration.resource_id) {
             data = { resource, target, content_version: 'reading-v1', facts: [{ groupe: 'trajectoire-demographique',
               story_key: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023',
               solde_naturel: 1, solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2,
-              classification: 'attire-renouvelle', status: 'measured', source_id: 'serie_historique', vintage_id: 'serie_historique' }] }
+              classification: 'attire-renouvelle', status: 'measured', source_id: readingDeclaration.sources[0],
+              vintage_id: metadata.source_records[readingDeclaration.sources[0]].vintages[0].id }] }
           } else if (resource === 'structure_age') {
             const profile = model.themes.demographie.indicateurs.filter((row: any) => row.key === resource && row.territoire === target.id)
             data = { resource, target, content_version: 'profile-v1', descriptor: { unit: '%', axes: [

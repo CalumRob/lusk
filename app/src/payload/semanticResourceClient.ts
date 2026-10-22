@@ -12,17 +12,20 @@ export interface SemanticReadItem {
 export interface SemanticResult { resource: string; target: SemanticTarget; [key: string]: unknown }
 export type SemanticFetch = (items: readonly SemanticReadItem[]) => Promise<SemanticResult[]>
 
-const caches = new WeakMap<typeof fetch, { pending: Map<string, Promise<SemanticResult[]>>; values: Map<string, SemanticResult[]> }>()
+const caches = new WeakMap<typeof fetch, { pending: Map<string, Promise<SemanticResult[]>>; values: Map<string, SemanticResult[]>; epoch: number }>()
 function cacheFor(fetcher: typeof fetch) {
   let cache = caches.get(fetcher)
-  if (!cache) { cache = { pending: new Map(), values: new Map() }; caches.set(fetcher, cache) }
+  if (!cache) { cache = { pending: new Map(), values: new Map(), epoch: 0 }; caches.set(fetcher, cache) }
   return cache
 }
 
 /** Clear successful semantic reads so a publication mismatch can be retried against a fresh snapshot. */
 export function invalidateSemanticReadCache(fetcher: typeof fetch = globalThis.fetch): void {
   const cache = caches.get(fetcher)
-  cache?.values.clear()
+  if (!cache) return
+  cache.epoch += 1
+  cache.values.clear()
+  cache.pending.clear()
 }
 
 /** Correlates by request id (not response order), validates identity, deduplicates and caches success only. */
@@ -33,7 +36,9 @@ export async function readSemanticBatch(items: readonly SemanticReadItem[], fetc
   if (cache.values.has(key)) return cache.values.get(key)!
   const pending = cache.pending.get(key)
   if (pending) return pending
-  const request = (async () => {
+  const epoch = cache.epoch
+  let request!: Promise<SemanticResult[]>
+  request = (async () => {
     const response = await fetcher('/api/resources/read-batch', { method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ items: items.map((item, index) => ({ id: `semantic-${index}`, ...item })) }) })
@@ -57,8 +62,10 @@ export async function readSemanticBatch(items: readonly SemanticReadItem[], fetc
       }
       return data as SemanticResult
     })
-    cache.values.set(key, mapped)
-    while (cache.values.size > 16) cache.values.delete(cache.values.keys().next().value!)
+    if (cache.epoch === epoch && cache.pending.get(key) === request) {
+      cache.values.set(key, mapped)
+      while (cache.values.size > 16) cache.values.delete(cache.values.keys().next().value!)
+    }
     return mapped
   })()
   cache.pending.set(key, request)

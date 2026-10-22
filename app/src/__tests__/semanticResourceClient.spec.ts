@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { readSemanticBatch } from '@/payload/semanticResourceClient'
+import { invalidateSemanticReadCache, readSemanticBatch } from '@/payload/semanticResourceClient'
 
 afterEach(() => vi.unstubAllGlobals())
 const item = { resource: 'densite', target: { kind: 'territory' as const, type: 'commune' as const, id: '22001' }, intent: { kind: 'facts' as const }, fields: ['value'] }
@@ -31,5 +31,21 @@ describe('semantic resource reader', () => {
       .mockResolvedValueOnce(new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [result()] })))
     await expect(readSemanticBatch([item], fetcher)).rejects.toThrow(/correlation/i)
     expect((await readSemanticBatch([item], fetcher))[0]?.value).toBe(42)
+  })
+
+  it('invalidating an in-flight generation starts a fresh read and an old completion cannot overwrite it', async () => {
+    let resolveOld!: (response: Response) => void
+    const oldResponse = new Promise<Response>((resolve) => { resolveOld = resolve })
+    const fetcher = vi.fn()
+      .mockReturnValueOnce(oldResponse)
+      .mockResolvedValueOnce(new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [result('semantic-0', 88)] })))
+    const oldRead = readSemanticBatch([item], fetcher)
+    invalidateSemanticReadCache(fetcher)
+    await readSemanticBatch([item], fetcher)
+    resolveOld(new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [result('semantic-0', 13)] })))
+    await oldRead
+
+    expect(fetcher).toHaveBeenCalledTimes(2)
+    expect((await readSemanticBatch([item], fetcher))[0]?.value).toBe(88)
   })
 })

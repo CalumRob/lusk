@@ -1,4 +1,4 @@
-import type { Histoire, HistoireDemographie, HistoireEconomie, HistoireHabitat, HistoireMilieux, HistoireMobilite, Indicateur, TerritoireType, VintageStamp } from './types'
+import type { Histoire, HistoireDemographie, HistoireDemographieNuage, HistoireEconomie, HistoireHabitat, HistoireMilieux, HistoireMobilite, Indicateur, TerritoireType, VintageStamp } from './types'
 import { RAISONS_SAILLANCE } from './types'
 import type { ThemeKey, ThemeSelectionMember } from './themeAcquisition'
 
@@ -184,22 +184,34 @@ function histoireDemographieDeSql(target: { territoire: string; type: Territoire
 }
 
 /** Maps only complete peer coordinate records; incomplete clouds remain honestly empty. */
-export function histoiresDemographieNuage(response: unknown): HistoireDemographie[] {
+export function histoiresDemographieNuage(response: unknown, producerMetadata: unknown): HistoireDemographieNuage[] {
   if (!isRecord(response) || !isRecord(response.reading_cloud)) return []
   const cloud = response.reading_cloud
-  if (cloud.status !== 'available' || cloud.story_key !== 'trajectoire-demographique' ||
-      !texteNonVide(cloud.groupe) || !Array.isArray(cloud.points)) return []
-  return cloud.points.flatMap((point): HistoireDemographie[] => {
+  if (!Array.isArray(cloud.points)) return []
+  const declaration = isRecord(response.reading_resource) ? response.reading_resource : null
+  if (!declaration || !texteNonVide(declaration.resource_id) || !Array.isArray(declaration.sources) ||
+      !isRecord(producerMetadata) || !isRecord(producerMetadata.source_records)) {
+    throw new Error('Déclaration de lecture typée Démographie absente')
+  }
+  const declaredSources = declaration.sources as unknown[]
+  return cloud.points.map((point): HistoireDemographieNuage => {
     if (!isRecord(point) || !isRecord(point.territory) || !texteNonVide(point.territory.territory_id) ||
         !['commune', 'epci', 'departement', 'region'].includes(String(point.territory.territory_type)) ||
-        !finite(point.taux_solde_naturel) || !finite(point.taux_solde_migratoire) ||
-        !(point.periode === null || text(point.periode))) return []
-    return [{ territoire: point.territory.territory_id, type: point.territory.territory_type as TerritoireType,
-      theme: 'demographie', groupe: cloud.groupe, story_key: 'trajectoire-demographique', salience_reason: 'defaut',
-      periode: point.periode as string | null, solde_naturel: 0, solde_migratoire: 0,
-      taux_solde_naturel: point.taux_solde_naturel, taux_solde_migratoire: point.taux_solde_migratoire,
-      classification: '', vintage_source: '', vintage_version: '', vintage_date_reference: null,
-      vintage_date_publication: null, nom: point.territory.name, nuageDemographieApi: true } as HistoireDemographie]
+        !texteNonVide(point.status) || !(point.periode === null || text(point.periode)) ||
+        !(point.taux_solde_naturel === null || finite(point.taux_solde_naturel)) ||
+        !(point.taux_solde_migratoire === null || finite(point.taux_solde_migratoire)) ||
+        !(point.classification === null || text(point.classification))) {
+      throw new Error('Observation du nuage Démographie invalide')
+    }
+    const provenance = demographieProvenance(point.source_id, point.vintage_id, declaredSources, producerMetadata)
+    if (point.status === 'measured' && (!provenance || !finite(point.taux_solde_naturel) || !finite(point.taux_solde_migratoire))) {
+      throw new Error('Observation mesurée du nuage Démographie sans provenance ou taux')
+    }
+    return { territoire: point.territory.territory_id, type: point.territory.territory_type as TerritoireType,
+      status: point.status, periode: point.periode as string | null,
+      taux_solde_naturel: point.taux_solde_naturel as number | null,
+      taux_solde_migratoire: point.taux_solde_migratoire as number | null,
+      classification: point.classification as string | null, provenance }
   })
 }
 
@@ -553,7 +565,8 @@ export function demographieComparisonForFiche(response: unknown, portee: string 
     selection: Array.isArray(response.selection) ? response.selection.map((member) => isRecord(member)
       ? { territory_type: member.territory_type ?? member.type, territory_id: member.territory_id ?? member.id } : member) : [],
     scope: isRecord(response.scope) ? response.scope : null, portee,
-    ...(isRecord(response.reading_cloud) ? { reading_cloud: response.reading_cloud } : {}) }
+    ...(isRecord(response.reading_cloud) ? { reading_cloud: response.reading_cloud } : {}),
+    ...(isRecord(response.reading_resource) ? { reading_resource: response.reading_resource } : {}) }
 }
 
 /** Convert the semantic resource response shapes for Démographie into the
@@ -561,15 +574,17 @@ export function demographieComparisonForFiche(response: unknown, portee: string 
  * this deliberately does not synthesize a theme-wide token. */
 export function demographieRowsFromSemantic(response: unknown, target: { territoire: string; type: TerritoireType }, producerMetadata: unknown): ThemeFactsRows {
   if (!isRecord(response) || response.contract !== 'semantic-demographie-v1' || response.theme_id !== 'demographie' ||
-      !Array.isArray(response.resource_results) || response.resource_results.length < 5) {
+      !Array.isArray(response.resource_results)) {
     throw new Error('Réponse sémantique Démographie incomplète')
   }
   const byResource = new Map<string, Row>()
+  const readingDeclaration = isRecord(response.reading_resource) ? response.reading_resource : null
   for (const result of response.resource_results) {
     if (!isRecord(result) || !texteNonVide(result.resource) || !isRecord(result.target) ||
         result.target.id !== target.territoire || result.target.type !== target.type) {
       throw new Error('Résultat de ressource Démographie invalide')
     }
+    if (byResource.has(result.resource)) throw new Error(`Ressource Démographie dupliquée : ${result.resource}`)
     byResource.set(result.resource, result)
   }
   if (!isRecord(producerMetadata) || !isRecord(producerMetadata.sources) || !isRecord(producerMetadata.source_records)) {
@@ -578,7 +593,7 @@ export function demographieRowsFromSemantic(response: unknown, target: { territo
   const indicators: Row[] = []
   const indicatorMetadata: Row[] = []
   for (const [resource, data] of byResource) {
-    if (resource === 'demographie_selected_reading') continue
+    if (resource === readingDeclaration?.resource_id) continue
     if (Array.isArray(data.observations)) {
       // Declared profile: keep each detail × sex coordinate, including nulls.
       for (const observation of rows(data.observations, `${resource}.observations`)) {
@@ -592,28 +607,45 @@ export function demographieRowsFromSemantic(response: unknown, target: { territo
         unit: data.unit, dimensions: {}, sources: data.sources })
     }
   }
-  const readingData = byResource.get('demographie_selected_reading')
+  const declaration = readingDeclaration
+  if (!declaration || !texteNonVide(declaration.resource_id) || !Array.isArray(declaration.sources) ||
+      declaration.sources.some((source) => !texteNonVide(source))) {
+    throw new Error('Déclaration de lecture typée Démographie absente')
+  }
+  const typedResults = [...byResource.values()].filter((item) => Array.isArray(item.facts))
+  if (typedResults.length !== 1 || typedResults[0]!.resource !== declaration.resource_id) {
+    throw new Error('Identité de la ressource de lecture typée Démographie inattendue')
+  }
+  const readingData = byResource.get(declaration.resource_id)
   if (!readingData || !Array.isArray(readingData.facts) || readingData.facts.length !== 1) {
     throw new Error('Lecture typée Démographie absente ou ambiguë')
   }
-  const reading = rows(readingData.facts, 'demographie_selected_reading.facts')[0]!
-  if (!texteNonVide(reading.source_id) || !texteNonVide(reading.vintage_id)) throw new Error('Provenance de lecture Démographie incomplète')
-  // Resource contract exposes source identities and vintage IDs. Human source
-  // metadata remains owned by the atomic territory model's producer metadata.
-  const sourceKey = producerMetadata.sources.evolution_1968
-  const sourceMeta = typeof sourceKey === 'string' ? producerMetadata.source_records[sourceKey] : null
-  const vintage = isRecord(sourceMeta) && Array.isArray(sourceMeta.vintages)
-    ? sourceMeta.vintages.find((item) => isRecord(item) && item.id === reading.vintage_id) : null
-  if (!isRecord(sourceMeta) || !isRecord(vintage)) throw new Error('Millésime producteur Démographie introuvable')
-  const source = { source_id: reading.source_id, name: sourceMeta.dataset, version: vintage.version,
-    reference_date: vintage.dateReference, publication_date: vintage.datePublication ?? null }
+  const reading = rows(readingData.facts, `${declaration.resource_id}.facts`)[0]!
+  const provenance = demographieProvenance(reading.source_id, reading.vintage_id, declaration.sources, producerMetadata)
+  if (!provenance) throw new Error('Provenance de lecture Démographie absente ou non déclarée')
   const envelope = { contract: 'theme-facts-v1', theme_id: 'demographie',
     territory: { territory_id: target.territoire, territory_type: target.type },
     indicators, indicator_metadata: indicatorMetadata, named_reference_evidence: [],
-    readings: [{ ...reading, provenance: { source_id: source.source_id, source_name: source.name,
-      source_version: source.version, source_reference_date: null, source_publication_date: null } }] }
+    readings: [{ ...reading, provenance }] }
   const converted = themeFactsRowsFromApi('demographie', envelope, target)
   return converted
+}
+
+function demographieProvenance(sourceId: unknown, vintageId: unknown, declaredSources: unknown[], metadata: Row) {
+  if (!texteNonVide(sourceId) || !texteNonVide(vintageId)) return null
+  if (!declaredSources.includes(sourceId)) throw new Error(`Source de lecture Démographie non déclarée : ${sourceId}`)
+  const source = isRecord(metadata.source_records) ? metadata.source_records[sourceId] : null
+  const vintage = isRecord(source) && Array.isArray(source.vintages)
+    ? source.vintages.find((item) => isRecord(item) && item.id === vintageId) : null
+  if (!isRecord(source) || !isRecord(vintage) || !texteNonVide(source.dataset) || !texteNonVide(vintage.version)) {
+    throw new Error(`Provenance de lecture Démographie inconnue : ${sourceId}/${vintageId}`)
+  }
+  const nullableDate = (value: unknown): value is string | null => value === null || text(value)
+  if (!nullableDate(vintage.dateReference) || !nullableDate(vintage.datePublication)) {
+    throw new Error(`Dates de provenance Démographie invalides : ${sourceId}/${vintageId}`)
+  }
+  return { source_id: sourceId, vintage_id: vintageId, source_name: source.dataset, source_version: vintage.version,
+    source_reference_date: vintage.dateReference, source_publication_date: vintage.datePublication }
 }
 
 /** Valide la réponse comparison-only d'un thème contre la sélection demandée —

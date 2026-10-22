@@ -56,6 +56,7 @@ import type { SlugOnglet } from '@/fiche/onglets'
 import { trouverTerritoire } from '@/payload/selectors'
 import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Histoire, Indicateur, Payload, Theme } from '@/payload/types'
+import type { HistoireDemographieNuage } from '@/payload/types'
 import { useTerritoryReadModel } from '@/payload/useTerritoryReadModel'
 import { payloadDepuisModeleTerritoire } from '@/payload/territoryReadModel'
 
@@ -117,7 +118,7 @@ const cacheAcquisition = new ThemeAcquisitionCache(
 )
 const faitsThemeRows = ref<Indicateur[] | null>(null)
 const histoiresThemeRows = ref<Histoire[] | null>(null)
-const histoiresNuageDemographie = ref<Histoire[]>([])
+const histoiresNuageDemographie = ref<HistoireDemographieNuage[]>([])
 const histoiresNuageMilieux = ref<Histoire[]>([])
 const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
 const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
@@ -140,7 +141,6 @@ const payloadPourRendu = computed<Payload | null>(() => {
     const histoires = histoiresThemeRows.value === null
       ? payload.histoires.filter((row) => row.theme !== theme)
       : [...payload.histoires.filter((row) => row.theme !== theme), ...histoiresThemeRows.value,
-        ...(theme === 'demographie' ? histoiresNuageDemographie.value : []),
         ...(theme === 'milieux' ? histoiresNuageMilieux.value : [])]
     // Les pairs des nuages doivent exister dans le référentiel de rendu afin que
     // les sélecteurs résolvent leur nom; seule l'identité sélectionnée est ajoutée.
@@ -150,7 +150,8 @@ const payloadPourRendu = computed<Payload | null>(() => {
       ?.filter((territory) => peerIds.has(territory.territoire)) ?? []
     const territoires = [...payload.territoires, ...peers.filter((peer) =>
       !payload.territoires.some((existing) => existing.territoire === peer.territoire))]
-    return { ...payload, territoires, indicateurs, histoires }
+    return { ...payload, territoires, indicateurs, histoires,
+      ...(theme === 'demographie' ? { demographieNuage: histoiresNuageDemographie.value } : {}) }
   }
   if (!scalarCohortEnabled(import.meta.env)) return payload
   const theme = selection.value
@@ -355,10 +356,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
              .map((item) => ({ territory_type: 'commune', territory_id: item.territoire })) : []
          const cloud = await acquireDemographieReadingCloud(members, acquired.focal.resource_results)
          if (cancelled || request !== sequenceAcquisition) return
-         histoiresNuageDemographie.value = histoiresDemographieNuage(cloud)
+         histoiresNuageDemographie.value = histoiresDemographieNuage(cloud, model.themes.demographie?.metadata)
        } else {
          histoiresNuageDemographie.value = themeActif === 'demographie' && isRecord(acquired.focal.comparison)
-           ? histoiresDemographieNuage(acquired.focal.comparison) : []
+           ? histoiresDemographieNuage(acquired.focal.comparison, model.themes.demographie?.metadata) : []
        }
       histoiresNuageMilieux.value = themeActif === 'milieux' && isRecord(acquired.focal.comparison)
         ? histoiresMilieuxDuNuage(acquired.focal.comparison) : []
@@ -437,8 +438,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
          : selectedComparison
        validerReponseComparaisonTheme(themeActif, ficheComparison, selectionMembres)
        if (themeActif === 'demographie') {
-         histoiresNuageDemographie.value = histoiresDemographieNuage(
-           ficheComparison)
+         histoiresNuageDemographie.value = histoiresDemographieNuage(ficheComparison,
+           model?.themes.demographie?.metadata)
       }
        if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(
          acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { demographieComparisonForFiche, histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
+import { demographieComparisonForFiche, demographieRowsFromSemantic, histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 
 const cible = { territoire: '35238', type: 'commune' as const }
@@ -26,6 +26,51 @@ const sources = () => [{
 }]
 
 describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#627)', () => {
+  it('uses the discovered typed-reading resource and its declared source for exact registered provenance', () => {
+    const sourceRecords = {
+      legacy_evolution_source: { dataset: 'Wrong legacy source', vintages: [{ id: 'legacy-vintage', version: 'old', dateReference: '1900', datePublication: null }] },
+      story_source_v2: { dataset: 'Declared story dataset', vintages: [{ id: 'story-vintage-v2', version: '2026', dateReference: '2026-01-01', datePublication: '2026-02-01' }] },
+    }
+    const declaration = { resource_id: 'story_resource_v2', sources: ['story_source_v2'] }
+    const response = { contract: 'semantic-demographie-v1', theme_id: 'demographie', reading_resource: declaration, resource_results: [
+      { resource: 'densite', target: { type: 'commune', id: cible.territoire }, value: 30, status: 'measured', unit: 'hab/km²', sources: [{
+        source_id: 'story_source_v2', name: 'Declared story dataset', version: '2026', reference_date: '2026-01-01', publication_date: '2026-02-01' }] },
+      { resource: 'structure_age', target: { type: 'commune', id: cible.territoire }, descriptor: { unit: '%', axes: [] }, observations: [] },
+      { resource: 'taille_menages', target: { type: 'commune', id: cible.territoire }, value: 2, status: 'measured', unit: 'personnes', sources: [{
+        source_id: 'story_source_v2', name: 'Declared story dataset', version: '2026', reference_date: '2026-01-01', publication_date: '2026-02-01' }] },
+      { resource: 'evolution_1968', target: { type: 'commune', id: cible.territoire }, value: 1, status: 'measured', unit: '%', sources: [{
+        source_id: 'story_source_v2', name: 'Declared story dataset', version: '2026', reference_date: '2026-01-01', publication_date: '2026-02-01' }] },
+      { resource: 'story_resource_v2', target: { type: 'commune', id: cible.territoire }, facts: [{ groupe: 'trajectoire-demographique',
+        story_key: 'trajectoire-demographique', salience_reason: 'defaut', periode: '2017-2023', solde_naturel: 1,
+        solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.1, classification: 'stable',
+        status: 'measured', source_id: 'story_source_v2', vintage_id: 'story-vintage-v2' }] },
+    ] }
+    const metadata = { sources: { evolution_1968: 'legacy_evolution_source' }, source_records: sourceRecords }
+    const rows = demographieRowsFromSemantic(response, cible, metadata)
+    expect(rows.histoires[0]).toMatchObject({ vintage_source: 'Declared story dataset', vintage_version: '2026',
+      vintage_date_reference: '2026-01-01', vintage_date_publication: '2026-02-01' })
+  })
+
+  it('fails closed when typed-reading identity or returned source is not producer-declared', () => {
+    const metadata = { sources: { evolution_1968: 'legacy' }, source_records: {
+      declared: { dataset: 'Declared', vintages: [{ id: 'v2', version: '2026', dateReference: null, datePublication: null }] },
+      legacy: { dataset: 'Legacy', vintages: [{ id: 'v1', version: 'old', dateReference: null, datePublication: null }] },
+    } }
+    const declaration = { resource_id: 'declared_story', sources: ['declared'] }
+    const read = (resource: string, source_id: string) => ({ contract: 'semantic-demographie-v1', theme_id: 'demographie',
+      reading_resource: declaration, resource_results: [
+      ...['densite', 'structure_age', 'taille_menages', 'evolution_1968'].map((id) => ({ resource: id,
+        target: { type: 'commune', id: cible.territoire }, value: 1, status: 'measured', unit: 'x', sources: [{
+          source_id: 'declared', name: 'Declared', version: '2026', reference_date: null, publication_date: null }] })),
+      { resource, target: { type: 'commune', id: cible.territoire }, facts: [{ groupe: 'trajectoire-demographique',
+        story_key: 'trajectoire-demographique', salience_reason: 'defaut', periode: null, solde_naturel: 0,
+        solde_migratoire: 0, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: 'stable',
+        status: 'measured', source_id, vintage_id: 'v2' }] },
+    ] })
+    expect(() => demographieRowsFromSemantic(read('wrong_story', 'declared'), cible, metadata)).toThrow(/ressource/i)
+    expect(() => demographieRowsFromSemantic(read('declared_story', 'legacy'), cible, metadata)).toThrow(/source/i)
+  })
+
   it('attache uniquement les rangs disponibles de la comparaison API sans modifier les valeurs focales', () => {
     const row = { territoire: '35238', type: 'commune' as const, theme: 'habitat' as const, key: 'part_passoires', detail: null,
       vintage_source: '', vintage_version: '', vintage_date_reference: null, vintage_date_publication: null,
@@ -135,10 +180,34 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     }
   })
   it('ne fabrique aucun point si la comparaison ne déclare pas de cloud', () => {
-    expect(histoiresDemographieNuage({ reading_cloud: null })).toEqual([])
-    expect(histoiresDemographieNuage({ reading_cloud: { status: 'available', story_key: 'trajectoire-demographique',
-      groupe: 'g', points: [{ territory: { territory_id: '1', territory_type: 'commune', name: 'T' },
-        periode: null, taux_solde_naturel: null, taux_solde_migratoire: 2 }] } })).toEqual([])
+    expect(histoiresDemographieNuage({ reading_cloud: null }, {})).toEqual([])
+  })
+  it('keeps cloud reading status and registered provenance without inventing numeric zeros', () => {
+    const metadata = { source_records: { story_source: { dataset: 'INSEE story', vintages: [
+      { id: 'story-v2', version: '2026', dateReference: '2023-01-01', datePublication: '2026-06-30' },
+    ] } } }
+    const response = { reading_resource: { resource_id: 'story_resource_v2', sources: ['story_source'] },
+      reading_cloud: { points: [
+        { territory: { territory_id: '1', territory_type: 'commune' }, status: 'measured', periode: '2017-2023',
+          taux_solde_naturel: 0, taux_solde_migratoire: -0.2, classification: 'stable',
+          source_id: 'story_source', vintage_id: 'story-v2' },
+        { territory: { territory_id: '2', territory_type: 'commune' }, status: 'suppressed', periode: null,
+          taux_solde_naturel: null, taux_solde_migratoire: null, classification: null, source_id: null, vintage_id: null },
+      ] } }
+    expect(histoiresDemographieNuage(response, metadata)).toEqual([
+      { territoire: '1', type: 'commune', status: 'measured', periode: '2017-2023', taux_solde_naturel: 0,
+        taux_solde_migratoire: -0.2, classification: 'stable', provenance: { source_id: 'story_source',
+          vintage_id: 'story-v2', source_name: 'INSEE story', source_version: '2026',
+          source_reference_date: '2023-01-01', source_publication_date: '2026-06-30' } },
+      { territoire: '2', type: 'commune', status: 'suppressed', periode: null, taux_solde_naturel: null,
+        taux_solde_migratoire: null, classification: null, provenance: null },
+    ])
+  })
+  it('rejects a cloud source identity outside the declared typed-reading sources', () => {
+    expect(() => histoiresDemographieNuage({ reading_resource: { resource_id: 'story', sources: ['known'] },
+      reading_cloud: { points: [{ territory: { territory_id: '1', territory_type: 'commune' }, status: 'measured',
+        periode: null, taux_solde_naturel: 0, taux_solde_migratoire: 0, classification: null,
+        source_id: 'unknown', vintage_id: 'v1' }] } }, { source_records: {} })).toThrow(/not declared|non déclarée/i)
   })
   it('refuse une réponse dont le contrat, le thème ou le territoire ne correspondent pas', () => {
     expect(() => themeFactsRowsFromApi('habitat', { contract: 'autre' }, cible)).toThrow(/contrat|Réponse/i)
