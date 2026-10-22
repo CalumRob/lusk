@@ -24,8 +24,8 @@ const canonicalRank = (indicator: string, territoryId: string) => canonicalEcono
   fact.key === indicator && fact.type === 'commune' && fact.territoire === territoryId)
 
 describe('scalarCohortEnabled', () => {
-  it('enables API acquisition by default and keeps an explicit opt-out', () => {
-    expect(scalarCohortEnabled({})).toBe(true)
+  it('keeps retired API acquisition off by default and explicitly opt-in', () => {
+    expect(scalarCohortEnabled({})).toBe(false)
     expect(scalarCohortEnabled({ VITE_SCALAR_COHORT_API: '0' })).toBe(false)
     expect(scalarCohortEnabled({ VITE_SCALAR_COHORT_API: '1' })).toBe(true)
   })

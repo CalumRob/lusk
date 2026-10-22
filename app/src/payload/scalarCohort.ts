@@ -13,7 +13,7 @@ export interface ScalarCohort {
 }
 
 export function scalarCohortEnabled(env: Record<string, string | undefined>): boolean {
-  return env.VITE_SCALAR_COHORT_API !== '0'
+  return env.VITE_SCALAR_COHORT_API === '1'
 }
 
 /** Registration is producer-owned; a declared page alone does not opt into scalar serving. */
