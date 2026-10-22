@@ -28,6 +28,11 @@ try {
   const { validerModeleTerritoire } = await server.ssrLoadModule('/src/payload/territoryReadModel.ts')
   const { reponseThemeMobiliteApi } = await server.ssrLoadModule('/src/__tests__/helpers/mobiliteThemeApiStub.ts')
   const { AEDAR_TYPEQU_REGISTRY } = await server.ssrLoadModule('/src/fiche/content/aedarTypequRegistry.ts')
+  const semanticContracts = JSON.parse(await readFile(
+    resolve(repoRoot, 'pipeline/inst/extdata/semantic-resource-contracts.json'), 'utf8',
+  ))
+  const aedarContract = semanticContracts.resources.find(({ resource_id }) => resource_id === 'aedar_territorial_aggregate')
+  assert(aedarContract?.source_id, 'AEDAR semantic resource contract must declare its source_id')
   const publishedModel = JSON.parse(await readFile(
     resolve(repoRoot, 'public/data/modeles-lecture/territoires/commune/35238.json'), 'utf8',
   ))
@@ -82,7 +87,7 @@ try {
               n_observed: 100,
               coverage_status: 'covered',
               measures,
-              source_id: 'aedar_bretagne',
+              source_id: aedarContract.source_id,
               vintage_id: '2026-v1',
               source_url: 'https://example.test/aedar-fixture',
               licence: 'Licence Ouverte 2.0',
@@ -189,6 +194,10 @@ try {
         paperRect: rect('.cahier-page'),
         indexRect: rect('.mobile-index'),
         contentRect: rect('.cahier-page .page-main'),
+        pageHeadingParts: ['.page-heading-index', '.page-heading h2', '.page-heading-context'].map((selector) => ({
+          selector,
+          ...rect(`.cahier-page ${selector}`),
+        })).filter(({ width }) => width > 0),
         paperContentInset: {
           left: parseFloat(paperStyle.paddingLeft),
           right: parseFloat(paperStyle.paddingRight),
@@ -198,6 +207,10 @@ try {
         },
         productionAedarCahier: cahier.classList.contains('cahier--indexed-sections') &&
           document.querySelector('.aedar-equipment-explorer') !== null,
+        productionClassComposition: {
+          indexed: cahier.classList.contains('cahier--indexed-sections'),
+          plainPresentation: cahier.classList.contains('cahier--sans-grille'),
+        },
         figureCount: figures.length,
         controlCount: controls.length,
         populatedSections: ['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer']
@@ -216,6 +229,8 @@ try {
     assert.equal(metrics.documentScrollWidth, width, `document overflow at ${width}px: ${JSON.stringify(metrics)}`)
     assert.equal(metrics.bodyScrollWidth, width, `body overflow at ${width}px`)
     assert(metrics.productionAedarCahier, `Expected the production AEDAR Cahier at ${width}px`)
+    assert.deepEqual(metrics.productionClassComposition, { indexed: true, plainPresentation: true },
+      `Production must retain presentation="plain" together with layoutVariant="indexed-sections" at ${width}px`)
     assert.deepEqual(metrics.populatedSections, ['aedar-car-overview', 'aedar-diversity-loss', 'aedar-access', 'aedar-equipment-profile', 'aedar-equipment-explorer'])
     assert.deepEqual(metrics.errorOrLoadingShells, [], `Loading/error shells are not populated content at ${width}px`)
     assert(metrics.figureCount >= 7, `Expected real figures at ${width}px, got ${metrics.figureCount}`)
@@ -242,112 +257,31 @@ try {
       assert.equal(metrics.paperContentInset.borderLeft, 0, `Mobile paper should have no framing border at ${width}px`)
       assert.equal(metrics.paperContentInset.borderRight, 0, `Mobile paper should have no framing border at ${width}px`)
       assert.equal(metrics.paperContentInset.boxShadow, 'none', `Mobile paper should have no outside sheet shadow at ${width}px`)
+      for (let leftIndex = 0; leftIndex < metrics.pageHeadingParts.length; leftIndex += 1) {
+        for (const rightPart of metrics.pageHeadingParts.slice(leftIndex + 1)) {
+          const leftPart = metrics.pageHeadingParts[leftIndex]
+          const overlaps = leftPart.x < rightPart.right - 1 && leftPart.right > rightPart.x + 1 &&
+            leftPart.y < rightPart.bottom - 1 && leftPart.bottom > rightPart.y + 1
+          assert(!overlaps,
+            `Indexed mobile page heading metadata overlaps at ${width}px: ${JSON.stringify(metrics.pageHeadingParts)}`)
+        }
+      }
     } else {
-      assert(metrics.paperRect.width <= 1202,
-        `Desktop paper exceeds the 1200px content cap at ${width}px: ${JSON.stringify(metrics.paperRect)}`)
       assert(metrics.paperRect.x > 0 && metrics.paperRect.right < width,
         `Desktop outer site ground should remain visible around the paper at ${width}px: ${JSON.stringify(metrics.paperRect)}`)
       assert(Math.abs(metrics.paperRect.center - metrics.pagesRect.center) <= 1,
         `Desktop paper should be centered in its sheet column at ${width}px: ${JSON.stringify(metrics)}`)
       if (width === 1440) assert(metrics.paperRect.width > 1000,
         `Paper was unnecessarily reduced when the available desktop column is narrower than 1200px: ${JSON.stringify(metrics.paperRect)}`)
-      if (width > 1440) assert(Math.abs(metrics.paperRect.width - 1200) <= 2,
-        `Wide desktop paper should reach the 1200px cap at ${width}px: ${JSON.stringify(metrics.paperRect)}`)
+      assert(Math.abs(metrics.paperRect.width - metrics.pagesRect.width) <= 1,
+        `Desktop paper should retain the indexed baseline's full sheet-column width at ${width}px: ${JSON.stringify(metrics)}`)
+      if (width === 1800) assert(metrics.paperRect.width > 1200,
+        `Wide desktop paper must remain on the 560419f indexed baseline, not a mobile-PR width cap: ${JSON.stringify(metrics.paperRect)}`)
     }
 
     if ([320, 360, 390, 760, 1440, 1800].includes(width)) {
       await page.locator('#section-aedar-car-overview').scrollIntoViewIfNeeded()
       await page.screenshot({ path: resolve(evidenceDir, `issue823-aedar-populated-${width}.png`), fullPage: false })
-    }
-
-    // Exercise the other shared renderer presentation against this exact
-    // populated production DOM. The product currently ships only Mobilité;
-    // switching the presentation class isolates the shared plain-layout CSS
-    // without inventing a second data source or claiming another public route.
-    await page.evaluate(async () => {
-      const cahier = document.querySelector('.cahier')
-      cahier.classList.remove('cahier--indexed-sections')
-      cahier.classList.add('cahier--sans-grille')
-      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
-    })
-    const plainMetrics = await page.evaluate(() => {
-      const geometry = (selector) => {
-        const el = document.querySelector(selector)
-        if (!el) return null
-        const box = el.getBoundingClientRect()
-        return { x: box.x, right: box.right, width: box.width, center: box.x + box.width / 2 }
-      }
-      const paper = document.querySelector('.cahier-page')
-      const source = document.querySelector('.sources-page')
-      const paperStyle = getComputedStyle(paper)
-      const sourceStyle = getComputedStyle(source)
-      return {
-        reader: geometry('.cahier-reader'),
-        pages: geometry('.cahier-pages'),
-        paper: geometry('.cahier-page'),
-        content: geometry('.cahier-page .page-main'),
-        mobileIndex: geometry('.mobile-index'),
-        paperInset: {
-          left: parseFloat(paperStyle.paddingLeft),
-          right: parseFloat(paperStyle.paddingRight),
-          borderLeft: parseFloat(paperStyle.borderLeftWidth),
-          borderRight: parseFloat(paperStyle.borderRightWidth),
-          boxShadow: paperStyle.boxShadow,
-        },
-        source: geometry('.sources-page'),
-        sourceContent: geometry('.sources-page .sources-list'),
-        sourceInset: {
-          left: parseFloat(sourceStyle.paddingLeft),
-          right: parseFloat(sourceStyle.paddingRight),
-          borderLeft: parseFloat(sourceStyle.borderLeftWidth),
-          borderRight: parseFloat(sourceStyle.borderRightWidth),
-          boxShadow: sourceStyle.boxShadow,
-        },
-        hasContent: Boolean(paper.querySelector('.page-main h2')?.textContent?.trim()) &&
-          Boolean(source.querySelector('.sources-list')?.textContent?.trim()),
-        documentScrollWidth: document.documentElement.scrollWidth,
-        bodyScrollWidth: document.body.scrollWidth,
-      }
-    })
-    if ([320, 390, 760, 1440, 1800].includes(width)) {
-      await page.screenshot({ path: resolve(evidenceDir, `issue823-plain-populated-${width}.png`), fullPage: false })
-    }
-    if ([320, 390, 760, 1440].includes(width)) {
-      await page.locator('.sources-page').scrollIntoViewIfNeeded()
-      await page.screenshot({ path: resolve(evidenceDir, `issue823-plain-sources-${width}.png`), fullPage: false })
-    }
-    assert(plainMetrics.hasContent, `Plain shared variant must retain page and source content at ${width}px`)
-    assert.equal(plainMetrics.documentScrollWidth, width,
-      `Plain shared variant document overflow at ${width}px: ${JSON.stringify(plainMetrics)}`)
-    assert.equal(plainMetrics.bodyScrollWidth, width, `Plain shared variant body overflow at ${width}px`)
-    if (width <= 760) {
-      assert(Math.abs(plainMetrics.reader.x) <= 1 && Math.abs(plainMetrics.reader.width - width) <= 1,
-        `Plain mobile reader must span the viewport at ${width}px: ${JSON.stringify(plainMetrics.reader)}`)
-      for (const [name, paper, inset, content] of [
-        ['page', plainMetrics.paper, plainMetrics.paperInset, plainMetrics.content],
-        ['source page', plainMetrics.source, plainMetrics.sourceInset, plainMetrics.sourceContent],
-      ]) {
-        assert(paper && content, `Plain ${name} and content must render at ${width}px`)
-        assert(Math.abs(paper.x) <= 1 && Math.abs(paper.width - width) <= 1,
-          `Plain mobile ${name} must be edge-to-edge at ${width}px: ${JSON.stringify(paper)}`)
-        assert(Math.abs(content.x - paper.x - 16) <= 1,
-          `Plain mobile ${name} content must have a 16px inset at ${width}px: ${JSON.stringify({ paper, content, inset })}`)
-        assert(Math.abs(paper.right - content.right - 16) <= 1,
-          `Plain mobile ${name} content must end 16px inside the paper at ${width}px: ${JSON.stringify({ paper, content, inset })}`)
-        assert.equal(inset.left, 16, `Plain mobile ${name} left inset at ${width}px: ${JSON.stringify(inset)}`)
-        assert.equal(inset.right, 16, `Plain mobile ${name} right inset at ${width}px: ${JSON.stringify(inset)}`)
-        assert.equal(inset.borderLeft, 0, `Plain mobile ${name} border at ${width}px`)
-        assert.equal(inset.borderRight, 0, `Plain mobile ${name} border at ${width}px`)
-        assert.equal(inset.boxShadow, 'none', `Plain mobile ${name} shadow at ${width}px`)
-      }
-      assert(Math.abs(plainMetrics.mobileIndex.x) <= 1 && Math.abs(plainMetrics.mobileIndex.width - width) <= 1,
-        `Plain mobile index should align with the viewport at ${width}px: ${JSON.stringify(plainMetrics.mobileIndex)}`)
-    } else {
-      assert(plainMetrics.paper.width <= 1202 && plainMetrics.source.width <= 1202,
-        `Plain desktop page/source should honor the 1200px cap at ${width}px: ${JSON.stringify(plainMetrics)}`)
-      assert(Math.abs(plainMetrics.paper.center - plainMetrics.pages.center) <= 1 &&
-        Math.abs(plainMetrics.source.center - plainMetrics.pages.center) <= 1,
-      `Plain desktop page/source should center within their column at ${width}px: ${JSON.stringify(plainMetrics)}`)
     }
 
     let oversizedMutationDetected = false
@@ -368,7 +302,6 @@ try {
     reports.push({
       width,
       ...metrics,
-      plainLayout: plainMetrics,
       oversizedMutationDetected,
       readCalls: {
         mobilityFacts: readCalls.mobilityFacts,

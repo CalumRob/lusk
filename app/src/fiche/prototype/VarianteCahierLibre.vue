@@ -1637,9 +1637,6 @@ onBeforeUnmount(() => {
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; }
 }
-@media (min-width: 761px) {
-  .cahier-pages { width: 100%; max-width: var(--content-max-width); justify-self: center; }
-}
 @media (prefers-reduced-motion: reduce) {
   .cahier * { scroll-behavior: auto !important; }
 }
