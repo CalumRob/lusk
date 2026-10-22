@@ -1,5 +1,7 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
 import type { Theme } from './types'
+import { readSemanticBatch } from './semanticResourceClient'
+import type { SemanticReadItem } from './semanticResourceClient'
 /** Every canonical theme is acquired (active priority, then background warm-up) unless an owner-owned flow handles it. */
 export const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux', 'mobilite']
 export type ThemeSelectionMember = { territory_type: 'commune' | 'epci' | 'departement' | 'region'; territory_id: string }
@@ -143,8 +145,47 @@ async function postThemeResponse(url: string, body: Record<string, unknown>, exp
 
 export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
   selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
+  if (theme === 'demographie') return acquireDemographieFacts(type, id)
   const path = `/api/territories/${encodeURIComponent(type)}/${encodeURIComponent(id)}/themes/${theme}/facts`
   return postThemeResponse(path, { theme_id: theme, ...(selection === undefined ? {} : { selection }) }, theme)
+}
+
+/** Démographie reads its producer-declared indicator resources and typed reading
+ * together on the semantic API's atomic snapshot. Resource names are supplied
+ * by the published read-model metadata, not a parallel UI registry. */
+export async function acquireDemographieFacts(type: string, id: string): Promise<ThemeResponse> {
+  const [metadataResponse, catalogueResponse] = await Promise.all([
+    fetch('/data/theme_demographie.json'), fetch('/api/resources'),
+  ])
+  if (!metadataResponse.ok || !catalogueResponse.ok) throw new Error('Démographie producer resource discovery unavailable')
+  const [metadata, catalogue]: [unknown, unknown] = await Promise.all([metadataResponse.json(), catalogueResponse.json()])
+  if (!isRecord(metadata) || !isRecord(metadata.indicator_pages) || !isRecord(catalogue) ||
+      catalogue.contract !== 'semantic-resource-catalogue-v1' || !Array.isArray(catalogue.resources) ||
+      !Array.isArray(metadata.subgroups)) throw new Error('Démographie resource metadata is incompatible')
+  const target = { kind: 'territory' as const, type: type as SemanticReadItem['target']['type'], id }
+  const declaredIndicators = Object.keys(metadata.indicator_pages)
+  const readingResources = catalogue.resources.filter((resource): resource is Record<string, unknown> =>
+    isRecord(resource) && resource.resource_kind === 'typed_reading' && resource.theme_id === 'demographie' &&
+      typeof resource.resource_id === 'string' && Array.isArray(resource.fields) &&
+      ['status', 'source_id', 'vintage_id'].every((field) => resource.fields.includes(field)))
+  if (!declaredIndicators.length || readingResources.length !== 1) throw new Error('Démographie resource declarations are incomplete')
+  const items: SemanticReadItem[] = [
+    ...declaredIndicators.map((resource) => ({ resource, target, intent: { kind: 'facts' as const } })),
+    ...readingResources.map((resource) => {
+      const subgroup = metadata.subgroups.find((group: unknown) => isRecord(group) && isRecord(group.reading) &&
+        isRecord(group.figure) && group.figure.indicator === 'evolution_1968')
+      if (!isRecord(subgroup)) throw new Error('Démographie reading group is undeclared')
+      return { resource: String(resource.resource_id), target, coordinates: { groupe: [String(subgroup.key)] },
+        intent: { kind: 'facts' as const } }
+    }),
+  ]
+  const values = await readSemanticBatch(items)
+  return { contract: 'semantic-demographie-v1', theme_id: 'demographie', territory: { territory_id: id, territory_type: type },
+    resource_results: values }
+}
+
+function isRecord(value: unknown): value is Record<string, any> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export function acquireThemeComparison(type: string, id: string, theme: ThemeKey,

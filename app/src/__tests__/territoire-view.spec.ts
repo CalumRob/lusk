@@ -912,7 +912,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // Le POST actif est prioritaire puis le registre complet est réchauffé.
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(5)
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
@@ -924,7 +924,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // Revisite du thème acquis : le cache détient l'entrée, aucune nouvelle requête.
     await router.replace({ query: { theme: 'habitat' } })
     await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(5)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
     wrapper.unmount()
   })
@@ -1211,7 +1211,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // Le POST actif part en premier, puis tout le registre se réchauffe.
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/economie/facts')
     expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'economie' })
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(5)
     expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
     const ecoActivites = model.themes.economie!.indicators.find((row: any) => row.territoire === '22001' && row.key === 'eco_activites')!
     expect(api.indicators).toContainEqual(expect.objectContaining({ indicator_id: 'eco_activites', value: ecoActivites.value }))
@@ -1238,7 +1238,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // entier — Économie comprise — en arrière-plan.
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
     expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(5)
     await router.replace({ query: { theme: 'economie' } }); await flushPromises()
     // La bascule vers un thème réchauffé n'acquiert rien : le cache détient l'entrée.
     expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
@@ -1271,7 +1271,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model)); expect(wrapper.get('[role="alert"]').text()).toContain('Les indicateurs')
     await flushPromises()
     // L'échec du thème actif ne suspend pas le réchauffage d'arrière-plan.
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(5)
     await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises()
     expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(2)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive'); wrapper.unmount()
@@ -1831,7 +1831,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(alert.text()).toContain('indicateurs de ce thème ne sont pas disponibles')
     await flushPromises()
     // Le réchauffage d'arrière-plan part malgré l'échec du thème actif.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(5)
     await alert.get('button').trigger('click'); await flushPromises()
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(2)
     expect(wrapper.get('[role="tabpanel"]').text()).toContain('Source API milieux')
@@ -2101,7 +2101,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     // Programmes prioritaire ; le registre réchauffe aussi Mobilité.
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(5)
     expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
     // La visite réutilise le POST chaud ; la revisite n'en déclenche aucun.
     await router.replace({ query: { theme: 'mobilite' } }); await flushPromises()
@@ -2131,11 +2131,11 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     await flushPromises()
     expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
     // 22001 : Programmes résolu + quatre réchauffages résolus + Habitat pendants.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22001/themes/'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22001/themes/'))).toHaveLength(5)
     // Navigation vers 22002 pendant que le réchauffage 22001/Habitat pends.
     await router.push('/territoire/commune/22002'); await flushPromises()
     // Le nouveau territoire acquiert son actif puis réchauffe SON registre.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22002/themes/'))).toHaveLength(6)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22002/themes/'))).toHaveLength(5)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     // La réponse tardive de 22001/Habitat arrive APRÈS la navigation : elle ne
     // peut peupler que sa propre clé de cache.

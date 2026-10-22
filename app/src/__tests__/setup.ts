@@ -1,4 +1,9 @@
-import { vi } from 'vitest'
+import { beforeEach, vi } from 'vitest'
+
+// Tests that do not cover API cutover explicitly exercise the documented
+// incumbent opt-out. Cutover specs opt in with vi.stubEnv('...', '1'); the
+// production build itself leaves this variable unset and therefore enabled.
+beforeEach(() => vi.stubEnv('VITE_THEME_ACQUISITION_API', '0'))
 
 /**
  * The app never fetches in tests: happy-dom's real fetch tries the network

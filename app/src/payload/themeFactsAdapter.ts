@@ -158,11 +158,11 @@ function histoireHabitatDeSql(
 }
 
 function histoireDemographieDeSql(target: { territoire: string; type: TerritoireType }, reading: Row): Histoire {
-  for (const key of ['groupe', 'story_key', 'salience_reason', 'status', 'classification', 'rate_unit']) {
+  for (const key of ['groupe', 'story_key', 'salience_reason', 'status', 'classification']) {
     if (!texteNonVide(reading[key])) throw new Error(`Lecture SQL Démographie invalide : ${key}`)
   }
   if (reading.story_key !== 'trajectoire-demographique' || reading.salience_reason !== 'defaut' ||
-      reading.rate_unit !== '‰' || !(reading.periode === null || text(reading.periode))) {
+      !(reading.periode === null || text(reading.periode))) {
     throw new Error('Lecture SQL Démographie non déclarée')
   }
   for (const key of ['solde_naturel', 'solde_migratoire', 'taux_solde_naturel', 'taux_solde_migratoire']) {
@@ -527,6 +527,66 @@ export function themeFactsRowsFromApi(
     throw new Error(`Thème non migré vers l’acquisition paresseuse : ${theme}`)
   }
   return { indicateurs, histoires }
+}
+
+/** Convert the semantic resource response shapes for Démographie into the
+ * existing fiche fact grammar. Each resource keeps its own publication version;
+ * this deliberately does not synthesize a theme-wide token. */
+export function demographieRowsFromSemantic(response: unknown, target: { territoire: string; type: TerritoireType }, producerMetadata: unknown): ThemeFactsRows {
+  if (!isRecord(response) || response.contract !== 'semantic-demographie-v1' || response.theme_id !== 'demographie' ||
+      !Array.isArray(response.resource_results) || response.resource_results.length < 5) {
+    throw new Error('Réponse sémantique Démographie incomplète')
+  }
+  const byResource = new Map<string, Row>()
+  for (const result of response.resource_results) {
+    if (!isRecord(result) || !texteNonVide(result.resource) || !isRecord(result.target) ||
+        result.target.id !== target.territoire || result.target.type !== target.type) {
+      throw new Error('Résultat de ressource Démographie invalide')
+    }
+    byResource.set(result.resource, result)
+  }
+  if (!isRecord(producerMetadata) || !isRecord(producerMetadata.sources) || !isRecord(producerMetadata.source_records)) {
+    throw new Error('Métadonnées producteur Démographie absentes')
+  }
+  const indicators: Row[] = []
+  const indicatorMetadata: Row[] = []
+  for (const [resource, data] of byResource) {
+    if (resource === 'demographie_selected_reading') continue
+    if (Array.isArray(data.observations)) {
+      // Declared profile: keep each detail × sex coordinate, including nulls.
+      for (const observation of rows(data.observations, `${resource}.observations`)) {
+        indicators.push({ indicator_id: resource, value: observation.value, status: observation.status,
+          unit: isRecord(data.descriptor) ? data.descriptor.unit : undefined,
+          dimensions: { detail: observation.detail, sex: observation.sex }, sources: observation.sources })
+      }
+      if (isRecord(data.descriptor)) indicatorMetadata.push({ indicator_id: resource, axes: data.descriptor.axes })
+    } else {
+      indicators.push({ indicator_id: resource, value: data.value, status: data.status,
+        unit: data.unit, dimensions: {}, sources: data.sources })
+    }
+  }
+  const readingData = byResource.get('demographie_selected_reading')
+  if (!readingData || !Array.isArray(readingData.facts) || readingData.facts.length !== 1) {
+    throw new Error('Lecture typée Démographie absente ou ambiguë')
+  }
+  const reading = rows(readingData.facts, 'demographie_selected_reading.facts')[0]!
+  if (!texteNonVide(reading.source_id) || !texteNonVide(reading.vintage_id)) throw new Error('Provenance de lecture Démographie incomplète')
+  // Resource contract exposes source identities and vintage IDs. Human source
+  // metadata remains owned by the atomic territory model's producer metadata.
+  const sourceKey = producerMetadata.sources.evolution_1968
+  const sourceMeta = typeof sourceKey === 'string' ? producerMetadata.source_records[sourceKey] : null
+  const vintage = isRecord(sourceMeta) && Array.isArray(sourceMeta.vintages)
+    ? sourceMeta.vintages.find((item) => isRecord(item) && item.id === reading.vintage_id) : null
+  if (!isRecord(sourceMeta) || !isRecord(vintage)) throw new Error('Millésime producteur Démographie introuvable')
+  const source = { source_id: reading.source_id, name: sourceMeta.dataset, version: vintage.version,
+    reference_date: vintage.dateReference, publication_date: vintage.datePublication ?? null }
+  const envelope = { contract: 'theme-facts-v1', theme_id: 'demographie',
+    territory: { territory_id: target.territoire, territory_type: target.type },
+    indicators, indicator_metadata: indicatorMetadata, named_reference_evidence: [],
+    readings: [{ ...reading, provenance: { source_id: source.source_id, source_name: source.name,
+      source_version: source.version, source_reference_date: null, source_publication_date: null } }] }
+  const converted = themeFactsRowsFromApi('demographie', envelope, target)
+  return converted
 }
 
 /** Valide la réponse comparison-only d'un thème contre la sélection demandée —

@@ -45,7 +45,7 @@ import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFac
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { chargerCohortesScalaires, indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
+import { demographieRowsFromSemantic, histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ComparisonScopeKind, SelectedTrajectoryComparison, TerritoryFacts } from '@/fiche/content/territoryFacts'
@@ -331,7 +331,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       if (cancelled || request !== sequenceAcquisition) return
       const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
       if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
-      const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type }, {
+      const rows = themeActif === 'demographie'
+        ? demographieRowsFromSemantic(acquired.focal, { territoire: code, type: target.type },
+          model.themes.demographie?.metadata)
+        : themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type }, {
         epci: target.epci, region: payloadModele.value?.territoires.find((item) => item.type === 'region')?.territoire ?? null,
       })
        faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, acquired.focal.comparison,
