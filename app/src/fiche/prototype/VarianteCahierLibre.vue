@@ -1350,9 +1350,47 @@ onBeforeUnmount(() => {
 .cahier--sans-grille .page-margin { right: 18px; left: auto; }
 @media (min-width: 761px) {
   .cahier--sans-grille .cahier-page { padding-top: 0; }
+  .cahier--sans-grille { --cahier-page-right-inset: var(--cahier-page-left-inset); }
+  .cahier--sans-grille .cahier-page,
+  .cahier--sans-grille .sources-page { background-image: none; }
   .page-layout--sticky { display: grid; grid-template-columns: minmax(0, 1fr) var(--page-right-inset); margin-right: calc(0px - var(--page-right-inset)); }
+  .cahier--sans-grille .page-layout--sticky { grid-template-columns: minmax(0, 1fr); margin-right: 0; }
   .page-layout--sticky .page-heading { position: sticky; top: var(--cahier-sticky-top); z-index: var(--z-page-header); padding-top: var(--space-12); background-color: var(--paper); }
   .page-layout--sticky > .page-margin { position: sticky; top: var(--cahier-sticky-top); grid-column: 2; grid-row: 1; align-self: start; width: 72px; margin-right: 18px; margin-left: auto; padding-top: var(--space-12); right: auto; left: auto; }
+  .cahier--sans-grille .page-layout--sticky > .page-margin {
+    position: static;
+    order: -1;
+    grid-column: 1;
+    grid-row: 1;
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: var(--space-4);
+    width: auto;
+    margin: 0 0 var(--space-4);
+    padding: 0;
+    text-align: left;
+  }
+  .cahier--sans-grille .page-layout--sticky .page-number,
+  .cahier--sans-grille .sources-page > .page-margin .page-number {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: 12px;
+  }
+  .cahier--sans-grille .page-layout--sticky .margin-sources {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 6px 12px;
+  }
+  .cahier--sans-grille .page-layout--sticky .margin-sources .margin-label { text-align: left; }
+  .cahier--sans-grille .sources-page > .page-margin {
+    position: static;
+    width: auto;
+    margin: 0 0 var(--space-4);
+    text-align: left;
+  }
 }
 .page-number { display: grid; gap: 3px; color: var(--red); font-family: var(--font-ui); font-size: 29px; line-height: .9; }
 .page-number span, .page-number small { color: var(--muted); font-family: var(--font-ui); font-size: 9px; }

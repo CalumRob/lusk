@@ -15,6 +15,7 @@ process.env.VITE_THEME_ACQUISITION_API = '1'
 const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
 const evidenceDir = resolve(process.env.CAHIER_EVIDENCE_DIR ?? join(tmpdir(), 'lusk-mobile-cahier-evidence'))
+const capturePhase = process.env.CAHIER_CAPTURE_PHASE ?? 'after'
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
 const server = await createServer({
   configFile: resolve(appRoot, 'vite.config.ts'),
@@ -157,7 +158,7 @@ try {
         const el = document.querySelector(selector)
         if (!el) return null
         const box = el.getBoundingClientRect()
-        return { x: box.x, right: box.right, width: box.width, center: box.x + box.width / 2 }
+        return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width, center: box.x + box.width / 2 }
       }
       const paperStyle = getComputedStyle(document.querySelector('.cahier-page'))
       const figures = [...cahier.querySelectorAll('figure')].filter((el) => {
@@ -262,12 +263,54 @@ try {
 
     // Exercise the other shared renderer presentation against this exact
     // populated production DOM. The product currently ships only Mobilité;
-    // switching the presentation class isolates the shared plain-layout CSS
-    // without inventing a second data source or claiming another public route.
+    // switching the presentation class isolates the shared plain-layout CSS.
+    // Add the plain template's marginalia structure so the browser can verify
+    // its desktop flow; the mounted component test separately checks the real
+    // conditional template branch and metadata semantics.
     await page.evaluate(async () => {
       const cahier = document.querySelector('.cahier')
       cahier.classList.remove('cahier--indexed-sections')
       cahier.classList.add('cahier--sans-grille')
+      const scopeNode = (node) => {
+        for (const attr of cahier.attributes) {
+          if (attr.name.startsWith('data-v-')) node.setAttribute(attr.name, '')
+        }
+        return node
+      }
+      const layout = document.querySelector('.cahier-page .page-layout')
+      const margin = scopeNode(document.createElement('aside'))
+      margin.className = 'page-margin'
+      margin.setAttribute('aria-label', 'Informations marginales')
+      const pageNumber = scopeNode(document.createElement('div'))
+      pageNumber.className = 'page-number'
+      const pageLabel = scopeNode(document.createElement('span'))
+      pageLabel.textContent = 'page'
+      const pageCount = scopeNode(document.createElement('small'))
+      pageCount.textContent = '/14'
+      pageNumber.append(pageLabel, document.createTextNode(' 01'), pageCount)
+      const sourceList = scopeNode(document.createElement('div'))
+      sourceList.className = 'margin-sources'
+      const sourceLabel = scopeNode(document.createElement('span'))
+      sourceLabel.className = 'margin-label'
+      sourceLabel.textContent = 'Sources'
+      const sourceLink = scopeNode(document.createElement('a'))
+      sourceLink.href = '#sources-title'
+      sourceLink.textContent = document.querySelector('.sources-list dt')?.textContent?.trim() || 'Source'
+      sourceList.append(sourceLabel, sourceLink)
+      margin.append(pageNumber, sourceList)
+      layout.append(margin)
+
+      const sourcePage = document.querySelector('.sources-page')
+      const sourceMargin = scopeNode(document.createElement('div'))
+      sourceMargin.className = 'page-margin'
+      sourceMargin.setAttribute('aria-hidden', 'true')
+      const sourcePageNumber = scopeNode(document.createElement('div'))
+      sourcePageNumber.className = 'page-number'
+      const endLabel = scopeNode(document.createElement('span'))
+      endLabel.textContent = 'fin'
+      sourcePageNumber.append(endLabel, document.createTextNode(' ·'))
+      sourceMargin.append(sourcePageNumber)
+      sourcePage.insertBefore(sourceMargin, sourcePage.firstChild)
       await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
     })
     const plainMetrics = await page.evaluate(() => {
@@ -275,12 +318,13 @@ try {
         const el = document.querySelector(selector)
         if (!el) return null
         const box = el.getBoundingClientRect()
-        return { x: box.x, right: box.right, width: box.width, center: box.x + box.width / 2 }
+        return { x: box.x, y: box.y, right: box.right, bottom: box.bottom, width: box.width, center: box.x + box.width / 2 }
       }
       const paper = document.querySelector('.cahier-page')
       const source = document.querySelector('.sources-page')
       const paperStyle = getComputedStyle(paper)
       const sourceStyle = getComputedStyle(source)
+      const layoutStyle = getComputedStyle(document.querySelector('.cahier-page .page-layout'))
       return {
         reader: geometry('.cahier-reader'),
         pages: geometry('.cahier-pages'),
@@ -303,6 +347,16 @@ try {
           borderRight: parseFloat(sourceStyle.borderRightWidth),
           boxShadow: sourceStyle.boxShadow,
         },
+        plainPaperBackground: paperStyle.backgroundImage,
+        plainSourceBackground: sourceStyle.backgroundImage,
+        pageLayoutColumns: layoutStyle.gridTemplateColumns,
+        pageMarginPosition: getComputedStyle(document.querySelector('.cahier-page .page-margin')).position,
+        pageMargin: geometry('.cahier-page .page-margin'),
+        pageNumber: document.querySelector('.cahier-page .page-margin .page-number')?.textContent?.replace(/\s+/g, ' ').trim(),
+        pageMarginSource: document.querySelector('.cahier-page .margin-sources a')?.textContent?.trim(),
+        sourceMarginPosition: getComputedStyle(document.querySelector('.sources-page > .page-margin')).position,
+        sourceMargin: geometry('.sources-page > .page-margin'),
+        sourceEndMarker: document.querySelector('.sources-page > .page-margin .page-number')?.textContent?.replace(/\s+/g, ' ').trim(),
         hasContent: Boolean(paper.querySelector('.page-main h2')?.textContent?.trim()) &&
           Boolean(source.querySelector('.sources-list')?.textContent?.trim()),
         documentScrollWidth: document.documentElement.scrollWidth,
@@ -310,11 +364,11 @@ try {
       }
     })
     if ([320, 390, 760, 1440, 1800].includes(width)) {
-      await page.screenshot({ path: resolve(evidenceDir, `issue823-plain-populated-${width}.png`), fullPage: false })
+      await page.screenshot({ path: resolve(evidenceDir, `issue824-plain-${capturePhase}-${width}.png`), fullPage: false })
     }
     if ([320, 390, 760, 1440].includes(width)) {
       await page.locator('.sources-page').scrollIntoViewIfNeeded()
-      await page.screenshot({ path: resolve(evidenceDir, `issue823-plain-sources-${width}.png`), fullPage: false })
+      await page.screenshot({ path: resolve(evidenceDir, `issue824-plain-sources-${capturePhase}-${width}.png`), fullPage: false })
     }
     assert(plainMetrics.hasContent, `Plain shared variant must retain page and source content at ${width}px`)
     assert.equal(plainMetrics.documentScrollWidth, width,
@@ -348,6 +402,27 @@ try {
       assert(Math.abs(plainMetrics.paper.center - plainMetrics.pages.center) <= 1 &&
         Math.abs(plainMetrics.source.center - plainMetrics.pages.center) <= 1,
       `Plain desktop page/source should center within their column at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert.equal(plainMetrics.plainPaperBackground, 'none',
+        `Plain desktop paper must not draw the right-hand margin rule at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert.equal(plainMetrics.plainSourceBackground, 'none',
+        `Plain desktop source paper must not draw the right-hand margin rule at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert(plainMetrics.paperInset.right <= 70 && plainMetrics.sourceInset.right <= 70,
+        `Plain desktop paper/source must not reserve the wide right gutter at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert.equal(plainMetrics.pageLayoutColumns.trim().split(/\s+/).length, 1,
+        `Plain desktop content must not retain a right-rail grid track at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert(plainMetrics.content.width >= plainMetrics.paper.width - 150,
+        `Plain desktop content should use the freed right-side space at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert.equal(plainMetrics.pageMarginPosition, 'static',
+        `Plain desktop page metadata should reflow in-flow at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert(plainMetrics.pageMargin.x < plainMetrics.content.right &&
+        plainMetrics.pageMargin.right <= plainMetrics.paper.right + 1 &&
+        plainMetrics.pageMargin.y < plainMetrics.content.y,
+      `Plain desktop page metadata should sit compactly before content, not in a rail, at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert.equal(plainMetrics.sourceMarginPosition, 'static',
+        `Plain desktop source-page marker should reflow in-flow at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert(plainMetrics.pageNumber.includes('01') && plainMetrics.pageNumber.includes('/14') &&
+        plainMetrics.pageMarginSource && plainMetrics.sourceEndMarker.includes('fin'),
+      `Plain desktop page/source metadata must remain present after reflow at ${width}px: ${JSON.stringify(plainMetrics)}`)
     }
 
     let oversizedMutationDetected = false
