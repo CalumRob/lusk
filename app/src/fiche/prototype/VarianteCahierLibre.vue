@@ -1589,8 +1589,8 @@ onBeforeUnmount(() => {
     grid-template-columns: 1fr;
     padding: 0 0 64px;
   }
-  .cahier--indexed-sections .cahier-page,
-  .cahier--indexed-sections .sources-page {
+  .cahier-page,
+  .sources-page {
     --page-left-inset: 16px;
     --page-right-inset: 16px;
     padding-inline: 16px;
@@ -1602,7 +1602,7 @@ onBeforeUnmount(() => {
   .mobile-index a { display: flex; gap: 12px; padding: 8px 0; color: var(--muted); font-size: 14px; text-decoration: none; }
   .page-margin { width: 58px; }
   .cahier--sans-grille .page-margin { right: 10px; left: auto; }
-  .cahier-page, .sources-page { --page-left-inset: 116px; --page-right-inset: 28px; padding-right: var(--page-right-inset); padding-left: var(--page-left-inset); }
+  .cahier-page, .sources-page { --page-left-inset: 16px; --page-right-inset: 16px; padding-right: 16px; padding-left: 16px; }
 }
 @media (max-width: 600px) {
   .cahier--sans-grille { --cahier-page-left-inset: 18px; --cahier-page-right-inset: 96px; }
@@ -1618,7 +1618,7 @@ onBeforeUnmount(() => {
   .cover-bottom-rule { margin-top: 52px; }
   .cahier-reader { padding: 0 0 88px; }
   .cahier-pages { gap: 64px; }
-  .cahier-page, .sources-page { --page-left-inset: 96px; --page-right-inset: 18px; padding: 36px var(--page-right-inset) 40px var(--page-left-inset); }
+  .cahier-page, .sources-page { --page-left-inset: 16px; --page-right-inset: 16px; padding: 36px 16px 40px; }
   .page-margin { position: static; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; width: auto; margin: 0 0 var(--space-5); text-align: left; }
   .margin-sources { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 6px 12px; }
   .margin-sources .margin-label { flex-basis: 100%; text-align: right; }

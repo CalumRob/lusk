@@ -231,6 +231,10 @@ try {
         `Mobile paper must be edge-to-edge at ${width}px: ${JSON.stringify(metrics.paperRect)}`)
       assert(Math.abs(metrics.contentRect.x - metrics.paperRect.x - 16) <= 1,
         `Mobile content should start 16px inside the paper at ${width}px: ${JSON.stringify(metrics)}`)
+      assert(Math.abs(metrics.paperRect.right - metrics.contentRect.right - 16) <= 1,
+        `Mobile content should end 16px inside the paper at ${width}px: ${JSON.stringify(metrics)}`)
+      assert(Math.abs(metrics.indexRect.x) <= 1 && Math.abs(metrics.indexRect.width - width) <= 1,
+        `Mobile index should align with the viewport at ${width}px: ${JSON.stringify(metrics.indexRect)}`)
       assert.equal(metrics.paperContentInset.left, 16,
         `Mobile paper content inset should be 16px at ${width}px: ${JSON.stringify(metrics.paperContentInset)}`)
       assert.equal(metrics.paperContentInset.right, 16,
@@ -256,6 +260,96 @@ try {
       await page.screenshot({ path: resolve(evidenceDir, `issue823-aedar-populated-${width}.png`), fullPage: false })
     }
 
+    // Exercise the other shared renderer presentation against this exact
+    // populated production DOM. The product currently ships only Mobilité;
+    // switching the presentation class isolates the shared plain-layout CSS
+    // without inventing a second data source or claiming another public route.
+    await page.evaluate(async () => {
+      const cahier = document.querySelector('.cahier')
+      cahier.classList.remove('cahier--indexed-sections')
+      cahier.classList.add('cahier--sans-grille')
+      await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+    })
+    const plainMetrics = await page.evaluate(() => {
+      const geometry = (selector) => {
+        const el = document.querySelector(selector)
+        if (!el) return null
+        const box = el.getBoundingClientRect()
+        return { x: box.x, right: box.right, width: box.width, center: box.x + box.width / 2 }
+      }
+      const paper = document.querySelector('.cahier-page')
+      const source = document.querySelector('.sources-page')
+      const paperStyle = getComputedStyle(paper)
+      const sourceStyle = getComputedStyle(source)
+      return {
+        reader: geometry('.cahier-reader'),
+        pages: geometry('.cahier-pages'),
+        paper: geometry('.cahier-page'),
+        content: geometry('.cahier-page .page-main'),
+        mobileIndex: geometry('.mobile-index'),
+        paperInset: {
+          left: parseFloat(paperStyle.paddingLeft),
+          right: parseFloat(paperStyle.paddingRight),
+          borderLeft: parseFloat(paperStyle.borderLeftWidth),
+          borderRight: parseFloat(paperStyle.borderRightWidth),
+          boxShadow: paperStyle.boxShadow,
+        },
+        source: geometry('.sources-page'),
+        sourceContent: geometry('.sources-page .sources-list'),
+        sourceInset: {
+          left: parseFloat(sourceStyle.paddingLeft),
+          right: parseFloat(sourceStyle.paddingRight),
+          borderLeft: parseFloat(sourceStyle.borderLeftWidth),
+          borderRight: parseFloat(sourceStyle.borderRightWidth),
+          boxShadow: sourceStyle.boxShadow,
+        },
+        hasContent: Boolean(paper.querySelector('.page-main h2')?.textContent?.trim()) &&
+          Boolean(source.querySelector('.sources-list')?.textContent?.trim()),
+        documentScrollWidth: document.documentElement.scrollWidth,
+        bodyScrollWidth: document.body.scrollWidth,
+      }
+    })
+    if ([320, 390, 760, 1440, 1800].includes(width)) {
+      await page.screenshot({ path: resolve(evidenceDir, `issue823-plain-populated-${width}.png`), fullPage: false })
+    }
+    if ([320, 390, 760, 1440].includes(width)) {
+      await page.locator('.sources-page').scrollIntoViewIfNeeded()
+      await page.screenshot({ path: resolve(evidenceDir, `issue823-plain-sources-${width}.png`), fullPage: false })
+    }
+    assert(plainMetrics.hasContent, `Plain shared variant must retain page and source content at ${width}px`)
+    assert.equal(plainMetrics.documentScrollWidth, width,
+      `Plain shared variant document overflow at ${width}px: ${JSON.stringify(plainMetrics)}`)
+    assert.equal(plainMetrics.bodyScrollWidth, width, `Plain shared variant body overflow at ${width}px`)
+    if (width <= 760) {
+      assert(Math.abs(plainMetrics.reader.x) <= 1 && Math.abs(plainMetrics.reader.width - width) <= 1,
+        `Plain mobile reader must span the viewport at ${width}px: ${JSON.stringify(plainMetrics.reader)}`)
+      for (const [name, paper, inset, content] of [
+        ['page', plainMetrics.paper, plainMetrics.paperInset, plainMetrics.content],
+        ['source page', plainMetrics.source, plainMetrics.sourceInset, plainMetrics.sourceContent],
+      ]) {
+        assert(paper && content, `Plain ${name} and content must render at ${width}px`)
+        assert(Math.abs(paper.x) <= 1 && Math.abs(paper.width - width) <= 1,
+          `Plain mobile ${name} must be edge-to-edge at ${width}px: ${JSON.stringify(paper)}`)
+        assert(Math.abs(content.x - paper.x - 16) <= 1,
+          `Plain mobile ${name} content must have a 16px inset at ${width}px: ${JSON.stringify({ paper, content, inset })}`)
+        assert(Math.abs(paper.right - content.right - 16) <= 1,
+          `Plain mobile ${name} content must end 16px inside the paper at ${width}px: ${JSON.stringify({ paper, content, inset })}`)
+        assert.equal(inset.left, 16, `Plain mobile ${name} left inset at ${width}px: ${JSON.stringify(inset)}`)
+        assert.equal(inset.right, 16, `Plain mobile ${name} right inset at ${width}px: ${JSON.stringify(inset)}`)
+        assert.equal(inset.borderLeft, 0, `Plain mobile ${name} border at ${width}px`)
+        assert.equal(inset.borderRight, 0, `Plain mobile ${name} border at ${width}px`)
+        assert.equal(inset.boxShadow, 'none', `Plain mobile ${name} shadow at ${width}px`)
+      }
+      assert(Math.abs(plainMetrics.mobileIndex.x) <= 1 && Math.abs(plainMetrics.mobileIndex.width - width) <= 1,
+        `Plain mobile index should align with the viewport at ${width}px: ${JSON.stringify(plainMetrics.mobileIndex)}`)
+    } else {
+      assert(plainMetrics.paper.width <= 1202 && plainMetrics.source.width <= 1202,
+        `Plain desktop page/source should honor the 1200px cap at ${width}px: ${JSON.stringify(plainMetrics)}`)
+      assert(Math.abs(plainMetrics.paper.center - plainMetrics.pages.center) <= 1 &&
+        Math.abs(plainMetrics.source.center - plainMetrics.pages.center) <= 1,
+      `Plain desktop page/source should center within their column at ${width}px: ${JSON.stringify(plainMetrics)}`)
+    }
+
     let oversizedMutationDetected = false
     if (width === 390) {
       // Prove the assertion is live: deliberately inject the reported-scale
@@ -274,6 +368,7 @@ try {
     reports.push({
       width,
       ...metrics,
+      plainLayout: plainMetrics,
       oversizedMutationDetected,
       readCalls: {
         mobilityFacts: readCalls.mobilityFacts,
