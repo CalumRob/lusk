@@ -510,6 +510,23 @@ test_that("AEDAR publication refuses territory identities absent from the servin
     "do not exist in published territory_reference")
 })
 
+test_that("AEDAR publication refuses an entire expected territory omitted from the snapshot", {
+  inputs <- make_aedar_test_inputs()
+  second_commune <- inputs$commune
+  second_commune$code_insee <- "22002"
+  second_commune$nom_commune <- "Essai deuxième"
+  inputs$commune <- rbind(inputs$commune,second_commune)
+  projection <- project_aedar_aggregates(inputs,make_aedar_test_typequ_metadata())
+  reference_pairs <- data.frame(territory_type=c("commune","commune","epci","departement","region"),
+    territory_id=c("22001","22002","200000001","22","53"),stringsAsFactors=FALSE)
+  incomplete_facts <- projection$facts[projection$facts$territory_id!="22002",,drop=FALSE]
+
+  expect_silent(validate_aedar_territory_reference(projection$facts,reference_pairs))
+  expect_equal(length(unique(incomplete_facts$territory_id[incomplete_facts$territory_type=="commune"])),1L)
+  expect_error(validate_aedar_territory_reference(incomplete_facts,reference_pairs),
+    "incomplete relative to published territory_reference")
+})
+
 test_that("canonical Parquet round trip keeps source columns, null/zero and provenance", {
   levels <- AEDAR_AGGREGATE_LEVELS
   inputs <- make_aedar_test_inputs()
@@ -575,6 +592,8 @@ test_that("AEDAR operator uses canonical aggregate and bounded comparison manife
   expect_match(script,"project_aedar_comparison_publication\\(")
   expect_match(script,"project_aedar_comparison_publication\\(projection,density_source")
   source <- paste(readLines(testthat::test_path("..","..","R","aedar_aggregates.R"),warn=FALSE),collapse="\n")
+  expect_match(source,'identical\\(Sys.getenv\\("LUSK_AEDAR_PUBLISH_PROGRESS"\\),"1"\\)')
+  expect_false(grepl('LUSK_AEDAR_PUBLISH_PROGRESS="1"',script,fixed=TRUE))
   expect_match(source,"typequ_codes=typequ,calculate_content_version=FALSE")
   expect_match(source,"aedar_comparison_manifest.json")
   expect_match(script,"publish_aedar_comparisons\\(comparison_projection,con\\)")

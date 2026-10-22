@@ -75,7 +75,7 @@ def test_aedar_r_publication_is_read_through_bounded_http():
         pub.execute("""INSERT INTO territory_reference(territory_id,territory_type,name) VALUES
           ('22001','commune','Fixture commune'),('200000001','epci','Fixture EPCI'),
           ('22','departement','Fixture département'),('53','region','Fixture région'),
-          ('mob-1','commune','Mobility unchanged')""")
+          ('22002','commune','Fixture unchanged')""")
         pub.execute("UPDATE territory_reference SET density_class_code=CASE WHEN territory_id='22001' THEN '1' ELSE '2' END,density_class_label='Fixture density',epci_id='200000001' WHERE territory_type='commune'")
         pub.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES('territory_reference','fixture-ref-v1',5)")
         # Seed a one-row legacy generation on the pre-040 schema. Its marker
@@ -143,7 +143,7 @@ inputs <- list(
   epci=make('epci','epci_code','200000001','nom_epci','Fixture EPCI'),
   departement=make('departement','code_departement','22','nom_departement','Fixture département'),
   region=make('region','code_region','53','nom_region','Fixture région'))
-inputs$commune <- rbind(inputs$commune,make('commune','code_insee','mob-1','nom_commune','Mobility unchanged'))
+inputs$commune <- rbind(inputs$commune,make('commune','code_insee','22002','nom_commune','Fixture unchanged'))
 i <- seq_len(nrow(source_axis))
 hierarchy <- readr::read_csv(file.path("tests","testthat","fixtures","aedar-typequ-hierarchy-2025.csv"),
   col_types=readr::cols(.default=readr::col_character()),trim_ws=FALSE,show_col_types=FALSE)
@@ -173,6 +173,22 @@ stage("end-aggregate-publish",rows=first$row_count)
 second <- publish_aedar_aggregates(projection,con)
 stage("end-aggregate-noop",changed=second$changed)
 stopifnot(first$changed,!second$changed,first$row_count==5L * nrow(source_axis))
+incomplete_projection <- projection
+incomplete_projection$facts <- incomplete_projection$facts[incomplete_projection$facts$territory_id!='22002',,drop=FALSE]
+incomplete_facts_before <- DBI::dbGetQuery(con,"SELECT * FROM aedar_territorial_aggregate ORDER BY territory_type,territory_id,typequ")
+incomplete_marker_before <- DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territorial_aggregate'")
+incomplete_dataset_before <- DBI::dbGetQuery(con,"SELECT * FROM source_dataset WHERE source_id='aedar_bretagne'")
+incomplete_vintage_before <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id='aedar_bretagne' AND vintage_id='2026-v1'")
+incomplete_reference_before <- DBI::dbGetQuery(con,"SELECT * FROM territory_reference ORDER BY territory_id")
+incomplete_error <- tryCatch({publish_aedar_aggregates(incomplete_projection,con); NULL},error=function(e) e)
+stopifnot(inherits(incomplete_error,"error"),
+  grepl("incomplete relative to published territory_reference",conditionMessage(incomplete_error)),
+  identical(incomplete_facts_before,DBI::dbGetQuery(con,"SELECT * FROM aedar_territorial_aggregate ORDER BY territory_type,territory_id,typequ")),
+  identical(incomplete_marker_before,DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territorial_aggregate'")),
+  identical(incomplete_dataset_before,DBI::dbGetQuery(con,"SELECT * FROM source_dataset WHERE source_id='aedar_bretagne'")),
+  identical(incomplete_vintage_before,DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHERE source_id='aedar_bretagne' AND vintage_id='2026-v1'")),
+  identical(incomplete_reference_before,DBI::dbGetQuery(con,"SELECT * FROM territory_reference ORDER BY territory_id")))
+stage("incomplete-territory-snapshot-rejected-no-mutation",facts=TRUE,marker=TRUE,source_clocks=TRUE,reference=TRUE)
 reader <- DBI::dbConnect(RPostgres::Postgres(),host=Sys.getenv('PGHOST'),port=as.integer(Sys.getenv('PGPORT')),
   dbname=Sys.getenv('PGDATABASE'),user=Sys.getenv('PGREADUSER'))
 on.exit(DBI::dbDisconnect(reader),add=TRUE)
@@ -188,14 +204,14 @@ read_committed_view <- function(connection) DBI::dbGetQuery(connection,"SELECT p
   FROM table_publication p WHERE p.table_name='aedar_territorial_aggregate'")
 old_snapshot <- read_committed_view(reader)
 replacement_inputs <- inputs
-replacement_inputs$commune <- replacement_inputs$commune[replacement_inputs$commune$code_insee!='mob-1',,drop=FALSE]
-replacement_commune <- make('commune','code_insee','mob-2','nom_commune','Mobility replacement')
+replacement_inputs$commune <- replacement_inputs$commune[replacement_inputs$commune$code_insee!='22002',,drop=FALSE]
+replacement_commune <- make('commune','code_insee','22003','nom_commune','Fixture replacement')
 replacement_inputs$commune <- rbind(replacement_inputs$commune,replacement_commune)
 replacement_inputs$commune$count_5_walk_max[replacement_inputs$commune$code_insee=='22001' & replacement_inputs$commune$TYPEQU=='A135'] <- 0.9876543210987654
 replacement_projection <- project_aedar_aggregates(replacement_inputs,metadata)
-DBI::dbExecute(con,"DELETE FROM territory_reference WHERE territory_type='commune' AND territory_id='mob-1'")
+DBI::dbExecute(con,"DELETE FROM territory_reference WHERE territory_type='commune' AND territory_id='22002'")
 DBI::dbExecute(con,"INSERT INTO territory_reference(territory_id,territory_type,name,epci_id,density_class_code,density_class_label)
-  VALUES('mob-2','commune','Mobility replacement','200000001','2','Fixture density')")
+  VALUES('22003','commune','Fixture replacement','200000001','2','Fixture density')")
 DBI::dbExecute(con,"UPDATE table_publication SET content_version='fixture-ref-v2',row_count=5,published_at=now() WHERE table_name='territory_reference'")
 failure_facts_before <- DBI::dbGetQuery(con,"SELECT * FROM aedar_territorial_aggregate ORDER BY territory_type,territory_id,typequ")
 failure_marker_before <- DBI::dbGetQuery(con,"SELECT * FROM table_publication WHERE table_name='aedar_territorial_aggregate'")
@@ -204,8 +220,8 @@ failure_vintage_before <- DBI::dbGetQuery(con,"SELECT * FROM source_vintage WHER
 failure_reference_before <- DBI::dbGetQuery(con,"SELECT * FROM territory_reference ORDER BY territory_id")
 DBI::dbExecute(con,"CREATE FUNCTION reject_aedar_after_reconcile() RETURNS trigger LANGUAGE plpgsql AS $$ BEGIN
   IF NEW.source_id='aedar_bretagne' THEN
-    IF NOT EXISTS(SELECT 1 FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id='mob-2') OR
-       EXISTS(SELECT 1 FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id='mob-1') THEN
+    IF NOT EXISTS(SELECT 1 FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id='22003') OR
+       EXISTS(SELECT 1 FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id='22002') THEN
       RAISE EXCEPTION 'fact reconciliation did not complete before injected marker failure';
     END IF;
     RAISE EXCEPTION 'forced rollback after upserts, obsolete-key deletion and source metadata update';
@@ -253,10 +269,10 @@ reconciled_rows <- DBI::dbGetQuery(fresh_reader,"SELECT territory_id,typequ,type
   identity->>'code_insee' AS identity_code,n_addresses,n_observed,coverage_status,
   jsonb_typeof(measures->'count_5_walk_share') AS share_json_type,measures->>'count_5_walk_max' AS max_value,
   source_id,vintage_id,source_url,licence,attribution,reference_date::text AS reference_date,publication_date::text AS publication_date,xmin::text AS row_xmin
-  FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id IN ('22001','mob-1','mob-2')
+  FROM aedar_territorial_aggregate WHERE territory_type='commune' AND territory_id IN ('22001','22002','22003')
     AND typequ IN ('A135','A104') ORDER BY territory_id,typequ")
 a135_metadata <- metadata[metadata$TYPEQU=='A135',,drop=FALSE]
-stopifnot(nrow(reconciled_rows)==4L,all(reconciled_rows$territory_id!='mob-1'),
+stopifnot(nrow(reconciled_rows)==4L,all(reconciled_rows$territory_id!='22002'),
   all(reconciled_rows$typequ_label[reconciled_rows$typequ=='A135']=="COUR D'ASSISES"),
   all(reconciled_rows$typequ_hierarchy_label[reconciled_rows$typequ=='A135']=='COUR D’ASSISES'),
   all(reconciled_rows$typequ_description[reconciled_rows$typequ=='A135']=='Description 1'),
@@ -271,7 +287,7 @@ stopifnot(nrow(reconciled_rows)==4L,all(reconciled_rows$territory_id!='mob-1'),
   all(reconciled_rows$vintage_id=='2026-v1'),all(reconciled_rows$licence=='ODbL'),
   all(reconciled_rows$source_url==projection$source$url),all(reconciled_rows$attribution==projection$source$attribution),
   all(is.na(reconciled_rows$reference_date)),all(reconciled_rows$publication_date=='2026-09-30'),
-  reconciled_rows$identity_code[reconciled_rows$territory_id=='mob-2' & reconciled_rows$typequ=='A135']=='mob-2',
+  reconciled_rows$identity_code[reconciled_rows$territory_id=='22003' & reconciled_rows$typequ=='A135']=='22003',
   abs(as.numeric(reconciled_rows$max_value[reconciled_rows$territory_id=='22001' & reconciled_rows$typequ=='A135'])-0.9876543210987654)<1e-12,
   reconciled_rows$row_xmin[reconciled_rows$territory_id=='22001' & reconciled_rows$typequ=='A104']==old_snapshot$unchanged_xmin)
     replacement_noop <- publish_aedar_aggregates(projection,con)
@@ -291,7 +307,7 @@ refs <- DBI::dbGetQuery(con,"SELECT territory_type,territory_id,epci_id,density_
 make_density_source <- function(walk_value=1) {
   registry <- registre_classes_densite(); codes <- as.character(registry[['classe_densite_code']])
   labels <- as.character(registry[['classe_densite_libelle_public']])
-  crosswalk <- data.frame(code_insee=c('22001','mob-2',paste0('unused-',seq_len(length(codes)-2L)+2L)),
+  crosswalk <- data.frame(code_insee=c('22001','22003',paste0('unused-',seq_len(length(codes)-2L)+2L)),
     density_class_code=codes,density_class_label=labels,stringsAsFactors=FALSE)
   density_ref <- list(crosswalk=crosswalk,identity=MANIFEST_CLASSES_DENSITE[['id']][[1]],
     sha256=MANIFEST_CLASSES_DENSITE[['sha256']][[1]],vintage=MANIFEST_CLASSES_DENSITE[['vintage']][[1]])
@@ -442,7 +458,7 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                             "target":{"kind":"territory","type":level,"id":territory_id},**item})
                     changed = reconciliation_read("commune","22001",coordinates={"typequ":["A135"]},
                         fields=["measures.count_5_walk_max"],intent={"kind":"facts"})
-                    replacement = reconciliation_read("commune","mob-2",coordinates={"typequ":["A135"]},
+                    replacement = reconciliation_read("commune","22003",coordinates={"typequ":["A135"]},
                         fields=["measures.count_5_walk_max"],intent={"kind":"facts"})
                     assert changed.status_code==200,changed.text
                     assert changed.json()["facts"][0]["measures"]["count_5_walk_max"]==pytest.approx(0.9876543210987654,rel=1e-15)
@@ -530,7 +546,7 @@ compare_db_projection('groups','aedar_comparison_group',group_columns,group_orde
                 assert semantic_facts.status_code == 200, semantic_facts.text
                 assert semantic_facts.json()["facts"][0]["measures"] == {
                     "count_5_walk_max": pytest.approx(0.9876543210987654, rel=1e-15)}
-                replacement_fact = semantic_read("commune", "mob-2", coordinates={"typequ": ["A135"]},
+                replacement_fact = semantic_read("commune", "22003", coordinates={"typequ": ["A135"]},
                     fields=["measures.count_5_walk_max"], intent={"kind": "facts"})
                 assert replacement_fact.status_code == 200, replacement_fact.text
                 assert replacement_fact.json()["facts"][0]["measures"]["count_5_walk_max"] == pytest.approx(0.12345678901234566, rel=1e-15)

@@ -748,10 +748,18 @@ validate_aedar_territory_reference <- function(facts, reference_pairs) {
   required <- c("territory_type","territory_id")
   if (!all(required %in% names(facts)) || !all(required %in% names(reference_pairs)))
     stop("AEDAR territory reference validation requires typed identity pairs",call.=FALSE)
-  projected <- unique(facts[required]); published <- unique(reference_pairs[required])
+  projected <- unique(facts[required])
+  published <- unique(reference_pairs[required])
+  published <- published[published$territory_type %in% AEDAR_AGGREGATE_LEVELS,,drop=FALSE]
   key <- function(x) paste(x$territory_type,x$territory_id,sep="\r")
   if (any(!key(projected) %in% key(published)))
     stop("AEDAR territory type/id pairs do not exist in published territory_reference",call.=FALSE)
+  # The producer reads all four canonical level resources and validates every
+  # territory's dense TYPEQU axis. Match that complete source universe to the
+  # independently published reference so omitting a whole territory cannot
+  # masquerade as a valid smaller snapshot.
+  if (any(!key(published) %in% key(projected)))
+    stop("AEDAR territory snapshot is incomplete relative to published territory_reference",call.=FALSE)
   invisible(TRUE)
 }
 
