@@ -34,7 +34,8 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
                     or not set(d[3]).issubset(facet[2]) or facet[3] != d[8]):
                 raise HTTPException(503, 'Profile scalar dependency is stale or incompatible')
     if not include_cells:
-        return [{'indicator': d[0], 'comparison_scalar': d[8]} for d in descriptors
+        return [{'indicator': d[0], 'comparison_scalar': d[8],
+                 'reference_content_version': marker[1]} for d in descriptors
                 if include_all_descriptors or d[8]], marker[0]
     ids = [d[0] for d in descriptors]
     axes_by_id = {}
@@ -98,7 +99,8 @@ def focal_profiles(conn, territory_type, territory_id, *, theme_id=None, indicat
                 cell['value'] = cells[(detail,sex)][2]
             cell_results.append(cell)
         profiles.append({'indicator': d[0], 'label': d[1], 'unit': d[2], 'denominator_semantics': d[10], 'descriptor_version': d[4],
-            'content_version': marker[0], 'comparison_scalar': d[8], 'required_scalar_version': d[9],
+            'content_version': marker[0], 'reference_content_version': marker[1],
+            'comparison_scalar': d[8], 'required_scalar_version': d[9],
             'allowed_levels': d[3],
             'comparison_point': None if d[8] else {'detail': d[5], 'sex': d[6], 'direction': d[7], 'unit': comparison_unit},
             'axes': [{'name': name, 'key': key, 'label': label, 'order': order,

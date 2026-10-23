@@ -40,6 +40,8 @@ def test_resource_item_rejects_open_query_shapes_before_storage_access():
         validate_resource_item(unknown_axis, catalogue)
     with pytest.raises(ValueError, match="field"):
         validate_resource_item(unknown_field, catalogue)
+    with pytest.raises(ValidationError, match="fields"):
+        ResourceReadItem.model_validate({**base, "fields": []})
     assert validate_resource_item(valid_axis, catalogue).resource_id == "structure_age"
 
 

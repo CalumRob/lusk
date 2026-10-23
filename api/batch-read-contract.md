@@ -35,6 +35,16 @@ activity evidence, Milieux source absences, and Milieux source bindings are sepa
 named evidence fields; they do not copy or recompute scalar/series measurements.
 Publication markers and territory-reference versions are checked during batch
 preflight, and typed rows/evidence are read on the shared repeatable-read snapshot.
+Focal scalar, profile, and typed-reading responses expose their publication's
+`reference_content_version`; scalar facts also expose the existing
+`scalar_descriptor.descriptor_version`. Typed-reading responses include that
+publication token, and each returned fact and selected evidence row carries its own
+`source` object (`source_id`, name, `vintage_id`, version, reference date, publication date).
+Clocks are resolved from that exact source/vintage pair or the row's published
+Milieux provenance binding; nullable dates remain `null`. Démographie also returns
+its published descriptor version, rate unit, and declared source clock. Habitat
+returns its existing selected-reading descriptor and linked publication version.
+Missing or incompatible required lineage fails closed with `503`.
 
 ## Bounded territory cohorts
 

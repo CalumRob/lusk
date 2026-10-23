@@ -802,6 +802,8 @@ def read_membership_cohort(conn, item, resource, descriptor, cohort, fields):
 
 
 def _typed_reading_context(conn, item, resource, cohort):
+    from api.typed_reading_snapshots import typed_reading_descriptor
+
     reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
     marker = conn.execute("""SELECT content_version,row_count,reference_content_version
         FROM table_publication WHERE table_name=%s""", (resource.publication_table,)).fetchone()
@@ -817,6 +819,7 @@ def _typed_reading_context(conn, item, resource, cohort):
             FROM selected_reading_publication WHERE theme_id=%s""", (resource.theme_id,)).fetchone()
         if not owner_marker or tuple(owner_marker) != tuple(marker):
             raise HTTPException(503, "Selected-reading publication is inconsistent")
+    descriptor = typed_reading_descriptor(conn, resource, marker)
 
     side_markers = []
     for side in resource.side_relations:
@@ -830,29 +833,37 @@ def _typed_reading_context(conn, item, resource, cohort):
              side.get("same_content_version_as") == "resource") and side_marker[0] != marker[0]):
             raise HTTPException(503, "Typed-reading evidence publication is incompatible")
         side_markers.append(side_marker)
-    return marker, side_markers
+    return marker, side_markers, descriptor
 
 
-def _typed_cohort_filters(item, cohort, group_filter=True):
-    clauses = ["territory_type=%s", "territory_id=ANY(%s::text[])"]
+def _typed_cohort_filters(item, cohort, group_filter=True, alias=None):
+    prefix = f"{alias}." if alias else ""
+    clauses = [f"{prefix}territory_type=%s", f"{prefix}territory_id=ANY(%s::text[])"]
     params = [cohort.territory_type, cohort.territory_ids]
     groups = (item.coordinates or {}).get("groupe")
     if group_filter and groups:
-        clauses.append("groupe=ANY(%s::text[])")
+        clauses.append(f"{prefix}groupe=ANY(%s::text[])")
         params.append(groups)
     return " AND ".join(clauses), tuple(params)
 
 
 def preflight_typed_reading_cohort(conn, item, resource, cohort, work_budget):
-    marker, side_markers = _typed_reading_context(conn, item, resource, cohort)
+    if (resource.publication_table in {"demographic_typed_reading", "selected_reading"}
+            and work_budget - len(cohort.members) < 1):
+        raise HTTPException(413, "Resource request exceeds the bounded work limit")
+    marker, side_markers, descriptor = _typed_reading_context(conn, item, resource, cohort)
     integrity_work = validate_typed_reading_integrity(
         conn, resource, marker, side_markers, work_budget - len(cohort.members))
+    if descriptor and descriptor.get("source"):
+        integrity_work += 1
+    if len(cohort.members) + integrity_work > work_budget:
+        raise HTTPException(413, "Resource request exceeds the bounded work limit")
     remaining = work_budget - len(cohort.members) - integrity_work
     where, params = _typed_cohort_filters(item, cohort)
     facts = _bounded_count(conn, f"SELECT 1 FROM {resource.storage_relation} WHERE {where}",
         params, remaining, "Cohort typed-reading facts exceed the bounded work limit")
     work = len(cohort.members) + integrity_work + facts
-    selected = set(item.fields or resource.fields)
+    selected = set(resource.fields) if item.fields is None else set(item.fields)
     for side in resource.side_relations:
         # Evidence is only read/charged when selected, except absence evidence,
         # which must always be checked against its primary reading.
@@ -863,23 +874,56 @@ def preflight_typed_reading_cohort(conn, item, resource, cohort, work_budget):
         count = _bounded_count(conn, f"SELECT 1 FROM {side['storage_relation']} WHERE {where}",
             params, remaining, "Cohort typed-reading evidence exceeds the bounded work limit")
         work += count
+        if side["storage_relation"] == "milieux_reading_source" and side["field"] in selected:
+            remaining = work_budget - work
+            clauses = ["b.territory_type=%s", "b.territory_id=ANY(%s::text[])",
+                       "b.field_key IN ('artif_m2_par_habitant','artif_m3_par_habitant')"]
+            params = [cohort.territory_type, cohort.territory_ids]
+            groups = (item.coordinates or {}).get("groupe")
+            if groups:
+                clauses.append("b.groupe=ANY(%s::text[])")
+                params.append(groups)
+            lineage = _bounded_count(conn, """SELECT 1 FROM milieux_reading_source b
+                JOIN series_observation_provenance a ON a.dataset_id=b.dataset_id
+                  AND a.indicator_id='artif_par_habitant' AND a.territory_id=b.territory_id
+                  AND a.axis_value=b.axis_value WHERE """ + " AND ".join(clauses), tuple(params),
+                remaining, "Cohort typed-reading source lineage exceeds the bounded work limit")
+            work += lineage
     return max(1, work)
 
 
 def read_typed_reading_cohort(conn, item, resource, cohort):
-    marker, _side_markers = _typed_reading_context(conn, item, resource, cohort)
-    selected = set(item.fields or resource.fields)
-    evidence_fields = {side["field"] for side in resource.side_relations}
-    fact_fields = [field for field in resource.fields if field in selected and field not in evidence_fields]
+    from api.typed_reading_snapshots import typed_reading_fact_fields
+
+    marker, _side_markers, descriptor = _typed_reading_context(conn, item, resource, cohort)
+    selected = set(resource.fields) if item.fields is None else set(item.fields)
+    fact_fields = typed_reading_fact_fields(resource, item.fields)
     facts_by_member = {member["id"]: [] for member in cohort.members}
     members_with_facts = set()
     if fact_fields:
         where, params = _typed_cohort_filters(item, cohort)
-        cursor = conn.execute(f"SELECT territory_id,{','.join(fact_fields)} FROM {resource.storage_relation} "
-            f"WHERE {where} ORDER BY territory_id,groupe", params)
+        cursor = conn.execute(f"SELECT r.territory_id,{','.join('r.' + field for field in fact_fields)},"
+            "sd.name AS registry_name,sv.version AS registry_version,"
+            "sv.reference_date AS registry_reference_date,sv.publication_date AS registry_publication_date "
+            f"FROM {resource.storage_relation} r LEFT JOIN source_dataset sd ON sd.source_id=r.source_id "
+            "LEFT JOIN source_vintage sv ON sv.source_id=r.source_id AND sv.vintage_id=r.vintage_id "
+            f"WHERE {where} ORDER BY r.territory_id,r.groupe", params)
         for raw in cursor.fetchall():
             members_with_facts.add(raw[0])
-            facts_by_member[raw[0]].append(dict(zip(fact_fields, raw[1:])))
+            fact = dict(zip((*fact_fields, "registry_name", "registry_version",
+                             "registry_reference_date", "registry_publication_date"), raw[1:]))
+            source_id, vintage_id = fact.get("source_id"), fact.get("vintage_id")
+            if not source_id or not vintage_id or not fact["registry_name"] or not fact["registry_version"]:
+                raise HTTPException(503, "Typed-reading source provenance is unavailable")
+            declared_source = descriptor.get("source") if descriptor else None
+            if declared_source and (source_id != declared_source["source_id"] or
+                                    vintage_id != declared_source["vintage_id"]):
+                raise HTTPException(503, "Typed-reading source differs from its published descriptor")
+            fact["source"] = {"source_id": source_id, "name": fact.pop("registry_name"),
+                "vintage_id": vintage_id, "version": fact.pop("registry_version"),
+                "reference_date": fact.pop("registry_reference_date"),
+                "publication_date": fact.pop("registry_publication_date")}
+            facts_by_member[raw[0]].append(fact)
     else:
         where, params = _typed_cohort_filters(item, cohort)
         members_with_facts = {row[0] for row in conn.execute(
@@ -890,16 +934,77 @@ def read_typed_reading_cohort(conn, item, resource, cohort):
         if side["field"] not in selected and side["field"] != "source_absences":
             continue
         side_fields = list(side["fields"])
-        where, params = _typed_cohort_filters(item, cohort, "groupe" in side_fields)
+        where, params = _typed_cohort_filters(item, cohort, "groupe" in side_fields,
+                                               alias="r" if side["storage_relation"] == "milieux_reading_source" else None)
         order = "rank" if "rank" in side_fields else ",".join(side_fields)
-        rows = conn.execute(f"SELECT {','.join(side_fields)} FROM {side['storage_relation']} "
-            f"WHERE {where} ORDER BY {order}", params).fetchall()
+        milieux_bindings = side["storage_relation"] == "milieux_reading_source"
+        revision_select = (",p.source_id AS population_source_id,p.vintage_id AS population_vintage_id,"
+            "p.source_name AS population_source_name,p.source_version AS population_source_version,"
+            "p.reference_date AS population_reference_date,p.publication_date AS population_publication_date,"
+            "s.source_id AS series_source_id,s.vintage_id AS series_vintage_id,"
+            "s.source_name AS series_source_name,s.source_version AS series_source_version,"
+            "s.reference_date AS series_reference_date,s.publication_date AS series_publication_date,"
+            "o.state_role AS observed_state_role,o.observation_period AS observed_period,"
+            "ARRAY(SELECT a.provenance_revision_id FROM series_observation_provenance a "
+            "WHERE a.dataset_id=r.dataset_id AND a.indicator_id='artif_par_habitant' "
+            "AND a.territory_id=r.territory_id AND a.axis_value=r.axis_value "
+            "ORDER BY a.provenance_revision_id) AS registered_revisions"
+            if milieux_bindings else "")
+        revision_joins = (" LEFT JOIN milieux_population_provenance_revision p "
+            "ON p.population_revision_id=r.population_revision_id "
+            "LEFT JOIN series_provenance_revision s ON s.provenance_revision_id=r.provenance_revision_id "
+            "LEFT JOIN series_dataset_observation o ON o.dataset_id=r.dataset_id "
+            "AND o.indicator_id='artif_par_habitant' AND o.territory_id=r.territory_id "
+            "AND o.territory_type=r.territory_type AND o.axis_value=r.axis_value"
+            if milieux_bindings else "")
+        rows = conn.execute(f"SELECT {','.join('r.' + field for field in side_fields)},"
+            "sd.name AS registry_name,sv.version AS registry_version,"
+            "sv.reference_date AS registry_reference_date,sv.publication_date AS registry_publication_date" +
+            revision_select + " "
+            f"FROM {side['storage_relation']} r LEFT JOIN source_dataset sd ON sd.source_id=r.source_id "
+            "LEFT JOIN source_vintage sv ON sv.source_id=r.source_id AND sv.vintage_id=r.vintage_id "
+            + revision_joins + " "
+            f"WHERE {where} ORDER BY " + ",".join("r." + key for key in order.split(",")), params).fetchall()
         by_member = {member["id"]: [] for member in cohort.members}
         for row in rows:
-            evidence = dict(zip(side_fields, row))
+            extras = ["registry_name", "registry_version", "registry_reference_date",
+                      "registry_publication_date"]
+            if milieux_bindings:
+                extras.extend([f"{prefix}_{field}" for prefix in ("population", "series")
+                               for field in ("source_id", "vintage_id", "source_name", "source_version",
+                                             "reference_date", "publication_date")])
+                extras.extend(("observed_state_role", "observed_period", "registered_revisions"))
+            evidence = dict(zip((*side_fields, *extras), row))
+            source_id, vintage_id = evidence.get("source_id"), evidence.get("vintage_id")
+            own_name = evidence.get("source_name") or evidence.get("registry_name")
+            own_version = evidence.get("source_version") or evidence.get("registry_version")
+            if not source_id or not vintage_id or not own_name or not own_version:
+                raise HTTPException(503, "Typed-reading evidence provenance is unavailable")
+            evidence["source"] = {"source_id": source_id, "name": own_name, "vintage_id": vintage_id,
+                "version": own_version,
+                "reference_date": (evidence.get("reference_date") if "reference_date" in evidence
+                                   else evidence.get("registry_reference_date")),
+                "publication_date": (evidence.get("publication_date") if "publication_date" in evidence
+                                      else evidence.get("registry_publication_date"))}
+            for key in ("registry_name", "registry_version", "registry_reference_date",
+                        "registry_publication_date"):
+                evidence.pop(key, None)
             by_member[evidence["territory_id"]].append(evidence)
+        if milieux_bindings:
+            from api.typed_reading_snapshots import validate_milieux_source_bindings
+            all_bindings = [entry for entries in by_member.values() for entry in entries]
+            validate_milieux_source_bindings(conn, all_bindings, marker[2])
         for territory_id, evidence in by_member.items():
             evidence_by_member[territory_id][side["field"]] = evidence
+        if milieux_bindings:
+            for entries in by_member.values():
+                for evidence in entries:
+                    for prefix in ("population", "series"):
+                        for field in ("source_id", "vintage_id", "source_name", "source_version",
+                                      "reference_date", "publication_date"):
+                            evidence.pop(f"{prefix}_{field}", None)
+                    for key in ("observed_state_role", "observed_period", "registered_revisions"):
+                        evidence.pop(key, None)
 
     territories = []
     for member in cohort.members:
@@ -913,6 +1018,7 @@ def read_typed_reading_cohort(conn, item, resource, cohort):
     return {"resource": item.resource, "target": item.target.model_dump(),
         "shape": "typed_reading", "cohort": cohort.envelope(),
         "content_version": marker[0], "reference_content_version": marker[2],
+        **({"descriptor": descriptor} if descriptor is not None else {}),
         "territories": territories}
 
 

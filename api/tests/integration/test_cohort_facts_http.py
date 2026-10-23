@@ -39,6 +39,17 @@ class CohortHTTP:
         payload.pop("id", None)
         return self.client.post("/api/resources/read", json=payload)
 
+    def focal(self, resource, *, territory_id="cohort-c1", territory_type="commune",
+              coordinates=None, fields=None):
+        item = {"resource": resource,
+                "target": {"kind": "territory", "type": territory_type, "id": territory_id},
+                "intent": {"kind": "facts"}}
+        if coordinates is not None:
+            item["coordinates"] = coordinates
+        if fields is not None:
+            item["fields"] = fields
+        return self.client.post("/api/resources/read", json=item)
+
     def batch(self, items):
         return self.client.post("/api/resources/read-batch", json={"items": items})
 
@@ -75,6 +86,9 @@ def cohort_http(canonical_db_env):
             publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('cohort-source','Cohort source')")
             publisher.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
                 VALUES ('cohort-source','cohort-v1','2026','2026-01-01','2026-01-02')""")
+            publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('cohort-evidence-source','Evidence source')")
+            publisher.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+                VALUES ('cohort-evidence-source','cohort-evidence-v1','evidence-2025',NULL,'2025-03-04')""")
 
             publisher.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,
                 comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version)
@@ -162,11 +176,43 @@ def cohort_http(canonical_db_env):
                 territory_id,territory_type,groupe,rank,activity_code,activity_label,lq,
                 establishment_count,park_share,source_id,vintage_id)
                 VALUES ('cohort-c1','commune','sante-et-taille',1,'A01','Agriculture',2.5,
-                    12,0.2,'cohort-source','cohort-v1')""")
+                    12,0.2,'cohort-evidence-source','cohort-evidence-v1')""")
             publisher.execute("""INSERT INTO table_publication(
                 table_name,content_version,row_count,reference_content_version)
                 VALUES ('economy_typed_reading','cohort-economy-v1',2,'cohort-reference-v1'),
                        ('economy_activity_evidence','cohort-economy-evidence-v1',1,'cohort-reference-v1')""")
+
+            publisher.execute("""INSERT INTO demographic_reading_descriptor(
+                singleton,descriptor_version,source_id,vintage_id,rate_unit)
+                VALUES (true,'cohort-demographic-v1','cohort-source','cohort-v1','‰/an')""")
+            publisher.execute("""INSERT INTO demographic_typed_reading(
+                territory_id,territory_type,groupe,story_key,salience_reason,periode,
+                solde_naturel,solde_migratoire,taux_solde_naturel,taux_solde_migratoire,
+                classification,status,source_id,vintage_id)
+                VALUES ('cohort-c1','commune','trajectoire-demographique','histoire-naturel','source','2025',
+                    10,20,0.01,0.02,'balanced','measured','cohort-source','cohort-v1'),
+                       ('cohort-c2','commune','trajectoire-demographique','histoire-naturel','source',
+                    NULL,NULL,NULL,NULL,NULL,NULL,'unavailable','cohort-source','cohort-v1')""")
+            publisher.execute("""INSERT INTO table_publication(
+                table_name,content_version,row_count,reference_content_version)
+                VALUES ('demographic_typed_reading','cohort-demographic-v1',2,'cohort-reference-v1')""")
+
+            publisher.execute("""INSERT INTO selected_reading_descriptor(
+                theme_id,descriptor_version,source_id,vintage_id,linked_content_version)
+                VALUES ('habitat','cohort-habitat-v1','cohort-source','cohort-v1','linked-dpe-v1')""")
+            publisher.execute("""INSERT INTO selected_reading_publication(
+                theme_id,content_version,reference_content_version,row_count)
+                VALUES ('habitat','cohort-habitat-v1','cohort-reference-v1',2)""")
+            publisher.execute("""INSERT INTO habitat_typed_reading(
+                territory_id,territory_type,groupe,story_key,salience_reason,classification,
+                part_passoires,part_abc,n_dpe,status,source_id,vintage_id)
+                VALUES ('cohort-c1','commune','etat-energetique-du-parc','diagnostics','source',
+                    'energivore',0.2,0.3,12,'measured','cohort-source','cohort-v1'),
+                       ('cohort-c2','commune','etat-energetique-du-parc','diagnostics','source',
+                    NULL,NULL,NULL,4,'suppressed','cohort-source','cohort-v1')""")
+            publisher.execute("""INSERT INTO table_publication(
+                table_name,content_version,row_count,reference_content_version)
+                VALUES ('selected_reading','cohort-habitat-v1',2,'cohort-reference-v1')""")
 
             publisher.execute("""INSERT INTO milieux_typed_reading(
                 territory_id,territory_type,groupe,story_key,salience_reason,periode_pop,periode_artif,
@@ -179,11 +225,45 @@ def cohort_http(canonical_db_env):
                 reference_date,publication_date,revision_hash)
                 VALUES ('cohort-milieux-population','cohort-source','cohort-v1','Cohort source',
                     'Population','2026','2026-01-01','2026-01-02','cohort-milieux-hash')""")
+            publisher.execute("""INSERT INTO series_dataset_publication(
+                dataset_id,content_version,reference_content_version,row_count)
+                VALUES ('cohort_artif_states','cohort-artif-v1','cohort-reference-v1',2)""")
+            publisher.execute("""INSERT INTO series_dataset_descriptor(
+                dataset_id,indicator_id,axis_kind,axis_values,completeness,label,unit,direction,
+                allowed_levels,descriptor_version)
+                VALUES ('cohort_artif_states','artif_par_habitant','state_role',ARRAY['M2','M3'],
+                    'dense_complete','Artificialisation par habitant','m²/hab.','none',
+                    ARRAY['commune'],'cohort-artif-desc-v1')""")
+            publisher.execute("""INSERT INTO series_provenance_revision(
+                provenance_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,
+                reference_date,publication_date,revision_hash)
+                VALUES ('cohort-artif-revision','cohort-source','cohort-v1','Cohort source',
+                    'Artificialisation','2026','2026-01-01','2026-01-02','cohort-artif-hash')""")
+            publisher.execute("""INSERT INTO series_dataset_observation(
+                dataset_id,indicator_id,territory_id,territory_type,axis_value,state_role,
+                observation_period,value,status)
+                VALUES ('cohort_artif_states','artif_par_habitant','cohort-c1','commune','M2','M2',
+                    '2021',10,'measured'),
+                       ('cohort_artif_states','artif_par_habitant','cohort-c1','commune','M3','M3',
+                    '2021',12,'measured')""")
+            publisher.execute("""INSERT INTO series_observation_provenance
+                VALUES ('cohort_artif_states','artif_par_habitant','cohort-c1','M2','cohort-artif-revision'),
+                       ('cohort_artif_states','artif_par_habitant','cohort-c1','M3','cohort-artif-revision')""")
             publisher.execute("""INSERT INTO milieux_reading_source(
                 territory_id,territory_type,groupe,field_key,source_id,vintage_id,source_name,source_version,
-                observation_period,population_revision_id)
+                reference_date,publication_date,observation_period,population_revision_id)
                 VALUES ('cohort-c1','commune','artificialisation','population','cohort-source','cohort-v1',
-                    'Cohort source','2026','2020','cohort-milieux-population')""")
+                    'Cohort source','2026','2026-01-01','2026-01-02','2020','cohort-milieux-population')""")
+            publisher.execute("""INSERT INTO milieux_reading_source(
+                territory_id,territory_type,groupe,field_key,source_id,vintage_id,source_name,source_version,
+                reference_date,publication_date,observation_period,dataset_id,dataset_content_version,
+                state_role,axis_value,provenance_revision_id)
+                VALUES ('cohort-c1','commune','artificialisation','artif_m2_par_habitant',
+                    'cohort-source','cohort-v1','Cohort source','2026','2026-01-01','2026-01-02',
+                    '2021','cohort_artif_states','cohort-artif-v1','M2','M2','cohort-artif-revision'),
+                       ('cohort-c1','commune','artificialisation','artif_m3_par_habitant',
+                    'cohort-source','cohort-v1','Cohort source','2026','2026-01-01','2026-01-02',
+                    '2021','cohort_artif_states','cohort-artif-v1','M3','M3','cohort-artif-revision')""")
             publisher.execute("""INSERT INTO milieux_reading_absence(
                 territory_id,territory_type,reason,source_id,vintage_id,source_snapshot_sha256)
                 VALUES ('cohort-c2','commune','source_record_absent','cohort-source','cohort-v1',%s),
@@ -361,6 +441,7 @@ def test_economy_typed_reading_cohort_preserves_status_and_ranked_evidence(cohor
     assert response.status_code == 200, response.text
     body = response.json()
     assert body["content_version"] == "cohort-economy-v1"
+    assert body["reference_content_version"] == "cohort-reference-v1"
     assert [item["territory"]["id"] for item in body["territories"]] == ["cohort-c1", "cohort-c2"]
     assert (body["territories"][0]["facts"][0]["status"],
             body["territories"][0]["facts"][0]["source_id"],
@@ -369,7 +450,11 @@ def test_economy_typed_reading_cohort_preserves_status_and_ranked_evidence(cohor
     assert body["territories"][0]["ranked_activities"] == [{
         "territory_id": "cohort-c1", "territory_type": "commune", "groupe": "sante-et-taille",
         "rank": 1, "activity_code": "A01", "activity_label": "Agriculture", "lq": 2.5,
-        "establishment_count": 12, "park_share": 0.2, "source_id": "cohort-source", "vintage_id": "cohort-v1",
+        "establishment_count": 12, "park_share": 0.2,
+        "source_id": "cohort-evidence-source", "vintage_id": "cohort-evidence-v1",
+        "source": {"source_id": "cohort-evidence-source", "name": "Evidence source",
+            "vintage_id": "cohort-evidence-v1", "version": "evidence-2025",
+            "reference_date": None, "publication_date": "2025-03-04"},
     }]
     assert body["territories"][1]["facts"][0]["status"] == "unavailable"
     assert body["territories"][1]["ranked_activities"] == []
@@ -386,18 +471,34 @@ def test_milieux_cohort_keeps_explicit_source_absence_separate_from_sparse_facts
     body = response.json()
     assert body["content_version"] == "cohort-milieux-v1"
     assert [item["territory"]["id"] for item in body["territories"]] == ["cohort-c1", "cohort-c2"]
-    assert body["territories"][0]["source_bindings"][0]["field_key"] == "population"
-    assert body["territories"][0]["source_bindings"][0]["population_revision_id"] == "cohort-milieux-population"
-    assert body["territories"][0]["source_bindings"][0]["observation_period"] == "2020"
+    population_binding = next(item for item in body["territories"][0]["source_bindings"]
+                              if item["field_key"] == "population")
+    assert population_binding["population_revision_id"] == "cohort-milieux-population"
+    assert population_binding["observation_period"] == "2020"
+    series_bindings = {item["field_key"]: item for item in body["territories"][0]["source_bindings"]
+                       if item["field_key"] != "population"}
+    assert set(series_bindings) == {"artif_m2_par_habitant", "artif_m3_par_habitant"}
+    assert series_bindings["artif_m2_par_habitant"]["source"] == {
+        "source_id": "cohort-source", "name": "Cohort source", "vintage_id": "cohort-v1",
+        "version": "2026", "reference_date": "2026-01-01", "publication_date": "2026-01-02",
+    }
+    assert series_bindings["artif_m2_par_habitant"]["provenance_revision_id"] == "cohort-artif-revision"
     assert body["territories"][0]["source_absences"] == []
     assert body["territories"][1]["facts"] == []
     assert body["territories"][1]["source_absences"] == [{
         "territory_id": "cohort-c2", "territory_type": "commune", "reason": "source_record_absent",
         "source_id": "cohort-source", "vintage_id": "cohort-v1", "source_snapshot_sha256": "a" * 64,
+        "source": {"source_id": "cohort-source", "name": "Cohort source", "vintage_id": "cohort-v1",
+            "version": "2026", "reference_date": "2026-01-01", "publication_date": "2026-01-02"},
     }]
     assert absence_projection.status_code == 200, absence_projection.text
     projected = absence_projection.json()["territories"]
-    assert all(item["facts"] == [] for item in projected)
+    assert projected[0]["facts"][0]["status"] == "measured"
+    assert projected[0]["facts"][0]["classification"] == "stable"
+    assert {"delta_population", "taux_variation_population", "artif_m2_par_habitant",
+            "artif_m3_par_habitant", "trajectoire_artif_par_habitant"}.isdisjoint(
+                projected[0]["facts"][0])
+    assert projected[1]["facts"] == []
     assert projected[0]["source_absences"] == []
     assert len(projected[1]["source_absences"]) == 1
 
@@ -478,7 +579,8 @@ def test_batch_family_parity_is_all_or_none(cohort_http):
     ("subventions_par_domaine", {"period": ["2025"], "detail": ["education"]}, ["value"]),
     ("couverture_programmes", {"membership": ["ACV"]}, ["detail", "availability"]),
     ("economie_selected_reading", {"groupe": ["sante-et-taille"]}, ["status", "ranked_activities"]),
-    ("milieux_selected_reading", {"groupe": ["artificialisation"]}, ["status", "source_absences"]),
+    ("milieux_selected_reading", {"groupe": ["artificialisation"]},
+     ["status", "source_absences", "source_bindings"]),
     ("prix_m2", {"year": ["2024"]}, ["value"]),
     ("subventions_annuelles", {"year": ["2024"]}, ["value"]),
 ])
@@ -622,3 +724,259 @@ def test_batch_observes_one_repeatable_read_snapshot_across_preflight_and_reads(
     assert next_snapshot.status_code == 200, next_snapshot.text
     assert next_snapshot.json()["content_version"] == "cohort-scalar-v2"
     assert next_snapshot.json()["observations"][0]["value"] == 77
+
+
+def test_focal_resource_evidence_is_additive_and_matches_single_batch(cohort_http):
+    requests = [
+        {"resource": "densite", "fields": ["value"]},
+        {"resource": "structure_age", "coordinates": {"detail": ["<15"], "sex": ["F"]},
+         "fields": ["value"]},
+        {"resource": "economie_selected_reading",
+         "coordinates": {"groupe": ["sante-et-taille"]},
+         "fields": ["status", "ranked_activities"]},
+        {"resource": "habitat_selected_reading",
+         "coordinates": {"groupe": ["etat-energetique-du-parc"]}, "fields": ["status"]},
+    ]
+    singles = {}
+    batch_items = []
+    for index, spec in enumerate(requests):
+        item = {"resource": spec["resource"],
+                "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+                "intent": {"kind": "facts"}, **{key: value for key, value in spec.items() if key != "resource"}}
+        response = cohort_http.client.post("/api/resources/read", json=item)
+        assert response.status_code == 200, response.text
+        singles[item["resource"]] = response.json()
+        batch_items.append({"id": f"focal-{index}", **item})
+    batch = cohort_http.batch(batch_items)
+    assert batch.status_code == 200, batch.text
+    assert [row["data"] for row in batch.json()["results"]] == list(singles.values())
+
+    assert singles["densite"]["reference_content_version"] == "cohort-reference-v1"
+    assert singles["densite"]["descriptor_version"] == "cohort-descriptor-v1"
+    assert singles["structure_age"]["reference_content_version"] == "cohort-reference-v1"
+    economy = singles["economie_selected_reading"]
+    assert economy["reference_content_version"] == "cohort-reference-v1"
+    assert economy["facts"][0]["source"] == {
+        "source_id": "cohort-source", "name": "Cohort source", "vintage_id": "cohort-v1",
+        "version": "2026", "reference_date": "2026-01-01", "publication_date": "2026-01-02",
+    }
+    assert economy["ranked_activities"][0]["source"] == {
+        "source_id": "cohort-evidence-source", "name": "Evidence source",
+        "vintage_id": "cohort-evidence-v1", "version": "evidence-2025",
+        "reference_date": None, "publication_date": "2025-03-04",
+    }
+    assert economy["facts"][0]["status"] == "measured"
+    assert economy["facts"][0]["source_id"] == "cohort-source"
+    assert economy["facts"][0]["vintage_id"] == "cohort-v1"
+    habitat = singles["habitat_selected_reading"]
+    assert habitat["reference_content_version"] == "cohort-reference-v1"
+    assert habitat["descriptor"] == {
+        "descriptor_version": "cohort-habitat-v1", "linked_content_version": "linked-dpe-v1",
+        "source": {"source_id": "cohort-source", "name": "Cohort source", "vintage_id": "cohort-v1",
+            "version": "2026", "reference_date": "2026-01-01", "publication_date": "2026-01-02"},
+    }
+    assert habitat["facts"][0]["source"]["source_id"] == "cohort-source"
+
+    habitat_cohort = cohort_http.read("habitat_selected_reading",
+        coordinates={"groupe": ["etat-energetique-du-parc"]}, fields=["status"])
+    assert habitat_cohort.status_code == 200, habitat_cohort.text
+    assert habitat_cohort.json()["reference_content_version"] == "cohort-reference-v1"
+    assert habitat_cohort.json()["descriptor"]["linked_content_version"] == "linked-dpe-v1"
+    assert habitat_cohort.json()["territories"][1]["facts"][0]["status"] == "suppressed"
+
+    sparse_cohort = cohort_http.read("economie_selected_reading",
+        coordinates={"groupe": ["sante-et-taille"]}, fields=["ranked_activities"])
+    assert sparse_cohort.status_code == 200, sparse_cohort.text
+    assert sparse_cohort.json()["territories"][2]["facts"] == []
+    assert sparse_cohort.json()["territories"][2]["ranked_activities"] == []
+
+
+def test_demographic_reading_exposes_its_declared_rate_unit_and_clock_for_focal_and_cohort(cohort_http):
+    focal_item = {"resource": "demographie_selected_reading",
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+        "coordinates": {"groupe": ["trajectoire-demographique"]}, "fields": ["status"],
+        "intent": {"kind": "facts"}}
+    focal = cohort_http.client.post("/api/resources/read", json=focal_item)
+    assert focal.status_code == 200, focal.text
+    body = focal.json()
+    assert body["reference_content_version"] == "cohort-reference-v1"
+    assert body["descriptor"] == {
+        "descriptor_version": "cohort-demographic-v1", "rate_unit": "‰/an",
+        "source": {"source_id": "cohort-source", "name": "Cohort source",
+            "vintage_id": "cohort-v1", "version": "2026", "reference_date": "2026-01-01",
+            "publication_date": "2026-01-02"},
+    }
+    assert body["facts"][0]["status"] == "measured"
+    assert body["facts"][0]["source"]["version"] == "2026"
+    batch = cohort_http.batch([{"id": "demography", **focal_item}])
+    assert batch.status_code == 200, batch.text
+    assert batch.json()["results"][0]["data"] == body
+
+    cohort = cohort_http.read("demographie_selected_reading", department_id="29", epci_id="cohort-e29",
+        coordinates={"groupe": ["trajectoire-demographique"]}, fields=["status"])
+    assert cohort.status_code == 200, cohort.text
+    cohort_body = cohort.json()
+    assert cohort_body["reference_content_version"] == "cohort-reference-v1"
+    assert cohort_body["descriptor"]["rate_unit"] == "‰/an"
+    assert [entry["facts"][0]["status"] for entry in cohort_body["territories"]] == [
+        "measured", "unavailable"]
+    assert cohort_body["territories"][0]["facts"][0]["source"]["version"] == "2026"
+
+
+def test_focal_typed_reading_rejects_stale_reference_dependency(cohort_http):
+    cohort_http.publish(("UPDATE table_publication SET reference_content_version='stale-reference' "
+                         "WHERE table_name='economy_typed_reading'", ()))
+    try:
+        focal = cohort_http.focal("economie_selected_reading",
+            coordinates={"groupe": ["sante-et-taille"]}, fields=["status"])
+        cohort = cohort_http.read("economie_selected_reading",
+            coordinates={"groupe": ["sante-et-taille"]}, fields=["status"])
+    finally:
+        cohort_http.publish(("UPDATE table_publication SET reference_content_version='cohort-reference-v1' "
+                             "WHERE table_name='economy_typed_reading'", ()))
+    assert focal.status_code == 503, focal.text
+    assert cohort.status_code == 503, cohort.text
+
+
+def test_focal_milieux_absence_projection_keeps_sparse_state_honest(cohort_http):
+    bindings = cohort_http.focal("milieux_selected_reading", territory_id="cohort-c1",
+        coordinates={"groupe": ["artificialisation"]}, fields=["source_bindings"])
+    observed = cohort_http.focal("milieux_selected_reading", territory_id="cohort-c1",
+        coordinates={"groupe": ["artificialisation"]}, fields=["source_absences"])
+    absent = cohort_http.focal("milieux_selected_reading", territory_id="cohort-c2",
+        coordinates={"groupe": ["artificialisation"]}, fields=["source_absences"])
+    assert bindings.status_code == observed.status_code == absent.status_code == 200, (
+        bindings.text, observed.text, absent.text)
+    binding = next(row for row in bindings.json()["source_bindings"]
+                   if row["field_key"] == "population")
+    assert binding["source"]["reference_date"] == "2026-01-01"
+    assert binding["source"]["publication_date"] == "2026-01-02"
+    state_binding = next(row for row in bindings.json()["source_bindings"]
+                         if row["field_key"] == "artif_m2_par_habitant")
+    assert state_binding["provenance_revision_id"] == "cohort-artif-revision"
+    assert state_binding["source"]["version"] == "2026"
+    observed_fact = observed.json()["facts"][0]
+    assert observed_fact["status"] == "measured"
+    assert observed_fact["classification"] == "stable"
+    assert {"delta_population", "taux_variation_population", "artif_m2_par_habitant",
+            "artif_m3_par_habitant", "trajectoire_artif_par_habitant"}.isdisjoint(observed_fact)
+    assert observed.json()["source_absences"] == []
+    assert absent.json()["facts"] == []
+    assert absent.json()["source_absences"][0]["reason"] == "source_record_absent"
+    assert absent.json()["source_absences"][0]["source"]["version"] == "2026"
+
+
+def test_typed_reading_fails_closed_when_selected_evidence_clock_is_missing(cohort_http):
+    cohort_http.publish(
+        ("ALTER TABLE economy_activity_evidence DROP CONSTRAINT "
+         "economy_activity_evidence_source_id_vintage_id_fkey", ()),
+        ("DELETE FROM source_vintage WHERE source_id='cohort-evidence-source' "
+         "AND vintage_id='cohort-evidence-v1'", ()),
+    )
+    try:
+        response = cohort_http.focal("economie_selected_reading",
+            coordinates={"groupe": ["sante-et-taille"]}, fields=["ranked_activities"])
+    finally:
+        cohort_http.publish(
+            ("INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date) "
+             "VALUES ('cohort-evidence-source','cohort-evidence-v1','evidence-2025',NULL,'2025-03-04')", ()),
+            ("ALTER TABLE economy_activity_evidence ADD CONSTRAINT "
+             "economy_activity_evidence_source_id_vintage_id_fkey "
+             "FOREIGN KEY(source_id,vintage_id) REFERENCES source_vintage(source_id,vintage_id)", ()),
+        )
+    assert response.status_code == 503, response.text
+    assert response.json()["detail"] == "Typed-reading evidence provenance is unavailable"
+
+
+def test_typed_reading_status_projection_retains_declared_classification(cohort_http):
+    coordinates = {"groupe": ["etat-energetique-du-parc"]}
+    focal = cohort_http.focal("habitat_selected_reading", coordinates=coordinates, fields=["status"])
+    assert focal.status_code == 200, focal.text
+    focal_fact = focal.json()["facts"][0]
+    assert (focal_fact["status"], focal_fact["classification"]) == ("measured", "energivore")
+    assert {"part_passoires", "part_abc", "n_dpe"}.isdisjoint(focal_fact)
+
+    cohort = cohort_http.read("habitat_selected_reading", department_id="29", epci_id="cohort-e29",
+        coordinates=coordinates, fields=["status"])
+    assert cohort.status_code == 200, cohort.text
+    facts = [territory["facts"][0] for territory in cohort.json()["territories"]]
+    assert [(fact["status"], fact["classification"]) for fact in facts] == [
+        ("measured", "energivore"), ("suppressed", None)]
+    assert all({"part_passoires", "part_abc", "n_dpe"}.isdisjoint(fact) for fact in facts)
+
+
+def test_evidence_only_projection_preserves_focal_and_cohort_economy_facts_and_batch_parity(cohort_http):
+    coordinates = {"groupe": ["sante-et-taille"]}
+    focal_item = {"resource": "economie_selected_reading",
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+        "coordinates": coordinates, "fields": ["ranked_activities"], "intent": {"kind": "facts"}}
+    focal = cohort_http.client.post("/api/resources/read", json=focal_item)
+    assert focal.status_code == 200, focal.text
+    focal_fact = focal.json()["facts"][0]
+    assert {"groupe", "story_key", "salience_reason", "status", "source_id", "vintage_id", "source"} <= set(focal_fact)
+    assert (focal_fact["status"], focal_fact["source"]["version"]) == ("measured", "2026")
+    assert "classification" not in focal_fact
+
+    focal_batch = cohort_http.batch([{"id": "focal-evidence", **focal_item}])
+    assert focal_batch.status_code == 200, focal_batch.text
+    assert focal_batch.json()["results"][0]["data"] == focal.json()
+
+    cohort_kwargs = {"department_id": "29", "epci_id": "cohort-e29", "coordinates": coordinates,
+                     "fields": ["ranked_activities"]}
+    cohort = cohort_http.read("economie_selected_reading", **cohort_kwargs)
+    assert cohort.status_code == 200, cohort.text
+    cohort_facts = [territory["facts"][0] for territory in cohort.json()["territories"]]
+    assert [fact["status"] for fact in cohort_facts] == ["measured", "unavailable"]
+    assert all({"groupe", "story_key", "salience_reason", "status", "source_id", "vintage_id", "source"}
+               <= set(fact) for fact in cohort_facts)
+    assert cohort_facts[0]["source"]["version"] == "2026"
+    assert all("classification" not in fact for fact in cohort_facts)
+
+    cohort_batch = cohort_http.batch([cohort_http.item(
+        "economie_selected_reading", **cohort_kwargs, item_id="cohort-evidence")])
+    assert cohort_batch.status_code == 200, cohort_batch.text
+    assert cohort_batch.json()["results"][0]["data"] == cohort.json()
+
+
+def test_source_binding_only_projection_keeps_milieux_facts_and_absence_partition(cohort_http):
+    coordinates = {"groupe": ["artificialisation"]}
+    focal_item = {"resource": "milieux_selected_reading",
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+        "coordinates": coordinates, "fields": ["source_bindings"], "intent": {"kind": "facts"}}
+    focal = cohort_http.client.post("/api/resources/read", json=focal_item)
+    assert focal.status_code == 200, focal.text
+    focal_fact = focal.json()["facts"][0]
+    assert {"groupe", "story_key", "salience_reason", "classification", "status",
+            "source_id", "vintage_id", "source"} <= set(focal_fact)
+    assert (focal_fact["classification"], focal_fact["status"]) == ("stable", "measured")
+    assert focal_fact["source"] == {
+        "source_id": "cohort-source", "name": "Cohort source", "vintage_id": "cohort-v1",
+        "version": "2026", "reference_date": "2026-01-01", "publication_date": "2026-01-02",
+    }
+    assert {"delta_population", "taux_variation_population", "artif_m2_par_habitant",
+            "artif_m3_par_habitant", "trajectoire_artif_par_habitant"}.isdisjoint(focal_fact)
+
+    focal_batch = cohort_http.batch([{"id": "focal-source-bindings", **focal_item}])
+    assert focal_batch.status_code == 200, focal_batch.text
+    assert focal_batch.json()["results"][0]["data"] == focal.json()
+
+    cohort_kwargs = {"department_id": "29", "epci_id": "cohort-e29", "coordinates": coordinates,
+                     "fields": ["source_bindings"]}
+    cohort = cohort_http.read("milieux_selected_reading", **cohort_kwargs)
+    assert cohort.status_code == 200, cohort.text
+    territories = cohort.json()["territories"]
+    cohort_fact = territories[0]["facts"][0]
+    assert {"groupe", "story_key", "salience_reason", "classification", "status",
+            "source_id", "vintage_id", "source"} <= set(cohort_fact)
+    assert cohort_fact["classification"] == "stable"
+    assert cohort_fact["source"]["vintage_id"] == "cohort-v1"
+    assert cohort_fact["source"]["reference_date"] == "2026-01-01"
+    assert {"delta_population", "taux_variation_population", "artif_m2_par_habitant",
+            "artif_m3_par_habitant", "trajectoire_artif_par_habitant"}.isdisjoint(cohort_fact)
+    assert territories[1]["facts"] == []
+    assert territories[1]["source_absences"][0]["reason"] == "source_record_absent"
+
+    cohort_batch = cohort_http.batch([cohort_http.item(
+        "milieux_selected_reading", **cohort_kwargs, item_id="cohort-source-bindings")])
+    assert cohort_batch.status_code == 200, cohort_batch.text
+    assert cohort_batch.json()["results"][0]["data"] == cohort.json()
