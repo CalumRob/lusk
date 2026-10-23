@@ -80,6 +80,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
   private readonly pendingFacts = new Map<string, Promise<AcquiredTheme<T>>>()
   private readonly pendingComparisons = new Map<string, Promise<ThemeResponse>>()
   private readonly generations = new Map<string, number>()
+  private readonly comparisonGenerations = new Map<string, number>()
 
   constructor(
     private readonly acquireFacts: (theme: ThemeKey, key?: Key) => Promise<T>,
@@ -128,10 +129,10 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
       await pending
       return this.entries.get(cacheKey) ?? focal
     }
-    const generation = (this.generations.get(cacheKey) ?? 0) + 1
-    this.generations.set(cacheKey, generation)
+    const generation = (this.comparisonGenerations.get(pendingKey) ?? 0) + 1
+    this.comparisonGenerations.set(pendingKey, generation)
     const request = this.acquireComparison(selection, theme, key).then((comparison) => {
-      if (generation !== this.generations.get(cacheKey)) throw new Error('Stale theme comparison response')
+      if (generation !== this.comparisonGenerations.get(pendingKey)) throw new Error('Stale theme comparison response')
       const compatible = semanticPublicationsCompatible(focal.focal, comparison)
       if (!compatible) throw new Error('Theme publication tokens do not match; retry comparison')
       const result = { ...focal, comparisons: new Map(focal.comparisons).set(selectionKey, comparison) }
@@ -143,6 +144,22 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     this.pendingComparisons.set(pendingKey, request)
     await request
     return this.entries.get(cacheKey) ?? focal
+  }
+
+  /** Drop one aggregate without disturbing its already acquired focal facts or sibling selections. */
+  invalidateComparison(type: string, id: string, theme: ThemeKey,
+    selection: readonly ThemeSelectionMember[] | undefined): void {
+    const cacheKey = this.key({ type, id, theme })
+    const selectionKey = cleSelectionComparaison(selection)
+    const pendingKey = JSON.stringify([cacheKey, selectionKey])
+    const cached = this.entries.get(cacheKey)
+    if (cached?.comparisons.has(selectionKey)) {
+      const comparisons = new Map(cached.comparisons)
+      comparisons.delete(selectionKey)
+      this.entries.set(cacheKey, { ...cached, comparisons })
+    }
+    this.comparisonGenerations.set(pendingKey, (this.comparisonGenerations.get(pendingKey) ?? 0) + 1)
+    this.pendingComparisons.delete(pendingKey)
   }
 
   invalidate(type: string, id: string, theme?: ThemeKey): void {
@@ -160,6 +177,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
       const [entryKey] = JSON.parse(pendingKey) as [string, string]
       const identity = JSON.parse(entryKey) as [string, string, ThemeKey]
       if (identity[0] === type && identity[1] === id && (!theme || identity[2] === theme)) {
+        this.comparisonGenerations.set(pendingKey, (this.comparisonGenerations.get(pendingKey) ?? 0) + 1)
         this.pendingComparisons.delete(pendingKey)
       }
     }

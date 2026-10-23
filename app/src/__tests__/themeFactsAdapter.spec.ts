@@ -713,8 +713,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         shapes: curve.shapes, declaration: curveDeclaration, data }] })
     const defaultData = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
       intent: { kind: 'fixed_comparison', context: 'default' } }, curve)
-    const projected = projectRaccordementSemanticReads(focal, response(defaultData), target, undefined,
-      target.classe_densite_libelle_public)
+    const projected = projectRaccordementSemanticReads(focal, response(defaultData), target, undefined)
     const comparisonAxis = String(facts.comparison_point)
     const comparisonAxisIndex = (facts.axis_values as string[]).indexOf(comparisonAxis)
     expect(projected.facts).toHaveLength((facts.axis_values as string[]).length)
@@ -722,7 +721,8 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       detail: comparisonAxis, value: named.points[comparisonAxisIndex]!.value,
     })
     expect(projected.comparison).toMatchObject({ statistic: 'mean', selectedMemberCount: defaultData.result.selected_member_count,
-      valueAtComparisonPoint: defaultData.result.mean, scopeLabel: target.classe_densite_libelle_public })
+      valueAtComparisonPoint: defaultData.result.mean, scope: { kind: 'density_class',
+        territory_type: 'commune', density_class_code: target.classe_densite_code } })
 
     const selection: ThemeSelectionMember[] = [
       { territory_type: 'commune', territory_id: '22001' },
@@ -731,9 +731,9 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const selectedData = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
       intent: { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) =>
         ({ type: territory_type, id: territory_id })) } }, curve)
-    expect(projectRaccordementSemanticReads(focal, response(selectedData, selection), target, selection,
-      'Deux communes sélectionnées').comparison).toMatchObject({ selectedMemberCount: 2,
-        valueAtComparisonPoint: selectedData.result.mean, scopeLabel: 'Deux communes sélectionnées' })
+    expect(projectRaccordementSemanticReads(focal, response(selectedData, selection), target, selection)
+      .comparison).toMatchObject({ selectedMemberCount: 2, valueAtComparisonPoint: selectedData.result.mean,
+        scope: { kind: 'explicit_selection', member_count: 2 } })
 
     const mixedProvenance = structuredClone(facts)
     mixedProvenance.points[1]!.provenance = [{ ...mixedProvenance.points[1]!.provenance[0],
@@ -741,7 +741,42 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const incoherentFocal = { ...focal, resource_reads: [{ resource: curve.resource_id, shapes: curve.shapes,
       declaration: curveDeclaration, data: mixedProvenance }] }
     expect(() => projectRaccordementSemanticReads(incoherentFocal, response(defaultData), target,
-      undefined, target.classe_densite_libelle_public)).toThrow(/provenances/)
+      undefined)).toThrow(/provenances/)
+  })
+
+  it('projects unavailable native comparisons without discarding valid focal or named-reference facts', () => {
+    const curve = nativeResources('mobilite').find((item) => item.resource_id === 'raccordement_courbe')!
+    const reference = nativeResources('mobilite').find((item) => item.resource_id === 'raccordement_reference')!
+    const curveDeclaration = curve as unknown as SemanticResourceDeclaration
+    const referenceDeclaration = reference as unknown as SemanticResourceDeclaration
+    const target = { ...territoiresFixture.find((territory) => territory.territoire === '22001')! }
+    const facts = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'facts' } }, curve)
+    const named = nativeReadFixture({ target: { kind: 'named_reference', id: reference.target_ids[0] },
+      intent: { kind: 'facts' } }, reference)
+    const focal = { resource_reads: [{ resource: curve.resource_id, shapes: curve.shapes,
+      declaration: curveDeclaration, data: facts }], named_reference_reads: [{ resource: reference.resource_id,
+      shapes: reference.shapes, declaration: referenceDeclaration, data: named }] }
+    const response = (data: Record<string, any>, selection?: ThemeSelectionMember[]) => ({ theme_id: 'mobilite',
+      ...(selection === undefined ? {} : { selection }), comparison_reads: [{ resource: curve.resource_id,
+        shapes: curve.shapes, declaration: curveDeclaration, data }] })
+
+    const emptySelection: ThemeSelectionMember[] = []
+    const emptyData = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'selected_comparison', members: [] } }, curve)
+    const empty = projectRaccordementSemanticReads(focal, response(emptyData, emptySelection), target,
+      emptySelection)
+    expect(emptyData.selection).toEqual([])
+    expect(empty.comparison).toMatchObject({ status: 'unavailable', reason: 'no_selected_comparable_values',
+      selectedMemberCount: 0, valueAtComparisonPoint: null, rank: null, rankSize: null, points: [],
+      scope: { kind: 'explicit_selection', member_count: 0 } })
+    expect(empty.facts).toHaveLength(73)
+    expect(empty.referenceFacts).toHaveLength(73)
+
+    const malformed = structuredClone(emptyData)
+    malformed.result.mean = 0.2
+    expect(() => projectRaccordementSemanticReads(focal, response(malformed, emptySelection), target,
+      emptySelection)).toThrow(/comparison|comparaison/i)
   })
 
   it('refuse une coordonnée de détail non déclarée par les métadonnées du contrat', () => {

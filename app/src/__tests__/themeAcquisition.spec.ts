@@ -259,6 +259,28 @@ describe('theme acquisition cache', () => {
     expect(comparison.mock.calls.map(([selection]) => selection)).toEqual([[], undefined])
   })
 
+  it('invalidates only the requested comparison while retaining focal facts and sibling selections', async () => {
+    const facts = vi.fn(async () => ({ content_version: 'v1', reference_content_version: 'r1', focal: { value: 17 } }))
+    let sequence = 0
+    const comparison = vi.fn(async (selection: readonly ThemeSelectionMember[] | undefined) => ({
+      content_version: 'v1', reference_content_version: 'r1', selection: selection ?? 'default', sequence: ++sequence,
+    }))
+    const cache = new ThemeAcquisitionCache(facts, comparison)
+    const initial = await cache.get('commune', '22001', 'habitat')
+    const empty = await cache.select('commune', '22001', 'habitat', [])
+    const defaultGroup = await cache.select('commune', '22001', 'habitat', undefined)
+
+    cache.invalidateComparison('commune', '22001', 'habitat', [])
+    const retried = await cache.select('commune', '22001', 'habitat', [])
+
+    expect(facts).toHaveBeenCalledTimes(1)
+    expect(comparison.mock.calls.map(([selection]) => selection)).toEqual([[], undefined, []])
+    expect(retried.focal).toBe(initial.focal)
+    expect(retried.comparisons.get('[]')?.sequence).toBe(3)
+    expect(retried.comparisons.get('omitted')?.sequence).toBe(defaultGroup.comparisons.get('omitted')?.sequence)
+    expect(empty.comparisons.get('[]')?.sequence).toBe(1)
+  })
+
   it('deduplicates concurrent reads for the same comparison selection', async () => {
     let resolveComparison!: (value: { content_version: string; reference_content_version: string; selection: readonly ThemeSelectionMember[] }) => void
     const comparisonResponse = new Promise<{ content_version: string; reference_content_version: string; selection: readonly ThemeSelectionMember[] }>((resolve) => {

@@ -1,7 +1,7 @@
 import { lienFiche } from '@/fiche/contratExploration'
 import type { NiveauComparable } from '@/fiche/contratExploration'
 import { resoudreNiveau } from './etatUrl'
-import type { Indicateur, Payload, Territoire } from '@/payload/types'
+import type { Indicateur, Payload, Territoire, TerritoireType } from '@/payload/types'
 import type { ComparisonFacet } from './familySeam'
 import { correspondFait, filtrerFaits, CORRESPONDANCE_CARTE, CORRESPONDANCE_STRICTE } from './correspondFait'
 import type { IndicatorPageMetadata, TrajectoryMetadata } from '@/payload/types'
@@ -52,7 +52,7 @@ export function rangsExAequo(values: readonly number[], direction: DirectionIndi
  * département/EPCI au niveau commune seulement. Repères, la carte par état
  * et les trajectoires lisent LA même appartenance, jamais trois copies.
  */
-export function dansScope(territoire: Territoire, niveau: NiveauIndicateur, departement?: string, epci?: string): boolean {
+export function dansScope(territoire: Territoire, niveau: TerritoireType, departement?: string, epci?: string): boolean {
   return territoire.type === niveau && (niveau !== 'commune' || ((!departement || territoire.departement === departement) && (!epci || territoire.epci === epci)))
 }
 
@@ -282,7 +282,7 @@ export function modeleTrajectoire(
   facet: ComparisonFacet,
   endpoints: readonly string[],
   territoires: readonly Territoire[],
-  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+  etat: { niveau: TerritoireType; departement?: string; epci?: string; territoire?: string },
   reference: readonly Pick<Indicateur, 'detail' | 'value'>[] = [],
   referenceLabel: string | null = null,
   options: OptionsTrajectoire = {},

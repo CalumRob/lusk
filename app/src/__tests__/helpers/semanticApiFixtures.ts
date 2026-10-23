@@ -286,12 +286,15 @@ function syntheticRaccordementComparison(item: Record<string, any>, resource: Re
   const cohort = selected ?? (target.type === 'commune'
     ? territories.filter((territory) => territory.type === 'commune' &&
       territory.classe_densite_code === focal?.classe_densite_code)
-    : territories.filter((territory) => territory.type === target.type))
+    : target.type === 'region' ? []
+      : territories.filter((territory) => territory.type === target.type))
   const scope = selected
     ? { kind: 'explicit_selection', member_count: cohort.length }
-    : { kind: target.type === 'commune' ? 'density_class' : 'same_level',
-      territory_type: target.type, density_class_code: focal?.classe_densite_code ?? null,
-      member_count: cohort.length }
+    : target.type === 'region' ? null
+      : { kind: target.type === 'commune' ? 'density_class' : 'same_level',
+        territory_type: target.type, ...(target.type === 'commune'
+          ? { density_class_code: focal?.classe_densite_code ?? null } : {}),
+        member_count: cohort.length }
   const curves = cohort.map((member: { territory_type?: string; territory_id?: string; type?: string; territoire?: string }) => {
     const type = member.territory_type ?? member.type!
     const id = member.territory_id ?? member.territoire!
@@ -314,7 +317,9 @@ function syntheticRaccordementComparison(item: Record<string, any>, resource: Re
     descriptor_version: descriptorVersion, source_facet: raccordementPage.comparison.detail,
     statistic: raccordementRoute.comparison_contract.statistic,
     status: available ? 'available' : 'unavailable',
-    reason: available ? null : 'fewer_than_two_comparable_values',
+    reason: available ? null : cohort.length === 0
+      ? selected ? 'no_selected_comparable_values' : 'unsupported_comparison_contract'
+      : 'fewer_than_two_comparable_values',
     selected_member_count: cohort.length, eligible_count: cohort.length,
     missing_count: 0, rank: available && focalIsSelected
       ? 1 + selectedValues.filter((value: number) => value > focalValue).length : null,
