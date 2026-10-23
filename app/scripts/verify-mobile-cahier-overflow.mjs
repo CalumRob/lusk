@@ -304,6 +304,115 @@ try {
       }
     }
 
+    let sandboxGroupedBarFigure = null
+    if ([320, 360, 390].includes(width)) {
+      sandboxGroupedBarFigure = await page.evaluate(async ({ baseUrl }) => {
+        const root = document.createElement('div')
+        root.id = 'sandbox-grouped-bar-browser-fixture'
+        root.style.cssText = `position:fixed;top:0;left:0;width:${innerWidth}px;visibility:hidden;pointer-events:none;z-index:-1`
+        document.body.append(root)
+        const fixture = await import(new URL('src/__tests__/helpers/mobileCahierBrowserFixture.ts', baseUrl).href)
+        const app = await fixture.mountSandboxGroupedBarFigure(root)
+        try {
+          await document.fonts.ready
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+          const frame = root.querySelector('.cahier-grouped-vertical-bar-chart')
+          const plot = root.querySelector('.cahier-grouped-vertical-bar-chart__plot')
+          const svg = root.querySelector('.cahier-grouped-vertical-bar-chart__svg')
+          const axis = root.querySelector('.cahier-grouped-vertical-bar-chart__axis')
+          const bars = [...root.querySelectorAll('.cahier-grouped-vertical-bar-chart__bar')]
+          const labels = [...root.querySelectorAll('.cahier-figure-tick-label--y')]
+          const title = root.querySelector('.cahier-figure-axis-title--y')
+          const hitbox = root.querySelector('.cahier-grouped-vertical-bar-chart__category-hitbox')
+          if (!frame || !plot || !svg || !axis || bars.length === 0 || labels.length === 0 || !title || !hitbox) {
+            throw new Error('Sandbox grouped-bar fixture did not mount completely')
+          }
+          const viewBoxWidth = svg.viewBox.baseVal.width
+          const plotRect = plot.getBoundingClientRect()
+          const style = getComputedStyle(labels[0])
+          const context = document.createElement('canvas').getContext('2d')
+          if (!context) throw new Error('Canvas text measurement is required for the sandbox grouped-bar fixture')
+          context.font = [style.fontStyle, style.fontVariant, style.fontWeight,
+            style.fontStretch, style.fontSize, style.fontFamily]
+            .filter((part) => part && part !== 'normal').join(' ')
+          const letterSpacing = Number.parseFloat(style.letterSpacing) || 0
+          const measuredLabelWidth = Math.max(...labels.map((label) =>
+            context.measureText(label.textContent).width + Math.max(0, label.textContent.length - 1) * letterSpacing,
+          ))
+          const titleRect = title.getBoundingClientRect()
+          const labelRects = labels.map((label) => {
+            const { x, y, right, bottom } = label.getBoundingClientRect()
+            return { text: label.textContent, x, y, right, bottom }
+          })
+          const overlaps = labelRects.filter((label) =>
+            label.x < titleRect.right && label.right > titleRect.left &&
+            label.y < titleRect.bottom && label.bottom > titleRect.top,
+          )
+          const axisLeft = Number(axis.getAttribute('x1'))
+          const axisRight = Number(axis.getAttribute('x2'))
+          const railPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-left'))
+          const frameRail = railPercent * viewBoxWidth / 100
+          const htmlLabelRail = Number.parseFloat(labels[0].style.left) * viewBoxWidth / 100
+          const bar = bars[0]
+          const barX = Number(bar.getAttribute('x'))
+          const barWidth = Number(bar.getAttribute('width'))
+          const groupWidth = (axisRight - axisLeft) / 5
+          const firstBarExpected = axisLeft + (groupWidth - barWidth) / 2
+          const hitboxLeft = Number.parseFloat(hitbox.style.left) * viewBoxWidth / 100
+          const hitboxWidth = Number.parseFloat(hitbox.style.width) * viewBoxWidth / 100
+          hitbox.click()
+          const tooltip = root.querySelector('.cahier-grouped-vertical-bar-chart__tooltip')
+          const tooltipAnchor = tooltip?.style.getPropertyValue('--cahier-figure-tooltip-anchor-x') ?? ''
+          return {
+            viewport: innerWidth,
+            titleText: title.textContent.trim(),
+            labels: labelRects.map(({ text }) => text),
+            measuredLabelWidth,
+            renderedWidth: plotRect.width,
+            viewBoxWidth,
+            requiredRailWidth: (16 + measuredLabelWidth + 8) * viewBoxWidth / plotRect.width,
+            frameRail,
+            htmlLabelRail,
+            axisLeft,
+            axisRight,
+            overlaps,
+            barCount: bars.length,
+            barX,
+            firstBarExpected,
+            hitboxLeft,
+            hitboxWidth,
+            expectedHitboxWidth: groupWidth,
+            tooltipAnchor,
+            expectedTooltipAnchor: `${((axisLeft + groupWidth / 2) / viewBoxWidth) * 100}%`,
+          }
+        } finally {
+          app.unmount()
+          root.remove()
+        }
+      }, { baseUrl })
+      assert.equal(sandboxGroupedBarFigure.titleText, 'NOMBRE D’ÉTABLISSEMENTS',
+        `Sandbox fixture must mount the real quantile y-axis title at ${width}px`)
+      assert(sandboxGroupedBarFigure.labels.some((label) => label.replace(/\D/gu, '') === '0') &&
+        sandboxGroupedBarFigure.labels.some((label) => label.replace(/\D/gu, '') === '6440') &&
+        sandboxGroupedBarFigure.labels.some((label) => label.replace(/\D/gu, '') === '12881'),
+      `Sandbox fixture must include Rennes-equivalent y ticks at ${width}px: ${JSON.stringify(sandboxGroupedBarFigure)}`)
+      assert.deepEqual(sandboxGroupedBarFigure.overlaps, [],
+        `Sandbox grouped-bar y-axis title must not intersect any tick label at ${width}px: ${JSON.stringify(sandboxGroupedBarFigure)}`)
+      assert(sandboxGroupedBarFigure.frameRail >= sandboxGroupedBarFigure.requiredRailWidth - 1,
+        `Sandbox frame must derive its rail from the rendered tick-label width at ${width}px: ${JSON.stringify(sandboxGroupedBarFigure)}`)
+      assert(Math.abs(sandboxGroupedBarFigure.frameRail - sandboxGroupedBarFigure.axisLeft) < 0.5 &&
+        Math.abs(sandboxGroupedBarFigure.htmlLabelRail - sandboxGroupedBarFigure.axisLeft) < 0.5,
+      `Sandbox frame, SVG axis, and HTML labels must share one derived rail at ${width}px: ${JSON.stringify(sandboxGroupedBarFigure)}`)
+      assert(Math.abs(sandboxGroupedBarFigure.barX - sandboxGroupedBarFigure.firstBarExpected) < 0.5,
+        `Sandbox SVG bars must consume the same derived plot width as the axis at ${width}px: ${JSON.stringify(sandboxGroupedBarFigure)}`)
+      assert(Math.abs(sandboxGroupedBarFigure.hitboxLeft - sandboxGroupedBarFigure.axisLeft) < 0.5 &&
+        Math.abs(sandboxGroupedBarFigure.hitboxWidth - sandboxGroupedBarFigure.expectedHitboxWidth) < 0.5,
+      `Sandbox category hitboxes must use the derived plot geometry at ${width}px: ${JSON.stringify(sandboxGroupedBarFigure)}`)
+      assert.equal(sandboxGroupedBarFigure.tooltipAnchor,
+        sandboxGroupedBarFigure.expectedTooltipAnchor,
+        `Sandbox tooltip must anchor to the derived category center at ${width}px: ${JSON.stringify(sandboxGroupedBarFigure)}`)
+    }
+
     let mobileIndexInteraction = null
     if (width <= 760) {
       const mobileIndex = page.locator('.mobile-index')
@@ -580,6 +689,7 @@ try {
       longYAxisFigure,
       accessRampLongYAxisFigure,
       accessRampRampYAxisFigure,
+      sandboxGroupedBarFigure,
       plainMarginLayout,
       oversizedMutationDetected,
       readCalls: {
