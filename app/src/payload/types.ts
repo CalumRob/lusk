@@ -103,7 +103,7 @@ export interface Indicateur extends VintageStamp {
   /** Optional typed lineage carried by the ordered-series API adapter. */
   observation_status?: 'measured' | 'missing'
   /** Producer-owned availability state for semantic scalar observations. */
-  fact_status?: 'measured' | 'suppressed' | 'unsupported' | 'not_available' | 'not_published'
+  fact_status?: 'measured' | 'suppressed' | 'unsupported' | 'not_available' | 'not_published' | 'unavailable'
   /** Producer-owned evidence counts for scalar facts; null means not declared. */
   support_count?: number | null
   denominator_count?: number | null

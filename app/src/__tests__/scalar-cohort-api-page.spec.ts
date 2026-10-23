@@ -35,6 +35,7 @@ function declaration(theme: string, indicator: string): SemanticResourceDeclarat
 }
 
 function membersFor(target: SemanticReadItem['target']) {
+  if (target.kind === 'named_reference') return []
   return territoiresFixture.filter((territory) => territory.type === target.type &&
     (target.kind !== 'territory_cohort' || ((!target.department_id || territory.departement === target.department_id) &&
       (!target.epci_id || territory.epci === target.epci_id))))
@@ -51,6 +52,7 @@ function scalarData(theme: string, indicator: string, item: SemanticReadItem, op
   mutate?: (value: Record<string, unknown>) => void
 } = {}) {
   const page = pageFor(theme, indicator)
+  if (item.target.kind === 'named_reference') throw new Error('Unexpected named-reference scalar fixture')
   const members = membersFor(item.target)
   const target = item.target.kind === 'territory_cohort'
     ? { ...item.target, kind: 'territory_cohort' }

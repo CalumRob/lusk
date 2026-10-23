@@ -1,6 +1,6 @@
 import type { Histoire, HistoireDemographie, HistoireEconomie, HistoireHabitat, HistoireMilieux, HistoireMobilite, Indicateur, TerritoireType, VintageStamp } from './types'
 import { RAISONS_SAILLANCE } from './types'
-import type { ThemeKey, ThemeSelectionMember } from './themeAcquisition'
+import type { ThemeKey, ThemeResponse, ThemeSelectionMember } from './themeAcquisition'
 
 /**
  * L'adaptateur du contrat `theme-facts-v1` (#627) : la réponse POST de faits
@@ -26,6 +26,7 @@ const rows = (value: unknown, field: string): Row[] => {
 const text = (value: unknown): value is string => typeof value === 'string'
 const texteNonVide = (value: unknown): value is string => typeof value === 'string' && value.length > 0
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const sameSemanticJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
 
 interface ProvenanceSource {
   sourceId: string
@@ -96,8 +97,17 @@ function indicateurDeSql(
       !descriptor.axis_values.includes(dimensions.axis)) {
     throw new Error('Axe SQL du thème non déclaré')
   }
-  const provenance = apiSources(fact.sources, String(fact.indicator_id))
+  const provenance = fact.status === 'unavailable' && Array.isArray(fact.sources) && fact.sources.length === 0
+    ? [] : apiSources(fact.sources, String(fact.indicator_id))
+  for (const field of ['support_count', 'denominator_count']) {
+    if (field in fact && !(fact[field] === null || finite(fact[field]))) {
+      throw new Error(`Comptage SQL du thème invalide : ${field}`)
+    }
+  }
   const measured = fact.status === 'measured'
+  const factStatus = typeof fact.status === 'string' &&
+    ['measured', 'suppressed', 'unsupported', 'not_available', 'not_published', 'unavailable'].includes(fact.status)
+    ? fact.status as Indicateur['fact_status'] : undefined
   if (measured && !finite(fact.value)) throw new Error(`Valeur mesurée absente : ${String(fact.indicator_id)}`)
   const detail = text(dimensions.detail) ? dimensions.detail : text(dimensions.axis) ? dimensions.axis : null
   return {
@@ -106,6 +116,9 @@ function indicateurDeSql(
     value: measured ? fact.value as number : null, unit: fact.unit,
     rider: measured ? null : fact.status,
     observation_status: measured ? 'measured' : 'missing',
+    ...(factStatus === undefined ? {} : { fact_status: factStatus }),
+    ...(fact.support_count === undefined ? {} : { support_count: fact.support_count as number | null }),
+    ...(fact.denominator_count === undefined ? {} : { denominator_count: fact.denominator_count as number | null }),
     observation_period: text(dimensions.observation_period) ? dimensions.observation_period : null,
     vintage_source: provenance[0]?.source ?? '', vintage_version: provenance[0]?.version ?? '',
     vintage_date_reference: provenance[0]?.referenceDate ?? null,
@@ -162,7 +175,7 @@ function histoireDemographieDeSql(target: { territoire: string; type: Territoire
     if (!texteNonVide(reading[key])) throw new Error(`Lecture SQL Démographie invalide : ${key}`)
   }
   if (reading.story_key !== 'trajectoire-demographique' || reading.salience_reason !== 'defaut' ||
-      reading.rate_unit !== '‰' || !(reading.periode === null || text(reading.periode))) {
+      !(reading.periode === null || text(reading.periode))) {
     throw new Error('Lecture SQL Démographie non déclarée')
   }
   for (const key of ['solde_naturel', 'solde_migratoire', 'taux_solde_naturel', 'taux_solde_migratoire']) {
@@ -281,7 +294,9 @@ function histoireMobiliteDeSql(target: { territoire: string; type: TerritoireTyp
 
 /** The comparison API deliberately returns only plotted peer coordinates. */
 export function histoiresMilieuxDuNuage(response: unknown): HistoireMilieux[] {
-  if (!isRecord(response) || !isRecord(response.reading_cloud) || !Array.isArray(response.reading_cloud.points)) return []
+  if (!isRecord(response) || !isRecord(response.reading_cloud) || response.reading_cloud.status !== 'available' ||
+      !texteNonVide(response.reading_cloud.groupe) || !Array.isArray(response.reading_cloud.points)) return []
+  const group = response.reading_cloud.groupe
   return response.reading_cloud.points.flatMap((point): HistoireMilieux[] => {
     if (!isRecord(point) || !isRecord(point.territory) ||
         !texteNonVide(point.territory.territory_id) || !texteNonVide(point.territory.territory_type) ||
@@ -290,7 +305,7 @@ export function histoiresMilieuxDuNuage(response: unknown): HistoireMilieux[] {
         !(point.periode_pop === null || text(point.periode_pop)) || !(point.periode_artif === null || text(point.periode_artif)) ||
         !finite(point.taux_variation_population) || !finite(point.artif_m2_par_habitant) || !finite(point.artif_m3_par_habitant)) return []
     return [{ territoire: point.territory.territory_id, type: point.territory.territory_type, theme: 'milieux',
-      groupe: 'land', story_key: 'se-densifier-setaler-ou-sen-aller', salience_reason: 'defaut',
+      groupe: group, story_key: 'se-densifier-setaler-ou-sen-aller', salience_reason: 'defaut',
       periode_pop: point.periode_pop as string, periode_artif: point.periode_artif as string | null,
       delta_population: 0, taux_variation_population: point.taux_variation_population as number,
       artif_m2: null, artif_m3: null, artif_m2_par_habitant: point.artif_m2_par_habitant as number,
@@ -337,6 +352,429 @@ function histoireEconomieDeSql(target: { territoire: string; type: TerritoireTyp
 export interface ThemeFactsRows {
   indicateurs: Indicateur[]
   histoires: Histoire[]
+  unavailableReadings?: string[]
+}
+
+function sourceName(source: Row): unknown { return source.name ?? source.source_name }
+
+function normalizeNativeSources(value: unknown): Row[] {
+  if (!Array.isArray(value)) return []
+  return value.filter(isRecord).map((source) => ({ ...source, name: sourceName(source) }))
+}
+
+function dualShapeScalarObservation(data: Row, resource: string,
+  target: { territoire: string; type: TerritoireType }): Row | null {
+  const facet = data.scalar_facet
+  if (facet === undefined) return null
+  const invalid = () => { throw new Error(`Facette scalaire sémantique invalide : ${resource}`) }
+  if (!isRecord(facet) || facet.shape !== 'scalar' || facet.source_facet !== resource ||
+      !texteNonVide(facet.content_version) || !texteNonVide(facet.reference_content_version) ||
+      !texteNonVide(facet.descriptor_version) || !isRecord(facet.descriptor) ||
+      facet.descriptor.indicator_id !== resource || facet.descriptor.descriptor_version !== facet.descriptor_version ||
+      !isRecord(facet.observation) || facet.observation.territory_id !== target.territoire ||
+      facet.observation.territory_type !== target.type || !texteNonVide(facet.observation.status) ||
+      !texteNonVide(facet.descriptor.unit)) return invalid()
+  const observation = facet.observation
+  if (!(observation.status === 'measured' || observation.status === 'suppressed' ||
+      observation.status === 'unsupported' || observation.status === 'not_available' ||
+      observation.status === 'not_published' || observation.status === 'unavailable') ||
+      !(observation.value === undefined || observation.value === null || finite(observation.value)) ||
+      (observation.status === 'measured' && !finite(observation.value)) ||
+      !Array.isArray(observation.sources) ||
+      ['support_count', 'denominator_count'].some((field) =>
+        field in observation && !(observation[field] === null || finite(observation[field])))) return invalid()
+  const sources = normalizeNativeSources(observation.sources)
+  if (sources.length !== observation.sources.length ||
+      (observation.status === 'unavailable' ? sources.length !== 0 : sources.length === 0)) return invalid()
+  return { indicator_id: resource, unit: facet.descriptor.unit, ...facet.observation,
+    dimensions: {}, sources }
+}
+
+function provenanceIdentity(source: Row): string {
+  return `${String(source.source_id ?? '')}\u0000${String(source.vintage_id ?? '')}`
+}
+
+/**
+ * Adapt the producer's declared native resource envelopes to the fiche's
+ * existing fact grammar. This is a consumer projection only: resource
+ * membership, shapes, axes, units, statuses and lineage stay API-owned.
+ */
+export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeResponse,
+  target: { territoire: string; type: TerritoireType }): Row {
+  if (!Array.isArray(acquired.resource_reads)) throw new Error('Lectures sémantiques du thème absentes')
+  const indicators: Row[] = []
+  const indicatorMetadata: Row[] = []
+  const collections: Row[] = []
+  const ownedSeries: Row[] = []
+  const readings: Row[] = []
+  const namedReferences: Row[] = []
+  const unavailableReadings: string[] = []
+  const reads = acquired.resource_reads
+
+  for (const read of reads) {
+    if (!isRecord(read) || !texteNonVide(read.resource) || !isRecord(read.data) ||
+        read.data.resource !== read.resource || !isRecord(read.data.target) ||
+        read.data.target.kind !== 'territory' || read.data.target.id !== target.territoire || read.data.target.type !== target.type) {
+      throw new Error('Identité de lecture sémantique du thème invalide')
+    }
+    // Do not pool provenance across resources. A source/vintage pair on an
+    // observation is not permission to borrow labels or dates from a sibling
+    // indicator; only evidence attached to this exact native resource read is
+    // eligible to resolve it.
+  }
+
+  for (const read of reads) {
+    const data = read.data
+    const resource = read.resource
+    const shapes = Array.isArray(read.shapes) ? read.shapes : []
+    if (shapes.includes('typed_reading')) {
+      if (!Array.isArray(data.facts)) throw new Error(`Lecture typée sémantique invalide : ${resource}`)
+      for (const candidate of rows(data.facts, 'typed_reading.facts')) {
+        if (!texteNonVide(candidate.groupe)) throw new Error('Groupe de lecture typée absent')
+        if (candidate.source !== undefined && (!isRecord(candidate.source) ||
+            candidate.source.source_id !== candidate.source_id || candidate.source.vintage_id !== candidate.vintage_id)) {
+          unavailableReadings.push(resource)
+          continue
+        }
+        const descriptor = isRecord(data.descriptor) ? data.descriptor : null
+        const sameResourceSources: Row[] = [
+          ...(isRecord(candidate.source) ? [candidate.source] : []),
+          ...normalizeNativeSources(candidate.sources),
+          ...normalizeNativeSources(data.sources),
+          ...(descriptor && isRecord(descriptor.source) ? [descriptor.source] : []),
+          ...(Array.isArray(data.source_bindings) ? rows(data.source_bindings, 'typed_reading.source_bindings').map((binding) => ({
+            ...binding, name: binding.source_name, version: binding.source_version,
+            reference_date: binding.reference_date ?? binding.source_reference_date,
+            publication_date: binding.publication_date ?? binding.source_publication_date,
+          })) : []),
+        ]
+        const source = sameResourceSources.find((item) => provenanceIdentity(item) === provenanceIdentity(candidate))
+        const binding = rows(data.source_bindings ?? [], 'typed_reading.source_bindings')
+          .find((row) => row.source_id === candidate.source_id && row.vintage_id === candidate.vintage_id)
+        const actualSource = source ?? (binding ? {
+          source_id: binding.source_id, name: binding.source_name, version: binding.source_version,
+          reference_date: binding.reference_date ?? binding.source_reference_date,
+          publication_date: binding.publication_date ?? binding.source_publication_date,
+        } : null)
+        if (!texteNonVide(candidate.source_id) || !texteNonVide(candidate.vintage_id) || !actualSource ||
+            !texteNonVide(sourceName(actualSource)) || !texteNonVide(actualSource.version)) {
+          unavailableReadings.push(resource)
+          continue
+        }
+        const reading: Row = { ...candidate,
+          ...(descriptor?.rate_unit !== undefined ? { rate_unit: descriptor.rate_unit } : {}),
+          provenance: actualSource ? {
+          source_id: actualSource.source_id, source_name: sourceName(actualSource), source_version: actualSource.version,
+          source_reference_date: actualSource.reference_date ?? null,
+          source_publication_date: actualSource.publication_date ?? null,
+        } : null }
+        if (Array.isArray(data.ranked_activities)) {
+          reading.activities = rows(data.ranked_activities, 'ranked_activities')
+            .filter((item) => item.groupe === candidate.groupe)
+            .map((item) => ({ activity_code: item.activity_code, activity_label: item.activity_label,
+              lq: item.lq, n: item.establishment_count, part_parc: item.park_share }))
+        }
+        readings.push(reading)
+      }
+      continue
+    }
+    if (shapes.includes('anchored_membership') || shapes.includes('period_detail')) {
+      collections.push({ ...data, indicator_id: resource })
+      continue
+    }
+    if (shapes.includes('declared_profile')) {
+      if (!isRecord(data.descriptor) || !Array.isArray(data.observations)) throw new Error(`Profil sémantique invalide : ${resource}`)
+      const descriptor = data.descriptor
+      indicatorMetadata.push({ indicator_id: resource, axes: descriptor.axes,
+        unit: descriptor.unit, label: descriptor.label, comparison_point: descriptor.comparison_point })
+      for (const cell of rows(data.observations, 'profile.observations')) {
+        indicators.push({ indicator_id: resource, unit: cell.unit ?? descriptor.unit, status: cell.status,
+          value: cell.value, dimensions: { detail: cell.detail, sex: cell.sex ?? null },
+          sources: normalizeNativeSources(cell.sources) })
+      }
+      continue
+    }
+    if (Array.isArray(data.points)) {
+      const points = rows(data.points, 'ordered_series.points')
+      const declaration: Row = isRecord(read.declaration) ? read.declaration : {}
+      const declaredAxes = Array.isArray(declaration.axes) ? declaration.axes : []
+      const declaredAxis = declaredAxes.find(text)
+      const axisValues = Array.isArray(data.axis_values) ? data.axis_values
+        : points.map((point) => point.axis)
+      const series: Row = { ...data, indicator_id: resource,
+        axis_kind: data.axis_kind ?? declaredAxis,
+        axis_values: axisValues,
+        points: points.map((point) => ({ ...point, provenance: normalizeNativeSources(point.provenance) })) }
+      if (resource === 'subventions_annuelles' || resource === 'prix_m2') ownedSeries.push(series)
+      else {
+        const axisValues = Array.isArray(data.axis_values) ? data.axis_values : []
+        const axisNumbers = Array.isArray(data.axis_numeric_values) ? data.axis_numeric_values : []
+        for (const point of points) {
+          const axisIndex = axisValues.indexOf(point.axis)
+          indicators.push({ indicator_id: resource, unit: data.unit, value: point.value,
+            status: point.status, dimensions: { axis: point.axis,
+              ...(axisIndex >= 0 && finite(axisNumbers[axisIndex]) ? { numeric_axis_value: axisNumbers[axisIndex] } : {}),
+              observation_period: point.observation_period ?? null, state_role: point.state_role ?? null },
+            sources: normalizeNativeSources(point.provenance) })
+        }
+      }
+      if (series.axis_kind && Array.isArray(series.axis_values)) {
+        indicatorMetadata.push({ indicator_id: resource, axis_kind: series.axis_kind,
+          axis_values: series.axis_values, axis_numeric_values: series.axis_numeric_values,
+          comparison_point: data.comparison_point, completeness: data.completeness,
+          comparison_contract: data.comparison_contract ?? declaration.comparison_contract })
+      }
+      for (const reference of rows(data.named_references ?? [], 'series.named_references')) {
+        namedReferences.push({ ...reference, indicator_id: resource,
+          points: rows(reference.points, 'series.reference.points').map((point) => ({ ...point,
+            provenance: normalizeNativeSources(point.provenance).map((source) => ({ ...source, source_name: source.name })) })) })
+      }
+      if (isRecord(data.context)) indicatorMetadata.push({ indicator_id: resource, unit: data.unit, context: data.context })
+      // Some producers declare both a pooled scalar headline and a separate
+      // ordered series (notably DVF). Keep the scalar distinct from points;
+      // never coerce the trajectory into the headline or infer a latest year.
+      if ('value' in data || 'status' in data) {
+        indicators.push({ indicator_id: resource, unit: data.unit, value: data.value,
+          status: data.status, dimensions: {}, sources: normalizeNativeSources(data.sources) })
+      }
+      if (shapes.includes('scalar') && shapes.includes('ordered_series')) {
+        const observation = dualShapeScalarObservation(data, resource, target)
+        if (observation && (observation.status !== 'measured' || finite(observation.value))) {
+          indicators.push(observation)
+        }
+      }
+      continue
+    }
+    if ('value' in data || 'status' in data) {
+      indicators.push({ indicator_id: resource, unit: data.unit, value: data.value, status: data.status,
+        dimensions: {}, sources: normalizeNativeSources(data.sources) })
+    }
+  }
+
+  for (const read of acquired.named_reference_reads ?? []) {
+    if (!isRecord(read) || !texteNonVide(read.resource) || !isRecord(read.data) ||
+        read.data.resource !== read.resource || !isRecord(read.data.target) ||
+        read.data.target.kind !== 'named_reference' || !texteNonVide(read.data.target.id) ||
+        !isRecord(read.data.reference) || read.data.reference.id !== read.data.target.id ||
+        !texteNonVide(read.data.indicator_id) || !Array.isArray(read.data.points)) {
+      throw new Error('Identité de lecture nommée sémantique invalide')
+    }
+    const owner = reads.find((candidate) => candidate.data.dataset_id === read.data.dataset_id)
+    const ownerData = owner?.data
+    const ownerVersion = isRecord(ownerData) ? ownerData.content_version ?? ownerData.publication_id : undefined
+    const namedVersion = read.data.content_version ?? read.data.publication_id
+    if (!ownerData || typeof ownerVersion !== 'string' || !ownerVersion ||
+        typeof namedVersion !== 'string' || ownerVersion !== namedVersion ||
+        ownerData.reference_content_version !== read.data.reference_content_version) {
+      throw new Error(`Dépendance de référence nommée incompatible : ${read.resource}`)
+    }
+    // The resource target identity is deliberately kept as the producer-owned
+    // named-reference ID; it is never projected onto a territory or a model
+    // reference territory.
+    for (let index = namedReferences.length - 1; index >= 0; index--) {
+      const existing = namedReferences[index]!
+      if (existing.indicator_id === read.data.indicator_id && existing.id === read.data.reference.id) {
+        namedReferences.splice(index, 1)
+      }
+    }
+    namedReferences.push({ indicator_id: owner?.resource ?? read.data.indicator_id, ...read.data.reference,
+      unit: read.data.unit, points: rows(read.data.points, 'named_reference.points').map((point) => ({
+        ...point, provenance: normalizeNativeSources(point.provenance)
+          .map((source) => ({ ...source, source_name: source.name })),
+      })) })
+  }
+
+  const territory = acquired.target
+  if (isRecord(territory) && (territory.id !== target.territoire || territory.type !== target.type)) {
+    throw new Error('Cible de la fiche différente des lectures sémantiques')
+  }
+  return { contract: 'theme-facts-v1', theme_id: theme,
+    territory: { territory_id: target.territoire, territory_type: target.type },
+    indicators, indicator_metadata: indicatorMetadata, named_reference_evidence: namedReferences,
+    unavailable_readings: [...new Set(unavailableReadings)],
+    readings, collections, owned_series: ownedSeries }
+}
+
+interface SemanticReadingReference {
+  target: { territoire: string; type: TerritoireType; classe_densite_code?: string | null }
+  territories?: Array<{ territoire?: string; type?: string; classe_densite_code?: string | null }>
+}
+
+function semanticReadingCloud(response: Row, scopeValue: unknown, selectionValue: unknown,
+  reference: SemanticReadingReference | undefined, focalReads: unknown): Row | null {
+  const cohortReads = Array.isArray(response.cohort_reads) ? response.cohort_reads.filter(isRecord) : []
+  const cohortRead = cohortReads.find((read) => Array.isArray(read.shapes) && read.shapes.includes('typed_reading'))
+  if (!cohortRead || !isRecord(cohortRead.data) || !isRecord(cohortRead.data.cohort) ||
+      !Array.isArray(cohortRead.data.territories) || !reference || !Array.isArray(focalReads)) return null
+  const data = cohortRead.data
+  const cohort = data.cohort as Row
+  const referenceVersion = cohort.reference_content_version
+  if (typeof referenceVersion !== 'string' || !referenceVersion ||
+      data.reference_content_version !== referenceVersion || cohort.territory_type !== reference.target.type ||
+      !Number.isInteger(cohort.member_count)) return null
+  const focalRead = focalReads.filter(isRecord).find((read) => Array.isArray(read.shapes) && read.shapes.includes('typed_reading'))
+  if (!focalRead || !isRecord(focalRead.data) || !Array.isArray(focalRead.data.facts)) return null
+  if ((focalRead.data.content_version ?? focalRead.data.publication_id) !==
+      (data.content_version ?? data.publication_id) ||
+      focalRead.data.reference_content_version !== referenceVersion) return null
+  const focalFact = rows(focalRead.data.facts, 'typed_reading.facts').find((fact) => texteNonVide(fact.groupe))
+  if (!focalFact || !texteNonVide(focalFact.source_id) || !texteNonVide(focalFact.vintage_id)) return null
+  const group = focalFact.groupe as string
+  const memberRows = rows(data.territories, 'typed_reading.territories')
+  const cohortMembers = rows(cohort.members, 'typed_reading.cohort.members')
+  if (memberRows.length !== cohortMembers.length || memberRows.length !== cohort.member_count) return null
+  const memberById = new Map<string, Row>()
+  for (const row of memberRows) {
+    if (!isRecord(row.territory) || !texteNonVide(row.territory.id) ||
+        row.territory.type !== cohort.territory_type || memberById.has(row.territory.id)) return null
+    memberById.set(row.territory.id, row)
+  }
+  const cohortIds = new Set(cohortMembers.flatMap((member) => isRecord(member) &&
+    texteNonVide(member.id) && member.type === cohort.territory_type ? [member.id] : []))
+  if (cohortIds.size !== cohort.member_count || [...cohortIds].some((id) => !memberById.has(id))) return null
+
+  const scope = isRecord(scopeValue) ? scopeValue : null
+  if (!scope || !Number.isInteger(scope.member_count)) return null
+  let selectedIds: string[]
+  if (scope.kind === 'density_class') {
+    const density = scope.density_class_code
+    if (scope.territory_type !== 'commune' || reference.target.type !== 'commune' ||
+        !texteNonVide(density) || reference.target.classe_densite_code !== density || !reference.territories) return null
+    selectedIds = reference.territories.flatMap((territory) =>
+      territory.type === 'commune' && territory.classe_densite_code === density && texteNonVide(territory.territoire)
+        ? [territory.territoire] : [])
+    if (selectedIds.length !== scope.member_count || !selectedIds.includes(reference.target.territoire)) return null
+  } else if (scope.kind === 'same_level') {
+    if (scope.territory_type !== cohort.territory_type || scope.member_count !== cohort.member_count) return null
+    selectedIds = [...cohortIds]
+  } else if (scope.kind === 'explicit_selection') {
+    if (!Array.isArray(selectionValue) || selectionValue.length !== scope.member_count) return null
+    const selection = rows(selectionValue, 'comparison.selection')
+    selectedIds = []
+    for (const member of selection) {
+      if (member.territory_type !== cohort.territory_type || !texteNonVide(member.territory_id)) return null
+      selectedIds.push(member.territory_id)
+    }
+    if (new Set(selectedIds).size !== selectedIds.length) return null
+  } else return null
+  if (selectedIds.some((id) => !cohortIds.has(id))) return null
+
+  const points: Row[] = []
+  const sourceAbsences: Row[] = []
+  const sourceBindings: Row[] = []
+  for (const id of selectedIds) {
+    const member = memberById.get(id)!
+    const territory = member.territory as Row
+    const facts = rows(member.facts, 'typed_reading.territory.facts')
+    const fact = facts.find((candidate) => candidate.groupe === group)
+    if (!fact && cohortRead.resource === 'milieux_selected_reading' && facts.length === 0 &&
+        Array.isArray(member.source_absences) && member.source_absences.length === 1) {
+      const absence = member.source_absences[0]
+      if (!isRecord(absence) || absence.territory_id !== id || absence.territory_type !== territory.type ||
+          absence.reason !== 'source_record_absent' || !texteNonVide(absence.source_id) ||
+          !texteNonVide(absence.vintage_id) || typeof absence.source_snapshot_sha256 !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(absence.source_snapshot_sha256)) return null
+      sourceAbsences.push(absence)
+      continue
+    }
+    if (!fact || fact.status !== 'measured' || fact.source_id !== focalFact.source_id ||
+        fact.vintage_id !== focalFact.vintage_id) return null
+    if (Array.isArray(member.source_bindings)) {
+      sourceBindings.push(...rows(member.source_bindings, 'typed_reading.source_bindings')
+        .filter((binding) => binding.groupe === group && binding.territory_id === id &&
+          binding.territory_type === territory.type))
+    }
+    if (cohortRead.resource === 'demographie_selected_reading') {
+      if (!finite(fact.taux_solde_naturel) || !finite(fact.taux_solde_migratoire) ||
+          !(fact.periode === null || text(fact.periode))) continue
+      points.push({ territory: { territory_id: id, territory_type: territory.type, name: territory.name },
+        periode: fact.periode, taux_solde_naturel: fact.taux_solde_naturel,
+        taux_solde_migratoire: fact.taux_solde_migratoire })
+    } else if (cohortRead.resource === 'milieux_selected_reading') {
+      if (!(fact.periode_pop === null || text(fact.periode_pop)) ||
+          !(fact.periode_artif === null || text(fact.periode_artif)) ||
+          !finite(fact.taux_variation_population) || !finite(fact.artif_m2_par_habitant) ||
+          !finite(fact.artif_m3_par_habitant)) continue
+      points.push({ territory: { territory_id: id, territory_type: territory.type, name: territory.name },
+        periode_pop: fact.periode_pop, periode_artif: fact.periode_artif,
+        taux_variation_population: fact.taux_variation_population,
+        artif_m2_par_habitant: fact.artif_m2_par_habitant,
+        artif_m3_par_habitant: fact.artif_m3_par_habitant })
+    } else return null
+  }
+  return { status: points.length ? 'available' : 'unavailable', groupe: group,
+    story_key: cohortRead.resource === 'demographie_selected_reading'
+      ? 'trajectoire-demographique' : 'se-densifier-setaler-ou-sen-aller',
+    scope, content_version: data.content_version, reference_content_version: referenceVersion, points,
+    source_absences: sourceAbsences, source_bindings: sourceBindings }
+}
+
+export function semanticComparisonForTheme(response: unknown, reference?: SemanticReadingReference,
+  focalReads?: unknown): Row | null {
+  if (!isRecord(response) || !Array.isArray(response.comparison_reads)) return null
+  const results: Row[] = []
+  const profiles: Row[] = []
+  const scopes: unknown[] = []
+  const selections: unknown[] = []
+  for (const item of response.comparison_reads) {
+    if (!isRecord(item) || !texteNonVide(item.resource) || !isRecord(item.data) || !isRecord(item.data.result)) {
+      throw new Error('Résultat de comparaison sémantique invalide')
+    }
+    const result = item.data.result
+    const shape = item.data.shape
+    scopes.push(item.data.scope ?? null)
+    selections.push(item.data.selection ?? null)
+    if ('scalar_facet' in item.data) {
+      const scalarFacet = item.data.scalar_facet
+      const scalarResult = isRecord(scalarFacet) ? scalarFacet.result : undefined
+      const descriptor = isRecord(scalarFacet) ? scalarFacet.descriptor : undefined
+      if (!isRecord(scalarFacet) || scalarFacet.shape !== 'scalar' || scalarFacet.source_facet !== item.resource ||
+          !texteNonVide(scalarFacet.content_version) || !texteNonVide(scalarFacet.reference_content_version) ||
+          !texteNonVide(scalarFacet.descriptor_version) || !isRecord(descriptor) ||
+          descriptor.indicator_id !== item.resource || descriptor.descriptor_version !== scalarFacet.descriptor_version ||
+          !texteNonVide(descriptor.unit) || !isRecord(scalarResult) ||
+          scalarResult.indicator_id !== item.resource || scalarResult.source_facet !== item.resource ||
+          scalarResult.descriptor_version !== scalarFacet.descriptor_version || !texteNonVide(scalarResult.status) ||
+          !sameSemanticJson(scalarFacet.scope ?? null, item.data.scope ?? null) ||
+          !sameSemanticJson(scalarFacet.selection ?? null, item.data.selection ?? null) ||
+          (scalarFacet.comparison_content_version !== undefined && !texteNonVide(scalarFacet.comparison_content_version)) ||
+          (scalarFacet.selection == null && !texteNonVide(scalarFacet.comparison_content_version))) {
+        throw new Error(`Facette de comparaison scalaire invalide : ${item.resource}`)
+      }
+      results.push({ ...scalarResult, indicator_id: item.data.indicator_id ?? item.resource,
+        source_facet: scalarResult.source_facet })
+    }
+    if (shape === 'declared_profile' || (Array.isArray(item.shapes) && item.shapes.includes('declared_profile'))) {
+      profiles.push({ ...result, indicator: item.data.indicator_id ?? item.resource,
+        facet: result.source_facet ?? result.facet })
+    } else results.push({ ...result, indicator_id: item.data.indicator_id ?? item.resource,
+      source_facet: result.source_facet })
+  }
+  const sameJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+  if (scopes.some((scope) => !sameJson(scope, scopes[0])) ||
+      selections.some((selection) => !sameJson(selection, selections[0]))) {
+    throw new Error('Portée ou sélection des comparaisons sémantiques incohérente')
+  }
+  const readingCloud = semanticReadingCloud(response, scopes[0] ?? null, selections[0] ?? null,
+    reference, focalReads)
+  const cloudRequested = Array.isArray(response.cohort_reads) && response.cohort_reads.some((read) =>
+    isRecord(read) && (read.resource === 'demographie_selected_reading' || read.resource === 'milieux_selected_reading'))
+  return { results, profile_comparisons: profiles,
+    selection: selections[0] ?? response.selection,
+    scope: scopes[0] ?? null,
+    reading_cloud_error: response.cohort_error === true || (cloudRequested && !readingCloud),
+    ...(readingCloud ? { reading_cloud: readingCloud } : {}) }
+}
+
+export function themeFactsRowsFromSemantic(
+  theme: ThemeKey,
+  response: ThemeResponse,
+  target: { territoire: string; type: TerritoireType },
+  referential: { epci?: string | null; region?: string | null } = {},
+): ThemeFactsRows {
+  const normalized = themeFactsEnvelopeFromSemantic(theme, response, target)
+  return { ...themeFactsRowsFromApi(theme, normalized, target, referential),
+    unavailableReadings: normalized.unavailable_readings as string[] }
 }
 
 /** Attach API-ranked facts without deriving anything from retired rank columns or changing focal values. */
@@ -348,7 +786,19 @@ export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unkno
   const results = rows(comparison.results, 'results')
   const profiles = rows(comparison.profile_comparisons, 'profile_comparisons')
   return lignes.map(({ comparaisonApi: _old, ...row }) => {
-    const match = results.find((item) => item.indicator_id === row.key) ?? profiles.find((item) => {
+    const match = results.find((item) => {
+      if (item.indicator_id !== row.key) return false
+      // A producer may publish a comparison for one member of an ordered
+      // series (for example the resolved current year). Its facet is a fact
+      // coordinate, not a label to spread across every point in that series.
+      if (item.source_facet !== undefined && item.source_facet !== null) {
+        const coordinate = row.dimension ?? row.detail
+        // Scalar comparisons identify their indicator as the source facet;
+        // ordered-series comparisons identify the selected axis coordinate.
+        if ((coordinate ?? row.key) !== item.source_facet) return false
+      }
+      return true
+    }) ?? profiles.find((item) => {
       if (item.indicator !== row.key) return false
       const facet = isRecord(item.facet) ? item.facet : {}
       return (facet.detail ?? null) === (row.detail ?? null) && (facet.sex ?? null) === (row.sex ?? null)
@@ -535,12 +985,48 @@ export function themeFactsRowsFromApi(
 export function validerReponseComparaisonTheme(
   theme: ThemeKey,
   response: unknown,
-  selectionAttendue: readonly ThemeSelectionMember[],
+  selectionAttendue: readonly ThemeSelectionMember[] | undefined,
 ): void {
+  if (isRecord(response) && Array.isArray(response.comparison_reads)) {
+    if (response.theme_id !== theme ||
+        (selectionAttendue === undefined ? response.selection !== undefined : !Array.isArray(response.selection))) {
+      throw new Error('Réponse de comparaison sémantique incompatible')
+    }
+    if (selectionAttendue !== undefined) {
+      const echo = response.selection as unknown[]
+      if (echo.length !== selectionAttendue.length || echo.some((item, index) => !isRecord(item) ||
+          item.territory_type !== selectionAttendue[index]!.territory_type ||
+          item.territory_id !== selectionAttendue[index]!.territory_id)) {
+        throw new Error('La comparaison sémantique ne reflète pas la sélection demandée')
+      }
+    }
+    for (const comparison of response.comparison_reads) {
+      if (!isRecord(comparison) || !texteNonVide(comparison.resource) || !isRecord(comparison.data) ||
+          comparison.data.contract !== 'indicator-comparison-v1' ||
+          comparison.data.indicator_id !== comparison.resource ||
+          !isRecord(comparison.data.target) || comparison.data.target.kind !== 'territory' ||
+          !isRecord(comparison.data.result) ||
+          (selectionAttendue === undefined
+            ? comparison.data.selection !== null && comparison.data.selection !== undefined
+            : !Array.isArray(comparison.data.selection))) {
+        throw new Error('Résultat de comparaison sémantique mal formé')
+      }
+      if (selectionAttendue !== undefined) {
+        const actual = comparison.data.selection as unknown[]
+        if (actual.length !== selectionAttendue.length || actual.some((item, index) => !isRecord(item) ||
+            item.territory_type !== selectionAttendue[index]!.territory_type ||
+            item.territory_id !== selectionAttendue[index]!.territory_id)) {
+          throw new Error('La sélection de comparaison sémantique est incohérente')
+        }
+      }
+    }
+    return
+  }
   if (!isRecord(response) || response.contract !== 'theme-comparison-v1' || response.theme_id !== theme ||
       !Array.isArray(response.profile_comparisons)) {
     throw new Error('Réponse de comparaison du thème invalide')
   }
+  if (selectionAttendue === undefined) throw new Error('La sélection native de comparaison est absente')
   rows(response.results, 'results')
   const echo = Array.isArray(response.selection) ? response.selection : []
   if (echo.length !== selectionAttendue.length || echo.some((item, index) => !isRecord(item) ||
