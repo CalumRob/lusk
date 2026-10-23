@@ -1392,18 +1392,13 @@ onBeforeUnmount(() => {
 .cahier--indexed-sections .page-heading-index { color: var(--red); font: 500 12px/1.3 var(--font-ui); font-variant-numeric: tabular-nums; }
 .cahier--indexed-sections .page-heading-index small { margin-left: 3px; color: var(--muted); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); }
 .cahier--indexed-sections .page-heading-sr-only { position: absolute; width: 1px; height: 1px; padding: 0; margin: -1px; overflow: hidden; clip: rect(0, 0, 0, 0); white-space: nowrap; border: 0; }
-.cahier--indexed-sections .page-heading-context { display: flex; align-items: baseline; justify-self: end; gap: 6px; max-width: min(32vw, 18rem); min-width: 0; font-family: var(--font-ui); font-size: 12px; line-height: 1.3; white-space: nowrap; }
+.cahier--indexed-sections .page-heading-context { display: flex; align-items: baseline; justify-self: end; gap: 6px; max-width: min(32vw, 18rem); min-width: 0; font-family: var(--font-ui); font-size: var(--text-cahier-min-size); line-height: 1.3; white-space: nowrap; }
 .cahier--indexed-sections .page-heading-theme { flex: none; color: var(--cahier-theme-strong); font-weight: 600; }
 .cahier--indexed-sections .page-heading-context-separator { flex: none; color: var(--muted); }
 .cahier--indexed-sections .page-heading-territory { min-width: 0; overflow: hidden; color: var(--accent-primary); font-weight: 600; text-align: right; text-overflow: ellipsis; }
 .cahier--indexed-sections .page-heading h2 {
   max-width: none;
   text-align: left;
-  font-family: var(--font-display-title);
-  font-size: clamp(18px, 1.7vw, 20px);
-  font-weight: 600;
-  letter-spacing: -.02em;
-  line-height: 1.25;
 }
 .cahier--indexed-sections .page-copy { padding-right: 0; padding-left: 0; }
 .cahier--indexed-sections .page-subtitle,
@@ -1619,8 +1614,16 @@ onBeforeUnmount(() => {
     --cahier-indexed-heading-padding-block-start: var(--space-3);
     --cahier-indexed-heading-padding-block-end: 10px;
   }
-  .cahier--indexed-sections .page-heading h2 { font-size: 18px; }
-  .cahier--indexed-sections .page-heading-context { max-width: 34vw; font-size: var(--text-cahier-min-size); }
+  .cahier--indexed-sections .page-layout--sticky .page-heading {
+    grid-template-columns: var(--cahier-indexed-heading-index-column) minmax(0, 1fr);
+  }
+  .cahier--indexed-sections .page-heading-index { grid-column: 1; grid-row: 1; }
+  .cahier--indexed-sections .page-heading h2 { grid-column: 1 / -1; grid-row: 2; }
+  .cahier--indexed-sections .page-heading-context {
+    grid-column: 2;
+    grid-row: 1;
+    max-width: 100%;
+  }
   .figure-spread { padding: var(--cahier-spread-padding, 28px) 0; }
   .access-figures { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 24px 10px; }
 }

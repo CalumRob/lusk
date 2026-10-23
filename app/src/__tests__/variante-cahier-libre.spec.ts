@@ -67,6 +67,23 @@ function blocCss(css: string, atRule: string): string {
   throw new Error(`Unclosed CSS at-rule: ${atRule}`)
 }
 
+function mediaCssBlocks(css: string): string[] {
+  const blocks: string[] = []
+  const mediaStarts = [...css.matchAll(/@media\b/g)].map((match) => match.index ?? -1)
+  for (const start of mediaStarts) {
+    const open = css.indexOf('{', start)
+    let depth = 0
+    for (let index = open; index < css.length; index += 1) {
+      if (css[index] === '{') depth += 1
+      if (css[index] === '}' && --depth === 0) {
+        blocks.push(css.slice(open + 1, index))
+        break
+      }
+    }
+  }
+  return blocks
+}
+
 function totalLossRows(): Indicateur[] {
   return [
     {
@@ -970,7 +987,7 @@ describe('Variante E — partage de l’espace public', () => {
     )
   })
 
-  it('uses stable compact metadata roles at every Cahier viewport width', () => {
+  it('keeps the indexed page heading on its token size and reflows its metadata row on mobile', () => {
     const evidenceSource = regleCss(cahierEvidenceSourceStyles, '\\.cahier-evidence-source')
     const marginSource = regleCss(varianteCahierLibreStyles, '\\.margin-sources a')
     for (const rule of [evidenceSource, marginSource]) {
@@ -991,14 +1008,50 @@ describe('Variante E — partage de l’espace public', () => {
     expect(pageNumberSpan).not.toMatch(/font-weight\s*:|letter-spacing\s*:/)
     expect(varianteCahierLibreStyles).not.toMatch(/\.concept-group-label\s*\{\s*font-family\s*:/)
     const mobileStyles = blocCss(varianteCahierLibreStyles, '@media (max-width: 600px)')
+    const indexedHeading = regleCss(
+      varianteCahierLibreStyles,
+      '\\.cahier--indexed-sections \\.page-heading h2',
+    )
+    expect(indexedHeading).toContain('text-align: left;')
+    expect(indexedHeading).not.toMatch(/font-(?:family|size|weight)\s*:|letter-spacing\s*:|line-height\s*:/)
+    for (const mediaBlock of mediaCssBlocks(varianteCahierLibreStyles)) {
+      const mediaHeading = mediaBlock.match(
+        /\.cahier--indexed-sections\s+\.page-heading\s+h2\s*\{([^}]*)\}/,
+      )?.[1] ?? ''
+      expect(mediaHeading).not.toMatch(/font-size\s*:/)
+    }
+
     const pageHeadingContext = regleCss(
-      mobileStyles,
+      varianteCahierLibreStyles,
       '\\.cahier--indexed-sections \\.page-heading-context',
     )
     expect(pageHeadingContext).toContain('font-size: var(--text-cahier-min-size);')
     expect(pageHeadingContext).not.toContain('--type-figure-tick-size')
-    expect(mobileStyles).not.toMatch(/^\s*\.page-heading h2\s*\{/m)
-    expect(mobileStyles).toContain('.cahier--indexed-sections .page-heading h2')
+    const mobilePageHeadingContext = regleCss(
+      mobileStyles,
+      '\\.cahier--indexed-sections \\.page-heading-context',
+    )
+    expect(mobilePageHeadingContext).not.toMatch(/font-size\s*:/)
+    expect(
+      regleCss(
+        mobileStyles,
+        '\\.cahier--indexed-sections \\.page-layout--sticky \\.page-heading',
+      ),
+    ).toContain('grid-template-columns: var(--cahier-indexed-heading-index-column) minmax(0, 1fr);')
+    expect(regleCss(mobileStyles, '\\.cahier--indexed-sections \\.page-heading-index')).toContain(
+      'grid-column: 1;',
+    )
+    expect(regleCss(mobileStyles, '\\.cahier--indexed-sections \\.page-heading-index')).toContain(
+      'grid-row: 1;',
+    )
+    expect(regleCss(mobileStyles, '\\.cahier--indexed-sections \\.page-heading h2')).toContain(
+      'grid-column: 1 / -1;',
+    )
+    expect(regleCss(mobileStyles, '\\.cahier--indexed-sections \\.page-heading h2')).toContain(
+      'grid-row: 2;',
+    )
+    expect(mobilePageHeadingContext).toContain('grid-column: 2;')
+    expect(mobilePageHeadingContext).toContain('grid-row: 1;')
   })
 
   it('starts at the persistent AppHeader edge and aligns Sommaire page targets there', () => {
