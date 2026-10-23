@@ -2,11 +2,10 @@ import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 import TerritoireView from '@/views/TerritoireView.vue'
 import { routes } from '@/router'
-import { varianteDeUrl } from '@/fiche/prototype/variantes'
 import {
   indicateursMobiliteFixture,
   histoiresMobiliteFixture,
@@ -21,8 +20,7 @@ import {
 } from '@/payload/territoryReadModel'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { PayloadError } from '@/payload/validate'
-import CahierComparisonNote from '@/fiche/prototype/CahierComparisonNote.vue'
-import { reponseThemeMobiliteApi } from './helpers/mobiliteThemeApiStub'
+import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture } from './helpers/semanticApiFixtures'
 
 const rawModel = {
   schema_version: '1',
@@ -42,12 +40,32 @@ const rawModel = {
   },
 } as const
 
+const fetchBloque = vi.fn(async (input: RequestInfo | URL) => {
+  throw new Error(`Accès réseau réel interdit dans ce test : ${String(input)}`)
+})
+
 beforeEach(() => localStorage.clear())
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+  vi.stubGlobal('fetch', fetchBloque)
+})
+
+function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = []) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url === '/api/resources') return nativeCatalogueResponse()
+    if (url === '/api/resources/read-batch') {
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(items)
+      return nativeBatchResponse(items, nativeReadFixture)
+    }
+    throw new Error(`Unexpected request: ${url}`)
+  })
+}
 
 describe('fiche — chargement par modèle de lecture de territoire', () => {
-  it('updates comparison labels and availability after navigating between communes', async () => {
-    const varianteE = varianteDeUrl('E')
-    await (varianteE?.composant as any).__asyncLoader?.()
+  it('keeps comparison labels scoped to the current commune while navigating on native reads', async () => {
     const modelFor = (id: string) => validerModeleTerritoire(
       JSON.parse(readFileSync(resolve(process.cwd(),
         `../public/data/modeles-lecture/territoires/commune/${id}.json`), 'utf8')),
@@ -60,59 +78,27 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
       model.cohortTerritories = JSON.parse(readFileSync(
         resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     }
-    // Le flux E acquiert ses faits par le POST de thème : la réponse doit être
-    // le contrat réel (theme-facts-v1) — le modèle publié n'EST pas une
-    // réponse de faits, et le repli pendand du cahier ne rend AUCUNE valeur
-    // statique (y compris le libellé de note de comparaison).
-    const models: Record<string, any> = { '35238': rennes, '22001': destination }
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
-      const url = String(input)
-      const focal = url.match(/^\/api\/territories\/commune\/([^/]+)\/themes\/mobilite\/facts$/)?.[1]
-      if (focal && models[focal]) {
-        const model = models[focal]
-        const densite = model.themes.mobilite!.comparisons.densite!
-        return { ok: true, status: 200, json: async () =>
-          reponseThemeMobiliteApi(model, 'commune', focal, densite.scope.kind, densite.scope.label) }
-      }
-      if (url.endsWith('/themes/mobilite/comparison')) {
-        const selection = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
-        // La réponse comparison-only porte les pairs bâtiments du périmètre
-        // demandé (rampes/distributions comparées SANS les faits focaux) —
-        // c'est elle qui actualise le libellé de portée des notes.
-        const focalComparaison = url.match(/^\/api\/territories\/commune\/([^/]+)\/themes\/mobilite\/comparison$/)?.[1]
-        const model = (focalComparaison && models[focalComparaison]) ?? models['35238']
-        const epci = model.themes.mobilite!.comparisons.epci!
-        const complet = reponseThemeMobiliteApi(model, 'commune', focalComparaison ?? '35238', epci.scope.kind, epci.scope.label)
-        return { ok: true, status: 200, json: async () => ({
-          contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite', selection,
-          scope: { kind: 'explicit_selection', member_count: selection.length },
-          results: [], profile_comparisons: [],
-          building_access: {
-            scope: { kind: 'custom', member_count: selection.length },
-            ramp: { ...complet.building_access.peer_ramp, member_count: selection.length },
-            distribution: { ...complet.building_access.peer_distribution, member_count: selection.length },
-          },
-        }) }
-      }
-      throw new Error(`Requête inattendue : ${url}`)
-    })
+    const requests: Array<Array<Record<string, any>>> = []
+    const fetchApi = nativeSemanticFetch(requests)
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
     const loader = vi.fn(async (_type: string, id: string) => id === '35238' ? rennes : destination)
     const router = createRouter({ history: createMemoryHistory(), routes })
-    await router.push('/territoire/commune/35238?theme=mobilite&variant=E&comparaison=epci')
+    await router.push('/territoire/commune/35238?theme=mobilite&comparaison=epci')
     await router.isReady()
     const wrapper = mount(TerritoireView, {
       global: { plugins: [router], provide: { [TERRITORY_READ_MODEL_CHARGER_KEY]: loader } },
     })
     await flushPromises()
-    const note = () => wrapper.findAllComponents(CahierComparisonNote)
-      .find((candidate) => candidate.find('button[aria-haspopup="listbox"]').exists())
-    expect(note()?.text()).toContain('Rennes Métropole')
+    const epciName = (model: typeof rennes) => model.territories
+      .find((territory) => territory.type === 'epci' && territory.territoire === model.territory.epci)?.nom
+    const notes = () => wrapper.findAll('.cahier-comparison-note').map((note) => note.text())
+    expect(notes().some((text) => text.includes(epciName(rennes)!))).toBe(true)
 
-    await router.push('/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci')
+    await router.push('/territoire/commune/22001?theme=mobilite&comparaison=epci')
     await flushPromises()
-    expect(note()?.text()).not.toContain('Rennes Métropole')
-    expect(note()?.text()).toContain(destination.themes.mobilite?.comparisons.epci?.scope.label)
+    expect(notes().some((text) => text.includes(epciName(destination)!))).toBe(true)
+    expect(notes().some((text) => text.includes(epciName(rennes)!))).toBe(false)
 
     const withoutEpci = { ...destination, territory: { ...destination.territory, epci: null },
       territories: destination.territories.map((item) => item.territoire === '22001'
@@ -120,12 +106,16 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
       themes: { ...destination.themes, mobilite: { ...destination.themes.mobilite!,
         comparisons: { ...destination.themes.mobilite!.comparisons, epci: undefined } } } }
     loader.mockResolvedValue(withoutEpci as typeof destination)
-    await router.push('/territoire/commune/35238?theme=mobilite&variant=E')
+    await router.push('/territoire/commune/35238?theme=mobilite')
     await flushPromises()
-    await router.push('/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci')
+    await router.push('/territoire/commune/22001?theme=mobilite&comparaison=epci')
     await flushPromises()
     expect(router.currentRoute.value.query.comparaison).toBeUndefined()
-    expect(note()?.findAll('[role="option"]')).toHaveLength(0)
+    expect(notes().some((text) => text.includes(epciName(destination)!))).toBe(false)
+    expect(requests.flat().some((item) => item.target?.kind === 'territory' && item.target.id === '35238')).toBe(true)
+    expect(requests.flat().some((item) => item.target?.kind === 'territory' && item.target.id === '22001')).toBe(true)
+    expect(requests.every((items) => items.length >= 1 && items.length <= 12)).toBe(true)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
     wrapper.unmount()
   })
 
@@ -133,8 +123,6 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
     { type: 'epci', id: '243500139', scope: 'EPCI bretons' },
     { type: 'departement', id: '35', scope: 'départements bretons' },
   ] as const)('uses the published fixed comparison on a $type fiche', async ({ type, id, scope }) => {
-    const varianteE = varianteDeUrl('E')
-    await (varianteE?.composant as any).__asyncLoader?.()
     const publishedModel = JSON.parse(readFileSync(
       resolve(process.cwd(), `../public/data/modeles-lecture/territoires/${type}/${id}.json`),
       'utf8',
@@ -153,47 +141,32 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
       comparison,
     )
     expect(projectedFacts?.mobility.buildingDistribution?.comparisonLabel).toBe(scope)
-    // Le flux E acquiert ses faits par le POST de thème : le modèle publié
-    // n'EST pas une réponse de faits (le repli pendant ne rend AUCUNE valeur
-    // statique) — le POST est servi avec le contrat réel, la comparaison fixe
-    // déclarée du modèle publiée portant son libellé de portée.
-    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).endsWith('/themes/mobilite/facts')) {
-        return {
-          ok: true,
-          status: 200,
-          json: async () => reponseThemeMobiliteApi(validatedModel, type, id,
-            comparison!.scope.kind, comparison!.scope.label),
-        }
-      }
-      return {
-        ok: true,
-        status: 200,
-        json: async () => publishedModel,
-      }
-    })
+    const requests: Array<Array<Record<string, any>>> = []
+    const fetchMock = nativeSemanticFetch(requests)
+    const readModelLoader = vi.fn(async () => validatedModel)
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchMock)
 
     try {
       const router = createRouter({ history: createMemoryHistory(), routes })
-      await router.push(`/territoire/${type}/${id}?theme=mobilite&variant=E`)
+      await router.push(`/territoire/${type}/${id}?theme=mobilite`)
       await router.isReady()
-      const wrapper = mount(TerritoireView, { global: { plugins: [router] } })
+      const wrapper = mount(TerritoireView, { global: { plugins: [router], provide: {
+        [TERRITORY_READ_MODEL_CHARGER_KEY]: readModelLoader,
+      } } })
       await flushPromises()
 
-      const labels = wrapper.findAllComponents(CahierComparisonNote)
-        .map((note) => note.props('label'))
       expect(wrapper.text()).not.toContain('Impossible de charger les données de la fiche.')
-      expect(
-        labels.some((label) =>
-          typeof label === 'string' &&
-          label.includes(scope) &&
-          !label.includes('Comparaison indisponible'),
-        ),
-        `comparaison publiée ${scope}, libellés rendus : ${JSON.stringify(labels)}`,
-      ).toBe(true)
+      expect(wrapper.find('[role="tabpanel"]').text()).toContain('L’accès aux services')
+      const fixedComparisonReads = requests.flat().filter((item) =>
+        item.target?.kind === 'territory' && item.target.type === type && item.target.id === id &&
+        item.intent?.kind === 'fixed_comparison')
+      expect(fixedComparisonReads.length).toBeGreaterThan(0)
+      expect(requests.length).toBeGreaterThan(0)
+      expect(requests.every((items) => items.length >= 1 && items.length <= 12)).toBe(true)
+      expect(fetchMock.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
     } finally {
-      vi.unstubAllGlobals()
+      vi.stubGlobal('fetch', fetchBloque)
     }
   })
 
@@ -240,7 +213,7 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
       expect(wrapper.text()).not.toContain('Impossible de charger les données de la fiche.')
       expect(wrapper.find('h1').text()).toBe('Rennes')
     } finally {
-      vi.unstubAllGlobals()
+      vi.stubGlobal('fetch', fetchBloque)
     }
   })
 
