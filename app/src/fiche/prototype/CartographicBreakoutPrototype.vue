@@ -407,7 +407,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   color: var(--red);
   font: var(--text-caption);
   font-variant-numeric: tabular-nums;
-  letter-spacing: .08em;
+  letter-spacing: var(--text-caption-tracking);
   vertical-align: .2em;
 }
 
@@ -518,7 +518,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   margin-right: 0;
   color: var(--red);
   font: var(--text-caption);
-  letter-spacing: .08em;
+  letter-spacing: var(--text-caption-tracking);
   vertical-align: baseline;
 }
 

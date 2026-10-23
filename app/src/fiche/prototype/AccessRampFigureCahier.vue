@@ -22,8 +22,6 @@ import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
 
-const AEDAR_TIME_FIGURE_STYLE = { '--cahier-figure-axis-title-x-left': '50%' }
-
 const props = withDefaults(defineProps<{
   ramp?: MobiliteAccessRamp
   timeRamp?: TimeRampFigureData
@@ -34,14 +32,12 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMode[]] }>()
 
 const MODE_ORDER: readonly MobiliteAccessMode[] = ['car', 'bike', 'walkTransit']
-const WIDTH = 820
+const WIDTH = 640
 const HEIGHT = 300
-// Preserve the prior 640×300 plot's desktop proportions in this custom
-// 820×300 viewBox; the measured left rail can then grow on narrow viewports.
 const BASE_FIGURE_GEOMETRY = {
   width: WIDTH,
   height: HEIGHT,
-  margin: { top: 22, right: 87.25, bottom: 62, left: 82 },
+  margin: { top: 22, right: 68, bottom: 62, left: 64 },
 } as const
 const plotElement = ref<HTMLElement | null>(null)
 
@@ -375,7 +371,6 @@ function timeHitboxStyle(index: number): Record<string, string> {
     class="access-ramp-cahier access-ramp-cahier--time"
     size="compact"
     :geometry="figureGeometry"
-    :style="AEDAR_TIME_FIGURE_STYLE"
     x-title="Temps de trajet"
     :y-title="`${timeRamp.yAxis.label}${timeRamp.yAxis.unit ? ` (${timeRamp.yAxis.unit})` : ''}`"
   >

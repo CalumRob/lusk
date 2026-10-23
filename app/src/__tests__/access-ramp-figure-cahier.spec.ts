@@ -54,7 +54,7 @@ describe('AccessRampFigureCahier', () => {
     const axis = wrapper.find('.access-ramp-axis')
 
     expect(svg.attributes('viewBox')).toBe('0 0 640 300')
-    expect(frame.attributes('style')).toContain('--cahier-figure-grid-left: 10%;')
+    expect(frame.attributes('style')).toContain('--cahier-figure-grid-left: 10.00%;')
     expect(frame.attributes('style')).toContain('--cahier-figure-grid-right: 10.63%;')
     expect(frame.attributes('style')).toContain('--cahier-figure-grid-top: 7.33%;')
     expect(frame.attributes('style')).toContain('--cahier-figure-grid-bottom: 20.67%;')
