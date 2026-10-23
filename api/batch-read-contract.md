@@ -15,7 +15,8 @@ whole request. Batches are bounded by 200,000 preflight work units and 8 MB outp
 
 | Resource shape | Target / coordinates | Intent |
 | --- | --- | --- |
-| `scalar`, `declared_profile`, `ordered_series`, `distribution`, `period_detail`, `anchored_membership` | A declared territory or `territory_cohort` target; producer-declared coordinates and optional output fields | `facts` |
+| `scalar`, `declared_profile`, `ordered_series`, `period_detail`, `anchored_membership` | A declared territory or `territory_cohort` target; producer-declared coordinates and optional output fields | `facts` |
+| `distribution` | A declared territory target; producer-declared coordinates and optional output fields | `facts` |
 | `typed_reading` | A territory or `territory_cohort` target and producer-declared reading group (`groupe`) | `facts` |
 | `named_reference` | Producer-declared named-reference target and coordinates | `facts` |
 | Comparable retained shapes | A declared territory target and a producer-declared comparison context or explicit bounded member selection | `fixed_comparison` or `selected_comparison` |
@@ -46,14 +47,16 @@ facts retain their native family payloads and source/status semantics. Scalar
 observations and profile cells keep their actual support, denominator, suppression,
 and provenance. Ordered series preserve declared axes and producer missing-record
 semantics. Period/detail collections and anchored memberships remain sparse; no
-synthetic zero, membership, or rank is added. Typed-reading side evidence and AEDAR
-source-grain facts are fetched set-wise for the same cohort.
+synthetic zero, membership, or rank is added. Typed-reading side evidence is fetched
+set-wise for the same cohort. AEDAR source-grain resources and named references do not
+accept cohort targets; comparisons remain territory-targeted.
 
 Before any data read, preflight bounds the actual selected members, axes, facts, and
 evidence/lineage work within the shared 200,000-unit limit. A single read and every
 item in a batch use one read-only repeatable-read snapshot. The existing 12-item
-batch and 8 MB serialized-response limits still apply, and any invalid or stale
-dependency rejects the whole batch without partial results.
+batch and 8 MB serialized-response limits still apply; the output cap is enforced after
+native response serialization, and any invalid or stale dependency rejects the whole
+batch without partial results.
 The AEDAR territorial aggregates and fixed comparisons are read only through
 the unified semantic resource contract (`/api/resources/read` and
 `/api/resources/read-batch`); the legacy GET routes are retired and return 404.

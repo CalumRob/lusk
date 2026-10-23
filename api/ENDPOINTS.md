@@ -49,10 +49,13 @@ only for `commune` cohorts and intersect against the published `territory_refere
 The response carries a shared `cohort` envelope (ordered member identities, count,
 filters, and reference version) plus the resource's native fact family: scalar
 `observations`, profile `profiles`, ordered-series `series`, sparse collection
-`territories`, typed-reading `territories` with selected evidence, or AEDAR aggregate
-`facts`. Sparse missing records are not converted into zero-valued facts. Member,
-selected-axis, evidence/lineage and serialized-response work is preflighted before
-reads; a failed item rejects the whole batch on its single repeatable-read snapshot.
+`territories`, or typed-reading `territories` with selected evidence. AEDAR
+source-grain resources, named references, and comparison intents do not accept cohort
+targets. Sparse missing records are not converted into zero-valued facts. Member,
+selected-axis, and evidence/lineage work is preflighted before reads. The existing
+8 MB serialized-output cap is enforced after native response serialization; an
+oversized response returns 413, and an oversized batch returns no partial results on
+its single repeatable-read snapshot.
 
 Theme/family-specific facts, direct-profile, series-dataset, building-access,
 essential-services and legacy batch routes have been retired in favor of the
