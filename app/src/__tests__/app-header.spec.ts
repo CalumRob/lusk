@@ -494,6 +494,31 @@ describe('AppHeader — le wait-set de la coquille (T3, #299)', () => {
     return new Promise<unknown>(() => {})
   }
 
+  it('cherche les pages app-owned et navigue sans attendre les métadonnées de thème', async () => {
+    const { router, wrapper } = await montage('/carte', {
+      provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },
+    })
+    await flushPromises()
+
+    const input = wrapper.find('.bouton-recherche')
+    await input.trigger('click')
+    const champ = wrapper.find('.recherche-superposee input[role="combobox"]')
+    await champ.trigger('focus')
+    await champ.setValue('densité')
+    await new Promise((r) => setTimeout(r, 300))
+
+    const groupeIndicateurs = wrapper.find('[role="group"][aria-label="Indicateurs"]')
+    expect(groupeIndicateurs.exists()).toBe(true)
+    expect(groupeIndicateurs.text()).toContain('Densité de population')
+    expect(groupeIndicateurs.text()).not.toContain('densite')
+
+    await champ.trigger('keydown', { key: 'ArrowDown' })
+    expect(champ.attributes('aria-activedescendant')).toBe('gsb-option-0')
+    await champ.trigger('keydown', { key: 'Enter' })
+    await flushPromises()
+    expect(router.currentRoute.value.path).toBe('/indicateurs/demographie/densite')
+  })
+
   it('rend la recherche vivante quand seuls territoires + run-report ont atterri — le reste coule en arrière-plan', async () => {
     const { wrapper } = await montage('/carte', {
       provide: { [PAYLOAD_CHARGER_KEY]: chargerCoquilleSeule },

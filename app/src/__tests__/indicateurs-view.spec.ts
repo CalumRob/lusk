@@ -1,85 +1,65 @@
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 
 import IndicateursView from '../views/IndicateursView.vue'
 import { routes } from '../router'
-import {
-  chargerAvec,
-  indicateursDemographieFixture,
-  indicateursHabitatFixture,
-  indicateursProgrammesFixture,
-  metadonneesHabitatAvecPagesFixture,
-  metadonneesThemesFixtures,
-} from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
-import type { Payload } from '../payload/types'
 import type { Fichier } from '../payload/loader'
-
-/**
- * La vue du catalogue /indicateurs (#409) : les thèmes canoniques et leurs
- * sous-groupes de fiche sont des RASSEMBLEMENTS (des titres — jamais des
- * liens ni des pages), les entrées sont les seules Pages d'indicateur
- * publiées, libellées par leur descripteur canon. Le seam est celui des vues
- * routées : le charger injecté (PAYLOAD_CHARGER_KEY) + un routeur mémoire.
- */
-
-// Le fixture habitat canon ne publie aucune page (seul le payload réel en
-// porte) — la vue est exercée sur un clone enrichi de DEUX descripteurs
-// publiés (le fixture partagé), la couverture « every and only » complète
-// vivant dans catalogue.spec × payload réel.
-const habitatAvecPages = metadonneesHabitatAvecPagesFixture(['distribution_dpe', 'prix_m2'])
-
-const payload: Payload = {
-  territoires: [],
-  indicateurs: [
-    ...indicateursDemographieFixture,
-    ...indicateursHabitatFixture,
-    ...indicateursProgrammesFixture,
-  ],
-  histoires: [],
-  apercu: null,
-  runReport: null,
-  vintages: null,
-  programmes: null,
-  themeMetadata: {
-    demographie: metadonneesThemesFixtures.demographie,
-    habitat: habitatAvecPages,
-    programmes: metadonneesThemesFixtures.programmes,
-  },
-}
 
 async function monter(url = '/indicateurs') {
   const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push(url)
+  await router.isReady()
+  const charger = vi.fn((_fichier: Fichier) => new Promise<unknown>(() => {}))
   const wrapper = mount(IndicateursView, {
     global: {
       plugins: [router],
-      provide: {
-        [PAYLOAD_CHARGER_KEY]: async (fichier: Fichier) => {
-          void url
-          return chargerAvec(payload)(fichier)
-        },
-      },
+      provide: { [PAYLOAD_CHARGER_KEY]: charger },
     },
   })
   await flushPromises()
-  return { wrapper, router }
+  return { wrapper, router, charger }
 }
 
 describe('IndicateursView — le catalogue groupé', () => {
-  it('titre chaque thème présent dans l’ordre canonique avec son label payload-owned', async () => {
-    const { wrapper } = await monter()
-    const themesRendus = wrapper.findAll('[data-groupe-theme]').map((n) => n.attributes('data-groupe-theme'))
-    // L'ordre CANONIQUE (mobilite → … → programmes), filtré aux thèmes publiés ;
-    // Économie n'a aucune page → aucun groupe fantôme.
-    expect(themesRendus).toEqual(['demographie', 'habitat', 'programmes'])
-    expect(wrapper.text()).toContain('Démographie')
-    expect(wrapper.text()).toContain('Programmes et subventions')
+  it('rend immédiatement ses pages produit sans métadonnées ni faits chargés', async () => {
+    const { wrapper, charger } = await monter()
+
+    const lien = wrapper.find('a[href="/indicateurs/demographie/densite"]')
+    expect(lien.exists()).toBe(true)
+    expect(lien.text()).toBe('Densité de population')
+    expect(charger).not.toHaveBeenCalled()
+    expect(wrapper.find('[role="status"]').exists()).toBe(false)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.attributes('aria-busy')).toBe('false')
   })
 
-  it('titre chaque sous-groupe de fiche sous son thème — un rassemblement, jamais un lien', async () => {
+  it('rend les thèmes dans l’ordre canonique avec leurs libellés app-owned', async () => {
     const { wrapper } = await monter()
-    // Les titres de rassemblement ne sont PAS des liens.
+    const groupes = wrapper.findAll('[data-groupe-theme]')
+
+    expect(groupes.map((groupe) => groupe.attributes('data-groupe-theme'))).toEqual([
+      'mobilite',
+      'demographie',
+      'habitat',
+      'economie',
+      'milieux',
+      'programmes',
+    ])
+    expect(groupes.map((groupe) => groupe.find('h2').text())).toEqual([
+      'Mobilité',
+      'Démographie',
+      'Habitat',
+      'Économie/Emploi',
+      'Milieux',
+      'Programmes et subventions',
+    ])
+  })
+
+  it('garde les sous-groupes comme titres et omet le groupe devenu vide après le retrait des pages legacy', async () => {
+    const { wrapper } = await monter()
+
     for (const titre of wrapper.findAll('[data-groupe-sous-groupe]')) {
       expect(titre.element.tagName).not.toBe('A')
       expect(titre.find('a').exists()).toBe(false)
@@ -87,40 +67,24 @@ describe('IndicateursView — le catalogue groupé', () => {
     for (const titre of wrapper.findAll('[data-groupe-theme] h2')) {
       expect(titre.find('a').exists()).toBe(false)
     }
-    // Le sous-groupe « couverture » (aucune page publiée) ne rend jamais un
-    // titre vide ; ses faits sans page n'apparaissent pas.
-    expect(wrapper.find('[data-groupe-sous-groupe="couverture"]').exists()).toBe(false)
-    expect(wrapper.text()).not.toContain('Couverture programmatique')
+    expect(wrapper.find('[data-clef-sous-groupe="acces-aux-services"]').exists()).toBe(false)
+    expect(wrapper.find('[data-clef-sous-groupe="couverture"]').exists()).toBe(false)
   })
 
-  it('liste chaque page publiée par son libellé canon, liée à sa route /indicateurs/:theme/:indicateur', async () => {
-    const { wrapper, router } = await monter('/indicateurs/demographie/densite')
-    void router
+  it('lie les 31 entrées retenues aux URL publiques et conserve leurs vrais libellés', async () => {
+    const { wrapper } = await monter('/indicateurs/demographie/densite')
     const liens = wrapper.findAll('a[href^="/indicateurs/"]')
     const hrefs = liens.map((lien) => lien.attributes('href'))
-    expect(hrefs).toContain('/indicateurs/demographie/densite')
-    expect(hrefs).toContain('/indicateurs/habitat/distribution_dpe')
-    expect(hrefs).toContain('/indicateurs/habitat/prix_m2')
-    expect(hrefs).toContain('/indicateurs/programmes/subventions_annuelles')
-    // Aucune entrée pour un fait sans page — la garde only-published à travers la vue.
-    expect(hrefs.some((href) => href?.includes('couverture_programmes'))).toBe(false)
-    expect(hrefs.some((href) => href?.includes('subventions_par_domaine'))).toBe(false)
-    // Le libellé affiché est celui du descripteur, jamais la clé brute.
     const textes = liens.map((lien) => lien.text())
-    expect(textes).toContain('Distribution des étiquettes DPE (A à G)')
-    expect(textes.every((texte) => !/^[a-z_]+$/.test(texte.trim()))).toBe(true)
-  })
 
-  it('reste honnête pendant le chargement — l’état attend son wait-set', async () => {
-    const router = createRouter({ history: createMemoryHistory(), routes })
-    const wrapper = mount(IndicateursView, {
-      global: {
-        plugins: [router],
-        provide: {
-          [PAYLOAD_CHARGER_KEY]: () => new Promise(() => {}),
-        },
-      },
-    })
-    expect(wrapper.find('[role="status"]').exists()).toBe(true)
+    expect(liens).toHaveLength(31)
+    expect(new Set(hrefs).size).toBe(31)
+    expect(hrefs).toContain('/indicateurs/mobilite/bornes_ev_par_station_service')
+    expect(hrefs).toContain('/indicateurs/mobilite/raccordement_courbe')
+    expect(hrefs).toContain('/indicateurs/programmes/subventions_par_domaine')
+    expect(textes).toContain('Distribution des étiquettes DPE (A à G)')
+    expect(textes).toContain('Subventions régionales par domaine')
+    expect(textes.every((texte) => !/^[a-z_]+$/.test(texte.trim()))).toBe(true)
+    expect(hrefs.some((href) => href?.includes('raccordement_reference'))).toBe(false)
   })
 })

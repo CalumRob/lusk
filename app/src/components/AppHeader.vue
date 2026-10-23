@@ -47,14 +47,9 @@ const { payload, erreur, chargement } = usePayload({ attendre: ['territoires', '
 
 const territoires = computed<Territoire[]>(() => payload.value?.territoires ?? [])
 
-/**
- * Les entrées Indicateurs de la recherche groupée (#409) — dérivées des
- * métadonnées déjà présentes, sans rien ajouter au wait-set : la section
- * « Indicateurs » apparaît quand les thèmes atterrissent en arrière-plan,
- * la recherche territoires reste vivante avant.
- */
+/** Le même contenu app-owned que le catalogue, disponible sans acquisition de faits. */
 const entreesIndicateurs = computed<EntreeRechercheIndicateur[]>(() =>
-  payload.value ? entreesRechercheIndicateurs(payload.value.themeMetadata ?? {}) : [],
+  entreesRechercheIndicateurs(),
 )
 
 const messageErreur = computed(() => (erreur.value ? 'Impossible de charger les territoires.' : null))

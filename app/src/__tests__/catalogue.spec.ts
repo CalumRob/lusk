@@ -1,5 +1,6 @@
 import { readFileSync } from 'node:fs'
-import { join } from 'node:path'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { describe, expect, it } from 'vitest'
 
@@ -7,151 +8,126 @@ import {
   entreesRechercheIndicateurs,
   groupesCatalogue,
 } from '../indicateurs/catalogue'
-import { metadonneesThemesFixtures } from '../payload/fixtures'
-import type { ThemeMetadata } from '../payload/types'
+import { CONTENU_CATALOGUE_INDICATEURS } from '../indicateurs/catalogueContent'
 import { FAMILLES_FIGURE, THEMES_CANONIQUES } from '../payload/types'
 
-/**
- * Le catalogue /indicateurs (#409) — la génération CONTRACT-DRIVEN : les
- * groupes lisent theme_<theme>.json (l'ordre canonique des thèmes, l'ordre
- * déclaré des sous-groupes) et NE contiennent que les Pages d'indicateur
- * PUBLIÉES (indicator_pages) — jamais un indicateur de fiche sans page, jamais
- * une page orpheline. Les libellés viennent des descripteurs canon (page.label),
- * jamais d'une clé brute ; thèmes et sous-groupes restent des RASSEMBLEMENTS
- * (des titres), jamais des pages analytiques.
- */
+const metadataDir = resolve(dirname(fileURLToPath(import.meta.url)), '../../../pipeline/inst/extdata/theme-metadata')
 
-describe('groupesCatalogue — la génération contract-driven', () => {
-  it('groupe par thème dans l’ordre canonique et par sous-groupe dans l’ordre déclaré', () => {
-    const groupes = groupesCatalogue({
-      programmes: metadonneesThemesFixtures.programmes,
-      demographie: metadonneesThemesFixtures.demographie,
+interface DeclarationPage {
+  sources?: string[]
+  family?: string
+}
+
+interface DeclarationTheme {
+  indicator_pages?: Record<string, DeclarationPage>
+  source_records?: Record<string, { serving_disposition?: string }>
+}
+
+function declarationsProducteur() {
+  return THEMES_CANONIQUES.map((theme) => {
+    const metadata = JSON.parse(
+      readFileSync(resolve(metadataDir, `theme_${theme}.json`), 'utf8'),
+    ) as DeclarationTheme
+    const pages = Object.entries(metadata.indicator_pages ?? {}).map(([resourceKey, page]) => {
+      const sources = page.sources ?? []
+      for (const source of sources) {
+        expect(metadata.source_records?.[source], `${theme}/${resourceKey}: source record ${source}`).toBeDefined()
+      }
+      const retired = sources.some(
+        (source) => metadata.source_records?.[source]?.serving_disposition === 'excluded_legacy_accessibility',
+      )
+      return { theme, resourceKey, page, retired }
     })
-    // L'ordre CANONIQUE des thèmes (mobilite … programmes), jamais l'ordre
-    // d'insertion de l'objet passé.
-    expect(groupes.map((groupe) => groupe.theme)).toEqual(
-      THEMES_CANONIQUES.filter(
-        (theme) => theme === 'demographie' || theme === 'programmes',
-      ),
-    )
-    // Les sous-groupes gardent leur ordre DÉCLARÉ ; « couverture » n'a aucune
-    // page publiée (couverture_programmes n'est pas une Page d'indicateur) —
-    // jamais un titre sans contenu.
-    expect(groupes[0]!.sousGroupes.map((sousGroupe) => sousGroupe.key)).toEqual([
-      'trajectoire-demographique',
+    return { theme, pages }
+  })
+}
+
+describe('catalogue des Pages d’indicateur app-owned', () => {
+  it('garde l’ordre des thèmes et sous-groupes ayant des pages, puis les pages déclarées dans leur ordre produit', () => {
+    const groupes = groupesCatalogue()
+
+    expect(groupes.map(({ theme }) => theme)).toEqual([...THEMES_CANONIQUES])
+    expect(groupes[0]?.sousGroupes.map(({ key }) => key)).toEqual([
+      'partage-de-lespace-public',
+      'motorisation',
+      'offre-transports-commun',
     ])
-    expect(groupes[1]!.sousGroupes.map((sousGroupe) => sousGroupe.key)).toEqual(['subventions'])
+    expect(groupes[0]?.sousGroupes[0]?.entrees.map(({ indicateur }) => indicateur)).toEqual([
+      'reseaux',
+      'reseaux_par_habitant',
+      'surface_reseaux_routiers',
+      'places_stationnement_velo_1000',
+      'places_stationnement_voiture_1000',
+      'stationnement_velo_par_voiture',
+      'offre_cyclable',
+    ])
+    expect(groupes.at(-1)?.sousGroupes.map(({ key }) => key)).toEqual(['subventions'])
   })
 
-  it('liste chaque Page d’indicateur publiée — et SEULEMENT elle', () => {
-    // Le fixture Programmes : couverture_programmes et subventions_par_domaine
-    // sont des faits publiés SANS Page d'indicateur (la dette connue #458) —
-    // ils ne sont JAMAIS des entrées du catalogue (aucune item qui mène
-    // nulle part). subventions_annuelles seule a sa page.
-    const groupes = groupesCatalogue({ programmes: metadonneesThemesFixtures.programmes })
-    const entrees = groupes.flatMap((groupe) =>
+  it('porte les libellés éditoriaux et les URL publiques sans rendre les clés brutes', () => {
+    const groupes = groupesCatalogue()
+    const pages = groupes.flatMap((groupe) =>
       groupe.sousGroupes.flatMap((sousGroupe) => sousGroupe.entrees),
     )
-    expect(entrees.map((entree) => entree.indicateur)).toEqual(['subventions_annuelles'])
-    const texte = JSON.stringify(entrees)
-    expect(texte).not.toContain('couverture_programmes')
-    expect(texte).not.toContain('subventions_par_domaine')
-  })
+    const densite = pages.find(({ indicateur }) => indicateur === 'densite')!
 
-  it('porte le libellé du DESCRIPTEUR canon — jamais une clé brute', () => {
-    const groupes = groupesCatalogue({
-      demographie: metadonneesThemesFixtures.demographie,
-      programmes: metadonneesThemesFixtures.programmes,
-    })
-    const densite = groupes[0]!.sousGroupes[0]!.entrees[0]!
+    expect(groupes[0]?.label).toBe('Mobilité')
+    expect(groupes[0]?.sousGroupes[0]?.label).toBe('Le partage de l’espace public')
     expect(densite.label).toBe('Densité de population')
-    expect(densite.label).not.toBe('densite')
     expect(densite.href).toBe('/indicateurs/demographie/densite')
-    // Le titre du sous-groupe est payload-owned (jamais un vocabulaire app-side).
-    expect(groupes[1]!.sousGroupes[0]!.label).toBe('Subventions attribuées')
+    expect(pages.every(({ label, indicateur }) => label !== indicateur && !/^[a-z_]+$/.test(label))).toBe(true)
+    expect(pages.some(({ href }) => href.endsWith('/raccordement_reference'))).toBe(false)
   })
 
-  it('ignore un thème absent des métadonnées — jamais un groupe fantôme', () => {
-    const groupes = groupesCatalogue({ demographie: metadonneesThemesFixtures.demographie })
-    expect(groupes.map((groupe) => groupe.theme)).toEqual(['demographie'])
-  })
-
-  it('ne crée pas de sous-groupe vide — un rassemblement sans page publiée reste silencieux', () => {
-    // Économie : aucun indicator_pages → AUCUN groupe (le thème ne figure pas).
-    const groupes = groupesCatalogue({ economie: metadonneesThemesFixtures.economie })
-    expect(groupes).toEqual([])
-  })
-})
-
-describe('entreesRechercheIndicateurs — le flat pour la recherche groupée', () => {
-  it('miroir 1:1 du catalogue : même ordre, mêmes hrefs', () => {
-    const metadata = Object.fromEntries(
-      Object.entries(metadonneesThemesFixtures).filter(
-        ([theme]) => theme === 'demographie' || theme === 'programmes',
-      ),
-    ) as Partial<Record<ThemeMetadata['theme'], ThemeMetadata>>
-    const attendu = groupesCatalogue(metadata).flatMap((groupe) =>
+  it('fournit les mêmes libellés, thèmes et ordre à la recherche groupée', () => {
+    const attendu = groupesCatalogue().flatMap((groupe) =>
       groupe.sousGroupes.flatMap((sousGroupe) =>
-        sousGroupe.entrees.map((entree) => ({ label: entree.label, href: entree.href })),
+        sousGroupe.entrees.map((entree) => ({
+          theme: entree.theme,
+          themeLabel: groupe.label,
+          label: entree.label,
+          href: entree.href,
+        })),
       ),
     )
-    expect(
-      entreesRechercheIndicateurs(metadata).map((entree) => ({
-        label: entree.label,
-        href: entree.href,
-      })),
-    ).toEqual(attendu)
+
+    expect(entreesRechercheIndicateurs()).toEqual(attendu)
+    expect(entreesRechercheIndicateurs().map(({ label }) => label)).toContain('Densité de population')
   })
-})
 
-/**
- * Le garde « every and only » contre le payload RÉEL commis : la somme des
- * pages publiées des six thèmes EST le catalogue, à l'entrée près — aucune
- * page oubliée, aucune entrée sans page, aucune famille non supportée par
- * la grammaire Repères (AC #409 : aucune item publiée ne mène à une famille
- * de page non supportée).
- */
-describe('catalogue × payload réel commis (public/data)', () => {
-  const dataDir = join(process.cwd(), '..', 'public', 'data')
-
-  function metadonneesReelles(): Partial<Record<(typeof THEMES_CANONIQUES)[number], ThemeMetadata>> {
-    return Object.fromEntries(
-      THEMES_CANONIQUES.map((theme) => [
-        theme,
-        JSON.parse(readFileSync(join(dataDir, `theme_${theme}.json`), 'utf-8')) as ThemeMetadata,
-      ]),
+  it('relie exactement les 31 pages conservées aux déclarations producteur retenues', () => {
+    const declarations = declarationsProducteur()
+    const pagesDeclarees = declarations.flatMap(({ pages }) => pages)
+    const conservees = pagesDeclarees.filter(({ retired }) => !retired)
+    const retirees = pagesDeclarees.filter(({ retired }) => retired)
+    const pagesCatalogue = CONTENU_CATALOGUE_INDICATEURS.flatMap((groupe) =>
+      groupe.sousGroupes.flatMap((sousGroupe) =>
+        sousGroupe.pages.map(({ resourceKey }) => `${groupe.theme}/${resourceKey}`),
+      ),
     )
-  }
 
-  it('le catalogue contient TOUTES les pages publiées, chacune UNE fois, chacune vers sa route', () => {
-    const metadata = metadonneesReelles()
-    const publiees = THEMES_CANONIQUES.flatMap((theme) =>
-      Object.keys(metadata[theme]?.indicator_pages ?? {}),
+    // Recomputed from canonical declarations via sources -> source_records;
+    // editorial labels are deliberately not compared to producer metadata.
+    expect(pagesDeclarees).toHaveLength(45)
+    expect(retirees).toHaveLength(14)
+    expect(conservees).toHaveLength(31)
+    expect(new Set(pagesCatalogue).size).toBe(pagesCatalogue.length)
+    expect(pagesCatalogue.sort()).toEqual(
+      conservees.map(({ theme, resourceKey }) => `${theme}/${resourceKey}`).sort(),
     )
-    const entrees = entreesRechercheIndicateurs(metadata)
 
-    expect(entrees.length).toBe(publiees.length)
-    expect(new Set(entrees.map((entree) => `${entree.theme}/${entree.indicateur}`)).size).toBe(
-      publiees.length,
-    )
-    for (const entree of entrees) {
-      expect(metadata[entree.theme]?.indicator_pages?.[entree.indicateur]).toBeTruthy()
-      expect(entree.href).toBe(`/indicateurs/${entree.theme}/${entree.indicateur}`)
-    }
-    for (const cle of publiees) {
-      expect(entrees.some((entree) => entree.indicateur === cle), `page ${cle} absente`).toBe(true)
+    for (const { theme, resourceKey } of conservees) {
+      expect(entreesRechercheIndicateurs().some((entry) =>
+        entry.theme === theme && entry.href === `/indicateurs/${theme}/${resourceKey}`,
+      )).toBe(true)
     }
   })
 
-  it('chaque famille publiée est supportée par la grammaire Repères — aucune item vers une famille non rendue', () => {
-    const metadata = metadonneesReelles()
-    for (const theme of THEMES_CANONIQUES) {
-      for (const page of Object.values(metadata[theme]?.indicator_pages ?? {})) {
-        // Le JSON brut commis peut porter le descripteur pré-#401 sans
-        // `family` — la règle du validateur (load) est la normalisation
-        // « scalar » ; on lit la même normalisation ici.
+  it('garde chaque famille de page producteur dans la grammaire Repères supportée', () => {
+    for (const { theme, pages } of declarationsProducteur()) {
+      for (const { resourceKey, page } of pages) {
         const family = page.family ?? 'scalar'
-        expect(FAMILLES_FIGURE as readonly string[]).toContain(family)
+        expect(FAMILLES_FIGURE as readonly string[], `${theme}/${resourceKey}`).toContain(family)
       }
     }
   })
