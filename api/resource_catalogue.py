@@ -168,6 +168,11 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
         raise ValueError("unknown semantic resource")
     if item.target.kind not in resource.target_kinds:
         raise ValueError("target kind is not declared for this resource")
+    if item.target.kind == "territory_cohort":
+        if item.intent.kind != "facts":
+            raise ValueError("territory cohort targets are facts-only")
+        if item.target.type not in resource.allowed_levels:
+            raise ValueError("resource is not declared for this cohort level")
     if item.target.kind == "named_reference" and item.target.id not in resource.target_ids:
         raise ValueError("named reference identity is not declared for this resource")
     if item.fields is not None:
@@ -301,7 +306,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 axes=axes,
                 axis_values=_axis_values(metadata, indicator_id, page_descriptor, shapes, parent_indicator),
                 target_kinds=(("named_reference",) if "named_reference" in shapes
-                              else ("territory",)),
+                              else ("territory", "territory_cohort")),
                 target_ids=((str((metadata.get("owned_series_routes") or {})
                                  .get(parent_indicator, {}).get("reference_id")),)
                             if parent_indicator is not None else ()),
@@ -376,7 +381,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 allowed_levels=tuple(declaration.get("allowed_levels", ("commune", "epci", "departement", "region"))),
                 sources=sources, shapes=(kind,),
                 axes=axes, axis_values=(("groupe", groups),) if kind == "typed_reading" else (),
-                target_kinds=("territory",), target_ids=(),
+                target_kinds=("territory", "territory_cohort"), target_ids=(),
                 dynamic_axes=(), fields=tuple(dict.fromkeys([
                     *declaration["fields"],
                     *(side["field"] for side in declaration.get("side_relations", ())),

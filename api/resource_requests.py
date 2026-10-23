@@ -12,6 +12,21 @@ class TerritoryTarget(BaseModel):
     id: str = Field(min_length=1, max_length=32)
 
 
+class TerritoryCohortTarget(BaseModel):
+    """The published population at one declared level, optionally commune-filtered."""
+    model_config = ConfigDict(extra="forbid")
+    kind: Literal["territory_cohort"]
+    type: Literal["commune", "epci", "departement", "region"]
+    department_id: str | None = Field(default=None, min_length=1, max_length=32)
+    epci_id: str | None = Field(default=None, min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def validate_commune_filters(self):
+        if self.type != "commune" and (self.department_id is not None or self.epci_id is not None):
+            raise ValueError("cohort parent filters are supported for communes only")
+        return self
+
+
 class NamedReferenceTarget(BaseModel):
     model_config = ConfigDict(extra="forbid")
     kind: Literal["named_reference"]
@@ -19,7 +34,7 @@ class NamedReferenceTarget(BaseModel):
 
 
 ResourceTarget = Annotated[
-    Union[TerritoryTarget, NamedReferenceTarget], Field(discriminator="kind")
+    Union[TerritoryTarget, TerritoryCohortTarget, NamedReferenceTarget], Field(discriminator="kind")
 ]
 
 
