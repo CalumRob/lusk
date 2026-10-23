@@ -60,6 +60,7 @@ import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Histoire, Indicateur, Payload, Territoire, Theme } from '@/payload/types'
 import { useTerritoryReadModel } from '@/payload/useTerritoryReadModel'
 import { payloadDepuisModeleTerritoire } from '@/payload/territoryReadModel'
+import type { TerritoryReadModel } from '@/payload/territoryReadModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -213,6 +214,39 @@ const resolutionComparaison = computed(() => {
     contextes: modeleTerritoire.model.value.themes.mobilite?.comparisons ?? {},
   })
 })
+
+function libellePorteeSemantic(comparison: unknown, model: TerritoryReadModel, target: Territoire): string | null {
+  if (typeof comparison !== 'object' || comparison === null || Array.isArray(comparison)) return null
+  const data = comparison as Record<string, unknown>
+  if (typeof data.scope !== 'object' || data.scope === null || Array.isArray(data.scope)) return null
+  const scope = data.scope as Record<string, unknown>
+  const contexts = model.themes.mobilite?.comparisons
+  if (scope.kind === 'density_class' && scope.territory_type === target.type &&
+      scope.density_class_code === target.classe_densite_code) {
+    return contexts?.densite?.scope.label ?? null
+  }
+  if (scope.kind === 'same_level' && scope.territory_type === target.type) {
+    return contexts?.bretagne?.scope.label ?? null
+  }
+  if (scope.kind !== 'explicit_selection' || !Array.isArray(data.selection)) return null
+  const selected = data.selection as unknown[]
+  const territories = model.cohortTerritories ?? model.territories
+  const candidates = [
+    ['epci', target.type === 'commune' && target.epci
+      ? territories.filter((item) => item.type === 'commune' && item.epci === target.epci) : []],
+    ['bretagne', territories.filter((item) => item.type === target.type)],
+  ] as const
+  for (const [mode, members] of candidates) {
+    const expected = members.map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+    if (expected.length === selected.length && expected.every((member, index) => {
+      const actual = selected[index]
+      return typeof actual === 'object' && actual !== null && !Array.isArray(actual) &&
+        (actual as Record<string, unknown>).territory_type === member.territory_type &&
+        (actual as Record<string, unknown>).territory_id === member.territory_id
+    })) return contexts?.[mode]?.scope.label ?? null
+  }
+  return null
+}
 
 const optionsComparaison = computed(() => optionsContexteComparaison({
   territoire: territoire.value,
@@ -498,9 +532,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
        const comparison = semanticComparisonForTheme(acquired.comparisons.get('omitted'), {
          target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
          territories: model.cohortTerritories,
-       }, acquired.focal.resource_reads)
-       faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, comparison,
-          resolutionComparaison.value?.contexte?.scope.label ?? null)
+        }, acquired.focal.resource_reads)
+        const comparisonScopeLabel = libellePorteeSemantic(comparison, model, target)
+        faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs,
+          comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
       histoiresThemeRows.value = rows.histoires
       preuvesThemeIndisponibles.value = Boolean(rows.unavailableReadings?.length || acquired.focal.named_reference_error)
        histoiresNuageDemographie.value = themeActif === 'demographie'
@@ -579,9 +614,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
       if (themeActif === 'demographie') {
         histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)
       }
-       if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(comparison)
-        faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [], comparison,
-          resolutionComparaison.value?.contexte?.scope.label ?? null)
+        if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(comparison)
+        const comparisonScopeLabel = libellePorteeSemantic(comparison, model, target)
+        faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
+          comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
        statutComparaison.value = nativeComparison?.cohort_error || comparison?.reading_cloud_error ? 'error' : 'ready'
     } catch {
        if (!cancelled && request === sequenceComparaison) {

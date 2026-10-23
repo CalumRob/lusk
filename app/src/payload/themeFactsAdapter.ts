@@ -26,6 +26,7 @@ const rows = (value: unknown, field: string): Row[] => {
 const text = (value: unknown): value is string => typeof value === 'string'
 const texteNonVide = (value: unknown): value is string => typeof value === 'string' && value.length > 0
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const sameSemanticJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
 
 interface ProvenanceSource {
   sourceId: string
@@ -96,8 +97,17 @@ function indicateurDeSql(
       !descriptor.axis_values.includes(dimensions.axis)) {
     throw new Error('Axe SQL du thème non déclaré')
   }
-  const provenance = apiSources(fact.sources, String(fact.indicator_id))
+  const provenance = fact.status === 'unavailable' && Array.isArray(fact.sources) && fact.sources.length === 0
+    ? [] : apiSources(fact.sources, String(fact.indicator_id))
+  for (const field of ['support_count', 'denominator_count']) {
+    if (field in fact && !(fact[field] === null || finite(fact[field]))) {
+      throw new Error(`Comptage SQL du thème invalide : ${field}`)
+    }
+  }
   const measured = fact.status === 'measured'
+  const factStatus = typeof fact.status === 'string' &&
+    ['measured', 'suppressed', 'unsupported', 'not_available', 'not_published', 'unavailable'].includes(fact.status)
+    ? fact.status as Indicateur['fact_status'] : undefined
   if (measured && !finite(fact.value)) throw new Error(`Valeur mesurée absente : ${String(fact.indicator_id)}`)
   const detail = text(dimensions.detail) ? dimensions.detail : text(dimensions.axis) ? dimensions.axis : null
   return {
@@ -106,6 +116,9 @@ function indicateurDeSql(
     value: measured ? fact.value as number : null, unit: fact.unit,
     rider: measured ? null : fact.status,
     observation_status: measured ? 'measured' : 'missing',
+    ...(factStatus === undefined ? {} : { fact_status: factStatus }),
+    ...(fact.support_count === undefined ? {} : { support_count: fact.support_count as number | null }),
+    ...(fact.denominator_count === undefined ? {} : { denominator_count: fact.denominator_count as number | null }),
     observation_period: text(dimensions.observation_period) ? dimensions.observation_period : null,
     vintage_source: provenance[0]?.source ?? '', vintage_version: provenance[0]?.version ?? '',
     vintage_date_reference: provenance[0]?.referenceDate ?? null,
@@ -349,6 +362,34 @@ function normalizeNativeSources(value: unknown): Row[] {
   return value.filter(isRecord).map((source) => ({ ...source, name: sourceName(source) }))
 }
 
+function dualShapeScalarObservation(data: Row, resource: string,
+  target: { territoire: string; type: TerritoireType }): Row | null {
+  const facet = data.scalar_facet
+  if (facet === undefined) return null
+  const invalid = () => { throw new Error(`Facette scalaire sémantique invalide : ${resource}`) }
+  if (!isRecord(facet) || facet.shape !== 'scalar' || facet.source_facet !== resource ||
+      !texteNonVide(facet.content_version) || !texteNonVide(facet.reference_content_version) ||
+      !texteNonVide(facet.descriptor_version) || !isRecord(facet.descriptor) ||
+      facet.descriptor.indicator_id !== resource || facet.descriptor.descriptor_version !== facet.descriptor_version ||
+      !isRecord(facet.observation) || facet.observation.territory_id !== target.territoire ||
+      facet.observation.territory_type !== target.type || !texteNonVide(facet.observation.status) ||
+      !texteNonVide(facet.descriptor.unit)) return invalid()
+  const observation = facet.observation
+  if (!(observation.status === 'measured' || observation.status === 'suppressed' ||
+      observation.status === 'unsupported' || observation.status === 'not_available' ||
+      observation.status === 'not_published' || observation.status === 'unavailable') ||
+      !(observation.value === undefined || observation.value === null || finite(observation.value)) ||
+      (observation.status === 'measured' && !finite(observation.value)) ||
+      !Array.isArray(observation.sources) ||
+      ['support_count', 'denominator_count'].some((field) =>
+        field in observation && !(observation[field] === null || finite(observation[field])))) return invalid()
+  const sources = normalizeNativeSources(observation.sources)
+  if (sources.length !== observation.sources.length ||
+      (observation.status === 'unavailable' ? sources.length !== 0 : sources.length === 0)) return invalid()
+  return { indicator_id: resource, unit: facet.descriptor.unit, ...facet.observation,
+    dimensions: {}, sources }
+}
+
 function provenanceIdentity(source: Row): string {
   return `${String(source.source_id ?? '')}\u0000${String(source.vintage_id ?? '')}`
 }
@@ -495,6 +536,12 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
       if ('value' in data || 'status' in data) {
         indicators.push({ indicator_id: resource, unit: data.unit, value: data.value,
           status: data.status, dimensions: {}, sources: normalizeNativeSources(data.sources) })
+      }
+      if (shapes.includes('scalar') && shapes.includes('ordered_series')) {
+        const observation = dualShapeScalarObservation(data, resource, target)
+        if (observation && (observation.status !== 'measured' || finite(observation.value))) {
+          indicators.push(observation)
+        }
       }
       continue
     }
@@ -677,6 +724,26 @@ export function semanticComparisonForTheme(response: unknown, reference?: Semant
     const shape = item.data.shape
     scopes.push(item.data.scope ?? null)
     selections.push(item.data.selection ?? null)
+    if ('scalar_facet' in item.data) {
+      const scalarFacet = item.data.scalar_facet
+      const scalarResult = isRecord(scalarFacet) ? scalarFacet.result : undefined
+      const descriptor = isRecord(scalarFacet) ? scalarFacet.descriptor : undefined
+      if (!isRecord(scalarFacet) || scalarFacet.shape !== 'scalar' || scalarFacet.source_facet !== item.resource ||
+          !texteNonVide(scalarFacet.content_version) || !texteNonVide(scalarFacet.reference_content_version) ||
+          !texteNonVide(scalarFacet.descriptor_version) || !isRecord(descriptor) ||
+          descriptor.indicator_id !== item.resource || descriptor.descriptor_version !== scalarFacet.descriptor_version ||
+          !texteNonVide(descriptor.unit) || !isRecord(scalarResult) ||
+          scalarResult.indicator_id !== item.resource || scalarResult.source_facet !== item.resource ||
+          scalarResult.descriptor_version !== scalarFacet.descriptor_version || !texteNonVide(scalarResult.status) ||
+          !sameSemanticJson(scalarFacet.scope ?? null, item.data.scope ?? null) ||
+          !sameSemanticJson(scalarFacet.selection ?? null, item.data.selection ?? null) ||
+          (scalarFacet.comparison_content_version !== undefined && !texteNonVide(scalarFacet.comparison_content_version)) ||
+          (scalarFacet.selection == null && !texteNonVide(scalarFacet.comparison_content_version))) {
+        throw new Error(`Facette de comparaison scalaire invalide : ${item.resource}`)
+      }
+      results.push({ ...scalarResult, indicator_id: item.data.indicator_id ?? item.resource,
+        source_facet: scalarResult.source_facet })
+    }
     if (shape === 'declared_profile' || (Array.isArray(item.shapes) && item.shapes.includes('declared_profile'))) {
       profiles.push({ ...result, indicator: item.data.indicator_id ?? item.resource,
         facet: result.source_facet ?? result.facet })

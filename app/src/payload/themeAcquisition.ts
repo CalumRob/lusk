@@ -283,6 +283,55 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
         !(name in actual && name in expected) || actual[name] === expected[name])
   }
   const focalByResource = new Map(focalReads.map((read) => [read.resource, read.data]))
+  const validDualScalarFacet = (focal: Record<string, unknown>, compared: Record<string, unknown>, resource: string): boolean => {
+    const focalFacet = focal.scalar_facet
+    const comparedFacet = compared.scalar_facet
+    if (focalFacet === undefined || comparedFacet === undefined ||
+        typeof focalFacet !== 'object' || focalFacet === null || Array.isArray(focalFacet) ||
+        typeof comparedFacet !== 'object' || comparedFacet === null || Array.isArray(comparedFacet)) return false
+    const scalar = focalFacet as Record<string, unknown>
+    const scalarComparison = comparedFacet as Record<string, unknown>
+    const focalDescriptor = scalar.descriptor
+    const comparedDescriptor = scalarComparison.descriptor
+    const result = scalarComparison.result
+    const target = focal.target
+    const comparedTarget = compared.target
+    const observation = scalar.observation
+    const scalarScope = scalarComparison.scope
+    const comparedScope = compared.scope
+    const scalarSelection = scalarComparison.selection
+    const comparedSelection = compared.selection
+    const isRecord = (value: unknown): value is Record<string, unknown> =>
+      typeof value === 'object' && value !== null && !Array.isArray(value)
+    if (!isRecord(focalDescriptor) || !isRecord(comparedDescriptor) || !isRecord(result) ||
+        !isRecord(target) || !isRecord(comparedTarget) || !isRecord(observation) ||
+        !isRecord(scalarScope) || !isRecord(comparedScope) ||
+        !(scalarSelection === null || Array.isArray(scalarSelection)) ||
+        !(comparedSelection === null || Array.isArray(comparedSelection)) ||
+        scalar.shape !== 'scalar' || scalar.source_facet !== resource ||
+        scalarComparison.shape !== 'scalar' || scalarComparison.source_facet !== resource ||
+        focalDescriptor.indicator_id !== resource || comparedDescriptor.indicator_id !== resource ||
+        ![scalar.content_version, scalar.reference_content_version, scalar.descriptor_version,
+          scalarComparison.content_version, scalarComparison.reference_content_version,
+          scalarComparison.descriptor_version].every((value) => typeof value === 'string' && value.length > 0) ||
+        focalDescriptor.descriptor_version !== scalar.descriptor_version ||
+        comparedDescriptor.descriptor_version !== scalarComparison.descriptor_version ||
+        scalarComparison.content_version !== scalar.content_version ||
+        scalarComparison.reference_content_version !== scalar.reference_content_version ||
+        scalarComparison.descriptor_version !== scalar.descriptor_version ||
+        observation.territory_id !== target.id || observation.territory_type !== target.type ||
+        target.kind !== 'territory' || comparedTarget.kind !== 'territory' ||
+        comparedTarget.id !== target.id || comparedTarget.type !== target.type ||
+        result.indicator_id !== resource || result.source_facet !== resource ||
+        result.descriptor_version !== scalar.descriptor_version ||
+        JSON.stringify(scalarScope) !== JSON.stringify(comparedScope) ||
+        JSON.stringify(scalarSelection) !== JSON.stringify(comparedSelection)) return false
+    if (scalarComparison.comparison_content_version !== undefined &&
+        (typeof scalarComparison.comparison_content_version !== 'string' || !scalarComparison.comparison_content_version)) return false
+    if (scalarSelection === null &&
+        (typeof scalarComparison.comparison_content_version !== 'string' || !scalarComparison.comparison_content_version)) return false
+    return true
+  }
   const comparisonCompatible = comparisonReads.every(({ resource, data }) => {
     const focal = focalByResource.get(resource)
     if (!focal) return false
@@ -296,6 +345,8 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
     const focalDescriptor = focal.descriptor
     const comparisonResult = data.result
     const shapes = focalReads.find((read) => read.resource === resource)?.shapes ?? []
+    const dualScalarSeries = shapes.includes('scalar') && shapes.includes('ordered_series')
+    if (dualScalarSeries && !validDualScalarFacet(focal, data, resource)) return false
     const profile = shapes.includes('declared_profile')
     if (shapes.includes('scalar') || shapes.includes('ordered_series') || shapes.includes('period_detail')) {
       if (typeof focal.descriptor_version !== 'string' || !focal.descriptor_version ||

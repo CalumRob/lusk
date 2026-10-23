@@ -5,6 +5,7 @@ import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparais
   themeFactsEnvelopeFromSemantic, themeFactsRowsFromApi, themeFactsRowsFromSemantic, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
 import { projectRaccordementSemanticReads } from '../payload/raccordementSemanticProjection'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
+import { semanticPublicationsCompatible } from '../payload/themeAcquisition'
 import { nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import { territoiresFixture } from '../payload/fixtures'
@@ -400,24 +401,134 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       row.vintage_version === 'api-v1')).toBe(true)
   })
 
-  it('keeps the native DVF owned-series response honest when its pooled scalar is not served', () => {
+  it('projects the native DVF pooled scalar facet without promoting it to a top-level series value', () => {
     const resource = nativeResources('habitat').find((item) => item.resource_id === 'prix_m2')!
     const response = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '35238' },
       intent: { kind: 'facts' } }, resource)
-    expect(response.points).toContainEqual(expect.objectContaining({ axis: '2025', value: 3777.777777777778 }))
+    expect(response.points).toContainEqual(expect.objectContaining({ axis: '2025' }))
     expect(response).not.toHaveProperty('value')
+    expect(response.scalar_facet).toMatchObject({ shape: 'scalar', source_facet: 'prix_m2',
+      descriptor: { indicator_id: 'prix_m2', unit: '€/m²' }, observation: { territory_id: '35238' } })
+    expect(response.scalar_facet.content_version).not.toBe(response.content_version)
 
     const declaration = resource as unknown as SemanticResourceDeclaration
     const envelope = themeFactsEnvelopeFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
       shapes: resource.shapes, declaration, data: response }] }, cible)
     expect(envelope.owned_series as unknown[]).toHaveLength(1)
     expect((envelope.indicators as Array<Record<string, unknown>>)
-      .filter((fact) => fact.indicator_id === 'prix_m2')).toEqual([])
+      .find((fact) => fact.indicator_id === 'prix_m2')).toMatchObject({
+      indicator_id: 'prix_m2', value: response.scalar_facet.observation.value,
+      unit: response.scalar_facet.descriptor.unit,
+    })
     const rows = themeFactsRowsFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
       shapes: resource.shapes, declaration, data: response }] }, cible).indicateurs
-    expect(rows.some((fact) => fact.key === 'prix_m2' && fact.detail === null)).toBe(false)
+    expect(rows.find((fact) => fact.key === 'prix_m2' && fact.detail === null)?.value)
+      .toBe(response.scalar_facet.observation.value)
     expect(rows.some((fact) => fact.key === 'prix_m2' && fact.detail === '2025' &&
-      Math.abs(fact.value! - 3777.777777777778) < 0.001)).toBe(true)
+      (fact.observation_status === 'measured' || fact.observation_status === 'missing'))).toBe(true)
+
+    const noFacet = structuredClone(response)
+    delete noFacet.scalar_facet
+    const withoutFacet = themeFactsEnvelopeFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: noFacet }] }, cible)
+    expect((withoutFacet.indicators as Array<Record<string, unknown>>)
+      .some((fact) => fact.indicator_id === 'prix_m2')).toBe(false)
+    expect(withoutFacet.owned_series).toHaveLength(1)
+
+    const corruptedFacet = structuredClone(response)
+    corruptedFacet.scalar_facet.source_facet = '2025'
+    expect(() => themeFactsEnvelopeFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: corruptedFacet }] }, cible)).toThrow(/facette scalaire/i)
+
+    const unavailableFacet = structuredClone(response)
+    unavailableFacet.scalar_facet.observation = { ...unavailableFacet.scalar_facet.observation,
+      status: 'unavailable', value: null, support_count: null, denominator_count: null, sources: [] }
+    const unavailableRows = themeFactsRowsFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: unavailableFacet }] }, cible).indicateurs
+    expect(unavailableRows.find((fact) => fact.key === 'prix_m2' && fact.detail === null))
+      .toMatchObject({ value: null, fact_status: 'unavailable' })
+  })
+
+  it('projects the native DVF pooled scalar and rank separately from its annual series facet', () => {
+    const scalarSources = [{ source_id: 'dvf', name: 'DVF pooled fixture', vintage_id: 'dvf-2026',
+      version: '2026', reference_date: '2026-01-01', publication_date: '2026-01-02' }]
+    const seriesSources = scalarSources.map(({ name, ...item }) => ({ ...item, source_name: name }))
+    const scalarDescriptor = { indicator_id: 'prix_m2', unit: '€/m²', completeness: 'sparse',
+      descriptor_version: 'scalar-descriptor-v1' }
+    const focal = { resource: 'prix_m2', shapes: ['scalar', 'ordered_series'], data: {
+      resource: 'prix_m2', target: { kind: 'territory', type: 'commune', id: cible.territoire },
+      dataset_id: 'dvf_prix_m2', publication_id: 'series-publication-v1',
+      content_version: 'series-publication-v1', reference_content_version: 'reference-v1',
+      descriptor_version: 'series-descriptor-v1', indicator_id: 'prix_m2', unit: '€/m²',
+      axis_kind: 'year', axis_values: ['2024', '2025'], axis_numeric_values: [2024, 2025],
+      points: [
+        { axis: '2024', observation_period: '2024', value: 211, status: 'measured', provenance: seriesSources },
+        { axis: '2025', observation_period: '2025', value: 230, status: 'measured', provenance: seriesSources },
+      ],
+      scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-publication-v1',
+        reference_content_version: 'reference-v1', descriptor_version: 'scalar-descriptor-v1',
+        descriptor: scalarDescriptor,
+        observation: { territory_id: cible.territoire, territory_type: 'commune', status: 'measured',
+          value: 700, support_count: 12, denominator_count: 20, sources: scalarSources } },
+    } }
+    const densityScope = { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 }
+    const comparison = { theme_id: 'habitat', comparison_reads: [{ resource: 'prix_m2', shapes: focal.shapes,
+      data: { resource: 'prix_m2', target: focal.data.target, contract: 'indicator-comparison-v1',
+        indicator_id: 'prix_m2', shape: 'ordered_series', content_version: 'series-publication-v1',
+        reference_content_version: 'reference-v1', selection: null,
+        scope: densityScope,
+        result: { indicator_id: 'prix_m2', source_facet: '2025', status: 'available', direction: 'low',
+          descriptor_version: 'series-descriptor-v1', rank: 2, rank_size: 2 },
+        scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-publication-v1',
+          reference_content_version: 'reference-v1', descriptor_version: 'scalar-descriptor-v1',
+          comparison_content_version: 'scalar-comparison-publication-v1',
+          descriptor: scalarDescriptor, selection: null, scope: densityScope,
+          result: { indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'available', direction: 'low',
+            descriptor_version: 'scalar-descriptor-v1', rank: 1, rank_size: 2 } },
+      } }] }
+
+    const reads = [{ ...focal, declaration: nativeResources('habitat').find((item) => item.resource_id === 'prix_m2') }]
+    const projected = themeFactsRowsFromSemantic('habitat', { resource_reads: reads } as any, cible).indicateurs
+    const pooled = projected.find((row) => row.key === 'prix_m2' && row.detail === null)!
+    const annual = projected.find((row) => row.key === 'prix_m2' && row.detail === '2025')!
+    expect([pooled.value, pooled.fact_status, pooled.support_count, pooled.denominator_count]).toEqual([
+      700, 'measured', 12, 20,
+    ])
+    expect(annual.value).toBe(230)
+    expect(focal.data).not.toHaveProperty('value')
+
+    const semantic = semanticComparisonForTheme(comparison, undefined, reads)
+    const ranked = lignesAvecComparaisonApi(projected, semantic, 'Classe publiée')
+    expect(ranked.find((row) => row.key === 'prix_m2' && row.detail === null)?.comparaisonApi)
+      .toEqual({ rang: 1, taille: 2, portee: 'Classe publiée' })
+    expect(ranked.find((row) => row.key === 'prix_m2' && row.detail === '2025')?.comparaisonApi)
+      .toEqual({ rang: 2, taille: 2, portee: 'Classe publiée' })
+    const corruptedComparison: any = structuredClone(comparison)
+    corruptedComparison.comparison_reads[0].data.scalar_facet.result.source_facet = '2025'
+    expect(() => semanticComparisonForTheme(corruptedComparison, undefined, reads))
+      .toThrow(/facette de comparaison scalaire/i)
+
+    const levelIds: Record<string, string> = { commune: cible.territoire, epci: '200067460', departement: '22', region: '53' }
+    for (const type of nativeResources('habitat').find((item) => item.resource_id === 'prix_m2')!.allowed_levels) {
+      const id = levelIds[type]!
+      const target = { kind: 'territory', type, id }
+      const focalAtLevel = structuredClone(focal)
+      focalAtLevel.data.target = target
+      focalAtLevel.data.scalar_facet.observation = { ...focalAtLevel.data.scalar_facet.observation,
+        territory_id: id, territory_type: type }
+      const comparisonAtLevel: any = structuredClone(comparison)
+      const scopeAtLevel = type === 'commune' ? densityScope : { kind: 'same_level', territory_type: type, member_count: 2 }
+      comparisonAtLevel.comparison_reads[0]!.data.target = target
+      comparisonAtLevel.comparison_reads[0]!.data.scope = scopeAtLevel
+      comparisonAtLevel.comparison_reads[0]!.data.scalar_facet.scope = scopeAtLevel
+      const readsAtLevel = [{ ...focalAtLevel, declaration: reads[0]!.declaration }]
+      expect(semanticPublicationsCompatible({ resource_reads: readsAtLevel } as any,
+        comparisonAtLevel as any), type).toBe(true)
+      const rowsAtLevel = themeFactsRowsFromSemantic('habitat', { resource_reads: readsAtLevel } as any,
+        { territoire: id, type: type as any }).indicateurs
+      expect(rowsAtLevel.find((row) => row.key === 'prix_m2' && row.detail === null)?.value).toBe(700)
+      expect(rowsAtLevel.find((row) => row.key === 'prix_m2' && row.detail === '2025')?.value).toBe(230)
+    }
   })
 
   it('builds an explicitly synthetic 73-axis Mobility curve, selected mean, rank, and named reference from the active producer contract', () => {

@@ -1021,6 +1021,123 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
+  it('renders the pooled DVF scalar/rank beside annual points without borrowing the annual rank', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        return nativeBatchResponse(items, (item, resource) => {
+          const data = nativeReadFixture(item, resource)
+          if (resource.resource_id !== 'prix_m2') return data
+          if (item.intent.kind === 'facts') {
+            data.points = (data.points as Array<Record<string, any>>).map((point) => point.axis === '2025'
+              ? { ...point, value: 230, status: 'measured', missing_reason: null }
+              : point.axis === '2024' ? { ...point, value: 211, status: 'measured', missing_reason: null } : point)
+            data.scalar_facet.observation = { ...data.scalar_facet.observation,
+              status: 'measured', value: 700, support_count: 12, denominator_count: 20 }
+          } else {
+            data.result = { ...data.result, source_facet: '2025', status: 'available',
+              direction: 'low', rank: 2, rank_size: 2 }
+            data.scalar_facet.result = { ...data.scalar_facet.result, source_facet: 'prix_m2',
+              status: 'available', direction: 'low', rank: 1, rank_size: 2 }
+          }
+          return data
+        })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const model = modeleAvecContextesComparaison()
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    await flushPromises()
+
+    const figure = wrapper.get('.figure-trajectoire[data-clef="prix_m2"]')
+    expect(figure.get('.trajectoire-repere__valeur').text()).toContain('700')
+    expect(figure.get('.trajectoire-repere__valeur').text()).toContain('€/m²')
+    expect(figure.get('.trajectoire-repere .puce-rang-texte').text()).toContain('1er/2')
+    expect(figure.get('.trajectoire-repere [role="img"]').attributes('aria-label'))
+      .toContain(model.themes.mobilite!.comparisons.densite!.scope.label)
+    expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('2025')
+    expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('230')
+    expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'facts')).toBe(true)
+    expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'fixed_comparison')).toBe(true)
+    wrapper.unmount()
+  }, 20_000)
+
+  it('does not attach the initial fixed-group price rank to a scope selected while facts are pending', async () => {
+    const initialPending: Array<{ release: () => void; released: boolean }> = []
+    const selectedPending: Array<{ release: () => void; released: boolean }> = []
+    const habitatResources = new Set(nativeResources('habitat').map((resource) => resource.resource_id))
+    const makeResponse = (items: Array<Record<string, any>>) => nativeBatchResponse(items, (item, resource) => {
+      const data = nativeReadFixture(item, resource)
+      if (resource.resource_id !== 'prix_m2') return data
+      if (item.intent.kind === 'facts') {
+        data.points = (data.points as Array<Record<string, any>>).map((point) => point.axis === '2025'
+          ? { ...point, value: 230, status: 'measured', missing_reason: null }
+          : point.axis === '2024' ? { ...point, value: 211, status: 'measured', missing_reason: null } : point)
+        data.scalar_facet.observation = { ...data.scalar_facet.observation,
+          status: 'measured', value: 700, support_count: 12, denominator_count: 20 }
+      } else {
+        data.result = { ...data.result, source_facet: '2025', status: 'available',
+          direction: 'low', rank: 2, rank_size: 2 }
+        data.scalar_facet.result = { ...data.scalar_facet.result, source_facet: 'prix_m2',
+          status: 'available', direction: 'low', rank: 1, rank_size: 2 }
+      }
+      return data
+    })
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        const targetThemeReads = items.some((item) => habitatResources.has(item.resource) && item.target.kind === 'territory')
+        if (targetThemeReads) {
+          const selected = items.some((item) => habitatResources.has(item.resource) && item.intent.kind === 'selected_comparison')
+          const queue = selected ? selectedPending : initialPending
+          return new Promise<Response>((resolve) => {
+            const pending = { released: false, release: () => {
+              pending.released = true
+              resolve(makeResponse(items))
+            } }
+            queue.push(pending)
+          })
+        }
+        return makeResponse(items)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const model = modeleAvecContextesComparaison()
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=habitat&comparaison=epci', vi.fn(async () => model))
+    await vi.waitFor(() => expect(initialPending.some((entry) => !entry.released)).toBe(true))
+    await router.replace({ query: { theme: 'habitat', comparaison: 'bretagne' } })
+    await flushPromises()
+
+    for (let attempt = 0; attempt < 12 && !selectedPending.some((entry) => !entry.released); attempt++) {
+      await vi.waitFor(() => expect(initialPending.some((entry) => !entry.released)).toBe(true))
+      initialPending.find((entry) => !entry.released)!.release()
+      await flushPromises()
+    }
+    expect(selectedPending.some((entry) => !entry.released)).toBe(true)
+    const figure = wrapper.get('.figure-trajectoire[data-clef="prix_m2"]')
+    expect(figure.get('.trajectoire-repere__valeur').text()).toContain('700')
+    expect(figure.find('.trajectoire-repere .puce-rang').exists()).toBe(false)
+
+    selectedPending.find((entry) => !entry.released)!.release()
+    await flushPromises()
+    expect(figure.get('.trajectoire-repere .puce-rang-texte').text()).toContain('1er/2')
+    expect(figure.get('.trajectoire-repere .puce-rang[aria-label]').attributes('aria-label'))
+      .toContain(model.themes.mobilite!.comparisons.bretagne!.scope.label)
+    expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('230')
+    wrapper.unmount()
+  }, 30_000)
+
   it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {
     await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
     const requests = vi.fn().mockRejectedValue(new Error('scalar API must stay off'))

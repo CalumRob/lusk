@@ -162,6 +162,23 @@ function publicationFor(resource: Resource): string {
   return `${dataset}-fixture-publication-v1`
 }
 
+function scalarFacetDescriptor(resource: Resource, descriptorVersion: string): Record<string, any> {
+  const metadata = metadataFor(resource.theme_id)
+  const contract = metadata.scalar_contracts?.[resource.resource_id]
+  const page = metadata.indicator_pages?.[resource.resource_id]
+  if (!contract || !page) throw new Error(`Missing producer scalar-facet declaration: ${resource.resource_id}`)
+  return { indicator_id: resource.indicator_id, theme_id: resource.theme_id, label: page.label,
+    unit: page.unit, direction: page.direction, comparison_facet: contract.comparison_facet,
+    allowed_levels: contract.allowed_levels ?? page.levels,
+    denominator_semantics: contract.denominator_semantics ?? null,
+    completeness: contract.completeness, descriptor_version: descriptorVersion }
+}
+
+function scalarFacetVersions(resource: Resource, version: string, referenceVersion: string) {
+  return { content_version: `${version}-scalar-facet-v1`, reference_content_version: referenceVersion,
+    descriptor_version: `${resource.resource_id}-scalar-descriptor-fixture-v1` }
+}
+
 /** These fixed curves exercise the native contract only; they are not producer observations. */
 function syntheticRaccordementValue(type: string, id: string, minute: number): number {
   return type === 'commune' && id === '22001' ? minute / 720 : 0.2 + minute / 1200
@@ -499,19 +516,33 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource)
       : territories.filter((territory) => territory.type === target.type))
     const shape = isProfile ? 'declared_profile' : isSeries ? 'ordered_series'
       : isCollection ? 'period_detail' : 'scalar'
+    const result = { indicator_id: resource.indicator_id, status: 'unavailable', reason: 'fixture_unavailable',
+      unit: resource.unit, direction: resource.direction,
+      source_facet: isProfile ? undefined : isSeries ? null : resource.indicator_id,
+      descriptor_version: descriptorVersion,
+      ...(isProfile ? { profile_descriptor_version: descriptorVersion } : {}),
+      selected_member_count: cohort.length, eligible_count: 0, missing_count: cohort.length,
+      rank: null, rank_size: null }
+    const dualScalarSeries = shapes.includes('scalar') && isSeries
+    const scalarVersions = scalarFacetVersions(resource, version, referenceVersion)
+    const scalarFacet = dualScalarSeries ? { shape: 'scalar', source_facet: resource.indicator_id,
+      ...scalarVersions, descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version),
+      ...(selected ? {} : { comparison_content_version: `${resource.resource_id}-scalar-comparison-fixture-v1` }),
+      selection: selected, scope: selected ? { kind: 'explicit_selection', member_count: selected.length }
+        : { kind: target.type === 'commune' ? 'density_class' : 'same_level',
+          territory_type: target.type, density_class_code: focal?.classe_densite_code ?? null,
+          member_count: cohort.length },
+      result: { indicator_id: resource.indicator_id, source_facet: resource.indicator_id,
+        status: 'unavailable', reason: 'fixture_unavailable', direction: resource.direction,
+        descriptor_version: scalarVersions.descriptor_version, selected_member_count: cohort.length,
+        eligible_count: 0, missing_count: cohort.length, rank: null, rank_size: null } } : undefined
     return { ...shared, contract: 'indicator-comparison-v1', indicator_id: resource.indicator_id, shape,
       content_version: version, reference_content_version: referenceVersion, selection: selected,
       scope: selected ? { kind: 'explicit_selection', member_count: selected.length }
         : { kind: target.type === 'commune' ? 'density_class' : 'same_level',
           territory_type: target.type, density_class_code: focal?.classe_densite_code ?? null,
           member_count: cohort.length },
-      result: { indicator_id: resource.indicator_id, status: 'unavailable', reason: 'fixture_unavailable',
-        unit: resource.unit, direction: resource.direction,
-        source_facet: isProfile ? undefined : isSeries ? null : resource.indicator_id,
-        descriptor_version: descriptorVersion,
-        ...(isProfile ? { profile_descriptor_version: descriptorVersion } : {}),
-        selected_member_count: cohort.length, eligible_count: 0, missing_count: cohort.length,
-        rank: null, rank_size: null } }
+      result, ...(scalarFacet ? { scalar_facet: scalarFacet } : {}) }
   }
 
   if (resource.resource_id === 'raccordement_tc') {
@@ -629,7 +660,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource)
           revision_id: 'fixture-revision', dataset_name: resource.resource_id,
           revision_hash: 'fixture-revision-hash' }] }
     })
-    return { ...shared, indicator_id: resource.indicator_id, theme_id: resource.theme_id,
+    const response: Record<string, any> = { ...shared, indicator_id: resource.indicator_id, theme_id: resource.theme_id,
       dataset_id: resource.resource_id === 'raccordement_courbe' ? raccordementRoute.dataset_id : resource.resource_id,
       publication_id: version, content_version: version, reference_content_version: referenceVersion,
       descriptor_version: descriptorVersion, axis_kind: axisKind, axis_values: axisValues,
@@ -640,6 +671,23 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource)
       completeness: facts.length ? 'observed_sparse' : 'no_record', label: resource.label,
       unit: resource.unit, direction: resource.direction, comparison_point: null,
        points, scope_series: [], context: null, named_references: [], availability: facts.length ? 'observed' : 'no_record' }
+    if (shapes.includes('scalar')) {
+      // Emit a deterministic synthetic pooled observation with producer-owned
+      // source identity/clock. It is not copied from a checked-in curve and is
+      // not evidence of a live publication or frontend publication parity.
+      const pooledSourceFact = facts.find((fact) => fact.detail === null || fact.detail === undefined)
+      const scalarSource = pooledSourceFact ? sourceFor(resource, pooledSourceFact, target) : null
+      const scalarVersions = scalarFacetVersions(resource, version, referenceVersion)
+      response.scalar_facet = { shape: 'scalar', source_facet: resource.indicator_id, ...scalarVersions,
+        descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version),
+        observation: { territory_id: target.id, territory_type: target.type,
+          status: scalarSource ? 'measured' : 'unavailable', value: scalarSource ? 700 : null,
+          support_count: scalarSource ? 12 : null, denominator_count: scalarSource ? 20 : null,
+          sources: scalarSource ? [{ source_id: scalarSource.source_id, name: scalarSource.name,
+            vintage_id: scalarSource.vintage_id, version: scalarSource.version,
+            reference_date: scalarSource.reference_date, publication_date: scalarSource.publication_date }] : [] } }
+    }
+    return response
   }
 
   if (shapes.includes('period_detail')) {

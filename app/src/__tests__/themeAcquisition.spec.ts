@@ -327,6 +327,67 @@ describe('theme acquisition cache', () => {
     } }] })).toBe(false)
   })
 
+  it('binds dual-shape scalar comparisons to the scalar facet and keeps annual tokens independent', async () => {
+    const target = { kind: 'territory', type: 'commune', id: '22001' }
+    const scalarDescriptor = { indicator_id: 'prix_m2', unit: '€/m²', descriptor_version: 'scalar-desc-v1' }
+    const scope = { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 }
+    const focalRead = { resource: 'prix_m2', shapes: ['scalar', 'ordered_series'], data: {
+      resource: 'prix_m2', target, content_version: 'series-v1', reference_content_version: 'series-ref-v1',
+      descriptor_version: 'series-desc-v1', points: [{ axis: '2025', value: 230 }],
+      scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-v1',
+        reference_content_version: 'scalar-ref-v1', descriptor_version: 'scalar-desc-v1',
+        descriptor: scalarDescriptor, observation: { territory_id: '22001', territory_type: 'commune',
+          status: 'measured', value: 700, sources: [] } },
+    } }
+    const comparisonRead = (facetPatch: Record<string, unknown> = {}) => ({ resource: 'prix_m2',
+      data: { resource: 'prix_m2', target, contract: 'indicator-comparison-v1', indicator_id: 'prix_m2',
+        shape: 'ordered_series', content_version: 'series-v1', reference_content_version: 'series-ref-v1',
+        selection: null, scope, result: { indicator_id: 'prix_m2', source_facet: '2025',
+          descriptor_version: 'series-desc-v1', status: 'available', rank: 2, rank_size: 2 },
+        scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-v1',
+          reference_content_version: 'scalar-ref-v1', descriptor_version: 'scalar-desc-v1',
+          descriptor: scalarDescriptor, selection: null, scope,
+          comparison_content_version: 'scalar-comparison-v1',
+          result: { indicator_id: 'prix_m2', source_facet: 'prix_m2',
+            descriptor_version: 'scalar-desc-v1', status: 'available', rank: 1, rank_size: 2 },
+          ...facetPatch },
+      } })
+    const facts = { resource_reads: [focalRead] }
+    const valid = { comparison_reads: [comparisonRead()] }
+    expect(semanticPublicationsCompatible(facts, valid)).toBe(true)
+
+    const corruptions = [
+      { content_version: 'stale-scalar-v0' },
+      { reference_content_version: 'stale-scalar-reference' },
+      { descriptor_version: 'stale-scalar-descriptor' },
+      { comparison_content_version: '' },
+      { source_facet: 'annual-2025' },
+      { descriptor: { ...scalarDescriptor, indicator_id: 'other-indicator' } },
+      { result: { indicator_id: 'other-indicator', source_facet: 'other-indicator',
+        descriptor_version: 'scalar-desc-v1', status: 'available', rank: 1, rank_size: 2 } },
+      { scope: { ...scope, density_class_code: 'D2' } },
+      { selection: [{ territory_type: 'commune', territory_id: '35238' }] },
+    ]
+    for (const corruption of corruptions) {
+      expect(semanticPublicationsCompatible(facts, { comparison_reads: [comparisonRead(corruption)] })).toBe(false)
+    }
+    const noFacet = structuredClone(valid)
+    delete (noFacet.comparison_reads[0]!.data as Record<string, unknown>).scalar_facet
+    expect(semanticPublicationsCompatible(facts, noFacet)).toBe(false)
+
+    const stale = comparisonRead({ reference_content_version: 'stale-scalar-reference' })
+    const compare = vi.fn().mockResolvedValueOnce({ comparison_reads: [stale] })
+      .mockResolvedValueOnce(valid)
+    const cache = new ThemeAcquisitionCache(async () => facts, compare)
+    const acquired = await cache.get('commune', '22001', 'habitat')
+    await expect(cache.select('commune', '22001', 'habitat', undefined)).rejects.toThrow(/publication/i)
+    expect((await cache.get('commune', '22001', 'habitat')).focal).toBe(acquired.focal)
+    const retried = await cache.select('commune', '22001', 'habitat', undefined)
+    expect(compare).toHaveBeenCalledTimes(2)
+    expect(retried.focal).toBe(acquired.focal)
+    expect(retried.comparisons.get('omitted')).toEqual(valid)
+  })
+
   it.each(['ordered_series', 'period_detail'])('rejects %s descriptor drift even when publication tokens match', (shape) => {
     const facts = { resource_reads: [{ resource: 'resource', shapes: [shape], data: {
       content_version: 'publication-v1', reference_content_version: 'reference-v1', descriptor_version: 'descriptor-v1',
