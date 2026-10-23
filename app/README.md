@@ -57,15 +57,21 @@ From the repo root, `npm run dev` / `build` / `test` / `preview` forward to the 
 - **French is the product language** — UI copy, page titles, route names. No "under construction" copy: empty states say "À venir."
 - Component names and behaviors follow `CONTEXT.md` (territoire, fiche d'identité, thème, indicateur, rang, vintage…).
 - Tokens only from `src/styles/tokens.css`. No new color/heuristic outside it — extend `DESIGN.md` first.
-# Scalar cohort API activation
+## Configuration
 
-Normal `npm run dev` and `npm run build` load the tracked `.env.development` and
-`.env.production` settings, respectively, and enable the registered scalar cohort
-API. The Vite proxy routes `/api` to the configured public API origin.
+The app does not require tracked `.env.development` or `.env.production` files.
+Normal commands use the defaults defined in app source; intentional overrides
+can be supplied through the invoking process environment (for example, in
+PowerShell: `$env:VITE_THEME_ACQUISITION_API='0'` before running a command).
 
-Rollback is reversible without code or data changes: set
-`VITE_SCALAR_COHORT_API=0` in the invoking environment before `npm run dev` or
-`npm run build` (for example, PowerShell: `$env:VITE_SCALAR_COHORT_API='0'`;
-clear it afterward with `Remove-Item Env:VITE_SCALAR_COHORT_API`). The API path
-then stays disabled and the incumbent static facts render. A production deploy
-is still a separate, reviewed operator action.
+- `VITE_THEME_ACQUISITION_API` is enabled by default; setting it to `'0'` selects
+  the incumbent static path. This client-side switch does not establish that an
+  API route is deployed or available.
+- `VITE_SCALAR_COHORT_API`, `VITE_STRUCTURE_AGE_PROFILE_API`,
+  `VITE_OWNED_SERIES_API`, `VITE_CONSO_ENAF_SERIES_API`, and
+  `VITE_OCSGE_STATE_SERIES_API` remain explicit opt-ins (`'1'`) for their
+  applicable readers; they are not enabled by normal dev or build commands.
+- `LUSK_API_ORIGIN` optionally overrides the Vite development server's `/api`
+  proxy target only; it is not bundled into the production frontend.
+- `VITE_MAPS_PUBLIC_BASE_URL` optionally overrides the map-asset origin; the
+  source-defined default is used when it is unset.
