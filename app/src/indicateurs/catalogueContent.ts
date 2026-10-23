@@ -56,8 +56,8 @@ export const CONTENU_CATALOGUE_INDICATEURS = [
         label: 'L’offre de transports en commun',
         pages: [
           { resourceKey: 'offre_tc', label: 'Part des bâtiments près d’un arrêt (à 500 m)' },
-          { resourceKey: 'raccordement_tc', label: 'Population bretonne jointe en 90 minutes en transports en commun' },
-          { resourceKey: 'raccordement_courbe', label: 'Courbe de population bretonne jointe selon le temps de trajet' },
+          { resourceKey: 'raccordement_tc', label: 'Population bretonne joignable en 90 minutes en TC' },
+          { resourceKey: 'raccordement_courbe', label: 'Courbe cumulative — population bretonne joignable en TC' },
         ],
       },
     ],

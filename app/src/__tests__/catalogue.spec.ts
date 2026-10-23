@@ -79,6 +79,19 @@ describe('catalogue des Pages d’indicateur app-owned', () => {
     expect(pages.some(({ href }) => href.endsWith('/raccordement_reference'))).toBe(false)
   })
 
+  it('préserve le libellé public existant des pages de raccordement TC', () => {
+    const pages = groupesCatalogue().flatMap((groupe) =>
+      groupe.sousGroupes.flatMap((sousGroupe) => sousGroupe.entrees),
+    )
+
+    expect(pages.find(({ indicateur }) => indicateur === 'raccordement_tc')?.label).toBe(
+      'Population bretonne joignable en 90 minutes en TC',
+    )
+    expect(pages.find(({ indicateur }) => indicateur === 'raccordement_courbe')?.label).toBe(
+      'Courbe cumulative — population bretonne joignable en TC',
+    )
+  })
+
   it('fournit les mêmes libellés, thèmes et ordre à la recherche groupée', () => {
     const attendu = groupesCatalogue().flatMap((groupe) =>
       groupe.sousGroupes.flatMap((sousGroupe) =>
