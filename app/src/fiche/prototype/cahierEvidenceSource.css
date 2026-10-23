@@ -1,9 +1,14 @@
+/* Source stamp exception: 10px is a deliberate desktop editorial size; mobile uses the 11px legibility floor. */
 .cahier-evidence-source {
   margin: 0;
   color: var(--cahier-default);
-  font: var(--text-caption);
+  font: 500 10px/1.4 var(--font-metadata);
   letter-spacing: var(--text-caption-tracking);
   overflow-wrap: anywhere;
+}
+
+@media (max-width: 760px) {
+  .cahier-evidence-source { font-size: 11px; }
 }
 
 .cahier-evidence-source a {

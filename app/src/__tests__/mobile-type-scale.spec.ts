@@ -37,8 +37,8 @@ function resolve(clamp: Clamp, viewportWidth: number): number {
   return Math.min(clamp.ceiling, Math.max(clamp.floor, clamp.rem + (clamp.vw * viewportWidth) / 100))
 }
 
-describe('mobile heading type scale', () => {
-  it.each(['--text-display', '--text-h1', '--text-page-heading'])(
+describe('mobile Cahier type scale', () => {
+  it.each(['--text-display', '--text-h1', '--text-page-heading', '--text-cahier-section'])(
     '%s reaches its limits without reversing as the viewport grows',
     (token) => {
       const clamp = headingClamp(token)

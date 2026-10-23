@@ -189,6 +189,7 @@ describe('DESIGN.md §3 — Typography', () => {
     expectToken('--text-h1-tracking', '-0.015em')
 
     expectToken('--text-page-heading', '400 clamp(1.35rem, 1rem + 1.556vw, 2.4rem)/1 var(--font-display-title)')
+    expectToken('--text-cahier-section', '500 clamp(1.0313rem, 0.9333rem + 0.435vw, 1.325rem)/1 var(--font-narrative-lead)')
 
     expectToken('--text-h2', "600 1.5rem/1.3 var(--font-section-title)")
     expectToken('--text-h2-tracking', '-0.01em')
@@ -212,7 +213,7 @@ describe('DESIGN.md §3 — Typography', () => {
     expectToken('--text-overline-tracking', '0.08em')
 
     expectToken('--type-figure-label', '400 0.75rem/1.2 var(--font-figure-label)')
-    expectToken('--type-figure-title', '400 0.9375rem/1.25 var(--font-figure-title)')
+    expectToken('--type-figure-title', '600 0.9375rem/1.25 var(--font-figure-title)')
     expectToken('--type-figure-tick-size', '0.6875rem')
     expectToken('--type-figure-mode', '400 0.875rem/1.35 var(--font-figure-mode)')
     expectToken('--type-figure-value', '700 1rem/1 var(--font-figure-value)')

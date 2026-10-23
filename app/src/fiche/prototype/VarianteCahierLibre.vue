@@ -1358,7 +1358,8 @@ onBeforeUnmount(() => {
 .page-number span, .page-number small { color: var(--muted); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); }
 .page-number span { text-transform: uppercase; }
 .margin-sources { display: grid; gap: 10px; justify-items: center; overflow-wrap: anywhere; }
-.margin-sources a { color: var(--cahier-theme-strong); font: var(--text-caption); letter-spacing: var(--text-caption-tracking); text-decoration-thickness: 1px; text-underline-offset: 3px; word-break: break-word; }
+/* Source stamp exception: 10px is a deliberate desktop editorial size; mobile uses the 11px legibility floor. */
+.margin-sources a { color: var(--cahier-theme-strong); font: 500 10px/1.4 var(--font-metadata); letter-spacing: var(--text-caption-tracking); text-decoration-thickness: 1px; text-underline-offset: 3px; word-break: break-word; }
 .page-heading { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); }
 .page-copy { padding-right: calc(var(--page-left-inset) - var(--page-right-inset)); padding-bottom: 18px; }
 .page-layout--sticky .page-main { min-width: 0; }
@@ -1446,7 +1447,7 @@ onBeforeUnmount(() => {
 .concept-group-heading-copy { display: grid; gap: 4px; min-width: 0; text-align: center; }
 .concept-group-label { color: var(--cahier-theme-strong); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); text-transform: uppercase; }
 .concept-group-heading > span { color: var(--red); font-size: 13px; font-variant-numeric: tabular-nums; letter-spacing: .08em; }
-.concept-group-heading h3 { margin: 0; color: var(--ink); font-family: var(--font-narrative-lead); font-size: calc(1.2rem + 2px); font-weight: 500; line-height: 1; }
+.concept-group-heading h3 { margin: 0; color: var(--ink); font: var(--text-cahier-section); }
 .cahier--sans-grille .concept-group-narrative { font-size: clamp(1.05rem, 1.4vw, 1.35rem); font-style: italic; font-weight: 400; line-height: 1.15; text-wrap: balance; }
 .figure-spread { display: grid; grid-template-columns: minmax(280px, 1fr) minmax(420px, 1.2fr); column-gap: clamp(40px, 5vw, 76px); row-gap: var(--cahier-spread-gap, 34px); align-items: start; padding: var(--cahier-spread-padding, 22px) 0; }
 .figure-spread--aedar-equipment-profile { grid-template-columns: minmax(0, 1fr); }
@@ -1601,6 +1602,7 @@ onBeforeUnmount(() => {
   .mobile-index a { display: flex; gap: 12px; padding: 8px 0; color: var(--muted); font-size: 14px; text-decoration: none; }
   .page-margin { position: static; display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 12px; width: auto; margin: 0 0 var(--space-5); text-align: left; }
   .margin-sources { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: flex-end; gap: 6px 12px; }
+  .margin-sources a { font-size: 11px; }
   .margin-sources .margin-label { flex-basis: 100%; text-align: right; }
   .page-number { font-size: 24px; }
 }

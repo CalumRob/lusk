@@ -946,22 +946,37 @@ describe('Variante E — partage de l’espace public', () => {
     const pageHeading = regleCss(varianteCahierLibreStyles, '\\.page-heading h2')
     expect(pageHeading).toContain('font: var(--text-page-heading);')
     expect(pageHeading).not.toMatch(/font-(?:family|weight)\s*:|line-height\s*:/)
-    expect(regleCss(varianteCahierLibreStyles, '\\.concept-group-heading h3')).toContain(
-      'font-family: var(--font-narrative-lead);',
-    )
+    const sectionHeading = regleCss(varianteCahierLibreStyles, '\\.concept-group-heading h3')
+    expect(sectionHeading).toContain('font: var(--text-cahier-section);')
+    expect(sectionHeading).not.toContain('font-family:')
+    expect(sectionHeading).not.toContain('font-size:')
+    expect(sectionHeading).not.toContain('font-weight:')
+    expect(sectionHeading).not.toContain('line-height:')
     expect(regleCss(varianteCahierLibreStyles, '\\.cahier--sans-grille \.summary-metric-title')).toContain(
       'font-family: var(--font-figure-label);',
     )
   })
 
   it('uses stable compact metadata roles at every Cahier viewport width', () => {
-    expect(regleCss(cahierEvidenceSourceStyles, '\\.cahier-evidence-source')).toContain(
-      'font: var(--text-caption);',
+    const evidenceSource = regleCss(cahierEvidenceSourceStyles, '\\.cahier-evidence-source')
+    const marginSource = regleCss(varianteCahierLibreStyles, '\\.margin-sources a')
+    for (const rule of [evidenceSource, marginSource]) {
+      expect(rule).toContain('font: 500 10px/1.4 var(--font-metadata);')
+      expect(rule).toContain('letter-spacing: var(--text-caption-tracking);')
+    }
+    expect(cahierEvidenceSourceStyles).toContain(
+      'Source stamp exception: 10px is a deliberate desktop editorial size; mobile uses the 11px legibility floor.',
     )
-    expect(cahierEvidenceSourceStyles).not.toMatch(/@media[^}]*\.cahier-evidence-source\s*\{[^}]*font-size/)
-    expect(regleCss(varianteCahierLibreStyles, '\\.margin-sources a')).toContain(
-      'font: var(--text-caption);',
+    expect(varianteCahierLibreStyles).toContain(
+      'Source stamp exception: 10px is a deliberate desktop editorial size; mobile uses the 11px legibility floor.',
     )
+    const mobileEvidenceSource = regleCss(
+      blocCss(cahierEvidenceSourceStyles, '@media (max-width: 760px)'),
+      '\\.cahier-evidence-source',
+    )
+    expect(mobileEvidenceSource).toContain('font-size: 11px;')
+    const sourceMobileStyles = blocCss(varianteCahierLibreStyles, '@media (max-width: 760px)')
+    expect(sourceMobileStyles).toContain('.margin-sources a { font-size: 11px; }')
     expect(regleCss(varianteCahierLibreStyles, '\\.page-number span, \\.page-number small')).toContain(
       'font: var(--text-overline);',
     )
@@ -969,10 +984,6 @@ describe('Variante E — partage de l’espace public', () => {
     expect(pageNumberSpan).toContain('text-transform: uppercase;')
     expect(pageNumberSpan).not.toMatch(/font-weight\s*:|letter-spacing\s*:/)
     expect(varianteCahierLibreStyles).not.toMatch(/\.concept-group-label\s*\{\s*font-family\s*:/)
-    expect(blocCss(varianteCahierLibreStyles, '@media (max-width: 760px)')).not.toContain(
-      '.margin-sources a {',
-    )
-
     const mobileStyles = blocCss(varianteCahierLibreStyles, '@media (max-width: 600px)')
     expect(mobileStyles).not.toMatch(/^\s*\.page-heading h2\s*\{/m)
     expect(mobileStyles).toContain('.cahier--indexed-sections .page-heading h2')

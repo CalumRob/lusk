@@ -57,19 +57,40 @@ describe('Cahier typography roles', () => {
       'font: var(--type-figure-title)',
     )
     expect(cssRule(layoutCss, '.cahier-figure-title')).toContain('color: var(--brand-700)')
-    expect(tokensSource).toContain('--type-figure-title: 400 0.9375rem/1.25 var(--font-figure-title)')
+    expect(tokensSource).toContain('--type-figure-title: 600 0.9375rem/1.25 var(--font-figure-title)')
     expect(tokensSource).toContain('--type-figure-tick-size: 0.6875rem')
     expect(cssRule(figureCss, '.cahier-figure-frame')).toContain(
       '--cahier-figure-tick-label-size: var(--type-figure-tick-size)',
     )
   })
 
-  it('keeps Cahier text at or above the 11px minimum', () => {
+  it('keeps Cahier text at or above 11px except for deliberate desktop editorial source stamps', () => {
     const undersized: string[] = []
     const sources = cahierStyleFiles(join(process.cwd(), 'src', 'fiche', 'prototype'))
+    // Only these two source-stamp base rules may use a deliberate 10px desktop editorial size.
+    const desktopEditorialSizeAllowlist = [
+      { file: 'cahierEvidenceSource.css', selector: '.cahier-evidence-source' },
+      { file: 'VarianteCahierLibre.vue', selector: '.margin-sources a' },
+    ]
 
     for (const path of sources) {
-      const source = readFileSync(path, 'utf8')
+      let source = readFileSync(path, 'utf8')
+      const exception = desktopEditorialSizeAllowlist.find(({ file }) => path.endsWith(file))
+      if (exception) {
+        const ruleStart = source.indexOf(`${exception.selector} {`)
+        const ruleEnd = source.indexOf('}', ruleStart)
+        if (ruleStart < 0 || ruleEnd < 0) {
+          throw new Error(`Expected desktop editorial source rule: ${exception.selector}`)
+        }
+        const rule = source.slice(ruleStart, ruleEnd + 1)
+        expect(rule).toContain('font: 500 10px/1.4 var(--font-metadata);')
+        expect(source).toContain('deliberate desktop editorial size')
+        const desktopSourceRuleForFloorScan = rule.replace(
+          'font: 500 10px/1.4 var(--font-metadata);',
+          'font: 500 11px/1.4 var(--font-metadata);',
+        )
+        source = source.slice(0, ruleStart) + desktopSourceRuleForFloorScan + source.slice(ruleEnd + 1)
+      }
       for (const declaration of source.matchAll(/\bfont(?:-size)?\s*:\s*([^;]+);/gu)) {
         const directSizes = declaration[1].replace(/calc\([^()]*\)/gu, '')
         for (const size of directSizes.matchAll(/([\d.]+)(px|rem)(?=\s|\/|,|\)|$)/gu)) {
