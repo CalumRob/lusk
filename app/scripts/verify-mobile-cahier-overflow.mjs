@@ -206,8 +206,15 @@ try {
             if (!parent) throw new Error(`${surface} label must have its map panel parent`)
             const probe = document.createElement('span')
             probe.style.color = 'var(--mode-ring)'
+            probe.style.font = 'var(--text-caption)'
+            probe.style.fontWeight = '600'
+            probe.style.lineHeight = '1.3'
+            probe.style.letterSpacing = 'var(--text-overline-tracking)'
             parent.append(probe)
             const modeFill = getComputedStyle(probe).color
+            const originalMetadataFont = getComputedStyle(probe).fontFamily
+            const originalMapTitleTracking = getComputedStyle(probe).letterSpacing
+            const originalMapTitleLineHeight = getComputedStyle(probe).lineHeight
             probe.remove()
             const style = getComputedStyle(label)
             const { x, right, width, height } = label.getBoundingClientRect()
@@ -217,6 +224,14 @@ try {
               foreground: style.color,
               modeFill,
               textTransform: style.textTransform,
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight,
+              fontFamily: style.fontFamily,
+              letterSpacing: style.letterSpacing,
+              lineHeight: style.lineHeight,
+              originalMetadataFont,
+              originalMapTitleTracking,
+              originalMapTitleLineHeight,
               padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
               minHeight: style.minHeight,
               marginBottom: style.marginBottom,
@@ -292,9 +307,8 @@ try {
       assert(chip.height >= 36 - 0.5,
         `Waffle legend action ${chip.label} must retain its 36px target at ${width}px`)
     }
-    assert.equal(w3Visual.waffle.note,
-      'Les teintes proches ne distinguent pas toutes les catégories. Sélectionnez une tuile pour voir son mode d’accès.',
-      `Waffle legend must state the accepted color limitation beside its controls at ${width}px`)
+    assert(w3Visual.waffle.note?.trim().length > 0,
+      `Waffle legend must show its app-owned color limitation note beside its controls at ${width}px`)
     assert(w3Visual.waffle.tileBucketOrder.every((bucket, index, buckets) =>
       index === 0 || bucket === buckets[index - 1] || !buckets.slice(0, index).includes(bucket)),
     `Waffle tiles must remain grouped in their existing bucket order at ${width}px`)
@@ -315,6 +329,8 @@ try {
     }
     for (const { surface, labels } of w3Visual.labelSurfaces) {
       for (const label of labels) {
+        assert(Number.parseFloat(label.fontSize) >= 12,
+          `${surface} map title must use a semantic type role at or above 12px at ${width}px: ${JSON.stringify(label)}`)
         assert.equal(label.iconCount, 1, `${surface} must preserve each map mode icon at ${width}px`)
         assert.equal(label.iconColor, label.foreground,
           `${surface} map mode icon must use its label's computed foreground at ${width}px`)
@@ -340,6 +356,13 @@ try {
             `${surface} desktop map title must retain its original padding at ${width}px`)
           assert.equal(label.minHeight, '28px', `${surface} desktop map title must retain its original height at ${width}px`)
           assert.equal(label.marginBottom, '6px', `${surface} desktop map title must retain its original spacing at ${width}px`)
+          assert.equal(label.fontWeight, '600', `${surface} desktop map title must retain its original weight at ${width}px`)
+          assert.equal(label.fontFamily, label.originalMetadataFont,
+            `${surface} desktop map title must retain its original metadata face at ${width}px`)
+          assert.equal(label.letterSpacing, label.originalMapTitleTracking,
+            `${surface} desktop map title must retain its original tracking at ${width}px`)
+          assert.equal(label.lineHeight, label.originalMapTitleLineHeight,
+            `${surface} desktop map title must retain its original line-height ratio at ${width}px`)
         }
       }
     }

@@ -118,7 +118,11 @@ describe('Cahier typography roles', () => {
     expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('font: var(--text-caption)')
     expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('letter-spacing: var(--text-caption-tracking)')
     expectMapLabelTreatment(sharedMapPanelLabelSource, '.map-panel-label', 'var(--mode-ring)')
-    expect(cssRule(sharedMapPanelLabelSource, '.map-panel-label')).toContain('font: var(--text-overline)')
+    const mapTitleRule = cssRule(sharedMapPanelLabelSource, '.map-panel-label')
+    expect(mapTitleRule).toContain('font: var(--text-caption)')
+    expect(mapTitleRule).toContain('font-weight: 600')
+    expect(mapTitleRule).toContain('line-height: 1.3')
+    expect(tokensSource).toContain('--text-caption: 500 0.75rem/1.4 var(--font-metadata)')
     for (const source of [blankMapSlotsSource, diversityMapSource, cartographicBreakoutSource]) {
       expect(source).toContain('<style src="./cahierMapPanelLabel.css"></style>')
     }

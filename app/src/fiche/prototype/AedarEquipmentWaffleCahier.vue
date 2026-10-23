@@ -4,6 +4,7 @@ import { Bike, BusFront, CarFront, ChevronDown, Footprints } from 'lucide-vue-ne
 import type { Component } from 'vue'
 import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS, AEDAR_EQUIPMENT_MODES, aedarEquipmentShareMeasureKey, classifyAedarEquipmentTypes } from '@/fiche/content/aedarEquipmentBuckets'
+import { AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE } from '@/fiche/content/aedarEquipmentPresentation'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
@@ -202,7 +203,7 @@ watch(horizonMinutes, (horizon) => {
         label="Types par premier mode d’accès — ouvrir le détail d’une catégorie"
         @activate="openBucket"
       />
-      <p class="aedar-waffle-legend-note">Les teintes proches ne distinguent pas toutes les catégories. Sélectionnez une tuile pour voir son mode d’accès.</p>
+      <p class="aedar-waffle-legend-note">{{ AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE }}</p>
       <CahierActionButton class="aedar-waffle-explore" @click="openExplorer">Parcourir les équipements</CahierActionButton>
     </template>
 
