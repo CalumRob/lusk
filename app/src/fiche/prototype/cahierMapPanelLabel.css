@@ -1,0 +1,41 @@
+.map-panel-label {
+  display: flex;
+  min-height: 28px;
+  align-items: center;
+  gap: 6px;
+  color: var(--mode-ring);
+  font: var(--text-overline);
+  letter-spacing: var(--text-overline-tracking);
+  text-transform: uppercase;
+}
+
+.map-panel--car {
+  --mode-ring: var(--cahier-mode-car);
+  --map-panel-label-ink: var(--paper);
+}
+
+.map-panel--bike {
+  --mode-ring: var(--cahier-mode-bike);
+  --map-panel-label-ink: var(--paper);
+}
+
+.map-panel--foot,
+.map-panel--walk {
+  --mode-ring: var(--cahier-mode-foot);
+  --map-panel-label-ink: #0C1B19;
+}
+
+@media (max-width: 760px) {
+  .map-panel-label {
+    box-sizing: border-box;
+    width: fit-content;
+    max-width: 100%;
+    min-height: 36px;
+    padding: 6px 10px;
+    border-radius: var(--radius-full);
+    background-color: var(--mode-ring);
+    color: var(--map-panel-label-ink, var(--paper));
+    letter-spacing: normal;
+    text-transform: none;
+  }
+}

@@ -7,7 +7,7 @@ import { AEDAR_EQUIPMENT_BUCKET_HORIZONS, AEDAR_EQUIPMENT_MODES, aedarEquipmentS
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { AEDAR_TIME_MODE_COLORS, AEDAR_TIME_MODE_LABEL_INKS } from './aedarTimeModeColors'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierDialog from './CahierDialog.vue'
 import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
@@ -57,14 +57,15 @@ const modeIcons: Readonly<Record<string, Component>> = {
   car: CarFront,
 }
 const bucketPresentation = {
-  walk: { iconKey: 'walk', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.walk },
-  transit: { iconKey: 'transit', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.transit },
-  bike_lts2: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts2 },
-  bike_lts4: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts4 },
-  car: { iconKey: 'car', tone: 'car', color: AEDAR_TIME_MODE_COLORS.car },
-  inaccessible: { iconKey: null, tone: 'foot', color: 'var(--text-tertiary)' },
-} satisfies Record<AedarEquipmentBucketKey, { iconKey: keyof typeof modeIcons | null; tone: string; color: string }>
+  walk: { iconKey: 'walk', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.walk, ink: AEDAR_TIME_MODE_LABEL_INKS.walk },
+  transit: { iconKey: 'transit', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.transit, ink: AEDAR_TIME_MODE_LABEL_INKS.transit },
+  bike_lts2: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts2, ink: AEDAR_TIME_MODE_LABEL_INKS.bike_lts2 },
+  bike_lts4: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts4, ink: AEDAR_TIME_MODE_LABEL_INKS.bike_lts4 },
+  car: { iconKey: 'car', tone: 'car', color: AEDAR_TIME_MODE_COLORS.car, ink: AEDAR_TIME_MODE_LABEL_INKS.car },
+  inaccessible: { iconKey: null, tone: 'foot', color: 'var(--text-tertiary)', ink: 'var(--editorial-ink)' },
+} satisfies Record<AedarEquipmentBucketKey, { iconKey: keyof typeof modeIcons | null; tone: string; color: string; ink: string }>
 const bucketColors = Object.fromEntries(Object.entries(bucketPresentation).map(([key, value]) => [key, value.color])) as Record<AedarEquipmentBucketKey, string>
+const bucketInks = Object.fromEntries(Object.entries(bucketPresentation).map(([key, value]) => [key, value.ink])) as Record<AedarEquipmentBucketKey, string>
 const bucketEntries = computed<FigureLegendEntry[]>(() => (profile.value?.buckets ?? []).map((bucket) => ({
   key: bucket.key,
   label: bucket.label,
@@ -175,7 +176,7 @@ watch(horizonMinutes, (horizon) => {
 
     <p v-if="profile?.status !== 'complete'" class="aedar-waffle-state" role="status">{{ summary }}</p>
     <template v-else>
-      <div class="aedar-waffle-grid aedar-waffle-grid--five-rows" role="group" :aria-label="summary">
+      <div class="aedar-waffle-grid aedar-waffle-grid--responsive" role="group" :aria-label="summary">
         <button
           v-for="(type, index) in profile.buckets.flatMap((item) => item.types.map((entry) => ({ ...entry, bucket: item.key, bucketLabel: item.label })))"
           :key="type.typequ"
@@ -195,10 +196,13 @@ watch(horizonMinutes, (horizon) => {
         :icons="modeIcons"
         :action-keys="bucketEntries.map((entry) => entry.key)"
         :counts="bucketCounts"
-        :mark-colors="bucketColors"
+        :mark-colors="bucketInks"
+        :chip-fills="bucketColors"
+        :chip-inks="bucketInks"
         label="Types par premier mode d’accès — ouvrir le détail d’une catégorie"
         @activate="openBucket"
       />
+      <p class="aedar-waffle-legend-note">Les teintes proches ne distinguent pas toutes les catégories. Sélectionnez une tuile pour voir son mode d’accès.</p>
       <CahierActionButton class="aedar-waffle-explore" @click="openExplorer">Parcourir les équipements</CahierActionButton>
     </template>
 
@@ -282,12 +286,13 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle > .cahier-figure-title { width: 100%; margin: 0; text-align: center; }
 .aedar-waffle-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3) var(--space-5); width: 100%; }
 .aedar-waffle-dialog button:focus-visible, .aedar-waffle-dialog input:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
-.aedar-waffle-grid { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; width: min(100%, 1000px); margin-inline: auto; }
-.aedar-waffle-tile { display: block; aspect-ratio: 1; min-width: 0; padding: 0; border: 0; border-radius: 2px; background: var(--aedar-bucket-color); cursor: pointer; }
+.aedar-waffle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(24px, 1fr)); grid-auto-flow: row; grid-auto-rows: auto; gap: 2px; width: min(100%, 1220px); margin-inline: auto; }
+.aedar-waffle-tile { display: block; width: 100%; min-width: 24px; min-height: 24px; aspect-ratio: 1; padding: 0; border: 0; border-radius: 2px; background: var(--aedar-bucket-color); cursor: pointer; }
 .aedar-waffle-tile:hover { filter: brightness(0.88); }
 .aedar-waffle-tile:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--text-primary); outline-offset: 1px; }
 .aedar-waffle :deep(.aedar-waffle-legend--centered) { justify-content: center; width: 100%; margin: 0; }
 .aedar-waffle :deep(.cahier-figure-legend-action) { min-height: 36px; }
+.aedar-waffle-legend-note { width: 100%; max-width: 72ch; margin: 0; color: var(--cahier-default); font: var(--type-figure-label); line-height: 1.5; text-align: center; }
 .aedar-waffle-state { max-width: 72ch; margin: 0; color: var(--text-secondary); font: var(--type-figure-label); line-height: 1.5; }
 /* Shared control primitive: a field is one label plus one control, so the
  * dialog's travel-time selector and search box read as the same object. */
@@ -324,6 +329,7 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle-share-table tbody tr:last-child th, .aedar-waffle-share-table tbody tr:last-child td { border-bottom: 0; }
 .aedar-waffle-empty { margin: 0; padding: var(--space-4); color: var(--text-secondary); text-align: center; }
 @media (max-width: 760px) {
+  .aedar-waffle-grid { width: min(calc(100% + var(--space-3) + var(--space-3)), 1220px); margin-inline: calc(0px - var(--space-3)); }
   .aedar-waffle-dialog-horizon { order: 1; flex: 1 1 auto; min-width: 0; }
   .aedar-waffle-search { order: 3; flex-basis: 100%; }
   .aedar-waffle-field-control { justify-content: center; }

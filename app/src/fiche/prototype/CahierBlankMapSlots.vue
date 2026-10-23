@@ -169,6 +169,7 @@ function markInspectionUnavailable(): void {
 </template>
 
 <style src="./cahierLayout.css"></style>
+<style src="./cahierMapPanelLabel.css"></style>
 
 <style scoped>
 .blank-map-slots { margin: 0; padding: 0 0 var(--space-3); }
@@ -176,10 +177,7 @@ function markInspectionUnavailable(): void {
 .blank-map-slots__legend-grid { display: grid; grid-template-columns: var(--cahier-map-columns); gap: clamp(var(--space-4), 3vw, var(--space-8)); margin-top: 8px; }
 .blank-map-slots__legend-grid > :first-child { grid-column: 1; width: min(100%, 360px); justify-self: center; }
 .blank-map-slot { width: min(100%, 360px); justify-self: center; }
-.map-panel-label { display: flex; min-height: 28px; justify-content: center; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--mode-ring); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); text-transform: uppercase; }
-.map-panel--car { --mode-ring: var(--cahier-mode-car); }
-.map-panel--bike { --mode-ring: var(--cahier-mode-bike); }
-.map-panel--foot { --mode-ring: var(--cahier-mode-foot); }
+.map-panel-label { justify-content: center; margin: 0 0 6px; }
 .blank-map-slot__viewport { position: relative; display: grid; width: 100%; aspect-ratio: 1; place-content: center; justify-items: center; gap: 8px; overflow: hidden; border: var(--cahier-map-circle-border) solid var(--mode-ring); border-radius: 50%; background: color-mix(in srgb, var(--cahier-theme) 8%, var(--paper)); color: var(--ink); text-align: center; }
 .blank-map-slot__number { position: absolute; top: 9px; left: 11px; color: var(--mode-ring); font: var(--text-caption); font-variant-numeric: tabular-nums; }
 .blank-map-slot__state { font: var(--text-caption); font-weight: 700; }

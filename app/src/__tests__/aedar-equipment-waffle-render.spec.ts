@@ -99,7 +99,7 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.find('.cahier-figure-title').text()).toBe('Services de proximité par premier mode')
     expect(wrapper.findAll('.aedar-waffle-tile')).toHaveLength(2)
     expect(wrapper.find('.aedar-waffle-grid').attributes('aria-label')).toContain('2 types')
-    expect(wrapper.get('.aedar-waffle-grid').classes()).toContain('aedar-waffle-grid--five-rows')
+    expect(wrapper.get('.aedar-waffle-grid').classes()).toContain('aedar-waffle-grid--responsive')
     expect(wrapper.get('.aedar-waffle-horizon button[aria-pressed="true"]').attributes('value')).toBe('10')
 
     await wrapper.get('.aedar-waffle-explore').trigger('click')
@@ -118,7 +118,7 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.find('.cahier-figure-title').text()).toBe('Types d’équipements accessibles par premier mode')
     expect(wrapper.find('.aedar-waffle-grid').attributes('aria-label')).toContain('235 types')
     expect(wrapper.find('.aedar-waffle').classes()).toContain('aedar-waffle--centered')
-    expect(wrapper.find('.aedar-waffle-grid').classes()).toContain('aedar-waffle-grid--five-rows')
+    expect(wrapper.find('.aedar-waffle-grid').classes()).toContain('aedar-waffle-grid--responsive')
     expect(wrapper.findAll('.aedar-waffle-tile').every((tile) => tile.element.tagName === 'BUTTON')).toBe(true)
     expect(wrapper.find('.cahier-figure-legend').exists()).toBe(true)
     expect(wrapper.find('.cahier-figure-legend').classes()).toContain('aedar-waffle-legend--centered')
@@ -126,6 +126,29 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.find('.cahier-travel-time-label svg').exists()).toBe(true)
     expect(wrapper.find('.aedar-waffle-threshold').exists()).toBe(false)
     expect(wrapper.find('.aedar-travel-time-selector button').exists()).toBe(true)
+    expect(wrapper.find('.aedar-waffle-legend-note').text()).toBe(
+      'Les teintes proches ne distinguent pas toutes les catégories. Sélectionnez une tuile pour voir son mode d’accès.',
+    )
+  })
+
+  it('keeps bucket legend actions named and icon-coded, and opens the matching bucket detail', async () => {
+    const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
+    const transitAction = wrapper.findAll('.cahier-figure-legend-action')
+      .find((button) => button.text().includes('Transports en commun'))
+
+    expect(transitAction).toBeDefined()
+    expect(transitAction!.text()).toContain('Transports en commun')
+    expect(transitAction!.find('svg[aria-hidden="true"]').exists()).toBe(true)
+    await transitAction!.trigger('click')
+
+    const dialog = wrapper.get('dialog[open]')
+    expect(dialog.get('.aedar-waffle-mode-filter button[data-mode="transit"]').attributes('aria-pressed')).toBe('true')
+    expect(dialog.find('.aedar-waffle-mode-filter').text()).toContain('Transports en commun')
+    expect(dialog.findAll('.aedar-waffle-dialog-row').length).toBe(
+      Number(wrapper.findAll('.cahier-figure-legend-action')
+        .find((button) => button.text().includes('Transports en commun'))!
+        .find('.cahier-figure-legend-count').text()),
+    )
   })
 
   it('opens full exploration from the nearby control, then filters all-mode results by search', async () => {

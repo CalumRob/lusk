@@ -46,6 +46,10 @@ const cartographicBreakoutSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'CartographicBreakoutPrototype.vue'),
   'utf8',
 )
+const sharedMapPanelLabelSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierMapPanelLabel.css'),
+  'utf8',
+)
 const tokensSource = readFileSync(
   join(process.cwd(), 'src', 'styles', 'tokens.css'),
   'utf8',
@@ -113,13 +117,14 @@ describe('Cahier typography roles', () => {
     expectMapLabelTreatment(mapPanelSource, '.map-panel-number', 'var(--mode-ring)', '0 1px 4px var(--paper)')
     expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('font: var(--text-caption)')
     expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('letter-spacing: var(--text-caption-tracking)')
-    expectMapLabelTreatment(blankMapSlotsSource, '.map-panel-label', 'var(--mode-ring)')
-    expect(cssRule(blankMapSlotsSource, '.map-panel-label')).toContain('font: var(--text-overline)')
+    expectMapLabelTreatment(sharedMapPanelLabelSource, '.map-panel-label', 'var(--mode-ring)')
+    expect(cssRule(sharedMapPanelLabelSource, '.map-panel-label')).toContain('font: var(--text-overline)')
+    for (const source of [blankMapSlotsSource, diversityMapSource, cartographicBreakoutSource]) {
+      expect(source).toContain('<style src="./cahierMapPanelLabel.css"></style>')
+    }
     expectMapLabelTreatment(blankMapSlotsSource, '.blank-map-slot__number', 'var(--mode-ring)')
     expect(cssRule(blankMapSlotsSource, '.blank-map-slot__number')).toContain('font: var(--text-caption)')
-    expectMapLabelTreatment(diversityMapSource, '.aedar-diversity-loss-map-label', 'var(--mode-ring)')
     expectMapLabelTreatment(diversityMapSource, '.aedar-diversity-loss-map__number', 'var(--mode-ring)')
-    expectMapLabelTreatment(cartographicBreakoutSource, '.map-panel-label', 'var(--mode-ring)')
     expectMapLabelTreatment(cartographicBreakoutSource, '.map-section-number', 'var(--red)')
     expectMapLabelTreatment(cartographicBreakoutSource, '.plate-apparatus-heading > .map-section-number', 'var(--red)')
     expect(cssRule(cartographicBreakoutSource, '.map-section-number')).toContain('letter-spacing: var(--text-caption-tracking)')

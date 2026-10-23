@@ -6,7 +6,7 @@ import type { Component } from 'vue'
 import { CAHIER_MAP_LAYOUT_STYLE } from '@/fiche/cahierFigureGrammaire'
 import { aedarDiversityLossMapAssetUrl } from '@/fiche/mapAssetUrl'
 import type { AedarDiversityLossEvidence, AedarDiversityLossMapEvidence } from '@/fiche/content/themeContent'
-import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { AEDAR_TIME_MODE_COLORS, AEDAR_TIME_MODE_LABEL_INKS } from './aedarTimeModeColors'
 import CahierContinuousMapLegend from './CahierContinuousMapLegend.vue'
 import CahierMapGallery from './CahierMapGallery.vue'
 import CahierMapPanel from './CahierMapPanel.vue'
@@ -23,7 +23,6 @@ const modePresentation: Readonly<Record<AedarDiversityLossMapEvidence['mode'], {
   bike_lts2: { icon: Bike, tone: 'bike' },
   bike_lts4: { icon: Bike, tone: 'bike' },
 }
-
 const loadedModes = ref(new Set<string>())
 const unavailableModes = ref(new Set<string>())
 const mapGallery = ref<InstanceType<typeof CahierMapGallery> | null>(null)
@@ -96,7 +95,7 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
               :style="{ '--mode-ring': AEDAR_TIME_MODE_COLORS[map.mode] }"
               :aria-label="`${map.label} — ${props.evidence.territory.name} — ${props.evidence.horizonMinutes} minutes`"
             >
-              <div class="aedar-diversity-loss-map-label map-panel-label" aria-hidden="true">
+              <div class="aedar-diversity-loss-map-label map-panel-label" :style="{ '--map-panel-label-ink': AEDAR_TIME_MODE_LABEL_INKS[map.mode] }" aria-hidden="true">
                 <component :is="modePresentation[map.mode].icon" :size="16" :stroke-width="1.8" aria-hidden="true" />
                 <span>{{ map.label }}</span>
               </div>
@@ -159,6 +158,8 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
   </figure>
 </template>
 
+<style src="./cahierMapPanelLabel.css"></style>
+
 <style scoped>
 .aedar-diversity-loss { display: grid; gap: var(--space-4); width: 100%; margin: 0; container-type: inline-size; }
 .aedar-diversity-loss__introduction { width: 100%; }
@@ -167,9 +168,7 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
 .aedar-diversity-loss__comparisons { display: grid; grid-column: 1 / -1; gap: clamp(var(--space-5), 4vw, var(--space-8)); }
 .aedar-diversity-loss__comparison-row { display: grid; grid-template-columns: var(--aedar-loss-columns); gap: clamp(var(--space-3), 2vw, var(--space-6)); align-items: center; }
 .aedar-diversity-loss-map { width: min(100%, 360px); justify-self: center; }
-.aedar-diversity-loss-map-label { display: flex; min-height: 28px; justify-content: center; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--mode-ring); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); text-transform: uppercase; }
-.map-panel--foot { --mode-ring: var(--cahier-mode-foot); }
-.map-panel--bike { --mode-ring: var(--cahier-mode-bike); }
+.aedar-diversity-loss-map-label { justify-content: center; margin: 0 0 6px; }
 .aedar-diversity-loss-map__unavailable { position: relative; display: grid; width: 100%; aspect-ratio: 1; place-content: center; justify-items: center; gap: 8px; overflow: hidden; border: var(--cahier-map-circle-border) solid var(--mode-ring); border-radius: 50%; background: color-mix(in srgb, var(--cahier-theme) 8%, var(--paper)); color: var(--muted); font: var(--text-caption); font-weight: 600; text-align: center; }
 .aedar-diversity-loss-map__number { position: absolute; top: 9px; left: 11px; color: var(--mode-ring); font: var(--text-caption); font-variant-numeric: tabular-nums; }
 .aedar-diversity-loss-map__territory { font: var(--text-caption); font-weight: 500; }

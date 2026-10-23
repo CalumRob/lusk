@@ -6,8 +6,8 @@ import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
 
 // Real-browser, populated contract check for Cahier mobile overflow and the
-// shared y-axis rail regression in issue #841. The static territory read model
-// is checked-in production data; post-#627 and AEDAR semantic reads are
+// shared y-axis rail regression in issue #841 and W3 labels in issue #829.
+// The static territory read model is checked-in production data; post-#627 and AEDAR semantic reads are
 // intercepted with the same builders/contracts used by the app tests.
 // Run: npm run verify:mobile-cahier-overflow. If Playwright has no cached
 // browser, run `npx playwright-core install chromium`; alternatively set
@@ -17,6 +17,28 @@ const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
 const evidenceDir = resolve(process.env.CAHIER_EVIDENCE_DIR ?? join(tmpdir(), 'lusk-mobile-cahier-evidence'))
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+
+function rgbChannels(color) {
+  let channels = color.match(/[\d.]+/gu)?.slice(0, 3).map(Number)
+  assert(channels?.length === 3, `Expected a computed RGB color, got ${color}`)
+  if (/^color\(srgb /u.test(color)) channels = channels.map((channel) => channel * 255)
+  return channels
+}
+
+function relativeLuminance(color) {
+  const [red, green, blue] = rgbChannels(color).map((channel) => {
+    const srgb = channel / 255
+    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+}
+
+function contrastRatio(foreground, background) {
+  const ink = relativeLuminance(foreground)
+  const fill = relativeLuminance(background)
+  return (Math.max(ink, fill) + 0.05) / (Math.min(ink, fill) + 0.05)
+}
+
 const server = await createServer({
   configFile: resolve(appRoot, 'vite.config.ts'),
   // Let Vite select an available ephemeral port; the owner's live server may
@@ -158,6 +180,201 @@ try {
       throw error
     }
     await page.locator('#section-aedar-equipment-explorer').waitFor({ state: 'visible' })
+
+    const w3Visual = await page.evaluate(() => {
+      const waffle = document.querySelector('.aedar-waffle')
+      const grid = waffle?.querySelector('.aedar-waffle-grid')
+      const tiles = [...(grid?.querySelectorAll('.aedar-waffle-tile') ?? [])]
+      const legend = [...(waffle?.querySelectorAll('.cahier-figure-legend-action') ?? [])]
+      const box = (element) => {
+        const { x, y, right, bottom, width, height } = element.getBoundingClientRect()
+        return { x, y, right, bottom, width, height }
+      }
+      const gridBox = grid ? box(grid) : null
+      const tileBoxes = tiles.map(box)
+      const labelSurfaces = [
+        ['CahierBlankMapSlots', '.blank-map-slots .map-panel-label'],
+        ['AedarDiversityLossMapsCahier', '.aedar-diversity-loss-map-label'],
+        ['CartographicBreakoutPrototype', '.map-breakout .map-panel-label'],
+      ].map(([surface, selector]) => {
+        const labels = [...document.querySelectorAll(selector)]
+        return {
+          surface,
+          count: labels.length,
+          labels: labels.map((label) => {
+            const parent = label.parentElement
+            if (!parent) throw new Error(`${surface} label must have its map panel parent`)
+            const probe = document.createElement('span')
+            probe.style.color = 'var(--mode-ring)'
+            parent.append(probe)
+            const modeFill = getComputedStyle(probe).color
+            probe.remove()
+            const style = getComputedStyle(label)
+            const { x, right, width, height } = label.getBoundingClientRect()
+            return {
+              text: label.textContent.trim(),
+              fill: style.backgroundColor,
+              foreground: style.color,
+              modeFill,
+              textTransform: style.textTransform,
+              padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+              minHeight: style.minHeight,
+              marginBottom: style.marginBottom,
+              borderRadius: style.borderRadius,
+              iconColor: label.querySelector('svg') ? getComputedStyle(label.querySelector('svg')).color : null,
+              width,
+              height,
+              x,
+              right,
+              iconCount: label.querySelectorAll('svg').length,
+            }
+          }),
+        }
+      })
+      return {
+        viewport: innerWidth,
+        waffle: {
+          tileCount: tiles.length,
+          gridWidth: gridBox?.width ?? 0,
+          gridHeight: gridBox?.height ?? 0,
+          gridClientWidth: grid?.clientWidth ?? 0,
+          gridScrollWidth: grid?.scrollWidth ?? 0,
+          tileBoxes,
+          tileBucketOrder: tiles.map((tile) => tile.getAttribute('data-bucket')),
+          tileFillsByBucket: Object.fromEntries(tiles.map((tile) => [
+            tile.getAttribute('data-bucket'), getComputedStyle(tile).backgroundColor,
+          ])),
+          legend: legend.map((button) => {
+            const style = getComputedStyle(button)
+            return {
+              key: button.getAttribute('data-legend-key'),
+              label: button.querySelector('.cahier-figure-legend-label')?.textContent.trim() ?? '',
+              fill: style.backgroundColor,
+              foreground: style.color,
+              iconColor: button.querySelector('svg') ? getComputedStyle(button.querySelector('svg')).color : null,
+              iconCount: button.querySelectorAll('svg').length,
+              height: box(button).height,
+            }
+          }),
+          note: waffle.querySelector('.aedar-waffle-legend-note')?.textContent.trim() ?? null,
+        },
+        labelSurfaces,
+      }
+    })
+    assert.equal(w3Visual.waffle.tileCount, 235,
+      `W3 must exercise the full production AEDAR category universe at ${width}px`)
+    assert.deepEqual(w3Visual.labelSurfaces.map(({ surface, count }) => ({ surface, count: count > 0 })), [
+      { surface: 'CahierBlankMapSlots', count: true },
+      { surface: 'AedarDiversityLossMapsCahier', count: true },
+      { surface: 'CartographicBreakoutPrototype', count: true },
+    ], `W3 browser fixture must render each real map-title surface at ${width}px: ${JSON.stringify(w3Visual.labelSurfaces)}`)
+    assert(w3Visual.waffle.tileBoxes.every(({ width: tileWidth, height: tileHeight }) =>
+      tileWidth >= 24 - 0.5 && tileHeight >= 24 - 0.5),
+    `Every Waffle tile must meet the 24×24px target floor at ${width}px: ${JSON.stringify(w3Visual.waffle.tileBoxes.slice(0, 4))}`)
+    assert.equal(w3Visual.waffle.gridScrollWidth, w3Visual.waffle.gridClientWidth,
+      `Waffle reflow must not create an internal horizontal scroller at ${width}px`)
+    assert.equal(w3Visual.waffle.legend.length, 6,
+      `All six AEDAR buckets must retain a Waffle legend action at ${width}px`)
+    const legendKeys = w3Visual.waffle.legend.map(({ key }) => key)
+    assert(legendKeys.every((key) => typeof key === 'string') && new Set(legendKeys).size === 6,
+      `Waffle legend actions must keep a distinct key for every AEDAR bucket at ${width}px`)
+    for (const chip of w3Visual.waffle.legend) {
+      const tileFill = w3Visual.waffle.tileFillsByBucket[chip.key]
+      if (tileFill) assert.equal(chip.fill, tileFill,
+        `Waffle ${chip.key} chip must match its unchanged bucket tile fill at ${width}px`)
+      assert.notEqual(chip.fill, 'rgba(0, 0, 0, 0)',
+        `Waffle bucket ${chip.label} must render as a filled chip at ${width}px`)
+      assert(contrastRatio(chip.foreground, chip.fill) >= 4.5,
+        `Waffle bucket ${chip.label} must have 4.5:1 computed contrast at ${width}px: ${JSON.stringify(chip)}`)
+      assert.equal(chip.iconCount, 1, `Waffle bucket ${chip.label} must keep its existing icon at ${width}px`)
+      assert(contrastRatio(chip.iconColor, chip.fill) >= 4.5,
+        `Waffle bucket ${chip.label} icon must remain visible against its filled chip at ${width}px: ${JSON.stringify(chip)}`)
+      assert(chip.height >= 36 - 0.5,
+        `Waffle legend action ${chip.label} must retain its 36px target at ${width}px`)
+    }
+    assert.equal(w3Visual.waffle.note,
+      'Les teintes proches ne distinguent pas toutes les catégories. Sélectionnez une tuile pour voir son mode d’accès.',
+      `Waffle legend must state the accepted color limitation beside its controls at ${width}px`)
+    assert(w3Visual.waffle.tileBucketOrder.every((bucket, index, buckets) =>
+      index === 0 || bucket === buckets[index - 1] || !buckets.slice(0, index).includes(bucket)),
+    `Waffle tiles must remain grouped in their existing bucket order at ${width}px`)
+    if (width === 320) {
+      const columns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
+      const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
+      assert.equal(columns, 11,
+        `320px Waffle should reflow to about 11 columns, got ${columns} (${w3Visual.waffle.gridWidth}px grid)`)
+      assert.equal(rows, 22,
+        `320px Waffle should reflow to about 22 rows, got ${rows}`)
+    }
+    const columnsForFiveRows = Math.ceil(w3Visual.waffle.tileCount / 5)
+    const requiredWidthForFiveRows = columnsForFiveRows * 24 + (columnsForFiveRows - 1) * 2
+    if (w3Visual.waffle.gridWidth >= requiredWidthForFiveRows) {
+      const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
+      assert.equal(rows, 5,
+        `Waffle should preserve the original five rows when the grid can fit 47 tiles at the 24px floor, got ${rows} at ${width}px`)
+    }
+    for (const { surface, labels } of w3Visual.labelSurfaces) {
+      for (const label of labels) {
+        assert.equal(label.iconCount, 1, `${surface} must preserve each map mode icon at ${width}px`)
+        assert.equal(label.iconColor, label.foreground,
+          `${surface} map mode icon must use its label's computed foreground at ${width}px`)
+        assert(label.x >= -0.5 && label.right <= width + 0.5,
+          `${surface} chip must stay inside the viewport at ${width}px: ${JSON.stringify(label)}`)
+        if (width <= 760) {
+          assert.equal(label.fill, label.modeFill,
+            `${surface} mobile chip must use its existing mode color at ${width}px: ${JSON.stringify(label)}`)
+          assert.equal(label.textTransform, 'none',
+            `${surface} mobile map labels must use natural case at ${width}px`)
+          assert(contrastRatio(label.foreground, label.fill) >= 4.5,
+            `${surface} map label must have 4.5:1 computed contrast at ${width}px: ${JSON.stringify(label)}`)
+          assert(contrastRatio(label.iconColor, label.fill) >= 4.5,
+            `${surface} map icon must have 4.5:1 computed contrast at ${width}px: ${JSON.stringify(label)}`)
+        } else {
+          assert.equal(label.foreground, label.modeFill,
+            `${surface} desktop map title must retain its original mode color at ${width}px`)
+          assert.equal(label.fill, 'rgba(0, 0, 0, 0)',
+            `${surface} desktop map title must remain unfilled at ${width}px`)
+          assert.equal(label.textTransform, 'uppercase',
+            `${surface} desktop map title must retain uppercase styling at ${width}px`)
+          assert.deepEqual(label.padding, ['0px', '0px', '0px', '0px'],
+            `${surface} desktop map title must retain its original padding at ${width}px`)
+          assert.equal(label.minHeight, '28px', `${surface} desktop map title must retain its original height at ${width}px`)
+          assert.equal(label.marginBottom, '6px', `${surface} desktop map title must retain its original spacing at ${width}px`)
+        }
+      }
+    }
+    const tileColumns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
+    const tileRows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
+    const w3Summary = {
+      waffle: {
+        tileCount: w3Visual.waffle.tileCount,
+        gridWidth: w3Visual.waffle.gridWidth,
+        gridHeight: w3Visual.waffle.gridHeight,
+        columns: tileColumns,
+        rows: tileRows,
+        minimumTile: {
+          width: Math.min(...w3Visual.waffle.tileBoxes.map(({ width: tileWidth }) => tileWidth)),
+          height: Math.min(...w3Visual.waffle.tileBoxes.map(({ height: tileHeight }) => tileHeight)),
+        },
+        legend: w3Visual.waffle.legend.map((chip) => ({
+          key: chip.key,
+          label: chip.label,
+          fill: chip.fill,
+          foreground: chip.foreground,
+          contrast: Number(contrastRatio(chip.foreground, chip.fill).toFixed(2)),
+        })),
+      },
+      mapLabels: w3Visual.labelSurfaces.map(({ surface, labels }) => ({
+        surface,
+        labels: labels.map((label) => ({
+          text: label.text,
+          fill: width <= 760 ? label.fill : null,
+          foreground: width <= 760 ? label.foreground : null,
+          contrast: width <= 760 ? Number(contrastRatio(label.foreground, label.fill).toFixed(2)) : null,
+          iconCount: label.iconCount,
+        })),
+      })),
+    }
 
     const longYAxisFigure = await page.evaluate(async ({ baseUrl, railContract }) => {
       const root = document.createElement('div')
@@ -857,6 +1074,7 @@ try {
     reports.push({
       width,
       ...metrics,
+      w3: w3Summary,
       mobileIndexInteraction,
       longYAxisFigure,
       accessRampLongYAxisFigure,

@@ -11,8 +11,19 @@ const props = defineProps<{
   toggleKeys?: readonly string[]
   actionKeys?: readonly string[]
   counts?: Readonly<Record<string, number>>
+  chipFills?: Readonly<Record<string, string>>
+  chipInks?: Readonly<Record<string, string>>
 }>()
 const emit = defineEmits<{ toggle: [key: string]; activate: [key: string] }>()
+
+function chipStyle(key: string): Record<string, string> | undefined {
+  const fill = props.chipFills?.[key]
+  if (!fill) return undefined
+  return {
+    '--cahier-figure-legend-chip-fill': fill,
+    '--cahier-figure-legend-chip-ink': props.chipInks?.[key] ?? 'currentColor',
+  }
+}
 </script>
 
 <template>
@@ -27,7 +38,7 @@ const emit = defineEmits<{ toggle: [key: string]; activate: [key: string] }>()
       <span class="cahier-figure-legend-label">{{ entry.label }}</span>
       <strong v-if="props.counts && entry.key in props.counts" class="cahier-figure-legend-count">{{ props.counts[entry.key] }}</strong>
       </button>
-      <button v-else-if="props.actionKeys?.includes(entry.key)" class="cahier-figure-legend-action" type="button" @click="emit('activate', entry.key)">
+      <button v-else-if="props.actionKeys?.includes(entry.key)" class="cahier-figure-legend-action" :data-legend-key="entry.key" :class="{ 'cahier-figure-legend-action--chip': props.chipFills?.[entry.key] }" :style="chipStyle(entry.key)" type="button" @click="emit('activate', entry.key)">
         <CahierFigureLegendMark :entry="entry" :icons="props.icons" :mark-color="props.markColors?.[entry.key]" />
         <span class="cahier-figure-legend-label">{{ entry.label }}</span>
         <strong v-if="props.counts && entry.key in props.counts" class="cahier-figure-legend-count">{{ props.counts[entry.key] }}</strong>
@@ -66,6 +77,14 @@ const emit = defineEmits<{ toggle: [key: string]; activate: [key: string] }>()
   cursor: pointer;
 }
 
+.cahier-figure-legend-action--chip {
+  min-height: 36px;
+  border-color: transparent;
+  border-radius: var(--radius-full);
+  background-color: var(--cahier-figure-legend-chip-fill);
+  color: var(--cahier-figure-legend-chip-ink);
+}
+
 .cahier-figure-legend-count { font-variant-numeric: tabular-nums; }
 
 .cahier-figure-legend-toggle:hover,
@@ -83,6 +102,7 @@ const emit = defineEmits<{ toggle: [key: string]; activate: [key: string] }>()
 }
 
 .cahier-figure-legend-action:hover { background: var(--surface-tertiary); }
+.cahier-figure-legend-action--chip:hover { background-color: var(--cahier-figure-legend-chip-fill); }
 .cahier-figure-legend-action:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
 </style>
 <style>
