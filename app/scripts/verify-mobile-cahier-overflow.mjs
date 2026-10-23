@@ -205,6 +205,105 @@ try {
     assert(longYAxisFigure.labelBandLeft >= longYAxisFigure.titleRight + 5,
       `Long tick-label band must stay outside the rotated title lane at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
 
+    let accessRampLongYAxisFigure = null
+    let accessRampRampYAxisFigure = null
+    if ([320, 360, 390].includes(width)) {
+      const accessRampFigures = await page.evaluate(async ({ baseUrl }) => {
+        const fixture = await import(new URL('src/__tests__/helpers/mobileCahierBrowserFixture.ts', baseUrl).href)
+        async function measure(variant) {
+          const root = document.createElement('div')
+          root.id = `access-ramp-${variant}-long-y-axis-browser-fixture`
+          root.style.cssText = `position:fixed;top:0;left:0;width:${innerWidth}px;visibility:hidden;pointer-events:none;z-index:-1`
+          document.body.append(root)
+          const app = variant === 'time'
+            ? await fixture.mountAccessRampLongYAxisFigure(root)
+            : await fixture.mountAccessRampRampFigure(root)
+          try {
+            await document.fonts.ready
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+            const frame = root.querySelector('.access-ramp-cahier')
+            const plot = root.querySelector('.access-ramp-plot')
+            const svg = root.querySelector('.access-ramp-svg')
+            const axis = root.querySelector('.access-ramp-axis')
+            const labels = [...root.querySelectorAll('.cahier-figure-tick-label--y')]
+            const title = root.querySelector('.cahier-figure-axis-title--y')
+            if (!frame || !plot || !svg || !axis || labels.length === 0 || !title) {
+              throw new Error(`Access-ramp ${variant} long-y-label fixture did not mount completely`)
+            }
+            const labelStyle = getComputedStyle(labels[0])
+            const context = document.createElement('canvas').getContext('2d')
+            if (!context) throw new Error('Canvas text measurement is required for the access-ramp fixture')
+            context.font = [labelStyle.fontStyle, labelStyle.fontVariant, labelStyle.fontWeight,
+              labelStyle.fontStretch, labelStyle.fontSize, labelStyle.fontFamily]
+              .filter((part) => part && part !== 'normal').join(' ')
+            const letterSpacing = Number.parseFloat(labelStyle.letterSpacing) || 0
+            const measuredLabelWidth = Math.max(...labels.map((label) =>
+              context.measureText(label.textContent).width + Math.max(0, label.textContent.length - 1) * letterSpacing,
+            ))
+            const viewBoxWidth = svg.viewBox.baseVal.width
+            const viewBoxHeight = svg.viewBox.baseVal.height
+            const renderedWidth = plot.getBoundingClientRect().width
+            const railPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-left'))
+            const railWidth = railPercent * viewBoxWidth / 100
+            const axisLeft = Number(axis.getAttribute('x1'))
+            const axisRight = Number(axis.getAttribute('x2'))
+            const labelRailWidth = Number.parseFloat(labels[0].style.left) * viewBoxWidth / 100
+            const frameRightPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-right'))
+            const frameRightWidth = frameRightPercent * viewBoxWidth / 100
+            const titleRect = title.getBoundingClientRect()
+            const labelRects = labels.map((label) => {
+              const { x, y, right, bottom } = label.getBoundingClientRect()
+              return { text: label.textContent, x, y, right, bottom }
+            })
+            const overlaps = labelRects.filter((label) =>
+              label.x < titleRect.right && label.right > titleRect.left &&
+              label.y < titleRect.bottom && label.bottom > titleRect.top,
+            )
+            return {
+              variant,
+              viewport: innerWidth,
+              labels: labelRects.map(({ text }) => text),
+              measuredLabelWidth,
+              renderedWidth,
+              viewBoxWidth,
+              viewBoxHeight,
+              railWidth,
+              requiredRailWidth: (16 + measuredLabelWidth + 8) * viewBoxWidth / renderedWidth,
+              axisLeft,
+              axisRight,
+              labelRailWidth,
+              frameRightWidth,
+              titleRect: { x: titleRect.x, y: titleRect.y, right: titleRect.right, bottom: titleRect.bottom },
+              overlaps,
+            }
+          } finally {
+            app.unmount()
+            root.remove()
+          }
+        }
+        return { time: await measure('time'), ramp: await measure('ramp') }
+      }, { baseUrl })
+      accessRampLongYAxisFigure = accessRampFigures.time
+      accessRampRampYAxisFigure = accessRampFigures.ramp
+      for (const [variant, report] of Object.entries(accessRampFigures)) {
+        assert(report.labels.some((label) => label.replace(/\D/gu, '') === '12881') &&
+          (variant !== 'time' || report.labels.some((label) => label.replace(/\D/gu, '') === '6440')),
+        `Access-ramp ${variant} fixture must include Rennes-equivalent long ticks at ${width}px: ${JSON.stringify(report)}`)
+        assert.deepEqual(report.overlaps, [],
+          `Access-ramp ${variant} y-axis title must not intersect any y-tick label at ${width}px: ${JSON.stringify(report)}`)
+        assert(report.railWidth >= report.requiredRailWidth - 1,
+          `Access-ramp ${variant} frame must reserve measured label width and title lane at ${width}px: ${JSON.stringify(report)}`)
+        assert.equal(report.viewBoxWidth, 820, `Access-ramp ${variant} must use its custom 820px geometry`)
+        assert.equal(report.viewBoxHeight, 300, `Access-ramp ${variant} must use its custom 300px geometry`)
+        assert(Math.abs(report.axisLeft - report.railWidth) < 0.5 &&
+          Math.abs(report.labelRailWidth - report.railWidth) < 0.5,
+        `Access-ramp ${variant} SVG axis, HTML labels and frame must share one measured left rail at ${width}px: ${JSON.stringify(report)}`)
+        assert(Math.abs(report.axisRight - (report.viewBoxWidth - report.frameRightWidth)) < 0.5 &&
+          report.axisRight - report.axisLeft < report.viewBoxWidth - report.frameRightWidth - 1,
+        `Access-ramp ${variant} plot must give horizontal width to its measured y-axis rail at ${width}px: ${JSON.stringify(report)}`)
+      }
+    }
+
     let mobileIndexInteraction = null
     if (width <= 760) {
       const mobileIndex = page.locator('.mobile-index')
@@ -479,6 +578,8 @@ try {
       ...metrics,
       mobileIndexInteraction,
       longYAxisFigure,
+      accessRampLongYAxisFigure,
+      accessRampRampYAxisFigure,
       plainMarginLayout,
       oversizedMutationDetected,
       readCalls: {
