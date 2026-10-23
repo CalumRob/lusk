@@ -91,10 +91,13 @@ const props = withDefaults(
 )
 
 const router = useRouter()
+const emit = defineEmits<{ 'territoire-clique': [territoire: Territoire] }>()
 
 const mapContainer = ref<HTMLElement | null>(null)
 let carte: CarteMaple | null = null
 let popup: Popup | null = null
+let popupTerritoire: string | null = null
+let popupPosition: [number, number] | null = null
 let tooltip: Popup | null = null
 /** Le tooltip courant est-il ancré sous le popup ouvert (ADR-0019) ? */
 let tooltipSousPopup = false
@@ -294,11 +297,12 @@ function zoomerSurTerritoire(cible: Territoire): void {
   ouvrirPopup(feature as unknown as MapGeoJSONFeature, centre)
 }
 
-function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): void {
+function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat, notifier = true): void {
   fermerTooltip()
   const territoire = String(feature.properties.territoire)
   const nom = nomTerritoire(territoire)
   const fiche = trouverTerritoire(props.payload, territoire)
+  if (notifier && fiche) emit('territoire-clique', fiche)
 
   const kpis = kpisPourPopup(props.payload, territoire, props.theme, couchePourPopup())
   const lignesKpis = kpis
@@ -340,12 +344,18 @@ function ouvrirPopup(feature: MapGeoJSONFeature, lngLat: maplibregl.LngLat): voi
     .setHTML(contenu)
     .addTo(carte as CarteMaple)
   popup = nouveauPopup
+  popupTerritoire = territoire
+  popupPosition = [lngLat.lng, lngLat.lat]
   // La fermeture par le bouton × ou closeOnClick passe par l'événement 'close'
   // de MapLibre, hors de surClic — on oublie l'instance pour que le tooltip
   // revienne sous le curseur (ADR-0019). Garde d'identité : seul le popup
   // courant peut se refermer sur lui-même.
   nouveauPopup.on('close', () => {
-    if (popup === nouveauPopup) popup = null
+    if (popup === nouveauPopup) {
+      popup = null
+      popupTerritoire = null
+      popupPosition = null
+    }
   })
 }
 
@@ -354,6 +364,8 @@ function surClic(e: maplibregl.MapLayerMouseEvent): void {
   const remplissage = ID_REMPLISSAGE(props.niveau)
   const features = carte.queryRenderedFeatures(e.point, { layers: [remplissage] })
   if (features.length === 0) {
+    popupTerritoire = null
+    popupPosition = null
     popup?.remove()
     popup = null
     return
@@ -472,6 +484,11 @@ watch(
     fermerTooltip()
     ajouterCouches()
     appliquerNiveau()
+    if (popupTerritoire && popupPosition) {
+      const feature = masqueDe(props.niveau)?.features.find((candidate) => candidate.properties.territoire === popupTerritoire)
+      if (feature) ouvrirPopup(feature as unknown as MapGeoJSONFeature,
+        new maplibregl.LngLat(popupPosition[0], popupPosition[1]), false)
+    }
   },
   { deep: true },
 )

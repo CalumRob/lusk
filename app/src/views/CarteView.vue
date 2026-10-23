@@ -64,7 +64,8 @@ import { themesPresent } from '@/payload/selectors'
 import { SIGLES_PROGRAMMES, THEMES_CANONIQUES } from '@/payload/types'
 import type { SigleProgramme, Territoire, Theme } from '@/payload/types'
 import { usePayload } from '@/payload/usePayload'
-import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesPourNiveau, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
+import { chargerCohorteScalaire, chargerRangScalaire, choisirFocalCohorte, indicateursScalairesPourNiveau, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
+import type { ScalarComparisonRank } from '@/payload/scalarCohort'
 import { validerThemeMetadata } from '@/payload/validate'
 import type { Indicateur, ThemeMetadata } from '@/payload/types'
 
@@ -251,20 +252,76 @@ const cohortFacts = ref<Indicateur[] | null>(null)
 const cohortStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 const registeredApiLayer = ref(false)
 const retryCohort = ref(0)
+const cohortIdentity = ref<{ contentVersion?: string; referenceContentVersion?: string }>({})
+const territoryRankTarget = ref<Territoire | null>(null)
+const territoryRank = ref<{ territoryId: string; indicator: string; level: Territoire['type']; rank: ScalarComparisonRank } | null>(null)
+const territoryRankStatus = ref<'idle' | 'loading' | 'error' | 'ready'>('idle')
 const cohortMetadata = new Map<Theme, ThemeMetadata>()
 const cohortRegistries = new Map<Theme, unknown>()
 let cohortSequence = 0
+let territoryRankSequence = 0
+let territoryRankRequestKey: string | null = null
 const indicateurScalaireActif = computed(() => {
   const layer = coucheActive.value
   return selection.value && layer?.source === 'indicateur' && layer.detail === null ? layer.clef : null
 })
 const niveauApi = computed(() => ({ communes: 'commune', epcis: 'epci', departements: 'departement' } as const)[niveau.value])
 
+async function chargerRangCarte(focal: Territoire, force = false): Promise<void> {
+  const theme = selection.value
+  const indicator = indicateurScalaireActif.value
+  const level = niveauApi.value
+  const metadata = theme ? cohortMetadata.get(theme) : undefined
+  const page = indicator ? metadata?.indicator_pages?.[indicator] : undefined
+  if (!cohortEnabled.value || !registeredApiLayer.value || !theme || !indicator || !level ||
+      cohortStatus.value !== 'ready' || !page || !payload.value) return
+  const key = JSON.stringify([theme, indicator, level, focal.territoire,
+    cohortIdentity.value.contentVersion, cohortIdentity.value.referenceContentVersion])
+  if (!force && territoryRankRequestKey === key &&
+      ['loading', 'error', 'ready'].includes(territoryRankStatus.value)) return
+  territoryRankTarget.value = focal
+  territoryRankRequestKey = key
+  const sequence = ++territoryRankSequence
+  territoryRank.value = null
+  territoryRankStatus.value = 'loading'
+  try {
+    const rank = await chargerRangScalaire(indicator, theme, page, focal, payload.value.territoires, cohortIdentity.value)
+    if (sequence === territoryRankSequence) {
+      territoryRank.value = rank ? { territoryId: focal.territoire, indicator, level, rank } : null
+      territoryRankStatus.value = 'ready'
+    }
+  } catch {
+    if (sequence === territoryRankSequence) territoryRankStatus.value = 'error'
+  }
+}
+
+function selectionnerTerritoirePourRang(focal: Territoire): void {
+  territoryRankTarget.value = focal
+  territoryRank.value = null
+  territoryRankStatus.value = 'idle'
+  territoryRankRequestKey = null
+  void chargerRangCarte(focal)
+}
+
+function retryTerritoryRank(): void {
+  if (!territoryRankTarget.value) return
+  territoryRankRequestKey = null
+  void chargerRangCarte(territoryRankTarget.value, true)
+}
+
 watch([selection, indicateurScalaireActif, niveauApi, payload, retryCohort], async ([theme, indicator, level, currentPayload]) => {
   const sequence = ++cohortSequence
+  // A pending comparison belongs to the cohort/layer that initiated it. Invalidate
+  // it before resetting the visible rank state so a late response cannot revive it.
+  territoryRankSequence++
   cohortFacts.value = null
   cohortStatus.value = 'idle'
   registeredApiLayer.value = false
+  cohortIdentity.value = {}
+  territoryRankTarget.value = null
+  territoryRank.value = null
+  territoryRankStatus.value = 'idle'
+  territoryRankRequestKey = null
   if (!cohortEnabled.value || !theme || !indicator || !level || !currentPayload) return
   cohortStatus.value = 'loading'
   try {
@@ -289,8 +346,14 @@ watch([selection, indicateurScalaireActif, niveauApi, payload, retryCohort], asy
     if (!page || page.family !== 'scalar' || !page.levels.includes(level)) { cohortStatus.value = 'idle'; return }
     const focal = choisirFocalCohorte(currentPayload.territoires, level, undefined, {})
     if (!focal) { cohortStatus.value = 'idle'; return }
-    const facts = await chargerCohorteScalaire(indicator, theme, page, focal, level, currentPayload.territoires, {})
-    if (sequence === cohortSequence) { cohortFacts.value = facts; cohortStatus.value = 'ready' }
+    const identity: { contentVersion?: string; referenceContentVersion?: string } = {}
+    const facts = await chargerCohorteScalaire(indicator, theme, page, focal, level, currentPayload.territoires, {}, identity)
+    if (sequence === cohortSequence) {
+      cohortIdentity.value = identity
+      cohortFacts.value = facts
+      cohortStatus.value = 'ready'
+      if (territoryRankTarget.value) void chargerRangCarte(territoryRankTarget.value)
+    }
   } catch {
     if (sequence === cohortSequence) cohortStatus.value = 'error'
   }
@@ -307,8 +370,15 @@ const payloadCarte = computed(() => {
   // metadata proves this key is not registered for the active level.
   if (!registeredApiLayer.value && cohortStatus.value === 'idle') return current
   const indicateurs = current.indicateurs.filter((row) => row.theme !== theme || row.key !== indicator)
+  const acquired = cohortStatus.value === 'ready' && cohortFacts.value
+    ? cohortFacts.value.map((row) => territoryRank.value && territoryRank.value.territoryId === row.territoire &&
+        territoryRank.value.indicator === indicator && territoryRank.value.level === row.type
+      ? { ...row, comparaisonApi: { rang: territoryRank.value.rank.rank,
+          taille: territoryRank.value.rank.rankSize, portee: territoryRank.value.rank.scope } }
+      : row)
+    : []
   return { ...current, indicateurs: cohortStatus.value === 'ready' && cohortFacts.value
-    ? [...indicateurs, ...cohortFacts.value]
+    ? [...indicateurs, ...acquired]
     : indicateurs }
 })
 
@@ -494,6 +564,7 @@ const classesFond = computed(() =>
             :niveau="niveau"
             :territoire-cible="demandeRecherche?.territoire ?? null"
             :requete-zoom="demandeRecherche?.requete ?? 0"
+            @territoire-clique="selectionnerTerritoirePourRang"
           />
           <div v-if="cohortEnabled && cohortStatus === 'loading' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte" role="status">
             <p class="carte-etat-texte">Chargement des valeurs de la couche…</p>
@@ -501,6 +572,13 @@ const classesFond = computed(() =>
           <div v-else-if="cohortEnabled && cohortStatus === 'error' && indicateurScalaireActif" class="carte-etat carte-etat--cohorte carte-etat--erreur" role="alert">
             <p class="carte-etat-texte">Impossible de charger les valeurs de la couche.</p>
             <button type="button" class="carte-etat-bouton" @click="retryCohort++">Réessayer</button>
+          </div>
+          <div v-if="cohortEnabled && territoryRankStatus === 'loading' && territoryRankTarget" class="carte-etat carte-etat--cohorte" role="status">
+            <p class="carte-etat-texte">Chargement du rang dans son groupe de comparaison…</p>
+          </div>
+          <div v-else-if="cohortEnabled && territoryRankStatus === 'error' && territoryRankTarget" class="carte-etat carte-etat--cohorte carte-etat--erreur" role="alert">
+            <p class="carte-etat-texte">Le rang de comparaison est indisponible.</p>
+            <button type="button" class="carte-etat-bouton" @click="retryTerritoryRank">Réessayer</button>
           </div>
           <MapSidebar
             :territoires="payload.territoires"

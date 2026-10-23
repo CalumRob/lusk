@@ -1,421 +1,348 @@
-import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
-import { indicateursDemographieFixture, indicateursEconomieFixture, territoiresFixture } from '../payload/fixtures'
-import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
+import { chargerCohorteScalaire, chargerCohortesScalaires, chargerRangScalaire,
+  chargerComparaisonsScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires,
+  scalarCohortEnabled, validerEnregistrementScalaires } from '../payload/scalarCohort'
+import { territoiresFixture, indicateursEconomieFixture } from '../payload/fixtures'
 import { validerThemeMetadata } from '../payload/validate'
-import { chargerCohorteScalaire, chargerCohortesScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled, validerEnregistrementScalaires } from '../payload/scalarCohort'
-import { formaterRang } from '../payload/selectors'
-import { routes } from '../router'
-import IndicateurView from '../views/IndicateurView.vue'
+import type { SemanticReadItem, SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 
-const economyMetadata = { ...JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_economie.json'), 'utf8')),
-  scalar_contracts: ['effectifs_salaries', 'chomage'] }
-const demographyMetadataRaw = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_demographie.json'), 'utf8'))
-const mobilityMetadataRaw = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_mobilite.json'), 'utf8'))
-const habitatMetadataRaw = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'theme_habitat.json'), 'utf8'))
-const productionThemeMetadata = { economie: economyMetadata, demographie: demographyMetadataRaw, mobilite: mobilityMetadataRaw }
-// Rank parity reference only: API-selected page tests never load this static fact payload as a fallback.
-const canonicalEconomyFacts = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', 'indicateurs_economie.json'), 'utf8')) as Array<Record<string, unknown>>
-const canonicalRank = (indicator: string, territoryId: string) => canonicalEconomyFacts.find((fact) =>
-  fact.key === indicator && fact.type === 'commune' && fact.territoire === territoryId)
+const themeRaw = (theme: string) => JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8'))
+const economy = themeRaw('economie')
+const habitat = themeRaw('habitat')
 
-describe('scalarCohortEnabled', () => {
-  it('keeps retired API acquisition off by default and explicitly opt-in', () => {
+beforeEach(() => { vi.stubEnv('VITE_SCALAR_COHORT_API', '1') })
+afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
+
+function pageFor(theme: string, indicator: string) {
+  return validerThemeMetadata(themeRaw(theme), `theme_${theme}.json`).indicator_pages![indicator]!
+}
+
+function declaration(theme: string, indicator: string): SemanticResourceDeclaration {
+  const page = pageFor(theme, indicator)
+  const raw = themeRaw(theme)
+  const contract = raw.scalar_contracts?.[indicator]
+  return {
+    resource_id: indicator, theme_id: theme, indicator_id: indicator,
+    label: 'Libellé API éditorialement distinct', unit: page.unit,
+    direction: page.comparison?.direction ?? page.direction,
+    allowed_levels: contract?.allowed_levels ?? page.levels,
+    sources: page.sources, shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
+    fields: ['value', 'support_count', 'denominator_count'],
+    intents: ['facts', 'fixed_comparison', 'selected_comparison'],
+  }
+}
+
+function membersFor(target: SemanticReadItem['target']) {
+  return territoiresFixture.filter((territory) => territory.type === target.type &&
+    (target.kind !== 'territory_cohort' || ((!target.department_id || territory.departement === target.department_id) &&
+      (!target.epci_id || territory.epci === target.epci_id))))
+}
+
+function scalarData(theme: string, indicator: string, item: SemanticReadItem, options: {
+  observations?: Array<{ territory: string; status: string; value: number | null }>
+  contentVersion?: string
+  referenceVersion?: string
+  unit?: string
+  direction?: string
+  facet?: string
+  completeness?: string
+  mutate?: (value: Record<string, unknown>) => void
+} = {}) {
+  const page = pageFor(theme, indicator)
+  const members = membersFor(item.target)
+  const target = item.target.kind === 'territory_cohort'
+    ? { ...item.target, kind: 'territory_cohort' }
+    : item.target
+  const result: Record<string, unknown> = {
+    resource: indicator, target, shape: 'scalar',
+    cohort: { territory_type: item.target.type,
+      department_id: item.target.kind === 'territory_cohort' ? item.target.department_id ?? null : null,
+      epci_id: item.target.kind === 'territory_cohort' ? item.target.epci_id ?? null : null,
+      member_count: members.length,
+      members: members.map((member) => ({ id: member.territoire, type: member.type, name: member.nom })),
+      reference_content_version: options.referenceVersion ?? 'reference-v7' },
+    content_version: options.contentVersion ?? 'scalar-publication-v4',
+    reference_content_version: options.referenceVersion ?? 'reference-v7',
+    descriptor: { indicator_id: indicator, theme_id: theme,
+      label: 'Libellé API éditorialement distinct', unit: options.unit ?? page.unit,
+      direction: options.direction ?? (page.comparison?.direction ?? page.direction),
+      comparison_facet: options.facet ?? (page.comparison?.indicator ?? indicator),
+      allowed_levels: declaration(theme, indicator).allowed_levels,
+      denominator_semantics: 'Dénominateur produit, documenté dans la publication',
+      completeness: options.completeness ?? 'sparse', descriptor_version: 'scalar-descriptor-v3' },
+    observations: (options.observations ?? [{ territory: members[0]!.territoire, status: 'measured', value: 9 }])
+      .map(({ territory, status, value }) => {
+        const reference = territoiresFixture.find((candidate) => candidate.territoire === territory)!
+        return { territory: { id: territory, type: reference.type, name: reference.nom }, status, value,
+          support_count: status === 'measured' ? 41 : 7, denominator_count: 100,
+          sources: [{ source_id: page.sources[0], name: 'Source API mesurée', vintage_id: 'source-vintage-2026',
+            version: '2026', reference_date: '2026-06-30', publication_date: '2026-07-01' }] }
+      }),
+  }
+  options.mutate?.(result)
+  return result
+}
+
+function installCatalogueAndReads(resources: SemanticResourceDeclaration[], respond: (item: SemanticReadItem) => Record<string, unknown>) {
+  const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+    if (url === '/api/resources/read-batch') {
+      const body = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: body.items.map((item) =>
+        ({ id: item.id, resource: item.resource, data: respond(item) })) }))
+    }
+    throw new Error(`Unexpected semantic request: ${url}`)
+  })
+  vi.stubGlobal('fetch', fetcher)
+  return fetcher
+}
+
+describe('ordinary scalar producer declarations and semantic acquisition', () => {
+  it('keeps the existing switch default and preserves producer registration boundaries', () => {
     expect(scalarCohortEnabled({})).toBe(false)
     expect(scalarCohortEnabled({ VITE_SCALAR_COHORT_API: '0' })).toBe(false)
     expect(scalarCohortEnabled({ VITE_SCALAR_COHORT_API: '1' })).toBe(true)
-  })
-})
-
-beforeEach(() => { localStorage.clear(); vi.stubEnv('VITE_SCALAR_COHORT_API', '1') })
-afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
-
-function response(indicator = 'effectifs_salaries') {
-  const page = economyMetadata.indicator_pages[indicator]
-  const publishedRank = canonicalRank(indicator, '22001')
-  return { indicator_id: indicator, territory_type: 'commune', label: page.label, unit: page.unit,
-    direction: page.direction, comparison_facet: indicator, completeness: 'sparse', content_version: 'scalar-v1',
-    observations: [
-      { territory_id: '22001', name: 'Commune A1', value: 9, status: 'measured',
-        rang_epci: publishedRank?.rang_epci ?? null, rang_epci_n: publishedRank?.rang_epci_n ?? null,
-        rang_dep: publishedRank?.rang_dep ?? null, rang_dep_n: publishedRank?.rang_dep_n ?? null,
-        rang_reg: publishedRank?.rang_reg ?? null, rang_reg_n: publishedRank?.rang_reg_n ?? null,
-        sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }] },
-      { territory_id: '22002', name: 'Commune D', value: null, status: 'not_published', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null, sources: [] },
-    ] }
-}
-
-async function mountEconomy(initial = '/indicateurs/economie/effectifs_salaries?territoire=22001&niveau=commune', allowStatic = false) {
-  const payloadCalls: string[] = []
-  const loader: ChargerFichier = async (file) => {
-    payloadCalls.push(file)
-    if (file === 'territoires') return territoiresFixture
-    if (allowStatic && file === 'indicateurs_economie') return indicateursEconomieFixture
-    if (allowStatic && file === 'theme_economie') return validerThemeMetadata(economyMetadata, 'theme_economie.json')
-    if (allowStatic && file === 'indicateurs_demographie') return indicateursDemographieFixture
-    if (allowStatic && file === 'theme_demographie') return validerThemeMetadata(demographyMetadataRaw, 'theme_demographie.json')
-    throw new Error(`static scalar payload must not be requested: ${file}`)
-  }
-  const router = createRouter({ history: createMemoryHistory(), routes })
-  await router.push(initial); await router.isReady()
-  const empty = { type: 'FeatureCollection' as const, features: [] }
-  const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
-    [PAYLOAD_CHARGER_KEY]: loader,
-    [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
-  } } })
-  return { wrapper, router, payloadCalls }
-}
-
-async function mountHabitat(initial = '/indicateurs/habitat/part_passoires?territoire=22001&niveau=commune') {
-  const payloadCalls: string[] = []
-  const loader: ChargerFichier = async (file) => {
-    payloadCalls.push(file)
-    if (file === 'territoires') return territoiresFixture
-    throw new Error(`static Habitat facts must not be requested for an API scalar page: ${file}`)
-  }
-  const router = createRouter({ history: createMemoryHistory(), routes })
-  await router.push(initial); await router.isReady()
-  const empty = { type: 'FeatureCollection' as const, features: [] }
-  const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
-    [PAYLOAD_CHARGER_KEY]: loader,
-    [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
-  } } })
-  return { wrapper, router, payloadCalls }
-}
-
-describe('Page indicateur économie - cohorte scalaire API', () => {
-  it('keeps registered non-scalar Habitat pages out of fiche cohort replacement', () => {
-    const registered = indicateursScalairesEnregistres(habitatMetadataRaw)
+    const registered = indicateursScalairesEnregistres(habitat)
     expect(registered).toContain('prix_m2')
-    expect(habitatMetadataRaw.indicator_pages.prix_m2.family).toBe('trajectory')
-    expect(habitatMetadataRaw.indicator_pages.part_passoires.family).toBe('scalar')
-    expect(() => validerThemeMetadata(habitatMetadataRaw, 'theme_habitat.json')).not.toThrow()
-    const metadata = validerThemeMetadata(habitatMetadataRaw, 'theme_habitat.json')
-    const selected = pagesScalairesEnregistrees(metadata, registered)
-    expect(selected).toEqual(['part_passoires'])
-    expect(() => validerEnregistrementScalaires(metadata, selected)).not.toThrow()
-    const priceTrajectory = { theme: 'habitat', key: 'prix_m2' } as never
-    expect(remplacerFaitsScalaires([priceTrajectory], [], selected)).toEqual([priceTrajectory])
+    const metadata = validerThemeMetadata(habitat, 'theme_habitat.json')
+    const scalarPages = pagesScalairesEnregistrees(metadata, registered)
+    expect(scalarPages).not.toContain('prix_m2')
+    expect(() => validerEnregistrementScalaires(metadata, scalarPages)).not.toThrow()
   })
-  it('loads a registered Habitat scalar page without rejecting the registered prix_m2 trajectory', async () => {
-    const page = validerThemeMetadata(habitatMetadataRaw, 'theme_habitat.json').indicator_pages!.part_passoires!
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+
+  it('reads native values, missing status, support, denominator, and complete provenance for a filtered page cohort', async () => {
+    const indicator = 'effectifs_salaries'
+    const page = pageFor('economie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const resource = declaration('economie', indicator)
+    const fetcher = installCatalogueAndReads([resource], (item) => scalarData('economie', indicator, item, {
+      observations: [
+        { territory: '22001', status: 'measured', value: 9999 },
+        { territory: '22002', status: 'suppressed', value: null },
+      ],
+    }))
+    const identity: { contentVersion?: string; referenceContentVersion?: string } = {}
+    const facts = await chargerCohorteScalaire(indicator, 'economie', page, focal, 'commune', territoiresFixture,
+      { department: '22', epci: '200000001' }, identity)
+    const request = JSON.parse((fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')?.[1] as RequestInit).body as string)
+    expect(request.items).toHaveLength(1)
+    expect(request.items[0]).toMatchObject({ resource: indicator,
+      target: { kind: 'territory_cohort', type: 'commune', department_id: '22', epci_id: '200000001' },
+      fields: ['value', 'support_count', 'denominator_count'], intent: { kind: 'facts' } })
+    expect(facts.find((fact) => fact.territoire === '22001')).toMatchObject({ value: 9999,
+      fact_status: 'measured', support_count: 41, denominator_count: 100,
+      source_id: page.sources[0], vintage_id: 'source-vintage-2026', vintage_source: 'Source API mesurée',
+      fact_sources: [{ sourceId: page.sources[0], version: '2026', referenceDate: '2026-06-30', publicationDate: '2026-07-01' }],
+      rang_epci: null, rang_epci_n: null, rang_dep: null, rang_reg: null })
+    expect(facts.find((fact) => fact.territoire === '22002')).toMatchObject({ value: null,
+      fact_status: 'suppressed', observation_status: 'missing', support_count: 7, denominator_count: 100,
+      rider: 'Valeur masquée selon les règles de diffusion.' })
+    expect(facts.find((fact) => fact.territoire === '22002')?.rider).not.toBe('suppressed')
+    expect(identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
+  })
+
+  it('keeps scalar resource theme binding strict when discovery contains other unthemed resources', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const wrongThemeResource = { ...declaration('demographie', indicator), theme_id: 'habitat' }
+    installCatalogueAndReads([wrongThemeResource], (item) => scalarData('demographie', indicator, item))
+
+    await expect(chargerCohorteScalaire(indicator, 'demographie', page, focal, 'commune', territoiresFixture, {}))
+      .rejects.toThrow('n’est pas compatible')
+  })
+
+  it('acquires all registered ordinary scalars in one bounded semantic batch and rejects mixed publication identities', async () => {
+    const metadata = validerThemeMetadata(economy, 'theme_economie.json')
+    const registered = indicateursScalairesEnregistres(economy).filter((indicator) => metadata.indicator_pages?.[indicator]?.family === 'scalar')
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const resources = registered.map((indicator) => declaration('economie', indicator))
+    const fetcher = installCatalogueAndReads(resources, (item) => scalarData('economie', item.resource, item, {
+      contentVersion: item.resource === 'chomage' ? 'another-publication' : 'scalar-publication-v4',
+    }))
+    await expect(chargerCohortesScalaires(registered, 'economie', metadata, focal, 'commune', territoiresFixture, {}))
+      .rejects.toThrow('même version de publication')
+    const calls = fetcher.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
+    expect(calls).toHaveLength(1)
+    const request = JSON.parse((calls[0]![1] as RequestInit).body as string)
+    expect(request.items.length).toBe(registered.length)
+    expect(request.items.length).toBeLessThanOrEqual(12)
+  })
+
+  it.each([
+    ['resource identity', (value: Record<string, unknown>) => { value.resource = 'other' }],
+    ['unit', (value: Record<string, unknown>) => { (value.descriptor as Record<string, unknown>).unit = 'wrong' }],
+    ['direction', (value: Record<string, unknown>) => { (value.descriptor as Record<string, unknown>).direction = 'sideways' }],
+    ['comparison facet', (value: Record<string, unknown>) => { (value.descriptor as Record<string, unknown>).comparison_facet = 'other' }],
+    ['source identity', (value: Record<string, unknown>) => { ((value.observations as Array<Record<string, unknown>>)[0]!.sources as Array<Record<string, unknown>>)[0]!.source_id = 'other' }],
+    ['support count', (value: Record<string, unknown>) => { ((value.observations as Array<Record<string, unknown>>)[0]!).support_count = -1 }],
+    ['denominator count', (value: Record<string, unknown>) => { delete ((value.observations as Array<Record<string, unknown>>)[0]!).denominator_count }],
+    ['echoed scope', (value: Record<string, unknown>) => { (value.target as Record<string, unknown>).department_id = '29' }],
+  ])('rejects a scalar semantic response with invalid %s evidence', async (_label, mutate) => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    installCatalogueAndReads([declaration('demographie', indicator)], (item) => scalarData('demographie', indicator, item, { mutate }))
+    await expect(chargerCohorteScalaire(indicator, 'demographie', page, focal, 'commune', territoiresFixture,
+      { department: '22' })).rejects.toThrow()
+  })
+
+  it('uses an explicit ADR-0021 commune peer set for the map rank and never reuses static rank columns', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const resource = declaration('demographie', indicator)
+    const expectedMembers = ['22001', '22002']
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url === '/data/theme_habitat.json') return new Response(JSON.stringify(habitatMetadataRaw), { status: 200 })
-      if (url === '/api/territories/commune/22001/indicator-cohorts/part_passoires?scope_level=commune') {
-        return new Response(JSON.stringify({ indicator_id: 'part_passoires', territory_type: 'commune', label: page.label,
-          unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? 'part_passoires',
-          completeness: 'sparse', content_version: 'habitat-v1', territory_reference_version: 'territories-v1',
-          observations: [{ territory_id: '22001', name: 'Commune A1', value: 0.12, status: 'measured',
-            rang_epci: 1, rang_epci_n: 2, rang_dep: 2, rang_dep_n: 4, rang_reg: 3, rang_reg_n: 8,
-            sources: [{ source_id: page.sources[0], name: 'Source DPE', vintage_id: 'v1', version: '2024',
-              reference_date: null, publication_date: null }] }] }), { status: 200 })
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [resource] }))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
+        const item = request.items[0]!
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, resource: indicator, data: {
+          resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+          shape: 'scalar', content_version: 'scalar-publication-v4',
+           reference_content_version: 'reference-v7', selection: expectedMembers.map((id) => ({ territory_type: 'commune', territory_id: id })),
+           scope: { kind: 'explicit_selection', member_count: 2 }, result: { indicator_id: indicator, status: 'available',
+             unit: page.unit, direction: page.direction, source_facet: indicator, descriptor_version: 'scalar-descriptor-v3',
+             selected_member_count: 2, eligible_count: 2, missing_count: 0, rank: 2, rank_size: 2 },
+        } }] }))
       }
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubGlobal('fetch', fetcher)
-    const { wrapper, payloadCalls } = await mountHabitat()
-    await flushPromises()
-    expect(payloadCalls).toEqual(['territoires'])
-    expect(fetcher).toHaveBeenCalledWith('/api/territories/commune/22001/indicator-cohorts/part_passoires?scope_level=commune')
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.text()).toContain('Part de passoires thermiques')
-    wrapper.unmount()
+    const rank = await chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture,
+      { contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
+    const call = fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')!
+    const request = JSON.parse((call[1] as RequestInit).body as string)
+    expect(request.items).toHaveLength(1)
+    expect(request.items[0]).toMatchObject({ target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '22001' }, { type: 'commune', id: '22002' }] } })
+    expect(rank).toEqual({ rank: 2, rankSize: 2, scope: "dans l'EPCI" })
   })
-  it('acquires registered facts concurrently and replaces only those theme rows', async () => {
-    const metadata = validerThemeMetadata(economyMetadata, 'theme_economie.json')
-    const registered = indicateursScalairesEnregistres(economyMetadata)
-    const focal = territoiresFixture.find((territory) => territory.type === 'commune')!
-    const active: string[] = []
-    let peak = 0
-    vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-      active.push(url); peak = Math.max(peak, active.length)
-      await Promise.resolve()
-      active.pop()
-      const indicator = decodeURIComponent(url.split('/').at(-1)!.split('?')[0]!)
-      const page = metadata.indicator_pages![indicator]!
-      return new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune', label: page.label,
-        unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? indicator,
-        completeness: 'sparse', content_version: 'batch-v1', territory_reference_version: 'territories-v1', observations: [{ territory_id: focal.territoire,
-          name: focal.nom, value: 2, status: 'measured', rang_epci: 1, rang_epci_n: 3, rang_dep: null,
-          rang_dep_n: null, rang_reg: null, rang_reg_n: null, sources: [{ source_id: page.sources[0],
-            name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }] }] }), { status: 200 })
+
+  it('uses the producer same-level comparison for EPCI ranks and does not request a regional rank', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const resource = declaration('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.type === 'epci')!
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [resource] }))
+      const request = JSON.parse(init?.body as string) as { items: Array<SemanticReadItem & { id: string }> }
+      const item = request.items[0]!
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, resource: indicator, data: {
+        resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+        shape: 'scalar', content_version: 'scalar-publication-v4',
+         reference_content_version: 'reference-v7', selection: null, scope: { kind: 'same_level', territory_type: 'epci', member_count: 2 },
+         result: { indicator_id: indicator, status: 'available', unit: page.unit, direction: page.direction,
+           source_facet: indicator, descriptor_version: 'scalar-descriptor-v3', selected_member_count: 2,
+           eligible_count: 2, missing_count: 0, rank: 1, rank_size: 2 },
+      } }] }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    expect(await chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture)).toEqual({
+      rank: 1, rankSize: 2, scope: 'en Bretagne',
+    })
+    const request = JSON.parse((fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')![1] as RequestInit).body as string)
+    expect(request.items[0].intent).toEqual({ kind: 'fixed_comparison', context: 'default' })
+    const callsBeforeRegion = fetcher.mock.calls.length
+    const region = territoiresFixture.find((territory) => territory.type === 'region')!
+    expect(await chargerRangScalaire(indicator, 'demographie', page, region, territoiresFixture)).toBeNull()
+    expect(fetcher.mock.calls).toHaveLength(callsBeforeRegion)
+  })
+
+  it('keeps a French unavailable explanation and never carries a stale source-state rider onto a new measurement', () => {
+    const registered = ['bornes_ev_par_station_service']
+    const source = indicateursEconomieFixture.find((fact) => fact.key === 'effectifs_salaries')!
+    const stale = { ...source, key: registered[0]!, rider: 'Aucune station-service sur le territoire', value: null }
+    const acquired = { ...stale, value: 999, rider: null, fact_status: 'measured' as const }
+    const merged = remplacerFaitsScalaires([stale], [acquired], registered)
+    expect(merged[0]).toMatchObject({ value: 999, fact_status: 'measured', rider: null })
+    expect(merged[0]?.rider).not.toBe('Aucune station-service sur le territoire')
+  })
+
+  it('uses an app-owned French explanation for an unavailable scalar without leaking the API enum', async () => {
+    const indicator = 'effectifs_salaries'
+    const page = pageFor('economie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    installCatalogueAndReads([declaration('economie', indicator)], (item) => scalarData('economie', indicator, item, {
+      observations: [{ territory: '22001', status: 'not_available', value: null }],
     }))
-    const facts = await chargerCohortesScalaires(registered, 'economie', metadata, focal, 'commune', territoiresFixture, {})
-    expect(facts.map((fact) => fact.key).sort()).toEqual([...registered].sort())
-    expect(peak).toBeGreaterThan(1)
-    const old = [...indicateursEconomieFixture]
-    const untouched = old.find((row) => !registered.includes(row.key))!
-    const merged = remplacerFaitsScalaires(old, facts, registered)
-    expect(merged.filter((row) => registered.includes(row.key))).toHaveLength(facts.length)
-    expect(merged).toContain(untouched)
-  })
-  it.each(['content_version', 'territory_reference_version'] as const)(
-    'rejects registered batches with mixed %s identities', async (identity) => {
-      const metadata = validerThemeMetadata(economyMetadata, 'theme_economie.json')
-      const registered = indicateursScalairesEnregistres(economyMetadata)
-      const focal = territoiresFixture.find((territory) => territory.type === 'commune')!
-      vi.stubGlobal('fetch', vi.fn(async (url: string) => {
-        const indicator = decodeURIComponent(url.split('/').at(-1)!.split('?')[0]!)
-        const page = metadata.indicator_pages![indicator]!
-        return new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune', label: page.label,
-          unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? indicator,
-          completeness: 'sparse', content_version: identity === 'content_version' && indicator === 'chomage' ? 'other' : 'batch-v1',
-          territory_reference_version: identity === 'territory_reference_version' && indicator === 'chomage' ? 'other' : 'territories-v1',
-          observations: [{ territory_id: focal.territoire, name: focal.nom, value: 2, status: 'measured',
-            rang_epci: 1, rang_epci_n: 3, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
-            sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024',
-              reference_date: null, publication_date: null }] }] }), { status: 200 })
-      }))
-      await expect(chargerCohortesScalaires(registered, 'economie', metadata, focal, 'commune', territoiresFixture, {}))
-        .rejects.toThrow('même version de publication et de référentiel territorial')
-    },
-  )
-  it('loads each producer-registered scalar page from all current themes through the production cohort adapter', async () => {
-    for (const theme of ['economie', 'demographie', 'mobilite'] as const) {
-      const raw = productionThemeMetadata[theme]
-      const registered = indicateursScalairesEnregistres(raw)
-      const metadata = validerThemeMetadata(raw, `theme_${theme}.json`)
-      const declared = Array.isArray(raw.scalar_contracts) ? raw.scalar_contracts : Object.keys(raw.scalar_contracts)
-      expect(registered).toEqual(declared)
-      expect(registered.length).toBeGreaterThan(0)
-      for (const id of registered) {
-        const page = metadata.indicator_pages?.[id]
-        expect(page, `${theme}/${id} is registered without a page`).toBeDefined()
-        if (!page) continue
-        expect(page.family).toBe('scalar')
-        const focal = territoiresFixture.find((territory) => territory.type === 'commune')!
-        vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify({
-          indicator_id: id, territory_type: 'commune', label: page.label, unit: page.unit,
-          direction: page.direction, comparison_facet: page.comparison?.indicator ?? id,
-          completeness: 'sparse', content_version: 'test', territory_reference_version: 'territories-v1', observations: [{
-            territory_id: focal.territoire, name: focal.nom, value: 1, status: 'measured',
-            rang_epci: 1, rang_epci_n: 1, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
-            sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }],
-          }],
-        }), { status: 200 })))
-        const facts = await chargerCohorteScalaire(id, theme, page, focal, 'commune', territoiresFixture, {})
-        expect(facts[0]).toMatchObject({ theme, key: id, territoire: focal.territoire, value: 1, rang_epci: 1, rang_epci_n: 1 })
-      }
-    }
+    const facts = await chargerCohorteScalaire(indicator, 'economie', page, focal, 'commune', territoiresFixture, {})
+    expect(facts[0]).toMatchObject({ value: null, fact_status: 'not_available', rider: 'Valeur non disponible.' })
+    expect(facts[0]?.rider).not.toBe('not_available')
   })
 
-  it('preserves publisher-provided rank and denominator fields without recomputing them', async () => {
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(response()), { status: 200 })))
-    const page = validerThemeMetadata(economyMetadata, 'theme_economie.json').indicator_pages!.effectifs_salaries!
-    const facts = await chargerCohorteScalaire('effectifs_salaries', 'economie', page, territoiresFixture[0]!, 'commune',
-      territoiresFixture, {})
-    expect(facts.find((fact) => fact.territoire === '22001')).toMatchObject({
-      rang_epci: canonicalRank('effectifs_salaries', '22001')?.rang_epci,
-      rang_epci_n: canonicalRank('effectifs_salaries', '22001')?.rang_epci_n,
-      rang_dep: canonicalRank('effectifs_salaries', '22001')?.rang_dep,
-      rang_dep_n: canonicalRank('effectifs_salaries', '22001')?.rang_dep_n,
-      rang_reg: canonicalRank('effectifs_salaries', '22001')?.rang_reg,
-      rang_reg_n: canonicalRank('effectifs_salaries', '22001')?.rang_reg_n,
-    })
-    expect(facts.find((fact) => fact.territoire === '22002')).toMatchObject({
-      value: null, observation_status: 'missing', rang_epci: null, rang_reg: null,
-    })
+  it('rejects a same-level rank whose returned level disagrees with the focal territory', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const resource = declaration('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.type === 'epci')!
+    installCatalogueAndReads([resource], (item) => ({
+      resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+      shape: 'scalar', content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
+      selection: null, scope: { kind: 'same_level', territory_type: 'departement', member_count: 2 },
+      result: { indicator_id: indicator, status: 'available', unit: page.unit, direction: page.direction,
+        source_facet: indicator, descriptor_version: 'scalar-descriptor-v3', selected_member_count: 2,
+        eligible_count: 2, missing_count: 0, rank: 1, rank_size: 2 },
+    }))
+    await expect(chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture))
+      .rejects.toThrow('groupe demandé')
   })
 
   it.each([
-    ['unknown territory', (body: ReturnType<typeof response>) => { body.observations[0]!.territory_id = '99999' }],
-    ['unknown status', (body: ReturnType<typeof response>) => { body.observations[0]!.status = 'zero' }],
-    ['undeclared source', (body: ReturnType<typeof response>) => { body.observations[0]!.sources[0]!.source_id = 'other_source' }],
-    ['invalid rank', (body: ReturnType<typeof response>) => { body.observations[0]!.rang_reg = 0 }],
-    ['unranked old API contract', (body: ReturnType<typeof response>) => { Reflect.deleteProperty(body.observations[0], 'rang_reg_n') }],
-    ['empty explicit territory reference version', (body: ReturnType<typeof response>) => { Object.assign(body, { territory_reference_version: '' }) }],
-    ['missing focal row', (body: ReturnType<typeof response>) => { body.observations = [body.observations[1]!] }],
-  ])('rejects a cohort containing %s', async (_label, mutate) => {
-    const body = response()
-    mutate(body)
-    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(body), { status: 200 })))
-    const page = validerThemeMetadata(economyMetadata, 'theme_economie.json').indicator_pages!.effectifs_salaries!
-    await expect(chargerCohorteScalaire('effectifs_salaries', 'economie', page, territoiresFixture[0]!, 'commune',
-      territoiresFixture, {})).rejects.toThrow()
+    ['negative eligible count', (result: Record<string, unknown>) => { result.eligible_count = -1 }],
+    ['rank on unavailable result', (result: Record<string, unknown>) => { result.status = 'unavailable' }],
+  ])('rejects a comparison with %s', async (_label, mutate) => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const resource = declaration('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.type === 'epci')!
+    installCatalogueAndReads([resource], (item) => {
+      const result: Record<string, unknown> = { indicator_id: indicator, status: 'available', unit: page.unit,
+        direction: page.direction, source_facet: indicator, descriptor_version: 'scalar-descriptor-v3',
+        selected_member_count: 2, eligible_count: 2, missing_count: 0, rank: 1, rank_size: 2 }
+      mutate(result)
+      return { resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+        shape: 'scalar', content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
+        selection: null, scope: { kind: 'same_level', territory_type: 'epci', member_count: 2 }, result }
+    })
+    await expect(chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture)).rejects.toThrow()
   })
 
-  it('acquiert les faits via API pour Repères et Carte sans charger les faits statiques', async () => {
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/data/theme_economie.json') return new Response(JSON.stringify(economyMetadata), { status: 200 })
-      return new Response(JSON.stringify(response()), { status: 200 })
-    })
-    vi.stubGlobal('fetch', fetcher)
-    const { wrapper, payloadCalls } = await mountEconomy()
-    await flushPromises()
-    expect(payloadCalls).toEqual(['territoires'])
-    expect(fetcher).toHaveBeenCalledWith('/api/territories/commune/22001/indicator-cohorts/effectifs_salaries?scope_level=commune')
-    expect(wrapper.text()).toContain('Effectifs salariés (lieu de travail)')
-    expect(wrapper.text()).toContain('9')
-    const expectedRank = canonicalRank('effectifs_salaries', '22001')!
-    expect(wrapper.text()).toContain(formaterRang(expectedRank.rang_epci as number, expectedRank.rang_epci_n as number))
-    await wrapper.get('.vues button:nth-child(2)').trigger('click')
-    await flushPromises()
-    expect(wrapper.find('.carte-indicateur').exists()).toBe(true)
-    expect(fetcher.mock.calls.filter(([url]) => String(url).includes('indicator-cohorts'))).toHaveLength(1)
-    wrapper.unmount()
+  it('keeps an explicitly empty fiche comparison honest and does not attach a rank', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const fetcher = installCatalogueAndReads([declaration('demographie', indicator)], (item) => ({
+      resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+      shape: 'scalar', content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
+      selection: [], scope: { kind: 'explicit_selection', member_count: 0 },
+      result: { indicator_id: indicator, status: 'unavailable', unit: page.unit, direction: page.direction,
+        source_facet: indicator, descriptor_version: 'scalar-descriptor-v3', selected_member_count: 0,
+        eligible_count: 0, missing_count: 0, rank: null, rank_size: null },
+    }))
+    await expect(chargerComparaisonsScalaires([indicator], 'demographie', { [indicator]: page }, focal,
+      territoiresFixture, { kind: 'selected', members: [], scope: {
+        kind: 'explicit_selection', territoryType: 'commune', memberCount: 0, label: null,
+      } })).resolves.toEqual({ [indicator]: null })
+    expect(fetcher).not.toHaveBeenCalled()
   })
 
-  it('montre une erreur retryable sans repli statique quand le cohort API est indisponible', async () => {
-    let attempts = 0
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) === '/data/theme_economie.json') return new Response(JSON.stringify(economyMetadata), { status: 200 })
-      attempts++
-      return attempts === 1 ? new Response('', { status: 503 }) : new Response(JSON.stringify(response()), { status: 200 })
+  it('keeps a singleton comparison without a rank or unnecessary API read', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const fetcher = installCatalogueAndReads([declaration('demographie', indicator)], () => {
+      throw new Error('A singleton comparison must not acquire a rank')
     })
-    vi.stubGlobal('fetch', fetcher)
-    const { wrapper, payloadCalls } = await mountEconomy()
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('Réessayer')
-    expect(payloadCalls).toEqual(['territoires'])
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(attempts).toBe(2)
-    expect(wrapper.text()).toContain('9')
-    wrapper.unmount()
-  })
-
-  it('reacts to page navigation and deduplicates requests per normalized page/scope', async () => {
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/data/theme_economie.json') return new Response(JSON.stringify(economyMetadata), { status: 200 })
-      const indicator = url.includes('/chomage?') ? 'chomage' : 'effectifs_salaries'
-      return new Response(JSON.stringify(response(indicator)), { status: 200 })
-    })
-    vi.stubGlobal('fetch', fetcher)
-    const { wrapper, router } = await mountEconomy()
-    await flushPromises()
-    await router.push('/indicateurs/economie/chomage?territoire=22001&niveau=commune')
-    await flushPromises()
-    expect(fetcher.mock.calls.filter(([url]) => String(url).includes('indicator-cohorts'))).toHaveLength(2)
-    expect(wrapper.text()).toContain('Chômage (population active)')
-    wrapper.unmount()
-  })
-
-  it('keeps the newest level cohort when a previous request resolves out of order', async () => {
-    let finishCommune: ((value: Response) => void) | undefined
-    const fetcher = vi.fn((input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/data/theme_economie.json') return Promise.resolve(new Response(JSON.stringify(economyMetadata), { status: 200 }))
-      if (url.includes('/commune/')) return new Promise<Response>((resolve) => { finishCommune = resolve })
-      const page = economyMetadata.indicator_pages.effectifs_salaries
-      return Promise.resolve(new Response(JSON.stringify({ ...response(), territory_type: 'departement',
-        observations: [{ territory_id: '22', name: 'Département 22', value: 222, status: 'measured',
-          rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: 2, rang_reg_n: 4,
-          sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }] }] }), { status: 200 }))
-    })
-    vi.stubGlobal('fetch', fetcher)
-    const { wrapper, router } = await mountEconomy()
-    await flushPromises()
-    await router.push('/indicateurs/economie/effectifs_salaries?territoire=22001&niveau=departement')
-    await flushPromises()
-    expect(wrapper.text()).toContain('222')
-    finishCommune?.(new Response(JSON.stringify(response()), { status: 200 }))
-    await flushPromises()
-    expect(wrapper.text()).toContain('222')
-    wrapper.unmount()
-  })
-
-  it('retains unregistered sparse-evidence pages on their static contract when scalar cutover is enabled', async () => {
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) === '/data/theme_economie.json') return new Response(JSON.stringify(economyMetadata), { status: 200 })
-      throw new Error('unregistered page must not call the scalar API')
-    })
-    vi.stubGlobal('fetch', fetcher)
-    const { wrapper, payloadCalls } = await mountEconomy(
-      '/indicateurs/economie/eco_activites?territoire=22001&niveau=commune', true)
-    await flushPromises()
-    expect(payloadCalls).toEqual(['territoires', 'indicateurs_economie', 'theme_economie'])
-    expect(fetcher.mock.calls.filter(([url]) => String(url).includes('indicator-cohorts'))).toHaveLength(0)
-    expect(wrapper.text()).toContain('Part des éco-activités')
-    wrapper.unmount()
-  })
-
-  it('uses the real router transition path across registered, unregistered, other-theme, and registered pages', async () => {
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/data/theme_economie.json') return new Response(JSON.stringify(economyMetadata), { status: 200 })
-      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify({ ...demographyMetadataRaw,
-        scalar_contracts: ['densite'] }), { status: 200 })
-      if (url.includes('/indicator-cohorts/densite?')) {
-        const page = demographyMetadataRaw.indicator_pages.densite
-        return new Response(JSON.stringify({ ...response(), indicator_id: 'densite', label: page.label,
-          unit: page.unit, direction: page.direction, comparison_facet: 'densite',
-          observations: [{ territory_id: '22001', name: 'Commune A1', value: 42, status: 'measured',
-            rang_epci: 1, rang_epci_n: 1, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
-            sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2024', reference_date: null, publication_date: null }] }] }), { status: 200 })
-      }
-      return new Response(JSON.stringify(response(url.includes('/chomage?') ? 'chomage' : 'effectifs_salaries')), { status: 200 })
-    })
-    vi.stubGlobal('fetch', fetcher)
-    const { wrapper, router, payloadCalls } = await mountEconomy(undefined, true)
-    await flushPromises()
-    await router.push('/indicateurs/economie/eco_activites?territoire=22001&niveau=commune')
-    await flushPromises()
-    expect(payloadCalls).toContain('indicateurs_economie')
-    expect(wrapper.text()).toContain('Part des éco-activités')
-    await router.push('/indicateurs/demographie/densite?territoire=22001&niveau=commune')
-    await flushPromises()
-    expect(payloadCalls).not.toContain('indicateurs_demographie')
-    expect(wrapper.text()).toContain('Densité')
-    await router.push('/indicateurs/economie/chomage?territoire=22001&niveau=commune')
-    await flushPromises()
-    expect(fetcher.mock.calls.filter(([url]) => String(url).includes('indicator-cohorts'))).toHaveLength(3)
-    expect(wrapper.text()).toContain('Chômage (population active)')
-    wrapper.unmount()
-  })
-
-  it.each([
-    ['missing', (raw: Record<string, unknown>) => { delete raw.scalar_contracts }],
-    ['malformed', (raw: Record<string, unknown>) => { raw.scalar_contracts = ['effectifs_salaries', 12] }],
-    ['page mismatch', (raw: Record<string, unknown>) => { raw.scalar_contracts = ['missing_page'] }],
-  ])('fails closed on %s scalar registration and retries metadata acquisition', async (_label, mutate) => {
-    let attempts = 0
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) !== '/data/theme_economie.json') throw new Error('no scalar API should start before metadata validates')
-      attempts++
-      if (attempts > 1) return new Response(JSON.stringify(economyMetadata), { status: 200 })
-      const invalid = JSON.parse(JSON.stringify(economyMetadata)) as Record<string, unknown>
-      mutate(invalid)
-      return new Response(JSON.stringify(invalid), { status: 200 })
-    })
-    vi.stubGlobal('fetch', fetcher)
-    const { wrapper, payloadCalls } = await mountEconomy()
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('Réessayer')
-    expect(payloadCalls).toEqual(['territoires'])
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(attempts).toBe(2)
-    expect(fetcher.mock.calls.filter(([url]) => String(url).includes('indicator-cohorts'))).toHaveLength(1)
-    wrapper.unmount()
-  })
-
-  it.each(['fetch failure', 'malformed JSON'])('surfaces and retries Economy metadata %s without static scalar fallback', async (failure) => {
-    let attempts = 0
-    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input) !== '/data/theme_economie.json') return new Response(JSON.stringify(response()), { status: 200 })
-      attempts++
-      if (attempts === 1) {
-        if (failure === 'fetch failure') throw new TypeError('network offline')
-        return new Response('{broken', { status: 200 })
-      }
-      return new Response(JSON.stringify(economyMetadata), { status: 200 })
-    })
-    vi.stubGlobal('fetch', fetcher)
-    const { wrapper, payloadCalls } = await mountEconomy()
-    await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('Réessayer')
-    expect(payloadCalls).toEqual(['territoires'])
-    await wrapper.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(attempts).toBe(2)
-    expect(fetcher.mock.calls.filter(([url]) => String(url).includes('indicator-cohorts'))).toHaveLength(1)
-    wrapper.unmount()
+    await expect(chargerComparaisonsScalaires([indicator], 'demographie', { [indicator]: page }, focal,
+      territoiresFixture, { kind: 'selected', members: [{ type: 'commune', id: focal.territoire }], scope: {
+        kind: 'explicit_selection', territoryType: 'commune', memberCount: 1, label: 'commune seule',
+      } })).resolves.toEqual({ [indicator]: null })
+    expect(fetcher).not.toHaveBeenCalled()
   })
 })

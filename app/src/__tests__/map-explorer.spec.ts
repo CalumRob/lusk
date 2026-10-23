@@ -232,14 +232,28 @@ describe('MapExplorer — the active layer choropleth (ADR-0019)', () => {
     const original = indicateursDemographieFixture.find((row) => row.territoire === '22001' && row.key === 'densite' && row.detail === null)!
     const page = { indicator: 'densite', label: 'Densité de population', unit: original.unit,
       direction: 'high', comparison: { indicator: 'densite' }, sources: ['src'], levels: ['commune'] } as never
-    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: true, json: async () => ({
-      indicator_id: 'densite', territory_type: 'commune', label: 'Densité de population', unit: original.unit,
-      direction: 'high', comparison_facet: 'densite', completeness: 'dense_complete', content_version: 'v1',
-      territory_reference_version: 't1', observations: [{ territory_id: '22001', name: 'Commune A1', value: 9876,
-        status: 'measured', rang_epci: 1, rang_epci_n: 2, rang_dep: null, rang_dep_n: null,
-        rang_reg: null, rang_reg_n: null, sources: [{ source_id: 'src', name: 'Source API', vintage_id: 'v1', version: '2026',
-          reference_date: null, publication_date: null }] }],
-    }) }))
+    const resource = { resource_id: 'densite', theme_id: 'demographie', indicator_id: 'densite', label: 'Densité',
+      unit: original.unit, direction: 'high', allowed_levels: ['commune'], sources: ['src'], shapes: ['scalar'],
+      target_kinds: ['territory', 'territory_cohort'], fields: ['value', 'support_count', 'denominator_count'],
+      intents: ['facts', 'fixed_comparison', 'selected_comparison'] }
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [resource] }))
+      const item = JSON.parse(init?.body as string).items[0]
+      const members = territoiresFixture.filter((territory) => territory.type === 'commune')
+      const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+      const data = { resource: 'densite', target: item.target, shape: 'scalar',
+        cohort: { territory_type: 'commune', department_id: null, epci_id: null, member_count: members.length,
+          members: members.map((territory) => ({ id: territory.territoire, type: territory.type, name: territory.nom })),
+          reference_content_version: 'ref-v1' }, content_version: 'scalar-v1', reference_content_version: 'ref-v1',
+        descriptor: { indicator_id: 'densite', theme_id: 'demographie', label: 'Densité', unit: original.unit,
+          direction: 'high', comparison_facet: 'densite', allowed_levels: ['commune'], denominator_semantics: 'Population',
+          completeness: 'sparse', descriptor_version: 'scalar-v1' },
+        observations: [{ territory: { id: focal.territoire, type: focal.type, name: focal.nom }, status: 'measured', value: 9876,
+          support_count: 41, denominator_count: 100,
+          sources: [{ source_id: 'src', name: 'Source API', vintage_id: 'v1', version: '2026', reference_date: null, publication_date: null }] }] }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1',
+        results: [{ id: item.id, resource: 'densite', data }] }))
+    }))
     const facts = await chargerCohorteScalaire('densite', 'demographie', page,
       territoiresFixture.find((territory) => territory.territoire === '22001')!, 'commune', territoiresFixture, {})
     const { carte } = await monter({
@@ -259,7 +273,7 @@ describe('MapExplorer — the active layer choropleth (ADR-0019)', () => {
     expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('9 876')
     carte?.fire('click', { point: {}, lngLat: { lng: 0, lat: 0 } })
     expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('9 876')
-    expect(maplibreMock.instancesPopups.at(-1)?.contenu).toContain('1er/2')
+    expect(maplibreMock.instancesPopups.at(-1)?.contenu).not.toContain('1er/2')
   })
 
   it('paints the neutral mask fill in Aperçu (no theme, no layer)', async () => {
