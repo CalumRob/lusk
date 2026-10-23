@@ -70,7 +70,10 @@ PowerShell: `$env:VITE_THEME_ACQUISITION_API='0'` before running a command).
 - `VITE_SCALAR_COHORT_API`, `VITE_STRUCTURE_AGE_PROFILE_API`,
   `VITE_OWNED_SERIES_API`, `VITE_CONSO_ENAF_SERIES_API`, and
   `VITE_OCSGE_STATE_SERIES_API` remain explicit opt-ins (`'1'`) for their
-  applicable readers; they are not enabled by normal dev or build commands.
+  applicable readers; normal commands do not set them. Exception: the ordered
+  series reader also enables `raccordement_courbe` through the default-on
+  `VITE_THEME_ACQUISITION_API` switch. This is inherited client behavior, not
+  support for its retired endpoint.
 - `LUSK_API_ORIGIN` optionally overrides the Vite development server's `/api`
   proxy target only; it is not bundled into the production frontend.
 - `VITE_MAPS_PUBLIC_BASE_URL` optionally overrides the map-asset origin; the
