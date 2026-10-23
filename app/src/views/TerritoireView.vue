@@ -59,7 +59,7 @@ import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
 import { trouverTerritoire } from '@/payload/selectors'
 import { THEMES_CANONIQUES } from '@/payload/types'
-import type { Histoire, Indicateur, Payload, Theme } from '@/payload/types'
+import type { Histoire, Indicateur, Payload, Territoire, Theme } from '@/payload/types'
 import { useTerritoryReadModel } from '@/payload/useTerritoryReadModel'
 import { payloadDepuisModeleTerritoire } from '@/payload/territoryReadModel'
 
@@ -337,17 +337,21 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
         (theme === 'mobilite' && productionMobilite.value)) { ficheScalairesStatus.value = 'ready'; return }
     const data = model.themes[theme]
     if (!data) { ficheScalairesStatus.value = 'ready'; return }
+    let focal: Territoire | undefined
+    let registered: string[] = []
+    let comparisonRequest: ScalarComparisonRequest | null = null
+    let comparisonKey = ''
     try {
-      const focal = model.territories.find((territory) => territory.territoire === code)
+      focal = model.territories.find((territory) => territory.territoire === code)
       if (!focal) throw new Error('Territoire focal absent')
       if (!('scalar_contracts' in data.metadata)) { ficheScalairesStatus.value = 'ready'; return }
       ficheScalairesRegistrePresent.value = true
-      const registered = pagesScalairesEnregistrees(data.metadata,
+      registered = pagesScalairesEnregistrees(data.metadata,
         indicateursScalairesPourNiveau(data.metadata, focal.type))
       ficheScalairesEnregistres.value = registered
       if (!registered.length) { ficheScalairesStatus.value = 'ready'; return }
-      const comparisonRequest = scalarComparisonRequest.value
-      const comparisonKey = scalarComparisonKey.value
+      comparisonRequest = scalarComparisonRequest.value
+      comparisonKey = scalarComparisonKey.value
       const result = await chargerCohortesScalairesAvecComparaisons(registered, theme, data.metadata, focal, focal.type,
         model.cohortTerritories ?? model.territories, scopeStableFaitsScalaires(focal), comparisonRequest)
       if (!cancelled && request === sequenceFicheScalaires) {
@@ -363,7 +367,32 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
         ficheScalairesStatus.value = 'ready'
       }
     } catch {
-      if (!cancelled && request === sequenceFicheScalaires) ficheScalairesStatus.value = 'error'
+      if (cancelled || request !== sequenceFicheScalaires) return
+      if (!focal || !registered.length || !comparisonRequest || comparisonRequest.scope.memberCount < 2) {
+        ficheScalairesStatus.value = 'error'
+        return
+      }
+      // The read-batch is atomic: never salvage facts from its failed envelope.
+      // A fresh facts-only read can still keep API values visible while the
+      // comparison is retried independently; these reads do not share a snapshot.
+      try {
+        const factsOnly = await chargerCohortesScalairesAvecComparaisons(registered, theme, data.metadata,
+          focal, focal.type, model.cohortTerritories ?? model.territories,
+          scopeStableFaitsScalaires(focal), null)
+        if (cancelled || request !== sequenceFicheScalaires) return
+        ficheScalaires.value = factsOnly.facts
+        ficheScalairesIdentity.value = factsOnly.identity
+        ficheComparaisonsScalaires.value = {}
+        const scopeStillCurrent = comparisonKey === scalarComparisonKey.value
+        ficheComparaisonsScalairesStatus.value = scopeStillCurrent ? 'error' : 'idle'
+        if (scopeStillCurrent) {
+          derniereCleComparaisonScalaire = comparisonKey
+          derniereRepriseComparaisonScalaire = retryFicheComparaisonsScalaires.value
+        }
+        ficheScalairesStatus.value = 'ready'
+      } catch {
+        if (!cancelled && request === sequenceFicheScalaires) ficheScalairesStatus.value = 'error'
+      }
     }
   }, { immediate: true })
 function retryScalaires(): void { retryFicheScalaires.value++ }

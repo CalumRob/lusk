@@ -61,7 +61,7 @@ export async function chargerCatalogueRessources(): Promise<SemanticResourceDecl
   const seen = new Set<string>()
   const resources = raw.resources.map((candidate): SemanticResourceDeclaration => {
     if (!isRecord(candidate) || typeof candidate.resource_id !== 'string' || !candidate.resource_id ||
-        typeof candidate.theme_id !== 'string' || !candidate.theme_id ||
+        typeof candidate.theme_id !== 'string' ||
         typeof candidate.indicator_id !== 'string' || !candidate.indicator_id ||
         typeof candidate.label !== 'string' || typeof candidate.unit !== 'string' ||
         typeof candidate.direction !== 'string' || !strings(candidate.allowed_levels) ||

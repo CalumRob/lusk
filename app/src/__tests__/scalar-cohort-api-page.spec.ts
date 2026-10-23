@@ -144,6 +144,17 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     expect(identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
   })
 
+  it('keeps scalar resource theme binding strict when discovery contains other unthemed resources', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const wrongThemeResource = { ...declaration('demographie', indicator), theme_id: 'habitat' }
+    installCatalogueAndReads([wrongThemeResource], (item) => scalarData('demographie', indicator, item))
+
+    await expect(chargerCohorteScalaire(indicator, 'demographie', page, focal, 'commune', territoiresFixture, {}))
+      .rejects.toThrow('n’est pas compatible')
+  })
+
   it('acquires all registered ordinary scalars in one bounded semantic batch and rejects mixed publication identities', async () => {
     const metadata = validerThemeMetadata(economy, 'theme_economie.json')
     const registered = indicateursScalairesEnregistres(economy).filter((indicator) => metadata.indicator_pages?.[indicator]?.family === 'scalar')

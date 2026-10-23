@@ -994,6 +994,155 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
+  it('recovers focal scalar facts after an initial paired comparison failure and retries ranks only', async () => {
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
+    metadata.scalar_contracts = { densite: metadata.scalar_contracts.densite }
+    const resources = semanticScalarResources('demographie', metadata)
+    const model = modeleAvecContextesComparaison()
+    model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    let comparisonAttempts = 0
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
+        requests.push(request)
+        if (request.items.some((item) => item.target.kind === 'territory_cohort') &&
+            request.items.some((item) => item.target.kind === 'territory')) {
+          return new Response('comparison unavailable in paired read', { status: 503 })
+        }
+        const batch = semanticScalarBatch('demographie', metadata, request.items, '22001', () => 77777)
+        if (request.items.every((item) => item.target.kind === 'territory') && ++comparisonAttempts === 1) {
+          batch.results.forEach((result: any) => { result.data.content_version = 'stale-scalar-publication' })
+        }
+        return new Response(JSON.stringify(batch))
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
+    await flushPromises()
+
+    expect(requests).toHaveLength(2)
+    expect(requests[0]!.items).toHaveLength(2)
+    expect(requests[0]!.items.some((item) => item.target.kind === 'territory_cohort')).toBe(true)
+    expect(requests[0]!.items.some((item) => item.target.kind === 'territory')).toBe(true)
+    expect(requests[1]!.items).toHaveLength(1)
+    expect(requests[1]!.items[0]!.target.kind).toBe('territory_cohort')
+    const figure = wrapper.get('[data-clef="densite"]')
+    expect(figure.get('.valeur-numerique').text()).toBe('77 777')
+    expect(figure.find('.puce-rang-texte').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('rangs de comparaison')
+
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(requests).toHaveLength(3)
+    expect(requests[2]!.items).toHaveLength(1)
+    expect(requests[2]!.items[0]!.target.kind).toBe('territory')
+    expect(requests[2]!.items[0]!.intent.kind).toBe('fixed_comparison')
+    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe('77 777')
+    expect(wrapper.find('[data-clef="densite"] .puce-rang-texte').exists()).toBe(false)
+    expect(wrapper.get('[role="alert"]').text()).toContain('rangs de comparaison')
+
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(requests).toHaveLength(4)
+    expect(requests[3]!.items).toHaveLength(1)
+    expect(requests[3]!.items[0]!.target.kind).toBe('territory')
+    expect(requests[3]!.items[0]!.intent.kind).toBe('fixed_comparison')
+    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe('77 777')
+    expect(wrapper.get('[data-clef="densite"] .puce-rang-texte').text())
+      .toContain(model.themes.mobilite!.comparisons.densite!.scope.label)
+    expect(requests.slice(2).flatMap((request) => request.items).every((item) => item.target.kind === 'territory')).toBe(true)
+    wrapper.unmount()
+  })
+
+  it('keeps scalar facts unavailable when both the paired read and facts-only recovery fail', async () => {
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
+    metadata.scalar_contracts = { densite: metadata.scalar_contracts.densite }
+    const resources = semanticScalarResources('demographie', metadata)
+    const model = modeleAvecContextesComparaison()
+    model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources/read-batch') {
+        requests.push(JSON.parse(init?.body as string))
+        return new Response('semantic reads unavailable', { status: 503 })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
+    await flushPromises()
+
+    expect(requests).toHaveLength(2)
+    expect(requests[0]!.items.map((item) => item.target.kind)).toEqual(['territory_cohort', 'territory'])
+    expect(requests[1]!.items).toHaveLength(1)
+    expect(requests[1]!.items[0]!.target.kind).toBe('territory_cohort')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Les indicateurs de ce thème ne sont pas disponibles.')
+    expect(wrapper.find('[data-clef="densite"] .valeur-numerique').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('does not start facts-only recovery after the paired read belongs to a cancelled fiche navigation', async () => {
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
+    metadata.scalar_contracts = { densite: metadata.scalar_contracts.densite }
+    const resources = semanticScalarResources('demographie', metadata)
+    const model = modeleAvecContextesComparaison()
+    model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    let failOldRequest: (() => void) | undefined
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
+        requests.push(request)
+        if (requests.length === 1) {
+          return new Promise<Response>((resolve) => {
+            failOldRequest = () => resolve(new Response('old paired read unavailable', { status: 503 }))
+          })
+        }
+        return new Response(JSON.stringify(semanticScalarBatch('demographie', metadata,
+          request.items, '22002', () => 22222)))
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
+    vi.stubGlobal('fetch', fetchApi)
+    const charger = vi.fn(async (_type: string, code: string) => {
+      const routeModel = structuredClone(model)
+      const target = routeModel.cohortTerritories!.find((territory: any) => territory.territoire === code)!
+      routeModel.territory = target
+      routeModel.territories = [target, ...routeModel.territories.filter((territory: any) => territory.territoire !== code)]
+      return routeModel
+    })
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie', charger)
+    await flushPromises()
+    expect(requests).toHaveLength(1)
+
+    await router.push('/territoire/commune/22002?theme=demographie')
+    await flushPromises()
+    expect(requests).toHaveLength(2)
+    failOldRequest!()
+    await flushPromises()
+    expect(requests).toHaveLength(2)
+    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe('22 222')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
   it('Habitat scalar cohort replaces only the scalar page and preserves the price trajectory', async () => {
     await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_habitat.json'), 'utf8'))
