@@ -13,6 +13,21 @@ import type { BpeAccessProfileFact, MobiliteAccessRamp, MobiliteBuildingDistribu
 import type { TrajectoryMetadata } from '@/payload/types'
 import { routes } from '@/router'
 
+/** Return the rendered tick boxes that intersect a y-axis title lane. */
+export function auditYAxisTitleTickOverlap(title: Element, labels: readonly Element[]) {
+  const { x, y, right, bottom } = title.getBoundingClientRect()
+  const titleRect = { x, y, right, bottom }
+  const labelRects = labels.map((label) => {
+    const rect = label.getBoundingClientRect()
+    return { text: label.textContent?.trim() ?? '', x: rect.x, y: rect.y, right: rect.right, bottom: rect.bottom }
+  })
+  const overlaps = labelRects.filter((label) =>
+    label.x < titleRect.right && label.right > titleRect.x &&
+    label.y < titleRect.bottom && label.bottom > titleRect.y,
+  )
+  return { titleRect, labelRects, overlaps }
+}
+
 export async function mountPlainCahier(
   container: Element,
   content: ThemeContent,

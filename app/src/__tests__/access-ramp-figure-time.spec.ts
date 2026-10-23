@@ -39,6 +39,22 @@ function timeRamp(overrides: Partial<TimeRampFigureData> = {}): TimeRampFigureDa
 }
 
 describe('AccessRampFigureCahier time ramp', () => {
+  it('preserves the original time-ramp viewBox and all base margins before measurement', () => {
+    const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Rennes' } })
+    const svg = wrapper.find('.access-ramp-svg')
+    const frame = wrapper.find('.access-ramp-cahier--time')
+    const axis = wrapper.find('.access-ramp-axis')
+
+    expect(svg.attributes('viewBox')).toBe('0 0 640 300')
+    expect(frame.attributes('style')).toContain('--cahier-figure-grid-left: 10%;')
+    expect(frame.attributes('style')).toContain('--cahier-figure-grid-right: 10.63%;')
+    expect(frame.attributes('style')).toContain('--cahier-figure-grid-top: 7.33%;')
+    expect(frame.attributes('style')).toContain('--cahier-figure-grid-bottom: 20.67%;')
+    expect(axis.attributes('x1')).toBe('64')
+    expect(axis.attributes('x2')).toBe('572')
+    expect(axis.attributes('y1')).toBe('238')
+  })
+
   it('toggles each mode and its reference together with accessible selected state', async () => {
     const wrapper = mount(AccessRampFigureCahier, { props: { timeRamp: timeRamp(), territoryName: 'Territoire test' } })
     const car = wrapper.find('button[aria-pressed="true"]')

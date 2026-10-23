@@ -47,6 +47,22 @@ const ramp: MobiliteAccessRamp = {
 }
 
 describe('AccessRampFigureCahier', () => {
+  it('preserves its original viewBox and base margins before widening the measured left rail', () => {
+    const wrapper = mount(AccessRampFigureCahier, { props: { ramp, territoryName: 'Rennes' } })
+    const svg = wrapper.find('.access-ramp-svg')
+    const frame = wrapper.find('.access-ramp-cahier')
+    const axis = wrapper.find('.access-ramp-axis')
+
+    expect(svg.attributes('viewBox')).toBe('0 0 640 300')
+    expect(frame.attributes('style')).toContain('--cahier-figure-grid-left: 10%;')
+    expect(frame.attributes('style')).toContain('--cahier-figure-grid-right: 10.63%;')
+    expect(frame.attributes('style')).toContain('--cahier-figure-grid-top: 7.33%;')
+    expect(frame.attributes('style')).toContain('--cahier-figure-grid-bottom: 20.67%;')
+    expect(axis.attributes('x1')).toBe('64')
+    expect(axis.attributes('x2')).toBe('572')
+    expect(axis.attributes('y1')).toBe('238')
+  })
+
   it('renders territory and comparison curves with cut-wide anchored tooltips', async () => {
     const wrapper = mount(AccessRampFigureCahier, {
       props: {

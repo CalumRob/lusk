@@ -71,12 +71,18 @@ function cssDeclarations(source: string, selector: string): Map<string, string> 
   }))
 }
 
-function expectUnboxedModeMapLabel(source: string, selector: string): void {
+function expectMapLabelTreatment(
+  source: string,
+  selector: string,
+  expectedColor: string,
+  expectedTextShadow: string | null = null,
+): void {
   const declarations = cssDeclarations(source, selector)
-  expect(declarations.get('color'), `${selector} must retain the mode-specific label ink`).toBe('var(--mode-ring)')
-  for (const decoration of ['background', 'background-color', 'background-image', 'text-shadow']) {
+  expect(declarations.get('color'), `${selector} must retain its pre-W2 map-label ink`).toBe(expectedColor)
+  for (const decoration of ['background', 'background-color', 'background-image', 'box-shadow']) {
     expect(declarations.has(decoration), `${selector} must not acquire ${decoration} treatment`).toBe(false)
   }
+  expect(declarations.get('text-shadow') ?? null, `${selector} must preserve only its pre-W2 text shadow`).toBe(expectedTextShadow)
 }
 
 describe('Cahier typography roles', () => {
@@ -104,15 +110,20 @@ describe('Cahier typography roles', () => {
   it('keeps map titles and numbers on their original mode-specific color', () => {
     expect(cssRule(figureCss, '.cahier-figure-legend')).toContain('font: var(--text-caption)')
     expect(cssRule(figureCss, '.cahier-figure-tooltip')).toContain('font: var(--text-caption)')
-    expectUnboxedModeMapLabel(mapPanelSource, '.map-panel-number')
+    expectMapLabelTreatment(mapPanelSource, '.map-panel-number', 'var(--mode-ring)', '0 1px 4px var(--paper)')
     expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('font: var(--text-caption)')
-    expectUnboxedModeMapLabel(blankMapSlotsSource, '.map-panel-label')
+    expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('letter-spacing: var(--text-caption-tracking)')
+    expectMapLabelTreatment(blankMapSlotsSource, '.map-panel-label', 'var(--mode-ring)')
     expect(cssRule(blankMapSlotsSource, '.map-panel-label')).toContain('font: var(--text-overline)')
-    expectUnboxedModeMapLabel(blankMapSlotsSource, '.blank-map-slot__number')
+    expectMapLabelTreatment(blankMapSlotsSource, '.blank-map-slot__number', 'var(--mode-ring)')
     expect(cssRule(blankMapSlotsSource, '.blank-map-slot__number')).toContain('font: var(--text-caption)')
-    expectUnboxedModeMapLabel(diversityMapSource, '.aedar-diversity-loss-map-label')
-    expectUnboxedModeMapLabel(diversityMapSource, '.aedar-diversity-loss-map__number')
-    expectUnboxedModeMapLabel(cartographicBreakoutSource, '.map-panel-label')
+    expectMapLabelTreatment(diversityMapSource, '.aedar-diversity-loss-map-label', 'var(--mode-ring)')
+    expectMapLabelTreatment(diversityMapSource, '.aedar-diversity-loss-map__number', 'var(--mode-ring)')
+    expectMapLabelTreatment(cartographicBreakoutSource, '.map-panel-label', 'var(--mode-ring)')
+    expectMapLabelTreatment(cartographicBreakoutSource, '.map-section-number', 'var(--red)')
+    expectMapLabelTreatment(cartographicBreakoutSource, '.plate-apparatus-heading > .map-section-number', 'var(--red)')
+    expect(cssRule(cartographicBreakoutSource, '.map-section-number')).toContain('letter-spacing: var(--text-caption-tracking)')
+    expect(cssRule(cartographicBreakoutSource, '.plate-apparatus-heading > .map-section-number')).toContain('letter-spacing: var(--text-caption-tracking)')
     expect(tokensSource).not.toContain('--color-figure-map-label')
     expect(figureCss).not.toContain('--color-figure-map-label')
     expect(tokensSource).toContain('--color-figure-reference: color-mix(in srgb, var(--brand-500) 30%, var(--editorial-ink))')

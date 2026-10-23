@@ -173,10 +173,11 @@ try {
         const plot = root.querySelector('.bpe-profile-chart')
         const svg = root.querySelector('.bpe-profile-chart-svg')
         const axis = root.querySelector('g.cahier-figure-axes > line.cahier-figure-axis:nth-of-type(2)')
+        const horizontalAxis = root.querySelector('g.cahier-figure-axes > line.cahier-figure-axis:nth-of-type(1)')
         const firstBar = root.querySelector('.bpe-profile-bar')
         const labels = [...root.querySelectorAll('.cahier-figure-tick-label--y')]
         const title = root.querySelector('.cahier-figure-axis-title--y')
-        if (!frame || !plot || !svg || !axis || !firstBar || !labels.length || !title) {
+        if (!frame || !plot || !svg || !axis || !horizontalAxis || !firstBar || !labels.length || !title) {
           throw new Error('Long-y-label figure fixture did not mount completely')
         }
         const longestTick = labels.reduce((longest, label) => label.textContent.length > longest.length ? label.textContent : longest, '')
@@ -188,16 +189,12 @@ try {
         const axisLeft = Number(axis.getAttribute('x1'))
         const labelRail = Number.parseFloat(labels[0].style.left) * svg.viewBox.baseVal.width / 100
         const barX = Number(firstBar.getAttribute('x'))
-        const titleRight = title.getBoundingClientRect().right
-        const titleRect = title.getBoundingClientRect()
-        const labelRects = labels.map((label) => {
-          const { x, y, right, bottom } = label.getBoundingClientRect()
-          return { text: label.textContent, x, y, right, bottom }
-        })
-        const overlaps = labelRects.filter((label) =>
-          label.x < titleRect.right && label.right > titleRect.left &&
-          label.y < titleRect.bottom && label.bottom > titleRect.top,
-        )
+        const { titleRect, labelRects, overlaps } = fixture.auditYAxisTitleTickOverlap(title, labels)
+        const titleRight = titleRect.right
+        const axisRight = Number(horizontalAxis.getAttribute('x2'))
+        const profileCount = root.querySelectorAll('.bpe-profile-bars').length
+        const barWidth = Number(firstBar.getAttribute('width'))
+        const firstBarExpected = axisLeft + (axisRight - axisLeft) / (profileCount * 2) - barWidth - 3.5
         const labelBandLeft = Math.min(...labels.map((label) => label.getBoundingClientRect().left))
         return {
           viewport: innerWidth,
@@ -207,8 +204,12 @@ try {
           requiredRailWidth: railContract.titleLane + measuredLabelWidth + railContract.labelGap,
           frameRail,
           axisLeft,
+          axisRight,
           labelRail,
           barX,
+          barWidth,
+          profileCount,
+          firstBarExpected,
           overlaps,
           labelBandLeft,
           titleRight,
@@ -228,9 +229,11 @@ try {
       assert.deepEqual(longYAxisFigure.overlaps, [],
         `BPE profile y-axis title must not intersect any tick label at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
       assert(Math.abs(longYAxisFigure.frameRail - longYAxisFigure.axisLeft) < 0.5 &&
-        Math.abs(longYAxisFigure.labelRail - longYAxisFigure.axisLeft) < 0.5 &&
-        longYAxisFigure.barX >= longYAxisFigure.axisLeft,
-      `BPE frame, SVG axis and bars must share the measured rail at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
+        Math.abs(longYAxisFigure.labelRail - longYAxisFigure.axisLeft) < 0.5,
+      `BPE frame, SVG axis and HTML labels must share the measured rail at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
+      assert.equal(longYAxisFigure.profileCount, 4, 'Synthetic BPE fixture must render all four profile groups')
+      assert(Math.abs(longYAxisFigure.barX - longYAxisFigure.firstBarExpected) < 0.5,
+        `BPE territory bar must be positioned from the SVG axis rails and first category center at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
     }
 
     let accessRampLongYAxisFigure = null
@@ -273,8 +276,11 @@ try {
             const axisLeft = Number(axis.getAttribute('x1'))
             const axisRight = Number(axis.getAttribute('x2'))
             const labelRailWidth = Number.parseFloat(labels[0].style.left) * viewBoxWidth / 100
-            const frameRightPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-right'))
+            const frameStyle = getComputedStyle(frame)
+            const frameRightPercent = Number.parseFloat(frameStyle.getPropertyValue('--cahier-figure-grid-right'))
             const frameRightWidth = frameRightPercent * viewBoxWidth / 100
+            const frameTopWidth = Number.parseFloat(frameStyle.getPropertyValue('--cahier-figure-grid-top')) * viewBoxHeight / 100
+            const frameBottomWidth = Number.parseFloat(frameStyle.getPropertyValue('--cahier-figure-grid-bottom')) * viewBoxHeight / 100
             const markX = variant === 'time'
               ? Number(mark.getAttribute('d').match(/^M\s*([\d.]+)/u)?.[1])
               : Number(mark.getAttribute('cx'))
@@ -283,15 +289,7 @@ try {
             await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
             const tooltip = root.querySelector('.access-ramp-tooltip')
             const tooltipAnchor = tooltip?.style.getPropertyValue('--cahier-figure-tooltip-anchor-x') ?? ''
-            const titleRect = title.getBoundingClientRect()
-            const labelRects = labels.map((label) => {
-              const { x, y, right, bottom } = label.getBoundingClientRect()
-              return { text: label.textContent, x, y, right, bottom }
-            })
-            const overlaps = labelRects.filter((label) =>
-              label.x < titleRect.right && label.right > titleRect.left &&
-              label.y < titleRect.bottom && label.bottom > titleRect.top,
-            )
+            const { titleRect, labelRects, overlaps } = fixture.auditYAxisTitleTickOverlap(title, labels)
             return {
               variant,
               viewport: innerWidth,
@@ -309,7 +307,9 @@ try {
               tooltipAnchor,
               labelRailWidth,
               frameRightWidth,
-              titleRect: { x: titleRect.x, y: titleRect.y, right: titleRect.right, bottom: titleRect.bottom },
+              frameTopWidth,
+              frameBottomWidth,
+              titleRect,
               overlaps,
             }
           } finally {
@@ -329,8 +329,13 @@ try {
           `Access-ramp ${variant} y-axis title must not intersect any y-tick label at ${width}px: ${JSON.stringify(report)}`)
         assert(report.railWidth >= report.requiredRailWidth - 1,
           `Access-ramp ${variant} frame must reserve measured label width and title lane at ${width}px: ${JSON.stringify(report)}`)
-        assert.equal(report.viewBoxWidth, 820, `Access-ramp ${variant} must use its custom 820px geometry`)
+        assert.equal(report.viewBoxWidth, 640, `Access-ramp ${variant} must preserve its original 640px geometry`)
         assert.equal(report.viewBoxHeight, 300, `Access-ramp ${variant} must use its custom 300px geometry`)
+        assert(Math.abs(report.frameRightWidth - 68) < 0.1 &&
+          Math.abs(report.frameTopWidth - 22) < 0.1 &&
+          Math.abs(report.frameBottomWidth - 62) < 0.1 &&
+          report.railWidth >= 64,
+        `Access-ramp ${variant} must preserve its original top/right/bottom margins and only widen the left rail: ${JSON.stringify(report)}`)
         assert(Math.abs(report.axisLeft - report.railWidth) < 0.5 &&
           Math.abs(report.labelRailWidth - report.railWidth) < 0.5,
         `Access-ramp ${variant} SVG axis, HTML labels and frame must share one measured left rail at ${width}px: ${JSON.stringify(report)}`)
@@ -369,15 +374,7 @@ try {
           const viewBoxWidth = svg.viewBox.baseVal.width
           const plotRect = plot.getBoundingClientRect()
           const measuredLabelWidth = Math.max(...labels.map((label) => label.getBoundingClientRect().width))
-          const titleRect = title.getBoundingClientRect()
-          const labelRects = labels.map((label) => {
-            const { x, y, right, bottom } = label.getBoundingClientRect()
-            return { text: label.textContent, x, y, right, bottom }
-          })
-          const overlaps = labelRects.filter((label) =>
-            label.x < titleRect.right && label.right > titleRect.left &&
-            label.y < titleRect.bottom && label.bottom > titleRect.top,
-          )
+          const { labelRects, overlaps } = fixture.auditYAxisTitleTickOverlap(title, labels)
           const axisLeft = Number(axis.getAttribute('x1'))
           const axisRight = Number(axis.getAttribute('x2'))
           const railPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-left'))
@@ -498,15 +495,7 @@ try {
             const viewBoxWidth = svg.viewBox.baseVal.width
             const plotWidth = plot.getBoundingClientRect().width
             const measuredLabelWidth = Math.max(...labels.map((label) => label.getBoundingClientRect().width))
-            const titleRect = title.getBoundingClientRect()
-            const labelRects = labels.map((label) => {
-              const { x, y, right, bottom } = label.getBoundingClientRect()
-              return { text: label.textContent.trim(), x, y, right, bottom }
-            })
-            const overlaps = labelRects.filter((label) =>
-              label.x < titleRect.right && label.right > titleRect.left &&
-              label.y < titleRect.bottom && label.bottom > titleRect.top,
-            )
+            const { labelRects, overlaps } = fixture.auditYAxisTitleTickOverlap(title, labels)
             const axisLeft = Number(axis.getAttribute('x1'))
             const railPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-left'))
             const frameRail = railPercent * viewBoxWidth / 100
