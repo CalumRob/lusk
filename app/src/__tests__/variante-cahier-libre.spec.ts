@@ -945,9 +945,7 @@ describe('Variante E — partage de l’espace public', () => {
     )
     const pageHeading = regleCss(varianteCahierLibreStyles, '\\.page-heading h2')
     expect(pageHeading).toContain('font: var(--text-page-heading);')
-    expect(pageHeading).toContain('font-family: var(--font-display-title);')
-    expect(pageHeading).toContain('font-weight: 400;')
-    expect(pageHeading).toContain('line-height: 1;')
+    expect(pageHeading).not.toMatch(/font-(?:family|weight)\s*:|line-height\s*:/)
     expect(regleCss(varianteCahierLibreStyles, '\\.concept-group-heading h3')).toContain(
       'font-family: var(--font-narrative-lead);',
     )
@@ -967,6 +965,10 @@ describe('Variante E — partage de l’espace public', () => {
     expect(regleCss(varianteCahierLibreStyles, '\\.page-number span, \\.page-number small')).toContain(
       'font: var(--text-overline);',
     )
+    const pageNumberSpan = regleCss(varianteCahierLibreStyles, '\\.page-number span')
+    expect(pageNumberSpan).toContain('text-transform: uppercase;')
+    expect(pageNumberSpan).not.toMatch(/font-weight\s*:|letter-spacing\s*:/)
+    expect(varianteCahierLibreStyles).not.toMatch(/\.concept-group-label\s*\{\s*font-family\s*:/)
     expect(blocCss(varianteCahierLibreStyles, '@media (max-width: 760px)')).not.toContain(
       '.margin-sources a {',
     )

@@ -188,7 +188,7 @@ describe('DESIGN.md §3 — Typography', () => {
     expectToken('--text-h1', "700 clamp(1.75rem, 1.6667rem + 0.370vw, 2rem)/1.2 var(--font-display-title)")
     expectToken('--text-h1-tracking', '-0.015em')
 
-    expectToken('--text-page-heading', '600 clamp(1.35rem, 1rem + 1.556vw, 2.4rem)/1 var(--font-display-title)')
+    expectToken('--text-page-heading', '400 clamp(1.35rem, 1rem + 1.556vw, 2.4rem)/1 var(--font-display-title)')
 
     expectToken('--text-h2', "600 1.5rem/1.3 var(--font-section-title)")
     expectToken('--text-h2-tracking', '-0.01em')
