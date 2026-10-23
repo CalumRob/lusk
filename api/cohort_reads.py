@@ -863,7 +863,7 @@ def preflight_typed_reading_cohort(conn, item, resource, cohort, work_budget):
     facts = _bounded_count(conn, f"SELECT 1 FROM {resource.storage_relation} WHERE {where}",
         params, remaining, "Cohort typed-reading facts exceed the bounded work limit")
     work = len(cohort.members) + integrity_work + facts
-    selected = set(item.fields or resource.fields)
+    selected = set(resource.fields) if item.fields is None else set(item.fields)
     for side in resource.side_relations:
         # Evidence is only read/charged when selected, except absence evidence,
         # which must always be checked against its primary reading.
@@ -893,14 +893,11 @@ def preflight_typed_reading_cohort(conn, item, resource, cohort, work_budget):
 
 
 def read_typed_reading_cohort(conn, item, resource, cohort):
+    from api.typed_reading_snapshots import typed_reading_fact_fields
+
     marker, _side_markers, descriptor = _typed_reading_context(conn, item, resource, cohort)
-    selected = set(item.fields or resource.fields)
-    evidence_fields = {side["field"] for side in resource.side_relations}
-    mandatory_fact_fields = {"groupe", "story_key", "salience_reason", "status", "source_id", "vintage_id"}
-    selected_fact_fields = (set(resource.fields) - evidence_fields) & selected
-    fact_fields = [field for field in resource.fields
-                   if (field in selected or (selected_fact_fields and field in mandatory_fact_fields))
-                   and field not in evidence_fields]
+    selected = set(resource.fields) if item.fields is None else set(item.fields)
+    fact_fields = typed_reading_fact_fields(resource, item.fields)
     facts_by_member = {member["id"]: [] for member in cohort.members}
     members_with_facts = set()
     if fact_fields:

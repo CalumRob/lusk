@@ -493,7 +493,12 @@ def test_milieux_cohort_keeps_explicit_source_absence_separate_from_sparse_facts
     }]
     assert absence_projection.status_code == 200, absence_projection.text
     projected = absence_projection.json()["territories"]
-    assert all(item["facts"] == [] for item in projected)
+    assert projected[0]["facts"][0]["status"] == "measured"
+    assert projected[0]["facts"][0]["classification"] == "stable"
+    assert {"delta_population", "taux_variation_population", "artif_m2_par_habitant",
+            "artif_m3_par_habitant", "trajectoire_artif_par_habitant"}.isdisjoint(
+                projected[0]["facts"][0])
+    assert projected[1]["facts"] == []
     assert projected[0]["source_absences"] == []
     assert len(projected[1]["source_absences"]) == 1
 
@@ -850,7 +855,11 @@ def test_focal_milieux_absence_projection_keeps_sparse_state_honest(cohort_http)
                          if row["field_key"] == "artif_m2_par_habitant")
     assert state_binding["provenance_revision_id"] == "cohort-artif-revision"
     assert state_binding["source"]["version"] == "2026"
-    assert observed.json()["facts"] == []
+    observed_fact = observed.json()["facts"][0]
+    assert observed_fact["status"] == "measured"
+    assert observed_fact["classification"] == "stable"
+    assert {"delta_population", "taux_variation_population", "artif_m2_par_habitant",
+            "artif_m3_par_habitant", "trajectoire_artif_par_habitant"}.isdisjoint(observed_fact)
     assert observed.json()["source_absences"] == []
     assert absent.json()["facts"] == []
     assert absent.json()["source_absences"][0]["reason"] == "source_record_absent"
@@ -877,3 +886,97 @@ def test_typed_reading_fails_closed_when_selected_evidence_clock_is_missing(coho
         )
     assert response.status_code == 503, response.text
     assert response.json()["detail"] == "Typed-reading evidence provenance is unavailable"
+
+
+def test_typed_reading_status_projection_retains_declared_classification(cohort_http):
+    coordinates = {"groupe": ["etat-energetique-du-parc"]}
+    focal = cohort_http.focal("habitat_selected_reading", coordinates=coordinates, fields=["status"])
+    assert focal.status_code == 200, focal.text
+    focal_fact = focal.json()["facts"][0]
+    assert (focal_fact["status"], focal_fact["classification"]) == ("measured", "energivore")
+    assert {"part_passoires", "part_abc", "n_dpe"}.isdisjoint(focal_fact)
+
+    cohort = cohort_http.read("habitat_selected_reading", department_id="29", epci_id="cohort-e29",
+        coordinates=coordinates, fields=["status"])
+    assert cohort.status_code == 200, cohort.text
+    facts = [territory["facts"][0] for territory in cohort.json()["territories"]]
+    assert [(fact["status"], fact["classification"]) for fact in facts] == [
+        ("measured", "energivore"), ("suppressed", None)]
+    assert all({"part_passoires", "part_abc", "n_dpe"}.isdisjoint(fact) for fact in facts)
+
+
+def test_evidence_only_projection_preserves_focal_and_cohort_economy_facts_and_batch_parity(cohort_http):
+    coordinates = {"groupe": ["sante-et-taille"]}
+    focal_item = {"resource": "economie_selected_reading",
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+        "coordinates": coordinates, "fields": ["ranked_activities"], "intent": {"kind": "facts"}}
+    focal = cohort_http.client.post("/api/resources/read", json=focal_item)
+    assert focal.status_code == 200, focal.text
+    focal_fact = focal.json()["facts"][0]
+    assert {"groupe", "story_key", "salience_reason", "status", "source_id", "vintage_id", "source"} <= set(focal_fact)
+    assert (focal_fact["status"], focal_fact["source"]["version"]) == ("measured", "2026")
+    assert "classification" not in focal_fact
+
+    focal_batch = cohort_http.batch([{"id": "focal-evidence", **focal_item}])
+    assert focal_batch.status_code == 200, focal_batch.text
+    assert focal_batch.json()["results"][0]["data"] == focal.json()
+
+    cohort_kwargs = {"department_id": "29", "epci_id": "cohort-e29", "coordinates": coordinates,
+                     "fields": ["ranked_activities"]}
+    cohort = cohort_http.read("economie_selected_reading", **cohort_kwargs)
+    assert cohort.status_code == 200, cohort.text
+    cohort_facts = [territory["facts"][0] for territory in cohort.json()["territories"]]
+    assert [fact["status"] for fact in cohort_facts] == ["measured", "unavailable"]
+    assert all({"groupe", "story_key", "salience_reason", "status", "source_id", "vintage_id", "source"}
+               <= set(fact) for fact in cohort_facts)
+    assert cohort_facts[0]["source"]["version"] == "2026"
+    assert all("classification" not in fact for fact in cohort_facts)
+
+    cohort_batch = cohort_http.batch([cohort_http.item(
+        "economie_selected_reading", **cohort_kwargs, item_id="cohort-evidence")])
+    assert cohort_batch.status_code == 200, cohort_batch.text
+    assert cohort_batch.json()["results"][0]["data"] == cohort.json()
+
+
+def test_source_binding_only_projection_keeps_milieux_facts_and_absence_partition(cohort_http):
+    coordinates = {"groupe": ["artificialisation"]}
+    focal_item = {"resource": "milieux_selected_reading",
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+        "coordinates": coordinates, "fields": ["source_bindings"], "intent": {"kind": "facts"}}
+    focal = cohort_http.client.post("/api/resources/read", json=focal_item)
+    assert focal.status_code == 200, focal.text
+    focal_fact = focal.json()["facts"][0]
+    assert {"groupe", "story_key", "salience_reason", "classification", "status",
+            "source_id", "vintage_id", "source"} <= set(focal_fact)
+    assert (focal_fact["classification"], focal_fact["status"]) == ("stable", "measured")
+    assert focal_fact["source"] == {
+        "source_id": "cohort-source", "name": "Cohort source", "vintage_id": "cohort-v1",
+        "version": "2026", "reference_date": "2026-01-01", "publication_date": "2026-01-02",
+    }
+    assert {"delta_population", "taux_variation_population", "artif_m2_par_habitant",
+            "artif_m3_par_habitant", "trajectoire_artif_par_habitant"}.isdisjoint(focal_fact)
+
+    focal_batch = cohort_http.batch([{"id": "focal-source-bindings", **focal_item}])
+    assert focal_batch.status_code == 200, focal_batch.text
+    assert focal_batch.json()["results"][0]["data"] == focal.json()
+
+    cohort_kwargs = {"department_id": "29", "epci_id": "cohort-e29", "coordinates": coordinates,
+                     "fields": ["source_bindings"]}
+    cohort = cohort_http.read("milieux_selected_reading", **cohort_kwargs)
+    assert cohort.status_code == 200, cohort.text
+    territories = cohort.json()["territories"]
+    cohort_fact = territories[0]["facts"][0]
+    assert {"groupe", "story_key", "salience_reason", "classification", "status",
+            "source_id", "vintage_id", "source"} <= set(cohort_fact)
+    assert cohort_fact["classification"] == "stable"
+    assert cohort_fact["source"]["vintage_id"] == "cohort-v1"
+    assert cohort_fact["source"]["reference_date"] == "2026-01-01"
+    assert {"delta_population", "taux_variation_population", "artif_m2_par_habitant",
+            "artif_m3_par_habitant", "trajectoire_artif_par_habitant"}.isdisjoint(cohort_fact)
+    assert territories[1]["facts"] == []
+    assert territories[1]["source_absences"][0]["reason"] == "source_record_absent"
+
+    cohort_batch = cohort_http.batch([cohort_http.item(
+        "milieux_selected_reading", **cohort_kwargs, item_id="cohort-source-bindings")])
+    assert cohort_batch.status_code == 200, cohort_batch.text
+    assert cohort_batch.json()["results"][0]["data"] == cohort.json()

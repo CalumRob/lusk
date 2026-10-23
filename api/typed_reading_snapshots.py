@@ -3,6 +3,16 @@
 from fastapi import HTTPException
 
 
+def typed_reading_fact_fields(resource, requested_fields):
+    """Project typed readings without dropping their native fact rows or metadata."""
+    evidence_fields = {side["field"] for side in resource.side_relations}
+    selected = set(resource.fields) if requested_fields is None else set(requested_fields)
+    mandatory = {"groupe", "story_key", "salience_reason", "classification", "status",
+                 "source_id", "vintage_id"}
+    return [field for field in resource.fields
+            if field not in evidence_fields and (field in selected or field in mandatory)]
+
+
 def typed_reading_descriptor(conn, resource, marker):
     """Return only descriptor evidence actually published for this typed resource."""
     if resource.publication_table == "demographic_typed_reading":

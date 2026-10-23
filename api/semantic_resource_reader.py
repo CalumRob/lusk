@@ -377,6 +377,7 @@ class SemanticResourceReader:
         side_markers = []
         coordinates = item.coordinates or {}
         group = coordinates.get("groupe")
+        selected_fields = set(resource.fields) if item.fields is None else set(item.fields)
         relation = resource.storage_relation
         for side in resource.side_relations:
             side_marker = conn.execute("""SELECT content_version,reference_content_version,row_count
@@ -411,8 +412,7 @@ class SemanticResourceReader:
                 " AND ".join(side_clauses), side_params).fetchone()[0])
             if work > work_budget:
                 raise HTTPException(413, "Resource request exceeds the bounded work limit")
-            if side["storage_relation"] == "milieux_reading_source" and "source_bindings" in (
-                    set(item.fields or resource.fields)):
+            if side["storage_relation"] == "milieux_reading_source" and "source_bindings" in selected_fields:
                 remaining = work_budget - work
                 revisions = conn.execute("""SELECT count(*) FROM (
                     SELECT a.provenance_revision_id FROM milieux_reading_source b
@@ -431,7 +431,7 @@ class SemanticResourceReader:
 
     @staticmethod
     def _typed_reading_read(conn, item, resource):
-        from api.typed_reading_snapshots import typed_reading_descriptor
+        from api.typed_reading_snapshots import typed_reading_descriptor, typed_reading_fact_fields
 
         marker = conn.execute("""SELECT p.content_version,p.reference_content_version,t.content_version
             FROM table_publication p LEFT JOIN table_publication t
@@ -441,13 +441,8 @@ class SemanticResourceReader:
             raise HTTPException(503, "Typed-reading publication is unavailable or stale")
         descriptor = typed_reading_descriptor(conn, resource, marker)
         coordinates = item.coordinates or {}
-        selected_fields = set(item.fields or resource.fields)
-        evidence_fields = {side["field"] for side in resource.side_relations}
-        selected_fact_fields = (set(resource.fields) - evidence_fields) & selected_fields
-        mandatory_fact_fields = {"groupe", "story_key", "salience_reason", "status", "source_id", "vintage_id"}
-        fields = [field for field in resource.fields
-                  if (field in selected_fields or (selected_fact_fields and field in mandatory_fact_fields))
-                  and field not in evidence_fields]
+        selected_fields = set(resource.fields) if item.fields is None else set(item.fields)
+        fields = typed_reading_fact_fields(resource, item.fields)
         clauses = ["territory_id=%s", "territory_type=%s"]
         params = [item.target.id, item.target.type]
         if coordinates.get("groupe"):
