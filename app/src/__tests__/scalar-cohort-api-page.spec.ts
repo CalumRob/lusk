@@ -2,7 +2,7 @@ import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { chargerCohorteScalaire, chargerCohortesScalaires, chargerRangScalaire,
-  indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires,
+  chargerComparaisonsScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires,
   scalarCohortEnabled, validerEnregistrementScalaires } from '../payload/scalarCohort'
 import { territoiresFixture, indicateursEconomieFixture } from '../payload/fixtures'
 import { validerThemeMetadata } from '../payload/validate'
@@ -279,7 +279,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
         eligible_count: 2, missing_count: 0, rank: 1, rank_size: 2 },
     }))
     await expect(chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture))
-      .rejects.toThrow('groupe déclaré')
+      .rejects.toThrow('groupe demandé')
   })
 
   it.each([
@@ -300,5 +300,38 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
         selection: null, scope: { kind: 'same_level', territory_type: 'epci', member_count: 2 }, result }
     })
     await expect(chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture)).rejects.toThrow()
+  })
+
+  it('keeps an explicitly empty fiche comparison honest and does not attach a rank', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const fetcher = installCatalogueAndReads([declaration('demographie', indicator)], (item) => ({
+      resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+      shape: 'scalar', content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
+      selection: [], scope: { kind: 'explicit_selection', member_count: 0 },
+      result: { indicator_id: indicator, status: 'unavailable', unit: page.unit, direction: page.direction,
+        source_facet: indicator, descriptor_version: 'scalar-descriptor-v3', selected_member_count: 0,
+        eligible_count: 0, missing_count: 0, rank: null, rank_size: null },
+    }))
+    await expect(chargerComparaisonsScalaires([indicator], 'demographie', { [indicator]: page }, focal,
+      territoiresFixture, { kind: 'selected', members: [], scope: {
+        kind: 'explicit_selection', territoryType: 'commune', memberCount: 0, label: null,
+      } })).resolves.toEqual({ [indicator]: null })
+    expect(fetcher).not.toHaveBeenCalled()
+  })
+
+  it('keeps a singleton comparison without a rank or unnecessary API read', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const fetcher = installCatalogueAndReads([declaration('demographie', indicator)], () => {
+      throw new Error('A singleton comparison must not acquire a rank')
+    })
+    await expect(chargerComparaisonsScalaires([indicator], 'demographie', { [indicator]: page }, focal,
+      territoiresFixture, { kind: 'selected', members: [{ type: 'commune', id: focal.territoire }], scope: {
+        kind: 'explicit_selection', territoryType: 'commune', memberCount: 1, label: 'commune seule',
+      } })).resolves.toEqual({ [indicator]: null })
+    expect(fetcher).not.toHaveBeenCalled()
   })
 })

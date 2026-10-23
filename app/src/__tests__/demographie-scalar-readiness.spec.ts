@@ -88,11 +88,37 @@ describe('Démographie scalar readiness on the territory fiche', () => {
         const body = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
         const results = body.items.map((item) => {
           const indicator = String(item.resource)
-          const target = item.target as { type: string; department_id?: string | null; epci_id?: string | null }
+          const target = item.target as { kind: string; type: string; id?: string; department_id?: string | null; epci_id?: string | null }
           const page = catalogue.indicator_pages[indicator]
           const staticRow = staticRows.find((row: any) => row.key === indicator && row.territoire === territory.territoire)
           if (!page || !staticRow) throw new Error(`Missing published fixture for ${indicator}`)
           requested.push(indicator)
+          if (target.kind === 'territory') {
+            const focal = cohortTerritories.find((member: any) => member.type === target.type && member.territoire === target.id)
+            const selectedIntent = item.intent.kind === 'selected_comparison'
+            const members = selectedIntent
+              ? item.intent.members.map((selection: { id: string }) => cohortTerritories.find((member: any) => member.territoire === selection.id))
+              : target.type === 'commune'
+                ? cohortTerritories.filter((member: any) => member.type === 'commune' && member.classe_densite_code === focal?.classe_densite_code)
+                : cohortTerritories.filter((member: any) => member.type === target.type)
+            const scope = selectedIntent
+              ? { kind: 'explicit_selection', member_count: members.length }
+              : target.type === 'commune'
+                ? { kind: 'density_class', territory_type: 'commune', density_class_code: focal?.classe_densite_code,
+                    member_count: members.length }
+                : { kind: 'same_level', territory_type: target.type, member_count: members.length }
+            const available = members.length >= 2 && members.some((member: any) => member?.territoire === territory.territoire)
+            const data = { resource: indicator, target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+              shape: 'scalar', content_version: 'test-published-scalar-version', reference_content_version: 'reference-test-v1',
+              selection: selectedIntent ? item.intent.members.map((member: { type: string; id: string }) =>
+                ({ territory_type: member.type, territory_id: member.id })) : null,
+              scope, result: { indicator_id: indicator, status: available ? 'available' : 'unavailable',
+                unit: page.unit, direction: page.comparison?.direction ?? page.direction,
+                source_facet: page.comparison?.indicator ?? indicator, descriptor_version: 'test-scalar-v1',
+                selected_member_count: members.length, eligible_count: members.length, missing_count: 0,
+                rank: available ? 1 : null, rank_size: available ? members.length : null } }
+            return { id: item.id, resource: indicator, data }
+          }
           const members = cohortTerritories.filter((member: any) => member.type === target.type &&
             (!target.department_id || member.departement === target.department_id) &&
             (!target.epci_id || member.epci === target.epci_id))
@@ -141,7 +167,8 @@ describe('Démographie scalar readiness on the territory fiche', () => {
     await flushPromises()
 
     expect(model.themes.demographie.theme_metadata.indicator_pages.densite.unit).not.toBe(catalogue.indicator_pages.densite.unit)
-    expect(requested.sort()).toEqual(scalarIds.sort())
+    expect(requested).toHaveLength(scalarIds.length * 2)
+    expect(new Set(requested)).toEqual(new Set(scalarIds))
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Les indicateurs de ce thème ne sont pas disponibles.')
     const evolution = staticRows.find((row: any) => row.key === 'evolution_1968' && row.territoire === targetId)

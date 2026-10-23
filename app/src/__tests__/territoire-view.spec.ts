@@ -27,7 +27,7 @@ import {
   validerModeleTerritoire,
 } from '../payload/territoryReadModel'
 import type { ChargerModeleTerritoire } from '../payload/territoryReadModel'
-import { PayloadError } from '../payload/validate'
+import { PayloadError, validerThemeMetadata } from '../payload/validate'
 import { payloadDepuisModeleTerritoire } from '../payload/territoryReadModel'
 import { territoryFactsFor } from '../fiche/content/territoryFacts'
 import { AEDAR_TYPEQU_REGISTRY } from '../fiche/content/aedarTypequRegistry'
@@ -57,9 +57,9 @@ function semanticScalarResources(theme: string, metadata: any) {
     return { resource_id: indicator, theme_id: theme, indicator_id: indicator,
       label: page.label, unit: page.unit, direction: page.comparison?.direction ?? page.direction,
       allowed_levels: contract.allowed_levels ?? page.levels, sources: page.sources,
-      shapes: ['scalar'], target_kinds: ['territory_cohort'],
+      shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
       fields: ['value', 'support_count', 'denominator_count'],
-      intents: ['facts'] }
+      intents: ['facts', 'fixed_comparison', 'selected_comparison'] }
   })
 }
 
@@ -68,9 +68,36 @@ function semanticScalarBatch(theme: string, metadata: any, items: Array<Record<s
   const territories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
   return { contract: 'semantic-read-batch-v1', results: items.map((item) => {
     const indicator = item.resource as string
-    const target = item.target as { type: string; department_id?: string | null; epci_id?: string | null }
+    const target = item.target as { kind: string; type: string; id?: string; department_id?: string | null; epci_id?: string | null }
     const contract = metadata.scalar_contracts[indicator]
     const page = metadata.indicator_pages[indicator]
+    if (target.kind === 'territory') {
+      const focal = territories.find((member: any) => member.type === target.type && member.territoire === target.id)
+      const selectedIntent = item.intent.kind === 'selected_comparison'
+      const members = selectedIntent
+        ? item.intent.members.map((selection: { id: string }) => territories.find((member: any) => member.territoire === selection.id))
+        : target.type === 'commune'
+          ? territories.filter((member: any) => member.type === 'commune' && member.classe_densite_code === focal?.classe_densite_code)
+          : territories.filter((member: any) => member.type === target.type)
+      const scope = selectedIntent
+        ? { kind: 'explicit_selection', member_count: members.length }
+        : target.type === 'commune'
+          ? { kind: 'density_class', territory_type: 'commune', density_class_code: focal?.classe_densite_code,
+              member_count: members.length }
+          : { kind: 'same_level', territory_type: target.type, member_count: members.length }
+      const available = members.length >= 2 && members.some((member: any) => member?.territoire === focalId)
+      const data = { resource: indicator, target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+        shape: 'scalar', content_version: `${theme}-scalar-test-v1`, reference_content_version: 'reference-test-v1',
+        selection: selectedIntent ? item.intent.members.map((member: { type: string; id: string }) =>
+          ({ territory_type: member.type, territory_id: member.id })) : null,
+        scope, result: { indicator_id: indicator, status: available ? 'available' : 'unavailable',
+          unit: page.unit, direction: page.comparison?.direction ?? page.direction,
+          source_facet: contract.comparison_facet ?? page.comparison?.indicator ?? indicator,
+          descriptor_version: `${theme}-scalar-descriptor-v1`, selected_member_count: members.length,
+          eligible_count: members.length, missing_count: 0, rank: available ? 1 : null,
+          rank_size: available ? members.length : null } }
+      return { id: item.id, resource: indicator, data }
+    }
     const members = territories.filter((member: any) => member.type === target.type &&
       (!target.department_id || member.departement === target.department_id) &&
       (!target.epci_id || member.epci === target.epci_id))
@@ -820,7 +847,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
     const { wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci', chargerModeleTerritoire)
-    expect(requestedIndicators).toEqual(registered)
+    expect(requestedIndicators).toHaveLength(registered.length * 2)
+    expect(new Set(requestedIndicators)).toEqual(new Set(registered))
     expect(pending).toHaveLength(1)
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('987 654 321')
     pending.forEach((resolve) => resolve())
@@ -830,14 +858,139 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(batchCalls).toHaveLength(1)
     expect(fetchApi).toHaveBeenCalledWith('/data/theme_demographie.json')
     const batchRequest = JSON.parse((batchCalls[0]![1] as RequestInit).body as string)
-    expect(batchRequest.items).toHaveLength(registered.length)
-    expect(batchRequest.items.every((item: any) => item.target.epci_id === published.territory.epci &&
+    expect(batchRequest.items).toHaveLength(registered.length * 2)
+    const factItems = batchRequest.items.filter((item: any) => item.target.kind === 'territory_cohort')
+    const comparisonItems = batchRequest.items.filter((item: any) => item.target.kind === 'territory')
+    expect(factItems).toHaveLength(registered.length)
+    expect(comparisonItems).toHaveLength(registered.length)
+    expect(factItems.every((item: any) => item.target.epci_id === published.territory.epci &&
       item.target.department_id === null)).toBe(true)
+    expect(comparisonItems.every((item: any) => item.intent.kind === 'selected_comparison')).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(text).toContain('987')
     expect(text).toContain('98 765 432')
     expect(text).not.toContain('24,45')
+    wrapper.unmount()
+  })
+
+  it('renders the default scalar rank and changes only comparison reads across fiche scopes, ignoring a late old scope', async () => {
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
+    const references = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')) as any[]
+    const resources = semanticScalarResources('demographie', metadata)
+    const model = modeleAvecContextesComparaison()
+    model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
+    const contextLabels = model.themes.mobilite!.comparisons
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    let resolveLateEpci: (() => void) | undefined
+    let epciAttempts = 0
+    const responseFor = (item: Record<string, any>) => {
+      const indicator = item.resource as string
+      const page = metadata.indicator_pages[indicator]
+      const contract = metadata.scalar_contracts[indicator]
+      if (item.target.kind === 'territory_cohort') {
+        const data = semanticScalarBatch('demographie', metadata, [item], '22001', () => 4321).results[0]!.data
+        return { id: item.id, resource: indicator, data }
+      }
+      const selected = item.intent.kind === 'selected_comparison'
+        ? item.intent.members.map((member: { type: string; id: string }) => references.find((ref) => ref.territoire === member.id)!)
+        : item.target.type === 'commune'
+          ? references.filter((ref) => ref.type === 'commune' && ref.classe_densite_code === references.find((ref) => ref.territoire === item.target.id)?.classe_densite_code)
+          : references.filter((ref) => ref.type === item.target.type)
+      const scope = item.intent.kind === 'selected_comparison'
+        ? { kind: 'explicit_selection', member_count: selected.length }
+        : item.target.type === 'commune'
+          ? { kind: 'density_class', territory_type: 'commune',
+              density_class_code: references.find((ref) => ref.territoire === item.target.id)?.classe_densite_code,
+              member_count: selected.length }
+          : { kind: 'same_level', territory_type: item.target.type, member_count: selected.length }
+      const available = selected.length > 0
+      return { id: item.id, resource: indicator, data: {
+        resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+        shape: 'scalar', content_version: 'demographie-scalar-test-v1', reference_content_version: 'reference-test-v1',
+        selection: item.intent.kind === 'selected_comparison'
+          ? item.intent.members.map((member: { type: string; id: string }) => ({ territory_type: member.type, territory_id: member.id }))
+          : null,
+        scope,
+        result: { indicator_id: indicator, status: available ? 'available' : 'unavailable',
+          unit: page.unit, direction: page.comparison?.direction ?? page.direction,
+          source_facet: contract.comparison_facet, descriptor_version: 'scalar-descriptor-test-v1',
+          selected_member_count: selected.length, eligible_count: selected.length, missing_count: 0,
+          rank: available ? 1 : null, rank_size: available ? selected.length : null },
+      } }
+    }
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
+        requests.push(request)
+        const response = new Response(JSON.stringify({ contract: 'semantic-read-batch-v1',
+          results: request.items.map(responseFor) }))
+        const selection = request.items[0]?.intent
+        const bretagneMemberCount = references.filter((reference) => reference.type === 'commune').length
+        if (request.items.every((item) => item.target.kind === 'territory') && selection?.kind === 'selected_comparison' &&
+            selection.members.some((member: { id: string }) => member.id === '22001') &&
+            selection.members.length < bretagneMemberCount) {
+          epciAttempts++
+          if (epciAttempts === 1) return new Response('comparison unavailable', { status: 503 })
+          if (epciAttempts === 2) return new Promise<Response>((resolve) => { resolveLateEpci = () => resolve(response) })
+        }
+        return response
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
+    await flushPromises()
+
+    expect(requests.length).toBeGreaterThan(0)
+    const focalFigure = wrapper.get('[data-clef="densite"]')
+    const valueBefore = focalFigure.get('.valeur-numerique').text()
+    expect(valueBefore).toBe('4 321')
+    expect(focalFigure.get('.puce-rang-texte').text()).toContain(contextLabels.densite!.scope.label)
+    const initialRequest = requests[0]!
+    expect(initialRequest.items).toHaveLength(Object.keys(metadata.scalar_contracts).length * 2)
+    expect(initialRequest.items.filter((item) => item.target.kind === 'territory_cohort')).toHaveLength(Object.keys(metadata.scalar_contracts).length)
+    expect(initialRequest.items.filter((item) => item.target.kind === 'territory')).toHaveLength(Object.keys(metadata.scalar_contracts).length)
+
+    await router.replace({ query: { theme: 'demographie', comparaison: 'epci' } })
+    await flushPromises()
+    expect(requests).toHaveLength(2)
+    expect(requests[1]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
+    const focalReference = references.find((reference) => reference.type === 'commune' && reference.territoire === '22001')
+    const epciMembers = references.filter((reference) => reference.type === 'commune' && reference.epci === focalReference?.epci)
+      .map((reference) => ({ type: reference.type, id: reference.territoire }))
+      .sort((left, right) => left.id.localeCompare(right.id))
+    expect(requests[1]!.items[0]!.intent.members).toEqual(epciMembers)
+    expect(wrapper.get('[role="alert"]').text()).toContain('rangs de comparaison')
+    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(valueBefore)
+
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(requests).toHaveLength(3)
+    expect(requests[2]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
+
+    await router.replace({ query: { theme: 'demographie', comparaison: 'bretagne' } })
+    await flushPromises()
+    expect(requests).toHaveLength(4)
+    expect(requests[3]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
+    const bretagneMembers = references.filter((reference) => reference.type === 'commune')
+      .map((reference) => ({ type: reference.type, id: reference.territoire }))
+      .sort((left, right) => left.id.localeCompare(right.id))
+    expect(requests[3]!.items[0]!.intent.members).toEqual(bretagneMembers)
+    const currentFigure = wrapper.get('[data-clef="densite"]')
+    expect(currentFigure.get('.valeur-numerique').text()).toBe(valueBefore)
+    expect(currentFigure.get('.puce-rang-texte').text()).toContain(contextLabels.bretagne!.scope.label)
+
+    resolveLateEpci!()
+    await flushPromises()
+    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(valueBefore)
+    expect(wrapper.get('[data-clef="densite"] .puce-rang-texte').text()).toContain(contextLabels.bretagne!.scope.label)
+    expect(requests.slice(1).flatMap((request) => request.items).some((item) => item.target.kind === 'territory_cohort')).toBe(false)
     wrapper.unmount()
   })
 
@@ -1399,7 +1552,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('reloads scalar facts when comparison scope changes and ignores the previous response', async () => {
+  it('keeps acquired scalar facts when comparison scope changes and ignores a late rank response', async () => {
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
@@ -1413,47 +1566,57 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const scalarMetadata = { scalar_contracts: model.themes.demographie!.metadata.scalar_contracts,
       indicator_pages: modelPages }
     const resources = semanticScalarResources('demographie', scalarMetadata)
-    const oldResponses: Array<() => void> = []
-    const newResponses: Array<() => void> = []
-    const oldIndicators: string[] = []
-    const newIndicators: string[] = []
-    const fetchApi = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    const bretagneMemberCount = model.cohortTerritories!.filter((member: any) => member.type === 'commune').length
+    let resolveLateBretagne: (() => void) | undefined
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/api/resources') return Promise.resolve(new Response(JSON.stringify({
         contract: 'semantic-resource-catalogue-v1', resources,
       })))
       if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
       const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
-      const old = Boolean(request.items[0]?.target.epci_id)
-      const indicators = request.items.map((item) => item.resource)
-      ;(old ? oldIndicators : newIndicators).push(...indicators)
-      const value = old ? 111111111 : 222222222
       const response = new Response(JSON.stringify(semanticScalarBatch('demographie', scalarMetadata,
-        request.items, '22001', () => value)), { status: 200 })
-      return new Promise<Response>((resolve) => {
-        ;(old ? oldResponses : newResponses).push(() => resolve(response))
-      })
+        request.items, '22001', () => 111111111)), { status: 200 })
+      requests.push(request)
+      const selection = request.items[0]?.intent
+      if (request.items.every((item) => item.target.kind === 'territory') &&
+          selection?.kind === 'selected_comparison' && selection.members.length === bretagneMemberCount) {
+        return new Promise<Response>((resolve) => { resolveLateBretagne = () => resolve(response) })
+      }
+      return response
     })
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci', vi.fn(async () => model))
-    expect(oldResponses).toHaveLength(1)
-    expect(oldIndicators.sort()).toEqual(Object.keys(metadata.scalar_contracts).sort())
+    await flushPromises()
+    expect(requests).toHaveLength(1)
+    const acquiredValue = wrapper.get('[data-clef="densite"] .valeur-numerique').text()
+    expect(acquiredValue).toBe('111 111 111')
+    expect(requests[0]!.items).toHaveLength(Object.keys(metadata.scalar_contracts).length * 2)
+    expect(requests[0]!.items.filter((item) => item.target.kind === 'territory_cohort')).toHaveLength(Object.keys(metadata.scalar_contracts).length)
+    expect(requests[0]!.items.filter((item) => item.target.kind === 'territory')).toHaveLength(Object.keys(metadata.scalar_contracts).length)
+
     await router.push('/territoire/commune/22001?theme=demographie&comparaison=bretagne')
     await flushPromises()
-    expect(newResponses).toHaveLength(1)
-    expect(newIndicators.sort()).toEqual(Object.keys(metadata.scalar_contracts).sort())
-    const newRead = fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch').at(-1)!
-    const newRequest = JSON.parse((newRead[1] as RequestInit).body as string)
-    expect(newRequest.items.every((item: any) => item.target.epci_id === null && item.target.department_id === null)).toBe(true)
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('111 111 111')
-    newResponses.forEach((resolve) => resolve())
+    expect(requests).toHaveLength(2)
+    expect(requests[1]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
+    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(acquiredValue)
+    expect(wrapper.find('[data-clef="densite"] .puce-rang-texte').exists()).toBe(false)
+
+    await router.push('/territoire/commune/22001?theme=demographie&comparaison=epci')
     await flushPromises()
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('222 222 222')
-    oldResponses.forEach((resolve) => resolve())
+    expect(requests).toHaveLength(3)
+    expect(requests[2]!.items.every((item) => item.target.kind === 'territory' && item.intent.kind === 'selected_comparison')).toBe(true)
+    const epciLabel = model.themes.mobilite!.comparisons.epci!.scope.label
+    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(acquiredValue)
+    expect(wrapper.get('[data-clef="densite"] .puce-rang-texte').text()).toContain(epciLabel)
+
+    resolveLateBretagne!()
     await flushPromises()
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('222 222 222')
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('111 111 111')
+    expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe(acquiredValue)
+    expect(wrapper.get('[data-clef="densite"] .puce-rang-texte').text()).toContain(epciLabel)
+    expect(requests.slice(1).every((request) => request.items.every((item) => item.target.kind === 'territory'))).toBe(true)
     wrapper.unmount()
   })
 

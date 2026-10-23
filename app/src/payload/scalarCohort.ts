@@ -21,13 +21,18 @@ function explicationStatutScalaire(status: string): string | null {
   }
 }
 
-interface ScalarIdentity { contentVersion?: string; referenceContentVersion?: string }
-
 export interface ScalarComparisonRank {
   rank: number
   rankSize: number
   scope: string
 }
+
+export type ScalarComparisonRequest =
+  | { kind: 'fixed'; scope: { kind: 'density_class'; territoryType: 'commune'; densityClassCode: string; memberCount: number; label: string | null } }
+  | { kind: 'fixed'; scope: { kind: 'same_level'; territoryType: TerritoireType; memberCount: number; label: string | null } }
+  | { kind: 'selected'; members: Array<{ type: TerritoireType; id: string }>; scope: { kind: 'explicit_selection'; territoryType: TerritoireType; memberCount: number; label: string | null } }
+
+interface ScalarIdentity { contentVersion?: string; referenceContentVersion?: string }
 
 export function scalarCohortEnabled(env: Record<string, string | undefined>): boolean {
   return env.VITE_SCALAR_COHORT_API === '1'
@@ -84,69 +89,15 @@ export async function chargerRangScalaire(indicator: string, theme: Theme, page:
   focal: Territoire, territories: Territoire[], identity?: ScalarIdentity): Promise<ScalarComparisonRank | null> {
   const group = groupeRangScalaire(focal, territories)
   if (!group || group.members.length < 2) return null
-  const path = '/api/resources/read-batch'
-  const resources = await chargerCatalogueRessources()
-  const resource = resources.find((candidate) => candidate.resource_id === indicator)
-  const intent = group.members[0]?.type === 'commune'
-    ? 'selected_comparison'
-    : 'fixed_comparison'
-  if (!resource || resource.indicator_id !== indicator || resource.theme_id !== theme ||
-      !resource.shapes.includes('scalar') || !resource.target_kinds.includes('territory') ||
-      !resource.allowed_levels.includes(focal.type) || !resource.intents.includes(intent) ||
-      page.sources.some((source) => !resource.sources.includes(source))) {
-    throw new PayloadError('validation', path, 'La ressource scalaire ne déclare pas cette comparaison territoriale.')
-  }
-  const selectedMembers = group.members.map((member) => ({ type: member.type, id: member.territoire }))
-  const item: SemanticReadItem = {
-    resource: indicator,
-    target: { kind: 'territory', type: focal.type, id: focal.territoire },
-    fields: ['rank', 'rank_size', 'eligible_count', 'selected_member_count', 'missing_count'],
-    intent: intent === 'selected_comparison'
-      ? { kind: 'selected_comparison', members: selectedMembers }
-      : { kind: 'fixed_comparison', context: 'default' },
-  }
-  const [data] = await lireRessourcesBatch([item])
-  const expectedSelection = intent === 'selected_comparison'
-    ? selectedMembers.map(({ type, id }) => ({ territory_type: type, territory_id: id }))
-    : null
-  const scope = data!.scope
-  const expectedScopeKind = intent === 'selected_comparison' ? 'explicit_selection' : 'same_level'
-  // The indicator-scoped comparison API returns one `result` object (the
-  // theme-scoped endpoint is the one that returns a `results` array).
-  const result = isRecord(data!.result) ? data!.result : null
-  const rank = result?.rank
-  const rankSize = result?.rank_size
-  const eligible = result?.eligible_count
-  const selectedCount = result?.selected_member_count
-  const missing = result?.missing_count
-  const expectedDirection = page.comparison?.direction ?? page.direction
-  const expectedFacet = page.comparison?.indicator ?? indicator
-  const expectedSelectionCount = group.members.length
-  const scopeTerritoryTypeMatches = expectedScopeKind === 'same_level'
-    ? scope?.territory_type === focal.type
-    : scope?.territory_type === undefined || scope.territory_type === focal.type
-  const countsValid = Number.isSafeInteger(selectedCount) && (selectedCount as number) >= 0 &&
-    Number.isSafeInteger(eligible) && (eligible as number) >= 0 &&
-    Number.isSafeInteger(missing) && (missing as number) >= 0 &&
-    (eligible as number) + (missing as number) === expectedSelectionCount
-  const rankValid = rank === null
-    ? rankSize === null
-    : Number.isSafeInteger(rank) && Number.isSafeInteger(rankSize) && (rank as number) >= 1 &&
-      (rank as number) <= (rankSize as number) && (rankSize as number) >= 2 && rankSize === eligible && result?.status === 'available'
-  if (data!.contract !== 'indicator-comparison-v1' || data!.indicator_id !== indicator || data!.shape !== 'scalar' ||
-       !isNonEmptyText(data!.content_version) || !isNonEmptyText(data!.reference_content_version) ||
-       (identity?.contentVersion !== undefined && data!.content_version !== identity.contentVersion) ||
-      (identity?.referenceContentVersion !== undefined && data!.reference_content_version !== identity.referenceContentVersion) ||
-      !isRecord(data!.target) || data!.target.kind !== 'territory' || data!.target.type !== focal.type || data!.target.id !== focal.territoire ||
-       JSON.stringify(data!.selection ?? null) !== JSON.stringify(expectedSelection) || !isRecord(scope) ||
-       scope.kind !== expectedScopeKind || scope.member_count !== expectedSelectionCount || !scopeTerritoryTypeMatches ||
-       !result || result.indicator_id !== indicator || result.status !== 'available' && result.status !== 'unavailable' ||
-       result.unit !== page.unit || result.direction !== expectedDirection || result.source_facet !== expectedFacet ||
-       !isNonEmptyText(result.descriptor_version) || !countsValid || selectedCount !== expectedSelectionCount ||
-       (result.status === 'unavailable' && (rank !== null || rankSize !== null)) || !rankValid) {
-    throw new PayloadError('validation', path, 'La comparaison scalaire ne reflète pas la ressource, le territoire ou le groupe déclaré.')
-  }
-  return rank === null ? null : { rank: rank as number, rankSize: rankSize as number, scope: group.scope }
+  const members = group.members.map((member) => ({ type: member.type, id: member.territoire }))
+  const request: ScalarComparisonRequest = focal.type === 'commune'
+    ? { kind: 'selected', members, scope: { kind: 'explicit_selection', territoryType: focal.type,
+        memberCount: members.length, label: group.scope } }
+    : { kind: 'fixed', scope: { kind: 'same_level', territoryType: focal.type,
+        memberCount: group.members.length, label: group.scope } }
+  const ranks = await chargerComparaisonsScalaires([indicator], theme, { [indicator]: page }, focal,
+    territories, request, identity)
+  return ranks[indicator] ?? null
 }
 
 function groupeRangScalaire(focal: Territoire, territories: Territoire[]): { members: Territoire[]; scope: string } | null {
@@ -163,6 +114,151 @@ function groupeRangScalaire(focal: Territoire, territories: Territoire[]): { mem
   }
   if (!members.some((member) => member.territoire === focal.territoire)) return null
   return { members: members.sort((left, right) => left.territoire.localeCompare(right.territoire)), scope }
+}
+
+function itemComparaisonScalaire(indicator: string, focal: Territoire, request: ScalarComparisonRequest): SemanticReadItem {
+  return {
+    resource: indicator,
+    target: { kind: 'territory', type: focal.type, id: focal.territoire },
+    fields: ['rank', 'rank_size', 'eligible_count', 'selected_member_count', 'missing_count'],
+    intent: request.kind === 'fixed'
+      ? { kind: 'fixed_comparison', context: 'default' }
+      : { kind: 'selected_comparison', members: request.members },
+  }
+}
+
+function selectionIdentity(value: unknown): Array<{ territory_type: TerritoireType; territory_id: string }> | null {
+  if (value === null || value === undefined) return null
+  if (!Array.isArray(value)) return null
+  const members: Array<{ territory_type: TerritoireType; territory_id: string }> = []
+  for (const item of value) {
+    if (!isRecord(item) || !['commune', 'epci', 'departement', 'region'].includes(String(item.territory_type)) ||
+        !isNonEmptyText(item.territory_id)) return null
+    members.push({ territory_type: item.territory_type as TerritoireType, territory_id: item.territory_id })
+  }
+  return members.sort((left, right) => left.territory_type.localeCompare(right.territory_type) ||
+    left.territory_id.localeCompare(right.territory_id))
+}
+
+function validateComparisonRequest(request: ScalarComparisonRequest, focal: Territoire, territories?: Territoire[]): void {
+  if (request.scope.territoryType !== focal.type || !Number.isSafeInteger(request.scope.memberCount) ||
+      request.scope.memberCount < 0) {
+    throw new PayloadError('validation', '/api/resources/read-batch', 'Le périmètre scalaire demandé est incohérent avec le territoire focal.')
+  }
+  if (request.kind === 'selected') {
+    const ids = request.members.map((member) => member.id)
+    if (request.scope.kind !== 'explicit_selection' || request.members.length !== request.scope.memberCount ||
+        request.members.some((member) => member.type !== focal.type || !isNonEmptyText(member.id)) ||
+        new Set(ids).size !== ids.length) {
+      throw new PayloadError('validation', '/api/resources/read-batch', 'La sélection de comparaison scalaire est mal formée.')
+    }
+  } else if (request.scope.kind === 'density_class') {
+    if (focal.type !== 'commune' || !isNonEmptyText(request.scope.densityClassCode) ||
+        focal.classe_densite_code !== request.scope.densityClassCode) {
+      throw new PayloadError('validation', '/api/resources/read-batch', 'La classe de densité demandée ne correspond pas au territoire focal.')
+    }
+  } else if (request.scope.kind !== 'same_level') {
+    throw new PayloadError('validation', '/api/resources/read-batch', 'Le contexte de comparaison scalaire est invalide.')
+  }
+  if (territories) {
+    const comparisonScope = request.scope
+    const focalReference = territories.find((territory) => territory.territoire === focal.territoire && territory.type === focal.type)
+    if (!focalReference) throw new PayloadError('validation', '/api/resources/read-batch', 'Le territoire focal est absent du référentiel de comparaison.')
+    let expectedCount: number
+    if (request.kind === 'selected') expectedCount = request.members.length
+    else if (comparisonScope.kind === 'density_class') {
+      expectedCount = territories.filter((territory) => territory.type === 'commune' &&
+        territory.classe_densite_code === comparisonScope.densityClassCode).length
+    } else expectedCount = territories.filter((territory) => territory.type === comparisonScope.territoryType).length
+    if (expectedCount !== comparisonScope.memberCount) {
+      throw new PayloadError('validation', '/api/resources/read-batch', 'La taille du périmètre scalaire diffère du référentiel territorial demandé.')
+    }
+    if (request.kind === 'selected' && request.members.some((member) => {
+      const reference = territories.find((territory) => territory.territoire === member.id)
+      return !reference || reference.type !== member.type
+    })) {
+      throw new PayloadError('validation', '/api/resources/read-batch', 'La sélection scalaire ne correspond pas au référentiel territorial.')
+    }
+  }
+}
+
+/** Keep the API's exact scope identity; the rank chip label comes from the fiche's resolved context. */
+function adapterComparaisonScalaire(data: Row, indicator: string, page: IndicatorPageMetadata, focal: Territoire,
+  request: ScalarComparisonRequest, identity?: ScalarIdentity): ScalarComparisonRank | null {
+  const path = '/api/resources/read-batch'
+  validateComparisonRequest(request, focal)
+  const expectedSelection = request.kind === 'selected'
+    ? request.members.map(({ type, id }) => ({ territory_type: type, territory_id: id }))
+    : null
+  const actualSelection = selectionIdentity(data.selection)
+  const expectedSelectionIdentity = expectedSelection?.map((member) => ({ ...member }))
+    .sort((left, right) => left.territory_type.localeCompare(right.territory_type) || left.territory_id.localeCompare(right.territory_id)) ?? null
+  const scope = data.scope
+  const result = isRecord(data.result) ? data.result : null
+  const rank = result?.rank
+  const rankSize = result?.rank_size
+  const eligible = result?.eligible_count
+  const selectedCount = result?.selected_member_count
+  const missing = result?.missing_count
+  const direction = page.comparison?.direction ?? page.direction
+  const facet = page.comparison?.indicator ?? indicator
+  const scopeIdentityValid = isRecord(scope) && scope.kind === request.scope.kind &&
+    scope.member_count === request.scope.memberCount &&
+    (request.scope.kind === 'explicit_selection'
+      ? scope.territory_type === undefined || scope.territory_type === focal.type
+      : scope.territory_type === request.scope.territoryType) &&
+    (request.scope.kind !== 'density_class' || scope.density_class_code === request.scope.densityClassCode)
+  const countsValid = Number.isSafeInteger(selectedCount) && selectedCount === request.scope.memberCount &&
+    Number.isSafeInteger(eligible) && (eligible as number) >= 0 &&
+    Number.isSafeInteger(missing) && (missing as number) >= 0 &&
+    (eligible as number) + (missing as number) === request.scope.memberCount
+  const rankValid = rank === null
+    ? rankSize === null
+    : Number.isSafeInteger(rank) && Number.isSafeInteger(rankSize) && (rank as number) >= 1 &&
+      (rank as number) <= (rankSize as number) && (rankSize as number) >= 2 && rankSize === eligible && result?.status === 'available'
+  if (data.contract !== 'indicator-comparison-v1' || data.indicator_id !== indicator || data.shape !== 'scalar' ||
+      !isNonEmptyText(data.content_version) || !isNonEmptyText(data.reference_content_version) ||
+      (identity?.contentVersion !== undefined && data.content_version !== identity.contentVersion) ||
+      (identity?.referenceContentVersion !== undefined && data.reference_content_version !== identity.referenceContentVersion) ||
+      !isRecord(data.target) || data.target.kind !== 'territory' || data.target.type !== focal.type || data.target.id !== focal.territoire ||
+      JSON.stringify(actualSelection) !== JSON.stringify(expectedSelectionIdentity) || !scopeIdentityValid ||
+      !result || result.indicator_id !== indicator || !['available', 'unavailable'].includes(String(result.status)) ||
+      result.unit !== page.unit || result.direction !== direction || result.source_facet !== facet ||
+      !isNonEmptyText(result.descriptor_version) || !countsValid ||
+      (result.status === 'unavailable' && (rank !== null || rankSize !== null)) || !rankValid ||
+      (rank !== null && !isNonEmptyText(request.scope.label))) {
+    throw new PayloadError('validation', path, 'La comparaison scalaire ne reflète pas la ressource, le territoire ou le groupe demandé.')
+  }
+  return rank === null ? null : { rank: rank as number, rankSize: rankSize as number, scope: request.scope.label! }
+}
+
+/** Acquire focal comparison ranks as one bounded semantic batch. */
+export async function chargerComparaisonsScalaires(indicators: string[], theme: Theme,
+  pages: Record<string, IndicatorPageMetadata>, focal: Territoire, territories: Territoire[],
+  request: ScalarComparisonRequest, identity?: ScalarIdentity): Promise<Record<string, ScalarComparisonRank | null>> {
+  const path = '/api/resources/read-batch'
+  validateComparisonRequest(request, focal, territories)
+  if (!indicators.length) return {}
+  if (indicators.length > 12 || new Set(indicators).size !== indicators.length) {
+    throw new PayloadError('validation', path, 'Le lot de comparaisons scalaires doit contenir au plus 12 ressources distinctes.')
+  }
+  if (request.scope.memberCount < 2) return Object.fromEntries(indicators.map((indicator) => [indicator, null]))
+  const resources = await chargerCatalogueRessources()
+  const items = indicators.map((indicator) => {
+    const page = pages[indicator]
+    const resource = resources.find((candidate) => candidate.resource_id === indicator)
+    const intent = request.kind === 'fixed' ? 'fixed_comparison' : 'selected_comparison'
+    if (!page || !resource || resource.indicator_id !== indicator || resource.theme_id !== theme ||
+        !resource.shapes.includes('scalar') || !resource.target_kinds.includes('territory') ||
+        !resource.allowed_levels.includes(focal.type) || !resource.intents.includes(intent) ||
+        page.sources.some((source) => !resource.sources.includes(source))) {
+      throw new PayloadError('validation', path, 'La ressource scalaire ne déclare pas cette comparaison territoriale.')
+    }
+    return itemComparaisonScalaire(indicator, focal, request)
+  })
+  const data = await lireRessourcesBatch(items)
+  return Object.fromEntries(indicators.map((indicator, index) => [indicator,
+    adapterComparaisonScalaire(data[index]!, indicator, pages[indicator]!, focal, request, identity)]))
 }
 
 function itemScalaire(indicator: string, level: TerritoireType,
@@ -314,16 +410,26 @@ export function indicateursScalairesPourNiveau(raw: unknown, level: TerritoireTy
   })
 }
 
-/** Acquire the producer-registered scalar facts for one selected theme together.
- * Requests are deduplicated by the caller's registration contract and run in
- * parallel; this deliberately remains one bounded cohort request per key. */
-export async function chargerCohortesScalaires(
+export interface ScalarCohortsWithComparisons {
+  facts: Indicateur[]
+  comparisons: Record<string, ScalarComparisonRank | null>
+  identity: { contentVersion: string; referenceContentVersion: string }
+}
+
+async function chargerCohortesEtComparaisonsScalaires(
   indicators: string[], theme: Theme, metadata: ThemeMetadata, focal: Territoire,
   level: TerritoireType, territories: Territoire[], scope: { department?: string; epci?: string },
-): Promise<Indicateur[]> {
+  comparison?: ScalarComparisonRequest,
+): Promise<ScalarCohortsWithComparisons> {
   validerEnregistrementScalaires(metadata, indicators)
   const path = '/api/resources/read-batch'
   if (indicators.length > 12) throw new PayloadError('validation', path, 'Le lot scalaire dépasse la limite de 12 ressources.')
+  if (comparison) validateComparisonRequest(comparison, focal, territories)
+  const comparisonRead = comparison && comparison.scope.memberCount >= 2 ? comparison : undefined
+  if (comparisonRead && indicators.length * 2 > 12) {
+    throw new PayloadError('validation', path, 'Le lot scalaire et ses comparaisons dépasse la limite de 12 lectures.')
+  }
+  if (!indicators.length) return { facts: [], comparisons: {}, identity: { contentVersion: '', referenceContentVersion: '' } }
   const catalogue = await chargerCatalogueRessources()
   const identities: ScalarIdentity[] = []
   const pages = indicators.map((indicator) => {
@@ -333,16 +439,48 @@ export async function chargerCohortesScalaires(
     identities.push(identity)
     return { page, identity, declaration: catalogue.find((resource) => resource.resource_id === indicator) }
   })
-  const items = indicators.map((indicator) => itemScalaire(indicator, level, scope))
-  const data = indicators.length ? await lireRessourcesBatch(items) : []
-  const cohorts = data.map((read, index) => adapterCohorteScalaire(read, pages[index]!.declaration, indicators[index]!,
-    theme, pages[index]!.page, focal, level, territories, scope, pages[index]!.identity))
+  if (comparisonRead && pages.some(({ declaration }) => !declaration?.target_kinds.includes('territory') ||
+      !declaration.intents.includes(comparisonRead.kind === 'fixed' ? 'fixed_comparison' : 'selected_comparison'))) {
+    throw new PayloadError('validation', path, 'La ressource scalaire ne déclare pas cette comparaison territoriale.')
+  }
+  const items = indicators.flatMap((indicator) => [itemScalaire(indicator, level, scope),
+    ...(comparisonRead ? [itemComparaisonScalaire(indicator, focal, comparisonRead)] : [])])
+  const data = await lireRessourcesBatch(items)
+  const cohorts: Indicateur[][] = []
+  const comparisons: Record<string, ScalarComparisonRank | null> = {}
+  indicators.forEach((indicator, index) => {
+    const factIndex = comparisonRead ? index * 2 : index
+    cohorts.push(adapterCohorteScalaire(data[factIndex]!, pages[index]!.declaration, indicator,
+      theme, pages[index]!.page, focal, level, territories, scope, pages[index]!.identity))
+    if (comparison) comparisons[indicator] = comparisonRead
+      ? adapterComparaisonScalaire(data[factIndex + 1]!, indicator, pages[index]!.page, focal, comparisonRead, pages[index]!.identity)
+      : null
+  })
   const versions = new Set(identities.map((identity) => identity.contentVersion ?? ''))
   const territoryVersions = new Set(identities.map((identity) => identity.referenceContentVersion ?? ''))
   if (versions.size > 1 || versions.has('') || territoryVersions.size > 1 || territoryVersions.has('')) {
     throw new PayloadError('validation', 'indicator cohorts', 'Les cohortes ne partagent pas la même version de publication et de référentiel territorial.')
   }
-  return cohorts.flat()
+  return { facts: cohorts.flat(), comparisons,
+    identity: { contentVersion: [...versions][0]!, referenceContentVersion: [...territoryVersions][0]! } }
+}
+
+/** Acquire the producer-registered scalar facts for one selected theme together. */
+export async function chargerCohortesScalaires(
+  indicators: string[], theme: Theme, metadata: ThemeMetadata, focal: Territoire,
+  level: TerritoireType, territories: Territoire[], scope: { department?: string; epci?: string },
+): Promise<Indicateur[]> {
+  return (await chargerCohortesEtComparaisonsScalaires(indicators, theme, metadata, focal, level, territories, scope)).facts
+}
+
+/** First fiche load pairs facts and their resolved comparison in one read snapshot. */
+export async function chargerCohortesScalairesAvecComparaisons(
+  indicators: string[], theme: Theme, metadata: ThemeMetadata, focal: Territoire,
+  level: TerritoireType, territories: Territoire[], scope: { department?: string; epci?: string },
+  comparison: ScalarComparisonRequest | null,
+): Promise<ScalarCohortsWithComparisons> {
+  return chargerCohortesEtComparaisonsScalaires(indicators, theme, metadata, focal, level, territories, scope,
+    comparison ?? undefined)
 }
 
 /** Replace only registered facts in a selected theme; all other payload data is untouched. */
