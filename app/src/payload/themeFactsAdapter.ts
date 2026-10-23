@@ -28,6 +28,123 @@ const texteNonVide = (value: unknown): value is string => typeof value === 'stri
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 const sameSemanticJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
 
+function validerPorteeComparaison(scope: unknown, selection: unknown, target: unknown): void {
+  if (!isRecord(target) || !texteNonVide(target.id) ||
+      !['commune', 'epci', 'departement', 'region'].includes(String(target.type))) {
+    throw new Error('Cible de comparaison sémantique invalide')
+  }
+  if (!isRecord(scope) || !Number.isInteger(scope.member_count) ||
+      (scope.member_count as number) < 0) throw new Error('Portée de comparaison sémantique invalide')
+  if (scope.kind === 'density_class') {
+    if (target.type !== 'commune' || scope.territory_type !== 'commune' ||
+        !texteNonVide(scope.density_class_code) || selection != null) {
+      throw new Error('Portée de comparaison sémantique invalide')
+    }
+    return
+  }
+  if (scope.kind === 'same_level') {
+    if (scope.territory_type !== target.type || selection != null) {
+      throw new Error('Portée de comparaison sémantique invalide')
+    }
+    return
+  }
+  if (scope.kind === 'explicit_selection') {
+    if (!Array.isArray(selection)) throw new Error('Portée de comparaison sémantique invalide')
+    const selected = rows(selection, 'comparison.selection')
+    const identities = selected.map((member) => {
+      if (!texteNonVide(member.territory_id) ||
+          !['commune', 'epci', 'departement', 'region'].includes(String(member.territory_type))) {
+        throw new Error('Portée de comparaison sémantique invalide')
+      }
+      return `${member.territory_type}\u0000${member.territory_id}`
+    })
+    if (scope.member_count !== selected.length || new Set(identities).size !== identities.length) {
+      throw new Error('Portée de comparaison sémantique invalide')
+    }
+    return
+  }
+  throw new Error('Portée de comparaison sémantique invalide')
+}
+
+function validerResultatComparaison(result: Row, data: Row, declaration?: Row): void {
+  if (result.status !== 'available' && result.status !== 'unavailable') {
+    throw new Error('Statut de comparaison sémantique invalide')
+  }
+  const direction = result.direction
+  const declaredDirection = declaration?.direction
+  if (declaredDirection !== undefined && !['high', 'low', 'none'].includes(String(declaredDirection))) {
+    throw new Error('Direction déclarée de comparaison sémantique invalide')
+  }
+  if (direction !== undefined && !['high', 'low', 'none'].includes(String(direction))) {
+    throw new Error('Direction de comparaison sémantique invalide')
+  }
+  if (direction !== undefined && declaredDirection !== undefined && direction !== declaredDirection) {
+    throw new Error('Direction de comparaison incompatible avec le catalogue producteur')
+  }
+  if (result.status === 'available' && direction !== 'high' && direction !== 'low') {
+    throw new Error('Direction de comparaison absente pour un résultat disponible')
+  }
+  if (result.source_facet !== undefined && result.source_facet !== null && !texteNonVide(result.source_facet)) {
+    throw new Error('Facette de comparaison sémantique invalide')
+  }
+  if (result.status === 'available' && data.shape === 'scalar' &&
+      result.source_facet !== data.indicator_id) throw new Error('Facette de comparaison scalaire incohérente')
+  if (result.status === 'available' && data.shape === 'series' && !texteNonVide(result.source_facet)) {
+    throw new Error('Facette de série de comparaison absente')
+  }
+
+  const rank = result.rank
+  const rankSize = result.rank_size
+  if (rank !== undefined && rank !== null && (!Number.isInteger(rank) || (rank as number) < 1)) {
+    throw new Error('Rang de comparaison sémantique invalide')
+  }
+  if (rankSize !== undefined && rankSize !== null &&
+      (!Number.isInteger(rankSize) || (rankSize as number) < 1 ||
+       (rank !== undefined && rank !== null && (rankSize as number) < (rank as number)))) {
+    throw new Error('Taille de rang de comparaison sémantique invalide')
+  }
+  if ((rank === null || rank === undefined) !== (rankSize === null || rankSize === undefined) ||
+      (result.status === 'unavailable' && (rank !== null && rank !== undefined ||
+        rankSize !== null && rankSize !== undefined))) {
+    throw new Error('Rang de comparaison incompatible avec son statut')
+  }
+}
+
+function validerLectureComparaison(read: Row, focalReads?: unknown, requireFocalSeries = false): void {
+  const data = isRecord(read.data) ? read.data : null
+  const result = data && isRecord(data.result) ? data.result : null
+  if (!data || !result || !isRecord(data.target)) {
+    throw new Error('Lecture de comparaison sémantique incomplète')
+  }
+  const declaration = isRecord(read.declaration) ? read.declaration : undefined
+  validerPorteeComparaison(data.scope, data.selection, data.target)
+  validerResultatComparaison(result, data, declaration)
+  if (data.shape === 'series' && result.status === 'available' && requireFocalSeries && !Array.isArray(focalReads)) {
+    throw new Error('Faits focaux absents pour valider la facette de série comparée')
+  }
+  if (data.shape === 'series' && (result.status === 'available' ||
+      (result.source_facet !== null && result.source_facet !== undefined)) && Array.isArray(focalReads)) {
+    const focal = focalReads.find((candidate) => isRecord(candidate) && candidate.resource === read.resource)
+    const focalData = isRecord(focal) && isRecord(focal.data) ? focal.data : null
+    const comparisonPoint = focalData?.comparison_point
+    if (!focalData || !texteNonVide(comparisonPoint) || result.source_facet !== comparisonPoint ||
+        (Array.isArray(focalData.axis_values) && !focalData.axis_values.includes(comparisonPoint))) {
+      throw new Error('Facette de série de comparaison incompatible avec les faits producteurs')
+    }
+  }
+  if (isRecord(data.scalar_facet)) {
+    const scalar = data.scalar_facet
+    if (isRecord(scalar.result)) {
+      const scalarDeclaration = isRecord(scalar.descriptor) ? scalar.descriptor : undefined
+      if (!sameSemanticJson(scalar.scope ?? null, data.scope ?? null) ||
+          !sameSemanticJson(scalar.selection ?? null, data.selection ?? null)) {
+        throw new Error('Portée de facette scalaire différente de la comparaison')
+      }
+      validerResultatComparaison(scalar.result, { ...data, shape: 'scalar', indicator_id: read.resource }, scalarDeclaration)
+    }
+  }
+}
+
 interface ProvenanceSource {
   sourceId: string
   source: string
@@ -720,6 +837,7 @@ export function semanticComparisonForTheme(response: unknown, reference?: Semant
     if (!isRecord(item) || !texteNonVide(item.resource) || !isRecord(item.data) || !isRecord(item.data.result)) {
       throw new Error('Résultat de comparaison sémantique invalide')
     }
+    validerLectureComparaison(item, focalReads, focalReads !== undefined)
     const result = item.data.result
     const shape = item.data.shape
     scopes.push(item.data.scope ?? null)
@@ -803,9 +921,11 @@ export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unkno
       const facet = isRecord(item.facet) ? item.facet : {}
       return (facet.detail ?? null) === (row.detail ?? null) && (facet.sex ?? null) === (row.sex ?? null)
     })
-    if (!match || match.status !== 'available' || !['high', 'low'].includes(String(match.direction)) || !finite(match.rank)) return row
-    if (!(match.rank_size === null || finite(match.rank_size))) throw new Error('Taille de rang API invalide')
-    return { ...row, comparaisonApi: { rang: match.rank, taille: match.rank_size as number | null, portee } }
+    if (!match) return row
+    validerResultatComparaison(match, {})
+    if (match.status !== 'available' || match.rank === null || match.rank === undefined) return row
+    return { ...row, comparaisonApi: { rang: match.rank as number, taille: match.rank_size as number | null,
+      portee, direction: match.direction as 'high' | 'low' } }
   })
 }
 
@@ -827,18 +947,20 @@ function programmesRows(response: Row, target: { territoire: string; type: Terri
       throw new Error('Collection Programmes invalide')
     }
     if (collection.kind === 'anchored_membership') {
+      const unit = collection.unit
+      if (!texteNonVide(unit) || !unit.trim()) {
+        throw new Error('Unité de collection Programmes absente ou invalide')
+      }
       if (collection.availability === 'no_record') continue
       const add = (territory: { id: unknown; type: unknown }, entry: Row) => {
         if (!texteNonVide(territory.id) || !['commune', 'epci', 'departement', 'region'].includes(String(territory.type)) ||
             !texteNonVide(entry.detail) || !(entry.rider === null || text(entry.rider))) throw new Error('Adhésion Programmes invalide')
-        // La grammaire incumbent lit le rider par correspondance exacte
-        // (programmesPourTerritoire : `ligne.rider === 'convention valant ORT'`)
-        // — le libellé produit est booléen dans cette collection (rider_label
-        // servi seulement quand convention_valant_ort), la clé sémantique est
-        // donc la constante requise par le contrat de la ligne.
+        // Le rider est le libellé producteur, déjà conditionné par le fait
+        // convention_valant_ort dans la collection native. Le conserver tel
+        // quel évite de transformer un autre libellé déclaré en affirmation ORT.
         result.push({ territoire: territory.id, type: territory.type as TerritoireType, theme: 'programmes',
-          key: 'couverture_programmes', detail: entry.detail, value: null, unit: 'count',
-          rider: entry.rider ? 'convention valant ORT' : null, ...vintageSql(entry.sources, entry.detail),
+          key: 'couverture_programmes', detail: entry.detail, value: null, unit,
+          rider: entry.rider, ...vintageSql(entry.sources, entry.detail),
           rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })
       }
       for (const entry of rows(collection.entries, 'collection.entries')) add({ id: target.territoire, type: target.type }, entry)
@@ -1011,6 +1133,7 @@ export function validerReponseComparaisonTheme(
             : !Array.isArray(comparison.data.selection))) {
         throw new Error('Résultat de comparaison sémantique mal formé')
       }
+      validerLectureComparaison(comparison)
       if (selectionAttendue !== undefined) {
         const actual = comparison.data.selection as unknown[]
         if (actual.length !== selectionAttendue.length || actual.some((item, index) => !isRecord(item) ||

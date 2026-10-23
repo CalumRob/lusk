@@ -223,7 +223,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     expect(request.items).toHaveLength(1)
     expect(request.items[0]).toMatchObject({ target: { kind: 'territory', type: 'commune', id: '22001' },
       intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '22001' }, { type: 'commune', id: '22002' }] } })
-    expect(rank).toEqual({ rank: 2, rankSize: 2, scope: "dans l'EPCI" })
+    expect(rank).toEqual({ rank: 2, rankSize: 2, scope: "dans l'EPCI", direction: 'high' })
   })
 
   it('uses the producer same-level comparison for EPCI ranks and does not request a regional rank', async () => {
@@ -246,7 +246,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     })
     vi.stubGlobal('fetch', fetcher)
     expect(await chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture)).toEqual({
-      rank: 1, rankSize: 2, scope: 'en Bretagne',
+      rank: 1, rankSize: 2, scope: 'en Bretagne', direction: 'high',
     })
     const request = JSON.parse((fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')![1] as RequestInit).body as string)
     expect(request.items[0].intent).toEqual({ kind: 'fixed_comparison', context: 'default' })

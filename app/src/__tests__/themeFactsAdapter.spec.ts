@@ -1,4 +1,7 @@
 import { describe, expect, it } from 'vitest'
+import { mount } from '@vue/test-utils'
+import FigureTrajectoire from '../components/fiche/FigureTrajectoire.vue'
+import { THEMES_METHODES } from '../methodes/indicateurs'
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
@@ -40,9 +43,13 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       value: 0.2, unit: '%', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }
     const result = lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires', status: 'available', direction: 'low', rank: 3, rank_size: 14 }], profile_comparisons: [] }, 'Densité')
     expect(result[0]).toMatchObject({ value: 0.2, rang_epci: null, comparaisonApi: { rang: 3, taille: 14, portee: 'Densité' } })
-    expect(lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires', status: 'unavailable', direction: 'low', rank: 3, rank_size: 14 }], profile_comparisons: [] }, null)[0]?.comparaisonApi).toBeUndefined()
+    expect(lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires', status: 'unavailable', direction: 'low', rank: null, rank_size: null }], profile_comparisons: [] }, null)[0]?.comparaisonApi).toBeUndefined()
     expect(lignesAvecComparaisonApi([row], null, null)[0]?.comparaisonApi).toBeUndefined()
     expect(() => lignesAvecComparaisonApi([row], { results: {}, profile_comparisons: [] }, null)).toThrow()
+    expect(() => lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires',
+      status: 'available', direction: 'up', rank: 1, rank_size: 2 }], profile_comparisons: [] }, null)).toThrow(/direction/i)
+    expect(() => lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires',
+      status: 'pending', direction: 'low', rank: 1, rank_size: 2 }], profile_comparisons: [] }, null)).toThrow(/statut/i)
   })
 
   it('attaches an ordered-series comparison only to its producer-declared comparison axis', () => {
@@ -54,7 +61,46 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const result = lignesAvecComparaisonApi(rows, { results: [{ indicator_id: 'subventions_annuelles',
       source_facet: '2025', status: 'available', direction: 'high', rank: 2, rank_size: 14 }], profile_comparisons: [] }, 'Densité')
     expect(result.find((row) => row.dimension === '2024')?.comparaisonApi).toBeUndefined()
-    expect(result.find((row) => row.dimension === '2025')?.comparaisonApi).toEqual({ rang: 2, taille: 14, portee: 'Densité' })
+    expect(result.find((row) => row.dimension === '2025')?.comparaisonApi).toEqual({ rang: 2, taille: 14,
+      portee: 'Densité', direction: 'high' })
+  })
+
+  it('refuses comparison direction, status, facet, or scope that contradict the producer contract', () => {
+    const declaration = nativeResources('habitat').find((resource) => resource.resource_id === 'prix_m2')!
+    const response = (patch: Record<string, unknown> = {}) => ({ theme_id: 'habitat', comparison_reads: [{
+      resource: 'prix_m2', declaration, shapes: declaration.shapes, data: {
+        contract: 'indicator-comparison-v1', indicator_id: 'prix_m2', shape: 'scalar',
+        content_version: 'scalar-v1', reference_content_version: 'territories-v1',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire }, selection: null,
+        scope: { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 },
+        result: { indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'available',
+          direction: 'low', rank: 1, rank_size: 2 },
+        ...patch,
+      },
+    }] })
+
+    expect(() => validerReponseComparaisonTheme('habitat', response({ result: {
+      indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'available',
+      direction: 'high', rank: 1, rank_size: 2,
+    } }), undefined)).toThrow(/direction/i)
+    expect(() => validerReponseComparaisonTheme('habitat', response({ result: {
+      indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'measured',
+      direction: 'low', rank: 1, rank_size: 2,
+    } }), undefined)).toThrow(/statut|status/i)
+    expect(() => validerReponseComparaisonTheme('habitat', response({ result: {
+      indicator_id: 'prix_m2', source_facet: '2025', status: 'available',
+      direction: 'low', rank: 1, rank_size: 2,
+    } }), undefined)).toThrow(/facette/i)
+    expect(() => validerReponseComparaisonTheme('habitat', response({
+      scope: { kind: 'invented_scope', member_count: 2 },
+    }), undefined)).toThrow(/portée|scope/i)
+    expect(() => validerReponseComparaisonTheme('habitat', response({ scope: null }), undefined))
+      .toThrow(/portée|scope/i)
+    expect(() => semanticComparisonForTheme(response({
+      selection: [{ territory_type: 'commune', territory_id: '1' },
+        { territory_type: 'commune', territory_id: '2' }],
+      scope: { kind: 'explicit_selection', member_count: 1 },
+    }))).toThrow(/portée|scope/i)
   })
 
   it('projects native semantic comparison results onto the fiche rank seam without replacing focal values', () => {
@@ -63,7 +109,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         resource: 'part_passoires', target: { kind: 'territory', type: 'commune', id: cible.territoire },
         contract: 'indicator-comparison-v1', indicator_id: 'part_passoires', shape: 'scalar',
         content_version: 'scalar-v1', reference_content_version: 'territories-v1', selection: null,
-        scope: { kind: 'density_class', member_count: 14 },
+        scope: { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 14 },
         result: { indicator_id: 'part_passoires', source_facet: 'part_passoires',
           status: 'available', direction: 'low', rank: 3, rank_size: 14 },
       },
@@ -81,14 +127,19 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
 
   it('retains valid Milieux cloud points alongside explicit source-absence evidence', () => {
     const members = [{ id: '1', type: 'commune', name: 'Focal' }, { id: '2', type: 'commune', name: 'Absent peer' }]
+    const declaration = nativeResources('milieux').find((resource) => resource.resource_id === 'artif_par_habitant')!
     const fact = { groupe: 'artificialisation', source_id: 'population', vintage_id: '2023', status: 'measured',
       periode_pop: '2020', periode_artif: '2021', taux_variation_population: 0.02,
       artif_m2_par_habitant: 10, artif_m3_par_habitant: 12 }
     const absence = { territory_id: '2', territory_type: 'commune', reason: 'source_record_absent',
       source_id: 'conso', vintage_id: '2025', source_snapshot_sha256: 'a'.repeat(64) }
-    const response = { theme_id: 'milieux', comparison_reads: [{ resource: 'artif_par_habitant', data: {
-      result: {}, scope: { kind: 'explicit_selection', member_count: 2 },
-      selection: members.map(({ id, type }) => ({ territory_id: id, territory_type: type })),
+    const response = { theme_id: 'milieux', comparison_reads: [{ resource: 'artif_par_habitant',
+      declaration, shapes: declaration.shapes, data: {
+      contract: 'indicator-comparison-v1', indicator_id: 'artif_par_habitant', shape: 'series',
+      target: { kind: 'territory', type: 'commune', id: '1' }, selection: members.map(({ id, type }) =>
+        ({ territory_id: id, territory_type: type })),
+      result: { indicator_id: 'artif_par_habitant', source_facet: null, status: 'unavailable',
+        direction: declaration.direction, rank: null, rank_size: null }, scope: { kind: 'explicit_selection', member_count: 2 },
     } }], cohort_reads: [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
       content_version: 'reading-v1', reference_content_version: 'reference-v1',
       cohort: { territory_type: 'commune', member_count: 2, reference_content_version: 'reference-v1', members },
@@ -126,7 +177,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         contract: 'indicator-comparison-v1', indicator_id: 'densite', shape: 'scalar',
         content_version: 'scalar-v1', reference_content_version: 'reference-v1', selection: null,
         scope: { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 },
-        result: { indicator_id: 'densite', status: 'available', direction: 'high', rank: 1, rank_size: 2 },
+        result: { indicator_id: 'densite', source_facet: 'densite', status: 'available', direction: 'high', rank: 1, rank_size: 2 },
       } }],
       cohort_reads: [{ resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
         resource: 'demographie_selected_reading',
@@ -290,9 +341,14 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const rows = themeFactsRowsFromApi('programmes', {
       contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
       indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [],
-      collections: [
-        { indicator_id: 'programme_membership', kind: 'anchored_membership', availability: 'observed',
-          entries: [{ detail: 'ACV', rider: 'Aid rider', sources: source }],
+        collections: [
+        { indicator_id: 'programme_membership', kind: 'anchored_membership', unit: 'adhésion', availability: 'observed',
+          entries: [
+            { detail: 'ACV', rider: 'Aid rider', sources: source },
+            { detail: 'PVD', rider: 'convention valant ORT', sources: source },
+            { detail: 'Label sans rider', rider: null, sources: source },
+            { detail: 'Rider vide', rider: '', sources: source },
+          ],
           relationships: [{ detail: 'CRTE', rider: null, sources: source, anchor: { id: '243500139', type: 'epci', name: 'EPCI' }, relation: 'covering_parent' }] },
         { indicator_id: 'grants', kind: 'period_detail', availability: 'observed', unit: '€', entries: [
           { observation_period: '2025', label: 'Mobilité', value: 1234, sources: source },
@@ -307,16 +363,22 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(rows.histoires).toEqual([])
     expect(rows.indicateurs.map((row) => [row.territoire, row.key, row.detail, row.dimension, row.value])).toEqual([
       ['35238', 'couverture_programmes', 'ACV', undefined, null],
+      ['35238', 'couverture_programmes', 'PVD', undefined, null],
+      ['35238', 'couverture_programmes', 'Label sans rider', undefined, null],
+      ['35238', 'couverture_programmes', 'Rider vide', undefined, null],
       ['243500139', 'couverture_programmes', 'CRTE', undefined, null],
       ['35238', 'subventions_par_domaine', 'Mobilité', '2025', 1234],
       ['35238', 'subventions_annuelles', null, '2025', 5678],
     ])
-    expect(rows.indicateurs[0]!.rider).toBe('convention valant ORT')
+    expect(rows.indicateurs.slice(0, 4).map((row) => row.rider))
+      .toEqual(['Aid rider', 'convention valant ORT', null, ''])
+    expect(rows.indicateurs.slice(0, 5).map((row) => row.unit)).toEqual(Array(5).fill('adhésion'))
+    expect(rows.indicateurs[0]!.rider).not.toBe('convention valant ORT')
     expect(rows.indicateurs[0]!.vintage_date_reference).toBe('2026-01-01')
     const absent = themeFactsRowsFromApi('programmes', {
       contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
       indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [],
-      collections: [{ indicator_id: 'programme_membership', kind: 'anchored_membership', availability: 'no_record', entries: [], relationships: [] }],
+      collections: [{ indicator_id: 'programme_membership', kind: 'anchored_membership', unit: 'adhésion', availability: 'no_record', entries: [], relationships: [] }],
       owned_series: [],
     }, cible)
     expect(absent.indicateurs).toEqual([])
@@ -342,10 +404,26 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(() => themeFactsRowsFromApi('programmes', {
       contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
       indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [], owned_series: [],
-      collections: [{ indicator_id: 'membership', kind: 'anchored_membership', availability: 'observed', entries: [
+      collections: [{ indicator_id: 'membership', kind: 'anchored_membership', unit: 'adhésion', availability: 'observed', entries: [
         { detail: 'ACV', rider: null, sources: [{ source_id: 's', name: 'S', version: 'v', reference_date: null, publication_date: null }] },
       ], relationships: [] }],
     }, cible)).toThrow(/Date de référence/)
+  })
+
+  it('uses the declared membership unit and rejects a missing or malformed descriptor unit', () => {
+    const response = (unit: unknown) => ({
+      contract: 'theme-facts-v1', theme_id: 'programmes',
+      territory: { territory_id: cible.territoire, territory_type: cible.type },
+      indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [], owned_series: [],
+      collections: [{ indicator_id: 'programme_membership', kind: 'anchored_membership', unit,
+        availability: 'observed', entries: [{ detail: 'ACV', rider: null, sources: [{ source_id: 's', name: 'S',
+          version: 'v', reference_date: '2026-01-01', publication_date: null }] }], relationships: [] }],
+    })
+    expect(themeFactsRowsFromApi('programmes', response('count'), cible).indicateurs[0]?.unit).toBe('count')
+    for (const malformed of [undefined, null, '', '  ', 12]) {
+      expect(() => themeFactsRowsFromApi('programmes', response(malformed), cible))
+        .toThrow(/unité de collection.*absente ou invalide/i)
+    }
   })
 
   it('mappe la lecture démographique avec provenance et rejette story/salience/taux incohérents', () => {
@@ -450,17 +528,19 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
   })
 
   it('projects the native DVF pooled scalar and rank separately from its annual series facet', () => {
+    const nativeResource = nativeResources('habitat').find((resource) => resource.resource_id === 'prix_m2')!
+    const apiDirection = nativeResource.direction
     const scalarSources = [{ source_id: 'dvf', name: 'DVF pooled fixture', vintage_id: 'dvf-2026',
       version: '2026', reference_date: '2026-01-01', publication_date: '2026-01-02' }]
     const seriesSources = scalarSources.map(({ name, ...item }) => ({ ...item, source_name: name }))
-    const scalarDescriptor = { indicator_id: 'prix_m2', unit: '€/m²', completeness: 'sparse',
+    const scalarDescriptor = { indicator_id: 'prix_m2', unit: '€/m²', direction: apiDirection, completeness: 'sparse',
       descriptor_version: 'scalar-descriptor-v1' }
     const focal = { resource: 'prix_m2', shapes: ['scalar', 'ordered_series'], data: {
       resource: 'prix_m2', target: { kind: 'territory', type: 'commune', id: cible.territoire },
       dataset_id: 'dvf_prix_m2', publication_id: 'series-publication-v1',
       content_version: 'series-publication-v1', reference_content_version: 'reference-v1',
       descriptor_version: 'series-descriptor-v1', indicator_id: 'prix_m2', unit: '€/m²',
-      axis_kind: 'year', axis_values: ['2024', '2025'], axis_numeric_values: [2024, 2025],
+      axis_kind: 'year', axis_values: ['2024', '2025'], axis_numeric_values: [2024, 2025], comparison_point: '2025',
       points: [
         { axis: '2024', observation_period: '2024', value: 211, status: 'measured', provenance: seriesSources },
         { axis: '2025', observation_period: '2025', value: 230, status: 'measured', provenance: seriesSources },
@@ -474,16 +554,16 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const densityScope = { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 }
     const comparison = { theme_id: 'habitat', comparison_reads: [{ resource: 'prix_m2', shapes: focal.shapes,
       data: { resource: 'prix_m2', target: focal.data.target, contract: 'indicator-comparison-v1',
-        indicator_id: 'prix_m2', shape: 'ordered_series', content_version: 'series-publication-v1',
+        indicator_id: 'prix_m2', shape: 'series', content_version: 'series-publication-v1',
         reference_content_version: 'reference-v1', selection: null,
         scope: densityScope,
-        result: { indicator_id: 'prix_m2', source_facet: '2025', status: 'available', direction: 'low',
+        result: { indicator_id: 'prix_m2', source_facet: '2025', status: 'available', direction: apiDirection,
           descriptor_version: 'series-descriptor-v1', rank: 2, rank_size: 2 },
         scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-publication-v1',
           reference_content_version: 'reference-v1', descriptor_version: 'scalar-descriptor-v1',
           comparison_content_version: 'scalar-comparison-publication-v1',
           descriptor: scalarDescriptor, selection: null, scope: densityScope,
-          result: { indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'available', direction: 'low',
+          result: { indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'available', direction: apiDirection,
             descriptor_version: 'scalar-descriptor-v1', rank: 1, rank_size: 2 } },
       } }] }
 
@@ -500,13 +580,36 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const semantic = semanticComparisonForTheme(comparison, undefined, reads)
     const ranked = lignesAvecComparaisonApi(projected, semantic, 'Classe publiée')
     expect(ranked.find((row) => row.key === 'prix_m2' && row.detail === null)?.comparaisonApi)
-      .toEqual({ rang: 1, taille: 2, portee: 'Classe publiée' })
+      .toEqual({ rang: 1, taille: 2, portee: 'Classe publiée', direction: apiDirection })
     expect(ranked.find((row) => row.key === 'prix_m2' && row.detail === '2025')?.comparaisonApi)
-      .toEqual({ rang: 2, taille: 2, portee: 'Classe publiée' })
+      .toEqual({ rang: 2, taille: 2, portee: 'Classe publiée', direction: apiDirection })
+
+    const method = THEMES_METHODES.habitat.indicateurs.prix_m2!
+    const publishedDirection = method.direction
+    method.direction = apiDirection === 'high' ? 'moins-est-mieux' : 'plus-est-mieux'
+    try {
+      const figure = mount(FigureTrajectoire, { props: {
+        clef: 'prix_m2', theme: 'habitat', libelle: 'Prix médian au mètre carré', lignes: ranked,
+      } })
+      const chip = figure.find('.puce-rang')
+      expect(figure.find('.puce-rang-glyphe').text().trim()).toBe('▼')
+      expect(chip.attributes('aria-label')).toBe('1er/2 · Classe publiée — moins = mieux')
+    } finally {
+      method.direction = publishedDirection
+    }
+    const staticFigure = mount(FigureTrajectoire, { props: {
+      clef: 'prix_m2', theme: 'habitat', libelle: 'Prix médian au mètre carré',
+      lignes: [{ ...projected.find((row) => row.key === 'prix_m2' && row.detail === null)!, rang_epci: 1, rang_epci_n: 2 }],
+    } })
+    expect(staticFigure.find('.puce-rang-glyphe').text().trim()).toBe('▼')
+    expect(staticFigure.find('.puce-rang').attributes('aria-label')).toBe("1er/2 de l'EPCI — moins = mieux")
     const corruptedComparison: any = structuredClone(comparison)
     corruptedComparison.comparison_reads[0].data.scalar_facet.result.source_facet = '2025'
     expect(() => semanticComparisonForTheme(corruptedComparison, undefined, reads))
       .toThrow(/facette de comparaison scalaire/i)
+    const incorrectAnnualFacet: any = structuredClone(comparison)
+    incorrectAnnualFacet.comparison_reads[0].data.result.source_facet = '2024'
+    expect(() => semanticComparisonForTheme(incorrectAnnualFacet, undefined, reads)).toThrow(/facette/i)
 
     const levelIds: Record<string, string> = { commune: cible.territoire, epci: '200067460', departement: '22', region: '53' }
     for (const type of nativeResources('habitat').find((item) => item.resource_id === 'prix_m2')!.allowed_levels) {

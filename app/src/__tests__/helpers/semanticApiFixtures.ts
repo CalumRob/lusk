@@ -615,7 +615,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource)
   if (shapes.includes('anchored_membership')) {
     return { ...shared, indicator_id: resource.indicator_id, theme_id: resource.theme_id,
       kind: 'anchored_membership', content_version: version, reference_content_version: referenceVersion,
-      completeness: 'observed_sparse', availability: 'no_record', entries: [], relationships: [], summaries: [] }
+      unit: resource.unit, completeness: 'observed_sparse', availability: 'no_record', entries: [], relationships: [], summaries: [] }
   }
 
   const facts = publishedIndicators(resource, target)

@@ -75,8 +75,17 @@ const pointsReference = computed(() => pointsDepuis(props.reference ?? []))
 const premiere = computed(() => props.lignes[0] ?? props.reference?.[0] ?? null)
 const repereScalaire = computed(() => props.lignes.find((ligne) => ligne.detail == null) ?? null)
 const rangRepereScalaire = computed(() => repereScalaire.value ? detailsRangEnContexte(repereScalaire.value) : null)
+const directionRepereScalaire = computed(() => {
+  const comparaison = repereScalaire.value?.comparaisonApi
+  if (comparaison) {
+    if (comparaison.direction === 'high') return 'plus-est-mieux'
+    if (comparaison.direction === 'low') return 'moins-est-mieux'
+    return null
+  }
+  return repereScalaire.value ? directionIndicateur(props.theme, props.clef) : null
+})
 const puceRepereScalaire = computed(() => {
-  const direction = directionIndicateur(props.theme, props.clef)
+  const direction = directionRepereScalaire.value
   return rangRepereScalaire.value && direction
     ? puceRangDirection(rangRepereScalaire.value.libelle, direction) : null
 })

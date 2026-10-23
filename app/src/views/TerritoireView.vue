@@ -321,7 +321,8 @@ function rangsScalairesPourFocal(facts: Indicateur[], territoryId: string,
   ranks: Record<string, ScalarComparisonRank | null>): Indicateur[] {
   return facts.map((fact) => {
     const rank = fact.territoire === territoryId ? ranks[fact.key] : null
-    return { ...fact, ...(rank ? { comparaisonApi: { rang: rank.rank, taille: rank.rankSize, portee: rank.scope } } : { comparaisonApi: undefined }) }
+    return { ...fact, ...(rank ? { comparaisonApi: { rang: rank.rank, taille: rank.rankSize,
+      portee: rank.scope, direction: rank.direction } } : { comparaisonApi: undefined }) }
   })
 }
 
