@@ -261,16 +261,6 @@
   );
 }
 
-/* Resolve mode-specific map accents locally; the root token supplies the
- * default only where a map panel has no declared mode. */
-.map-panel {
-  --color-figure-map-label: color-mix(
-    in srgb,
-    var(--figure-map-accent, var(--mode-ring, var(--brand-500))) 45%,
-    var(--editorial-ink)
-  );
-}
-
 .cahier-figure-scalar--colored.cahier-figure-scalar--t .cahier-figure-scalar-value {
   color: var(--color-figure-mode-foot);
 }

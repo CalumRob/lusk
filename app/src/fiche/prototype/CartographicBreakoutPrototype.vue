@@ -407,7 +407,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   color: var(--red);
   font: var(--text-caption);
   font-variant-numeric: tabular-nums;
-  letter-spacing: .08em;
+  letter-spacing: var(--text-caption-tracking);
   vertical-align: .2em;
 }
 
@@ -432,7 +432,6 @@ async function inspect(mode: ModeKey): Promise<void> {
 }
 
 .map-panel {
-  --figure-map-accent: var(--mode-ring, var(--brand-500));
   min-width: 0;
   margin: 0;
   transition: opacity 150ms ease-out;
@@ -447,7 +446,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   align-items: center;
   min-height: 28px;
   margin-bottom: 6px;
-  color: var(--color-figure-map-label);
+  color: var(--mode-ring);
   font: var(--text-overline);
   letter-spacing: var(--text-overline-tracking);
   text-transform: uppercase;
@@ -519,7 +518,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   margin-right: 0;
   color: var(--red);
   font: var(--text-caption);
-  letter-spacing: .08em;
+  letter-spacing: var(--text-caption-tracking);
   vertical-align: baseline;
 }
 

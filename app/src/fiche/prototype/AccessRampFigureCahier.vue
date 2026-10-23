@@ -14,17 +14,13 @@ import type { MobiliteAccessMode, MobiliteAccessRamp, MobiliteAccessRampPoint, T
 import { AEDAR_DEFAULT_VISIBLE_RAMP_MODES } from '@/fiche/content/aedarTimeRampFacts'
 import type { AedarRampMode } from '@/fiche/content/themeContent'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow, CahierTooltipTone, FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { cahierIntegerYAxisScale, CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
+import { cahierIntegerYAxisScale } from '@/fiche/cahierFigureGrammaire'
 import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
-
-const AEDAR_TIME_FIGURE_STYLE = {
-  ...CAHIER_FIGURE_STYLE,
-  '--cahier-figure-axis-title-x-left': '50%',
-}
+import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
 
 const props = withDefaults(defineProps<{
   ramp?: MobiliteAccessRamp
@@ -38,10 +34,12 @@ const emit = defineEmits<{ 'update:selectedModes': [modes: readonly AedarRampMod
 const MODE_ORDER: readonly MobiliteAccessMode[] = ['car', 'bike', 'walkTransit']
 const WIDTH = 640
 const HEIGHT = 300
-const MARGIN = { top: 22, right: 68, bottom: 62, left: 64 }
-const PLOT_WIDTH = WIDTH - MARGIN.left - MARGIN.right
-const PLOT_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom
-const FIGURE_GEOMETRY = { width: WIDTH, height: HEIGHT, margin: MARGIN } as const
+const BASE_FIGURE_GEOMETRY = {
+  width: WIDTH,
+  height: HEIGHT,
+  margin: { top: 22, right: 68, bottom: 62, left: 64 },
+} as const
+const plotElement = ref<HTMLElement | null>(null)
 
 function formatNumber(value: number): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(value)
@@ -58,11 +56,13 @@ const maximum = computed(() => Math.max(
 ))
 
 function xFor(quantile: number): number {
-  return MARGIN.left + quantile * PLOT_WIDTH
+  const { width, margin } = figureGeometry.value
+  return margin.left + quantile * (width - margin.left - margin.right)
 }
 
 function yFor(value: number): number {
-  return MARGIN.top + (1 - value / maximum.value) * PLOT_HEIGHT
+  const { height, margin } = figureGeometry.value
+  return margin.top + (1 - value / maximum.value) * (height - margin.top - margin.bottom)
 }
 
 function pathFor(points: MobiliteAccessRamp['curves'][MobiliteAccessMode]['points']): string {
@@ -123,7 +123,9 @@ const modeAnnotations = computed<readonly ModeAnnotation[]>(() => {
   }))
   const placed: ModeAnnotation[] = []
   for (const item of [...desired].sort((left, right) => yFor(left.value) - yFor(right.value))) {
-    let labelY = Math.max(MARGIN.top + 12, Math.min(MARGIN.top + PLOT_HEIGHT - 8, yFor(item.value)))
+    const { height, margin } = figureGeometry.value
+    const plotBottom = height - margin.bottom
+    let labelY = Math.max(margin.top + 12, Math.min(plotBottom - 8, yFor(item.value)))
     const previous = placed.at(-1)
     if (previous) labelY = Math.max(labelY, previous.labelY + 18)
     placed.push({
@@ -135,9 +137,9 @@ const modeAnnotations = computed<readonly ModeAnnotation[]>(() => {
     })
   }
   const bounded = placed.map((annotation) => ({
-      ...annotation,
-      labelY: Math.min(annotation.labelY, MARGIN.top + PLOT_HEIGHT - 8),
-    }))
+    ...annotation,
+    labelY: Math.min(annotation.labelY, figureGeometry.value.height - figureGeometry.value.margin.bottom - 8),
+  }))
   return MODE_ORDER.flatMap((mode) => bounded.filter((annotation) => annotation.mode === mode))
 })
 
@@ -196,11 +198,12 @@ function cutHitboxStyle(point: MobiliteAccessRampPoint, index: number): Record<s
   const next = points[index + 1]
   const leftQuantile = previous ? (previous.quantile + point.quantile) / 2 : point.quantile
   const rightQuantile = next ? (point.quantile + next.quantile) / 2 : point.quantile
+  const { width, height, margin } = figureGeometry.value
   return {
-    left: `${((xFor(leftQuantile) / WIDTH) * 100)}%`,
-    top: `${(MARGIN.top / HEIGHT) * 100}%`,
-    width: `${((xFor(rightQuantile) - xFor(leftQuantile)) / WIDTH) * 100}%`,
-    height: `${(PLOT_HEIGHT / HEIGHT) * 100}%`,
+    left: `${((xFor(leftQuantile) / width) * 100)}%`,
+    top: `${(margin.top / height) * 100}%`,
+    width: `${((xFor(rightQuantile) - xFor(leftQuantile)) / width) * 100}%`,
+    height: `${((height - margin.top - margin.bottom) / height) * 100}%`,
   }
 }
 
@@ -212,8 +215,8 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
   ])
   const average = values.reduce((sum, value) => sum + value, 0) / Math.max(values.length, 1)
   return {
-    x: `${Math.max(0.18, Math.min(0.82, xFor(selectedCut.value.quantile) / WIDTH)) * 100}%`,
-    y: `${Math.max(0.04, Math.min(0.48, yFor(average) / HEIGHT)) * 100}%`,
+    x: `${Math.max(0.18, Math.min(0.82, xFor(selectedCut.value.quantile) / figureGeometry.value.width)) * 100}%`,
+    y: `${Math.max(0.04, Math.min(0.48, yFor(average) / figureGeometry.value.height)) * 100}%`,
   }
 })
 
@@ -269,8 +272,21 @@ function toggleTimeMode(key: string): void {
 const timeYAxis = computed(() => cahierIntegerYAxisScale(visibleTimeSeries.value.flatMap((series) =>
   series.points.flatMap((point) => [point.value, point.referenceValue]),
 )))
-const timeX = (value: number) => MARGIN.left + ((value - (timePoints.value[0]?.xValue ?? 0)) / Math.max(1, (timePoints.value.at(-1)?.xValue ?? 1) - (timePoints.value[0]?.xValue ?? 0))) * PLOT_WIDTH
-const timeY = (value: number) => MARGIN.top + (1 - (value - timeYAxis.value.minimum) / (timeYAxis.value.maximum - timeYAxis.value.minimum)) * PLOT_HEIGHT
+const measuredYTickLabels = computed(() => props.timeRamp
+  ? timeYAxis.value.ticks.map((value) => `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`)
+  : yLabels.value.map(formatNumber))
+const figureGeometry = useMeasuredCahierFigureGeometry(plotElement, measuredYTickLabels, BASE_FIGURE_GEOMETRY)
+const plotHeight = computed(() => figureGeometry.value.height -
+  figureGeometry.value.margin.top - figureGeometry.value.margin.bottom)
+const timeX = (value: number) => {
+  const { width, margin } = figureGeometry.value
+  return margin.left + ((value - (timePoints.value[0]?.xValue ?? 0)) / Math.max(1, (timePoints.value.at(-1)?.xValue ?? 1) - (timePoints.value[0]?.xValue ?? 0))) * (width - margin.left - margin.right)
+}
+const timeY = (value: number) => {
+  const { height, margin } = figureGeometry.value
+  return margin.top + (1 - (value - timeYAxis.value.minimum) / (timeYAxis.value.maximum - timeYAxis.value.minimum)) *
+    (height - margin.top - margin.bottom)
+}
 const timeTicks = computed(() => timePoints.value.map((point) => ({ key: point.xValue, position: timeX(point.xValue), label: point.xLabel })))
 const timeYTicks = computed(() => timeYAxis.value.ticks.map((value) => ({ key: value, position: timeY(value), label: `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}` })))
 
@@ -307,7 +323,7 @@ const timeLegendMarkColors = computed<Readonly<Record<string, string>>>(() => Ob
   (props.timeRamp?.series ?? []).map((series) => [series.key, AEDAR_TIME_MODE_COLORS[series.key] ?? 'var(--cahier-theme-strong)']),
 ))
 const selectedTimeCut = ref<{ xValue: number; xLabel: string } | null>(null)
-const timeTooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => selectedTimeCut.value ? { x: `${Math.max(0.18, Math.min(0.82, timeX(selectedTimeCut.value.xValue) / WIDTH)) * 100}%`, y: '12%' } : undefined)
+const timeTooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => selectedTimeCut.value ? { x: `${Math.max(0.18, Math.min(0.82, timeX(selectedTimeCut.value.xValue) / figureGeometry.value.width)) * 100}%`, y: '12%' } : undefined)
 const timeTooltipRows = computed<readonly CahierTooltipRow[]>(() => {
   const cut = selectedTimeCut.value
   const timeRamp = props.timeRamp
@@ -344,7 +360,8 @@ function timeHitboxStyle(index: number): Record<string, string> {
   const next = timePoints.value[index + 1]
   const left = previous ? (timeX(previous.xValue) + timeX(point.xValue)) / 2 : timeX(point.xValue)
   const right = next ? (timeX(point.xValue) + timeX(next.xValue)) / 2 : timeX(point.xValue)
-  return { left: `${left / WIDTH * 100}%`, top: `${MARGIN.top / HEIGHT * 100}%`, width: `${Math.max(2, (right - left) / WIDTH * 100)}%`, height: `${PLOT_HEIGHT / HEIGHT * 100}%` }
+  const { width, height, margin } = figureGeometry.value
+  return { left: `${left / width * 100}%`, top: `${margin.top / height * 100}%`, width: `${Math.max(2, (right - left) / width * 100)}%`, height: `${plotHeight.value / height * 100}%` }
 }
 </script>
 
@@ -353,17 +370,17 @@ function timeHitboxStyle(index: number): Record<string, string> {
     v-if="timeRamp"
     class="access-ramp-cahier access-ramp-cahier--time"
     size="compact"
-    :style="AEDAR_TIME_FIGURE_STYLE"
+    :geometry="figureGeometry"
     x-title="Temps de trajet"
     :y-title="`${timeRamp.yAxis.label}${timeRamp.yAxis.unit ? ` (${timeRamp.yAxis.unit})` : ''}`"
   >
     <template #plot>
-      <div class="access-ramp-plot cahier-figure-plot">
-        <svg class="access-ramp-svg" :viewBox="`0 0 ${WIDTH} ${HEIGHT}`" preserveAspectRatio="xMidYMid meet" role="img" :aria-label="timeAccessibleLabel">
+      <div ref="plotElement" class="access-ramp-plot cahier-figure-plot">
+        <svg class="access-ramp-svg" :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`" preserveAspectRatio="xMidYMid meet" role="img" :aria-label="timeAccessibleLabel">
           <g class="access-ramp-grid" aria-hidden="true">
-            <line v-for="tick in timeYTicks" :key="`ty-${tick.key}`" :x1="MARGIN.left" :x2="MARGIN.left + PLOT_WIDTH" :y1="tick.position" :y2="tick.position" />
-            <line v-for="point in timePoints" :key="`tx-${point.xValue}`" :x1="timeX(point.xValue)" :x2="timeX(point.xValue)" :y1="MARGIN.top" :y2="MARGIN.top + PLOT_HEIGHT" />
-            <line class="access-ramp-axis" :x1="MARGIN.left" :x2="MARGIN.left + PLOT_WIDTH" :y1="MARGIN.top + PLOT_HEIGHT" :y2="MARGIN.top + PLOT_HEIGHT" />
+            <line v-for="tick in timeYTicks" :key="`ty-${tick.key}`" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="tick.position" :y2="tick.position" />
+            <line v-for="point in timePoints" :key="`tx-${point.xValue}`" :x1="timeX(point.xValue)" :x2="timeX(point.xValue)" :y1="figureGeometry.margin.top" :y2="figureGeometry.height - figureGeometry.margin.bottom" />
+            <line class="access-ramp-axis" :x1="figureGeometry.margin.left" :x2="figureGeometry.width - figureGeometry.margin.right" :y1="figureGeometry.height - figureGeometry.margin.bottom" :y2="figureGeometry.height - figureGeometry.margin.bottom" />
           </g>
           <g v-for="series in visibleTimeSeries" :key="series.key">
             <template v-if="timeRamp.comparisonLabel">
@@ -372,7 +389,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
             <path v-for="(path, index) in timePaths(series.points)" :key="`value-${index}`" class="access-ramp-line access-ramp-line--territory access-ramp-time-line" :class="timeSeriesLineClass(series.key)" :style="{ stroke: timeSeriesColor(series.key) }" :d="path" aria-hidden="true" />
           </g>
         </svg>
-        <CahierFigureAxisLabels :geometry="FIGURE_GEOMETRY" :x-ticks="timeTicks" :y-ticks="timeYTicks" :x-label-offset="8" />
+        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="timeTicks" :y-ticks="timeYTicks" :x-label-offset="8" />
         <div class="access-ramp-cut-hitboxes" aria-label="Détails par temps d'accès">
           <button v-for="(point, index) in timePoints" :key="point.xValue" class="access-ramp-cut-hitbox" type="button" :style="timeHitboxStyle(index)" :aria-label="`Temps d'accès : ${point.xLabel}`" @mouseenter="selectedTimeCut = { xValue: point.xValue, xLabel: point.xLabel }" @mouseleave="selectedTimeCut = null" @focus="selectedTimeCut = { xValue: point.xValue, xLabel: point.xLabel }" @blur="selectedTimeCut = null" @click="selectedTimeCut = { xValue: point.xValue, xLabel: point.xLabel }" />
         </div>
@@ -385,15 +402,15 @@ function timeHitboxStyle(index: number): Record<string, string> {
     v-else-if="ramp"
     class="access-ramp-cahier"
     size="compact"
-    :style="CAHIER_FIGURE_STYLE"
+    :geometry="figureGeometry"
     :x-title="ramp.xAxisLabel"
     :y-title="ramp.yAxisLabel"
   >
     <template #plot>
-      <div class="access-ramp-plot cahier-figure-plot">
+      <div ref="plotElement" class="access-ramp-plot cahier-figure-plot">
         <svg
           class="access-ramp-svg"
-          :viewBox="`0 0 ${WIDTH} ${HEIGHT}`"
+          :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`"
           preserveAspectRatio="xMidYMid meet"
           role="img"
           :aria-label="accessibleLabel"
@@ -402,8 +419,8 @@ function timeHitboxStyle(index: number): Record<string, string> {
             <line
               v-for="value in yLabels"
               :key="`y-${value}`"
-              :x1="MARGIN.left"
-              :x2="MARGIN.left + PLOT_WIDTH"
+              :x1="figureGeometry.margin.left"
+              :x2="figureGeometry.width - figureGeometry.margin.right"
               :y1="yFor(value)"
               :y2="yFor(value)"
             />
@@ -412,22 +429,22 @@ function timeHitboxStyle(index: number): Record<string, string> {
               :key="`x-${point.quantile}`"
               :x1="xFor(point.quantile)"
               :x2="xFor(point.quantile)"
-              :y1="MARGIN.top"
-              :y2="MARGIN.top + PLOT_HEIGHT"
+              :y1="figureGeometry.margin.top"
+              :y2="figureGeometry.height - figureGeometry.margin.bottom"
             />
             <line
               class="access-ramp-axis"
-              :x1="MARGIN.left"
-              :x2="MARGIN.left + PLOT_WIDTH"
-              :y1="MARGIN.top + PLOT_HEIGHT"
-              :y2="MARGIN.top + PLOT_HEIGHT"
+              :x1="figureGeometry.margin.left"
+              :x2="figureGeometry.width - figureGeometry.margin.right"
+              :y1="figureGeometry.height - figureGeometry.margin.bottom"
+              :y2="figureGeometry.height - figureGeometry.margin.bottom"
             />
             <line
               class="access-ramp-median"
               :x1="xFor(0.5)"
               :x2="xFor(0.5)"
-              :y1="MARGIN.top"
-              :y2="MARGIN.top + PLOT_HEIGHT"
+              :y1="figureGeometry.margin.top"
+              :y2="figureGeometry.height - figureGeometry.margin.bottom"
             />
           </g>
           <path
@@ -484,7 +501,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
           </g>
         </svg>
         <CahierFigureAxisLabels
-          :geometry="FIGURE_GEOMETRY"
+          :geometry="figureGeometry"
           :x-ticks="xAxisTicks"
           :y-ticks="yAxisTicks"
           :x-label-offset="8"
@@ -528,7 +545,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
 .access-ramp-plot {
   position: relative;
   width: 100%;
-  aspect-ratio: 640 / 300;
+  aspect-ratio: var(--cahier-figure-aspect-ratio);
 }
 
 .access-ramp-svg {

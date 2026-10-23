@@ -10,22 +10,23 @@ import { computed, ref } from 'vue'
 
 import type { MobiliteBuildingDistribution } from '@/fiche/content/territoryFacts'
 import type { CahierFigureTooltipAnchor, CahierTooltipRow } from '@/fiche/cahierFigureGrammaire'
-import { CAHIER_FIGURE_STYLE } from '@/fiche/cahierFigureGrammaire'
+import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureFrame from './CahierFigureFrame.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
+import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
 
 const props = defineProps<{
   distribution: MobiliteBuildingDistribution
   territoryName: string
 }>()
 
-const WIDTH = 640
-const HEIGHT = 404
-const MARGIN = { top: 22, right: 20, bottom: 58, left: 118 }
-const PLOT_WIDTH = WIDTH - MARGIN.left - MARGIN.right
-const PLOT_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom
-const FIGURE_GEOMETRY = { width: WIDTH, height: HEIGHT, margin: MARGIN } as const
+const BASE_FIGURE_GEOMETRY = {
+  width: 640,
+  height: 404,
+  margin: { top: 22, right: 20, bottom: 58, left: 118 },
+} as const satisfies CahierFigureGeometry
+const plotElement = ref<HTMLElement | null>(null)
 
 function formatNumber(value: number, maximumFractionDigits = 1): string {
   return new Intl.NumberFormat('fr-FR', { maximumFractionDigits }).format(value)
@@ -39,6 +40,15 @@ function formatShare(value: number): string {
 const cellsByKey = computed(() => new Map(
   props.distribution.cells.map((cell) => [`${cell.breadthBucket}:${cell.depthBucket}`, cell]),
 ))
+const figureGeometry = useMeasuredCahierFigureGeometry(
+  plotElement,
+  computed(() => props.distribution.depthBins.map(({ label }) => label)),
+  BASE_FIGURE_GEOMETRY,
+)
+const plotWidth = computed(() => figureGeometry.value.width -
+  figureGeometry.value.margin.left - figureGeometry.value.margin.right)
+const plotHeight = computed(() => figureGeometry.value.height -
+  figureGeometry.value.margin.top - figureGeometry.value.margin.bottom)
 
 const maxShare = computed(() => Math.max(
   0.01,
@@ -48,8 +58,8 @@ const maxShare = computed(() => Math.max(
   ]),
 ))
 
-const cellWidth = computed(() => PLOT_WIDTH / Math.max(props.distribution.breadthBins.length, 1))
-const cellHeight = computed(() => PLOT_HEIGHT / Math.max(props.distribution.depthBins.length, 1))
+const cellWidth = computed(() => plotWidth.value / Math.max(props.distribution.breadthBins.length, 1))
+const cellHeight = computed(() => plotHeight.value / Math.max(props.distribution.depthBins.length, 1))
 
 type RenderedCell = {
   key: string
@@ -74,8 +84,8 @@ const renderedCells = computed<readonly RenderedCell[]>(() => props.distribution
     const share = cell?.share ?? 0
     return {
       key: `${breadth.key}:${depth.key}`,
-      x: MARGIN.left + xIndex * cellWidth.value,
-      y: MARGIN.top + (props.distribution.depthBins.length - 1 - depthIndex) * cellHeight.value,
+      x: figureGeometry.value.margin.left + xIndex * cellWidth.value,
+      y: figureGeometry.value.margin.top + (props.distribution.depthBins.length - 1 - depthIndex) * cellHeight.value,
       width: cellWidth.value,
       height: cellHeight.value,
       share,
@@ -99,12 +109,12 @@ const comparisonCells = computed(() => renderedCells.value.filter((cell) => (cel
 
 const xLabels = computed(() => props.distribution.breadthBins.map((bin, index) => ({
   ...bin,
-  x: MARGIN.left + (index + 0.5) * cellWidth.value,
+  x: figureGeometry.value.margin.left + (index + 0.5) * cellWidth.value,
 })))
 
 const yLabels = computed(() => props.distribution.depthBins.map((bin, index) => ({
   ...bin,
-  y: MARGIN.top + (props.distribution.depthBins.length - 1 - index + 0.5) * cellHeight.value,
+  y: figureGeometry.value.margin.top + (props.distribution.depthBins.length - 1 - index + 0.5) * cellHeight.value,
 })))
 
 const xAxisTicks = computed(() => xLabels.value.map((label) => ({
@@ -142,10 +152,10 @@ function territoryColor(share: number): string {
 
 function cellHitboxStyle(cell: RenderedCell): Record<string, string> {
   return {
-    left: `${(cell.x / WIDTH) * 100}%`,
-    top: `${(cell.y / HEIGHT) * 100}%`,
-    width: `${(cell.width / WIDTH) * 100}%`,
-    height: `${(cell.height / HEIGHT) * 100}%`,
+    left: `${(cell.x / figureGeometry.value.width) * 100}%`,
+    top: `${(cell.y / figureGeometry.value.height) * 100}%`,
+    width: `${(cell.width / figureGeometry.value.width) * 100}%`,
+    height: `${(cell.height / figureGeometry.value.height) * 100}%`,
   }
 }
 
@@ -178,8 +188,8 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
   const centerX = selectedCell.value.x + selectedCell.value.width / 2
   const centerY = selectedCell.value.y + selectedCell.value.height / 2
   return {
-    x: `${Math.max(0.18, Math.min(0.82, centerX / WIDTH)) * 100}%`,
-    y: `${Math.max(0.04, Math.min(0.58, centerY / HEIGHT)) * 100}%`,
+    x: `${Math.max(0.18, Math.min(0.82, centerX / figureGeometry.value.width)) * 100}%`,
+    y: `${Math.max(0.04, Math.min(0.58, centerY / figureGeometry.value.height)) * 100}%`,
   }
 })
 </script>
@@ -188,15 +198,15 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
   <CahierFigureFrame
     class="bivariate-distribution-cahier"
     size="compact"
-    :style="CAHIER_FIGURE_STYLE"
+    :geometry="figureGeometry"
     :x-title="distribution.breadthAxisLabel"
     :y-title="distribution.depthAxisLabel"
   >
     <template #plot>
-      <div class="bivariate-distribution-plot cahier-figure-plot">
+      <div ref="plotElement" class="bivariate-distribution-plot cahier-figure-plot">
         <svg
           class="bivariate-distribution-svg"
-          :viewBox="`0 0 ${WIDTH} ${HEIGHT}`"
+          :viewBox="`0 0 ${figureGeometry.width} ${figureGeometry.height}`"
           preserveAspectRatio="xMidYMid meet"
           role="img"
           :aria-label="accessibleLabel"
@@ -227,10 +237,10 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
             />
             <line
               class="bivariate-grid-axis"
-              :x1="MARGIN.left"
-              :x2="MARGIN.left + PLOT_WIDTH"
-              :y1="MARGIN.top + PLOT_HEIGHT"
-              :y2="MARGIN.top + PLOT_HEIGHT"
+              :x1="figureGeometry.margin.left"
+              :x2="figureGeometry.width - figureGeometry.margin.right"
+              :y1="figureGeometry.margin.top + plotHeight"
+              :y2="figureGeometry.margin.top + plotHeight"
             />
           </g>
           <g class="bivariate-grid-labels" aria-hidden="true">
@@ -253,7 +263,7 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
           </g>
         </svg>
         <CahierFigureAxisLabels
-          :geometry="FIGURE_GEOMETRY"
+          :geometry="figureGeometry"
           :x-ticks="xAxisTicks"
           :y-ticks="yAxisTicks"
           :x-label-offset="8"
@@ -312,7 +322,6 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
 .bivariate-distribution-plot {
   position: relative;
   width: 100%;
-  aspect-ratio: 640 / 404;
 }
 
 .bivariate-distribution-svg {

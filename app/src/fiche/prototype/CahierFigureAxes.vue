@@ -40,7 +40,7 @@ const axisStyle = { '--cahier-figure-axis-width': `${CAHIER_FIGURE_AXIS.width}` 
       <line class="cahier-figure-tick" :x1="geometry.margin.left - CAHIER_FIGURE_AXIS.tickLength" :x2="geometry.margin.left" :y1="tick.position" :y2="tick.position" />
       <text
         v-if="props.showLabels !== false && tick.label !== null"
-        class="cahier-figure-tick-label"
+        class="cahier-figure-tick-label cahier-figure-tick-label-svg--y"
         :x="geometry.margin.left - CAHIER_FIGURE_AXIS.yLabelOffset"
         :y="tick.position + CAHIER_FIGURE_AXIS.yLabelBaseline"
         text-anchor="end"
