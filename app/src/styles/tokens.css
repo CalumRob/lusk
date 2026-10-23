@@ -196,11 +196,13 @@
    * var(--text-h1-tracking)` composes the full style.
    * ---------------------------------------------------------------------- */
 
-  --text-display: 600 clamp(2.25rem, 4vw, 3rem)/1.15 var(--font-display-title); /* hero claim, fiche one-liner */
+  --text-display: 600 clamp(2.25rem, 2rem + 1.111vw, 3rem)/1.15 var(--font-display-title); /* hero claim, fiche one-liner */
   --text-display-tracking: -0.01em;
 
-  --text-h1: 700 clamp(1.75rem, 3vw, 2rem)/1.2 var(--font-display-title); /* page titles */
+  --text-h1: 700 clamp(1.75rem, 1.6667rem + 0.370vw, 2rem)/1.2 var(--font-display-title); /* page titles */
   --text-h1-tracking: -0.015em;
+
+  --text-page-heading: 600 clamp(1.35rem, 1rem + 1.556vw, 2.4rem)/1 var(--font-display-title); /* Cahier page titles */
 
   --text-h2: 600 1.5rem/1.3 var(--font-section-title); /* section headers */
   --text-h2-tracking: -0.01em;
@@ -226,6 +228,8 @@
   /* Shared figure role: labels and axes use the same compact editorial face. */
   --type-figure-label: 400 0.75rem/1.2 var(--font-figure-label);
   --type-figure-label-tracking: 0.08em;
+  --type-figure-title: 400 0.9375rem/1.25 var(--font-figure-title);
+  --type-figure-tick-size: 0.6875rem;
   /* Backwards-compatible alias for existing figure-column consumers. */
   --type-figure-column: var(--type-figure-label);
   --type-figure-column-tracking: var(--type-figure-label-tracking);

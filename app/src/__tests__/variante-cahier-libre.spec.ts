@@ -39,6 +39,10 @@ const varianteCahierLibreStyles = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'VarianteCahierLibre.vue'),
   'utf-8',
 ).match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
+const cahierEvidenceSourceStyles = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierEvidenceSource.css'),
+  'utf-8',
+)
 
 function regleCss(css: string, selector: string): string {
   const match = css.match(new RegExp(`${selector}\\s*\\{([\\s\\S]*?)\\}`))
@@ -939,15 +943,37 @@ describe('Variante E — partage de l’espace public', () => {
     expect(regleCss(varianteCahierLibreStyles, '\\.cahier')).toContain(
       'font-family: var(--font-body);',
     )
-    expect(regleCss(varianteCahierLibreStyles, '\\.page-heading h2')).toContain(
-      'font-family: var(--font-display-title);',
-    )
+    const pageHeading = regleCss(varianteCahierLibreStyles, '\\.page-heading h2')
+    expect(pageHeading).toContain('font: var(--text-page-heading);')
+    expect(pageHeading).toContain('font-family: var(--font-display-title);')
+    expect(pageHeading).toContain('font-weight: 400;')
+    expect(pageHeading).toContain('line-height: 1;')
     expect(regleCss(varianteCahierLibreStyles, '\\.concept-group-heading h3')).toContain(
       'font-family: var(--font-narrative-lead);',
     )
     expect(regleCss(varianteCahierLibreStyles, '\\.cahier--sans-grille \.summary-metric-title')).toContain(
       'font-family: var(--font-figure-label);',
     )
+  })
+
+  it('uses stable compact metadata roles at every Cahier viewport width', () => {
+    expect(regleCss(cahierEvidenceSourceStyles, '\\.cahier-evidence-source')).toContain(
+      'font: var(--text-caption);',
+    )
+    expect(cahierEvidenceSourceStyles).not.toMatch(/@media[^}]*\.cahier-evidence-source\s*\{[^}]*font-size/)
+    expect(regleCss(varianteCahierLibreStyles, '\\.margin-sources a')).toContain(
+      'font: var(--text-caption);',
+    )
+    expect(regleCss(varianteCahierLibreStyles, '\\.page-number span, \\.page-number small')).toContain(
+      'font: var(--text-overline);',
+    )
+    expect(blocCss(varianteCahierLibreStyles, '@media (max-width: 760px)')).not.toContain(
+      '.margin-sources a {',
+    )
+
+    const mobileStyles = blocCss(varianteCahierLibreStyles, '@media (max-width: 600px)')
+    expect(mobileStyles).not.toMatch(/^\s*\.page-heading h2\s*\{/m)
+    expect(mobileStyles).toContain('.cahier--indexed-sections .page-heading h2')
   })
 
   it('starts at the persistent AppHeader edge and aligns Sommaire page targets there', () => {

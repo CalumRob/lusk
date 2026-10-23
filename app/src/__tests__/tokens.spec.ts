@@ -182,11 +182,13 @@ describe('DESIGN.md §3 — Typography', () => {
   })
 
   it('encodes the type scale (size, weight, line-height, tracking)', () => {
-    expectToken('--text-display', "600 clamp(2.25rem, 4vw, 3rem)/1.15 var(--font-display-title)")
+    expectToken('--text-display', "600 clamp(2.25rem, 2rem + 1.111vw, 3rem)/1.15 var(--font-display-title)")
     expectToken('--text-display-tracking', '-0.01em')
 
-    expectToken('--text-h1', "700 clamp(1.75rem, 3vw, 2rem)/1.2 var(--font-display-title)")
+    expectToken('--text-h1', "700 clamp(1.75rem, 1.6667rem + 0.370vw, 2rem)/1.2 var(--font-display-title)")
     expectToken('--text-h1-tracking', '-0.015em')
+
+    expectToken('--text-page-heading', '600 clamp(1.35rem, 1rem + 1.556vw, 2.4rem)/1 var(--font-display-title)')
 
     expectToken('--text-h2', "600 1.5rem/1.3 var(--font-section-title)")
     expectToken('--text-h2-tracking', '-0.01em')
@@ -210,6 +212,8 @@ describe('DESIGN.md §3 — Typography', () => {
     expectToken('--text-overline-tracking', '0.08em')
 
     expectToken('--type-figure-label', '400 0.75rem/1.2 var(--font-figure-label)')
+    expectToken('--type-figure-title', '400 0.9375rem/1.25 var(--font-figure-title)')
+    expectToken('--type-figure-tick-size', '0.6875rem')
     expectToken('--type-figure-mode', '400 0.875rem/1.35 var(--font-figure-mode)')
     expectToken('--type-figure-value', '700 1rem/1 var(--font-figure-value)')
     expectToken('--type-figure-legend', '500 0.8125rem/1.35 var(--font-figure-legend)')

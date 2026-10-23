@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -31,6 +31,14 @@ const tokensSource = readFileSync(
   'utf8',
 )
 
+function cahierStyleFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) return cahierStyleFiles(path)
+    return /\.(?:css|vue)$/u.test(entry.name) ? [path] : []
+  })
+}
+
 function cssRule(source: string, selector: string): string {
   return source.match(new RegExp(`(?:^|\\n)${selector.replaceAll('.', '\\.') }\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? ''
 }
@@ -46,8 +54,32 @@ describe('Cahier typography roles', () => {
 
   it('routes Cahier figure titles through the figure-title family role', () => {
     expect(cssRule(layoutCss, '.cahier-figure-title')).toContain(
-      'font-family: var(--font-figure-title)',
+      'font: var(--type-figure-title)',
     )
+    expect(cssRule(layoutCss, '.cahier-figure-title')).toContain('color: var(--brand-700)')
+    expect(tokensSource).toContain('--type-figure-title: 400 0.9375rem/1.25 var(--font-figure-title)')
+    expect(tokensSource).toContain('--type-figure-tick-size: 0.6875rem')
+    expect(cssRule(figureCss, '.cahier-figure-frame')).toContain(
+      '--cahier-figure-tick-label-size: var(--type-figure-tick-size)',
+    )
+  })
+
+  it('keeps Cahier text at or above the 11px minimum', () => {
+    const undersized: string[] = []
+    const sources = cahierStyleFiles(join(process.cwd(), 'src', 'fiche', 'prototype'))
+
+    for (const path of sources) {
+      const source = readFileSync(path, 'utf8')
+      for (const declaration of source.matchAll(/\bfont(?:-size)?\s*:\s*([^;]+);/gu)) {
+        const directSizes = declaration[1].replace(/calc\([^()]*\)/gu, '')
+        for (const size of directSizes.matchAll(/([\d.]+)(px|rem)(?=\s|\/|,|\)|$)/gu)) {
+          const pixels = Number(size[1]) * (size[2] === 'rem' ? 16 : 1)
+          if (pixels < 11) undersized.push(`${path}: ${declaration[0]}`)
+        }
+      }
+    }
+
+    expect(undersized).toEqual([])
   })
 
   it('uses one lecture size for the Lecture control and En savoir plus', () => {

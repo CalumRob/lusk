@@ -45,7 +45,8 @@ describe('shared E editorial foundation', () => {
 
   it('reflows the page margin in mobile flow and keeps a compact margin line', () => {
     const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
-    const mobile = cahier.match(/@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*?)(?=\n\})/)?.[1] ?? ''
+    const mobileStart = [...cahier.matchAll(/@media\s*\(max-width:\s*760px\)\s*\{/g)].at(-1)?.index
+    const mobile = mobileStart === undefined ? '' : cahier.slice(mobileStart)
     expect(mobile).toContain('--margin-line: 12px')
     expect(mobile).toMatch(/\.page-margin\s*\{[^}]*position:\s*static/s)
   })

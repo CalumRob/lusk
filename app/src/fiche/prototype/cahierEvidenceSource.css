@@ -1,10 +1,8 @@
 .cahier-evidence-source {
   margin: 0;
   color: var(--cahier-default);
-  font-size: 10px;
-  font-weight: 400;
-  line-height: 1.1;
-  letter-spacing: normal;
+  font: var(--text-caption);
+  letter-spacing: var(--text-caption-tracking);
   overflow-wrap: anywhere;
 }
 
@@ -12,11 +10,4 @@
   color: inherit;
   text-decoration-thickness: 1px;
   text-underline-offset: 2px;
-}
-
-@media (max-width: 760px) {
-  .cahier-evidence-source {
-    font-size: 14px;
-    line-height: 1.4;
-  }
 }

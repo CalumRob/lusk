@@ -665,7 +665,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
 
 @media (max-width: 640px) {
   .access-ramp-labels text {
-    font-size: 10px;
+    font-size: var(--type-figure-tick-size);
   }
 }
 </style>

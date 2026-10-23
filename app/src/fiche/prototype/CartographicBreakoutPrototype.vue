@@ -448,8 +448,8 @@ async function inspect(mode: ModeKey): Promise<void> {
   min-height: 28px;
   margin-bottom: 6px;
   color: var(--mode-ring);
-  font: 700 10px/1.2 var(--font-sans);
-  letter-spacing: .035em;
+  font: var(--text-overline);
+  letter-spacing: var(--text-overline-tracking);
   text-transform: uppercase;
 }
 
@@ -532,8 +532,8 @@ async function inspect(mode: ModeKey): Promise<void> {
 .plate-apparatus-heading h3 {
   margin: 0;
   color: var(--cahier-theme-strong);
-  font: 700 10px/1.2 var(--font-sans);
-  letter-spacing: .08em;
+  font: var(--text-overline);
+  letter-spacing: var(--text-overline-tracking);
   text-transform: uppercase;
 }
 
@@ -569,7 +569,7 @@ async function inspect(mode: ModeKey): Promise<void> {
 .border-legend {
   gap: 6px 12px;
   margin: 0;
-  font-size: 9px;
+  font-size: var(--type-figure-tick-size);
 }
 
 .border-legend--a { margin-top: var(--space-3); }
@@ -609,8 +609,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   gap: 14px;
   align-items: center;
   color: var(--cahier-theme-strong);
-  font-size: 10px;
-  font-weight: 700;
+  font: var(--text-overline);
   letter-spacing: .06em;
   text-transform: uppercase;
 }
@@ -623,7 +622,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   gap: 1px;
   width: 16px;
   color: var(--muted);
-  font-size: 10px;
+  font-size: var(--type-figure-tick-size);
   line-height: 1;
 }
 
@@ -652,7 +651,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   border-left: 1px solid currentColor;
 }
 
-.shared-scale small { font-size: 8px; font-weight: 600; letter-spacing: .04em; }
+.shared-scale small { font-size: var(--type-figure-tick-size); font-weight: 600; letter-spacing: .04em; }
 
 .plate-switcher {
   position: fixed;
