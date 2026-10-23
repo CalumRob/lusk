@@ -11,6 +11,16 @@ const isNonEmptyText = (value: unknown): value is string => typeof value === 'st
 const isFiniteNumber = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 const isNullableDate = (value: unknown): value is string | null => value === null || isText(value)
 
+function explicationStatutScalaire(status: string): string | null {
+  switch (status) {
+    case 'suppressed': return 'Valeur masquée selon les règles de diffusion.'
+    case 'unsupported': return 'Valeur non prise en charge pour ce territoire.'
+    case 'not_available': return 'Valeur non disponible.'
+    case 'not_published': return 'Valeur non publiée à ce niveau.'
+    default: return null
+  }
+}
+
 interface ScalarIdentity { contentVersion?: string; referenceContentVersion?: string }
 
 export interface ScalarComparisonRank {
@@ -111,20 +121,29 @@ export async function chargerRangScalaire(indicator: string, theme: Theme, page:
   const missing = result?.missing_count
   const expectedDirection = page.comparison?.direction ?? page.direction
   const expectedFacet = page.comparison?.indicator ?? indicator
+  const expectedSelectionCount = group.members.length
+  const scopeTerritoryTypeMatches = expectedScopeKind === 'same_level'
+    ? scope?.territory_type === focal.type
+    : scope?.territory_type === undefined || scope.territory_type === focal.type
+  const countsValid = Number.isSafeInteger(selectedCount) && (selectedCount as number) >= 0 &&
+    Number.isSafeInteger(eligible) && (eligible as number) >= 0 &&
+    Number.isSafeInteger(missing) && (missing as number) >= 0 &&
+    (eligible as number) + (missing as number) === expectedSelectionCount
+  const rankValid = rank === null
+    ? rankSize === null
+    : Number.isSafeInteger(rank) && Number.isSafeInteger(rankSize) && (rank as number) >= 1 &&
+      (rank as number) <= (rankSize as number) && (rankSize as number) >= 2 && rankSize === eligible && result?.status === 'available'
   if (data!.contract !== 'indicator-comparison-v1' || data!.indicator_id !== indicator || data!.shape !== 'scalar' ||
        !isNonEmptyText(data!.content_version) || !isNonEmptyText(data!.reference_content_version) ||
        (identity?.contentVersion !== undefined && data!.content_version !== identity.contentVersion) ||
       (identity?.referenceContentVersion !== undefined && data!.reference_content_version !== identity.referenceContentVersion) ||
       !isRecord(data!.target) || data!.target.kind !== 'territory' || data!.target.type !== focal.type || data!.target.id !== focal.territoire ||
-      JSON.stringify(data!.selection ?? null) !== JSON.stringify(expectedSelection) || !isRecord(scope) ||
-      scope.kind !== expectedScopeKind || scope.member_count !== group.members.length ||
-      !result || result.indicator_id !== indicator || result.status !== 'available' && result.status !== 'unavailable' ||
-      result.unit !== page.unit || result.direction !== expectedDirection || result.source_facet !== expectedFacet ||
-      !isNonEmptyText(result.descriptor_version) || !Number.isSafeInteger(selectedCount) ||
-      selectedCount !== group.members.length || !Number.isSafeInteger(eligible) || !Number.isSafeInteger(missing) ||
-      (eligible as number) + (missing as number) !== group.members.length ||
-      (rank === null ? rankSize !== null : !Number.isSafeInteger(rank) || !Number.isSafeInteger(rankSize) ||
-        (rank as number) < 1 || (rank as number) > (rankSize as number) || (rankSize as number) < 2 || rankSize !== eligible)) {
+       JSON.stringify(data!.selection ?? null) !== JSON.stringify(expectedSelection) || !isRecord(scope) ||
+       scope.kind !== expectedScopeKind || scope.member_count !== expectedSelectionCount || !scopeTerritoryTypeMatches ||
+       !result || result.indicator_id !== indicator || result.status !== 'available' && result.status !== 'unavailable' ||
+       result.unit !== page.unit || result.direction !== expectedDirection || result.source_facet !== expectedFacet ||
+       !isNonEmptyText(result.descriptor_version) || !countsValid || selectedCount !== expectedSelectionCount ||
+       (result.status === 'unavailable' && (rank !== null || rankSize !== null)) || !rankValid) {
     throw new PayloadError('validation', path, 'La comparaison scalaire ne reflète pas la ressource, le territoire ou le groupe déclaré.')
   }
   return rank === null ? null : { rank: rank as number, rankSize: rankSize as number, scope: group.scope }
@@ -262,7 +281,7 @@ function adapterCohorteScalaire(data: Row, declaration: SemanticResourceDeclarat
     const primary = sources[0]!
     return { territoire: territoryId, type: level, theme, key: indicator, detail: null,
       value: status === 'measured' ? value as number : null, unit: descriptor.unit as string,
-      rider: status === 'measured' ? null : status,
+      rider: status === 'measured' ? null : explicationStatutScalaire(status),
       observation_status: status === 'measured' ? 'measured' : 'missing',
       fact_status: status as Indicateur['fact_status'],
       support_count: support as number | null, denominator_count: denominator as number | null,
@@ -339,9 +358,10 @@ export function remplacerFaitsScalaires(themeRows: Indicateur[], replacement: In
   )
   const replacementsWithRiders = replacement.map((row) => ({
     ...row,
-    // Scalar cohorts replace numeric observations, not content-owned riders
-    // such as "no service station on this territory" from the published row.
-    rider: row.rider ?? originalBySignature.get(signature(row))?.rider ?? null,
+    // Semantic scalar status explanations are app-owned French copy. A static
+    // rider may encode a source-state assertion (e.g. no station existed), so
+    // it must not outlive the API observation that replaces that fact.
+    rider: row.fact_status ? row.rider ?? null : row.rider ?? originalBySignature.get(signature(row))?.rider ?? null,
   }))
   return [...themeRows.filter((row) => !(row.theme === replacement[0]?.theme && keys.has(row.key))), ...replacementsWithRiders]
 }

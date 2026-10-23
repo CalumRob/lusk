@@ -138,7 +138,9 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
       fact_sources: [{ sourceId: page.sources[0], version: '2026', referenceDate: '2026-06-30', publicationDate: '2026-07-01' }],
       rang_epci: null, rang_epci_n: null, rang_dep: null, rang_reg: null })
     expect(facts.find((fact) => fact.territoire === '22002')).toMatchObject({ value: null,
-      fact_status: 'suppressed', observation_status: 'missing', support_count: 7, denominator_count: 100 })
+      fact_status: 'suppressed', observation_status: 'missing', support_count: 7, denominator_count: 100,
+      rider: 'Valeur masquée selon les règles de diffusion.' })
+    expect(facts.find((fact) => fact.territoire === '22002')?.rider).not.toBe('suppressed')
     expect(identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
   })
 
@@ -241,12 +243,62 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     expect(fetcher.mock.calls).toHaveLength(callsBeforeRegion)
   })
 
-  it('retains content-owned riders while replacing only API facts', () => {
-    const registered = ['effectifs_salaries']
-    const source = indicateursEconomieFixture.find((fact) => fact.key === registered[0])!
-    const original = { ...source, rider: 'app-owned explanation' }
-    const acquired = { ...original, value: 999, rider: null, rang_epci: null }
-    const merged = remplacerFaitsScalaires([original], [acquired], registered)
-    expect(merged).toContainEqual(expect.objectContaining({ key: original.key, value: 999, rider: 'app-owned explanation' }))
+  it('keeps a French unavailable explanation and never carries a stale source-state rider onto a new measurement', () => {
+    const registered = ['bornes_ev_par_station_service']
+    const source = indicateursEconomieFixture.find((fact) => fact.key === 'effectifs_salaries')!
+    const stale = { ...source, key: registered[0]!, rider: 'Aucune station-service sur le territoire', value: null }
+    const acquired = { ...stale, value: 999, rider: null, fact_status: 'measured' as const }
+    const merged = remplacerFaitsScalaires([stale], [acquired], registered)
+    expect(merged[0]).toMatchObject({ value: 999, fact_status: 'measured', rider: null })
+    expect(merged[0]?.rider).not.toBe('Aucune station-service sur le territoire')
+  })
+
+  it('uses an app-owned French explanation for an unavailable scalar without leaking the API enum', async () => {
+    const indicator = 'effectifs_salaries'
+    const page = pageFor('economie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    installCatalogueAndReads([declaration('economie', indicator)], (item) => scalarData('economie', indicator, item, {
+      observations: [{ territory: '22001', status: 'not_available', value: null }],
+    }))
+    const facts = await chargerCohorteScalaire(indicator, 'economie', page, focal, 'commune', territoiresFixture, {})
+    expect(facts[0]).toMatchObject({ value: null, fact_status: 'not_available', rider: 'Valeur non disponible.' })
+    expect(facts[0]?.rider).not.toBe('not_available')
+  })
+
+  it('rejects a same-level rank whose returned level disagrees with the focal territory', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const resource = declaration('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.type === 'epci')!
+    installCatalogueAndReads([resource], (item) => ({
+      resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+      shape: 'scalar', content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
+      selection: null, scope: { kind: 'same_level', territory_type: 'departement', member_count: 2 },
+      result: { indicator_id: indicator, status: 'available', unit: page.unit, direction: page.direction,
+        source_facet: indicator, descriptor_version: 'scalar-descriptor-v3', selected_member_count: 2,
+        eligible_count: 2, missing_count: 0, rank: 1, rank_size: 2 },
+    }))
+    await expect(chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture))
+      .rejects.toThrow('groupe déclaré')
+  })
+
+  it.each([
+    ['negative eligible count', (result: Record<string, unknown>) => { result.eligible_count = -1 }],
+    ['rank on unavailable result', (result: Record<string, unknown>) => { result.status = 'unavailable' }],
+  ])('rejects a comparison with %s', async (_label, mutate) => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const resource = declaration('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.type === 'epci')!
+    installCatalogueAndReads([resource], (item) => {
+      const result: Record<string, unknown> = { indicator_id: indicator, status: 'available', unit: page.unit,
+        direction: page.direction, source_facet: indicator, descriptor_version: 'scalar-descriptor-v3',
+        selected_member_count: 2, eligible_count: 2, missing_count: 0, rank: 1, rank_size: 2 }
+      mutate(result)
+      return { resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+        shape: 'scalar', content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
+        selection: null, scope: { kind: 'same_level', territory_type: 'epci', member_count: 2 }, result }
+    })
+    await expect(chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture)).rejects.toThrow()
   })
 })
