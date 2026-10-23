@@ -10,6 +10,7 @@ import {
   CAHIER_FIGURE_AXIS,
   CAHIER_FIGURE_GEOMETRY,
   CAHIER_FIGURE_GRID,
+  CAHIER_FIGURE_RAIL,
   CAHIER_SUMMARY_PLOT_FRAME,
   deriveCahierFigureGeometry,
 } from '../fiche/cahierFigureGrammaire'
@@ -67,14 +68,15 @@ describe('figureGrammaire — le socle géométrique du Cahier', () => {
 
   it.each([320, 360, 390])('réserve le rail des graduations mesurées à %ipx sans atteindre le titre vertical', (renderedWidth) => {
     const longestLabelWidth = 52
-    const titleLane = 16
-    const gap = 8
     const geometry = deriveCahierFigureGeometry(CAHIER_FIGURE_GEOMETRY, renderedWidth, longestLabelWidth)
     const renderedRailWidth = geometry.margin.left * renderedWidth / geometry.width
 
-    expect(renderedRailWidth).toBeGreaterThanOrEqual(titleLane + longestLabelWidth + gap)
+    expect(renderedRailWidth).toBeGreaterThanOrEqual(
+      CAHIER_FIGURE_RAIL.titleLane + longestLabelWidth + CAHIER_FIGURE_RAIL.labelGap,
+    )
     expect(geometry.margin.left).toBeGreaterThan(CAHIER_FIGURE_GEOMETRY.margin.left)
-    expect(geometry.width - geometry.margin.right - geometry.margin.left).toBeGreaterThanOrEqual(120)
+    expect(geometry.width - geometry.margin.right - geometry.margin.left)
+      .toBeGreaterThanOrEqual(CAHIER_FIGURE_RAIL.minimumPlotWidth)
   })
 
   it('préserve le rail large des figures de synthèse', () => {

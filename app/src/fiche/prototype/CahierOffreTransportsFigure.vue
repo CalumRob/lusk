@@ -1,31 +1,37 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { CAHIER_FIGURE_GEOMETRY } from '@/fiche/cahierFigureGrammaire'
+import { computed, ref } from 'vue'
+import { cahierFigureStyle, CAHIER_FIGURE_GEOMETRY } from '@/fiche/cahierFigureGrammaire'
 import type { CahierFigureAxisTick } from '@/fiche/cahierFigureGrammaire'
 import type { ComparisonTrajectoryContent, ContentFact } from '@/fiche/content/themeContent'
 import type { TrajectoryMetadata } from '@/payload/types'
 import CahierFigureAxes from './CahierFigureAxes.vue'
 import CahierFigureAxisLabels from './CahierFigureAxisLabels.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
+import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
 
 const props = defineProps<{ offer: ContentFact | null; trajectory: readonly ContentFact[];
   comparisonTrajectory?: ComparisonTrajectoryContent | null; metadata: TrajectoryMetadata | null }>()
-const geometry = CAHIER_FIGURE_GEOMETRY
+const plotElement = ref<HTMLElement | null>(null)
+const yTickValues = [0, .25, .5, .75, 1] as const
+const yTickLabels = computed(() => yTickValues.map((value) => `${value * 100}%`))
+const geometry = useMeasuredCahierFigureGeometry(plotElement, yTickLabels, CAHIER_FIGURE_GEOMETRY)
+const frameStyle = computed(() => cahierFigureStyle(geometry.value))
 const details = computed(() => [...new Set(props.trajectory.map(item => item.fact.detail)
   .filter((item): item is string => item !== null))])
 const allSeriesPoints = computed(() => [...props.trajectory,
   ...(props.comparisonTrajectory?.points ?? [])])
 function positionFor(detail: string, axisValue?: number): number {
-  const left = geometry.margin.left
-  const width = geometry.width - left - geometry.margin.right
+  const { margin, width } = geometry.value
+  const left = margin.left
+  const plotWidth = width - left - margin.right
   if (props.metadata?.axis === 'numeric' && axisValue !== undefined) {
     const numeric = allSeriesPoints.value.flatMap(item => item.fact.axisValue === undefined ? [] : [item.fact.axisValue])
     const min = Math.min(...numeric)
     const max = Math.max(...numeric)
-    return left + width * (max === min ? 0 : (axisValue - min) / (max - min))
+    return left + plotWidth * (max === min ? 0 : (axisValue - min) / (max - min))
   }
   const index = details.value.indexOf(detail)
-  return left + width * (details.value.length < 2 ? 0 : index / (details.value.length - 1))
+  return left + plotWidth * (details.value.length < 2 ? 0 : index / (details.value.length - 1))
 }
 const ticks = computed((): CahierFigureAxisTick[] => {
   const labels = new Map((props.metadata?.ticks ?? []).map(tick => [tick.detail, tick.label]))
@@ -34,9 +40,9 @@ const ticks = computed((): CahierFigureAxisTick[] => {
     position: positionFor(detail, props.trajectory.find(item => item.fact.detail === detail)?.fact.axisValue) }))
 })
 const yTicks = computed((): CahierFigureAxisTick[] => {
-  const top = geometry.margin.top
-  const height = geometry.height - top - geometry.margin.bottom
-  return [0, .25, .5, .75, 1].map(value => ({ key: String(value), label: `${value * 100}%`, position: top + height * (1 - value) }))
+  const { margin, height } = geometry.value
+  const plotHeight = height - margin.top - margin.bottom
+  return yTickValues.map(value => ({ key: String(value), label: `${value * 100}%`, position: margin.top + plotHeight * (1 - value) }))
 })
 function seriesPath(series: readonly ContentFact[]): string {
   const byDetail = new Map(series.map(item => [item.fact.detail, item.fact.value]))
@@ -45,7 +51,8 @@ function seriesPath(series: readonly ContentFact[]): string {
     const value = byDetail.get(detail)
     if (value === null || value === undefined) return []
     const x = positionFor(detail, byAxis.get(detail ?? '') ?? undefined)
-    const y = geometry.margin.top + (1 - Math.max(0, Math.min(1, value))) * (geometry.height - geometry.margin.top - geometry.margin.bottom)
+    const { margin, height } = geometry.value
+    const y = margin.top + (1 - Math.max(0, Math.min(1, value))) * (height - margin.top - margin.bottom)
     return [`${index ? 'L' : 'M'}${x},${y}`]
   }).join(' ')
 }
@@ -82,24 +89,25 @@ const seriesDescription = computed(() => {
 })
 const factsWithRiders = computed(() => props.trajectory.filter((fact) => fact.fact.reason !== null))
 function yPosition(value: number): number {
-  return geometry.margin.top + (1 - Math.max(0, Math.min(1, value))) * (geometry.height - geometry.margin.top - geometry.margin.bottom)
+  const { margin, height } = geometry.value
+  return margin.top + (1 - Math.max(0, Math.min(1, value))) * (height - margin.top - margin.bottom)
 }
 </script>
 
 <template>
-  <div class="cahier-figure-frame transit-trajectory">
+  <div class="cahier-figure-frame transit-trajectory" :style="frameStyle">
     <div v-if="offer" class="transit-offer">
       <CahierFigureScalar :value="offer.fact.value === null ? 'Indisponible' : new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 1 }).format(offer.fact.value)" :label="offer.label" :aria-label="`${offer.label} : ${offer.fact.value ?? 'indisponible'} ${offer.fact.unit}`" />
       <p v-if="offer.fact.reason" class="transit-rider">{{ offer.fact.reason }}</p>
     </div>
     <figure v-if="trajectory.length && metadata">
-      <div class="transit-plot cahier-figure-plot" :style="{ aspectRatio: `${geometry.width} / ${geometry.height}` }">
+      <div ref="plotElement" class="transit-plot cahier-figure-plot">
         <svg :viewBox="`0 0 ${geometry.width} ${geometry.height}`" role="img" :aria-label="`${metadata.axisLabels?.x ?? ''} — ${metadata.axisLabels?.y ?? ''}. ${seriesDescription}${markerPoint && metadata.marker ? ` Repère : ${metadata.marker.label}.` : ''}`">
           <CahierFigureAxes :geometry="geometry" :x-ticks="ticks" :y-ticks="yTicks" />
           <path v-if="seriesPath(trajectory)" class="transit-series transit-series--territory" data-series="territory" :d="seriesPath(trajectory)" />
-          <circle v-for="item in trajectory" :key="item.fact.detail ?? item.fact.key" class="transit-point transit-point--territory" data-series="territory" :data-detail="item.fact.detail" :data-value="item.fact.value" :cx="positionFor(item.fact.detail ?? '', item.fact.axisValue)" :cy="geometry.margin.top + (1 - (item.fact.value ?? 0)) * (geometry.height - geometry.margin.top - geometry.margin.bottom)" r="4" />
+          <circle v-for="item in trajectory" :key="item.fact.detail ?? item.fact.key" class="transit-point transit-point--territory" data-series="territory" :data-detail="item.fact.detail" :data-value="item.fact.value" :cx="positionFor(item.fact.detail ?? '', item.fact.axisValue)" :cy="yPosition(item.fact.value ?? 0)" r="4" />
           <path v-if="comparisonPath" class="transit-series transit-series--comparison" data-series="comparison" :d="comparisonPath" />
-          <rect v-for="item in comparisonTrajectory?.points ?? []" :key="item.fact.detail ?? item.fact.key" class="transit-point transit-point--comparison" data-series="comparison" :data-detail="item.fact.detail" :data-value="item.fact.value" :x="positionFor(item.fact.detail ?? '', item.fact.axisValue) - 3.5" :y="geometry.margin.top + (1 - (item.fact.value ?? 0)) * (geometry.height - geometry.margin.top - geometry.margin.bottom) - 3.5" width="7" height="7" />
+          <rect v-for="item in comparisonTrajectory?.points ?? []" :key="item.fact.detail ?? item.fact.key" class="transit-point transit-point--comparison" data-series="comparison" :data-detail="item.fact.detail" :data-value="item.fact.value" :x="positionFor(item.fact.detail ?? '', item.fact.axisValue) - 3.5" :y="yPosition(item.fact.value ?? 0) - 3.5" width="7" height="7" />
           <g v-if="markerPoint && marker" class="transit-marker" :data-detail="marker?.detail" :aria-label="marker?.label">
             <circle class="transit-marker-ring" :cx="ticks.find(tick => tick.key === marker?.detail)?.position" :cy="yPosition(markerPoint.fact.value!)" r="8" />
             <text class="transit-marker-label" :x="(ticks.find(tick => tick.key === marker?.detail)?.position ?? 0) + 10" :y="yPosition(markerPoint.fact.value!) - 9">{{ marker?.label }}</text>

@@ -72,13 +72,11 @@ const emit = defineEmits<{
   z-index: 1;
   top: 9px;
   left: 11px;
-  padding: 2px 4px;
-  border-radius: var(--radius-sm);
-  background: var(--editorial-paper);
-  color: var(--color-figure-map-label);
+  color: var(--mode-ring);
+  text-shadow: 0 1px 4px var(--paper);
   font: var(--text-caption);
   font-variant-numeric: tabular-nums;
-  letter-spacing: normal;
+  letter-spacing: var(--text-caption-tracking);
 }
 
 .map-loading {

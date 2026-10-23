@@ -2,6 +2,86 @@
 
 from fastapi import HTTPException
 
+
+def typed_reading_fact_fields(resource, requested_fields):
+    """Project typed readings without dropping their native fact rows or metadata."""
+    evidence_fields = {side["field"] for side in resource.side_relations}
+    selected = set(resource.fields) if requested_fields is None else set(requested_fields)
+    mandatory = {"groupe", "story_key", "salience_reason", "classification", "status",
+                 "source_id", "vintage_id"}
+    return [field for field in resource.fields
+            if field not in evidence_fields and (field in selected or field in mandatory)]
+
+
+def typed_reading_descriptor(conn, resource, marker):
+    """Return only descriptor evidence actually published for this typed resource."""
+    if resource.publication_table == "demographic_typed_reading":
+        declared = _demographic_reading_marker(conn)
+        if (not declared or declared[0] != marker[0] or declared[2] != marker[2]):
+            raise HTTPException(503, "Demographic reading descriptor is unavailable or stale")
+        return {
+            "descriptor_version": declared[4],
+            "rate_unit": declared[11],
+            "source": {
+                "source_id": declared[5], "name": declared[6],
+                "vintage_id": declared[7], "version": declared[8],
+                "reference_date": declared[9], "publication_date": declared[10],
+            },
+        }
+    if resource.publication_table == "selected_reading":
+        row = conn.execute("""SELECT d.descriptor_version,d.source_id,sd.name,d.vintage_id,
+            sv.version,sv.reference_date,sv.publication_date,d.linked_content_version
+            FROM selected_reading_descriptor d
+            JOIN source_dataset sd ON sd.source_id=d.source_id
+            JOIN source_vintage sv ON sv.source_id=d.source_id AND sv.vintage_id=d.vintage_id
+            WHERE d.theme_id=%s""", (resource.theme_id,)).fetchone()
+        if (not row or row[0] != marker[0] or not row[1] or not row[2] or not row[3]
+                or not row[4] or not row[7]):
+            raise HTTPException(503, "Selected-reading descriptor is unavailable or incompatible")
+        return {
+            "descriptor_version": row[0],
+            "linked_content_version": row[7],
+            "source": {
+                "source_id": row[1], "name": row[2], "vintage_id": row[3],
+                "version": row[4], "reference_date": row[5], "publication_date": row[6],
+            },
+        }
+    return None
+
+
+def validate_milieux_source_bindings(conn, bindings, reference_content_version):
+    """Check returned Milieux clocks against their exact immutable revisions and datasets."""
+    if not bindings:
+        return
+    dataset_ids = sorted({row["dataset_id"] for row in bindings if row.get("dataset_id")})
+    publications = {}
+    if dataset_ids:
+        publications = {row[0]: (row[1], row[2]) for row in conn.execute("""SELECT dataset_id,
+            content_version,reference_content_version FROM series_dataset_publication
+            WHERE dataset_id=ANY(%s::text[])""", (dataset_ids,)).fetchall()}
+    for row in bindings:
+        identity = (row.get("source_id"), row.get("vintage_id"), row.get("source_name"),
+                    row.get("source_version"), row.get("reference_date"), row.get("publication_date"))
+        if row.get("field_key") == "population":
+            revision = tuple(row.get(f"population_{field}") for field in (
+                "source_id", "vintage_id", "source_name", "source_version", "reference_date", "publication_date"))
+            valid = (row.get("population_revision_id") and not row.get("provenance_revision_id")
+                     and row.get("dataset_id") is None and identity == revision)
+        else:
+            revision = tuple(row.get(f"series_{field}") for field in (
+                "source_id", "vintage_id", "source_name", "source_version", "reference_date", "publication_date"))
+            valid = (row.get("provenance_revision_id") and not row.get("population_revision_id")
+                     and identity == revision
+                     and row.get("observed_state_role") == row.get("state_role")
+                     and row.get("observed_period") == row.get("observation_period")
+                     and row.get("provenance_revision_id") in (row.get("registered_revisions") or [])
+                     and row.get("state_role") == ("M2" if row.get("field_key") == "artif_m2_par_habitant" else "M3")
+                     and row.get("dataset_id") is not None
+                     and publications.get(row.get("dataset_id")) == (
+                         row.get("dataset_content_version"), reference_content_version))
+        if not valid:
+            raise HTTPException(503, "Milieux source binding is stale or incompatible")
+
 def _demographic_reading_marker(conn):
     """Return a compatible selected-reading marker from this caller-owned snapshot."""
     if not conn.execute("SELECT to_regclass('demographic_typed_reading')").fetchone()[0]:

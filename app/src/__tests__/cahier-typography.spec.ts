@@ -42,6 +42,10 @@ const diversityMapSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'AedarDiversityLossMapsCahier.vue'),
   'utf8',
 )
+const cartographicBreakoutSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'CartographicBreakoutPrototype.vue'),
+  'utf8',
+)
 const tokensSource = readFileSync(
   join(process.cwd(), 'src', 'styles', 'tokens.css'),
   'utf8',
@@ -56,7 +60,29 @@ function cahierStyleFiles(directory: string): string[] {
 }
 
 function cssRule(source: string, selector: string): string {
-  return source.match(new RegExp(`(?:^|\\n)${selector.replaceAll('.', '\\.') }\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? ''
+  return source.match(new RegExp(`(?:^|\\n)${selector.replaceAll('.', '\\.') }\\s*\\{([^}]*)\\}`))?.[1] ?? ''
+}
+
+function cssDeclarations(source: string, selector: string): Map<string, string> {
+  return new Map(cssRule(source, selector).split(';').flatMap((declaration) => {
+    const separator = declaration.indexOf(':')
+    if (separator < 0) return []
+    return [[declaration.slice(0, separator).trim(), declaration.slice(separator + 1).trim()]]
+  }))
+}
+
+function expectMapLabelTreatment(
+  source: string,
+  selector: string,
+  expectedColor: string,
+  expectedTextShadow: string | null = null,
+): void {
+  const declarations = cssDeclarations(source, selector)
+  expect(declarations.get('color'), `${selector} must retain its pre-W2 map-label ink`).toBe(expectedColor)
+  for (const decoration of ['background', 'background-color', 'background-image', 'box-shadow']) {
+    expect(declarations.has(decoration), `${selector} must not acquire ${decoration} treatment`).toBe(false)
+  }
+  expect(declarations.get('text-shadow') ?? null, `${selector} must preserve only its pre-W2 text shadow`).toBe(expectedTextShadow)
 }
 
 describe('Cahier typography roles', () => {
@@ -81,18 +107,25 @@ describe('Cahier typography roles', () => {
     )
   })
 
-  it('routes map labels, numbers, legends, and tooltips through shared text and contrast tokens', () => {
+  it('keeps map titles and numbers on their original mode-specific color', () => {
     expect(cssRule(figureCss, '.cahier-figure-legend')).toContain('font: var(--text-caption)')
     expect(cssRule(figureCss, '.cahier-figure-tooltip')).toContain('font: var(--text-caption)')
-    expect(mapPanelSource).toContain('color: var(--color-figure-map-label)')
+    expectMapLabelTreatment(mapPanelSource, '.map-panel-number', 'var(--mode-ring)', '0 1px 4px var(--paper)')
     expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('font: var(--text-caption)')
-    expect(blankMapSlotsSource).toMatch(/\.map-panel-label\s*\{[^}]*font:\s*var\(--text-overline\)/u)
-    expect(blankMapSlotsSource).toMatch(/\.blank-map-slot__number\s*\{[^}]*font:\s*var\(--text-caption\)/u)
-    expect(diversityMapSource).toContain('color: var(--color-figure-map-label)')
-    expect(tokensSource).toContain('--color-figure-map-label: color-mix(in srgb, var(--brand-500) 45%, var(--editorial-ink))')
-    expect(cssRule(figureCss, '.map-panel')).toContain(
-      'var(--figure-map-accent, var(--mode-ring, var(--brand-500))) 45%',
-    )
+    expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('letter-spacing: var(--text-caption-tracking)')
+    expectMapLabelTreatment(blankMapSlotsSource, '.map-panel-label', 'var(--mode-ring)')
+    expect(cssRule(blankMapSlotsSource, '.map-panel-label')).toContain('font: var(--text-overline)')
+    expectMapLabelTreatment(blankMapSlotsSource, '.blank-map-slot__number', 'var(--mode-ring)')
+    expect(cssRule(blankMapSlotsSource, '.blank-map-slot__number')).toContain('font: var(--text-caption)')
+    expectMapLabelTreatment(diversityMapSource, '.aedar-diversity-loss-map-label', 'var(--mode-ring)')
+    expectMapLabelTreatment(diversityMapSource, '.aedar-diversity-loss-map__number', 'var(--mode-ring)')
+    expectMapLabelTreatment(cartographicBreakoutSource, '.map-panel-label', 'var(--mode-ring)')
+    expectMapLabelTreatment(cartographicBreakoutSource, '.map-section-number', 'var(--red)')
+    expectMapLabelTreatment(cartographicBreakoutSource, '.plate-apparatus-heading > .map-section-number', 'var(--red)')
+    expect(cssRule(cartographicBreakoutSource, '.map-section-number')).toContain('letter-spacing: var(--text-caption-tracking)')
+    expect(cssRule(cartographicBreakoutSource, '.plate-apparatus-heading > .map-section-number')).toContain('letter-spacing: var(--text-caption-tracking)')
+    expect(tokensSource).not.toContain('--color-figure-map-label')
+    expect(figureCss).not.toContain('--color-figure-map-label')
     expect(tokensSource).toContain('--color-figure-reference: color-mix(in srgb, var(--brand-500) 30%, var(--editorial-ink))')
     expect(tokensSource).toContain('--color-figure-series-label: color-mix(in srgb, var(--brand-500) 45%, var(--editorial-ink))')
     expect(cssRule(figureCss, '.cahier')).toContain('var(--cahier-region-emphasis, var(--brand-500)) 30%')

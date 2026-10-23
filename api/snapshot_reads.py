@@ -1785,7 +1785,7 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
                              if column != "value")
     cursor = conn.execute(
         """SELECT """ + ", ".join(scalar_projection) + """,
-                  d.label, d.unit, d.direction, d.comparison_facet,
+                  d.label, d.unit, d.direction, d.comparison_facet, d.descriptor_version,
                   p.content_version,
                   (SELECT json_agg(json_build_object('source_id', os.source_id,
                       'name', sd.name, 'vintage_id', os.vintage_id,
@@ -1806,7 +1806,9 @@ def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, 
     row = cursor.fetchone()
     if row is None:
         raise HTTPException(404, "Declared scalar observation is unavailable")
-    return dict(zip((column.name for column in cursor.description), row))
+    result = dict(zip((column.name for column in cursor.description), row))
+    result["reference_content_version"] = marker[1]
+    return result
 
 
 def _comparison_result_without_focal_value(result):
