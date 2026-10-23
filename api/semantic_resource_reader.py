@@ -74,7 +74,7 @@ class SemanticResourceReader:
                   *, work_budget: int = 200_000) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
-        if resource.resource_kind == "indicator":
+        if resource.resource_kind in {"indicator", "typed_reading"}:
             self._coordinate_values(conn, item, resource)
         if resource.resource_kind == "typed_reading":
             if item.target.kind == "territory_cohort":

@@ -150,7 +150,7 @@ _FIELDS_BY_SHAPE = {
     "declared_profile": ("value",),
     "ordered_series": ("value",),
     "period_detail": ("value",),
-    "anchored_membership": ("detail", "label", "rider", "anchor_count"),
+    "anchored_membership": ("detail", "label", "rider", "anchor_count", "availability"),
     "named_reference": ("value",),
     "distribution": ("value",),
 }

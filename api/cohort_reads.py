@@ -76,6 +76,16 @@ def _bounded_count(conn, query, params, budget, message):
     return count
 
 
+def _bounded_fact_summary(conn, query, params, budget, message):
+    if budget < 0:
+        raise HTTPException(413, "Resource request exceeds the bounded work limit")
+    facts, members = conn.execute("SELECT count(*),count(DISTINCT territory_id) FROM (" + query +
+        " LIMIT %s) AS bounded_rows", (*params, budget + 1)).fetchone()
+    if int(facts) > budget:
+        raise HTTPException(413, message)
+    return int(facts), int(members)
+
+
 def _scalar_contract(conn, resource_id, territory_type, cohort):
     descriptor = conn.execute("""SELECT indicator_id,theme_id,label,unit,direction,
         comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version
@@ -386,13 +396,18 @@ def preflight_owned_series_cohort(conn, item, resource, cohort, fields, work_bud
     route, marker, descriptor, axes = _owned_series_context(conn, item, resource, cohort)
     budget = work_budget - len(cohort.members)
     params = (route[0], route[3], item.target.type, cohort.territory_ids, axes)
-    facts = _bounded_count(conn, """SELECT 1 FROM series_dataset_observation o
+    facts, populated_members = _bounded_fact_summary(conn, """SELECT o.territory_id
+        FROM series_dataset_observation o
         WHERE o.dataset_id=%s AND o.indicator_id=%s AND o.territory_type=%s
           AND o.territory_id=ANY(%s::text[]) AND o.axis_value=ANY(%s::text[])""",
         params, budget, "Cohort ordered-series facts exceed the bounded work limit")
     if descriptor[3] == "dense_complete" and facts != len(cohort.members) * len(axes):
         raise HTTPException(503, "Owned-series cohort is incomplete")
-    budget -= facts
+    axis_work = (populated_members if descriptor[12] == "no_record" and
+                 descriptor[3] == "may_be_missing" else len(cohort.members)) * len(axes)
+    budget = work_budget - len(cohort.members) - axis_work
+    if budget < 0:
+        raise HTTPException(413, "Cohort ordered-series axes exceed the bounded work limit")
     provenance = _bounded_count(conn, """SELECT 1 FROM series_observation_provenance p
         WHERE p.dataset_id=%s AND p.indicator_id=%s AND p.territory_id=ANY(%s::text[])
           AND p.axis_value=ANY(%s::text[])""",
@@ -400,7 +415,7 @@ def preflight_owned_series_cohort(conn, item, resource, cohort, fields, work_bud
         "Cohort ordered-series provenance exceeds the bounded work limit")
     if provenance < facts:
         raise HTTPException(503, "Owned-series provenance is incomplete")
-    return max(1, len(cohort.members) + facts + provenance)
+    return max(1, len(cohort.members) + axis_work + provenance)
 
 
 def read_owned_series_cohort(conn, item, resource, cohort, fields):
@@ -480,6 +495,470 @@ def read_owned_series_cohort(conn, item, resource, cohort, fields):
         "shape": "ordered_series", "cohort": cohort.envelope(),
         "content_version": marker[0], "reference_content_version": marker[1],
         "descriptor": desc, "series": series}
+
+
+def _legacy_series_context(conn, item, cohort):
+    marker = conn.execute("""SELECT s.content_version,s.reference_content_version,t.content_version
+        FROM table_publication s LEFT JOIN table_publication t
+          ON t.table_name='territory_reference' WHERE s.table_name='ordered_series'""").fetchone()
+    if not marker or not marker[0] or marker[1] != marker[2] or marker[1] != cohort.reference_content_version:
+        raise HTTPException(503, "Series publication is unavailable or incompatible")
+    descriptor = conn.execute("""SELECT axis_kind,axis_values,completeness,comparison_point,label,unit,
+        direction,source_id,vintage_id,descriptor_version,allowed_levels
+        FROM series_descriptor WHERE indicator_id=%s""", (item.resource,)).fetchone()
+    if not descriptor:
+        raise HTTPException(503, "Series descriptor is unavailable")
+    if item.target.type not in descriptor[10]:
+        raise HTTPException(422, "Series is not declared for this cohort level")
+    axes = _selected_axis_values(item, descriptor[0], descriptor[1])
+    if not axes:
+        raise HTTPException(422, "Series coordinate selection is empty")
+    return marker, descriptor, axes
+
+
+def preflight_legacy_series_cohort(conn, item, resource, cohort, fields, work_budget):
+    marker, descriptor, axes = _legacy_series_context(conn, item, cohort)
+    axis_work = len(cohort.members) * len(axes)
+    remaining = work_budget - len(cohort.members) - axis_work
+    if remaining < 0:
+        raise HTTPException(413, "Cohort ordered-series axes exceed the bounded work limit")
+    params = (item.resource, item.target.type, cohort.territory_ids, axes)
+    facts = _bounded_count(conn, """SELECT 1 FROM ordered_series o
+        WHERE o.indicator_id=%s AND o.territory_type=%s AND o.territory_id=ANY(%s::text[])
+          AND o.axis_value=ANY(%s::text[])""",
+        params, axis_work, "Cohort ordered-series facts exceed the bounded work limit")
+    if descriptor[2] == "dense_complete" and facts != len(cohort.members) * len(axes):
+        raise HTTPException(503, "Series cohort is incomplete")
+    # The legacy series contract has one descriptor-owned source/vintage per point.
+    if not descriptor[7] or not descriptor[8]:
+        raise HTTPException(503, "Series source provenance is unavailable")
+    if facts > remaining:
+        raise HTTPException(413, "Cohort ordered-series provenance exceeds the bounded work limit")
+    return max(1, len(cohort.members) + axis_work + facts)
+
+
+def read_legacy_series_cohort(conn, item, resource, cohort, fields):
+    marker, descriptor, axes = _legacy_series_context(conn, item, cohort)
+    project_value = fields is None or "value" in fields
+    cursor = conn.execute("""SELECT o.territory_id,o.territory_type,t.name,o.axis_value,o.observation_period,
+        CASE WHEN %s THEN o.value ELSE NULL::double precision END AS value,o.status,o.source_id,o.vintage_id,
+        v.version,v.reference_date,v.publication_date
+        FROM ordered_series o JOIN territory_reference t
+          ON t.territory_id=o.territory_id AND t.territory_type=o.territory_type
+        LEFT JOIN source_vintage v ON v.source_id=o.source_id AND v.vintage_id=o.vintage_id
+        WHERE o.indicator_id=%s AND o.territory_type=%s AND o.territory_id=ANY(%s::text[])
+          AND o.axis_value=ANY(%s::text[])
+        ORDER BY o.territory_id,array_position(%s::text[],o.axis_value)""",
+        (project_value, item.resource, item.target.type, cohort.territory_ids, axes,
+         list(descriptor[1])))
+    names = [column.name for column in cursor.description]
+    by_member = {}
+    for raw in cursor.fetchall():
+        row = dict(zip(names, raw))
+        if not row["version"]:
+            raise HTTPException(503, "Series source provenance is unavailable")
+        points = by_member.setdefault(row["territory_id"], {})
+        if row["axis_value"] in points:
+            raise HTTPException(503, "Series contains duplicate axis facts")
+        point = {"axis": row["axis_value"], "status": row["status"],
+            "observation_period": row["observation_period"], "source_id": row["source_id"],
+            "vintage_id": row["vintage_id"], "source_version": row["version"],
+            "source_reference_date": row["reference_date"],
+            "source_publication_date": row["publication_date"]}
+        if project_value:
+            point["value"] = row["value"]
+        points[row["axis_value"]] = point
+    series = []
+    for member in cohort.members:
+        actual = by_member.get(member["id"], {})
+        if descriptor[2] == "dense_complete" and set(actual) != set(axes):
+            raise HTTPException(503, "Series cohort is incomplete")
+        points = []
+        for axis in axes:
+            point = actual.get(axis)
+            if point is None:
+                point = {"axis": axis, "status": "missing", "observation_period": None,
+                         "source_id": descriptor[7], "vintage_id": descriptor[8],
+                         "source_version": None, "source_reference_date": None,
+                         "source_publication_date": None}
+                if project_value:
+                    point["value"] = None
+            points.append(point)
+        series.append({"territory": dict(member), "points": points,
+            "availability": "complete" if all(p["status"] == "measured" for p in points) else "incomplete"})
+    desc = {"axis_kind": descriptor[0], "axis_values": descriptor[1],
+        "completeness": descriptor[2], "comparison_point": descriptor[3],
+        "label": descriptor[4], "unit": descriptor[5], "direction": descriptor[6],
+        "source_id": descriptor[7], "vintage_id": descriptor[8],
+        "descriptor_version": descriptor[9], "allowed_levels": descriptor[10]}
+    return {"resource": item.resource, "target": item.target.model_dump(),
+        "shape": "ordered_series", "cohort": cohort.envelope(),
+        "content_version": marker[0], "reference_content_version": marker[1],
+        "descriptor": desc, "series": series}
+
+
+def _collection_context(conn, item, cohort, descriptor):
+    from api.observed_collections import collection_marker
+
+    if item.target.type not in descriptor["allowed_levels"]:
+        raise HTTPException(422, "Collection is not declared for this cohort level")
+    marker = collection_marker(conn, descriptor)
+    if marker["reference_content_version"] != cohort.reference_content_version:
+        raise HTTPException(503, "Observed collection publication is incompatible with the cohort")
+    coordinates = item.coordinates or {}
+    categories = conn.execute("""SELECT detail_key,label,ordinal,source_id,rider_label
+        FROM observed_collection_category WHERE indicator_id=%s ORDER BY ordinal""",
+        (item.resource,)).fetchall()
+    if not categories:
+        raise HTTPException(503, "Collection coordinate descriptor is unavailable")
+    details = [row[0] for row in categories]
+    selected_details = [key for key in details
+                        if "detail" not in coordinates and "membership" not in coordinates
+                        or key in coordinates.get("detail", coordinates.get("membership", []))]
+    if not selected_details:
+        raise HTTPException(422, "Collection coordinate selection is empty")
+    periods = None
+    if descriptor["kind"] == "period_detail":
+        if "period" in coordinates:
+            periods = coordinates["period"]
+    return marker, categories, selected_details, periods
+
+
+def preflight_period_detail_cohort(conn, item, resource, descriptor, cohort, fields, work_budget):
+    _marker, _categories, details, periods = _collection_context(conn, item, cohort, descriptor)
+    remaining = work_budget - len(cohort.members)
+    clauses = ["indicator_id=%s", "territory_type=%s", "territory_id=ANY(%s::text[])",
+               "detail_key=ANY(%s::text[])"]
+    params = [item.resource, item.target.type, cohort.territory_ids, details]
+    if periods is not None:
+        clauses.append("observation_period=ANY(%s::text[])")
+        params.append(periods)
+    facts = _bounded_count(conn, "SELECT 1 FROM period_detail_observation WHERE " + " AND ".join(clauses),
+        tuple(params), remaining, "Cohort period/detail facts exceed the bounded work limit")
+    if facts:
+        return max(1, len(cohort.members) + facts * 2)
+    return max(1, len(cohort.members))
+
+
+def read_period_detail_cohort(conn, item, resource, descriptor, cohort, fields):
+    marker, _categories, details, periods = _collection_context(conn, item, cohort, descriptor)
+    project_value = fields is None or "value" in fields
+    params = [project_value, item.resource, cohort.territory_type, cohort.territory_ids, details]
+    period_clause = ""
+    if periods is not None:
+        period_clause = " AND o.observation_period=ANY(%s::text[])"
+        params.append(periods)
+    cursor = conn.execute("""SELECT o.territory_id,o.detail_key,c.label,o.observation_period,
+        CASE WHEN %s THEN o.value ELSE NULL::double precision END AS value,o.source_id,sd.name AS source_name,
+        o.vintage_id,v.version,v.reference_date,v.publication_date,c.ordinal
+        FROM period_detail_observation o JOIN observed_collection_category c USING(indicator_id,detail_key)
+        JOIN source_dataset sd ON sd.source_id=o.source_id
+        JOIN source_vintage v ON v.source_id=o.source_id AND v.vintage_id=o.vintage_id
+        WHERE o.indicator_id=%s AND o.territory_type=%s AND o.territory_id=ANY(%s::text[])
+          AND o.detail_key=ANY(%s::text[])""" + period_clause + " ORDER BY o.territory_id,o.observation_period,c.ordinal",
+        tuple(params))
+    names = [column.name for column in cursor.description]
+    entries = {}
+    for raw in cursor.fetchall():
+        row = dict(zip(names, raw))
+        entry = {"detail": row["detail_key"], "label": row["label"],
+            "observation_period": row["observation_period"], "status": "measured",
+            "sources": [{"source_id": row["source_id"], "name": row["source_name"],
+                "vintage_id": row["vintage_id"], "version": row["version"],
+                "reference_date": row["reference_date"], "publication_date": row["publication_date"]}]}
+        if project_value:
+            entry["value"] = row["value"]
+        entries.setdefault(row["territory_id"], []).append(entry)
+    populations = []
+    for member in cohort.members:
+        rows = entries.get(member["id"], [])
+        populations.append({"territory": dict(member), "completeness": "observed_sparse",
+            "availability": "observed" if rows else "no_record", "entries": rows})
+    return {"resource": item.resource, "target": item.target.model_dump(),
+        "shape": "period_detail", "cohort": cohort.envelope(),
+        "content_version": marker["content_version"],
+        "reference_content_version": marker["reference_content_version"],
+        "descriptor": descriptor, "territories": populations}
+
+
+def _membership_cohort_query(projection):
+    return f"""SELECT {projection}
+        FROM territory_reference f
+        JOIN anchored_membership m ON m.indicator_id=%s
+        JOIN territory_reference a ON a.territory_id=m.territory_id
+        JOIN observed_collection_category c
+          ON c.indicator_id=m.indicator_id AND c.detail_key=m.detail_key
+        JOIN source_dataset sd ON sd.source_id=m.source_id
+        JOIN source_vintage v ON v.source_id=m.source_id AND v.vintage_id=m.vintage_id
+        WHERE f.territory_type=%s AND f.territory_id=ANY(%s::text[])
+          AND m.detail_key=ANY(%s::text[]) AND (
+            a.territory_id=f.territory_id
+            OR (f.territory_type='commune' AND a.territory_id=(
+                SELECT epci_id FROM territory_reference WHERE territory_id=f.territory_id
+                  AND territory_type='commune'))
+            OR (f.territory_type='epci' AND a.territory_type='commune' AND a.epci_id=f.territory_id)
+            OR (f.territory_type='departement' AND (
+                (a.territory_type='commune' AND a.department_id=f.territory_id)
+                OR (a.territory_type='epci' AND EXISTS(
+                    SELECT 1 FROM territory_reference member
+                    WHERE member.epci_id=a.territory_id AND member.department_id=f.territory_id))))
+            OR f.territory_type='region')"""
+
+
+def preflight_membership_cohort(conn, item, resource, descriptor, cohort, fields, work_budget):
+    _marker, _categories, details, _periods = _collection_context(conn, item, cohort, descriptor)
+    remaining = work_budget - len(cohort.members)
+    facts = _bounded_count(conn, _membership_cohort_query("1"),
+        (item.resource, item.target.type, cohort.territory_ids, details), remaining,
+        "Cohort membership relationships exceed the bounded work limit")
+    return max(1, len(cohort.members) + facts * 2)
+
+
+def read_membership_cohort(conn, item, resource, descriptor, cohort, fields):
+    marker, _categories, details, _periods = _collection_context(conn, item, cohort, descriptor)
+    project_rider = fields is None or "rider" in fields
+    project_anchor_count = fields is None or "anchor_count" in fields
+    projection = """f.territory_id AS focal_id,a.territory_id AS anchor_id,a.territory_type AS anchor_type,
+        a.name AS anchor_name,m.detail_key,c.label,
+        CASE WHEN %s AND m.convention_valant_ort THEN c.rider_label ELSE NULL END AS rider,
+        m.source_id,sd.name AS source_name,m.vintage_id,v.version,v.reference_date,v.publication_date,
+        c.ordinal"""
+    cursor = conn.execute(_membership_cohort_query(projection) +
+        " ORDER BY f.territory_id,c.ordinal,a.territory_id",
+        (project_rider, item.resource, item.target.type, cohort.territory_ids, details))
+    names = [column.name for column in cursor.description]
+    by_focal = {member["id"]: {"entries": [], "relationships": [], "summaries": {}}
+                for member in cohort.members}
+    for raw in cursor.fetchall():
+        row = dict(zip(names, raw))
+        result = by_focal[row["focal_id"]]
+        entry = {"detail": row["detail_key"], "label": row["label"],
+                 **({"rider": row["rider"]} if project_rider else {}),
+                 "sources": [{"source_id": row["source_id"], "name": row["source_name"],
+                     "vintage_id": row["vintage_id"], "version": row["version"],
+                     "reference_date": row["reference_date"],
+                     "publication_date": row["publication_date"]}]}
+        summary = result["summaries"].setdefault(row["detail_key"], {
+            "detail": row["detail_key"], "label": row["label"],
+            **({"anchor_count": 0} if project_anchor_count else {})})
+        if project_anchor_count:
+            summary["anchor_count"] += 1
+        if row["anchor_id"] == row["focal_id"]:
+            result["entries"].append(entry)
+        else:
+            relation = "covering_parent" if item.target.type == "commune" else "member_anchor"
+            result["relationships"].append({**entry, "anchor": {
+                "id": row["anchor_id"], "type": row["anchor_type"], "name": row["anchor_name"]},
+                "relation": relation})
+
+    territories = []
+    for member in cohort.members:
+        result = by_focal[member["id"]]
+        entries, relationships = result["entries"], result["relationships"]
+        territories.append({"territory": dict(member), "completeness": "observed_sparse",
+            "availability": "observed" if entries or relationships else "no_record",
+            "entries": entries, "relationships": relationships,
+            "summaries": list(result["summaries"].values())})
+    return {"resource": item.resource, "target": item.target.model_dump(),
+        "shape": "anchored_membership", "cohort": cohort.envelope(),
+        "content_version": marker["content_version"],
+        "reference_content_version": marker["reference_content_version"],
+        "descriptor": descriptor, "territories": territories}
+
+
+def _typed_reading_context(conn, item, resource, cohort):
+    reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
+    marker = conn.execute("""SELECT content_version,row_count,reference_content_version
+        FROM table_publication WHERE table_name=%s""", (resource.publication_table,)).fetchone()
+    if (not reference or reference[0] != cohort.reference_content_version or not marker or
+            not marker[0] or marker[1] < 1 or marker[2] != reference[0]):
+        raise HTTPException(503, "Typed-reading publication is unavailable or stale")
+    if item.target.type not in resource.allowed_levels:
+        raise HTTPException(422, "Typed reading is not declared for this cohort level")
+    if not conn.execute("SELECT to_regclass(%s)", (resource.storage_relation,)).fetchone()[0]:
+        raise HTTPException(503, "Typed-reading storage is unavailable")
+    if resource.publication_table == "selected_reading":
+        owner_marker = conn.execute("""SELECT content_version,row_count,reference_content_version
+            FROM selected_reading_publication WHERE theme_id=%s""", (resource.theme_id,)).fetchone()
+        if not owner_marker or tuple(owner_marker) != tuple(marker):
+            raise HTTPException(503, "Selected-reading publication is inconsistent")
+
+    for side in resource.side_relations:
+        if not conn.execute("SELECT to_regclass(%s)", (side["storage_relation"],)).fetchone()[0]:
+            raise HTTPException(503, "Typed-reading evidence storage is unavailable")
+        side_marker = conn.execute("""SELECT content_version,reference_content_version
+            FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
+        if not side_marker or side_marker[1] != reference[0]:
+            raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
+        if ((side["publication_table"] == resource.publication_table or
+             side.get("same_content_version_as") == "resource") and side_marker[0] != marker[0]):
+            raise HTTPException(503, "Typed-reading evidence publication is incompatible")
+    return marker
+
+
+def _typed_cohort_filters(item, cohort, group_filter=True):
+    clauses = ["territory_type=%s", "territory_id=ANY(%s::text[])"]
+    params = [cohort.territory_type, cohort.territory_ids]
+    groups = (item.coordinates or {}).get("groupe")
+    if group_filter and groups:
+        clauses.append("groupe=ANY(%s::text[])")
+        params.append(groups)
+    return " AND ".join(clauses), tuple(params)
+
+
+def preflight_typed_reading_cohort(conn, item, resource, cohort, work_budget):
+    _typed_reading_context(conn, item, resource, cohort)
+    remaining = work_budget - len(cohort.members)
+    where, params = _typed_cohort_filters(item, cohort)
+    facts = _bounded_count(conn, f"SELECT 1 FROM {resource.storage_relation} WHERE {where}",
+        params, remaining, "Cohort typed-reading facts exceed the bounded work limit")
+    work = len(cohort.members) + facts
+    selected = set(item.fields or resource.fields)
+    for side in resource.side_relations:
+        # Evidence is only read/charged when selected, except absence evidence,
+        # which must always be checked against its primary reading.
+        if side["field"] not in selected and side["field"] != "source_absences":
+            continue
+        remaining = work_budget - work
+        where, params = _typed_cohort_filters(item, cohort, "groupe" in side["fields"])
+        count = _bounded_count(conn, f"SELECT 1 FROM {side['storage_relation']} WHERE {where}",
+            params, remaining, "Cohort typed-reading evidence exceeds the bounded work limit")
+        work += count
+    return max(1, work)
+
+
+def read_typed_reading_cohort(conn, item, resource, cohort):
+    marker = _typed_reading_context(conn, item, resource, cohort)
+    selected = set(item.fields or resource.fields)
+    evidence_fields = {side["field"] for side in resource.side_relations}
+    fact_fields = [field for field in resource.fields if field in selected and field not in evidence_fields]
+    facts_by_member = {member["id"]: [] for member in cohort.members}
+    members_with_facts = set()
+    if fact_fields:
+        where, params = _typed_cohort_filters(item, cohort)
+        cursor = conn.execute(f"SELECT territory_id,{','.join(fact_fields)} FROM {resource.storage_relation} "
+            f"WHERE {where} ORDER BY territory_id,groupe", params)
+        for raw in cursor.fetchall():
+            members_with_facts.add(raw[0])
+            facts_by_member[raw[0]].append(dict(zip(fact_fields, raw[1:])))
+    else:
+        where, params = _typed_cohort_filters(item, cohort)
+        members_with_facts = {row[0] for row in conn.execute(
+            f"SELECT territory_id FROM {resource.storage_relation} WHERE {where}", params).fetchall()}
+
+    evidence_by_member = {member["id"]: {} for member in cohort.members}
+    for side in resource.side_relations:
+        if side["field"] not in selected and side["field"] != "source_absences":
+            continue
+        side_fields = list(side["fields"])
+        where, params = _typed_cohort_filters(item, cohort, "groupe" in side_fields)
+        order = "rank" if "rank" in side_fields else ",".join(side_fields)
+        rows = conn.execute(f"SELECT {','.join(side_fields)} FROM {side['storage_relation']} "
+            f"WHERE {where} ORDER BY {order}", params).fetchall()
+        by_member = {member["id"]: [] for member in cohort.members}
+        for row in rows:
+            evidence = dict(zip(side_fields, row))
+            by_member[evidence["territory_id"]].append(evidence)
+        for territory_id, evidence in by_member.items():
+            evidence_by_member[territory_id][side["field"]] = evidence
+
+    territories = []
+    for member in cohort.members:
+        facts = facts_by_member[member["id"]]
+        absences = evidence_by_member[member["id"]].get("source_absences")
+        if absences is not None and ((member["id"] not in members_with_facts and len(absences) != 1)
+                                     or (member["id"] in members_with_facts and absences)):
+            raise HTTPException(503, "Milieux reading is missing or overlaps its source-absence evidence")
+        territories.append({"territory": dict(member), "facts": facts,
+            **evidence_by_member[member["id"]]})
+    return {"resource": item.resource, "target": item.target.model_dump(),
+        "shape": "typed_reading", "cohort": cohort.envelope(),
+        "content_version": marker[0], "reference_content_version": marker[2],
+        "territories": territories}
+
+
+def _aedar_cohort_context(conn, item, cohort):
+    from api.aedar_models import AEDAR_MEASURE_KEYS
+
+    reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
+    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
+        FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
+        WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
+    if (not reference or reference[0] != cohort.reference_content_version or not marker or
+            not marker[0] or marker[1] < 1 or marker[2] != marker[3] or marker[2] != reference[0]):
+        raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
+    coordinates = item.coordinates or {}
+    selected_typequ = coordinates.get("typequ")
+    if selected_typequ:
+        known = {row[0] for row in conn.execute(
+            "SELECT DISTINCT typequ FROM aedar_territorial_aggregate WHERE typequ=ANY(%s::text[])",
+            (selected_typequ,)).fetchall()}
+        if known != set(selected_typequ):
+            raise HTTPException(422, "Coordinate value is not present in the published AEDAR descriptor")
+    selected_measures = coordinates.get("measure")
+    if selected_measures and not set(selected_measures) <= AEDAR_MEASURE_KEYS:
+        raise HTTPException(422, "Coordinate measure is not declared for AEDAR")
+    fields = item.fields
+    measure_keys = (set(AEDAR_MEASURE_KEYS) if fields is None else
+        {field.removeprefix("measures.") for field in fields})
+    if selected_measures:
+        measure_keys &= set(selected_measures)
+    if not measure_keys:
+        raise HTTPException(422, "AEDAR measure coordinate selection is empty")
+    return marker, selected_typequ, measure_keys
+
+
+def preflight_aedar_cohort(conn, item, resource, cohort, work_budget):
+    _marker, typequ, measure_keys = _aedar_cohort_context(conn, item, cohort)
+    remaining = work_budget - len(cohort.members)
+    clauses = ["territory_type=%s", "territory_id=ANY(%s::text[])"]
+    params = [item.target.type, cohort.territory_ids]
+    if typequ is not None:
+        clauses.append("typequ=ANY(%s::text[])")
+        params.append(typequ)
+    per_fact = 1 + len(measure_keys)
+    fact_budget = remaining // per_fact
+    facts = _bounded_count(conn, "SELECT 1 FROM aedar_territorial_aggregate WHERE " +
+        " AND ".join(clauses), tuple(params), fact_budget,
+        "Cohort AEDAR aggregate facts exceed the bounded work limit")
+    return max(1, len(cohort.members) + facts * per_fact)
+
+
+def read_aedar_cohort(conn, item, resource, cohort):
+    from api.aedar_models import AEDAR_MEASURE_KEYS
+
+    marker, typequ, measure_keys = _aedar_cohort_context(conn, item, cohort)
+    measure_projection = ("measures" if measure_keys == AEDAR_MEASURE_KEYS else
+        "COALESCE((SELECT jsonb_object_agg(k,v) FROM jsonb_each(aedar_territorial_aggregate.measures) AS m(k,v) "
+        "WHERE k=ANY(%s::text[])), '{}'::jsonb) AS measures")
+    clauses = ["territory_type=%s", "territory_id=ANY(%s::text[])"]
+    params = []
+    if measure_keys != AEDAR_MEASURE_KEYS:
+        params.append(sorted(measure_keys))
+    params.extend((item.target.type, cohort.territory_ids))
+    if typequ is not None:
+        clauses.append("typequ=ANY(%s::text[])")
+        params.append(typequ)
+    cursor = conn.execute("""SELECT territory_id,territory_type,typequ,typequ_label,
+        typequ_hierarchy_label,typequ_description,typequ_domain_code,typequ_domain_label,
+        typequ_subdomain_code,typequ_subdomain_label,typequ_gamme,typequ_gamme_status,
+        typequ_source_order,identity,n_addresses,n_observed,coverage_status,""" + measure_projection + """,
+        source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date
+        FROM aedar_territorial_aggregate WHERE """ + " AND ".join(clauses) +
+        " ORDER BY territory_id,typequ", tuple(params))
+    names = [column.name for column in cursor.description]
+    rows = [dict(zip(names, row)) for row in cursor.fetchall()]
+    expected_measures = AEDAR_MEASURE_KEYS if item.fields is None else measure_keys
+    if any(set(row["measures"] or {}) != expected_measures for row in rows):
+        raise HTTPException(503, "AEDAR measure publication is incomplete for the requested projection")
+    required_metadata = ("typequ_hierarchy_label", "typequ_description", "typequ_domain_code",
+        "typequ_domain_label", "typequ_subdomain_code", "typequ_subdomain_label",
+        "typequ_gamme_status", "typequ_source_order")
+    if any(any(row[key] is None for key in required_metadata) for row in rows):
+        raise HTTPException(503, "AEDAR TYPEQU metadata publication is incomplete")
+    return {"resource": item.resource, "target": item.target.model_dump(),
+        "shape": "aedar_source_grain", "cohort": cohort.envelope(),
+        "content_version": marker[0], "reference_content_version": marker[2], "facts": rows}
 
 
 def preflight_cohort(conn, item, resource, cohort, fields, work_budget):
