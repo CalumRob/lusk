@@ -93,7 +93,12 @@ describe('Cahier typography roles', () => {
     expect(cssRule(figureCss, '.map-panel')).toContain(
       'var(--figure-map-accent, var(--mode-ring, var(--brand-500))) 45%',
     )
-    expect(tokensSource).toContain('--color-figure-reference: color-mix(in srgb, var(--cahier-region-emphasis, var(--brand-500)) 30%, var(--editorial-ink))')
+    expect(tokensSource).toContain('--color-figure-reference: color-mix(in srgb, var(--brand-500) 30%, var(--editorial-ink))')
+    expect(tokensSource).toContain('--color-figure-series-label: color-mix(in srgb, var(--brand-500) 45%, var(--editorial-ink))')
+    expect(cssRule(figureCss, '.cahier')).toContain('var(--cahier-region-emphasis, var(--brand-500)) 30%')
+    expect(cssRule(figureCss, '.cahier-figure-scalar--colored')).toContain(
+      'var(--cahier-figure-scalar-color, var(--brand-500)) 45%',
+    )
   })
 
   it('keeps Cahier text at or above 11px except for deliberate desktop editorial source stamps', () => {

@@ -244,6 +244,23 @@
   color: var(--color-figure-series-label);
 }
 
+/* Resolve each semantic ink where its source variable is set. */
+.cahier {
+  --color-figure-reference: color-mix(
+    in srgb,
+    var(--cahier-region-emphasis, var(--brand-500)) 30%,
+    var(--editorial-ink)
+  );
+}
+
+.cahier-figure-scalar--colored {
+  --color-figure-series-label: color-mix(
+    in srgb,
+    var(--cahier-figure-scalar-color, var(--brand-500)) 45%,
+    var(--editorial-ink)
+  );
+}
+
 /* Resolve mode-specific map accents locally; the root token supplies the
  * default only where a map panel has no declared mode. */
 .map-panel {

@@ -147,8 +147,11 @@
   --color-figure-mode-foot: color-mix(in srgb, var(--mode-transit) 45%, var(--editorial-ink));
   --color-figure-mode-bike: color-mix(in srgb, var(--mode-bike) 45%, var(--editorial-ink));
   --color-figure-mode-car: color-mix(in srgb, var(--mode-car) 45%, var(--editorial-ink));
-  --color-figure-reference: color-mix(in srgb, var(--cahier-region-emphasis, var(--brand-500)) 30%, var(--editorial-ink));
-  --color-figure-series-label: color-mix(in srgb, var(--cahier-figure-scalar-color, var(--brand-500)) 45%, var(--editorial-ink));
+  /* Context-sensitive roles are overridden in their owning scopes; these
+   * brand-derived defaults support standalone consumers without capturing
+   * descendant variables at :root. */
+  --color-figure-reference: color-mix(in srgb, var(--brand-500) 30%, var(--editorial-ink));
+  --color-figure-series-label: color-mix(in srgb, var(--brand-500) 45%, var(--editorial-ink));
   /* Mode-coloured map text keeps its hue while meeting AA on paper, including
    * the intentionally lighter AEDAR variants. */
   --color-figure-map-label: color-mix(in srgb, var(--brand-500) 45%, var(--editorial-ink));
