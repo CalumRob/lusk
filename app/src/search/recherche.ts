@@ -99,14 +99,13 @@ export function libelleType(type: TerritoireType): string {
 
 /**
  * Une entrée Indicateur de la recherche groupée (#409) — une Page
- * d'indicateur publiée du catalogue, avec le libellé payload-owned de son
- * thème pour la puce de groupe.
+ * d'indicateur du catalogue app-owned, avec le libellé éditorial du thème.
  */
 export interface EntreeRechercheIndicateur {
   theme: Theme
-  /** Le libellé publié du thème (theme_<theme>.json) — jamais un slug brut. */
+  /** Le libellé éditorial du thème — jamais un slug brut. */
   themeLabel: string
-  /** Le libellé public du descripteur de la page. */
+  /** Le libellé public app-owned de la page. */
   label: string
   href: string
 }

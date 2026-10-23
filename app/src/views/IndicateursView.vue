@@ -1,36 +1,16 @@
 <script setup lang="ts">
 /**
- * IndicateursView — le catalogue /indicateurs (#409) : la liste CONTRACT-DRIVEN
- * des Pages d'indicateur publiées, groupée par thème canonique puis par
- * sous-groupe de fiche (l'ordre déclaré de theme_<theme>.json). Les thèmes et
- * les sous-groupes sont des rassemblements TITRÉS — jamais des liens ni des
- * pages analytiques (le catalogue mène uniquement aux Pages d'indicateur).
- *
- * Le wait-set (#296) : la table de référence + la métadonnée des SIX thèmes —
- * chaque theme_<theme>.json chaîne sur sa paire hermétique dans le magasin,
- * donc attendre la métadonnée attend implicitement les faits du thème. Les
- * libellés viennent des métadonnées publiées (descripteurs canon), jamais
- * d'une clé brute.
+ * Catalogue /indicateurs (#409), servi par le contenu éditorial stable de
+ * l'application : cette navigation ne dépend ni des métadonnées de thème ni
+ * des faits disponibles à l'exécution.
  */
-import { computed } from 'vue'
-
 import { groupesCatalogue } from '@/indicateurs/catalogue'
-import { usePayload } from '@/payload/usePayload'
-import type { Fichier } from '@/payload/loader'
-import { THEMES_CANONIQUES } from '@/payload/types'
-import type { Theme } from '@/payload/types'
 
-const { payload, erreur, chargement } = usePayload({
-  attendre: ['territoires', ...THEMES_CANONIQUES.map((theme) => `theme_${theme}` as Fichier)],
-})
-
-const groupes = computed(() => groupesCatalogue(payload.value.themeMetadata ?? {}))
-
-const themeDe = (theme: string): Theme => theme as Theme
+const groupes = groupesCatalogue()
 </script>
 
 <template>
-  <section class="catalogue" :aria-busy="chargement ? 'true' : 'false'">
+  <section class="catalogue" aria-busy="false">
     <header class="catalogue-entete">
       <h1>Indicateurs</h1>
       <p class="catalogue-sous-titre">
@@ -39,36 +19,27 @@ const themeDe = (theme: string): Theme => theme as Theme
       </p>
     </header>
 
-    <div v-if="chargement" role="status" aria-label="Chargement du catalogue">
-      <div class="squelette squelette--ligne" />
-      <div class="squelette squelette--ligne" />
-    </div>
-    <div v-else-if="erreur" role="alert">Impossible de charger le catalogue.</div>
-    <div v-else-if="groupes.length === 0" role="note">Aucun indicateur publié pour l’instant.</div>
-
-    <template v-else>
-      <section
-        v-for="groupe in groupes"
-        :key="groupe.theme"
-        class="catalogue-theme"
-        :data-groupe-theme="themeDe(groupe.theme)"
-        :class="`catalogue-theme--${groupe.theme}`"
+    <section
+      v-for="groupe in groupes"
+      :key="groupe.theme"
+      class="catalogue-theme"
+      :data-groupe-theme="groupe.theme"
+      :class="`catalogue-theme--${groupe.theme}`"
+    >
+      <h2>{{ groupe.label }}</h2>
+      <div
+        v-for="sousGroupe in groupe.sousGroupes"
+        :key="sousGroupe.key"
+        class="catalogue-sous-groupe"
       >
-        <h2>{{ groupe.label }}</h2>
-        <div
-          v-for="sousGroupe in groupe.sousGroupes"
-          :key="sousGroupe.key"
-          class="catalogue-sous-groupe"
-        >
-          <h3 data-groupe-sous-groupe :data-clef-sous-groupe="sousGroupe.key">{{ sousGroupe.label }}</h3>
-          <ul class="catalogue-liste">
-            <li v-for="entree in sousGroupe.entrees" :key="entree.indicateur">
-              <RouterLink :to="entree.href">{{ entree.label }}</RouterLink>
-            </li>
-          </ul>
-        </div>
-      </section>
-    </template>
+        <h3 data-groupe-sous-groupe :data-clef-sous-groupe="sousGroupe.key">{{ sousGroupe.label }}</h3>
+        <ul class="catalogue-liste">
+          <li v-for="entree in sousGroupe.entrees" :key="entree.indicateur">
+            <RouterLink :to="entree.href">{{ entree.label }}</RouterLink>
+          </li>
+        </ul>
+      </div>
+    </section>
   </section>
 </template>
 
