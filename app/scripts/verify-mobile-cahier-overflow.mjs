@@ -497,6 +497,8 @@ try {
             const axis = root.querySelector(definition.axisSelector)
             const marks = [...root.querySelectorAll(definition.markSelector)]
             const labels = [...root.querySelectorAll('.cahier-figure-tick-label--y, .cahier-figure-tick-label-svg--y')]
+            const svgLabels = [...root.querySelectorAll('.cahier-figure-tick-label-svg--y')]
+            const htmlLabels = [...root.querySelectorAll('.cahier-figure-tick-label--y')]
             const title = root.querySelector('.cahier-figure-axis-title--y')
             if (!frame || !plot || !svg || !axis || marks.length === 0 || labels.length === 0 || !title) {
               throw new Error(`${definition.family} fixture did not mount a populated titled y-axis`)
@@ -532,6 +534,14 @@ try {
               frameRail,
               axisLeft,
               labelRail: definition.labelRail(labels[0], viewBoxWidth),
+              ...(definition.family === 'transport-offer-trajectory' ? {
+                labelRails: {
+                  svg: svgLabels.length ? Number(svgLabels[0].getAttribute('x')) : null,
+                  html: htmlLabels.length
+                    ? Number.parseFloat(htmlLabels[0].style.left) * viewBoxWidth / 100
+                    : null,
+                },
+              } : {}),
               overlaps,
               markX: definition.markX(marks[0]),
               hitboxRail,
@@ -555,6 +565,16 @@ try {
           Math.abs(report.labelRail - report.axisLeft) < 0.5 &&
           Math.abs(report.markX - report.axisLeft) < 0.5,
         `${report.family} frame, SVG axis, y labels, and plotted marks must share the derived rail at ${width}px: ${JSON.stringify(report)}`)
+        if (report.family === 'transport-offer-trajectory') {
+          assert.notEqual(report.labelRails.html, null,
+            `Transport-offer fixture must render HTML y-tick labels at ${width}px: ${JSON.stringify(report)}`)
+          for (const [representation, labelRail] of Object.entries(report.labelRails)) {
+            if (labelRail === null) continue
+            assert(Math.abs(labelRail - report.axisLeft) < 0.5 &&
+              Math.abs(labelRail - report.frameRail) < 0.5,
+            `${report.family} first ${representation} y-tick label must share the frame and SVG axis rail at ${width}px: ${JSON.stringify(report)}`)
+          }
+        }
         if (report.hitboxRail !== null) {
           assert(Math.abs(report.hitboxRail - report.axisLeft) < 0.5 && report.hitboxWidth > 0,
             `${report.family} hitboxes must share derived plot geometry at ${width}px: ${JSON.stringify(report)}`)
