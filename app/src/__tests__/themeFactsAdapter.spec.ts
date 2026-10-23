@@ -101,6 +101,21 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         { territory_type: 'commune', territory_id: '2' }],
       scope: { kind: 'explicit_selection', member_count: 1 },
     }))).toThrow(/portée|scope/i)
+    const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
+    const focalCurve = nativeReadFixture({ target: { kind: 'territory', type: 'region', id: '53' },
+      intent: { kind: 'facts' } }, curve)
+    const regionComparison = (resultPatch: Record<string, unknown> = {}) => ({ theme_id: 'mobilite',
+      comparison_reads: [{ resource: curve.resource_id, declaration: curve, shapes: curve.shapes, data: {
+        contract: 'indicator-comparison-v1', indicator_id: curve.indicator_id, shape: 'series',
+        target: { kind: 'territory', type: 'region', id: '53' }, selection: null, scope: null,
+        result: { indicator_id: curve.indicator_id, source_facet: focalCurve.comparison_point, status: 'unavailable',
+          reason: 'unsupported_comparison_contract', direction: curve.direction, selected_member_count: 0,
+          eligible_count: 0, missing_count: 0, mean: null, mean_curve: null, comparison_sources: [],
+          rank: null, rank_size: null, ...resultPatch },
+      } }] })
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison(), undefined)).not.toThrow()
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({ status: 'available' }), undefined))
+      .toThrow(/portée|scope/i)
   })
 
   it('projects native semantic comparison results onto the fiche rank seam without replacing focal values', () => {

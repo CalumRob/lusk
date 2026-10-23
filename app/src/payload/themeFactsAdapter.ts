@@ -28,10 +28,20 @@ const texteNonVide = (value: unknown): value is string => typeof value === 'stri
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
 const sameSemanticJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
 
-function validerPorteeComparaison(scope: unknown, selection: unknown, target: unknown): void {
+function validerPorteeComparaison(scope: unknown, selection: unknown, target: unknown,
+  result: Row, shape: unknown): void {
   if (!isRecord(target) || !texteNonVide(target.id) ||
       !['commune', 'epci', 'departement', 'region'].includes(String(target.type))) {
     throw new Error('Cible de comparaison sémantique invalide')
+  }
+  if (scope === null || scope === undefined) {
+    const unsupportedRegion = target.type === 'region' && selection == null && shape === 'series' &&
+      result.status === 'unavailable' && result.reason === 'unsupported_comparison_contract' &&
+      result.selected_member_count === 0 && result.eligible_count === 0 && result.missing_count === 0 &&
+      result.mean === null && result.mean_curve === null && result.rank === null && result.rank_size === null &&
+      Array.isArray(result.comparison_sources) && result.comparison_sources.length === 0
+    if (unsupportedRegion) return
+    throw new Error('Portée de comparaison sémantique invalide')
   }
   if (!isRecord(scope) || !Number.isInteger(scope.member_count) ||
       (scope.member_count as number) < 0) throw new Error('Portée de comparaison sémantique invalide')
@@ -117,7 +127,7 @@ function validerLectureComparaison(read: Row, focalReads?: unknown, requireFocal
     throw new Error('Lecture de comparaison sémantique incomplète')
   }
   const declaration = isRecord(read.declaration) ? read.declaration : undefined
-  validerPorteeComparaison(data.scope, data.selection, data.target)
+  validerPorteeComparaison(data.scope, data.selection, data.target, result, data.shape)
   validerResultatComparaison(result, data, declaration)
   if (data.shape === 'series' && result.status === 'available' && requireFocalSeries && !Array.isArray(focalReads)) {
     throw new Error('Faits focaux absents pour valider la facette de série comparée')
