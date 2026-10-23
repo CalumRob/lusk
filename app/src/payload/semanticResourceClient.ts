@@ -89,8 +89,8 @@ async function poster(path: string, body: RecordValue): Promise<unknown> {
 /** A semantic read-batch retains request-local correlation and resource identity. */
 export async function lireRessourcesBatch(items: SemanticReadItem[]): Promise<RecordValue[]> {
   const path = '/api/resources/read-batch'
-  if (!items.length || items.length > 12 || new Set(items.map((item) => item.resource)).size !== items.length) {
-    throw new PayloadError('validation', path, 'Le lot sémantique doit contenir 1 à 12 ressources distinctes.')
+  if (!items.length || items.length > 12) {
+    throw new PayloadError('validation', path, 'Le lot sémantique doit contenir de 1 à 12 lectures.')
   }
   const requests = items.map((item, index) => ({ ...item, id: `scalar-${index}-${item.resource}` }))
   const raw = await poster(path, { items: requests })
@@ -110,6 +110,16 @@ export async function lireRessourcesBatch(items: SemanticReadItem[]): Promise<Re
     const data = result?.data
     if (!result || result.resource !== request.resource || !isRecord(data) || data.resource !== request.resource) {
       throw new PayloadError('validation', path, 'La corrélation ou l’identité d’une ressource du lot est incompatible.')
+    }
+    const target = data.target
+    const expected = request.target
+    const sameNullable = (actual: unknown, wanted: string | null | undefined) =>
+      (actual === undefined || actual === null ? null : actual) === (wanted ?? null)
+    if (!isRecord(target) || target.kind !== expected.kind || target.type !== expected.type ||
+        (expected.kind === 'territory' && target.id !== expected.id) ||
+        (expected.kind === 'territory_cohort' &&
+          (!sameNullable(target.department_id, expected.department_id) || !sameNullable(target.epci_id, expected.epci_id)))) {
+      throw new PayloadError('validation', path, 'La cible renvoyée par le lot sémantique ne correspond pas à la lecture demandée.')
     }
     return data
   })
