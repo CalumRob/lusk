@@ -72,15 +72,15 @@ def cohort_http(canonical_db_env):
     with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as publisher:
         with publisher.transaction():
             publisher.execute("""INSERT INTO territory_reference(
-                territory_id,territory_type,name,department_id,epci_id)
-                VALUES ('cohort-c1','commune','Commune 1','29','cohort-e29'),
-                       ('cohort-c2','commune','Commune 2','29','cohort-e29'),
-                       ('cohort-c3','commune','Commune 3','22','cohort-e22'),
-                       ('cohort-e29','epci','EPCI 29','29',NULL),
-                       ('cohort-e22','epci','EPCI 22','22',NULL),
-                       ('29','departement','Finistère',NULL,NULL),
-                       ('22','departement','Côtes-d’Armor',NULL,NULL),
-                       ('cohort-bretagne','region','Bretagne',NULL,NULL)""")
+                territory_id,territory_type,name,department_id,epci_id,density_class_code,density_class_label)
+                VALUES ('cohort-c1','commune','Commune 1','29','cohort-e29','D1','Dense'),
+                       ('cohort-c2','commune','Commune 2','29','cohort-e29','D1','Dense'),
+                       ('cohort-c3','commune','Commune 3','22','cohort-e22',NULL,NULL),
+                       ('cohort-e29','epci','EPCI 29','29',NULL,NULL,NULL),
+                       ('cohort-e22','epci','EPCI 22','22',NULL,NULL,NULL),
+                       ('29','departement','Finistère',NULL,NULL,NULL,NULL),
+                       ('22','departement','Côtes-d’Armor',NULL,NULL,NULL,NULL),
+                       ('cohort-bretagne','region','Bretagne',NULL,NULL,NULL,NULL)""")
             publisher.execute("""INSERT INTO table_publication(table_name,content_version,row_count)
                 VALUES ('territory_reference','cohort-reference-v1',8)""")
             publisher.execute("INSERT INTO source_dataset(source_id,name) VALUES ('cohort-source','Cohort source')")
@@ -111,7 +111,41 @@ def cohort_http(canonical_db_env):
                     VALUES ('densite',%s,'cohort-source','cohort-v1')""", (territory_id,))
             publisher.execute("""INSERT INTO table_publication(
                 table_name,content_version,row_count,reference_content_version)
-                VALUES ('scalar_observation','cohort-scalar-v1',5,'cohort-reference-v1')""")
+                VALUES ('scalar_observation','cohort-scalar-v1',8,'cohort-reference-v1')""")
+
+            # prix_m2 is intentionally published at both native grains: this pooled
+            # scalar is distinct from every annual point in the owned series below.
+            publisher.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,
+                comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version)
+                VALUES ('prix_m2','habitat','Prix médian poolé au m²','€/m²','low','prix_m2',
+                    ARRAY['commune'],'transactions','sparse','cohort-prix-scalar-desc-v1')""")
+            publisher.execute("INSERT INTO scalar_descriptor_source VALUES ('prix_m2','cohort-source')")
+            for territory_id, value, status, support, denominator in (
+                    ('cohort-c1', 987.0, 'measured', 12, 20),
+                    ('cohort-c2', 987.0, 'measured', 15, 24),
+                    ('cohort-c3', None, 'suppressed', 5, 20)):
+                publisher.execute("""INSERT INTO scalar_observation(
+                    indicator_id,territory_id,territory_type,value,status,support_count,denominator_count)
+                    VALUES ('prix_m2',%s,'commune',%s,%s,%s,%s)""",
+                    (territory_id, value, status, support, denominator))
+                publisher.execute("""INSERT INTO scalar_observation_source
+                    VALUES ('prix_m2',%s,'cohort-source','cohort-v1')""", (territory_id,))
+
+            publisher.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,
+                scalar_content_version,reference_content_version,group_row_count,territory_row_count,lineage_row_count)
+                VALUES (true,'cohort-prix-scalar-comparison-v1','cohort-scalar-v1',
+                    'cohort-reference-v1',1,2,1)""")
+            publisher.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,
+                indicator_id,statistic,median,member_count,eligible_count,missing_count,lineage_source_count)
+                VALUES ('density_class','D1','commune','prix_m2','median',987,2,2,0,1)""")
+            publisher.execute("""INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,
+                indicator_id,territory_id,value,status,rank,tie_count,rank_size)
+                VALUES ('density_class','D1','commune','prix_m2','cohort-c1',987,'measured',1,2,2),
+                       ('density_class','D1','commune','prix_m2','cohort-c2',987,'measured',1,2,2)""")
+            publisher.execute("""INSERT INTO comparison_source_lineage(comparison_family,comparison_context,
+                group_id,territory_type,facet_id,source_id,vintage_id,comparison_content_version)
+                VALUES ('scalar','density_class','D1','commune','prix_m2','cohort-source','cohort-v1',
+                    'cohort-prix-scalar-comparison-v1')""")
 
             publisher.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,
                 completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction)
@@ -279,9 +313,11 @@ def cohort_http(canonical_db_env):
                 VALUES ('dvf_prix_m2','cohort-series-v1','cohort-reference-v1',3)""")
             publisher.execute("""INSERT INTO series_dataset_descriptor(
                 dataset_id,indicator_id,axis_kind,axis_values,completeness,comparison_point,label,unit,direction,
-                allowed_levels,descriptor_version,active_read_route,theme_id,absence_semantics)
+                allowed_levels,descriptor_version,active_read_route,theme_id,absence_semantics,
+                comparison_statistic,comparison_scope)
                 VALUES ('dvf_prix_m2','prix_m2','year',ARRAY['2024','2025'],'may_be_missing','2025',
-                    'Prix médian au m²','€/m²','low',ARRAY['commune'],'cohort-series-desc-v1',true,'habitat','no_record')""")
+                    'Prix médian au m² par année','€/m²','low',ARRAY['commune'],'cohort-series-desc-v1',true,
+                    'habitat','no_record','median','default_group')""")
             publisher.execute("""INSERT INTO series_provenance_revision(
                 provenance_revision_id,source_id,vintage_id,source_name,dataset_name,source_version,
                 reference_date,publication_date,revision_hash)
@@ -301,6 +337,24 @@ def cohort_http(canonical_db_env):
                 publisher.execute("""INSERT INTO series_observation_provenance
                     VALUES ('dvf_prix_m2','prix_m2',%s,%s,'cohort-series-revision')""",
                     (territory_id, axis))
+
+            publisher.execute("""INSERT INTO ordered_series_comparison_publication(
+                dataset_id,indicator_id,content_version,ordered_series_content_version,
+                reference_content_version,group_row_count,territory_row_count,lineage_row_count,comparison_axes)
+                VALUES ('dvf_prix_m2','prix_m2','cohort-prix-series-comparison-v1',
+                    'cohort-series-v1','cohort-reference-v1',1,2,0,ARRAY['2025'])""")
+            publisher.execute("""INSERT INTO ordered_series_comparison_group(dataset_id,indicator_id,
+                comparison_context,group_id,territory_type,axis_value,statistic,group_value,
+                member_count,eligible_count,missing_count,lineage_source_count)
+                VALUES ('dvf_prix_m2','prix_m2','density_class','D1','commune','2025',
+                    'median',NULL,2,0,2,0)""")
+            publisher.execute("""INSERT INTO ordered_series_comparison_territory(dataset_id,indicator_id,
+                comparison_context,group_id,territory_type,axis_value,territory_id,value,status,rank,tie_count,rank_size)
+                VALUES ('dvf_prix_m2','prix_m2','density_class','D1','commune','2025',
+                    'cohort-c1',NULL,'missing',NULL,NULL,NULL),
+                       ('dvf_prix_m2','prix_m2','density_class','D1','commune','2025',
+                    'cohort-c2',NULL,'not_published',NULL,NULL,NULL)""")
+
 
             publisher.execute("""INSERT INTO series_descriptor(
                 indicator_id,axis_kind,axis_values,completeness,comparison_point,allowed_levels,label,unit,
@@ -350,6 +404,231 @@ def cohort_http(canonical_db_env):
         else:
             main.app.dependency_overrides[main.get_repository] = previous
         pool.close()
+
+
+def _prix_m2_item(*, intent=None, fields=None, coordinates=None):
+    item = {
+        "resource": "prix_m2",
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+        "intent": intent or {"kind": "facts"},
+    }
+    if fields is not None:
+        item["fields"] = fields
+    if coordinates is not None:
+        item["coordinates"] = coordinates
+    return item
+
+
+def test_dual_shape_prix_m2_returns_native_pooled_scalar_beside_annual_series(cohort_http):
+    item = _prix_m2_item()
+    response = cohort_http.client.post("/api/resources/read", json=item)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["dataset_id"] == "dvf_prix_m2"
+    assert body["publication_id"] == "cohort-series-v1"
+    assert [(point["axis"], point["value"]) for point in body["points"]] == [
+        ("2024", 230.0), ("2025", None)]
+    facet = body["scalar_facet"]
+    assert (facet["shape"], facet["source_facet"]) == ("scalar", "prix_m2")
+    assert (facet["content_version"], facet["reference_content_version"],
+            facet["descriptor_version"]) == (
+        "cohort-scalar-v1", "cohort-reference-v1", "cohort-prix-scalar-desc-v1")
+    assert facet["descriptor"]["completeness"] == "sparse"
+    assert facet["observation"] == {
+        "territory_id": "cohort-c1", "territory_type": "commune", "status": "measured",
+        "value": 987.0, "support_count": 12, "denominator_count": 20,
+        "sources": [{"source_id": "cohort-source", "name": "Cohort source",
+                     "vintage_id": "cohort-v1", "version": "2026",
+                     "reference_date": "2026-01-01", "publication_date": "2026-01-02"}],
+    }
+    assert facet["observation"]["value"] not in {point.get("value") for point in body["points"]}
+
+    batch = cohort_http.batch([{"id": "pooled-and-annual", **item}])
+    assert batch.status_code == 200, batch.text
+    assert batch.json()["results"][0]["data"] == body
+
+
+def test_dual_shape_facet_projection_and_sparse_suppression_are_independent(cohort_http):
+    support_only = cohort_http.client.post("/api/resources/read", json=
+        _prix_m2_item(fields=["support_count"], coordinates={"year": ["2024"]}))
+    assert support_only.status_code == 200, support_only.text
+    body = support_only.json()
+    assert len(body["points"]) == 1 and body["points"][0]["axis"] == "2024"
+    assert body["points"][0]["status"] == "measured"
+    assert "value" not in body["points"][0]
+    assert body["scalar_facet"]["observation"]["status"] == "measured"
+    assert body["scalar_facet"]["observation"]["support_count"] == 12
+    assert "value" not in body["scalar_facet"]["observation"]
+    assert "denominator_count" not in body["scalar_facet"]["observation"]
+
+    value_only = cohort_http.client.post("/api/resources/read", json=
+        _prix_m2_item(fields=["value"], coordinates={"year": ["2024"]}))
+    assert value_only.status_code == 200, value_only.text
+    assert [point["axis"] for point in value_only.json()["points"]] == ["2024"]
+    value_observation = value_only.json()["scalar_facet"]["observation"]
+    assert value_observation["value"] == 987.0
+    assert "support_count" not in value_observation and "denominator_count" not in value_observation
+    assert all("support_count" not in point and "denominator_count" not in point
+               for point in value_only.json()["points"])
+
+    denominator_only = cohort_http.client.post("/api/resources/read", json=
+        _prix_m2_item(fields=["denominator_count"]))
+    assert denominator_only.status_code == 200, denominator_only.text
+    denominator_observation = denominator_only.json()["scalar_facet"]["observation"]
+    assert denominator_observation["denominator_count"] == 20
+    assert "value" not in denominator_observation and "support_count" not in denominator_observation
+
+    suppressed = cohort_http.client.post("/api/resources/read", json={
+        **_prix_m2_item(), "target": {"kind": "territory", "type": "commune", "id": "cohort-c3"}})
+    assert suppressed.status_code == 200, suppressed.text
+    suppressed_facet = suppressed.json()["scalar_facet"]["observation"]
+    assert suppressed_facet["status"] == "suppressed"
+    assert suppressed_facet["value"] is None
+    assert (suppressed_facet["support_count"], suppressed_facet["denominator_count"]) == (5, 20)
+
+    # Publish a sparse absence by keeping the table marker's row count accurate.
+    cohort_http.publish(
+        ("DELETE FROM scalar_observation WHERE indicator_id='prix_m2' AND territory_id='cohort-c3'", ()),
+        ("UPDATE table_publication SET row_count=7 WHERE table_name='scalar_observation'", ()),
+    )
+    try:
+        absent = cohort_http.client.post("/api/resources/read", json={
+            **_prix_m2_item(),
+            "target": {"kind": "territory", "type": "commune", "id": "cohort-c3"},
+        })
+        assert absent.status_code == 200, absent.text
+        absent_observation = absent.json()["scalar_facet"]["observation"]
+        assert absent_observation["status"] == "unavailable"
+        assert absent_observation["value"] is None and absent_observation["sources"] == []
+    finally:
+        cohort_http.publish(
+            ("INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status,"
+             "support_count,denominator_count) VALUES ('prix_m2','cohort-c3','commune',NULL,'suppressed',5,20)", ()),
+            ("INSERT INTO scalar_observation_source VALUES ('prix_m2','cohort-c3','cohort-source','cohort-v1')", ()),
+            ("UPDATE table_publication SET row_count=8 WHERE table_name='scalar_observation'", ()),
+        )
+
+
+@pytest.mark.parametrize("intent,fields,expected_scope", [
+    ({"kind": "fixed_comparison", "context": "default"},
+     ["median", "rank", "rank_ties", "rank_size"], "density_class"),
+    ({"kind": "selected_comparison", "members": [
+        {"type": "commune", "id": "cohort-c1"},
+        {"type": "commune", "id": "cohort-c3"}]}, ["rank"], "explicit_selection"),
+])
+def test_dual_shape_comparison_exposes_independent_pooled_scalar_result(
+        cohort_http, intent, fields, expected_scope):
+    item = _prix_m2_item(intent=intent, fields=fields, coordinates={"year": ["2025"]})
+    response = cohort_http.client.post("/api/resources/read", json=item)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["content_version"] == "cohort-series-v1"
+    series_result = body["result"]
+    assert series_result["source_facet"] == "2025"
+    assert series_result["status"] == "unavailable"
+    if fields == ["rank"]:
+        assert "median" not in series_result and "focal_value" not in series_result
+    facet = body["scalar_facet"]
+    assert (facet["shape"], facet["source_facet"]) == ("scalar", "prix_m2")
+    assert (facet["content_version"], facet["reference_content_version"],
+            facet["descriptor_version"]) == (
+        "cohort-scalar-v1", "cohort-reference-v1", "cohort-prix-scalar-desc-v1")
+    assert facet["scope"]["kind"] == expected_scope
+    assert facet["selection"] == (None if intent["kind"] == "fixed_comparison" else [
+        {"territory_type": "commune", "territory_id": "cohort-c1"},
+        {"territory_type": "commune", "territory_id": "cohort-c3"}])
+    scalar_result = facet["result"]
+    assert scalar_result["source_facet"] == "prix_m2"
+    if expected_scope == "density_class":
+        assert facet["comparison_content_version"] == "cohort-prix-scalar-comparison-v1"
+        assert (scalar_result["median"], scalar_result["rank"], scalar_result["rank_ties"],
+                scalar_result["rank_size"]) == (987.0, 1, 2, 2)
+        assert scalar_result["comparison_sources"][0]["vintage_id"] == "cohort-v1"
+    else:
+        assert "comparison_content_version" not in facet
+        assert scalar_result["rank"] == 1
+        assert "median" not in scalar_result and "focal_value" not in scalar_result
+
+    batch = cohort_http.batch([{"id": "dual-comparison", **item}])
+    assert batch.status_code == 200, batch.text
+    assert batch.json()["results"][0]["data"] == body
+
+
+def test_dual_shape_publications_and_descriptor_fail_closed_and_batch_is_all_or_none(cohort_http):
+    item = _prix_m2_item()
+    cases = [
+        ([("UPDATE table_publication SET reference_content_version='bad-reference' "
+           "WHERE table_name='scalar_observation'", ())],
+         "UPDATE table_publication SET reference_content_version='cohort-reference-v1' "
+         "WHERE table_name='scalar_observation'"),
+        ([("ALTER TABLE series_dataset_publication DISABLE TRIGGER series_dataset_publication_complete", ()),
+          ("UPDATE series_dataset_publication SET reference_content_version='bad-reference' "
+           "WHERE dataset_id='dvf_prix_m2'", ()),
+          ("ALTER TABLE series_dataset_publication ENABLE TRIGGER series_dataset_publication_complete", ())],
+         "UPDATE series_dataset_publication SET reference_content_version='cohort-reference-v1' "
+         "WHERE dataset_id='dvf_prix_m2'"),
+        ([("UPDATE scalar_descriptor SET theme_id='demographie' WHERE indicator_id='prix_m2'", ())],
+         "UPDATE scalar_descriptor SET theme_id='habitat' WHERE indicator_id='prix_m2'"),
+    ]
+    for corrupt, restore in cases:
+        cohort_http.publish(*corrupt)
+        try:
+            response = cohort_http.client.post("/api/resources/read", json=item)
+            assert response.status_code == 503, response.text
+        finally:
+            cohort_http.publish((restore, ()))
+
+    comparison = _prix_m2_item(intent={"kind": "fixed_comparison", "context": "default"})
+    cohort_http.publish(("UPDATE scalar_descriptor SET theme_id='demographie' WHERE indicator_id='prix_m2'", ()))
+    try:
+        response = cohort_http.client.post("/api/resources/read", json=comparison)
+        assert response.status_code == 503, response.text
+    finally:
+        cohort_http.publish(("UPDATE scalar_descriptor SET theme_id='habitat' WHERE indicator_id='prix_m2'", ()))
+
+    cohort_http.publish(("UPDATE comparison_source_lineage SET comparison_content_version='stale-lineage' "
+                         "WHERE comparison_family='scalar' AND facet_id='prix_m2'", ()))
+    try:
+        rejected = cohort_http.batch([
+            {"id": "other-fact", "resource": "densite",
+             "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+             "intent": {"kind": "facts"}},
+            {"id": "dual-comparison", **comparison},
+        ])
+        assert rejected.status_code == 503, rejected.text
+        assert "results" not in rejected.json()
+    finally:
+        cohort_http.publish(("UPDATE comparison_source_lineage "
+                             "SET comparison_content_version='cohort-prix-scalar-comparison-v1' "
+                             "WHERE comparison_family='scalar' AND facet_id='prix_m2'", ()))
+
+
+def test_dual_shape_preflight_charges_scalar_reads_and_keeps_query_count_bounded(
+        cohort_http, monkeypatch):
+    from api import resource_execution
+
+    with monkeypatch.context() as patch:
+        patch.setattr(resource_execution, "MAX_WORK_UNITS", 40)
+        too_much_facts = cohort_http.client.post("/api/resources/read", json=_prix_m2_item())
+    with monkeypatch.context() as patch:
+        patch.setattr(resource_execution, "MAX_WORK_UNITS", 2)
+        too_much_comparison = cohort_http.client.post("/api/resources/read", json=
+            _prix_m2_item(intent={"kind": "fixed_comparison", "context": "default"}))
+    assert too_much_facts.status_code == 413
+    assert too_much_comparison.status_code == 413
+
+    def focal_query_count(territory_id):
+        before = cohort_http.query_counter["count"]
+        response = cohort_http.client.post("/api/resources/read", json={
+            **_prix_m2_item(),
+            "target": {"kind": "territory", "type": "commune", "id": territory_id},
+        })
+        assert response.status_code == 200, response.text
+        return cohort_http.query_counter["count"] - before
+
+    assert focal_query_count("cohort-c1") == focal_query_count("cohort-c3")
 
 
 def test_scalar_cohort_intersects_commune_parent_filters_and_keeps_support_and_lineage(cohort_http):

@@ -46,6 +46,21 @@ its published descriptor version, rate unit, and declared source clock. Habitat
 returns its existing selected-reading descriptor and linked publication version.
 Missing or incompatible required lineage fails closed with `503`.
 
+For a focal territory, when the producer catalogue declares the same indicator
+as both `scalar` and `ordered_series`, `facts` and comparison intents retain the
+existing ordered-series response and add a separate `scalar_facet`. Its
+`source_facet` is the original indicator identity; it carries the native scalar
+descriptor/observation (or comparison result), source evidence, and its own
+`content_version`, `reference_content_version`, and `descriptor_version`. A
+comparison facet also carries its resolved `selection` and `scope`; fixed
+published scalar comparisons include their own `comparison_content_version`.
+Annual points and their series publication/descriptor versions remain unchanged,
+and no ambiguous top-level scalar `value` is added. Explicit `fields` are
+projected independently within each facet while mandatory status, descriptor,
+provenance, and publication metadata remain. This additive facet applies to
+focal territory reads only; cohort responses and series-only resources keep their
+existing contracts.
+
 ## Bounded territory cohorts
 
 `territory_cohort` is a closed, facts-only target, not a comparison scope or a
