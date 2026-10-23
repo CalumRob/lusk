@@ -556,6 +556,114 @@ def test_dual_shape_comparison_exposes_independent_pooled_scalar_result(
     assert batch.json()["results"][0]["data"] == body
 
 
+def test_dual_shape_fixed_comparison_keeps_pooled_and_annual_ranks_independent(cohort_http):
+    # This isolated fixture variant publishes an annual comparison point with
+    # the opposite ordering from the pooled scalar. Other tests retain the base
+    # sparse/missing annual fixture unchanged.
+    cohort_http.publish(
+        ("UPDATE table_publication SET content_version='cohort-scalar-rank-v1' "
+         "WHERE table_name='scalar_observation'", ()),
+        ("UPDATE scalar_observation SET value=700 WHERE indicator_id='prix_m2' "
+         "AND territory_id='cohort-c1'", ()),
+        ("UPDATE scalar_observation SET value=900 WHERE indicator_id='prix_m2' "
+         "AND territory_id='cohort-c2'", ()),
+        ("UPDATE scalar_comparison_publication SET "
+         "content_version='cohort-prix-scalar-comparison-rank-v1', "
+         "scalar_content_version='cohort-scalar-rank-v1', published_at=transaction_timestamp() "
+         "WHERE singleton", ()),
+        ("UPDATE scalar_comparison_group SET median=800,eligible_count=2,missing_count=0 "
+         "WHERE comparison_context='density_class' AND group_id='D1' "
+         "AND territory_type='commune' AND indicator_id='prix_m2'", ()),
+        ("UPDATE scalar_comparison_territory SET value=700,status='measured',rank=1,tie_count=1,rank_size=2 "
+         "WHERE comparison_context='density_class' AND group_id='D1' AND territory_type='commune' "
+         "AND indicator_id='prix_m2' AND territory_id='cohort-c1'", ()),
+        ("UPDATE scalar_comparison_territory SET value=900,status='measured',rank=2,tie_count=1,rank_size=2 "
+         "WHERE comparison_context='density_class' AND group_id='D1' AND territory_type='commune' "
+         "AND indicator_id='prix_m2' AND territory_id='cohort-c2'", ()),
+        ("UPDATE comparison_source_lineage SET comparison_content_version="
+         "'cohort-prix-scalar-comparison-rank-v1' WHERE comparison_family='scalar' "
+         "AND facet_id='prix_m2'", ()),
+        ("UPDATE series_dataset_publication SET content_version='cohort-series-rank-v1',row_count=4, "
+         "published_at=transaction_timestamp() WHERE dataset_id='dvf_prix_m2'", ()),
+        ("UPDATE series_dataset_observation SET value=230,status='measured',missing_reason=NULL "
+         "WHERE dataset_id='dvf_prix_m2' AND indicator_id='prix_m2' "
+         "AND territory_id='cohort-c1' AND axis_value='2025'", ()),
+        ("INSERT INTO series_dataset_observation(dataset_id,indicator_id,territory_id,territory_type, "
+         "axis_value,observation_period,value,status) VALUES "
+         "('dvf_prix_m2','prix_m2','cohort-c2','commune','2025','2025',123,'measured')", ()),
+        ("INSERT INTO series_observation_provenance VALUES "
+         "('dvf_prix_m2','prix_m2','cohort-c2','2025','cohort-series-revision')", ()),
+        ("UPDATE ordered_series_comparison_publication SET "
+         "content_version='cohort-prix-series-comparison-rank-v1', "
+         "ordered_series_content_version='cohort-series-rank-v1',lineage_row_count=1, "
+         "published_at=transaction_timestamp() WHERE dataset_id='dvf_prix_m2' "
+         "AND indicator_id='prix_m2'", ()),
+        ("UPDATE ordered_series_comparison_group SET group_value=176.5,eligible_count=2,missing_count=0, "
+         "lineage_source_count=1 WHERE dataset_id='dvf_prix_m2' AND indicator_id='prix_m2' "
+         "AND comparison_context='density_class' AND group_id='D1' AND territory_type='commune' "
+         "AND axis_value='2025'", ()),
+        ("UPDATE ordered_series_comparison_territory SET value=230,status='measured',rank=2,tie_count=1,rank_size=2 "
+         "WHERE dataset_id='dvf_prix_m2' AND indicator_id='prix_m2' "
+         "AND comparison_context='density_class' AND group_id='D1' AND territory_type='commune' "
+         "AND axis_value='2025' AND territory_id='cohort-c1'", ()),
+        ("UPDATE ordered_series_comparison_territory SET value=123,status='measured',rank=1,tie_count=1,rank_size=2 "
+         "WHERE dataset_id='dvf_prix_m2' AND indicator_id='prix_m2' "
+         "AND comparison_context='density_class' AND group_id='D1' AND territory_type='commune' "
+         "AND axis_value='2025' AND territory_id='cohort-c2'", ()),
+        ("INSERT INTO ordered_series_comparison_lineage VALUES "
+         "('dvf_prix_m2','prix_m2','density_class','D1','commune','2025','cohort-series-revision')", ()),
+    )
+
+    c1_response = cohort_http.client.post("/api/resources/read", json=_prix_m2_item())
+    c2_response = cohort_http.client.post("/api/resources/read", json={
+        **_prix_m2_item(),
+        "target": {"kind": "territory", "type": "commune", "id": "cohort-c2"},
+    })
+    assert c1_response.status_code == 200, c1_response.text
+    assert c2_response.status_code == 200, c2_response.text
+    c1_facts = c1_response.json()
+    c2_facts = c2_response.json()
+    pooled_c1 = c1_facts["scalar_facet"]["observation"]["value"]
+    pooled_c2 = c2_facts["scalar_facet"]["observation"]["value"]
+    annual_c1 = next(point["value"] for point in c1_facts["points"] if point["axis"] == "2025")
+    annual_c2 = next(point["value"] for point in c2_facts["points"] if point["axis"] == "2025")
+    assert (pooled_c1, pooled_c2, annual_c1, annual_c2) == (700.0, 900.0, 230.0, 123.0)
+    assert pooled_c1 < pooled_c2 and annual_c1 > annual_c2
+    assert (c1_facts["publication_id"], c1_facts["scalar_facet"]["content_version"],
+            c1_facts["reference_content_version"],
+            c1_facts["scalar_facet"]["reference_content_version"]) == (
+        "cohort-series-rank-v1", "cohort-scalar-rank-v1", "cohort-reference-v1",
+        "cohort-reference-v1")
+
+    item = _prix_m2_item(
+        intent={"kind": "fixed_comparison", "context": "default"},
+        fields=["median", "rank", "rank_size"],
+    )
+    response = cohort_http.client.post("/api/resources/read", json=item)
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    annual = body["result"]
+    assert (body["content_version"], annual["owned_content_version"],
+            annual["descriptor_version"], annual["source_facet"]) == (
+        "cohort-series-rank-v1", "cohort-series-rank-v1", "cohort-series-desc-v1", "2025")
+    assert annual["status"] == "available"
+    assert (annual["median"], annual["rank"], annual["rank_size"]) == (176.5, 2, 2)
+    assert annual["comparison_sources"][0]["revision_hash"] == "cohort-series-hash"
+
+    pooled = body["scalar_facet"]
+    assert (pooled["content_version"], pooled["reference_content_version"],
+            pooled["descriptor_version"], pooled["comparison_content_version"]) == (
+        "cohort-scalar-rank-v1", "cohort-reference-v1", "cohort-prix-scalar-desc-v1",
+        "cohort-prix-scalar-comparison-rank-v1")
+    assert pooled["result"]["source_facet"] == "prix_m2"
+    assert pooled["result"]["status"] == "available"
+    assert (pooled["result"]["median"], pooled["result"]["rank"],
+            pooled["result"]["rank_size"]) == (800.0, 1, 2)
+    assert pooled["result"]["comparison_sources"][0]["source_id"] == "cohort-source"
+    assert pooled["result"]["comparison_sources"][0]["vintage_id"] == "cohort-v1"
+
+
 def test_dual_shape_publications_and_descriptor_fail_closed_and_batch_is_all_or_none(cohort_http):
     item = _prix_m2_item()
     cases = [
@@ -603,6 +711,34 @@ def test_dual_shape_publications_and_descriptor_fail_closed_and_batch_is_all_or_
         cohort_http.publish(("UPDATE comparison_source_lineage "
                              "SET comparison_content_version='cohort-prix-scalar-comparison-v1' "
                              "WHERE comparison_family='scalar' AND facet_id='prix_m2'", ()))
+
+
+def test_dual_shape_facts_reject_series_route_bound_to_wrong_theme_single_and_batch(cohort_http):
+    cohort_http.publish(
+        ("UPDATE series_dataset_publication SET content_version='cohort-series-wrong-theme-v1', "
+         "published_at=transaction_timestamp() WHERE dataset_id='dvf_prix_m2'", ()),
+        ("UPDATE series_dataset_descriptor SET theme_id='demographie' "
+         "WHERE dataset_id='dvf_prix_m2' AND indicator_id='prix_m2'", ()),
+    )
+    try:
+        single = cohort_http.client.post("/api/resources/read", json=_prix_m2_item())
+        assert single.status_code == 503, single.text
+
+        batch = cohort_http.batch([
+            {"id": "ordinary-fact", "resource": "densite",
+             "target": {"kind": "territory", "type": "commune", "id": "cohort-c1"},
+             "intent": {"kind": "facts"}},
+            {"id": "misbound-dual-fact", **_prix_m2_item()},
+        ])
+        assert batch.status_code == 503, batch.text
+        assert "results" not in batch.json()
+    finally:
+        cohort_http.publish(
+            ("UPDATE series_dataset_publication SET content_version='cohort-series-v1', "
+             "published_at=transaction_timestamp() WHERE dataset_id='dvf_prix_m2'", ()),
+            ("UPDATE series_dataset_descriptor SET theme_id='habitat' "
+             "WHERE dataset_id='dvf_prix_m2' AND indicator_id='prix_m2'", ()),
+        )
 
 
 def test_dual_shape_preflight_charges_scalar_reads_and_keeps_query_count_bounded(

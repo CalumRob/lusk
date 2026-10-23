@@ -78,7 +78,7 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
             if "column_name='active_read_route'" in sql:
                 return Cursor([(True,)])
             if "WHERE indicator_id=%s AND active_read_route" in sql:
-                return Cursor([("dvf_prix_m2", "theme", "prix_m2")])
+                return Cursor([("dvf_prix_m2", "habitat", "prix_m2")])
             if "to_regclass('series_named_reference_descriptor')" in sql:
                 return Cursor([(True,)])
             if "WHERE d.reference_indicator_id=%s AND d.active_read_route" in sql:
@@ -109,7 +109,7 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
             if "FROM series_dataset_descriptor WHERE" in sql:
                 return Cursor([("year", ["2024", "2025", "2026"], [2024, 2025, 2026],
                     "may_be_missing", "Transactions", "€/m²", "low", "descriptor-v3",
-                    ["commune"], "2025", "theme", "year", "unavailable", "median", "default_group")])
+                    ["commune"], "2025", "habitat", "year", "unavailable", "median", "default_group")])
             if "FROM territory_reference WHERE territory_id=%s" in sql:
                 return Cursor([("Commune X", self.territory_type)])
             if "FROM series_dataset_observation o LEFT JOIN" in sql:

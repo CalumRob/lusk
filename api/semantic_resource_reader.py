@@ -32,10 +32,10 @@ class SemanticResourceReader:
         return (resource.resource_kind == "indicator"
                 and "scalar" in resource.shapes and "ordered_series" in resource.shapes)
 
-    def _require_dual_series_route(self, conn, resource_id):
-        route = self._owned_series_route(conn, resource_id)
-        if not route or route[2]:
-            raise HTTPException(503, "Declared ordered-series facet publication is unavailable")
+    def _require_dual_series_route(self, conn, resource):
+        route = self._owned_series_route(conn, resource.resource_id)
+        if (not route or route[2] or route[1] != resource.theme_id):
+            raise HTTPException(503, "Declared ordered-series facet publication is unavailable or incompatible")
 
     @staticmethod
     def _scalar_facet_fields(item):
@@ -97,7 +97,7 @@ class SemanticResourceReader:
         dual_scalar_series = (self._has_dual_scalar_series(resource)
                               and item.target.kind == "territory")
         if dual_scalar_series:
-            self._require_dual_series_route(conn, item.resource)
+            self._require_dual_series_route(conn, resource)
         if resource.resource_kind == "typed_reading":
             if item.target.kind == "territory_cohort":
                 cohort = resolve_territory_cohort(conn, item.target, work_budget=work_budget)
@@ -376,7 +376,7 @@ class SemanticResourceReader:
         if item.coordinates:
             data = self._filter_coordinates(data, item.coordinates, resource)
         if (self._has_dual_scalar_series(resource) and item.target.kind == "territory"):
-            self._require_dual_series_route(conn, item.resource)
+            self._require_dual_series_route(conn, resource)
             data["scalar_facet"] = self._indicator_facts_snapshot(conn, item.target.type,
                 item.target.id, item.resource, self._scalar_facet_fields(item),
                 scalar_facet=True, expected_theme_id=resource.theme_id)
