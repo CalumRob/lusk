@@ -559,8 +559,8 @@ function timeHitboxStyle(index: number): Record<string, string> {
 
 .access-ramp-labels text {
   fill: var(--cahier-default);
-  font-family: var(--font-sans);
-  font-size: 11px;
+  font: var(--type-figure-label);
+  font-size: var(--type-figure-tick-size);
 }
 
 .access-ramp-line {
@@ -590,9 +590,6 @@ function timeHitboxStyle(index: number): Record<string, string> {
 
 .access-ramp-mode-annotation {
   fill: var(--cahier-default);
-  font-family: var(--font-sans);
-  font-size: 11px;
-  font-weight: 700;
 }
 
 .access-ramp-mode-annotation--car { color: var(--cahier-mode-car); }

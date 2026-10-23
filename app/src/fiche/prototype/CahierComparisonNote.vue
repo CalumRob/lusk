@@ -219,7 +219,7 @@ async function choisir(mode: TerritoryComparisonMode): Promise<void> {
 }
 
 .cahier-comparison-note__label {
-  color: var(--cahier-region-emphasis);
+  color: var(--color-figure-reference);
 }
 
 .cahier-comparison-note__trigger {
@@ -310,7 +310,7 @@ async function choisir(mode: TerritoryComparisonMode): Promise<void> {
   max-width: 34rem;
   margin: 0 auto var(--space-1);
   color: var(--cahier-default);
-  font-size: 0.9em;
+  font: var(--text-caption);
   line-height: 1.35;
 }
 

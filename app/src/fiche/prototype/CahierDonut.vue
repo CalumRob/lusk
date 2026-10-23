@@ -138,8 +138,7 @@ function ringStrokeWidth(): number {
   justify-items: center;
   gap: 4px;
   color: var(--cahier-default);
-  font-family: var(--font-sans);
-  font-size: 11px;
+  font: var(--text-caption);
   line-height: 1.1;
   text-align: center;
 }

@@ -339,15 +339,13 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
 
 .bivariate-grid-labels text {
   fill: var(--cahier-default);
-  font-family: var(--font-sans);
-  font-size: 12px;
+  font: var(--text-caption);
 }
 
 .bivariate-grid-share {
   fill: var(--ink);
-  font-size: 11px !important;
+  font: 700 var(--type-figure-tick-size)/1 var(--font-figure-value);
   font-variant-numeric: tabular-nums;
-  font-weight: 700;
 }
 
 .bivariate-ramp-legend {
@@ -356,7 +354,7 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
   gap: 10px 18px;
   margin-top: 10px;
   color: var(--cahier-default);
-  font-size: 11px;
+  font: var(--text-caption);
 }
 
 .bivariate-ramp-legend__item {
@@ -432,14 +430,6 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
 }
 
 @media (max-width: 640px) {
-  .bivariate-grid-labels text {
-    font-size: 11px;
-  }
-
-  .bivariate-grid-share {
-    font-size: var(--type-figure-tick-size) !important;
-  }
-
   .bivariate-ramp-legend {
     grid-template-columns: 1fr;
   }

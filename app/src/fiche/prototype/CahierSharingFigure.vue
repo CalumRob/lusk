@@ -485,7 +485,7 @@ function parkingShare(fact: ContentFact): string {
 
 .sharing-cycling-total :deep(.cahier-figure-scalar-value) {
   color: var(--cahier-theme-strong);
-  font-size: 1.35rem;
+  font: var(--type-figure-value);
 }
 
 .sharing-cycling-rule {
@@ -570,7 +570,7 @@ function parkingShare(fact: ContentFact): string {
 
 .sharing-parking-ratio :deep(.cahier-figure-scalar-value) {
   color: var(--cahier-theme-strong);
-  font-size: 1.35rem;
+  font: var(--type-figure-value);
 }
 
 .sharing-ratio-note {
@@ -597,8 +597,8 @@ function parkingShare(fact: ContentFact): string {
   min-width: 0;
 }
 
-.sharing-parking-mode--bike .sharing-parking-label { color: var(--cahier-mode-bike); }
-.sharing-parking-mode--car .sharing-parking-label { color: var(--cahier-mode-car); }
+.sharing-parking-mode--bike .sharing-parking-label { color: var(--color-figure-mode-bike); }
+.sharing-parking-mode--car .sharing-parking-label { color: var(--color-figure-mode-car); }
 
 .sharing-parking-track { height: 15px; }
 .sharing-parking-segment--bike { background: var(--cahier-mode-bike); }

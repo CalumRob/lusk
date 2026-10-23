@@ -9,15 +9,15 @@
   --cahier-figure-width-wide: 100%;
   --cahier-figure-max-width: var(--cahier-figure-width-standard);
   --cahier-figure-tick-label-size: var(--type-figure-tick-size);
-  --cahier-figure-surface: var(--paper, #f1f2ec);
-  --cahier-figure-surface-border: color-mix(in srgb, var(--cahier-theme, #57726f) 19%, transparent);
+  --cahier-figure-surface: var(--paper, var(--editorial-paper));
+  --cahier-figure-surface-border: color-mix(in srgb, var(--cahier-theme, var(--brand-500)) 19%, transparent);
   --cahier-figure-surface-shadow: 0 12px 28px rgb(35 42 42 / 16%);
   width: min(100%, var(--cahier-figure-max-width));
   margin-inline: auto;
   min-width: 0;
   position: relative;
-  color: var(--cahier-default, var(--muted, #62706c));
-  font: var(--type-figure-label, 400 0.75rem/1.2 var(--font-sans, 'Manrope Variable', system-ui, sans-serif));
+  color: var(--cahier-default, var(--editorial-muted));
+  font: var(--type-figure-label);
   font-variant-numeric: tabular-nums;
   letter-spacing: var(--type-figure-label-tracking, 0.08em);
 }
@@ -41,19 +41,19 @@
 .cahier-figure-axis,
 .cahier-figure-tick {
   fill: none;
-  stroke: color-mix(in srgb, var(--cahier-default, #62706c) 22%, transparent);
+  stroke: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 22%, transparent);
   stroke-width: var(--cahier-figure-axis-width, 1);
 }
 
 .cahier-figure-axis {
-  stroke: color-mix(in srgb, var(--cahier-default, #62706c) 58%, transparent);
+  stroke: color-mix(in srgb, var(--cahier-default, var(--editorial-muted)) 58%, transparent);
 }
 
 .cahier-figure-tick-label,
 .cahier-figure-axis-title {
-  fill: var(--cahier-default, #62706c);
-  color: var(--cahier-default, #62706c);
-  font: var(--type-figure-label, 400 0.75rem/1.2 var(--font-sans, sans-serif));
+  fill: var(--cahier-default, var(--editorial-muted));
+  color: var(--cahier-default, var(--editorial-muted));
+  font: var(--type-figure-label);
   letter-spacing: var(--type-figure-label-tracking, 0.08em);
 }
 
@@ -103,8 +103,8 @@
   margin: var(--cahier-figure-legend-margin, 10px 0 0);
   padding: 0;
   list-style: none;
-  color: var(--cahier-default, #62706c);
-  font: var(--type-figure-legend, 500 0.8125rem/1.35 var(--font-sans, sans-serif));
+  color: var(--cahier-default, var(--editorial-muted));
+  font: var(--text-caption);
   letter-spacing: normal;
 }
 
@@ -113,7 +113,7 @@
   align-items: center;
   gap: 6px;
   min-width: 0;
-  color: var(--cahier-default, #62706c);
+  color: var(--cahier-default, var(--editorial-muted));
 }
 
 .cahier-figure-legend-label {
@@ -161,31 +161,31 @@
 
 .cahier-figure-legend-mark--t,
 .cahier-figure-legend-mark--t.cahier-figure-legend-icon {
-  color: var(--cahier-mode-foot, #448fa6);
+  color: var(--cahier-mode-foot, var(--mode-transit));
 }
 
 .cahier-figure-legend-mark--b,
 .cahier-figure-legend-mark--b.cahier-figure-legend-icon {
-  color: var(--cahier-mode-bike, #2e6171);
+  color: var(--cahier-mode-bike, var(--mode-bike));
 }
 
 .cahier-figure-legend-mark--c,
 .cahier-figure-legend-mark--c.cahier-figure-legend-icon {
-  color: var(--cahier-mode-car, #a94562);
+  color: var(--cahier-mode-car, var(--mode-car));
 }
 
 .cahier-figure-legend-mark--territory,
 .cahier-figure-legend-mark--theme {
-  color: var(--cahier-theme, #57726f);
+  color: var(--cahier-theme, var(--brand-500));
 }
 
 .cahier-figure-legend-mark--peer {
-  color: var(--cahier-default, #62706c);
+  color: var(--cahier-default, var(--editorial-muted));
 }
 
 .cahier-figure-legend-mark--reference,
 .cahier-figure-legend-mark--neutral {
-  color: var(--cahier-default, #62706c);
+  color: var(--cahier-default, var(--editorial-muted));
 }
 
 .cahier-figure-scalar {
@@ -194,7 +194,7 @@
   min-width: 0;
   justify-items: center;
   gap: 3px;
-  color: var(--cahier-default, #62706c);
+  color: var(--cahier-default, var(--editorial-muted));
   text-align: center;
 }
 
@@ -234,26 +234,36 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  color: var(--ink, #232a2a);
-  font: var(--type-figure-value, 600 1rem/1.1 var(--font-sans, sans-serif));
+  color: var(--ink, var(--editorial-ink));
+  font: var(--type-figure-value);
   font-variant-numeric: tabular-nums;
   letter-spacing: normal;
 }
 
 .cahier-figure-scalar--colored .cahier-figure-scalar-value {
-  color: var(--cahier-figure-scalar-color, var(--cahier-theme-strong, #3e5350));
+  color: var(--color-figure-series-label);
+}
+
+/* Resolve mode-specific map accents locally; the root token supplies the
+ * default only where a map panel has no declared mode. */
+.map-panel {
+  --color-figure-map-label: color-mix(
+    in srgb,
+    var(--figure-map-accent, var(--mode-ring, var(--brand-500))) 45%,
+    var(--editorial-ink)
+  );
 }
 
 .cahier-figure-scalar--colored.cahier-figure-scalar--t .cahier-figure-scalar-value {
-  color: var(--cahier-figure-scalar-color, var(--cahier-mode-foot, #448fa6));
+  color: var(--color-figure-mode-foot);
 }
 
 .cahier-figure-scalar--colored.cahier-figure-scalar--b .cahier-figure-scalar-value {
-  color: var(--cahier-figure-scalar-color, var(--cahier-mode-bike, #2e6171));
+  color: var(--color-figure-mode-bike);
 }
 
 .cahier-figure-scalar--colored.cahier-figure-scalar--c .cahier-figure-scalar-value {
-  color: var(--cahier-figure-scalar-color, var(--cahier-mode-car, #a94562));
+  color: var(--color-figure-mode-car);
 }
 
 .cahier-figure-scalar-value strong {
@@ -265,31 +275,31 @@
 }
 
 .cahier-figure-scalar-icon--t {
-  color: var(--cahier-mode-foot, #448fa6);
+  color: var(--cahier-mode-foot, var(--mode-transit));
 }
 
 .cahier-figure-scalar-icon--b {
-  color: var(--cahier-mode-bike, #2e6171);
+  color: var(--cahier-mode-bike, var(--mode-bike));
 }
 
 .cahier-figure-scalar-icon--c {
-  color: var(--cahier-mode-car, #a94562);
+  color: var(--cahier-mode-car, var(--mode-car));
 }
 
 .cahier-figure-scalar-label {
   max-width: 22ch;
-  color: var(--cahier-default, #62706c);
+  color: var(--cahier-default, var(--editorial-muted));
   overflow-wrap: anywhere;
 }
 
 .cahier-figure-scalar-label:not(.type-figure-label) {
-  font: var(--type-figure-mode, 500 0.75rem/1.25 var(--font-sans, sans-serif));
+  font: var(--type-figure-mode);
   letter-spacing: normal;
 }
 
 .cahier-figure-scalar-reference {
-  color: var(--cahier-region-emphasis, var(--cahier-theme-strong, #3e5350));
-  font: var(--type-figure-label, 400 0.6875rem/1.2 var(--font-sans, sans-serif));
+  color: var(--color-figure-reference);
+  font: var(--type-figure-label);
   letter-spacing: normal;
 }
 
@@ -301,13 +311,11 @@
   width: min(220px, calc(100% - 24px));
   margin: 0;
   padding: 10px 12px;
-  border: 1px solid var(--cahier-figure-surface-border, rgb(87 114 111 / 30%));
-  background: var(--cahier-figure-surface, #f1f2ec);
+  border: 1px solid var(--cahier-figure-surface-border);
+  background: var(--cahier-figure-surface);
   box-shadow: var(--cahier-figure-surface-shadow);
-  color: var(--cahier-default, #62706c);
-  font: var(--type-figure-label, 400 0.75rem/1.2 var(--font-sans, sans-serif));
-  font-size: 11px;
-  line-height: 1.25;
+  color: var(--cahier-default, var(--editorial-muted));
+  font: var(--text-caption);
 }
 
 .cahier-figure-tooltip--popover {
@@ -333,12 +341,11 @@
   width: min(210px, calc(100% + 80px));
   gap: 5px;
   padding: 9px 10px;
-  font-size: var(--type-figure-tick-size);
 }
 
 .cahier-figure-tooltip-unit {
-  color: var(--cahier-default, #62706c);
-  font-size: var(--type-figure-tick-size);
+  color: var(--cahier-default, var(--editorial-muted));
+  font: var(--text-caption);
   letter-spacing: normal;
 }
 
@@ -357,7 +364,7 @@
 }
 
 .cahier-figure-tooltip > strong {
-  color: var(--cahier-region-emphasis, var(--cahier-theme-strong, #3e5350));
+  color: var(--color-figure-reference);
   font-weight: 700;
 }
 
@@ -388,20 +395,20 @@
   flex: 0 0 auto;
 }
 
-.cahier-figure-tooltip-icon--t { color: var(--cahier-mode-foot, #448fa6); }
-.cahier-figure-tooltip-icon--b { color: var(--cahier-mode-bike, #2e6171); }
-.cahier-figure-tooltip-icon--c { color: var(--cahier-mode-car, #a94562); }
-.cahier-figure-tooltip-icon--neutral { color: var(--cahier-default, #62706c); }
+.cahier-figure-tooltip-icon--t { color: var(--cahier-mode-foot, var(--mode-transit)); }
+.cahier-figure-tooltip-icon--b { color: var(--cahier-mode-bike, var(--mode-bike)); }
+.cahier-figure-tooltip-icon--c { color: var(--cahier-mode-car, var(--mode-car)); }
+.cahier-figure-tooltip-icon--neutral { color: var(--cahier-default, var(--editorial-muted)); }
 
 .cahier-figure-tooltip-row dd {
-  color: var(--ink, #232a2a);
+  color: var(--ink, var(--editorial-ink));
   font-variant-numeric: tabular-nums;
 }
 
 .cahier-figure-tooltip-row small {
   grid-column: 1 / -1;
-  color: var(--cahier-region-emphasis, var(--cahier-theme-strong, #3e5350));
-  font-size: var(--type-figure-tick-size);
+  color: var(--color-figure-reference);
+  font: var(--text-caption);
 }
 
 .cahier-figure-tooltip-marker {
@@ -411,7 +418,7 @@
   width: 8px;
   height: 8px;
   border-radius: 50%;
-  background: var(--cahier-default, #62706c);
+  background: var(--cahier-default, var(--editorial-muted));
 }
 
 .cahier-figure-tooltip-marker--slash {
@@ -434,19 +441,19 @@
 }
 
 .cahier-figure-tooltip-row--t .cahier-figure-tooltip-marker {
-  background: var(--cahier-mode-foot, #448fa6);
+  background: var(--cahier-mode-foot, var(--mode-transit));
 }
 
 .cahier-figure-tooltip-row--b .cahier-figure-tooltip-marker {
-  background: var(--cahier-mode-bike, #2e6171);
+  background: var(--cahier-mode-bike, var(--mode-bike));
 }
 
 .cahier-figure-tooltip-row--c .cahier-figure-tooltip-marker {
-  background: var(--cahier-mode-car, #a94562);
+  background: var(--cahier-mode-car, var(--mode-car));
 }
 
 .cahier-figure-tooltip-row--neutral .cahier-figure-tooltip-marker {
-  background: var(--cahier-default, #62706c);
+  background: var(--cahier-default, var(--editorial-muted));
 }
 
 .cahier-figure-tooltip-row--neutral .cahier-figure-tooltip-marker--slash {
@@ -465,7 +472,7 @@
   padding: 0;
   border: 0;
   background: transparent;
-  color: var(--cahier-region-emphasis, var(--cahier-theme-strong, #3e5350));
+  color: var(--color-figure-reference);
   cursor: pointer;
   font: inherit;
   font-weight: 700;

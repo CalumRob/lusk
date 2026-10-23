@@ -206,7 +206,7 @@ onBeforeUnmount(() => {
 :global(.lusk-map-gallery .viewer-canvas > img) { cursor: zoom-in; touch-action: none; }
 :global(.lusk-map-gallery--zoomed .viewer-canvas > img) { cursor: grab; }
 :global(.lusk-map-gallery .viewer-footer) { background: linear-gradient(transparent, rgb(24 31 30 / 94%)); }
-:global(.lusk-map-gallery .viewer-title) { color: #fff; font: 600 12px/1.25 var(--font-sans); }
+:global(.lusk-map-gallery .viewer-title) { color: #fff; font: var(--text-caption); }
 :global(.lusk-map-gallery .viewer-navbar) { background: rgb(24 31 30 / 86%); }
 :global(.lusk-map-gallery .viewer-button) { background-color: rgb(24 31 30 / 72%); }
 :global(.lusk-map-gallery .viewer-button:hover),
