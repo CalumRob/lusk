@@ -7,6 +7,7 @@ FastAPI composition root.
 
 from fastapi import HTTPException
 
+from api.cohort_reads import preflight_cohort, read_cohort, resolve_territory_cohort
 from api.profile_reads import focal_profiles
 from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
 
@@ -23,6 +24,7 @@ class SemanticResourceReader:
         self._owned_named_reference_snapshot = owned_named_reference_snapshot
         self._comparison_field_selection = comparison_field_selection
         self._max_owned_series_provenance_per_point = max_owned_series_provenance_per_point
+        self._cohort_scopes = {}
 
     def _coordinate_values(self, conn, item, resource):
         coordinates = item.coordinates or {}
@@ -72,10 +74,22 @@ class SemanticResourceReader:
                   *, work_budget: int = 200_000) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
-        if resource.resource_kind == "typed_reading":
-            return self._typed_reading_preflight(conn, item, resource, work_budget=work_budget)
         if resource.resource_kind == "indicator":
             self._coordinate_values(conn, item, resource)
+        if resource.resource_kind == "typed_reading":
+            if item.target.kind == "territory_cohort":
+                cohort = resolve_territory_cohort(conn, item.target, work_budget=work_budget)
+                estimate = preflight_cohort(conn, item, resource, cohort,
+                    self._legacy_fields(item, catalogue), work_budget)
+                self._cohort_scopes[id(item)] = cohort
+                return estimate
+            return self._typed_reading_preflight(conn, item, resource, work_budget=work_budget)
+        if item.target.kind == "territory_cohort":
+            cohort = resolve_territory_cohort(conn, item.target, work_budget=work_budget)
+            estimate = preflight_cohort(conn, item, resource, cohort,
+                self._legacy_fields(item, catalogue), work_budget)
+            self._cohort_scopes[id(item)] = cohort
+            return estimate
         if resource.resource_kind == "aedar_source_grain":
             from api.aedar_reads import (_aedar_comparison_snapshot,
                 _aedar_territorial_aggregate_snapshot)
@@ -257,6 +271,12 @@ class SemanticResourceReader:
     def read(self, conn, item, catalogue: ResourceCatalogue | None = None) -> dict:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        if item.target.kind == "territory_cohort":
+            cohort = self._cohort_scopes.pop(id(item), None)
+            if cohort is None:
+                cohort = resolve_territory_cohort(conn, item.target, work_budget=200_000)
+            return read_cohort(conn, item, resource, cohort,
+                               self._legacy_fields(item, catalogue))
         if resource.resource_kind == "typed_reading":
             return self._typed_reading_read(conn, item, resource)
         if resource.resource_kind == "aedar_source_grain":
