@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
+import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
+  themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 
 const cible = { territoire: '35238', type: 'commune' as const }
@@ -35,6 +36,39 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires', status: 'unavailable', direction: 'low', rank: 3, rank_size: 14 }], profile_comparisons: [] }, null)[0]?.comparaisonApi).toBeUndefined()
     expect(lignesAvecComparaisonApi([row], null, null)[0]?.comparaisonApi).toBeUndefined()
     expect(() => lignesAvecComparaisonApi([row], { results: {}, profile_comparisons: [] }, null)).toThrow()
+  })
+
+  it('attaches an ordered-series comparison only to its producer-declared comparison axis', () => {
+    const rows = ['2024', '2025'].map((axis) => ({ territoire: cible.territoire, type: 'commune' as const,
+      theme: 'programmes' as const, key: 'subventions_annuelles', detail: null, dimension: axis,
+      value: axis === '2024' ? 100 : 200, unit: '€', vintage_source: 'Source', vintage_version: 'v1',
+      vintage_date_reference: '2025-01-01', vintage_date_publication: null,
+      rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }))
+    const result = lignesAvecComparaisonApi(rows, { results: [{ indicator_id: 'subventions_annuelles',
+      source_facet: '2025', status: 'available', direction: 'high', rank: 2, rank_size: 14 }], profile_comparisons: [] }, 'Densité')
+    expect(result.find((row) => row.dimension === '2024')?.comparaisonApi).toBeUndefined()
+    expect(result.find((row) => row.dimension === '2025')?.comparaisonApi).toEqual({ rang: 2, taille: 14, portee: 'Densité' })
+  })
+
+  it('projects native semantic comparison results onto the fiche rank seam without replacing focal values', () => {
+    const response = { theme_id: 'habitat', comparison_reads: [{
+      resource: 'part_passoires', shapes: ['scalar'], data: {
+        resource: 'part_passoires', target: { kind: 'territory', type: 'commune', id: cible.territoire },
+        contract: 'indicator-comparison-v1', indicator_id: 'part_passoires', shape: 'scalar',
+        content_version: 'scalar-v1', reference_content_version: 'territories-v1', selection: null,
+        scope: { kind: 'density_class', member_count: 14 },
+        result: { indicator_id: 'part_passoires', status: 'available', direction: 'low', rank: 3, rank_size: 14 },
+      },
+    }] }
+    validerReponseComparaisonTheme('habitat', response, undefined)
+    const comparison = semanticComparisonForTheme(response)
+    const row = { territoire: cible.territoire, type: 'commune' as const, theme: 'habitat' as const,
+      key: 'part_passoires', detail: null, value: 0.2, unit: '%', vintage_source: '', vintage_version: '',
+      vintage_date_reference: null, vintage_date_publication: null, rang_epci: null, rang_epci_n: null,
+      rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }
+    expect(lignesAvecComparaisonApi([row], comparison, 'Même classe de densité')[0]).toMatchObject({
+      value: 0.2, rang_epci: null, comparaisonApi: { rang: 3, taille: 14, portee: 'Même classe de densité' },
+    })
   })
 
   it('associe les comparaisons de profil à la même facette', () => {

@@ -50,7 +50,8 @@ import { chargerCohortesScalairesAvecComparaisons, chargerComparaisonsScalaires,
 import type { ScalarComparisonRank, ScalarComparisonRequest } from '@/payload/scalarCohort'
 import { PayloadError } from '@/payload/validate'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
+import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
+  themeFactsRowsFromSemantic, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
 import type { ComparisonScopeKind, SelectedTrajectoryComparison, TerritoryFacts } from '@/fiche/content/territoryFacts'
@@ -146,6 +147,7 @@ const histoiresNuageMilieux = ref<Histoire[]>([])
 const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
 const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const retryAcquisition = ref(0)
+const retryThemeComparaison = ref(0)
 let sequenceAcquisition = 0
 let sequenceComparaison = 0
 let cleFaitsPrets: string | null = null
@@ -490,17 +492,19 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       if (cancelled || request !== sequenceAcquisition) return
       const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
       if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
-      const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type }, {
+      const rows = themeFactsRowsFromSemantic(themeActif, acquired.focal, { territoire: code, type: target.type }, {
         epci: target.epci, region: payloadModele.value?.territoires.find((item) => item.type === 'region')?.territoire ?? null,
       })
-       faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, acquired.focal.comparison,
-         resolutionComparaison.value?.contexte?.scope.label ?? null)
+       const comparison = semanticComparisonForTheme(acquired.comparisons.get('omitted'))
+       faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, comparison,
+          resolutionComparaison.value?.contexte?.scope.label ?? null)
       histoiresThemeRows.value = rows.histoires
       histoiresNuageDemographie.value = themeActif === 'demographie' && isRecord(acquired.focal.comparison)
         ? histoiresDemographieNuage(acquired.focal.comparison) : []
       histoiresNuageMilieux.value = themeActif === 'milieux' && isRecord(acquired.focal.comparison)
         ? histoiresMilieuxDuNuage(acquired.focal.comparison) : []
-      statutAcquisition.value = 'ready'
+       statutAcquisition.value = 'ready'
+       statutComparaison.value = acquired.focal.comparison_error ? 'error' : 'ready'
       cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
     } catch {
       if (!cancelled && request === sequenceAcquisition) {
@@ -526,14 +530,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     }
   }, { immediate: true })
 
-/** Une seule requête comparison-only par changement de sélection : le défaut
- * déclaré (classe de densité d'une commune, pairs de même niveau ailleurs)
- * est déjà servi par la comparaison imbriquée de la réponse de faits ; une
- * sélection explicite (EPCI, Bretagne) acquiert UNE réponse de comparaison et
- * garde les faits focaux. Les tokens incompatibles échouent fermé (le cache
- * rejette la fusion) et restent réessayables. */
+/** Comparison-only reads retain focal facts. The producer's fixed default is
+ * cached with the paired focal read; explicit scopes acquire only comparisons. */
 watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
-  () => resolutionComparaison.value?.mode, statutAcquisition, retryAcquisition],
+  () => resolutionComparaison.value?.mode, statutAcquisition, retryThemeComparaison],
   async ([model, theme, code, mode], _old, onCleanup) => {
     if (!themeMigre(theme) || theme === 'mobilite' || statutAcquisition.value !== 'ready' || !model || !typeValide.value) {
       statutComparaison.value = 'idle'
@@ -541,16 +541,11 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
     }
     const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
     if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'idle'; return }
-    // Le mode densité (défaut d'une commune) et les niveaux non communaux
-    // gardent la comparaison déclarée déjà acquise avec les faits.
-    if (target.type !== 'commune' || mode === 'densite' || mode === null || mode === undefined) {
-      statutComparaison.value = 'ready'
-      return
-    }
     const cohort = model.cohortTerritories
-    if (!cohort) { statutComparaison.value = 'error'; return }
     const themeActif = theme as Theme
-    const selectionMembres: ThemeSelectionMember[] = mode === 'bretagne'
+    const selectionMembres: ThemeSelectionMember[] | undefined = target.type !== 'commune' || mode === 'densite' || mode === null || mode === undefined
+      ? undefined
+      : !cohort ? [] : mode === 'bretagne'
       ? cohort.filter((item) => item.type === 'commune')
         .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
       : mode === 'epci' && target.epci
@@ -568,17 +563,15 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
     try {
       const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
       if (cancelled || request !== sequenceComparaison) return
-      validerReponseComparaisonTheme(themeActif,
-        acquired.comparisons.get(cleSelectionComparaison(selectionMembres)), selectionMembres)
+      const nativeComparison = acquired.comparisons.get(cleSelectionComparaison(selectionMembres))
+      validerReponseComparaisonTheme(themeActif, nativeComparison, selectionMembres)
+      const comparison = semanticComparisonForTheme(nativeComparison)
       if (themeActif === 'demographie') {
-        histoiresNuageDemographie.value = histoiresDemographieNuage(
-          acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
+        histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)
       }
-       if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(
-         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
-       faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
-         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)),
-         resolutionComparaison.value?.contexte?.scope.label ?? null)
+       if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(comparison)
+        faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [], comparison,
+          resolutionComparaison.value?.contexte?.scope.label ?? null)
        statutComparaison.value = 'ready'
     } catch {
        if (!cancelled && request === sequenceComparaison) {
@@ -589,6 +582,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
   }, { immediate: true })
 
 function retryAcquisitionTheme(): void { retryAcquisition.value++ }
+function retryThemeComparison(): void { retryThemeComparaison.value++ }
 
 
 const echelons = computed(() =>
@@ -962,7 +956,7 @@ watch(
         role="alert"
       >
         <p>Les comparaisons de ce thème ne sont pas disponibles.</p>
-        <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
+        <button type="button" @click="retryThemeComparison">Réessayer</button>
       </div>
       <div v-if="scalarCohortActif && ficheScalairesStatus === 'ready' && ficheComparaisonsScalairesStatus === 'error'"
         class="etat-erreur" role="alert">

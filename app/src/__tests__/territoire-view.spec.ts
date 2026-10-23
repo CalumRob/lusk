@@ -432,6 +432,91 @@ function reponsePageAedar(type: string, id: string, typequ: readonly string[], f
 }
 
 describe('TerritoireView — modèle atomique par territoire', () => {
+  it('ouvre la fiche Programmes par défaut depuis les ressources sémantiques natives, sans route thème ni repli statique', async () => {
+    const model = modeleAvecContextesComparaison()
+    const resources = [
+      { resource_id: 'aedar_territorial_aggregate', theme_id: '', indicator_id: 'aedar_territorial_aggregate',
+        label: 'AEDAR territorial aggregates', unit: '', direction: 'none', allowed_levels: ['commune', 'epci', 'departement', 'region'],
+        sources: [], shapes: ['aedar_source_grain'], target_kinds: ['territory'], fields: ['group_value', 'value'], intents: ['facts', 'fixed_comparison'] },
+      { resource_id: 'couverture_programmes', theme_id: 'programmes', indicator_id: 'couverture_programmes',
+        label: 'Couverture programmatique', unit: 'adhésion', direction: 'none', allowed_levels: ['commune', 'epci', 'departement', 'region'],
+        sources: ['acv'], shapes: ['anchored_membership'], target_kinds: ['territory', 'territory_cohort'],
+        fields: ['detail', 'label', 'rider', 'anchor_count', 'availability'], intents: ['facts'] },
+      { resource_id: 'subventions_annuelles', theme_id: 'programmes', indicator_id: 'subventions_annuelles',
+        label: 'Subventions régionales attribuées', unit: '€', direction: 'high', allowed_levels: ['commune', 'epci', 'departement'],
+        sources: ['subventions_scdl'], shapes: ['ordered_series'], target_kinds: ['territory', 'territory_cohort'],
+        fields: ['value'], intents: ['facts', 'fixed_comparison', 'selected_comparison'] },
+      { resource_id: 'subventions_par_domaine', theme_id: 'programmes', indicator_id: 'subventions_par_domaine',
+        label: 'Subventions régionales par domaine', unit: '€', direction: 'high', allowed_levels: ['commune'],
+        sources: ['subventions_scdl'], shapes: ['period_detail'], axes: ['period', 'detail'],
+        target_kinds: ['territory', 'territory_cohort'], fields: ['value'], intents: ['facts', 'fixed_comparison', 'selected_comparison'] },
+    ]
+    const source = [{ source_id: 'subventions_scdl', name: 'Source sémantique Programmes', vintage_id: 'subventions-2026',
+      version: '2026', reference_date: '2026-01-01', publication_date: '2026-02-01' }]
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(request)
+        const results = request.items.map((item) => {
+          if (item.intent.kind !== 'facts') return { id: item.id, resource: item.resource, data: {
+            resource: item.resource, target: item.target, contract: 'indicator-comparison-v1',
+            indicator_id: item.resource, shape: item.resource === 'subventions_annuelles' ? 'ordered_series' : 'observed_collection',
+            content_version: item.resource === 'subventions_annuelles' ? 'series-v1' : 'collection-v1',
+            reference_content_version: 'territories-v1', selection: null,
+            scope: { kind: 'density_class', territory_type: 'commune', density_class_code: 'commune_density_a', member_count: 2 },
+            result: { indicator_id: item.resource, status: 'unavailable', reason: 'not_comparable', direction: 'high',
+              unit: '€', selected_member_count: 2, eligible_count: 0, missing_count: 2, rank: null, rank_size: null },
+          } }
+          if (item.resource === 'couverture_programmes') return { id: item.id, resource: item.resource, data: {
+            resource: item.resource, target: item.target, indicator_id: item.resource, theme_id: 'programmes', kind: 'anchored_membership',
+            content_version: 'membership-v1', reference_content_version: 'territories-v1', completeness: 'observed_sparse',
+            availability: 'observed', entries: [{ detail: 'PVD', label: 'Petites villes API', rider: null, sources: source }],
+            relationships: [], summaries: [],
+          } }
+          if (item.resource === 'subventions_annuelles') return { id: item.id, resource: item.resource, data: {
+            resource: item.resource, target: item.target, indicator_id: item.resource, theme_id: 'programmes', publication_id: 'series-v1',
+            reference_content_version: 'territories-v1', axis_kind: 'year', axis_values: ['2025'], axis_numeric_values: [2025],
+            completeness: 'dense_complete', label: 'Subventions régionales attribuées', unit: '€', direction: 'high',
+            descriptor_version: 'series-descriptor-v1', points: [{ axis: '2025', observation_period: '2025', value: 9_999_999,
+              status: 'measured', missing_reason: null, provenance: source.map(({ name, ...entry }) => ({ ...entry, source_name: name })) }],
+            scope_series: [], context: null, named_references: [], availability: 'complete',
+          } }
+          return { id: item.id, resource: item.resource, data: {
+            resource: item.resource, target: item.target, indicator_id: item.resource, theme_id: 'programmes', kind: 'period_detail',
+            content_version: 'collection-v1', reference_content_version: 'territories-v1', completeness: 'observed_sparse',
+            availability: 'observed', unit: '€', entries: [{ detail: 'Domaine API', label: 'Domaine API', observation_period: '2025',
+              value: 9876, status: 'measured', sources: source }],
+          } }
+        })
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: results.reverse() }))
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    const text = wrapper.get('[role="tabpanel"]').text()
+    expect(text).toContain('PVD')
+    expect(text).toContain('Domaine API')
+    expect(text).toContain('10,00 M€')
+    expect(text).toContain('Source sémantique Programmes')
+    expect(text).not.toContain('Agriculture')
+    expect(text).not.toContain('1 600 €')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
+    expect(requests[0]?.items.map(({ resource, intent }) => [resource, intent.kind])).toEqual([
+      ['couverture_programmes', 'facts'],
+      ['subventions_annuelles', 'facts'], ['subventions_annuelles', 'fixed_comparison'],
+      ['subventions_par_domaine', 'facts'], ['subventions_par_domaine', 'fixed_comparison'],
+    ])
+    expect(requests[0]?.items.every((item) => item.target.kind === 'territory' && item.target.id === '22001')).toBe(true)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch').length).toBeGreaterThan(0)
+    wrapper.unmount()
+  })
+
   beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('API not configured in tests'))))
   afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
   it.skipIf(!process.env.LUSK_MOUNTED_E_HTTP_FIXTURE)('consumes real PostgreSQL HTTP responses in mounted E', async () => {
