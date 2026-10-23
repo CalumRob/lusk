@@ -54,10 +54,10 @@ export async function mountPlainCahier(
 /** Mounts a synthetic high-count profile plot so mobile checks exercise a long y-axis label. */
 export async function mountLongYAxisFigure(container: Element) {
   const profiles: BpeAccessProfileFact[] = [
-    { profile: 'acces-pied-tc', label: 'Profil synthétique A', count: 1234, exemplar: null, comparison: null },
-    { profile: 'velo-compense', label: 'Profil synthétique B', count: 800, exemplar: null, comparison: null },
-    { profile: 'voiture-requise', label: 'Profil synthétique C', count: 350, exemplar: null, comparison: null },
-    { profile: 'inaccessible-20-minutes', label: 'Profil synthétique D', count: 100, exemplar: null, comparison: null },
+    { profile: 'acces-pied-tc', label: 'Profil synthétique A', count: 1234, exemplar: null, comparison: { scope: { kind: 'communes-bretagne' }, direction: 'plus-est-mieux', rank: null, reference: { kind: 'mean', value: 1100 } } },
+    { profile: 'velo-compense', label: 'Profil synthétique B', count: 800, exemplar: null, comparison: { scope: { kind: 'communes-bretagne' }, direction: 'plus-est-mieux', rank: null, reference: { kind: 'mean', value: 700 } } },
+    { profile: 'voiture-requise', label: 'Profil synthétique C', count: 350, exemplar: null, comparison: { scope: { kind: 'communes-bretagne' }, direction: 'plus-est-mieux', rank: null, reference: { kind: 'mean', value: 300 } } },
+    { profile: 'inaccessible-20-minutes', label: 'Profil synthétique D', count: 100, exemplar: null, comparison: { scope: { kind: 'communes-bretagne' }, direction: 'plus-est-mieux', rank: null, reference: { kind: 'mean', value: 80 } } },
   ]
   const app = createApp(BpeProfilesChartCahier, {
     profiles,

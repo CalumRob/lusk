@@ -174,10 +174,11 @@ try {
         const svg = root.querySelector('.bpe-profile-chart-svg')
         const axis = root.querySelector('g.cahier-figure-axes > line.cahier-figure-axis:nth-of-type(2)')
         const horizontalAxis = root.querySelector('g.cahier-figure-axes > line.cahier-figure-axis:nth-of-type(1)')
-        const firstBar = root.querySelector('.bpe-profile-bar')
+        const firstBar = root.querySelector('.bpe-profile-bar--territory')
+        const firstReferenceBar = root.querySelector('.bpe-profile-bar--reference')
         const labels = [...root.querySelectorAll('.cahier-figure-tick-label--y')]
         const title = root.querySelector('.cahier-figure-axis-title--y')
-        if (!frame || !plot || !svg || !axis || !horizontalAxis || !firstBar || !labels.length || !title) {
+        if (!frame || !plot || !svg || !axis || !horizontalAxis || !firstBar || !firstReferenceBar || !labels.length || !title) {
           throw new Error('Long-y-label figure fixture did not mount completely')
         }
         const longestTick = labels.reduce((longest, label) => label.textContent.length > longest.length ? label.textContent : longest, '')
@@ -194,7 +195,10 @@ try {
         const axisRight = Number(horizontalAxis.getAttribute('x2'))
         const profileCount = root.querySelectorAll('.bpe-profile-bars').length
         const barWidth = Number(firstBar.getAttribute('width'))
-        const firstBarExpected = axisLeft + (axisRight - axisLeft) / (profileCount * 2) - barWidth - 3.5
+        const referenceBarWidth = Number(firstReferenceBar.getAttribute('width'))
+        const referenceBarX = Number(firstReferenceBar.getAttribute('x'))
+        const firstCategoryCenter = axisLeft + (axisRight - axisLeft) / (profileCount * 2)
+        const pairedBarCenter = (barX + barWidth / 2 + referenceBarX + referenceBarWidth / 2) / 2
         const labelBandLeft = Math.min(...labels.map((label) => label.getBoundingClientRect().left))
         return {
           viewport: innerWidth,
@@ -208,8 +212,11 @@ try {
           labelRail,
           barX,
           barWidth,
+          referenceBarX,
+          referenceBarWidth,
           profileCount,
-          firstBarExpected,
+          firstCategoryCenter,
+          pairedBarCenter,
           overlaps,
           labelBandLeft,
           titleRight,
@@ -232,8 +239,10 @@ try {
         Math.abs(longYAxisFigure.labelRail - longYAxisFigure.axisLeft) < 0.5,
       `BPE frame, SVG axis and HTML labels must share the measured rail at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
       assert.equal(longYAxisFigure.profileCount, 4, 'Synthetic BPE fixture must render all four profile groups')
-      assert(Math.abs(longYAxisFigure.barX - longYAxisFigure.firstBarExpected) < 0.5,
-        `BPE territory bar must be positioned from the SVG axis rails and first category center at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
+      assert(Math.abs(longYAxisFigure.pairedBarCenter - longYAxisFigure.firstCategoryCenter) < 0.5 &&
+        longYAxisFigure.barX + longYAxisFigure.barWidth / 2 < longYAxisFigure.firstCategoryCenter &&
+        longYAxisFigure.referenceBarX + longYAxisFigure.referenceBarWidth / 2 > longYAxisFigure.firstCategoryCenter,
+      `BPE territory/reference bars must straddle the first category center derived from the SVG axis rails at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
     }
 
     let accessRampLongYAxisFigure = null
