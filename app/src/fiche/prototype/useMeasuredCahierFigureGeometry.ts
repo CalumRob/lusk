@@ -7,13 +7,7 @@ import {
 } from '@/fiche/cahierFigureGrammaire'
 import type { CahierFigureGeometry } from '@/fiche/cahierFigureGrammaire'
 
-function fontForCanvas(style: CSSStyleDeclaration): string {
-  return [style.fontStyle, style.fontVariant, style.fontWeight, style.fontStretch, style.fontSize, style.fontFamily]
-    .filter((part) => part && part !== 'normal')
-    .join(' ')
-}
-
-/** Measure the actual fixed-pixel tick labels and keep their rail aligned with the SVG geometry. */
+/** Measure rendered HTML or SVG y ticks and keep every rail consumer aligned. */
 export function useMeasuredCahierFigureGeometry(
   plotElement: Ref<HTMLElement | null>,
   yTickLabels: ComputedRef<readonly (string | null)[]>,
@@ -32,18 +26,11 @@ export function useMeasuredCahierFigureGeometry(
     const labels = yTickLabels.value.filter((label): label is string => label !== null)
     if (renderedWidth <= 0 || labels.length === 0) return
 
-    const labelElement = plot.querySelector<HTMLElement>('.cahier-figure-tick-label--y')
-    if (!labelElement) return
-    const style = getComputedStyle(labelElement)
-    const canvas = document.createElement('canvas')
-    const context = canvas.getContext('2d')
-    if (!context) return
-
-    context.font = fontForCanvas(style)
-    const letterSpacing = Number.parseFloat(style.letterSpacing) || 0
-    const longestLabelWidth = Math.max(...labels.map((label) =>
-      context.measureText(label).width + Math.max(0, label.length - 1) * letterSpacing,
-    ))
+    const renderedLabels = [...plot.querySelectorAll<HTMLElement | SVGTextElement>(
+      '.cahier-figure-tick-label--y, .cahier-figure-tick-label-svg--y',
+    )]
+    if (!renderedLabels.length) return
+    const longestLabelWidth = Math.max(...renderedLabels.map((label) => label.getBoundingClientRect().width))
     geometry.value = deriveCahierFigureGeometry(baseGeometry, renderedWidth, longestLabelWidth)
   }
 

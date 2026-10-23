@@ -38,9 +38,11 @@ const WIDTH = 820
 const HEIGHT = 300
 // Preserve the prior 640×300 plot's desktop proportions in this custom
 // 820×300 viewBox; the measured left rail can then grow on narrow viewports.
-const MARGIN = { top: 22, right: 87.25, bottom: 62, left: 82 } as const
-const BASE_FIGURE_GEOMETRY = { width: WIDTH, height: HEIGHT, margin: MARGIN } as const
-const PLOT_HEIGHT = HEIGHT - MARGIN.top - MARGIN.bottom
+const BASE_FIGURE_GEOMETRY = {
+  width: WIDTH,
+  height: HEIGHT,
+  margin: { top: 22, right: 87.25, bottom: 62, left: 82 },
+} as const
 const plotElement = ref<HTMLElement | null>(null)
 
 function formatNumber(value: number): string {
@@ -63,7 +65,8 @@ function xFor(quantile: number): number {
 }
 
 function yFor(value: number): number {
-  return MARGIN.top + (1 - value / maximum.value) * PLOT_HEIGHT
+  const { height, margin } = figureGeometry.value
+  return margin.top + (1 - value / maximum.value) * (height - margin.top - margin.bottom)
 }
 
 function pathFor(points: MobiliteAccessRamp['curves'][MobiliteAccessMode]['points']): string {
@@ -124,7 +127,9 @@ const modeAnnotations = computed<readonly ModeAnnotation[]>(() => {
   }))
   const placed: ModeAnnotation[] = []
   for (const item of [...desired].sort((left, right) => yFor(left.value) - yFor(right.value))) {
-    let labelY = Math.max(MARGIN.top + 12, Math.min(MARGIN.top + PLOT_HEIGHT - 8, yFor(item.value)))
+    const { height, margin } = figureGeometry.value
+    const plotBottom = height - margin.bottom
+    let labelY = Math.max(margin.top + 12, Math.min(plotBottom - 8, yFor(item.value)))
     const previous = placed.at(-1)
     if (previous) labelY = Math.max(labelY, previous.labelY + 18)
     placed.push({
@@ -137,7 +142,7 @@ const modeAnnotations = computed<readonly ModeAnnotation[]>(() => {
   }
   const bounded = placed.map((annotation) => ({
     ...annotation,
-    labelY: Math.min(annotation.labelY, MARGIN.top + PLOT_HEIGHT - 8),
+    labelY: Math.min(annotation.labelY, figureGeometry.value.height - figureGeometry.value.margin.bottom - 8),
   }))
   return MODE_ORDER.flatMap((mode) => bounded.filter((annotation) => annotation.mode === mode))
 })
@@ -202,7 +207,7 @@ function cutHitboxStyle(point: MobiliteAccessRampPoint, index: number): Record<s
     left: `${((xFor(leftQuantile) / width) * 100)}%`,
     top: `${(margin.top / height) * 100}%`,
     width: `${((xFor(rightQuantile) - xFor(leftQuantile)) / width) * 100}%`,
-    height: `${(PLOT_HEIGHT / height) * 100}%`,
+    height: `${((height - margin.top - margin.bottom) / height) * 100}%`,
   }
 }
 
@@ -271,15 +276,23 @@ function toggleTimeMode(key: string): void {
 const timeYAxis = computed(() => cahierIntegerYAxisScale(visibleTimeSeries.value.flatMap((series) =>
   series.points.flatMap((point) => [point.value, point.referenceValue]),
 )))
+const measuredYTickLabels = computed(() => props.timeRamp
+  ? timeYAxis.value.ticks.map((value) => `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}`)
+  : yLabels.value.map(formatNumber))
+const figureGeometry = useMeasuredCahierFigureGeometry(plotElement, measuredYTickLabels, BASE_FIGURE_GEOMETRY)
+const plotHeight = computed(() => figureGeometry.value.height -
+  figureGeometry.value.margin.top - figureGeometry.value.margin.bottom)
 const timeX = (value: number) => {
   const { width, margin } = figureGeometry.value
   return margin.left + ((value - (timePoints.value[0]?.xValue ?? 0)) / Math.max(1, (timePoints.value.at(-1)?.xValue ?? 1) - (timePoints.value[0]?.xValue ?? 0))) * (width - margin.left - margin.right)
 }
-const timeY = (value: number) => MARGIN.top + (1 - (value - timeYAxis.value.minimum) / (timeYAxis.value.maximum - timeYAxis.value.minimum)) * PLOT_HEIGHT
+const timeY = (value: number) => {
+  const { height, margin } = figureGeometry.value
+  return margin.top + (1 - (value - timeYAxis.value.minimum) / (timeYAxis.value.maximum - timeYAxis.value.minimum)) *
+    (height - margin.top - margin.bottom)
+}
 const timeTicks = computed(() => timePoints.value.map((point) => ({ key: point.xValue, position: timeX(point.xValue), label: point.xLabel })))
 const timeYTicks = computed(() => timeYAxis.value.ticks.map((value) => ({ key: value, position: timeY(value), label: `${formatNumber(value)}${props.timeRamp?.yAxis.unit ? ` ${props.timeRamp.yAxis.unit}` : ''}` })))
-const measuredYTickLabels = computed(() => (props.timeRamp ? timeYTicks.value : yAxisTicks.value).map(({ label }) => label))
-const figureGeometry = useMeasuredCahierFigureGeometry(plotElement, measuredYTickLabels, BASE_FIGURE_GEOMETRY)
 
 function timePaths(points: readonly TimeRampPoint[], reference = false): string[] {
   const paths: string[] = []
@@ -352,7 +365,7 @@ function timeHitboxStyle(index: number): Record<string, string> {
   const left = previous ? (timeX(previous.xValue) + timeX(point.xValue)) / 2 : timeX(point.xValue)
   const right = next ? (timeX(point.xValue) + timeX(next.xValue)) / 2 : timeX(point.xValue)
   const { width, height, margin } = figureGeometry.value
-  return { left: `${left / width * 100}%`, top: `${margin.top / height * 100}%`, width: `${Math.max(2, (right - left) / width * 100)}%`, height: `${PLOT_HEIGHT / height * 100}%` }
+  return { left: `${left / width * 100}%`, top: `${margin.top / height * 100}%`, width: `${Math.max(2, (right - left) / width * 100)}%`, height: `${plotHeight.value / height * 100}%` }
 }
 </script>
 
@@ -421,8 +434,8 @@ function timeHitboxStyle(index: number): Record<string, string> {
               :key="`x-${point.quantile}`"
               :x1="xFor(point.quantile)"
               :x2="xFor(point.quantile)"
-              :y1="MARGIN.top"
-              :y2="MARGIN.top + PLOT_HEIGHT"
+              :y1="figureGeometry.margin.top"
+              :y2="figureGeometry.height - figureGeometry.margin.bottom"
             />
             <line
               class="access-ramp-axis"

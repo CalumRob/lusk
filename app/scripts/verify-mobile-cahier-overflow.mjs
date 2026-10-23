@@ -5,9 +5,10 @@ import { join, resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
 
-// Real-browser, populated contract check for issue #823. The static territory
-// read model is checked-in production data; post-#627 and AEDAR semantic reads
-// are intercepted with the same builders/contracts used by the app tests.
+// Real-browser, populated contract check for Cahier mobile overflow and the
+// shared y-axis rail regression in issue #841. The static territory read model
+// is checked-in production data; post-#627 and AEDAR semantic reads are
+// intercepted with the same builders/contracts used by the app tests.
 // Run: npm run verify:mobile-cahier-overflow. If Playwright has no cached
 // browser, run `npx playwright-core install chromium`; alternatively set
 // PLAYWRIGHT_CHROMIUM_EXECUTABLE to an installed Chromium executable.
@@ -18,6 +19,8 @@ const evidenceDir = resolve(process.env.CAHIER_EVIDENCE_DIR ?? join(tmpdir(), 'l
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
 const server = await createServer({
   configFile: resolve(appRoot, 'vite.config.ts'),
+  // Let Vite select an available ephemeral port; the owner's live server may
+  // already be using its usual development port.
   server: { host: '127.0.0.1', port: 0, strictPort: false },
 })
 let browser
@@ -25,6 +28,8 @@ let browser
 try {
   await server.listen()
   const baseUrl = server.resolvedUrls.local[0]
+  const { CAHIER_FIGURE_RAIL: railContract } =
+    await server.ssrLoadModule('/src/fiche/cahierFigureGrammaire.ts')
   const { payloadDepuisModeleTerritoire, validerModeleTerritoire } =
     await server.ssrLoadModule('/src/payload/territoryReadModel.ts')
   const { territoryFactsFor } = await server.ssrLoadModule('/src/fiche/content/territoryFacts.ts')
@@ -154,7 +159,7 @@ try {
     }
     await page.locator('#section-aedar-equipment-explorer').waitFor({ state: 'visible' })
 
-    const longYAxisFigure = await page.evaluate(async ({ baseUrl }) => {
+    const longYAxisFigure = await page.evaluate(async ({ baseUrl, railContract }) => {
       const root = document.createElement('div')
       root.id = 'long-y-axis-browser-fixture'
       root.style.cssText = `position:fixed;top:0;left:0;width:${innerWidth}px;visibility:hidden;pointer-events:none;z-index:-1`
@@ -162,34 +167,49 @@ try {
       const fixture = await import(new URL('src/__tests__/helpers/mobileCahierBrowserFixture.ts', baseUrl).href)
       const app = await fixture.mountLongYAxisFigure(root)
       try {
+        await document.fonts.ready
         await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))))
         const frame = root.querySelector('.bpe-profile-visual')
         const plot = root.querySelector('.bpe-profile-chart')
+        const svg = root.querySelector('.bpe-profile-chart-svg')
+        const axis = root.querySelector('g.cahier-figure-axes > line.cahier-figure-axis:nth-of-type(2)')
+        const firstBar = root.querySelector('.bpe-profile-bar')
         const labels = [...root.querySelectorAll('.cahier-figure-tick-label--y')]
         const title = root.querySelector('.cahier-figure-axis-title--y')
-        if (!frame || !plot || !labels.length || !title) throw new Error('Long-y-label figure fixture did not mount completely')
-        const labelStyle = getComputedStyle(labels[0])
-        const context = document.createElement('canvas').getContext('2d')
-        if (!context) throw new Error('Canvas text measurement is required for the long-y-label fixture')
-        context.font = [labelStyle.fontStyle, labelStyle.fontVariant, labelStyle.fontWeight,
-          labelStyle.fontStretch, labelStyle.fontSize, labelStyle.fontFamily]
-          .filter((part) => part && part !== 'normal').join(' ')
-        const letterSpacing = Number.parseFloat(labelStyle.letterSpacing) || 0
+        if (!frame || !plot || !svg || !axis || !firstBar || !labels.length || !title) {
+          throw new Error('Long-y-label figure fixture did not mount completely')
+        }
         const longestTick = labels.reduce((longest, label) => label.textContent.length > longest.length ? label.textContent : longest, '')
-        const measuredLabelWidth = Math.max(...labels.map((label) =>
-          context.measureText(label.textContent).width + Math.max(0, label.textContent.length - 1) * letterSpacing,
-        ))
+        const measuredLabelWidth = Math.max(...labels.map((label) => label.getBoundingClientRect().width))
         const frameWidth = frame.getBoundingClientRect().width
         const railPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-left'))
         const railWidth = railPercent * frameWidth / 100
+        const frameRail = railPercent * svg.viewBox.baseVal.width / 100
+        const axisLeft = Number(axis.getAttribute('x1'))
+        const labelRail = Number.parseFloat(labels[0].style.left) * svg.viewBox.baseVal.width / 100
+        const barX = Number(firstBar.getAttribute('x'))
         const titleRight = title.getBoundingClientRect().right
+        const titleRect = title.getBoundingClientRect()
+        const labelRects = labels.map((label) => {
+          const { x, y, right, bottom } = label.getBoundingClientRect()
+          return { text: label.textContent, x, y, right, bottom }
+        })
+        const overlaps = labelRects.filter((label) =>
+          label.x < titleRect.right && label.right > titleRect.left &&
+          label.y < titleRect.bottom && label.bottom > titleRect.top,
+        )
         const labelBandLeft = Math.min(...labels.map((label) => label.getBoundingClientRect().left))
         return {
           viewport: innerWidth,
           longestTick,
           measuredLabelWidth,
           railWidth,
-          requiredRailWidth: 16 + measuredLabelWidth + 8,
+          requiredRailWidth: railContract.titleLane + measuredLabelWidth + railContract.labelGap,
+          frameRail,
+          axisLeft,
+          labelRail,
+          barX,
+          overlaps,
           labelBandLeft,
           titleRight,
         }
@@ -197,18 +217,26 @@ try {
         app.unmount()
         root.remove()
       }
-    }, { baseUrl })
+    }, { baseUrl, railContract })
     assert(longYAxisFigure.longestTick.replace(/\D/gu, '').length >= 4 && longYAxisFigure.measuredLabelWidth > 24,
       `Long y-axis fixture must contain a measured four-digit tick at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
     assert(longYAxisFigure.railWidth >= longYAxisFigure.requiredRailWidth - 1,
       `Measured y-axis rail must reserve the label width and title lane at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
     assert(longYAxisFigure.labelBandLeft >= longYAxisFigure.titleRight + 5,
       `Long tick-label band must stay outside the rotated title lane at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
+    if ([320, 360, 390].includes(width)) {
+      assert.deepEqual(longYAxisFigure.overlaps, [],
+        `BPE profile y-axis title must not intersect any tick label at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
+      assert(Math.abs(longYAxisFigure.frameRail - longYAxisFigure.axisLeft) < 0.5 &&
+        Math.abs(longYAxisFigure.labelRail - longYAxisFigure.axisLeft) < 0.5 &&
+        longYAxisFigure.barX >= longYAxisFigure.axisLeft,
+      `BPE frame, SVG axis and bars must share the measured rail at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
+    }
 
     let accessRampLongYAxisFigure = null
     let accessRampRampYAxisFigure = null
     if ([320, 360, 390].includes(width)) {
-      const accessRampFigures = await page.evaluate(async ({ baseUrl }) => {
+      const accessRampFigures = await page.evaluate(async ({ baseUrl, railContract }) => {
         const fixture = await import(new URL('src/__tests__/helpers/mobileCahierBrowserFixture.ts', baseUrl).href)
         async function measure(variant) {
           const root = document.createElement('div')
@@ -225,21 +253,18 @@ try {
             const plot = root.querySelector('.access-ramp-plot')
             const svg = root.querySelector('.access-ramp-svg')
             const axis = root.querySelector('.access-ramp-axis')
+            const mark = variant === 'time'
+              ? root.querySelector('.access-ramp-time-line.access-ramp-line--territory')
+              : root.querySelector('.access-ramp-point')
+            const hitbox = variant === 'time'
+              ? root.querySelector('.access-ramp-cut-hitbox')
+              : root.querySelector('.access-ramp-cut-hitbox')
             const labels = [...root.querySelectorAll('.cahier-figure-tick-label--y')]
             const title = root.querySelector('.cahier-figure-axis-title--y')
-            if (!frame || !plot || !svg || !axis || labels.length === 0 || !title) {
+            if (!frame || !plot || !svg || !axis || !mark || !hitbox || labels.length === 0 || !title) {
               throw new Error(`Access-ramp ${variant} long-y-label fixture did not mount completely`)
             }
-            const labelStyle = getComputedStyle(labels[0])
-            const context = document.createElement('canvas').getContext('2d')
-            if (!context) throw new Error('Canvas text measurement is required for the access-ramp fixture')
-            context.font = [labelStyle.fontStyle, labelStyle.fontVariant, labelStyle.fontWeight,
-              labelStyle.fontStretch, labelStyle.fontSize, labelStyle.fontFamily]
-              .filter((part) => part && part !== 'normal').join(' ')
-            const letterSpacing = Number.parseFloat(labelStyle.letterSpacing) || 0
-            const measuredLabelWidth = Math.max(...labels.map((label) =>
-              context.measureText(label.textContent).width + Math.max(0, label.textContent.length - 1) * letterSpacing,
-            ))
+            const measuredLabelWidth = Math.max(...labels.map((label) => label.getBoundingClientRect().width))
             const viewBoxWidth = svg.viewBox.baseVal.width
             const viewBoxHeight = svg.viewBox.baseVal.height
             const renderedWidth = plot.getBoundingClientRect().width
@@ -250,6 +275,14 @@ try {
             const labelRailWidth = Number.parseFloat(labels[0].style.left) * viewBoxWidth / 100
             const frameRightPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-right'))
             const frameRightWidth = frameRightPercent * viewBoxWidth / 100
+            const markX = variant === 'time'
+              ? Number(mark.getAttribute('d').match(/^M\s*([\d.]+)/u)?.[1])
+              : Number(mark.getAttribute('cx'))
+            const hitboxRail = Number.parseFloat(hitbox.style.left) * viewBoxWidth / 100
+            hitbox.click()
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+            const tooltip = root.querySelector('.access-ramp-tooltip')
+            const tooltipAnchor = tooltip?.style.getPropertyValue('--cahier-figure-tooltip-anchor-x') ?? ''
             const titleRect = title.getBoundingClientRect()
             const labelRects = labels.map((label) => {
               const { x, y, right, bottom } = label.getBoundingClientRect()
@@ -268,9 +301,12 @@ try {
               viewBoxWidth,
               viewBoxHeight,
               railWidth,
-              requiredRailWidth: (16 + measuredLabelWidth + 8) * viewBoxWidth / renderedWidth,
+              requiredRailWidth: (railContract.titleLane + measuredLabelWidth + railContract.labelGap) * viewBoxWidth / renderedWidth,
               axisLeft,
               axisRight,
+              markX,
+              hitboxRail,
+              tooltipAnchor,
               labelRailWidth,
               frameRightWidth,
               titleRect: { x: titleRect.x, y: titleRect.y, right: titleRect.right, bottom: titleRect.bottom },
@@ -282,7 +318,7 @@ try {
           }
         }
         return { time: await measure('time'), ramp: await measure('ramp') }
-      }, { baseUrl })
+      }, { baseUrl, railContract })
       accessRampLongYAxisFigure = accessRampFigures.time
       accessRampRampYAxisFigure = accessRampFigures.ramp
       for (const [variant, report] of Object.entries(accessRampFigures)) {
@@ -298,6 +334,9 @@ try {
         assert(Math.abs(report.axisLeft - report.railWidth) < 0.5 &&
           Math.abs(report.labelRailWidth - report.railWidth) < 0.5,
         `Access-ramp ${variant} SVG axis, HTML labels and frame must share one measured left rail at ${width}px: ${JSON.stringify(report)}`)
+        assert(Math.abs(report.markX - report.railWidth) < 0.5 &&
+          Math.abs(report.hitboxRail - report.railWidth) < 0.5 && report.tooltipAnchor.length > 0,
+        `Access-ramp ${variant} marks, hitboxes and tooltip must consume the measured geometry at ${width}px: ${JSON.stringify(report)}`)
         assert(Math.abs(report.axisRight - (report.viewBoxWidth - report.frameRightWidth)) < 0.5 &&
           report.axisRight - report.axisLeft < report.viewBoxWidth - report.frameRightWidth - 1,
         `Access-ramp ${variant} plot must give horizontal width to its measured y-axis rail at ${width}px: ${JSON.stringify(report)}`)
@@ -306,7 +345,7 @@ try {
 
     let sandboxGroupedBarFigure = null
     if ([320, 360, 390].includes(width)) {
-      sandboxGroupedBarFigure = await page.evaluate(async ({ baseUrl }) => {
+      sandboxGroupedBarFigure = await page.evaluate(async ({ baseUrl, railContract }) => {
         const root = document.createElement('div')
         root.id = 'sandbox-grouped-bar-browser-fixture'
         root.style.cssText = `position:fixed;top:0;left:0;width:${innerWidth}px;visibility:hidden;pointer-events:none;z-index:-1`
@@ -329,16 +368,7 @@ try {
           }
           const viewBoxWidth = svg.viewBox.baseVal.width
           const plotRect = plot.getBoundingClientRect()
-          const style = getComputedStyle(labels[0])
-          const context = document.createElement('canvas').getContext('2d')
-          if (!context) throw new Error('Canvas text measurement is required for the sandbox grouped-bar fixture')
-          context.font = [style.fontStyle, style.fontVariant, style.fontWeight,
-            style.fontStretch, style.fontSize, style.fontFamily]
-            .filter((part) => part && part !== 'normal').join(' ')
-          const letterSpacing = Number.parseFloat(style.letterSpacing) || 0
-          const measuredLabelWidth = Math.max(...labels.map((label) =>
-            context.measureText(label.textContent).width + Math.max(0, label.textContent.length - 1) * letterSpacing,
-          ))
+          const measuredLabelWidth = Math.max(...labels.map((label) => label.getBoundingClientRect().width))
           const titleRect = title.getBoundingClientRect()
           const labelRects = labels.map((label) => {
             const { x, y, right, bottom } = label.getBoundingClientRect()
@@ -361,6 +391,7 @@ try {
           const hitboxLeft = Number.parseFloat(hitbox.style.left) * viewBoxWidth / 100
           const hitboxWidth = Number.parseFloat(hitbox.style.width) * viewBoxWidth / 100
           hitbox.click()
+          await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
           const tooltip = root.querySelector('.cahier-grouped-vertical-bar-chart__tooltip')
           const tooltipAnchor = tooltip?.style.getPropertyValue('--cahier-figure-tooltip-anchor-x') ?? ''
           return {
@@ -370,7 +401,7 @@ try {
             measuredLabelWidth,
             renderedWidth: plotRect.width,
             viewBoxWidth,
-            requiredRailWidth: (16 + measuredLabelWidth + 8) * viewBoxWidth / plotRect.width,
+            requiredRailWidth: (railContract.titleLane + measuredLabelWidth + railContract.labelGap) * viewBoxWidth / plotRect.width,
             frameRail,
             htmlLabelRail,
             axisLeft,
@@ -389,7 +420,7 @@ try {
           app.unmount()
           root.remove()
         }
-      }, { baseUrl })
+      }, { baseUrl, railContract })
       assert.equal(sandboxGroupedBarFigure.titleText, 'NOMBRE D’ÉTABLISSEMENTS',
         `Sandbox fixture must mount the real quantile y-axis title at ${width}px`)
       assert(sandboxGroupedBarFigure.labels.some((label) => label.replace(/\D/gu, '') === '0') &&
@@ -408,9 +439,132 @@ try {
       assert(Math.abs(sandboxGroupedBarFigure.hitboxLeft - sandboxGroupedBarFigure.axisLeft) < 0.5 &&
         Math.abs(sandboxGroupedBarFigure.hitboxWidth - sandboxGroupedBarFigure.expectedHitboxWidth) < 0.5,
       `Sandbox category hitboxes must use the derived plot geometry at ${width}px: ${JSON.stringify(sandboxGroupedBarFigure)}`)
-      assert.equal(sandboxGroupedBarFigure.tooltipAnchor,
-        sandboxGroupedBarFigure.expectedTooltipAnchor,
+      assert(Math.abs(Number.parseFloat(sandboxGroupedBarFigure.tooltipAnchor) -
+        Number.parseFloat(sandboxGroupedBarFigure.expectedTooltipAnchor)) < 0.001,
         `Sandbox tooltip must anchor to the derived category center at ${width}px: ${JSON.stringify(sandboxGroupedBarFigure)}`)
+    }
+
+    let otherCartesianFigureRails = null
+    if ([320, 360, 390].includes(width)) {
+      otherCartesianFigureRails = await page.evaluate(async ({ baseUrl, railContract }) => {
+        const fixture = await import(new URL('src/__tests__/helpers/mobileCahierBrowserFixture.ts', baseUrl).href)
+        const figures = [
+          {
+            family: 'bivariate-distribution',
+            mount: fixture.mountBivariateDistributionFigure,
+            frameSelector: '.bivariate-distribution-cahier',
+            plotSelector: '.bivariate-distribution-plot',
+            svgSelector: '.bivariate-distribution-svg',
+            axisSelector: '.bivariate-grid-axis',
+            labelRail: (label, width) => Number.parseFloat(label.style.left) * width / 100,
+            markX: (mark) => Number(mark.getAttribute('points').split(' ')[0].split(',')[0]),
+            markSelector: '.bivariate-cell-territory',
+            hitboxSelector: '.bivariate-cell-hitbox',
+            tooltipSelector: '.bivariate-distribution-tooltip',
+          },
+          {
+            family: 'transport-offer-trajectory',
+            mount: fixture.mountCahierOffreTransportsFigure,
+            frameSelector: '.transit-plot',
+            plotSelector: '.transit-plot',
+            svgSelector: 'svg',
+            axisSelector: '.cahier-figure-axes > line.cahier-figure-axis:nth-of-type(2)',
+            labelRail: (label, width) => label.getAttribute('x') === null
+              ? Number.parseFloat(label.style.left) * width / 100
+              : Number(label.getAttribute('x')),
+            markX: (mark) => Number(mark.getAttribute('cx')),
+            markSelector: '.transit-point--territory',
+          },
+        ]
+        const reports = []
+        for (const definition of figures) {
+          const root = document.createElement('div')
+          root.style.cssText = `position:fixed;top:0;left:0;width:${innerWidth}px;visibility:hidden;pointer-events:none;z-index:-1`
+          document.body.append(root)
+          const app = await definition.mount(root)
+          try {
+            await document.fonts.ready
+            await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+            const frame = root.querySelector(definition.frameSelector)
+            const plot = root.querySelector(definition.plotSelector)
+            const svg = root.querySelector(definition.svgSelector)
+            const axis = root.querySelector(definition.axisSelector)
+            const marks = [...root.querySelectorAll(definition.markSelector)]
+            const labels = [...root.querySelectorAll('.cahier-figure-tick-label--y, .cahier-figure-tick-label-svg--y')]
+            const title = root.querySelector('.cahier-figure-axis-title--y')
+            if (!frame || !plot || !svg || !axis || marks.length === 0 || labels.length === 0 || !title) {
+              throw new Error(`${definition.family} fixture did not mount a populated titled y-axis`)
+            }
+            const viewBoxWidth = svg.viewBox.baseVal.width
+            const plotWidth = plot.getBoundingClientRect().width
+            const measuredLabelWidth = Math.max(...labels.map((label) => label.getBoundingClientRect().width))
+            const titleRect = title.getBoundingClientRect()
+            const labelRects = labels.map((label) => {
+              const { x, y, right, bottom } = label.getBoundingClientRect()
+              return { text: label.textContent.trim(), x, y, right, bottom }
+            })
+            const overlaps = labelRects.filter((label) =>
+              label.x < titleRect.right && label.right > titleRect.left &&
+              label.y < titleRect.bottom && label.bottom > titleRect.top,
+            )
+            const axisLeft = Number(axis.getAttribute('x1'))
+            const railPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-left'))
+            const frameRail = railPercent * viewBoxWidth / 100
+            const hitbox = definition.hitboxSelector ? root.querySelector(definition.hitboxSelector) : null
+            let hitboxRail = null
+            let hitboxWidth = null
+            let tooltipAnchor = null
+            let expectedTooltipAnchor = null
+            if (hitbox) {
+              hitboxRail = Number.parseFloat(hitbox.style.left) * viewBoxWidth / 100
+              hitboxWidth = Number.parseFloat(hitbox.style.width) * viewBoxWidth / 100
+              expectedTooltipAnchor = `${((axisLeft + hitboxWidth / 2) / viewBoxWidth) * 100}%`
+              hitbox.click()
+              await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(resolve)))
+              const tooltip = root.querySelector(definition.tooltipSelector)
+              tooltipAnchor = tooltip?.style.getPropertyValue('--cahier-figure-tooltip-anchor-x') ?? ''
+            }
+            reports.push({
+              family: definition.family,
+              labels: labelRects.map(({ text }) => text),
+              measuredLabelWidth,
+              plotWidth,
+              viewBoxWidth,
+              requiredRailWidth: (railContract.titleLane + measuredLabelWidth + railContract.labelGap) * viewBoxWidth / plotWidth,
+              frameRail,
+              axisLeft,
+              labelRail: definition.labelRail(labels[0], viewBoxWidth),
+              overlaps,
+              markX: definition.markX(marks[0]),
+              hitboxRail,
+              hitboxWidth,
+              tooltipAnchor,
+              expectedTooltipAnchor,
+            })
+          } finally {
+            app.unmount()
+            root.remove()
+          }
+        }
+        return reports
+      }, { baseUrl, railContract })
+      for (const report of otherCartesianFigureRails) {
+        assert.deepEqual(report.overlaps, [],
+          `${report.family} y-axis title must not intersect tick labels at ${width}px: ${JSON.stringify(report)}`)
+        assert(report.frameRail >= report.requiredRailWidth - 1,
+          `${report.family} frame must derive its rail from rendered tick labels at ${width}px: ${JSON.stringify(report)}`)
+        assert(Math.abs(report.frameRail - report.axisLeft) < 0.5 &&
+          Math.abs(report.labelRail - report.axisLeft) < 0.5 &&
+          Math.abs(report.markX - report.axisLeft) < 0.5,
+        `${report.family} frame, SVG axis, y labels, and plotted marks must share the derived rail at ${width}px: ${JSON.stringify(report)}`)
+        if (report.hitboxRail !== null) {
+          assert(Math.abs(report.hitboxRail - report.axisLeft) < 0.5 && report.hitboxWidth > 0,
+            `${report.family} hitboxes must share derived plot geometry at ${width}px: ${JSON.stringify(report)}`)
+          assert(Math.abs(Number.parseFloat(report.tooltipAnchor) -
+            Number.parseFloat(report.expectedTooltipAnchor)) < 0.001,
+            `${report.family} tooltip must anchor to derived plotted geometry at ${width}px: ${JSON.stringify(report)}`)
+        }
+      }
     }
 
     let mobileIndexInteraction = null
@@ -690,6 +844,7 @@ try {
       accessRampLongYAxisFigure,
       accessRampRampYAxisFigure,
       sandboxGroupedBarFigure,
+      otherCartesianFigureRails,
       plainMarginLayout,
       oversizedMutationDetected,
       readCalls: {

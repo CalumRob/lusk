@@ -5,9 +5,12 @@ import VarianteCahierLibre from '@/fiche/prototype/VarianteCahierLibre.vue'
 import AccessRampFigureCahier from '@/fiche/prototype/AccessRampFigureCahier.vue'
 import BpeProfilesChartCahier from '@/fiche/prototype/BpeProfilesChartCahier.vue'
 import AedarEquipmentQuantileFigureCahier from '@/fiche/prototype/AedarEquipmentQuantileFigureCahier.vue'
+import BivariateDistributionFigureCahier from '@/fiche/prototype/BivariateDistributionFigureCahier.vue'
+import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
 import type { CahierPagination } from '@/fiche/prototype/cahierPagination'
-import type { ThemeContent } from '@/fiche/content/themeContent'
-import type { BpeAccessProfileFact, MobiliteAccessRamp, TimeRampFigureData } from '@/fiche/content/territoryFacts'
+import type { ContentFact, ThemeContent } from '@/fiche/content/themeContent'
+import type { BpeAccessProfileFact, MobiliteAccessRamp, MobiliteBuildingDistribution, TimeRampFigureData } from '@/fiche/content/territoryFacts'
+import type { TrajectoryMetadata } from '@/payload/types'
 import { routes } from '@/router'
 
 export async function mountPlainCahier(
@@ -166,6 +169,83 @@ export async function mountSandboxGroupedBarFigure(container: Element) {
       distributionUnavailableDescription: 'Distribution indisponible.',
       source: null,
     },
+  })
+  app.mount(container)
+  await nextTick()
+  return app
+}
+
+/** Mounts the bivariate grid renderer with long depth-bin labels. */
+export async function mountBivariateDistributionFigure(container: Element) {
+  const distribution: MobiliteBuildingDistribution = {
+    availability: 'complete',
+    mode: 't',
+    modeLabel: 'À pied et transports',
+    breadthAxisLabel: 'Nombre de types d’équipements différents',
+    depthAxisLabel: 'Équipements par type accessibles à pied',
+    breadthBins: [
+      { key: 'b1', min: 1, max: 1, label: '1 type' },
+      { key: 'b2', min: 2, max: 2, label: '2 types' },
+      { key: 'b3', min: 3, max: null, label: '3 types ou plus' },
+    ],
+    depthBins: [
+      { key: 'd1', min: 1, max: 2, label: '1 à 2 équipements' },
+      { key: 'd2', min: 3, max: 5, label: '3 à 5 équipements' },
+      { key: 'd3', min: 6, max: null, label: '6 équipements ou plus' },
+    ],
+    cells: [
+      { breadthBucket: 'b1', depthBucket: 'd1', buildingCount: 5, share: 0.2, comparisonBuildingCount: 8, comparisonShare: 0.3 },
+      { breadthBucket: 'b2', depthBucket: 'd2', buildingCount: 10, share: 0.4, comparisonBuildingCount: 9, comparisonShare: 0.35 },
+      { breadthBucket: 'b3', depthBucket: 'd3', buildingCount: 10, share: 0.4, comparisonBuildingCount: 9, comparisonShare: 0.35 },
+    ],
+    totalBuildings: 25,
+    provenance: null,
+    comparisonLabel: 'Bretagne',
+    comparisonTotalBuildings: 26,
+    comparisonStatistic: 'mean',
+  }
+  const app = createApp(BivariateDistributionFigureCahier, {
+    distribution,
+    territoryName: 'Rennes',
+  })
+  app.mount(container)
+  await nextTick()
+  return app
+}
+
+/** Mounts the transport-offer trajectory, whose y ticks are SVG text nodes. */
+export async function mountCahierOffreTransportsFigure(container: Element) {
+  const trajectory: ContentFact[] = [0, 0.5, 1].map((value, index) => ({
+    label: `Période ${index + 1}`,
+    fact: {
+      key: `trajectory-${index}`,
+      detail: `period-${index + 1}`,
+      axisValue: index,
+      value,
+      unit: '%',
+      availability: 'complete',
+      provenance: null,
+      comparison: null,
+      comparisonBasis: 'territory-median',
+      reason: null,
+    },
+  }))
+  const metadata: TrajectoryMetadata = {
+    endpoints: ['period-1', 'period-3'],
+    axis: 'numeric',
+    axisLabels: {
+      x: 'Période observée',
+      y: 'Établissements accessibles au fil du temps',
+    },
+    ticks: trajectory.map((item, index) => ({
+      detail: item.fact.detail!,
+      label: `Période ${index + 1}`,
+    })),
+  }
+  const app = createApp(CahierOffreTransportsFigure, {
+    offer: null,
+    trajectory,
+    metadata,
   })
   app.mount(container)
   await nextTick()
