@@ -138,7 +138,7 @@ function yPosition(value: number): number {
 .transit-point--territory { stroke: var(--cahier-theme); }
 .transit-point--comparison { fill: var(--cahier-paper); stroke: currentColor; stroke-width: 1.5; }
 .transit-marker-ring { fill: var(--cahier-paper); stroke: var(--cahier-theme); stroke-width: 3; }
-.transit-marker-label { fill: currentColor; font-size: 14px; font-weight: 700; }
+.transit-marker-label { fill: currentColor; font: var(--type-figure-mode); font-weight: 700; }
 .transit-legend { display: flex; gap: var(--space-2); align-items: center; }
 .transit-legend-territory { display: inline-flex; align-items: center; gap: var(--space-2); }
 .transit-legend-territory { border-top-style: solid; border-color: var(--cahier-theme); }

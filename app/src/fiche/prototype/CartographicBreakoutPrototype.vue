@@ -405,8 +405,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   display: inline-block;
   margin-right: 10px;
   color: var(--red);
-  font-family: var(--font-sans);
-  font-size: .55em;
+  font: var(--text-caption);
   font-variant-numeric: tabular-nums;
   letter-spacing: .08em;
   vertical-align: .2em;
@@ -433,6 +432,7 @@ async function inspect(mode: ModeKey): Promise<void> {
 }
 
 .map-panel {
+  --figure-map-accent: var(--mode-ring, var(--brand-500));
   min-width: 0;
   margin: 0;
   transition: opacity 150ms ease-out;
@@ -447,7 +447,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   align-items: center;
   min-height: 28px;
   margin-bottom: 6px;
-  color: var(--mode-ring);
+  color: var(--color-figure-map-label);
   font: var(--text-overline);
   letter-spacing: var(--text-overline-tracking);
   text-transform: uppercase;
@@ -518,7 +518,7 @@ async function inspect(mode: ModeKey): Promise<void> {
 .plate-apparatus-heading > .map-section-number {
   margin-right: 0;
   color: var(--red);
-  font-size: 13px;
+  font: var(--text-caption);
   letter-spacing: .08em;
   vertical-align: baseline;
 }
@@ -569,7 +569,7 @@ async function inspect(mode: ModeKey): Promise<void> {
 .border-legend {
   gap: 6px 12px;
   margin: 0;
-  font-size: var(--type-figure-tick-size);
+  font: var(--text-caption);
 }
 
 .border-legend--a { margin-top: var(--space-3); }
@@ -651,7 +651,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   border-left: 1px solid currentColor;
 }
 
-.shared-scale small { font-size: var(--type-figure-tick-size); font-weight: 600; letter-spacing: .04em; }
+.shared-scale small { font: var(--text-caption); font-weight: 600; letter-spacing: normal; }
 
 .plate-switcher {
   position: fixed;

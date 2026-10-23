@@ -47,6 +47,13 @@ function relativeWidth(value: number | null): string {
 function rowAriaLabel(row: CahierNetworkBarRow): string {
   return row.ariaLabel ?? `${row.label} : ${row.value} ${props.unit}`
 }
+
+function labelColor(row: CahierNetworkBarRow): string {
+  if (row.tone === 't') return 'var(--color-figure-mode-foot)'
+  if (row.tone === 'b') return 'var(--color-figure-mode-bike)'
+  if (row.tone === 'c') return 'var(--color-figure-mode-car)'
+  return row.color
+}
 </script>
 
 <template>
@@ -79,16 +86,12 @@ function rowAriaLabel(row: CahierNetworkBarRow): string {
         @mouseleave="emit('deactivate')"
         @blur="emit('deactivate')"
       >
-        <span class="cahier-network-bar-row__label" :style="{ color: row.color }">
+        <span class="cahier-network-bar-row__label" :style="{ color: labelColor(row) }">
           <component :is="row.icon" v-if="row.icon" :size="16" aria-hidden="true" />
           <span>
             <span class="cahier-network-bar-row__label-main">{{ row.label }}</span>
             <span v-if="row.segments?.length" class="cahier-network-bar-row__segments">
-              <span
-                v-for="segment in row.segments"
-                :key="segment.key"
-                :style="{ color: segment.color }"
-              >{{ segment.label }}</span>
+              <span v-for="segment in row.segments" :key="segment.key">{{ segment.label }}</span>
             </span>
           </span>
         </span>
@@ -166,7 +169,7 @@ function rowAriaLabel(row: CahierNetworkBarRow): string {
   display: inline-flex;
   align-items: center;
   gap: 5px;
-  color: var(--cahier-region-emphasis);
+  color: var(--color-figure-reference);
   font-size: var(--type-figure-tick-size);
   letter-spacing: normal;
   white-space: nowrap;
@@ -253,7 +256,7 @@ function rowAriaLabel(row: CahierNetworkBarRow): string {
 
 .cahier-network-bar-row__scalar :deep(.cahier-figure-scalar-value) {
   justify-content: flex-end;
-  font-size: 14px;
+  font: var(--type-figure-value);
   white-space: nowrap;
 }
 

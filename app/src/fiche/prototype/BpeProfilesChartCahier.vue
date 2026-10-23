@@ -34,6 +34,7 @@ import CahierFigureLegendMark from './CahierFigureLegendMark.vue'
 import CahierFigureScalar from './CahierFigureScalar.vue'
 import CahierFigureTooltip from './CahierFigureTooltip.vue'
 import CahierComparisonValue from './CahierComparisonValue.vue'
+import { useMeasuredCahierFigureGeometry } from './useMeasuredCahierFigureGeometry'
 
 const props = defineProps<{
   profiles: readonly BpeAccessProfileFact[]
@@ -50,8 +51,8 @@ const marge = {
   haut: CAHIER_FIGURE_GEOMETRY.margin.top,
   droite: CAHIER_FIGURE_GEOMETRY.margin.right,
   bas: CAHIER_FIGURE_GEOMETRY.margin.bottom,
-  gauche: CAHIER_FIGURE_GEOMETRY.margin.left,
 }
+const plotElement = ref<HTMLElement | null>(null)
 const axeBas = hauteur - marge.bas
 const axeDroite = largeur - marge.droite
 const largeurBarre = 22
@@ -181,9 +182,15 @@ const graduationsAxesY = computed<readonly CahierFigureAxisTick[]>(() =>
   })),
 )
 
+const figureGeometry = useMeasuredCahierFigureGeometry(
+  plotElement,
+  computed(() => graduationsAxesY.value.map(({ label }) => label)),
+)
+const gauche = computed(() => figureGeometry.value.margin.left)
+
 function xPour(index: number): number {
   const nombreProfils = Math.max(props.profiles.length, 1)
-  return marge.gauche + ((index + 0.5) / nombreProfils) * (axeDroite - marge.gauche)
+  return gauche.value + ((index + 0.5) / nombreProfils) * (axeDroite - gauche.value)
 }
 
 function yPour(value: number): number {
@@ -298,10 +305,11 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
   <CahierFigureFrame
     class="bpe-profile-visual"
     size="standard"
+    :geometry="figureGeometry"
     y-title="Types d’équipements"
   >
     <template #plot>
-      <div class="bpe-profile-chart cahier-figure-plot" role="group" :aria-label="accessibleLabel()">
+      <div ref="plotElement" class="bpe-profile-chart cahier-figure-plot" role="group" :aria-label="accessibleLabel()">
         <svg
           class="bpe-profile-chart-svg"
           :viewBox="`0 0 ${largeur} ${hauteur}`"
@@ -309,7 +317,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
           role="img"
           :aria-label="accessibleLabel()"
         >
-          <CahierFigureAxes :x-ticks="graduationsAxesX" :y-ticks="graduationsAxesY" :show-labels="false" />
+          <CahierFigureAxes :geometry="figureGeometry" :x-ticks="graduationsAxesX" :y-ticks="graduationsAxesY" :show-labels="false" />
 
           <g v-for="(profile, index) in profiles" :key="profile.profile">
           <g
@@ -347,7 +355,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
           </g>
           </g>
         </svg>
-        <CahierFigureAxisLabels :x-ticks="graduationsAxesX" :y-ticks="graduationsAxesY" />
+        <CahierFigureAxisLabels :geometry="figureGeometry" :x-ticks="graduationsAxesX" :y-ticks="graduationsAxesY" />
       </div>
     </template>
 
@@ -522,8 +530,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
 .bpe-profile-donut-placeholder {
   align-self: center;
   color: var(--cahier-default);
-  font-family: var(--font-sans);
-  font-size: 11px;
+  font: var(--text-caption);
   font-style: italic;
   line-height: 1.2;
 }
@@ -541,8 +548,7 @@ const profilInfobulleAnchor = computed<CahierFigureTooltipAnchor | undefined>(()
 .bpe-profile-exemplar {
   max-width: 16ch;
   color: var(--cahier-default);
-  font-family: var(--font-sans);
-  font-size: 11px;
+  font: var(--text-caption);
   line-height: 1.2;
   overflow-wrap: anywhere;
 }

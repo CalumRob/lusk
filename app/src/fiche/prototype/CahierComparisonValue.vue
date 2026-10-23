@@ -85,7 +85,7 @@ function comparisonText(): string | null {
 }
 
 .cahier-comparison-value .region-emphasis {
-  color: var(--cahier-region-emphasis);
+  color: var(--color-figure-reference);
   font-weight: 700;
 }
 </style>

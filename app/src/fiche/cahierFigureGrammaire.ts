@@ -22,6 +22,31 @@ export const CAHIER_FIGURE_GEOMETRY = {
   margin: { top: 38, right: 26, bottom: 58, left: 88 },
 } as const
 
+export const CAHIER_FIGURE_RAIL = {
+  titleLane: 16,
+  labelGap: 8,
+  minimumPlotWidth: 120,
+} as const
+
+/** Derive the shared SVG/HTML y-axis rail from the browser-measured label width. */
+export function deriveCahierFigureGeometry(
+  geometry: CahierFigureGeometry,
+  renderedWidth: number,
+  longestLabelWidth: number,
+): CahierFigureGeometry {
+  if (!Number.isFinite(renderedWidth) || renderedWidth <= 0 || !Number.isFinite(longestLabelWidth)) return geometry
+
+  const requiredRenderedRail = CAHIER_FIGURE_RAIL.titleLane + Math.max(0, longestLabelWidth) + CAHIER_FIGURE_RAIL.labelGap
+  const requiredUserRail = requiredRenderedRail * (geometry.width / renderedWidth)
+  const maximumRail = geometry.width - geometry.margin.right - CAHIER_FIGURE_RAIL.minimumPlotWidth
+  const left = Math.max(geometry.margin.left, Math.min(maximumRail, requiredUserRail))
+
+  return {
+    ...geometry,
+    margin: { ...geometry.margin, left },
+  }
+}
+
 /** Summary plots reserve a wider left rail for readable group labels. */
 export const CAHIER_SUMMARY_PLOT_FRAME = {
   width: CAHIER_FIGURE_GEOMETRY.width,
@@ -40,27 +65,31 @@ export const CAHIER_FIGURE_GRID = {
   bottom: percent(CAHIER_FIGURE_GEOMETRY.margin.bottom, CAHIER_FIGURE_GEOMETRY.height),
 } as const
 
+/** Build all frame CSS variables from the same geometry consumed by SVG marks. */
+export function cahierFigureStyle(geometry: CahierFigureGeometry): Record<string, string> {
+  const { width, height, margin } = geometry
+  return {
+    '--cahier-figure-width': `${width}px`,
+    '--cahier-figure-height': `${height}px`,
+    '--cahier-figure-aspect-ratio': `${width} / ${height}`,
+    '--cahier-figure-grid-left': percent(margin.left, width),
+    '--cahier-figure-grid-right': percent(margin.right, width),
+    '--cahier-figure-grid-top': percent(margin.top, height),
+    '--cahier-figure-grid-bottom': percent(margin.bottom, height),
+    '--cahier-figure-axis-title-x-left': percent(
+      margin.left + (width - margin.left - margin.right) / 2,
+      width,
+    ),
+    '--cahier-figure-axis-title-y-left': percent(0, width),
+    '--cahier-figure-axis-title-y-top': percent(
+      (margin.top + height - margin.bottom) / 2,
+      height,
+    ),
+  }
+}
+
 /** Variables CSS du cadre — les adaptateurs n'ont pas à recopier le viewBox. */
-export const CAHIER_FIGURE_STYLE = {
-  '--cahier-figure-width': `${CAHIER_FIGURE_GEOMETRY.width}px`,
-  '--cahier-figure-height': `${CAHIER_FIGURE_GEOMETRY.height}px`,
-  '--cahier-figure-aspect-ratio': `${CAHIER_FIGURE_GEOMETRY.width} / ${CAHIER_FIGURE_GEOMETRY.height}`,
-  '--cahier-figure-grid-left': CAHIER_FIGURE_GRID.left,
-  '--cahier-figure-grid-right': CAHIER_FIGURE_GRID.right,
-  '--cahier-figure-grid-top': CAHIER_FIGURE_GRID.top,
-  '--cahier-figure-grid-bottom': CAHIER_FIGURE_GRID.bottom,
-  '--cahier-figure-axis-title-x-left': percent(
-    (CAHIER_FIGURE_GEOMETRY.margin.left +
-      (CAHIER_FIGURE_GEOMETRY.width - CAHIER_FIGURE_GEOMETRY.margin.left - CAHIER_FIGURE_GEOMETRY.margin.right) / 2),
-    CAHIER_FIGURE_GEOMETRY.width,
-  ),
-  '--cahier-figure-axis-title-y-left': percent(0, CAHIER_FIGURE_GEOMETRY.width),
-  '--cahier-figure-axis-title-y-top': percent(
-    (CAHIER_FIGURE_GEOMETRY.margin.top +
-      CAHIER_FIGURE_GEOMETRY.height - CAHIER_FIGURE_GEOMETRY.margin.bottom) / 2,
-    CAHIER_FIGURE_GEOMETRY.height,
-  ),
-} as const
+export const CAHIER_FIGURE_STYLE = cahierFigureStyle(CAHIER_FIGURE_GEOMETRY)
 
 /** Shared map-panel geometry used by the map breakout and blank map slots. */
 export const CAHIER_MAP_LAYOUT_STYLE = {

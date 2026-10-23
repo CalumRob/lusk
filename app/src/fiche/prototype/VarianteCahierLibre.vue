@@ -1498,8 +1498,8 @@ onBeforeUnmount(() => {
 .summary-loss-metrics { margin-top: var(--space-3); }
 .summary-metrics { display: grid; gap: 42px; }
 .summary-metric { min-width: 0; }
-.summary-metric-title { margin: 0; color: var(--ink); font-family: var(--font-figure-label); font-size: 20px; font-weight: 500; line-height: 1.15; }
-.summary-metric-title span { color: var(--cahier-default); font-family: var(--font-ui); font-size: 11px; font-weight: 500; white-space: nowrap; }
+.summary-metric-title { margin: 0; color: var(--brand-700); font: var(--type-figure-title); }
+.summary-metric-title span { color: var(--cahier-default); font: var(--text-caption); white-space: nowrap; }
 .summary-stack { position: relative; height: 14px; margin: 24px 0 20px; background: var(--paper-deep); }
 .summary-stack-segment { position: absolute; top: 0; height: 100%; }
 .summary-stack-segment--t { background: var(--cahier-mode-foot); }
@@ -1513,30 +1513,30 @@ onBeforeUnmount(() => {
 .summary-value { display: grid; grid-template-columns: minmax(140px, .8fr) minmax(0, 1.2fr); gap: 14px; align-items: start; padding-top: 12px; border-top: 1px solid var(--fine-rule); }
 .summary-value dt { display: flex; align-items: center; gap: 7px; color: var(--cahier-default); font: var(--type-figure-mode); line-height: 1.25; }
 .summary-value dd { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 2px 10px; align-items: baseline; margin: 0; }
-.summary-value dd strong { font: var(--type-figure-value); font-size: 18px; font-variant-numeric: tabular-nums; }
-.summary-value dd small { color: var(--cahier-default); font-size: 11px; }
+.summary-value dd strong { font: var(--type-figure-value); font-variant-numeric: tabular-nums; }
+.summary-value dd small { color: var(--cahier-default); font: var(--text-caption); }
 .summary-value dd .cahier-comparison-value { grid-column: 1 / -1; text-align: left; }
 .cahier--sans-grille .summary-value dd .cahier-comparison-value { text-align: center; }
  .cahier--sans-grille .summary-metric > .summary-loss { margin-top: var(--space-4); padding-top: var(--space-3); }
 .summary-loss { min-width: 0; }
-.summary-loss-title { display: block; color: var(--cahier-default); text-align: center; }
+.summary-loss-title { display: block; color: var(--cahier-default); font: var(--text-caption); text-align: center; }
 .summary-loss-readings { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin-top: 8px; }
-.summary-value--t dt, .summary-value--t dd strong { color: var(--cahier-mode-foot); }
-.summary-value--b dt, .summary-value--b dd strong { color: var(--cahier-mode-bike); }
-.summary-value--c dt, .summary-value--c dd strong { color: var(--cahier-mode-car); }
+.summary-value--t dt, .summary-value--t dd strong { color: var(--color-figure-mode-foot); }
+.summary-value--b dt, .summary-value--b dd strong { color: var(--color-figure-mode-bike); }
+.summary-value--c dt, .summary-value--c dd strong { color: var(--color-figure-mode-car); }
 .mode-figures { display: grid; gap: 0; margin: 16px 0 0; }
 .mode-figures-heading { display: grid; grid-template-columns: minmax(0, 1fr) var(--mode-scalar-width); gap: 12px; color: var(--cahier-default); text-align: center; }
 .mode-figure { padding: 14px 0 34px; }
 .mode-figure-scalar { width: 100%; }
 
-.regional-reading { font: var(--type-figure-mode); font-size: 11px; line-height: 1.25; }
+.regional-reading { font: var(--text-caption); line-height: 1.25; }
 
 .access-figure-collection { margin: 0; padding: 12px 0 0; }
 .cahier--sans-grille .access-figure-collection { width: min(100%, var(--cahier-figure-width-standard, 760px)); margin-inline: auto; }
 .access-figures { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 28px 18px; align-items: start; }
 .access-figure { position: relative; display: grid; min-width: 0; gap: 8px; justify-items: center; margin: 0; }
 .access-service-label { min-height: 1.4em; color: var(--cahier-default); font: var(--type-figure-mode); line-height: 1.4; text-align: center; }
-.access-legend { display: grid; gap: 7px; justify-items: center; margin-top: var(--space-5); color: var(--cahier-default); text-align: center; }
+.access-legend { display: grid; gap: 7px; justify-items: center; margin-top: var(--space-5); color: var(--cahier-default); font: var(--text-caption); text-align: center; }
 .access-legend p { margin: 0 0 3px; }
 
 .bpe-evidence { min-width: 0; }

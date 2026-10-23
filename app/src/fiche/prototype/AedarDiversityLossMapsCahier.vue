@@ -167,15 +167,15 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
 .aedar-diversity-loss__comparisons { display: grid; grid-column: 1 / -1; gap: clamp(var(--space-5), 4vw, var(--space-8)); }
 .aedar-diversity-loss__comparison-row { display: grid; grid-template-columns: var(--aedar-loss-columns); gap: clamp(var(--space-3), 2vw, var(--space-6)); align-items: center; }
 .aedar-diversity-loss-map { width: min(100%, 360px); justify-self: center; }
-.aedar-diversity-loss-map-label { display: flex; min-height: 28px; justify-content: center; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--mode-ring); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); text-transform: uppercase; }
+.aedar-diversity-loss-map-label { display: flex; min-height: 28px; justify-content: center; align-items: center; gap: 6px; margin: 0 0 6px; color: var(--color-figure-map-label); font: var(--text-overline); letter-spacing: var(--text-overline-tracking); text-transform: uppercase; }
 .map-panel--foot { --mode-ring: var(--cahier-mode-foot); }
 .map-panel--bike { --mode-ring: var(--cahier-mode-bike); }
-.aedar-diversity-loss-map__unavailable { position: relative; display: grid; width: 100%; aspect-ratio: 1; place-content: center; justify-items: center; gap: 8px; overflow: hidden; border: var(--cahier-map-circle-border) solid var(--mode-ring); border-radius: 50%; background: color-mix(in srgb, var(--cahier-theme) 8%, var(--paper)); color: var(--muted); font: 600 12px/1.4 var(--font-sans); text-align: center; }
-.aedar-diversity-loss-map__number { position: absolute; top: 9px; left: 11px; color: var(--mode-ring); font-size: var(--type-figure-tick-size); font-variant-numeric: tabular-nums; }
-.aedar-diversity-loss-map__territory { font-size: 11px; font-weight: 500; }
+.aedar-diversity-loss-map__unavailable { position: relative; display: grid; width: 100%; aspect-ratio: 1; place-content: center; justify-items: center; gap: 8px; overflow: hidden; border: var(--cahier-map-circle-border) solid var(--mode-ring); border-radius: 50%; background: color-mix(in srgb, var(--cahier-theme) 8%, var(--paper)); color: var(--muted); font: var(--text-caption); font-weight: 600; text-align: center; }
+.aedar-diversity-loss-map__number { position: absolute; top: 9px; left: 11px; padding: 2px 4px; border-radius: var(--radius-sm); background: var(--editorial-paper); color: var(--color-figure-map-label); font: var(--text-caption); font-variant-numeric: tabular-nums; }
+.aedar-diversity-loss-map__territory { font: var(--text-caption); font-weight: 500; }
 .aedar-diversity-loss__comparison-copy { max-width: 34ch; margin: 0; color: var(--muted); font: var(--text-body-sm); line-height: 1.55; text-align: justify; }
 .aedar-diversity-loss__legend { grid-column: 1 / 3; width: min(100%, 520px); justify-self: center; }
-.aedar-diversity-loss__status-note { grid-column: 1 / -1; margin: 0; color: var(--muted); font: 500 12px/1.5 var(--font-sans); text-align: center; }
+.aedar-diversity-loss__status-note { grid-column: 1 / -1; margin: 0; color: var(--muted); font: var(--text-caption); text-align: center; }
 @container (max-width: 760px) {
   .aedar-diversity-loss__layout { --aedar-loss-columns: repeat(2, minmax(0, 1fr)); }
   .aedar-diversity-loss > .cahier-figure-title { width: 100%; }

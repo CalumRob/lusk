@@ -67,10 +67,10 @@ defineProps<{
 }
 .cahier-prose__link-icon { margin-inline-start: 0.16em; vertical-align: -0.12em; }
 .cahier-prose strong.theme-emphasis { color: var(--cahier-theme-emphasis); font-weight: 700; }
-.cahier-prose strong.region-emphasis { color: var(--cahier-region-emphasis); font-weight: 700; }
-.cahier-prose strong.car-emphasis { color: var(--cahier-mode-car); font-weight: 700; }
-.cahier-prose strong.bike-emphasis { color: var(--cahier-mode-bike); font-weight: 700; }
-.cahier-prose strong.foot-emphasis { color: var(--cahier-mode-foot); font-weight: 700; }
+.cahier-prose strong.region-emphasis { color: var(--color-figure-reference); font-weight: 700; }
+.cahier-prose strong.car-emphasis { color: var(--color-figure-mode-car); font-weight: 700; }
+.cahier-prose strong.bike-emphasis { color: var(--color-figure-mode-bike); font-weight: 700; }
+.cahier-prose strong.foot-emphasis { color: var(--color-figure-mode-foot); font-weight: 700; }
 .cahier-prose strong.neutral-emphasis { color: var(--cahier-default, var(--muted, #62706c)); font-family: var(--font-body); font-weight: 700; }
 .cahier-prose strong.default-emphasis { font-weight: 700; }
 </style>

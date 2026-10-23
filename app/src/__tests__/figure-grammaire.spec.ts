@@ -10,6 +10,8 @@ import {
   CAHIER_FIGURE_AXIS,
   CAHIER_FIGURE_GEOMETRY,
   CAHIER_FIGURE_GRID,
+  CAHIER_SUMMARY_PLOT_FRAME,
+  deriveCahierFigureGeometry,
 } from '../fiche/cahierFigureGrammaire'
 
 /**
@@ -61,6 +63,27 @@ describe('figureGrammaire — le socle géométrique du Cahier', () => {
 
   it('garde les axes et les graduations sur la même mesure', () => {
     expect(CAHIER_FIGURE_AXIS).toEqual({ width: 1, tickLength: 7, xLabelOffset: 22, yLabelOffset: 0, yLabelBaseline: 4 })
+  })
+
+  it.each([320, 360, 390])('réserve le rail des graduations mesurées à %ipx sans atteindre le titre vertical', (renderedWidth) => {
+    const longestLabelWidth = 52
+    const titleLane = 16
+    const gap = 8
+    const geometry = deriveCahierFigureGeometry(CAHIER_FIGURE_GEOMETRY, renderedWidth, longestLabelWidth)
+    const renderedRailWidth = geometry.margin.left * renderedWidth / geometry.width
+
+    expect(renderedRailWidth).toBeGreaterThanOrEqual(titleLane + longestLabelWidth + gap)
+    expect(geometry.margin.left).toBeGreaterThan(CAHIER_FIGURE_GEOMETRY.margin.left)
+    expect(geometry.width - geometry.margin.right - geometry.margin.left).toBeGreaterThanOrEqual(120)
+  })
+
+  it('préserve le rail large des figures de synthèse', () => {
+    const summaryGeometry = {
+      ...CAHIER_FIGURE_GEOMETRY,
+      margin: CAHIER_SUMMARY_PLOT_FRAME.margin,
+    }
+
+    expect(deriveCahierFigureGeometry(summaryGeometry, 320, 52).margin.left).toBe(220)
   })
 })
 

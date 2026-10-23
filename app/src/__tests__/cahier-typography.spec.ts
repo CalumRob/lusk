@@ -30,6 +30,18 @@ const comparisonNoteSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierComparisonNote.vue'),
   'utf8',
 )
+const mapPanelSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierMapPanel.vue'),
+  'utf8',
+)
+const blankMapSlotsSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierBlankMapSlots.vue'),
+  'utf8',
+)
+const diversityMapSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'AedarDiversityLossMapsCahier.vue'),
+  'utf8',
+)
 const tokensSource = readFileSync(
   join(process.cwd(), 'src', 'styles', 'tokens.css'),
   'utf8',
@@ -66,6 +78,26 @@ describe('Cahier typography roles', () => {
     expect(tokensSource).toContain('--type-figure-tick-size: var(--text-cahier-min-size)')
     expect(cssRule(figureCss, '.cahier-figure-frame')).toContain(
       '--cahier-figure-tick-label-size: var(--type-figure-tick-size)',
+    )
+  })
+
+  it('routes map labels, numbers, legends, and tooltips through shared text and contrast tokens', () => {
+    expect(cssRule(figureCss, '.cahier-figure-legend')).toContain('font: var(--text-caption)')
+    expect(cssRule(figureCss, '.cahier-figure-tooltip')).toContain('font: var(--text-caption)')
+    expect(mapPanelSource).toContain('color: var(--color-figure-map-label)')
+    expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('font: var(--text-caption)')
+    expect(blankMapSlotsSource).toMatch(/\.map-panel-label\s*\{[^}]*font:\s*var\(--text-overline\)/u)
+    expect(blankMapSlotsSource).toMatch(/\.blank-map-slot__number\s*\{[^}]*font:\s*var\(--text-caption\)/u)
+    expect(diversityMapSource).toContain('color: var(--color-figure-map-label)')
+    expect(tokensSource).toContain('--color-figure-map-label: color-mix(in srgb, var(--brand-500) 45%, var(--editorial-ink))')
+    expect(cssRule(figureCss, '.map-panel')).toContain(
+      'var(--figure-map-accent, var(--mode-ring, var(--brand-500))) 45%',
+    )
+    expect(tokensSource).toContain('--color-figure-reference: color-mix(in srgb, var(--brand-500) 30%, var(--editorial-ink))')
+    expect(tokensSource).toContain('--color-figure-series-label: color-mix(in srgb, var(--brand-500) 45%, var(--editorial-ink))')
+    expect(cssRule(figureCss, '.cahier')).toContain('var(--cahier-region-emphasis, var(--brand-500)) 30%')
+    expect(cssRule(figureCss, '.cahier-figure-scalar--colored')).toContain(
+      'var(--cahier-figure-scalar-color, var(--brand-500)) 45%',
     )
   })
 
