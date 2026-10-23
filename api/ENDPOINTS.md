@@ -42,6 +42,21 @@ same `facts` grammar and a declared `groupe` coordinate. Ranked economy activiti
 Milieux source absences, and Milieux source bindings are exposed as separate named
 evidence fields, with publication/reference compatibility checked before reads.
 
+`territory_cohort` is a facts-only target for bounded producer-declared populations;
+it does not add comparison or arbitrary query semantics. The target `type` must be
+declared by the resource. Optional `department_id` and `epci_id` filters are accepted
+only for `commune` cohorts and intersect against the published `territory_reference`.
+The response carries a shared `cohort` envelope (ordered member identities, count,
+filters, and reference version) plus the resource's native fact family: scalar
+`observations`, profile `profiles`, ordered-series `series`, sparse collection
+`territories`, or typed-reading `territories` with selected evidence. AEDAR
+source-grain resources, named references, and comparison intents do not accept cohort
+targets. Sparse missing records are not converted into zero-valued facts. Member,
+selected-axis, and evidence/lineage work is preflighted before reads. The existing
+8 MB serialized-output cap is enforced after native response serialization; an
+oversized response returns 413, and an oversized batch returns no partial results on
+its single repeatable-read snapshot.
+
 Theme/family-specific facts, direct-profile, series-dataset, building-access,
 essential-services and legacy batch routes have been retired in favor of the
 semantic resource contract. `aedar_territorial_aggregate` is declared as a
@@ -80,7 +95,7 @@ These are the model fields reachable from request bodies, including nested and d
 | Model | Property | Required? | Schema |
 | --- | --- | --- | --- |
 | `ResourceReadItem` | `resource` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
-| `ResourceReadItem` | `target` | yes | one of TerritoryTarget / NamedReferenceTarget |
+| `ResourceReadItem` | `target` | yes | one of TerritoryTarget / TerritoryCohortTarget / NamedReferenceTarget |
 | `ResourceReadItem` | `coordinates` | no | object |
 | `ResourceReadItem` | `fields` | no | array of string; max items: `32` |
 | `ResourceReadItem` | `intent` | yes | one of FactsIntent / FixedComparisonIntent / SelectedComparisonIntent |
@@ -88,6 +103,10 @@ These are the model fields reachable from request bodies, including nested and d
 | `TerritoryTarget` | `kind` | yes | string; const: `territory` |
 | `TerritoryTarget` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
 | `TerritoryTarget` | `id` | yes | string; min chars: `1`; max chars: `32` |
+| `TerritoryCohortTarget` | `kind` | yes | string; const: `territory_cohort` |
+| `TerritoryCohortTarget` | `type` | yes | string; one of `commune`, `epci`, `departement`, `region` |
+| `TerritoryCohortTarget` | `department_id` | no | string; min chars: `1`; max chars: `32` |
+| `TerritoryCohortTarget` | `epci_id` | no | string; min chars: `1`; max chars: `32` |
 | `NamedReferenceTarget` | `kind` | yes | string; const: `named_reference` |
 | `NamedReferenceTarget` | `id` | yes | string; min chars: `1`; max chars: `128` |
 | `FactsIntent` | `kind` | yes | string; const: `facts` |
@@ -96,7 +115,7 @@ These are the model fields reachable from request bodies, including nested and d
 | `SelectedComparisonIntent` | `kind` | yes | string; const: `selected_comparison` |
 | `SelectedComparisonIntent` | `members` | yes | array of TerritoryMember; max items: `1500` |
 | `ResourceBatchItem` | `resource` | yes | string; pattern: `^[a-z][a-z0-9_]{0,95}$` |
-| `ResourceBatchItem` | `target` | yes | one of TerritoryTarget / NamedReferenceTarget |
+| `ResourceBatchItem` | `target` | yes | one of TerritoryTarget / TerritoryCohortTarget / NamedReferenceTarget |
 | `ResourceBatchItem` | `coordinates` | no | object |
 | `ResourceBatchItem` | `fields` | no | array of string; max items: `32` |
 | `ResourceBatchItem` | `intent` | yes | one of FactsIntent / FixedComparisonIntent / SelectedComparisonIntent |
@@ -151,7 +170,7 @@ Searches the retained published territory reference with bounded query inputs.
 ## Retired route families
 
 Theme/family-specific facts and comparisons, direct indicator/profile/series
-reads, owned-dataset reads, scalar cohorts, building-access, essential-services,
+reads, owned-dataset reads, legacy scalar-specific cohorts, building-access, essential-services,
 the legacy AEDAR GET compatibility routes, and the legacy `/api/read-batch`
 request grammar have been retired. Use the producer-derived catalogue and
 semantic single/batch read routes for retained resources. Legacy

@@ -5,7 +5,10 @@ from pathlib import Path
 import pytest
 from fastapi.testclient import TestClient
 
-from api.resource_catalogue import discover_indicator_resources
+from api.resource_catalogue import (default_resource_catalogue,
+                                    discover_indicator_resources,
+                                    validate_resource_item)
+from api.resource_requests import ResourceReadItem
 from api import main
 
 
@@ -103,6 +106,80 @@ def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():
     assert resources["subventions_annuelles"].shapes == ("ordered_series",)
     assert "fixed_comparison" in resources["subventions_par_domaine"].intents
     assert "selected_comparison" in resources["subventions_annuelles"].intents
+
+
+def test_cohort_capability_is_derived_from_supported_fact_families():
+    catalogue = default_resource_catalogue.__wrapped__()
+    resources = catalogue.resources_by_id
+
+    assert "territory_cohort" in resources["densite"].target_kinds
+    assert "territory_cohort" in resources["structure_age"].target_kinds
+    assert "territory_cohort" in resources["prix_m2"].target_kinds
+    assert "territory_cohort" in resources["subventions_par_domaine"].target_kinds
+    assert "territory_cohort" in resources["couverture_programmes"].target_kinds
+    assert "territory_cohort" in resources["economie_selected_reading"].target_kinds
+    assert "territory_cohort" not in resources["aedar_territorial_aggregate"].target_kinds
+    assert resources["raccordement_reference"].target_kinds == ("named_reference",)
+
+    aedar_cohort = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate",
+        "target": {"kind": "territory_cohort", "type": "commune"},
+        "intent": {"kind": "facts"},
+    })
+    with pytest.raises(ValueError, match="target kind is not declared"):
+        validate_resource_item(aedar_cohort, catalogue)
+
+    named_reference_cohort = ResourceReadItem.model_validate({
+        "resource": "raccordement_reference",
+        "target": {"kind": "territory_cohort", "type": "commune"},
+        "intent": {"kind": "facts"},
+    })
+    with pytest.raises(ValueError, match="target kind is not declared"):
+        validate_resource_item(named_reference_cohort, catalogue)
+
+    comparison_cohort = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory_cohort", "type": "commune"},
+        "intent": {"kind": "fixed_comparison", "context": "default"},
+    })
+    with pytest.raises(ValueError, match="facts-only"):
+        validate_resource_item(comparison_cohort, catalogue)
+
+
+def test_aedar_cohort_is_rejected_by_public_http_before_opening_a_connection(monkeypatch):
+    from contextlib import contextmanager
+    from types import SimpleNamespace
+
+    class NoConnectionPool:
+        @contextmanager
+        def connection(self):
+            raise AssertionError("invalid cohort target must fail before opening a connection")
+            yield
+
+    catalogue = default_resource_catalogue.__wrapped__()
+    previous_catalogue = main.app.dependency_overrides.get(main.get_resource_catalogue)
+    previous_repository = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_resource_catalogue] = lambda: catalogue
+    main.app.dependency_overrides[main.get_repository] = lambda: SimpleNamespace(
+        connections=NoConnectionPool())
+    try:
+        response = TestClient(main.app).post("/api/resources/read", json={
+            "resource": "aedar_territorial_aggregate",
+            "target": {"kind": "territory_cohort", "type": "commune"},
+            "intent": {"kind": "facts"},
+        })
+    finally:
+        if previous_catalogue is None:
+            main.app.dependency_overrides.pop(main.get_resource_catalogue, None)
+        else:
+            main.app.dependency_overrides[main.get_resource_catalogue] = previous_catalogue
+        if previous_repository is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous_repository
+
+    assert response.status_code == 422
+    assert "target kind is not declared" in response.json()["detail"]
 
 
 def test_discovery_fails_closed_on_unaccounted_producer_declaration(tmp_path):

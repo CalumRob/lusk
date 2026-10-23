@@ -193,3 +193,68 @@ def test_comparison_intents_are_closed_and_share_item_grammar():
                 {"type": "commune", "id": "22002"},
             ]},
         })
+
+
+def test_cohort_target_is_closed_and_facts_only():
+    catalogue = default_resource_catalogue()
+    item = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory_cohort", "type": "commune",
+                   "department_id": "29", "epci_id": "E29"},
+        "fields": ["value"],
+        "intent": {"kind": "facts"},
+    })
+    assert validate_resource_item(item, catalogue).resource_id == "densite"
+
+    with pytest.raises(ValidationError):
+        ResourceReadItem.model_validate({
+            "resource": "densite",
+            "target": {"kind": "territory_cohort", "type": "epci", "department_id": "29"},
+            "intent": {"kind": "facts"},
+        })
+    with pytest.raises(ValidationError):
+        ResourceReadItem.model_validate({
+            "resource": "densite",
+            "target": {"kind": "territory_cohort", "type": "commune", "ids": ["22001"]},
+            "intent": {"kind": "facts"},
+        })
+    for intent in (
+        {"kind": "fixed_comparison", "context": "default"},
+        {"kind": "selected_comparison", "members": []},
+    ):
+        request = ResourceReadItem.model_validate({
+            "resource": "densite",
+            "target": {"kind": "territory_cohort", "type": "commune"},
+            "intent": intent,
+        })
+        with pytest.raises(ValueError, match="facts-only"):
+            validate_resource_item(request, catalogue)
+
+
+def test_cohort_capabilities_follow_declared_native_shapes_not_a_scalar_allowlist():
+    catalogue = default_resource_catalogue()
+    for resource_id in (
+        "densite", "structure_age", "conso_enaf_annuel", "subventions_par_domaine",
+        "couverture_programmes", "demographie_selected_reading",
+    ):
+        resource = catalogue.resources_by_id[resource_id]
+        assert "territory_cohort" in resource.target_kinds
+        request = ResourceReadItem.model_validate({
+            "resource": resource_id,
+            "target": {"kind": "territory_cohort", "type": "commune"},
+            "intent": {"kind": "facts"},
+        })
+        assert validate_resource_item(request, catalogue) == resource
+
+    aedar = catalogue.resources_by_id["aedar_territorial_aggregate"]
+    assert "territory_cohort" not in aedar.target_kinds
+    aedar_cohort = ResourceReadItem.model_validate({
+        "resource": "aedar_territorial_aggregate",
+        "target": {"kind": "territory_cohort", "type": "commune"},
+        "intent": {"kind": "facts"},
+    })
+    with pytest.raises(ValueError, match="target kind is not declared"):
+        validate_resource_item(aedar_cohort, catalogue)
+
+    reference = catalogue.resources_by_id["raccordement_reference"]
+    assert "territory_cohort" not in reference.target_kinds
