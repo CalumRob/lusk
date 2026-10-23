@@ -43,6 +43,11 @@ const cahierEvidenceSourceStyles = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierEvidenceSource.css'),
   'utf-8',
 )
+const tokensStyles = readFileSync(join(process.cwd(), 'src', 'styles', 'tokens.css'), 'utf-8')
+const cartographicBreakoutStyles = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'CartographicBreakoutPrototype.vue'),
+  'utf-8',
+).match(/<style scoped>([\s\S]*?)<\/style>/)?.[1] ?? ''
 
 function regleCss(css: string, selector: string): string {
   const match = css.match(new RegExp(`${selector}\\s*\\{([\\s\\S]*?)\\}`))
@@ -933,6 +938,13 @@ describe('Variante E — partage de l’espace public', () => {
     expect(mobileStyles).toContain('padding-inline: var(--space-4);')
   })
 
+  it('uses the shared overline tracking for the cartographic plate orientation', () => {
+    const orientation = regleCss(cartographicBreakoutStyles, '\\.plate-orientation')
+
+    expect(orientation).toContain('letter-spacing: var(--text-overline-tracking);')
+    expect(orientation).not.toContain('letter-spacing: .06em;')
+  })
+
   it('flows plain Cahier marginalia below the page content through the mobile breakpoint', () => {
     const mobileStyles = blocCss(varianteCahierLibreStyles, '@media (max-width: 760px)')
 
@@ -945,6 +957,7 @@ describe('Variante E — partage de l’espace public', () => {
     )
     const pageHeading = regleCss(varianteCahierLibreStyles, '\\.page-heading h2')
     expect(pageHeading).toContain('font: var(--text-page-heading);')
+    expect(pageHeading).toContain('letter-spacing: var(--text-page-heading-tracking);')
     expect(pageHeading).not.toMatch(/font-(?:family|weight)\s*:|line-height\s*:/)
     const sectionHeading = regleCss(varianteCahierLibreStyles, '\\.concept-group-heading h3')
     expect(sectionHeading).toContain('font: var(--text-cahier-section);')
@@ -961,22 +974,15 @@ describe('Variante E — partage de l’espace public', () => {
     const evidenceSource = regleCss(cahierEvidenceSourceStyles, '\\.cahier-evidence-source')
     const marginSource = regleCss(varianteCahierLibreStyles, '\\.margin-sources a')
     for (const rule of [evidenceSource, marginSource]) {
-      expect(rule).toContain('font: 500 10px/1.4 var(--font-metadata);')
+      expect(rule).toContain('font: 500 var(--text-source-stamp-size)/1.4 var(--font-metadata);')
       expect(rule).toContain('letter-spacing: var(--text-caption-tracking);')
     }
-    expect(cahierEvidenceSourceStyles).toContain(
-      'Source stamp exception: 10px is a deliberate desktop editorial size; mobile uses the 11px legibility floor.',
+    expect(cahierEvidenceSourceStyles).not.toContain('@media (max-width: 760px)')
+    expect(varianteCahierLibreStyles).not.toContain('.margin-sources a { font-size: 11px; }')
+    expect(tokensStyles).toMatch(/--text-source-stamp-size:\s*0\.625rem;/u)
+    expect(tokensStyles).toMatch(
+      /@media\s*\(max-width:\s*760px\)\s*\{\s*:root\s*\{\s*--text-source-stamp-size:\s*0\.6875rem;\s*\}\s*\}/u,
     )
-    expect(varianteCahierLibreStyles).toContain(
-      'Source stamp exception: 10px is a deliberate desktop editorial size; mobile uses the 11px legibility floor.',
-    )
-    const mobileEvidenceSource = regleCss(
-      blocCss(cahierEvidenceSourceStyles, '@media (max-width: 760px)'),
-      '\\.cahier-evidence-source',
-    )
-    expect(mobileEvidenceSource).toContain('font-size: 11px;')
-    const sourceMobileStyles = blocCss(varianteCahierLibreStyles, '@media (max-width: 760px)')
-    expect(sourceMobileStyles).toContain('.margin-sources a { font-size: 11px; }')
     expect(regleCss(varianteCahierLibreStyles, '\\.page-number span, \\.page-number small')).toContain(
       'font: var(--text-overline);',
     )
@@ -985,6 +991,12 @@ describe('Variante E — partage de l’espace public', () => {
     expect(pageNumberSpan).not.toMatch(/font-weight\s*:|letter-spacing\s*:/)
     expect(varianteCahierLibreStyles).not.toMatch(/\.concept-group-label\s*\{\s*font-family\s*:/)
     const mobileStyles = blocCss(varianteCahierLibreStyles, '@media (max-width: 600px)')
+    const pageHeadingContext = regleCss(
+      mobileStyles,
+      '\\.cahier--indexed-sections \\.page-heading-context',
+    )
+    expect(pageHeadingContext).toContain('font-size: var(--text-cahier-min-size);')
+    expect(pageHeadingContext).not.toContain('--type-figure-tick-size')
     expect(mobileStyles).not.toMatch(/^\s*\.page-heading h2\s*\{/m)
     expect(mobileStyles).toContain('.cahier--indexed-sections .page-heading h2')
   })

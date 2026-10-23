@@ -610,7 +610,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   align-items: center;
   color: var(--cahier-theme-strong);
   font: var(--text-overline);
-  letter-spacing: .06em;
+  letter-spacing: var(--text-overline-tracking);
   text-transform: uppercase;
 }
 

@@ -14,6 +14,10 @@ const varianteCahierLibreSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'VarianteCahierLibre.vue'),
   'utf8',
 )
+const cahierEvidenceSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierEvidenceSource.css'),
+  'utf8',
+)
 const lectureSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'CahierFigureLecture.vue'),
   'utf8',
@@ -58,7 +62,8 @@ describe('Cahier typography roles', () => {
     )
     expect(cssRule(layoutCss, '.cahier-figure-title')).toContain('color: var(--brand-700)')
     expect(tokensSource).toContain('--type-figure-title: 600 0.9375rem/1.25 var(--font-figure-title)')
-    expect(tokensSource).toContain('--type-figure-tick-size: 0.6875rem')
+    expect(tokensSource).toContain('--text-cahier-min-size: 0.6875rem')
+    expect(tokensSource).toContain('--type-figure-tick-size: var(--text-cahier-min-size)')
     expect(cssRule(figureCss, '.cahier-figure-frame')).toContain(
       '--cahier-figure-tick-label-size: var(--type-figure-tick-size)',
     )
@@ -67,30 +72,12 @@ describe('Cahier typography roles', () => {
   it('keeps Cahier text at or above 11px except for deliberate desktop editorial source stamps', () => {
     const undersized: string[] = []
     const sources = cahierStyleFiles(join(process.cwd(), 'src', 'fiche', 'prototype'))
-    // Only these two source-stamp base rules may use a deliberate 10px desktop editorial size.
-    const desktopEditorialSizeAllowlist = [
-      { file: 'cahierEvidenceSource.css', selector: '.cahier-evidence-source' },
-      { file: 'VarianteCahierLibre.vue', selector: '.margin-sources a' },
-    ]
+    const sourceStampDecision =
+      'Owner decision: source stamps are a deliberate quiet editorial size on desktop, below --text-caption, and rise to the 11px legibility floor on phones.'
+    const sourceStampRole = '--text-source-stamp-size: 0.625rem;'
 
     for (const path of sources) {
-      let source = readFileSync(path, 'utf8')
-      const exception = desktopEditorialSizeAllowlist.find(({ file }) => path.endsWith(file))
-      if (exception) {
-        const ruleStart = source.indexOf(`${exception.selector} {`)
-        const ruleEnd = source.indexOf('}', ruleStart)
-        if (ruleStart < 0 || ruleEnd < 0) {
-          throw new Error(`Expected desktop editorial source rule: ${exception.selector}`)
-        }
-        const rule = source.slice(ruleStart, ruleEnd + 1)
-        expect(rule).toContain('font: 500 10px/1.4 var(--font-metadata);')
-        expect(source).toContain('deliberate desktop editorial size')
-        const desktopSourceRuleForFloorScan = rule.replace(
-          'font: 500 10px/1.4 var(--font-metadata);',
-          'font: 500 11px/1.4 var(--font-metadata);',
-        )
-        source = source.slice(0, ruleStart) + desktopSourceRuleForFloorScan + source.slice(ruleEnd + 1)
-      }
+      const source = readFileSync(path, 'utf8')
       for (const declaration of source.matchAll(/\bfont(?:-size)?\s*:\s*([^;]+);/gu)) {
         const directSizes = declaration[1].replace(/calc\([^()]*\)/gu, '')
         for (const size of directSizes.matchAll(/([\d.]+)(px|rem)(?=\s|\/|,|\)|$)/gu)) {
@@ -100,6 +87,22 @@ describe('Cahier typography roles', () => {
       }
     }
 
+    expect(tokensSource).toContain(sourceStampRole)
+    expect(tokensSource).toContain(sourceStampDecision)
+    expect(tokensSource).toMatch(
+      /\/\* Owner decision: source stamps are a deliberate quiet editorial size on desktop, below --text-caption, and rise to the 11px legibility floor on phones\. \*\/\s*--text-source-stamp-size:\s*0\.625rem;/u,
+    )
+    expect(tokensSource).toContain(
+      'The 11px phone floor is applied to this size role in this single location.',
+    )
+    expect(tokensSource).toMatch(
+      /@media\s*\(max-width:\s*760px\)\s*\{\s*:root\s*\{\s*--text-source-stamp-size:\s*0\.6875rem;\s*\}\s*\}/u,
+    )
+    expect(tokensSource.match(new RegExp(sourceStampDecision, 'gu'))).toHaveLength(1)
+    expect(cahierEvidenceSource).toContain('font: 500 var(--text-source-stamp-size)/1.4 var(--font-metadata);')
+    expect(varianteCahierLibreSource).toContain('font: 500 var(--text-source-stamp-size)/1.4 var(--font-metadata);')
+    expect(cahierEvidenceSource).not.toContain('Source stamps are a deliberate quiet editorial size')
+    expect(varianteCahierLibreSource).not.toContain('Source stamps are a deliberate quiet editorial size')
     expect(undersized).toEqual([])
   })
 
