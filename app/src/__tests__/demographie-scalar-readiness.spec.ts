@@ -59,53 +59,64 @@ describe('Démographie scalar readiness on the territory fiche', () => {
     const sourceMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
       '../pipeline/inst/extdata/theme-metadata/theme_demographie.json'), 'utf8'))
     const staticRows = model.themes.demographie.indicateurs
+    const cohortTerritories = readData('territoires.json')
+    // The raw producer metadata may omit `family`; family is reconciled from
+    // producer subgroup declarations when the app validates the catalogue.
+    // `scalar_contracts` is the authoritative registration for this read.
+    const scalarIds: string[] = Array.isArray(catalogue.scalar_contracts)
+      ? catalogue.scalar_contracts as string[]
+      : Object.keys(catalogue.scalar_contracts)
+    const resources = scalarIds.map((indicator) => {
+      const page = catalogue.indicator_pages[indicator]
+      const contract = catalogue.scalar_contracts[indicator]
+      return { resource_id: indicator, theme_id: 'demographie', indicator_id: indicator, label: page.label,
+        unit: page.unit, direction: page.comparison?.direction ?? page.direction,
+        allowed_levels: contract.allowed_levels ?? page.levels, sources: page.sources, shapes: ['scalar'],
+        target_kinds: ['territory', 'territory_cohort'], fields: ['value', 'support_count', 'denominator_count'],
+        intents: ['facts', 'fixed_comparison', 'selected_comparison'] }
+    })
     const requested: string[] = []
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.startsWith('/data/')) {
         const file = url.slice('/data/'.length)
         return new Response(JSON.stringify(readData(file)), { status: 200 })
       }
-      const match = url.match(/^\/api\/territories\/commune\/([^/]+)\/indicator-cohorts\/([^?]+)\?scope_level=commune$/)
-      if (!match) throw new Error(`Unexpected request ${url}`)
-      const [, focalId, indicator] = match
-      requested.push(indicator!)
-      const page = catalogue.indicator_pages[indicator!]
-      const staticRow = staticRows.find((row: any) => row.key === indicator && row.territoire === focalId)
-      if (!page || !staticRow) throw new Error(`Missing published fixture for ${indicator}`)
-      return new Response(JSON.stringify({
-        indicator_id: indicator,
-        territory_type: 'commune',
-        label: page.label,
-        unit: page.unit,
-        direction: page.direction,
-        comparison_facet: page.comparison?.indicator ?? indicator,
-        completeness: 'sparse',
-        content_version: 'test-published-scalar-version',
-        observations: [{
-          territory_id: focalId,
-          name: territory.nom,
-          value: staticRow.value,
-          status: 'measured',
-          support_count: null,
-          denominator_count: null,
-          rang_epci: null,
-          rang_epci_n: null,
-          rang_dep: null,
-          rang_dep_n: null,
-          rang_reg: null,
-          rang_reg_n: null,
-          sources: [{
-            source_id: page.sources[0],
-            name: staticRow.vintage_source,
-            vintage_id: `${staticRow.vintage_version}/${staticRow.vintage_date_reference}`,
-            version: staticRow.vintage_version,
-            reference_date: staticRow.vintage_date_reference,
-            publication_date: staticRow.vintage_date_publication,
-          }],
-        }],
-      }), { status: 200 })
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources/read-batch') {
+        const body = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
+        const results = body.items.map((item) => {
+          const indicator = String(item.resource)
+          const target = item.target as { type: string; department_id?: string | null; epci_id?: string | null }
+          const page = catalogue.indicator_pages[indicator]
+          const staticRow = staticRows.find((row: any) => row.key === indicator && row.territoire === territory.territoire)
+          if (!page || !staticRow) throw new Error(`Missing published fixture for ${indicator}`)
+          requested.push(indicator)
+          const members = cohortTerritories.filter((member: any) => member.type === target.type &&
+            (!target.department_id || member.departement === target.department_id) &&
+            (!target.epci_id || member.epci === target.epci_id))
+          const data = { resource: indicator, target, shape: 'scalar',
+            cohort: { territory_type: target.type, department_id: target.department_id ?? null,
+              epci_id: target.epci_id ?? null, member_count: members.length,
+              members: members.map((member: any) => ({ id: member.territoire, type: member.type, name: member.nom })),
+              reference_content_version: 'reference-test-v1' },
+            content_version: 'test-published-scalar-version', reference_content_version: 'reference-test-v1',
+            descriptor: { indicator_id: indicator, theme_id: 'demographie', label: page.label, unit: page.unit,
+              direction: page.comparison?.direction ?? page.direction, comparison_facet: page.comparison?.indicator ?? indicator,
+              allowed_levels: resources.find((resource: { resource_id: string; allowed_levels: string[] }) => resource.resource_id === indicator)!.allowed_levels,
+              denominator_semantics: 'Producer-declared denominator', completeness: 'sparse', descriptor_version: 'test-scalar-v1' },
+            observations: [{ territory: { id: territory.territoire, type: territory.type, name: territory.nom },
+              status: staticRow.value === null ? 'not_published' : 'measured', value: staticRow.value,
+              support_count: null, denominator_count: null, sources: [{ source_id: page.sources[0],
+                name: staticRow.vintage_source, vintage_id: `${staticRow.vintage_version}/${staticRow.vintage_date_reference}`,
+                version: staticRow.vintage_version, reference_date: staticRow.vintage_date_reference,
+                publication_date: staticRow.vintage_date_publication }] }] }
+          return { id: item.id, resource: indicator, data }
+        })
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }))
+      }
+      throw new Error(`Unexpected request ${url}`)
     }))
 
     const loadedModel = await chargerModeleTerritoire('commune', targetId)
@@ -130,7 +141,7 @@ describe('Démographie scalar readiness on the territory fiche', () => {
     await flushPromises()
 
     expect(model.themes.demographie.theme_metadata.indicator_pages.densite.unit).not.toBe(catalogue.indicator_pages.densite.unit)
-    expect(requested.sort()).toEqual(Object.keys(catalogue.scalar_contracts).sort())
+    expect(requested.sort()).toEqual(scalarIds.sort())
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Les indicateurs de ce thème ne sont pas disponibles.')
     const evolution = staticRows.find((row: any) => row.key === 'evolution_1968' && row.territoire === targetId)

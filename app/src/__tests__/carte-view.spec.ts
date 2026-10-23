@@ -218,18 +218,37 @@ describe('CarteView — la carte avec fond publié', () => {
   it('masque le scalaire statique tant que le cohort est indisponible puis récupère via le retry', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     const metadata = JSON.parse(await (await import('node:fs/promises')).readFile('../public/data/theme_demographie.json', 'utf8'))
+    const page = metadata.indicator_pages.densite
+    const resource = { resource_id: 'densite', theme_id: 'demographie', indicator_id: 'densite', label: 'Densité',
+      unit: page.unit, direction: page.direction, allowed_levels: metadata.scalar_contracts.densite.allowed_levels,
+      sources: page.sources, shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
+      fields: ['value', 'support_count', 'denominator_count'], intents: ['facts', 'fixed_comparison', 'selected_comparison'] }
     let apiCalls = 0
-    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
-      if (String(input).startsWith('/data/')) return { ok: true, json: async () => metadata } as Response
-      apiCalls += 1
-      if (apiCalls === 1) return { ok: false, status: 503 } as Response
-      return { ok: true, json: async () => ({
-        indicator_id: 'densite', territory_type: 'commune', label: 'Densité de population', unit: 'hab/km²',
-        direction: 'high', comparison_facet: 'densite', completeness: 'dense_complete', content_version: 'v1',
-        territory_reference_version: 't1', observations: [{ territory_id: '22001', name: 'Commune A1', value: 9876,
-          status: 'measured', rang_epci: 1, rang_epci_n: 1, rang_dep: 1, rang_dep_n: 1, rang_reg: 1, rang_reg_n: 1,
-          sources: [{ source_id: metadata.indicator_pages.densite.sources[0], name: 'Source', vintage_id: 'v1', version: '2026', reference_date: null, publication_date: null }] }],
-      }) } as Response
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata))
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [resource] }))
+      if (url === '/api/resources/read-batch') {
+        apiCalls += 1
+        if (apiCalls === 1) return new Response('', { status: 503 })
+        const item = JSON.parse(init?.body as string).items[0]
+        const members = territoiresFixture.filter((territory) => territory.type === 'commune')
+        const fact = territoiresFixture.find((territory) => territory.territoire === '22001')!
+        const data = { resource: 'densite', target: item.target, shape: 'scalar',
+          cohort: { territory_type: 'commune', department_id: null, epci_id: null, member_count: members.length,
+            members: members.map((territory) => ({ id: territory.territoire, type: territory.type, name: territory.nom })),
+            reference_content_version: 'reference-v1' },
+          content_version: 'scalar-v1', reference_content_version: 'reference-v1',
+          descriptor: { indicator_id: 'densite', theme_id: 'demographie', label: 'Densité de population', unit: page.unit,
+            direction: page.direction, comparison_facet: 'densite', allowed_levels: resource.allowed_levels,
+            denominator_semantics: 'Population totale publiée', completeness: 'sparse', descriptor_version: 'scalar-v1' },
+          observations: [{ territory: { id: fact.territoire, type: fact.type, name: fact.nom }, status: 'measured', value: 9876,
+            support_count: 41, denominator_count: 100,
+            sources: [{ source_id: page.sources[0], name: 'Source', vintage_id: 'v1', version: '2026',
+              reference_date: null, publication_date: null }] }] }
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: [{ id: item.id, resource: 'densite', data }] }))
+      }
+      throw new Error(`Unexpected request: ${url}`)
     }))
     const { wrapper } = await monter({ chemin: '/carte?theme=demographie' })
     await wrapper.findAll('button').find((button) => button.text().includes('Densité'))?.trigger('click')

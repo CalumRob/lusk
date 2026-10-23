@@ -50,6 +50,54 @@ const modelePublie22001 = JSON.parse(readFileSync(
   'utf8',
 )) as Record<string, any>
 
+function semanticScalarResources(theme: string, metadata: any) {
+  return Object.keys(metadata.scalar_contracts).map((indicator) => {
+    const page = metadata.indicator_pages[indicator]
+    const contract = metadata.scalar_contracts[indicator]
+    return { resource_id: indicator, theme_id: theme, indicator_id: indicator,
+      label: page.label, unit: page.unit, direction: page.comparison?.direction ?? page.direction,
+      allowed_levels: contract.allowed_levels ?? page.levels, sources: page.sources,
+      shapes: ['scalar'], target_kinds: ['territory_cohort'],
+      fields: ['value', 'support_count', 'denominator_count'],
+      intents: ['facts'] }
+  })
+}
+
+function semanticScalarBatch(theme: string, metadata: any, items: Array<Record<string, any>>,
+  focalId: string, valueFor: (indicator: string) => number) {
+  const territories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+  return { contract: 'semantic-read-batch-v1', results: items.map((item) => {
+    const indicator = item.resource as string
+    const target = item.target as { type: string; department_id?: string | null; epci_id?: string | null }
+    const contract = metadata.scalar_contracts[indicator]
+    const page = metadata.indicator_pages[indicator]
+    const members = territories.filter((member: any) => member.type === target.type &&
+      (!target.department_id || member.departement === target.department_id) &&
+      (!target.epci_id || member.epci === target.epci_id))
+    const observations = (contract.completeness === 'dense_complete'
+      ? members
+      : members.filter((member: any) => member.territoire === focalId)).map((member: any) => ({
+      territory: { id: member.territoire, type: member.type, name: member.nom },
+      status: 'measured', value: valueFor(indicator), support_count: null, denominator_count: null,
+      sources: [{ source_id: page.sources[0], name: 'Source API fiche',
+        vintage_id: `${page.sources[0]}-2026`, version: '2026', reference_date: null, publication_date: null }],
+    }))
+    const data = { resource: indicator, target, shape: 'scalar',
+      cohort: { territory_type: target.type, department_id: target.department_id ?? null,
+        epci_id: target.epci_id ?? null, member_count: members.length,
+        members: members.map((member: any) => ({ id: member.territoire, type: member.type, name: member.nom })),
+        reference_content_version: 'reference-test-v1' },
+      content_version: `${theme}-scalar-test-v1`, reference_content_version: 'reference-test-v1',
+      descriptor: { indicator_id: indicator, theme_id: theme, label: page.label, unit: page.unit,
+        direction: page.comparison?.direction ?? page.direction,
+        comparison_facet: contract.comparison_facet ?? page.comparison?.indicator ?? indicator,
+        allowed_levels: contract.allowed_levels ?? page.levels,
+        denominator_semantics: 'Producer-declared denominator', completeness: contract.completeness,
+        descriptor_version: `${theme}-scalar-descriptor-v1` }, observations }
+    return { id: item.id, resource: indicator, data }
+  }) }
+}
+
 function modeleAvecContextesComparaison() {
   const model = structuredClone(modelePublie22001)
   const validated = validerModeleTerritoire(
@@ -748,38 +796,23 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     // indicateur ne s'y déclenche jamais, qu'importe le drapeau.
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     const registered = Object.keys(metadata.scalar_contracts) as string[]
-    const referenceTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    const peer = referenceTerritories.find((territory: any) => territory.type === 'commune' &&
-      territory.epci === published.territory.epci && territory.territoire !== published.territory.territoire)
     expect(published.themes.demographie.theme_metadata.scalar_contracts).toBeUndefined()
     const pending: Array<() => void> = []
     const requestedIndicators: string[] = []
-    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+    const resources = semanticScalarResources('demographie', metadata)
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url === '/data/modeles-lecture/territoires/commune/22001.json') return new Response(JSON.stringify(published), { status: 200 })
-      if (url === '/data/territoires.json') return new Response(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'), { status: 200 })
-      if (url.startsWith('/data/theme_') && url.endsWith('.json')) {
-        const themeMetadata = url === '/data/theme_demographie.json' ? metadata : JSON.parse(readFileSync(
-          resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'))
-        return new Response(JSON.stringify(themeMetadata), { status: 200 })
+      if (url.startsWith('/data/')) {
+        return new Response(readFileSync(resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'), { status: 200 })
       }
-      if (url.startsWith('/api/territories/commune/22001/indicator-cohorts/')) {
-        const indicator = url.split('/').at(-1)!.split('?')[0]!
-        requestedIndicators.push(indicator)
-        const page = metadata.indicator_pages[indicator]
-        const response = new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune',
-          label: page.label, unit: page.unit, direction: page.direction,
-          comparison_facet: page.comparison?.indicator ?? indicator, completeness: 'sparse', content_version: 'fiche-v1',
-          observations: [{ territory_id: '22001', name: published.territory.nom, value: 987654321, status: 'measured',
-            rang_epci: 1, rang_epci_n: 38, rang_dep: 1, rang_dep_n: 50, rang_reg: 1, rang_reg_n: 100,
-            sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
-              reference_date: null, publication_date: null }] },
-          { territory_id: peer.territoire, name: peer.nom, value: 123, status: 'measured',
-            rang_epci: 2, rang_epci_n: 38, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
-            sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
-              reference_date: null, publication_date: null }] }] }), { status: 200 })
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
+        requestedIndicators.push(...request.items.map((item) => item.resource))
+        const response = new Response(JSON.stringify(semanticScalarBatch('demographie', metadata,
+          request.items, '22001', () => 987654321)), { status: 200 })
         return new Promise<Response>((resolve) => pending.push(() => resolve(response)))
       }
       throw new Error(`Unexpected request: ${url}`)
@@ -788,17 +821,19 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     vi.stubGlobal('fetch', fetchApi)
     const { wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci', chargerModeleTerritoire)
     expect(requestedIndicators).toEqual(registered)
-    expect(pending).toHaveLength(registered.length)
+    expect(pending).toHaveLength(1)
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('987 654 321')
     pending.forEach((resolve) => resolve())
     await flushPromises()
     const text = wrapper.get('[role="tabpanel"]').text()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/indicator-cohorts/'))).toHaveLength(registered.length)
+    const batchCalls = fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
+    expect(batchCalls).toHaveLength(1)
     expect(fetchApi).toHaveBeenCalledWith('/data/theme_demographie.json')
-    const cohortUrls = fetchApi.mock.calls.map(([url]) => new URL(String(url), 'http://localhost'))
-      .filter((url) => url.pathname.includes('/indicator-cohorts/'))
-    expect(cohortUrls.every((url) => url.searchParams.get('epci_id') === published.territory.epci &&
-      !url.searchParams.has('department_id'))).toBe(true)
+    const batchRequest = JSON.parse((batchCalls[0]![1] as RequestInit).body as string)
+    expect(batchRequest.items).toHaveLength(registered.length)
+    expect(batchRequest.items.every((item: any) => item.target.epci_id === published.territory.epci &&
+      item.target.department_id === null)).toBe(true)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     expect(text).toContain('987')
     expect(text).toContain('98 765 432')
@@ -811,22 +846,17 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_habitat.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/35238.json'), 'utf8'))
-    const page = metadata.indicator_pages.part_passoires
-    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+    const resources = semanticScalarResources('habitat', metadata)
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/data/theme_habitat.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url !== '/api/territories/commune/35238/indicator-cohorts/part_passoires?scope_level=commune') {
-        throw new Error(`Unexpected request: ${url}`)
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
+        return new Response(JSON.stringify(semanticScalarBatch('habitat', metadata,
+          request.items, '35238', (indicator) => indicator === 'part_passoires' ? 0.12 : 0.456)), { status: 200 })
       }
-      return new Response(JSON.stringify({ indicator_id: 'part_passoires', territory_type: 'commune',
-        label: page.label, unit: page.unit, direction: page.direction,
-        comparison_facet: page.comparison?.indicator ?? 'part_passoires', completeness: 'sparse',
-        content_version: 'habitat-fiche-v1', territory_reference_version: 'territories-v1',
-        observations: [{ territory_id: '35238', name: published.territory.nom, value: 0.123, status: 'measured',
-          rang_epci: 1, rang_epci_n: 43, rang_dep: 1, rang_dep_n: 333, rang_reg: 1, rang_reg_n: 1200,
-          sources: [{ source_id: page.sources[0], name: 'ADEME — Observatoire DPE, logements existants',
-            vintage_id: '2026-08-11/NA', version: '2026-08-11', reference_date: null,
-            publication_date: '2026-08-11' }] }] }), { status: 200 })
+      throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
@@ -837,9 +867,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     const { wrapper } = await monter('/territoire/commune/35238?theme=habitat', vi.fn(async () => model))
     await flushPromises()
-    const cohortUrls = fetchApi.mock.calls.map(([url]) => String(url)).filter((url) => url.includes('/indicator-cohorts/'))
-    expect(cohortUrls.some((url) => url.includes('/part_passoires'))).toBe(true)
-    expect(cohortUrls.some((url) => url.includes('/prix_m2'))).toBe(false)
+    const batchCalls = fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
+    expect(batchCalls).toHaveLength(1)
+    const batchRequest = JSON.parse((batchCalls[0]![1] as RequestInit).body as string)
+    expect(batchRequest.items.map((item: any) => item.resource)).toContain('part_passoires')
+    expect(batchRequest.items.map((item: any) => item.resource)).not.toContain('prix_m2')
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
     expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     const habitatText = wrapper.get('[role="tabpanel"]').text()
     expect(habitatText).toContain('12%Part de passoires thermiques')
@@ -1373,43 +1406,46 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     published.themes.demographie.theme_metadata.scalar_contracts = metadata.scalar_contracts
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
       { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
-    // La validation du cohort vise les pages MÉTADONNÉES DU MODÈLE (le loader
-    // du modèle embarqué ne recharge pas le catalogue ici) — la fixture
-    // construit donc la réponse depuis les pages du modèle, pas du catalogue
-    // (l'unité « densité » y diffère).
+    // La validation du cohort vise les pages MÉTADONNÉES DU MODÈLE — son unité
+    // densité diffère de celle du catalogue public de thème.
+    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     const modelPages = model.themes.demographie!.metadata.indicator_pages
+    const scalarMetadata = { scalar_contracts: model.themes.demographie!.metadata.scalar_contracts,
+      indicator_pages: modelPages }
+    const resources = semanticScalarResources('demographie', scalarMetadata)
     const oldResponses: Array<() => void> = []
     const newResponses: Array<() => void> = []
     const oldIndicators: string[] = []
     const newIndicators: string[] = []
-    const fetchApi = vi.fn((input: RequestInfo | URL) => {
-      const url = new URL(String(input), 'http://localhost')
-      const indicator = url.pathname.split('/').at(-1)!
-      const page = modelPages![indicator]!
-      const value = url.searchParams.has('epci_id') ? 111111111 : 222222222
-      const response = new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune',
-        label: page.label, unit: page.unit, direction: page.direction,
-        comparison_facet: page.comparison?.indicator ?? indicator, completeness: 'sparse',
-        content_version: url.searchParams.has('epci_id') ? 'epci-v1' : 'bretagne-v1',
-        territory_reference_version: 'territories-v1',
-        observations: [{ territory_id: '22001', name: published.territory.nom, value, status: 'measured',
-          rang_epci: 1, rang_epci_n: 38, rang_dep: 1, rang_dep_n: 50, rang_reg: 1, rang_reg_n: 100,
-          sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
-            reference_date: null, publication_date: null }] }] }), { status: 200 })
+    const fetchApi = vi.fn((input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return Promise.resolve(new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources,
+      })))
+      if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
+      const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
+      const old = Boolean(request.items[0]?.target.epci_id)
+      const indicators = request.items.map((item) => item.resource)
+      ;(old ? oldIndicators : newIndicators).push(...indicators)
+      const value = old ? 111111111 : 222222222
+      const response = new Response(JSON.stringify(semanticScalarBatch('demographie', scalarMetadata,
+        request.items, '22001', () => value)), { status: 200 })
       return new Promise<Response>((resolve) => {
-        const old = url.searchParams.has('epci_id')
-        ;(old ? oldIndicators : newIndicators).push(indicator)
         ;(old ? oldResponses : newResponses).push(() => resolve(response))
       })
     })
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
     const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie&comparaison=epci', vi.fn(async () => model))
-    expect(oldResponses, JSON.stringify({ oldIndicators, missing: Object.keys(metadata.scalar_contracts).filter((id) => !oldIndicators.includes(id)) })).toHaveLength(Object.keys(metadata.scalar_contracts).length)
+    expect(oldResponses).toHaveLength(1)
+    expect(oldIndicators.sort()).toEqual(Object.keys(metadata.scalar_contracts).sort())
     await router.push('/territoire/commune/22001?theme=demographie&comparaison=bretagne')
     await flushPromises()
-    expect(newResponses, JSON.stringify({ newIndicators })).toHaveLength(Object.keys(metadata.scalar_contracts).length)
-    expect(new URL(String(fetchApi.mock.calls.at(-1)![0]), 'http://localhost').searchParams.has('epci_id')).toBe(false)
+    expect(newResponses).toHaveLength(1)
+    expect(newIndicators.sort()).toEqual(Object.keys(metadata.scalar_contracts).sort())
+    const newRead = fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch').at(-1)!
+    const newRequest = JSON.parse((newRead[1] as RequestInit).body as string)
+    expect(newRequest.items.every((item: any) => item.target.epci_id === null && item.target.department_id === null)).toBe(true)
     expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('111 111 111')
     newResponses.forEach((resolve) => resolve())
     await flushPromises()
@@ -1428,17 +1464,19 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     published.themes.demographie.theme_metadata.scalar_contracts = { densite: { allowed_levels: 'commune' } }
     const model = validerModeleTerritoire(published, 'territoires/commune/22001.json',
       { type: 'commune', territoire: '22001' }, { requireAllThemes: true })
+    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     const modelPages = model.themes.demographie!.metadata.indicator_pages
-    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
-      const indicator = String(input).split('/').at(-1)!.split('?')[0]!
-       const page = modelPages![indicator]!
-      return new Response(JSON.stringify({ indicator_id: indicator, territory_type: 'commune', label: page.label,
-        unit: page.unit, direction: page.direction, comparison_facet: page.comparison?.indicator ?? indicator,
-        completeness: 'sparse', content_version: 'retry-v1', territory_reference_version: 'territories-v1',
-        observations: [{ territory_id: '22001', name: published.territory.nom, value: 987654321, status: 'measured',
-          rang_epci: 1, rang_epci_n: 38, rang_dep: 1, rang_dep_n: 50, rang_reg: 1, rang_reg_n: 100,
-          sources: [{ source_id: page.sources[0], name: 'Source API fiche', vintage_id: 'api-v1', version: '2026',
-            reference_date: null, publication_date: null }] }] }), { status: 200 })
+    const scalarMetadata = { scalar_contracts: metadata.scalar_contracts, indicator_pages: modelPages }
+    const resources = semanticScalarResources('demographie', scalarMetadata)
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
+        return new Response(JSON.stringify(semanticScalarBatch('demographie', scalarMetadata,
+          request.items, '22001', () => 987654321)))
+      }
+      throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', fetchApi)
@@ -1452,7 +1490,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     model.themes.demographie!.metadata.scalar_contracts = metadata.scalar_contracts
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()
-    expect(fetchApi).toHaveBeenCalled()
+    expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch')).toBe(true)
     expect(wrapper.text()).toContain('987 654 321')
     expect(wrapper.text()).not.toContain('24,45')
     wrapper.unmount()
