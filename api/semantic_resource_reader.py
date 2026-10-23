@@ -7,7 +7,8 @@ FastAPI composition root.
 
 from fastapi import HTTPException
 
-from api.cohort_reads import preflight_cohort, read_cohort, resolve_territory_cohort
+from api.cohort_reads import (preflight_cohort, read_cohort, resolve_territory_cohort,
+                              validate_typed_reading_integrity)
 from api.profile_reads import focal_profiles
 from api.resource_catalogue import ResourceCatalogue, default_resource_catalogue
 
@@ -362,39 +363,13 @@ class SemanticResourceReader:
             if (not owner_marker or owner_marker[0] != marker[0] or
                     owner_marker[1] != marker[1] or owner_marker[2] != marker[2]):
                 raise HTTPException(503, "Selected-reading publication is inconsistent")
-        # Validate physical completeness without an unaccounted full-relation
-        # count. Each validation count is capped by the remaining request budget,
-        # and the scanned rows are charged as work before any focal read runs.
-        from api.snapshot_reads import _execute_comparison_publication_read
-        work = 0
-
-        def checked_count(relation, expected_count=None):
-            nonlocal work
-            remaining = work_budget - work
-            if remaining <= 0 or (expected_count is not None and int(expected_count) > remaining):
-                raise HTTPException(413, "Resource request exceeds the bounded work limit")
-            scanned = int(_execute_comparison_publication_read(conn,
-                f"SELECT count(*) FROM (SELECT 1 FROM {relation} LIMIT %s) AS bounded_rows",
-                (remaining + 1,)).fetchone()[0])
-            if scanned > remaining:
-                raise HTTPException(413, "Resource request exceeds the bounded work limit")
-            if expected_count is not None and scanned != int(expected_count):
-                raise HTTPException(503, "Typed-reading publication row count is inconsistent")
-            work += scanned
-            return scanned
-
-        checked_count(resource.storage_relation, marker[1])
+        # Publication tokens alone do not prove that declared physical rows
+        # remain present. Validate the primary and evidence row counts with the
+        # shared budgeted scan before counting focal rows.
+        side_markers = []
         coordinates = item.coordinates or {}
         group = coordinates.get("groupe")
         relation = resource.storage_relation
-        clauses = ["territory_id=%s", "territory_type=%s"]
-        params = [item.target.id, item.target.type]
-        if group:
-            clauses.append("groupe=ANY(%s::text[])")
-            params.append(group)
-        work += int(conn.execute(f"SELECT count(*) FROM {relation} WHERE " + " AND ".join(clauses), params).fetchone()[0])
-        if work > work_budget:
-            raise HTTPException(413, "Resource request exceeds the bounded work limit")
         for side in resource.side_relations:
             side_marker = conn.execute("""SELECT content_version,reference_content_version,row_count
                 FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
@@ -404,9 +379,18 @@ class SemanticResourceReader:
                 raise HTTPException(503, "Typed-reading evidence publication is incompatible")
             if side.get("same_content_version_as") == "resource" and side_marker[0] != marker[0]:
                 raise HTTPException(503, "Typed-reading evidence publication is stale")
-            expected_side_count = (side_marker[2]
-                if side["publication_table"] != resource.publication_table else None)
-            checked_count(side["storage_relation"], expected_side_count)
+            side_markers.append(side_marker)
+        work = validate_typed_reading_integrity(
+            conn, resource, marker, side_markers, work_budget)
+        clauses = ["territory_id=%s", "territory_type=%s"]
+        params = [item.target.id, item.target.type]
+        if group:
+            clauses.append("groupe=ANY(%s::text[])")
+            params.append(group)
+        work += int(conn.execute(f"SELECT count(*) FROM {relation} WHERE " + " AND ".join(clauses), params).fetchone()[0])
+        if work > work_budget:
+            raise HTTPException(413, "Resource request exceeds the bounded work limit")
+        for side in resource.side_relations:
             side_clauses = ["territory_id=%s", "territory_type=%s"]
             side_params = [item.target.id, item.target.type]
             if "groupe" in side["fields"]:

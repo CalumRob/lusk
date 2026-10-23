@@ -93,6 +93,38 @@ def test_typed_reading_preflight_charges_and_bounds_integrity_validation():
     assert not any("FROM (SELECT 1 FROM" in sql for sql, _ in connection.calls)
 
 
+class _TruncatedIntegrityConnection(_Connection):
+    def __init__(self, *, primary_count, side_count):
+        super().__init__()
+        self.primary_count = primary_count
+        self.side_count = side_count
+
+    def execute(self, sql, params=()):
+        if "FROM (SELECT 1 FROM economy_typed_reading LIMIT %s)" in sql:
+            return _Result((self.primary_count,))
+        if "FROM (SELECT 1 FROM economy_activity_evidence LIMIT %s)" in sql:
+            return _Result((self.side_count,))
+        return super().execute(sql, params)
+
+
+def test_typed_reading_integrity_rejects_truncated_primary_or_side_rows():
+    from api.cohort_reads import validate_typed_reading_integrity
+
+    resource = default_resource_catalogue().resources_by_id["economie_selected_reading"]
+    for connection in (
+        _TruncatedIntegrityConnection(primary_count=0, side_count=2),
+        _TruncatedIntegrityConnection(primary_count=1, side_count=1),
+    ):
+        try:
+            validate_typed_reading_integrity(
+                connection, resource, ("reading-v1", 1, "reference-v1"),
+                [("evidence-v1", "reference-v1", 2)], 10)
+        except HTTPException as exc:
+            assert exc.status_code == 503
+        else:
+            raise AssertionError("truncated typed-reading publication rows must fail closed")
+
+
 def test_typed_reading_read_keeps_ranked_evidence_separate_from_facts():
     catalogue = default_resource_catalogue()
     item = ResourceReadItem.model_validate({

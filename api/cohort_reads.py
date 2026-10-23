@@ -86,6 +86,34 @@ def _bounded_fact_summary(conn, query, params, budget, message):
     return int(facts), int(members)
 
 
+def validate_typed_reading_integrity(conn, resource, marker, side_markers, work_budget):
+    """Check declared physical row counts with a budgeted scan on this snapshot."""
+    from api.snapshot_reads import _execute_comparison_publication_read
+
+    work = 0
+
+    def checked_count(relation, expected_count=None):
+        nonlocal work
+        remaining = work_budget - work
+        if remaining <= 0 or (expected_count is not None and int(expected_count) > remaining):
+            raise HTTPException(413, "Resource request exceeds the bounded work limit")
+        scanned = int(_execute_comparison_publication_read(conn,
+            f"SELECT count(*) FROM (SELECT 1 FROM {relation} LIMIT %s) AS bounded_rows",
+            (remaining + 1,)).fetchone()[0])
+        if scanned > remaining:
+            raise HTTPException(413, "Resource request exceeds the bounded work limit")
+        if expected_count is not None and scanned != int(expected_count):
+            raise HTTPException(503, "Typed-reading publication row count is inconsistent")
+        work += scanned
+
+    checked_count(resource.storage_relation, marker[1])
+    for side, side_marker in zip(resource.side_relations, side_markers):
+        expected_side_count = (side_marker[2]
+            if side["publication_table"] != resource.publication_table else None)
+        checked_count(side["storage_relation"], expected_side_count)
+    return work
+
+
 def _scalar_contract(conn, resource_id, territory_type, cohort):
     descriptor = conn.execute("""SELECT indicator_id,theme_id,label,unit,direction,
         comparison_facet,allowed_levels,denominator_semantics,completeness,descriptor_version
@@ -395,6 +423,13 @@ def _owned_series_context(conn, item, resource, cohort):
 def preflight_owned_series_cohort(conn, item, resource, cohort, fields, work_budget):
     route, marker, descriptor, axes = _owned_series_context(conn, item, resource, cohort)
     budget = work_budget - len(cohort.members)
+    publication_rows = _bounded_count(conn, """SELECT 1 FROM series_dataset_observation
+        WHERE dataset_id=%s UNION ALL SELECT 1 FROM series_named_reference WHERE dataset_id=%s""",
+        (route[0], route[0]), budget,
+        "Owned-series publication integrity exceeds the bounded work limit")
+    if publication_rows != int(marker[2]):
+        raise HTTPException(503, "Owned-series marker row count does not match its facts")
+    budget -= publication_rows
     params = (route[0], route[3], item.target.type, cohort.territory_ids, axes)
     facts, populated_members = _bounded_fact_summary(conn, """SELECT o.territory_id
         FROM series_dataset_observation o
@@ -405,7 +440,7 @@ def preflight_owned_series_cohort(conn, item, resource, cohort, fields, work_bud
         raise HTTPException(503, "Owned-series cohort is incomplete")
     axis_work = (populated_members if descriptor[12] == "no_record" and
                  descriptor[3] == "may_be_missing" else len(cohort.members)) * len(axes)
-    budget = work_budget - len(cohort.members) - axis_work
+    budget = work_budget - len(cohort.members) - publication_rows - axis_work
     if budget < 0:
         raise HTTPException(413, "Cohort ordered-series axes exceed the bounded work limit")
     provenance = _bounded_count(conn, """SELECT 1 FROM series_observation_provenance p
@@ -415,7 +450,7 @@ def preflight_owned_series_cohort(conn, item, resource, cohort, fields, work_bud
         "Cohort ordered-series provenance exceeds the bounded work limit")
     if provenance < facts:
         raise HTTPException(503, "Owned-series provenance is incomplete")
-    return max(1, len(cohort.members) + axis_work + provenance)
+    return max(1, len(cohort.members) + publication_rows + axis_work + provenance)
 
 
 def read_owned_series_cohort(conn, item, resource, cohort, fields):
@@ -783,17 +818,19 @@ def _typed_reading_context(conn, item, resource, cohort):
         if not owner_marker or tuple(owner_marker) != tuple(marker):
             raise HTTPException(503, "Selected-reading publication is inconsistent")
 
+    side_markers = []
     for side in resource.side_relations:
         if not conn.execute("SELECT to_regclass(%s)", (side["storage_relation"],)).fetchone()[0]:
             raise HTTPException(503, "Typed-reading evidence storage is unavailable")
-        side_marker = conn.execute("""SELECT content_version,reference_content_version
+        side_marker = conn.execute("""SELECT content_version,reference_content_version,row_count
             FROM table_publication WHERE table_name=%s""", (side["publication_table"],)).fetchone()
         if not side_marker or side_marker[1] != reference[0]:
             raise HTTPException(503, "Typed-reading evidence publication is unavailable or stale")
         if ((side["publication_table"] == resource.publication_table or
              side.get("same_content_version_as") == "resource") and side_marker[0] != marker[0]):
             raise HTTPException(503, "Typed-reading evidence publication is incompatible")
-    return marker
+        side_markers.append(side_marker)
+    return marker, side_markers
 
 
 def _typed_cohort_filters(item, cohort, group_filter=True):
@@ -807,12 +844,14 @@ def _typed_cohort_filters(item, cohort, group_filter=True):
 
 
 def preflight_typed_reading_cohort(conn, item, resource, cohort, work_budget):
-    _typed_reading_context(conn, item, resource, cohort)
-    remaining = work_budget - len(cohort.members)
+    marker, side_markers = _typed_reading_context(conn, item, resource, cohort)
+    integrity_work = validate_typed_reading_integrity(
+        conn, resource, marker, side_markers, work_budget - len(cohort.members))
+    remaining = work_budget - len(cohort.members) - integrity_work
     where, params = _typed_cohort_filters(item, cohort)
     facts = _bounded_count(conn, f"SELECT 1 FROM {resource.storage_relation} WHERE {where}",
         params, remaining, "Cohort typed-reading facts exceed the bounded work limit")
-    work = len(cohort.members) + facts
+    work = len(cohort.members) + integrity_work + facts
     selected = set(item.fields or resource.fields)
     for side in resource.side_relations:
         # Evidence is only read/charged when selected, except absence evidence,
@@ -828,7 +867,7 @@ def preflight_typed_reading_cohort(conn, item, resource, cohort, work_budget):
 
 
 def read_typed_reading_cohort(conn, item, resource, cohort):
-    marker = _typed_reading_context(conn, item, resource, cohort)
+    marker, _side_markers = _typed_reading_context(conn, item, resource, cohort)
     selected = set(item.fields or resource.fields)
     evidence_fields = {side["field"] for side in resource.side_relations}
     fact_fields = [field for field in resource.fields if field in selected and field not in evidence_fields]
@@ -877,90 +916,6 @@ def read_typed_reading_cohort(conn, item, resource, cohort):
         "territories": territories}
 
 
-def _aedar_cohort_context(conn, item, cohort):
-    from api.aedar_models import AEDAR_MEASURE_KEYS
-
-    reference = conn.execute("SELECT content_version FROM table_publication WHERE table_name='territory_reference'").fetchone()
-    marker = conn.execute("""SELECT p.content_version,p.row_count,p.reference_content_version,t.content_version
-        FROM table_publication p JOIN table_publication t ON t.table_name='territory_reference'
-        WHERE p.table_name='aedar_territorial_aggregate'""").fetchone()
-    if (not reference or reference[0] != cohort.reference_content_version or not marker or
-            not marker[0] or marker[1] < 1 or marker[2] != marker[3] or marker[2] != reference[0]):
-        raise HTTPException(503, "AEDAR territorial publication is unavailable or incompatible")
-    coordinates = item.coordinates or {}
-    selected_typequ = coordinates.get("typequ")
-    if selected_typequ:
-        known = {row[0] for row in conn.execute(
-            "SELECT DISTINCT typequ FROM aedar_territorial_aggregate WHERE typequ=ANY(%s::text[])",
-            (selected_typequ,)).fetchall()}
-        if known != set(selected_typequ):
-            raise HTTPException(422, "Coordinate value is not present in the published AEDAR descriptor")
-    selected_measures = coordinates.get("measure")
-    if selected_measures and not set(selected_measures) <= AEDAR_MEASURE_KEYS:
-        raise HTTPException(422, "Coordinate measure is not declared for AEDAR")
-    fields = item.fields
-    measure_keys = (set(AEDAR_MEASURE_KEYS) if fields is None else
-        {field.removeprefix("measures.") for field in fields})
-    if selected_measures:
-        measure_keys &= set(selected_measures)
-    if not measure_keys:
-        raise HTTPException(422, "AEDAR measure coordinate selection is empty")
-    return marker, selected_typequ, measure_keys
-
-
-def preflight_aedar_cohort(conn, item, resource, cohort, work_budget):
-    _marker, typequ, measure_keys = _aedar_cohort_context(conn, item, cohort)
-    remaining = work_budget - len(cohort.members)
-    clauses = ["territory_type=%s", "territory_id=ANY(%s::text[])"]
-    params = [item.target.type, cohort.territory_ids]
-    if typequ is not None:
-        clauses.append("typequ=ANY(%s::text[])")
-        params.append(typequ)
-    per_fact = 1 + len(measure_keys)
-    fact_budget = remaining // per_fact
-    facts = _bounded_count(conn, "SELECT 1 FROM aedar_territorial_aggregate WHERE " +
-        " AND ".join(clauses), tuple(params), fact_budget,
-        "Cohort AEDAR aggregate facts exceed the bounded work limit")
-    return max(1, len(cohort.members) + facts * per_fact)
-
-
-def read_aedar_cohort(conn, item, resource, cohort):
-    from api.aedar_models import AEDAR_MEASURE_KEYS
-
-    marker, typequ, measure_keys = _aedar_cohort_context(conn, item, cohort)
-    measure_projection = ("measures" if measure_keys == AEDAR_MEASURE_KEYS else
-        "COALESCE((SELECT jsonb_object_agg(k,v) FROM jsonb_each(aedar_territorial_aggregate.measures) AS m(k,v) "
-        "WHERE k=ANY(%s::text[])), '{}'::jsonb) AS measures")
-    clauses = ["territory_type=%s", "territory_id=ANY(%s::text[])"]
-    params = []
-    if measure_keys != AEDAR_MEASURE_KEYS:
-        params.append(sorted(measure_keys))
-    params.extend((item.target.type, cohort.territory_ids))
-    if typequ is not None:
-        clauses.append("typequ=ANY(%s::text[])")
-        params.append(typequ)
-    cursor = conn.execute("""SELECT territory_id,territory_type,typequ,typequ_label,
-        typequ_hierarchy_label,typequ_description,typequ_domain_code,typequ_domain_label,
-        typequ_subdomain_code,typequ_subdomain_label,typequ_gamme,typequ_gamme_status,
-        typequ_source_order,identity,n_addresses,n_observed,coverage_status,""" + measure_projection + """,
-        source_id,vintage_id,source_url,licence,attribution,reference_date,publication_date
-        FROM aedar_territorial_aggregate WHERE """ + " AND ".join(clauses) +
-        " ORDER BY territory_id,typequ", tuple(params))
-    names = [column.name for column in cursor.description]
-    rows = [dict(zip(names, row)) for row in cursor.fetchall()]
-    expected_measures = AEDAR_MEASURE_KEYS if item.fields is None else measure_keys
-    if any(set(row["measures"] or {}) != expected_measures for row in rows):
-        raise HTTPException(503, "AEDAR measure publication is incomplete for the requested projection")
-    required_metadata = ("typequ_hierarchy_label", "typequ_description", "typequ_domain_code",
-        "typequ_domain_label", "typequ_subdomain_code", "typequ_subdomain_label",
-        "typequ_gamme_status", "typequ_source_order")
-    if any(any(row[key] is None for key in required_metadata) for row in rows):
-        raise HTTPException(503, "AEDAR TYPEQU metadata publication is incomplete")
-    return {"resource": item.resource, "target": item.target.model_dump(),
-        "shape": "aedar_source_grain", "cohort": cohort.envelope(),
-        "content_version": marker[0], "reference_content_version": marker[2], "facts": rows}
-
-
 def preflight_cohort(conn, item, resource, cohort, fields, work_budget):
     """Validate the native publication and actual bounded work before any read."""
     if resource.resource_kind == "indicator":
@@ -980,12 +935,6 @@ def preflight_cohort(conn, item, resource, cohort, fields, work_budget):
         raise HTTPException(503, "Cohort facts are unavailable for this published resource shape")
     if resource.resource_kind == "typed_reading":
         return preflight_typed_reading_cohort(conn, item, resource, cohort, work_budget)
-    if resource.resource_kind == "aedar_source_grain":
-        return preflight_aedar_cohort(conn, item, resource, cohort, work_budget)
-    if resource.resource_kind == "indicator" and resource.shapes == ("scalar",):
-        return preflight_scalar_cohort(conn, item, resource, cohort, fields, work_budget)
-    if resource.resource_kind == "indicator" and "declared_profile" in resource.shapes:
-        return preflight_profile_cohort(conn, item, resource, cohort, fields, work_budget)
     raise HTTPException(503, "Cohort facts are unavailable for this published resource shape")
 
 
@@ -1006,6 +955,4 @@ def read_cohort(conn, item, resource, cohort, fields):
             return read_membership_cohort(conn, item, resource, route, cohort, fields)
     if resource.resource_kind == "typed_reading":
         return read_typed_reading_cohort(conn, item, resource, cohort)
-    if resource.resource_kind == "aedar_source_grain":
-        return read_aedar_cohort(conn, item, resource, cohort)
     raise HTTPException(503, "Cohort facts are unavailable for this published resource shape")

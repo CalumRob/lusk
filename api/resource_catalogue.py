@@ -158,6 +158,9 @@ _FIELDS_BY_SHAPE = {
 _COMPARABLE_SHAPES = frozenset({
     "scalar", "declared_profile", "ordered_series", "period_detail", "distribution",
 })
+_COHORT_FACT_SHAPES = frozenset({
+    "scalar", "declared_profile", "ordered_series", "period_detail", "anchored_membership",
+})
 
 
 def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResource:
@@ -292,6 +295,13 @@ def discover_indicator_resources(metadata_directory: str | Path,
             if (parent_indicator is None and comparison_declared
                     and _COMPARABLE_SHAPES.intersection(shapes)):
                 intents += ("fixed_comparison", "selected_comparison")
+            target_kinds = []
+            if "named_reference" in shapes:
+                target_kinds.append("named_reference")
+            if any(shape != "named_reference" for shape in shapes):
+                target_kinds.append("territory")
+            if _COHORT_FACT_SHAPES.intersection(shapes):
+                target_kinds.append("territory_cohort")
             resources.append(IndicatorResource(
                 resource_id=indicator_id,
                 theme_id=theme_id,
@@ -305,8 +315,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 shapes=shapes,
                 axes=axes,
                 axis_values=_axis_values(metadata, indicator_id, page_descriptor, shapes, parent_indicator),
-                target_kinds=(("named_reference",) if "named_reference" in shapes
-                              else ("territory", "territory_cohort")),
+                target_kinds=tuple(target_kinds),
                 target_ids=((str((metadata.get("owned_series_routes") or {})
                                  .get(parent_indicator, {}).get("reference_id")),)
                             if parent_indicator is not None else ()),
@@ -381,7 +390,8 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 allowed_levels=tuple(declaration.get("allowed_levels", ("commune", "epci", "departement", "region"))),
                 sources=sources, shapes=(kind,),
                 axes=axes, axis_values=(("groupe", groups),) if kind == "typed_reading" else (),
-                target_kinds=("territory", "territory_cohort"), target_ids=(),
+                target_kinds=("territory", "territory_cohort") if kind == "typed_reading" else ("territory",),
+                target_ids=(),
                 dynamic_axes=(), fields=tuple(dict.fromkeys([
                     *declaration["fields"],
                     *(side["field"] for side in declaration.get("side_relations", ())),
