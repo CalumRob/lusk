@@ -1,0 +1,13 @@
+{
+  "name": "lusk-audit-indicateur-shell-harness",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Audit navigateur déterministe #481 — shell de la Page d'indicateur et passarelles fiche → indicateur. Ne fait jamais partie du build de l'app : dépendances isolées ici.",
+  "scripts": {
+    "audit": "node audit.mjs"
+  },
+  "dependencies": {
+    "playwright-core": "^1.49.0"
+  }
+}
