@@ -119,3 +119,30 @@ false about why it was made or how existing pages work today. ADR-0004's
 static-file cron and ADR-0006's tag/timer frontend release remain in place for
 unmigrated pages, but their static-only Pi/failover assumptions no longer
 describe the target data-serving architecture.
+
+## Owner-confirmed boundary amendment — 2026-10-23 (#587 / #827)
+
+The one-serving-path decision applies to **facts and factual semantics**, not to
+stable product wording and organisation. Headings, explanatory/editorial copy,
+display labels, page/subgroup organisation, and figure presentation belong in
+the appropriate shared app content/config layer. Ordinary edits to them do not
+require R publication, a generated presentation-metadata projection, hashes or
+global release versions, or a new metadata API/framework. The app may bind that
+content to canonical resource identities, but it does not define the facts:
+numeric values, units/scales, actual axis domains/order, eligibility,
+comparison facets/direction, status, provenance, and source observation dates
+remain producer/API-owned. This amendment supersedes the provisional generated
+static presentation projection option; it does not claim that current browser
+readers have already been migrated.
+
+Retain **one compact generated static territory reference** for search,
+directories, names, hierarchy/navigation, relationships, and identity lookup.
+It must come from the same canonical reference as the database; territory names
+and relationships are not handwritten app data. The measured search exception
+accepted by #582 remains, and this decision does not require a directory API.
+This reference does not settle the separate dispositions of geometry, map masks,
+global Sources/vintages, or run-report readers. Keep their readers and freshness
+clocks separately inventoried; pipeline-run time, source observation time, and
+database publication time are distinct. Producer declarations and artifacts
+required by R serving/publishing remain in place: retiring a browser reader is
+not authority to delete its producer input.

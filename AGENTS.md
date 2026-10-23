@@ -51,18 +51,20 @@ can cite them; method depth stays in the skills. No intent personas/subagents.
 **Known baseline:** 10 detector findings on current code (mostly `[side-tab]` theme accent lines)
 are deliberately NOT ignore-listed — they open the evidence base of the DESIGN.md v2 campaign (#511).
 
-### General implementation rule — derive decisions from contracts, not literals
+### General implementation rule — derive facts from contracts; own presentation in the app
 
-- Do not hardcode domain facts, derived values, territory names, indicator selections, comparison
-  scopes, source metadata, or content decisions in a renderer or UI fixture when the value belongs
-  in the pipeline, payload, metadata, typed facts, or semantic content layer.
-- Keep stable presentation grammar in code — component structure, CSS tokens, enum keys, and
-  contract-required fallback copy are legitimate constants. The test is whether changing the
-  underlying data or product decision should change the literal; if so, it belongs upstream of
-  presentation.
-- Before adding a domain-looking literal, identify its source of truth and put it there. Add or
-  update a contract test proving the renderer consumes that source rather than silently duplicating
-  it.
+- Stable presentation/editorial choices belong in the appropriate shared app content/config layer:
+  headings, explanatory copy, display labels, page/subgroup organisation, and figure presentation.
+  Ordinary wording or organisation changes do not require R publication, generated presentation
+  metadata, hashes/global release versions, or a new metadata API/framework. Keep these choices out
+  of scattered renderer literals and do not duplicate factual semantics in them.
+- Do not hardcode domain facts or derived policy: numeric values, units/scales, actual axis domains or
+  order, eligibility/facets/direction, status, provenance, source observation dates, or territory
+  identities and relationships. Bind app-owned content to the actual producer/API identities and
+  consume those facts and semantics from their source of truth.
+- Before adding a domain-looking literal, identify whether it is stable app presentation or a fact
+  owned upstream, and put it in that owner's layer. Add or update a contract test proving factual
+  consumers use the source contract rather than silently duplicating it.
 
 ### Theme acquisition contract
 
