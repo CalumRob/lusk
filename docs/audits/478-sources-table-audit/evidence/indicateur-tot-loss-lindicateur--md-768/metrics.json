@@ -1,0 +1,34 @@
+{
+  "page": "/indicateurs/mobilite/tot_loss_t?vue=indicateur",
+  "largeur": 768,
+  "viewport": {
+    "innerWidth": 768,
+    "innerHeight": 1024
+  },
+  "scrollLargeurDoc": 768,
+  "clientLargeurDoc": 768,
+  "debordementHorizontal": 0,
+  "coquilleDroite": null,
+  "maxDroiteContenu": 0,
+  "pireContenu": "",
+  "debordementCoquille": null,
+  "sectionsMilimesVides": 0,
+  "debordants": [],
+  "hauteurPagePx": 1642,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 0,
+  "lignes": [],
+  "tableLargeurPx": null,
+  "conteneurLargeurPx": null,
+  "fichesIndicateur": [
+    {
+      "jeu": "Lusk — analyse d’accessibilité « Vingt minutes sans voiture »",
+      "texte": "Lu k — analy e d’acce ibilité « Vingt minute   an  voiture »Éditeur : Lu k · Licence : ODbL — © OpenStreetMap contributor  · Millé ime : Snap hot 2026-02 · Fraîcheur : 6 août 2026Voir le jeu de donnée Voir la fiche  ourceSnap hot 2026-02 · 2026-02 · ODbL — © OpenStreetMap contributor  · 2026-02-28 · 2026-08-06Équipement  de proximitéannuelle — un nouveau millé ime publié chaque année · Référence :",
+      "hauteurPx": 390,
+      "millésimesRendus": 1
+    }
+  ],
+  "titrePage": "Perte totale d’accès — à pied ou en transports en commun",
+  "url": "/indicateurs/mobilite/tot_loss_t?vue=indicateur&niveau=commune"
+}

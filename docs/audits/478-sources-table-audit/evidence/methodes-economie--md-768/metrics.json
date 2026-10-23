@@ -1,0 +1,185 @@
+{
+  "page": "/methodologie?onglet=sources&section=economie",
+  "largeur": 768,
+  "viewport": {
+    "innerWidth": 768,
+    "innerHeight": 1024
+  },
+  "scrollLargeurDoc": 768,
+  "clientLargeurDoc": 768,
+  "debordementHorizontal": 0,
+  "coquilleDroite": 768,
+  "maxDroiteContenu": 1227,
+  "pireContenu": "table.sources-tableau",
+  "debordementCoquille": 459,
+  "sectionsMilimesVides": 0,
+  "debordants": [
+    {
+      "sel": "button.onglet.onglet--selectionne",
+      "left": 770,
+      "right": 894
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-building2-icon",
+      "left": 786,
+      "right": 804
+    },
+    {
+      "sel": "path",
+      "left": 793,
+      "right": 796
+    },
+    {
+      "sel": "span",
+      "left": 812,
+      "right": 878
+    },
+    {
+      "sel": "button.onglet",
+      "left": 898,
+      "right": 1001
+    },
+    {
+      "sel": "svg.lucide.onglet-icone.lucide-trees-icon",
+      "left": 914,
+      "right": 932
+    },
+    {
+      "sel": "table.sources-tableau",
+      "left": 16,
+      "right": 1227
+    },
+    {
+      "sel": "thead",
+      "left": 17,
+      "right": 1226
+    },
+    {
+      "sel": "tr",
+      "left": 17,
+      "right": 1226
+    },
+    {
+      "sel": "th",
+      "left": 761,
+      "right": 914
+    },
+    {
+      "sel": "th.colonne-lien",
+      "left": 1162,
+      "right": 1226
+    },
+    {
+      "sel": "span.visuellement-cache",
+      "left": 1177,
+      "right": 1178
+    },
+    {
+      "sel": "tbody",
+      "left": 17,
+      "right": 1226
+    },
+    {
+      "sel": "tr.source-jeu",
+      "left": 17,
+      "right": 1226
+    },
+    {
+      "sel": "td.cellule-fraicheur",
+      "left": 761,
+      "right": 914
+    },
+    {
+      "sel": "td.cellule-licence",
+      "left": 1078,
+      "right": 1162
+    },
+    {
+      "sel": "td.colonne-lien",
+      "left": 1162,
+      "right": 1226
+    },
+    {
+      "sel": "a.lien-donnees",
+      "left": 1178,
+      "right": 1210
+    },
+    {
+      "sel": "svg.lucide.lucide-external-link-icon.lucide-external-link",
+      "left": 1186,
+      "right": 1202
+    }
+  ],
+  "hauteurPagePx": 1498,
+  "nbCartesSource": 0,
+  "cartes": [],
+  "nbLignesTable": 5,
+  "lignes": [
+    {
+      "classe": "source-jeu",
+      "nom": "data.bretagne.bzh — Base SIRENE — Région Bretagne",
+      "nomLen": 49,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [
+        "Part des éco-activités"
+      ],
+      "hauteurLignePx": 88,
+      "hauteurCelluleIndicateurs": 63
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A38)",
+      "nomLen": 91,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Flores : nombre d’établissements et effectifs salariés par secteur d’activité (A88)",
+      "nomLen": 91,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [
+        "Effectifs salariés (lieu de travail)"
+      ],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": 84
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Emploi au lieu de résidence (dossier complet, ACT4/ACT5)",
+      "nomLen": 64,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": null
+    },
+    {
+      "classe": "source-jeu",
+      "nom": "INSEE — Population active et chômage (dossier complet, principaux indicateurs, exploitation principale)",
+      "nomLen": 103,
+      "themes": [
+        "Économie"
+      ],
+      "indicateurs": [
+        "Chômage (population active)"
+      ],
+      "hauteurLignePx": 109,
+      "hauteurCelluleIndicateurs": 63
+    }
+  ],
+  "tableLargeurPx": 1211,
+  "conteneurLargeurPx": 736,
+  "fichesIndicateur": [],
+  "titrePage": "Sources & Méthodes",
+  "url": "/methodologie?onglet=sources&section=economie"
+}
