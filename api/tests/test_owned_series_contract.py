@@ -78,7 +78,7 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
             if "column_name='active_read_route'" in sql:
                 return Cursor([(True,)])
             if "WHERE indicator_id=%s AND active_read_route" in sql:
-                return Cursor([("dvf_prix_m2", "theme", "prix_m2")])
+                return Cursor([("dvf_prix_m2", "habitat", "prix_m2")])
             if "to_regclass('series_named_reference_descriptor')" in sql:
                 return Cursor([(True,)])
             if "WHERE d.reference_indicator_id=%s AND d.active_read_route" in sql:
@@ -88,10 +88,28 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
             if "FROM series_dataset_publication p CROSS JOIN table_publication" in sql:
                 return Cursor([("series-v2", self.reference_version, 6,
                                 "2026-10-01T00:00:00Z", "ref-v8")])
+            if "WHERE p.table_name='scalar_observation'" in sql:
+                return Cursor([("scalar-v4", "ref-v8", "ref-v8")])
+            if "FROM scalar_descriptor WHERE indicator_id=%s" in sql:
+                return Cursor([("prix_m2", "habitat", "Pooled price", "€/m²", "low", "prix_m2",
+                    ["commune"], "transactions", "sparse", "scalar-descriptor-v2")])
+            if "SELECT territory_type FROM territory_reference WHERE territory_id=%s" in sql:
+                return Cursor([(self.territory_type,)])
+            if "SELECT count(*) FROM scalar_observation" in sql:
+                return Cursor([(1,)])
+            if "SELECT count(*) FROM scalar_observation_source" in sql:
+                return Cursor([(1,)])
+            if "FROM scalar_observation o" in sql:
+                sources = [{"source_id": "scalar-source", "name": "Scalar source",
+                    "vintage_id": "scalar-vintage", "version": "2026",
+                    "reference_date": "2026-01-01", "publication_date": "2026-02-01"}]
+                if "o.value" in sql:
+                    return Cursor([("measured", 987.0, 12, 20, sources)])
+                return Cursor([("measured", sources)])
             if "FROM series_dataset_descriptor WHERE" in sql:
                 return Cursor([("year", ["2024", "2025", "2026"], [2024, 2025, 2026],
                     "may_be_missing", "Transactions", "€/m²", "low", "descriptor-v3",
-                    ["commune"], "2025", "theme", "year", "unavailable", "median", "default_group")])
+                    ["commune"], "2025", "habitat", "year", "unavailable", "median", "default_group")])
             if "FROM territory_reference WHERE territory_id=%s" in sql:
                 return Cursor([("Commune X", self.territory_type)])
             if "FROM series_dataset_observation o LEFT JOIN" in sql:
@@ -136,6 +154,8 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
     read = {**response, "territory": {"id": "22001", "type": "commune", "name": "Commune X"},
             "named_references": response.get("named_references", [])}
     assert read["publication_id"] == "series-v2"
+    assert read["scalar_facet"]["observation"]["value"] == 987.0
+    assert read["scalar_facet"]["content_version"] == "scalar-v4"
     assert read["reference_content_version"] == "ref-v8"
     assert read["axis_values"] == ["2024", "2025", "2026"]
     assert [point["axis"] for point in read["points"]] == ["2024", "2025", "2026"]
@@ -158,6 +178,7 @@ def test_owned_series_snapshot_preserves_axis_lineage_references_and_optional_pr
     })
     projected = reader.read(connection, projected_item, catalogue)
     assert all("value" not in point for point in projected["points"])
+    assert "value" not in projected["scalar_facet"]["observation"]
     assert [point["axis"] for point in projected["points"]] == ["2024", "2025", "2026"]
     with pytest.raises(HTTPException, match="stale or unavailable"):
         reader.read(Connection(reference_version="ref-v7"), item, catalogue)

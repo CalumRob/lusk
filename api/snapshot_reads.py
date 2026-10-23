@@ -738,7 +738,8 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
 
 def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
                                *, indicator_id=None, profiles=None, profile_version=None, has_readings=False,
-                               result_fields=None, preflight_only=False, snapshot_state=None):
+                               result_fields=None, preflight_only=False, snapshot_state=None,
+                               include_owned_series=True, include_fixed_context=False):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
     scalar_descriptors = conn.execute(
         """SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
@@ -757,7 +758,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
         profiles, profile_version = focal_profiles(conn, territory_type, territory_id,
             theme_id=theme_id, indicator_id=indicator_id)
     owned_descriptors=[]
-    if conn.execute("SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
+    if include_owned_series and conn.execute(
+            "SELECT to_regclass('series_dataset_descriptor')").fetchone()[0]:
         has_theme=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
             WHERE table_schema=current_schema() AND table_name='series_dataset_descriptor' AND column_name='theme_id')""").fetchone()[0]
         has_route=conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
@@ -822,7 +824,7 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
         if fixed_context and (comparable_scalars or scalar_backed_profiles):
             _scalar_comparison_publication_marker(conn)
-        if owned_descriptors:
+        if include_owned_series and owned_descriptors:
             routes = [(dataset_id,theme_id,False,indicator,None)
                       for dataset_id,indicator in owned_descriptors]
             _owned_series_comparison_results(conn,routes,territory_type,territory_id,
@@ -894,12 +896,14 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
     profile_fixed_context = fixed_context if profiles else None
     profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id,
         profile_fixed_context, **({} if result_fields is None else {"selected_fields":result_fields}))
-    owned_results,owned_markers,_,_,_=_owned_series_comparison_results(conn,
-        [(dataset_id,theme_id,False,owned_indicator,None)
-          for dataset_id,owned_indicator in owned_descriptors],
-        territory_type,territory_id,selection,cohort=(cohort_type,members,scope),
-        selected_fields=result_fields)
-    results.extend(owned_results)
+    owned_markers = {}
+    if include_owned_series:
+        owned_results,owned_markers,_,_,_=_owned_series_comparison_results(conn,
+            [(dataset_id,theme_id,False,owned_indicator,None)
+              for dataset_id,owned_indicator in owned_descriptors],
+            territory_type,territory_id,selection,cohort=(cohort_type,members,scope),
+            selected_fields=result_fields)
+        results.extend(owned_results)
     collection_results = []
     for descriptor in collections:
         collection_supported=({"status","reason","selected_member_count"}
@@ -941,7 +945,8 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             {"territory_type": level, "territory_id": code} for level, code in selection],
         "scope": {**scope, "member_count": len(members)} if scope else None,
         "results": results, "profile_content_version": profile_version,
-        "profile_comparisons": profile_results}
+        "profile_comparisons": profile_results,
+        **({"_fixed_context": fixed_context} if include_fixed_context else {})}
 
 
 
@@ -1654,9 +1659,104 @@ def _owned_series_comparison_result(conn, route, territory_type, territory_id, i
         "result":_comparison_result_without_focal_value(result)}
 
 
+def _scalar_facet_descriptor(conn, indicator_id, territory_type, expected_theme_id=None):
+    row = conn.execute("""SELECT indicator_id,theme_id,label,unit,direction,comparison_facet,
+        allowed_levels,denominator_semantics,completeness,descriptor_version
+        FROM scalar_descriptor WHERE indicator_id=%s""", (indicator_id,)).fetchone()
+    if not row or not row[9] or (expected_theme_id is not None and row[1] != expected_theme_id):
+        raise HTTPException(503, "Declared scalar facet descriptor is unavailable or incompatible")
+    descriptor = dict(zip(("indicator_id", "theme_id", "label", "unit", "direction",
+        "comparison_facet", "allowed_levels", "denominator_semantics", "completeness",
+        "descriptor_version"), row))
+    if territory_type not in descriptor["allowed_levels"]:
+        raise HTTPException(422, "Scalar facet is not declared for this territory level")
+    return descriptor
+
+
+def _scalar_facet_snapshot(conn, territory_type, territory_id, indicator_id, fields=None, *,
+                           preflight_only=False, expected_theme_id=None):
+    """Read the native scalar facet without changing the ordered-series envelope."""
+    marker = conn.execute("""SELECT p.content_version,p.reference_content_version,t.content_version
+        FROM table_publication p LEFT JOIN table_publication t
+          ON t.table_name='territory_reference' WHERE p.table_name='scalar_observation'""").fetchone()
+    if not marker or not marker[0] or not marker[1] or marker[1] != marker[2]:
+        raise HTTPException(503, "Scalar facet publication is stale or incompatible")
+    descriptor = _scalar_facet_descriptor(conn, indicator_id, territory_type, expected_theme_id)
+    territory = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
+                             (territory_id,)).fetchone()
+    if not territory:
+        raise HTTPException(404, "Territory not found")
+    if territory[0] != territory_type:
+        raise HTTPException(422, "Territory target type does not match")
+
+    if fields is None:
+        selected = {"value", "support_count", "denominator_count"}
+    else:
+        selected = set(fields)
+        unsupported = selected - {"value", "support_count", "denominator_count"}
+        if unsupported:
+            raise HTTPException(422, "Field selection is not declared for the scalar facet")
+    if preflight_only:
+        observation_count = conn.execute("""SELECT count(*) FROM scalar_observation
+            WHERE indicator_id=%s AND territory_id=%s AND territory_type=%s""",
+            (indicator_id, territory_id, territory_type)).fetchone()[0]
+        source_count = conn.execute("""SELECT count(*) FROM scalar_observation_source
+            WHERE indicator_id=%s AND territory_id=%s""", (indicator_id, territory_id)).fetchone()[0]
+        if observation_count > 1 or (observation_count and not source_count):
+            raise HTTPException(503, "Scalar facet observation provenance is incomplete")
+        if not observation_count and descriptor["completeness"] != "sparse":
+            raise HTTPException(503, "Dense scalar facet observation is missing")
+        return {"content_version": marker[0], "reference_content_version": marker[1],
+                "work_units": max(1, observation_count + source_count)}
+
+    projections = ["o.status"]
+    for field, column in (("value", "value"), ("support_count", "support_count"),
+                          ("denominator_count", "denominator_count")):
+        if field in selected:
+            projections.append(f"o.{column}")
+    row = conn.execute("""SELECT """ + ",".join(projections) + """,
+        (SELECT json_agg(json_build_object('source_id',os.source_id,'name',sd.name,
+            'vintage_id',os.vintage_id,'version',sv.version,'reference_date',sv.reference_date,
+            'publication_date',sv.publication_date) ORDER BY os.source_id,os.vintage_id)
+         FROM scalar_observation_source os JOIN source_dataset sd USING(source_id)
+         JOIN source_vintage sv USING(source_id,vintage_id)
+         WHERE os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id) AS sources
+        FROM scalar_observation o
+        WHERE o.indicator_id=%s AND o.territory_id=%s AND o.territory_type=%s""",
+        (indicator_id, territory_id, territory_type)).fetchone()
+    observation = {"territory_id": territory_id, "territory_type": territory_type,
+                   "status": row[0] if row else "unavailable"}
+    if row:
+        index = 1
+        for field in ("value", "support_count", "denominator_count"):
+            if field in selected:
+                observation[field] = row[index]
+                index += 1
+        sources = row[index]
+        if not sources:
+            raise HTTPException(503, "Scalar facet observation provenance is incomplete")
+        observation["sources"] = sources
+    else:
+        if descriptor["completeness"] != "sparse":
+            raise HTTPException(503, "Dense scalar facet observation is missing")
+        for field in ("value", "support_count", "denominator_count"):
+            if field in selected:
+                observation[field] = None
+        observation["sources"] = []
+
+    return {"shape": "scalar", "source_facet": indicator_id,
+        "content_version": marker[0], "reference_content_version": marker[1],
+        "descriptor_version": descriptor["descriptor_version"],
+        "descriptor": descriptor, "observation": observation}
+
+
 def _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id, fields=None, *,
                               preflight_only=False, snapshot_state=None,
-                              require_declared_resource=False):
+                              require_declared_resource=False, scalar_facet=False,
+                              expected_theme_id=None):
+    if scalar_facet:
+        return _scalar_facet_snapshot(conn, territory_type, territory_id, indicator_id,
+            fields, preflight_only=preflight_only, expected_theme_id=expected_theme_id)
     if snapshot_state is None:
         shape_rows = []
     else:
@@ -1918,8 +2018,84 @@ def _series_comparison_snapshot(conn, territory_type, territory_id, indicator_id
         "result": result}
 
 
+def _scalar_facet_comparison_preflight(conn, territory_type, territory_id, indicator_id,
+                                       theme_id, selection, selected_fields):
+    descriptor = _scalar_facet_descriptor(conn, indicator_id, territory_type, theme_id)
+    if (descriptor["comparison_facet"] != indicator_id
+            or descriptor["direction"] not in ("high", "low")):
+        raise HTTPException(503, "Declared scalar facet comparison is incompatible")
+    checked = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
+        indicator_id=indicator_id, result_fields=selected_fields, preflight_only=True,
+        include_owned_series=False)
+    cohort_type = checked["cohort_type"]
+    if cohort_type not in descriptor["allowed_levels"]:
+        raise HTTPException(422, "Scalar facet comparison is not declared for this cohort level")
+
+    fixed = checked["fixed_context"]
+    if fixed is not None and territory_id in checked["members"]:
+        context, group_id, fixed_level = fixed
+        group = _execute_comparison_publication_read(conn, """SELECT member_count,lineage_source_count
+            FROM scalar_comparison_group WHERE comparison_context=%s AND group_id=%s
+              AND territory_type=%s AND indicator_id=%s""",
+            (context, group_id, fixed_level, indicator_id)).fetchall()
+        territory = _execute_comparison_publication_read(conn, """SELECT count(*)
+            FROM scalar_comparison_territory WHERE comparison_context=%s AND group_id=%s
+              AND territory_type=%s AND indicator_id=%s AND territory_id=%s""",
+            (context, group_id, fixed_level, indicator_id, territory_id)).fetchone()[0]
+        lineage = _execute_comparison_publication_read(conn, """SELECT count(*)
+            FROM comparison_source_lineage WHERE comparison_family='scalar'
+              AND comparison_context=%s AND group_id=%s AND territory_type=%s AND facet_id=%s""",
+            (context, group_id, fixed_level, indicator_id)).fetchone()[0]
+        if (len(group) != 1 or territory != 1 or group[0][0] != len(checked["members"])
+                or group[0][1] != lineage):
+            raise HTTPException(503, "Published scalar facet comparison is incomplete")
+        work_units = 2 + lineage + 1  # group, focal result, lineage, and comparison marker
+    else:
+        members = list(checked["members"])
+        observations = conn.execute("""SELECT count(*) FROM scalar_observation o
+            WHERE o.indicator_id=%s AND ((o.territory_type=%s AND o.territory_id=ANY(%s))
+              OR (o.territory_id=%s AND o.territory_type=%s))""",
+            (indicator_id, cohort_type, members, territory_id, territory_type)).fetchone()[0]
+        lineage = (conn.execute("""SELECT count(*) FROM (
+                SELECT DISTINCT os.source_id,os.vintage_id FROM scalar_observation_source os
+                JOIN territory_reference t ON t.territory_id=os.territory_id
+                WHERE os.indicator_id=%s AND os.territory_id=ANY(%s) AND t.territory_type=%s
+            ) source_vintages""", (indicator_id, members, cohort_type)).fetchone()[0]
+            if members else 0)
+        work_units = observations + lineage + 1
+    return max(1, int(work_units))
+
+
+def _scalar_facet_comparison_snapshot(conn, territory_type, territory_id, indicator_id,
+                                      theme_id, selection, selected_fields):
+    descriptor = _scalar_facet_descriptor(conn, indicator_id, territory_type, theme_id)
+    if (descriptor["comparison_facet"] != indicator_id
+            or descriptor["direction"] not in ("high", "low")):
+        raise HTTPException(503, "Declared scalar facet comparison is incompatible")
+    comparison = _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
+        indicator_id=indicator_id, result_fields=selected_fields, include_owned_series=False,
+        include_fixed_context=True)
+    if len(comparison["results"]) != 1:
+        raise HTTPException(503, "Published scalar facet comparison is unavailable or ambiguous")
+    result = dict(comparison["results"][0])
+    result["source_facet"] = indicator_id
+    result = _project_comparison_result_fields(result, selected_fields)
+    result = _comparison_result_without_focal_value(result)
+    facet = {"shape": "scalar", "source_facet": indicator_id,
+        "content_version": comparison["scalar_content_version"],
+        "reference_content_version": comparison["reference_content_version"],
+        "descriptor_version": descriptor["descriptor_version"],
+        "descriptor": descriptor, "selection": comparison["selection"],
+        "scope": comparison["scope"], "result": result}
+    if comparison["_fixed_context"] is not None:
+        facet["comparison_content_version"] = _scalar_comparison_publication_marker(conn)[0]
+    return facet
+
+
 def _indicator_comparison_preflight(conn, territory_type, territory_id, indicator_id,
-                                    selection, selected_fields, *, snapshot_state=None):
+                                    selection, selected_fields, *, snapshot_state=None,
+                                    include_scalar_facet=False,
+                                    scalar_facet_theme_id=None):
     _validate_comparison_fields(selected_fields,
         _COMPARISON_RESULT_FIELDS - {"mean", "mean_curve", "focal_value"})
     focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
@@ -1931,6 +2107,12 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
+    if include_scalar_facet and (not active_owned or active_owned[2]):
+        raise HTTPException(503, "Declared ordered-series facet publication is unavailable")
+    if include_scalar_facet and not scalar_facet_theme_id:
+        raise HTTPException(503, "Declared scalar facet theme is unavailable")
+    if include_scalar_facet and active_owned[1] != scalar_facet_theme_id:
+        raise HTTPException(503, "Declared scalar and ordered-series facets have incompatible themes")
     if active_owned:
         if active_owned[2]:
             _validate_comparison_fields(selected_fields,{"selected_member_count"})
@@ -1944,9 +2126,13 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
         checked = _owned_series_comparison_results(conn,[active_owned],territory_type,territory_id,
             selection,cohort=cohort,selected_fields=selected_fields,strict_fields=True,
             preflight_only=True)
+        scalar_work = 0
+        if include_scalar_facet:
+            scalar_work = _scalar_facet_comparison_preflight(conn, territory_type, territory_id,
+                indicator_id, scalar_facet_theme_id, selection, selected_fields)
         return {"shape": "ordered_series", "cohort_type": cohort[0],
                 "members": cohort[1], "scope": cohort[2], "fixed_context": checked[2],
-                "checked": checked}
+                "checked": checked, "scalar_facet_work_units": scalar_work}
     collections = list(resource.collections) if resource else collection_descriptors(
         conn,indicator_id=indicator_id)
     if collections:
@@ -2007,10 +2193,18 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
 
 
 def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator_id, selection,
-                                   selected_fields, *, snapshot_state=None):
+                                   selected_fields, *, snapshot_state=None,
+                                   include_scalar_facet=False,
+                                   scalar_facet_theme_id=None):
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
+    if include_scalar_facet and (not active_owned or active_owned[2]):
+        raise HTTPException(503, "Declared ordered-series facet publication is unavailable")
+    if include_scalar_facet and not scalar_facet_theme_id:
+        raise HTTPException(503, "Declared scalar facet theme is unavailable")
+    if include_scalar_facet and active_owned[1] != scalar_facet_theme_id:
+        raise HTTPException(503, "Declared scalar and ordered-series facets have incompatible themes")
     if active_owned:
         if active_owned[2]:
             _validate_comparison_fields(selected_fields,{"selected_member_count"})
@@ -2019,7 +2213,12 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
         else:
             result=_owned_series_comparison_result(conn,active_owned,territory_type,
                 territory_id,indicator_id,selection,selected_fields)
-        return _project_comparison_payload_fields(result,selected_fields)
+        projected = _project_comparison_payload_fields(result,selected_fields)
+        if include_scalar_facet:
+            projected["scalar_facet"] = _scalar_facet_comparison_snapshot(
+                conn, territory_type, territory_id, indicator_id, scalar_facet_theme_id,
+                selection, selected_fields)
+        return projected
     collections = list(resource.collections) if resource else collection_descriptors(
         conn,indicator_id=indicator_id)
     if collections:

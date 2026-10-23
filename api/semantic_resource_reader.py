@@ -27,6 +27,23 @@ class SemanticResourceReader:
         self._max_owned_series_provenance_per_point = max_owned_series_provenance_per_point
         self._cohort_scopes = {}
 
+    @staticmethod
+    def _has_dual_scalar_series(resource):
+        return (resource.resource_kind == "indicator"
+                and "scalar" in resource.shapes and "ordered_series" in resource.shapes)
+
+    def _require_dual_series_route(self, conn, resource):
+        route = self._owned_series_route(conn, resource.resource_id)
+        if (not route or route[2] or route[1] != resource.theme_id):
+            raise HTTPException(503, "Declared ordered-series facet publication is unavailable or incompatible")
+
+    @staticmethod
+    def _scalar_facet_fields(item):
+        if item.fields is None:
+            return None
+        return [field for field in item.fields
+                if field in {"value", "support_count", "denominator_count"}]
+
     def _coordinate_values(self, conn, item, resource):
         coordinates = item.coordinates or {}
         domains = {axis: set(values) for axis, values in resource.axis_values}
@@ -77,6 +94,10 @@ class SemanticResourceReader:
         resource = catalogue.resources_by_id[item.resource]
         if resource.resource_kind in {"indicator", "typed_reading"}:
             self._coordinate_values(conn, item, resource)
+        dual_scalar_series = (self._has_dual_scalar_series(resource)
+                              and item.target.kind == "territory")
+        if dual_scalar_series:
+            self._require_dual_series_route(conn, resource)
         if resource.resource_kind == "typed_reading":
             if item.target.kind == "territory_cohort":
                 cohort = resolve_territory_cohort(conn, item.target, work_budget=work_budget)
@@ -152,7 +173,9 @@ class SemanticResourceReader:
                        for member_type, member_id in selection):
                     raise HTTPException(422, "Selected comparison territory type does not match")
             estimate = self._indicator_comparison_preflight(
-                conn, item.target.type, item.target.id, item.resource, selection, fields)
+                conn, item.target.type, item.target.id, item.resource, selection, fields,
+                include_scalar_facet=dual_scalar_series,
+                scalar_facet_theme_id=resource.theme_id if dual_scalar_series else None)
             resource = catalogue.resources_by_id[item.resource]
             members = ([member_id for _, member_id in selection] if selection else
                        list(estimate.get("members", ())) if isinstance(estimate, dict) else [])
@@ -209,7 +232,7 @@ class SemanticResourceReader:
                       AND comparison_context=%s AND group_id=%s AND territory_type=%s""",
                     (item.resource, fixed_context[0], fixed_context[1], fixed_context[2])).fetchone()[0]
                 work = max(1, int(rows) + int(lineage))
-            return work
+            return work + int((estimate or {}).get("scalar_facet_work_units", 0))
 
         requested_fields = self._legacy_fields(item, catalogue)
         if item.target.kind == "named_reference":
@@ -234,6 +257,12 @@ class SemanticResourceReader:
             requested_fields, preflight_only=True, require_declared_resource=True)
         if not isinstance(estimate, dict):
             return 1
+        scalar_facet_work = 0
+        if dual_scalar_series:
+            scalar_estimate = self._indicator_facts_snapshot(conn, item.target.type,
+                item.target.id, item.resource, self._scalar_facet_fields(item),
+                preflight_only=True, scalar_facet=True, expected_theme_id=resource.theme_id)
+            scalar_facet_work = int(scalar_estimate["work_units"])
         declared_cells = 1
         for _axis, values in resource.axis_values:
             declared_cells *= max(1, len(values))
@@ -250,7 +279,7 @@ class SemanticResourceReader:
                 declared_cells = max(declared_cells, len(descriptor[0]))
         if route:
             declared_cells *= self._max_owned_series_provenance_per_point
-        return estimate.get("work_units", declared_cells)
+        return estimate.get("work_units", declared_cells) + scalar_facet_work
 
     @staticmethod
     def _legacy_fields(item, catalogue):
@@ -296,7 +325,11 @@ class SemanticResourceReader:
                          if item.intent.kind == "selected_comparison" else None)
             data = self._indicator_comparison_snapshot(
                 conn, item.target.type, item.target.id, item.resource, selection,
-                self._comparison_field_selection(item.fields))
+                self._comparison_field_selection(item.fields),
+                include_scalar_facet=(self._has_dual_scalar_series(resource)
+                                      and item.target.kind == "territory"),
+                scalar_facet_theme_id=(resource.theme_id if self._has_dual_scalar_series(resource)
+                                       and item.target.kind == "territory" else None))
             if item.coordinates:
                 data = self._filter_coordinates(data, item.coordinates, resource)
             return {"resource": item.resource, "target": item.target.model_dump(), **data}
@@ -342,6 +375,11 @@ class SemanticResourceReader:
             require_declared_resource=True)
         if item.coordinates:
             data = self._filter_coordinates(data, item.coordinates, resource)
+        if (self._has_dual_scalar_series(resource) and item.target.kind == "territory"):
+            self._require_dual_series_route(conn, resource)
+            data["scalar_facet"] = self._indicator_facts_snapshot(conn, item.target.type,
+                item.target.id, item.resource, self._scalar_facet_fields(item),
+                scalar_facet=True, expected_theme_id=resource.theme_id)
         return {"resource": item.resource, "target": item.target.model_dump(),
                 **(data if isinstance(data, dict) else {"result": data})}
 
