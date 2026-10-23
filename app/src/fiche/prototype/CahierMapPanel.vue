@@ -74,7 +74,7 @@ const emit = defineEmits<{
   left: 11px;
   color: var(--mode-ring);
   text-shadow: 0 1px 4px var(--paper);
-  font-size: 9px;
+  font-size: var(--type-figure-tick-size);
   font-variant-numeric: tabular-nums;
   letter-spacing: .08em;
 }
@@ -83,7 +83,7 @@ const emit = defineEmits<{
   position: absolute;
   inset: auto 0 8px;
   color: var(--muted);
-  font: 500 10px/1.2 var(--font-sans);
+  font: var(--text-caption);
   text-align: center;
 }
 

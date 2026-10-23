@@ -5,6 +5,28 @@ import { describe, expect, it } from 'vitest'
 const root = process.cwd()
 const read = (path: string) => readFileSync(join(root, path), 'utf8')
 
+function mediaBlocks(css: string, maxWidth: number): string[] {
+  const mediaRule = new RegExp(`@media\\s*\\(max-width:\\s*${maxWidth}px\\)\\s*\\{`, 'gu')
+  const blocks: string[] = []
+  let match: RegExpExecArray | null
+
+  while ((match = mediaRule.exec(css)) !== null) {
+    const open = match.index + match[0].lastIndexOf('{')
+    let depth = 0
+
+    for (let index = open; index < css.length; index += 1) {
+      if (css[index] === '{') depth += 1
+      if (css[index] === '}' && --depth === 0) {
+        blocks.push(css.slice(open + 1, index))
+        mediaRule.lastIndex = index + 1
+        break
+      }
+    }
+  }
+
+  return blocks
+}
+
 describe('shared E editorial foundation', () => {
   it('exposes observed E decisions as site-wide tokens', () => {
     const tokens = read('src/styles/tokens.css')
@@ -45,9 +67,13 @@ describe('shared E editorial foundation', () => {
 
   it('reflows the page margin in mobile flow and keeps a compact margin line', () => {
     const cahier = read('src/fiche/prototype/VarianteCahierLibre.vue')
-    const mobile = cahier.match(/@media\s*\(max-width:\s*600px\)\s*\{([\s\S]*?)(?=\n\})/)?.[1] ?? ''
-    expect(mobile).toContain('--margin-line: 12px')
-    expect(mobile).toMatch(/\.page-margin\s*\{[^}]*position:\s*static/s)
+    const mobile600 = mediaBlocks(cahier, 600)
+    const mobile760 = mediaBlocks(cahier, 760).find((block) => block.includes('.page-margin'))
+
+    expect(mobile600).toHaveLength(1)
+    expect(mobile600[0]).toContain('--margin-line: 12px')
+    expect(mobile760).toBeDefined()
+    expect(mobile760).toMatch(/\.page-margin\s*\{[^}]*position:\s*static/s)
   })
 
   it('ships the Mobilité map plate in the production cahier without prototype query switches', () => {

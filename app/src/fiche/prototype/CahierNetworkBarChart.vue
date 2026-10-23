@@ -150,7 +150,7 @@ function rowAriaLabel(row: CahierNetworkBarRow): string {
 
 .cahier-network-bar-chart__unit {
   justify-self: end;
-  font-size: 9px;
+  font-size: var(--type-figure-tick-size);
   letter-spacing: normal;
   white-space: nowrap;
 }
@@ -167,7 +167,7 @@ function rowAriaLabel(row: CahierNetworkBarRow): string {
   align-items: center;
   gap: 5px;
   color: var(--cahier-region-emphasis);
-  font-size: 9px;
+  font-size: var(--type-figure-tick-size);
   letter-spacing: normal;
   white-space: nowrap;
 }

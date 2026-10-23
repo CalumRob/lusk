@@ -437,7 +437,7 @@ const tooltipAnchor = computed<CahierFigureTooltipAnchor | undefined>(() => {
   }
 
   .bivariate-grid-share {
-    font-size: 10px !important;
+    font-size: var(--type-figure-tick-size) !important;
   }
 
   .bivariate-ramp-legend {

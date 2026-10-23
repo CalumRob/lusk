@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs'
+import { readdirSync, readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
@@ -12,6 +12,10 @@ const layoutCss = readFileSync(
 )
 const varianteCahierLibreSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'VarianteCahierLibre.vue'),
+  'utf8',
+)
+const cahierEvidenceSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierEvidenceSource.css'),
   'utf8',
 )
 const lectureSource = readFileSync(
@@ -31,6 +35,14 @@ const tokensSource = readFileSync(
   'utf8',
 )
 
+function cahierStyleFiles(directory: string): string[] {
+  return readdirSync(directory, { withFileTypes: true }).flatMap((entry) => {
+    const path = join(directory, entry.name)
+    if (entry.isDirectory()) return cahierStyleFiles(path)
+    return /\.(?:css|vue)$/u.test(entry.name) ? [path] : []
+  })
+}
+
 function cssRule(source: string, selector: string): string {
   return source.match(new RegExp(`(?:^|\\n)${selector.replaceAll('.', '\\.') }\\s*\\{([\\s\\S]*?)\\n\\}`))?.[1] ?? ''
 }
@@ -46,8 +58,52 @@ describe('Cahier typography roles', () => {
 
   it('routes Cahier figure titles through the figure-title family role', () => {
     expect(cssRule(layoutCss, '.cahier-figure-title')).toContain(
-      'font-family: var(--font-figure-title)',
+      'font: var(--type-figure-title)',
     )
+    expect(cssRule(layoutCss, '.cahier-figure-title')).toContain('color: var(--brand-700)')
+    expect(tokensSource).toContain('--type-figure-title: 600 0.9375rem/1.25 var(--font-figure-title)')
+    expect(tokensSource).toContain('--text-cahier-min-size: 0.6875rem')
+    expect(tokensSource).toContain('--type-figure-tick-size: var(--text-cahier-min-size)')
+    expect(cssRule(figureCss, '.cahier-figure-frame')).toContain(
+      '--cahier-figure-tick-label-size: var(--type-figure-tick-size)',
+    )
+  })
+
+  it('keeps Cahier text at or above 11px except for deliberate desktop editorial source stamps', () => {
+    const undersized: string[] = []
+    const sources = cahierStyleFiles(join(process.cwd(), 'src', 'fiche', 'prototype'))
+    const sourceStampDecision =
+      'Owner decision: source stamps are a deliberate quiet editorial size on desktop, below --text-caption, and rise to the 11px legibility floor on phones.'
+    const sourceStampRole = '--text-source-stamp-size: 0.625rem;'
+
+    for (const path of sources) {
+      const source = readFileSync(path, 'utf8')
+      for (const declaration of source.matchAll(/\bfont(?:-size)?\s*:\s*([^;]+);/gu)) {
+        const directSizes = declaration[1].replace(/calc\([^()]*\)/gu, '')
+        for (const size of directSizes.matchAll(/([\d.]+)(px|rem)(?=\s|\/|,|\)|$)/gu)) {
+          const pixels = Number(size[1]) * (size[2] === 'rem' ? 16 : 1)
+          if (pixels < 11) undersized.push(`${path}: ${declaration[0]}`)
+        }
+      }
+    }
+
+    expect(tokensSource).toContain(sourceStampRole)
+    expect(tokensSource).toContain(sourceStampDecision)
+    expect(tokensSource).toMatch(
+      /\/\* Owner decision: source stamps are a deliberate quiet editorial size on desktop, below --text-caption, and rise to the 11px legibility floor on phones\. \*\/\s*--text-source-stamp-size:\s*0\.625rem;/u,
+    )
+    expect(tokensSource).toContain(
+      'The 11px phone floor is applied to this size role in this single location.',
+    )
+    expect(tokensSource).toMatch(
+      /@media\s*\(max-width:\s*760px\)\s*\{\s*:root\s*\{\s*--text-source-stamp-size:\s*0\.6875rem;\s*\}\s*\}/u,
+    )
+    expect(tokensSource.match(new RegExp(sourceStampDecision, 'gu'))).toHaveLength(1)
+    expect(cahierEvidenceSource).toContain('font: 500 var(--text-source-stamp-size)/1.4 var(--font-metadata);')
+    expect(varianteCahierLibreSource).toContain('font: 500 var(--text-source-stamp-size)/1.4 var(--font-metadata);')
+    expect(cahierEvidenceSource).not.toContain('Source stamps are a deliberate quiet editorial size')
+    expect(varianteCahierLibreSource).not.toContain('Source stamps are a deliberate quiet editorial size')
+    expect(undersized).toEqual([])
   })
 
   it('uses one lecture size for the Lecture control and En savoir plus', () => {
