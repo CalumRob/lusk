@@ -283,7 +283,7 @@ export function modeleTrajectoire(
   endpoints: readonly string[],
   territoires: readonly Territoire[],
   etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
-  reference: readonly Indicateur[] = [],
+  reference: readonly Pick<Indicateur, 'detail' | 'value'>[] = [],
   referenceLabel: string | null = null,
   options: OptionsTrajectoire = {},
 ): ModeleTrajectoire {

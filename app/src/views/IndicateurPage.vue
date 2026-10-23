@@ -27,8 +27,8 @@ import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, o
 import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
 import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
 import type { Indicateur, IndicatorPageMetadata, Payload, ThemeMetadata } from '@/payload/types'
-import { validateRaccordementIndicatorRead } from '@/payload/raccordementIndicatorApi'
-import type { RaccordementIndicatorComparison, RaccordementIndicatorRead } from '@/payload/raccordementIndicatorApi'
+import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison } from '@/payload/themeAcquisition'
+import { projectRaccordementSemanticReads } from '@/payload/raccordementSemanticProjection'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -270,8 +270,18 @@ watch(
 )
 
 const serieLecture = ref<OrderedSeriesRead | null>(null)
-const raccordementApiLecture = ref<{ metadata: RaccordementIndicatorRead; comparison: RaccordementIndicatorComparison; facts: Indicateur[]; referenceFacts: Indicateur[] } | null>(null)
+const raccordementApiLecture = ref<ReturnType<typeof projectRaccordementSemanticReads> | null>(null)
 const raccordementApiErreur = ref(false)
+const raccordementThemeCache = new ThemeAcquisitionCache(
+  (selectedTheme, key) => {
+    if (!key) throw new Error('Cible requise pour l’acquisition sémantique Mobilité')
+    return acquireThemeFacts(key.type, key.id, selectedTheme)
+  },
+  (selection, selectedTheme, key) => {
+    if (!key) throw new Error('Cible requise pour la comparaison sémantique Mobilité')
+    return acquireThemeComparison(key.type, key.id, selectedTheme, selection)
+  },
+)
 const raccordementSource = computed(() => {
   const point = raccordementApiLecture.value?.metadata.points[0]
   if (!point || typeof point !== 'object') return null
@@ -304,9 +314,15 @@ async function chargerSerie(force = false) {
   const url = adapter.publicationMode === 'owned'
     ? `/api/series-datasets/${encodeURIComponent(adapter.datasetId ?? '')}/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/${encodeURIComponent(adapter.pathIndicator)}?${query}`
     : `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`
-  if (!force && url === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value)) return
+  const selectedIds = adapter.indicator === 'raccordement_courbe' && niveauSerie.value === 'commune' && (department || epci)
+    ? scopeTerritories.filter((territory) => territory.type === 'commune')
+      .map((territory) => ({ territory_type: 'commune' as const, territory_id: territory.territoire }))
+    : undefined
+  const requestKey = adapter.indicator === 'raccordement_courbe'
+    ? JSON.stringify([focal.type, focal.territoire, cleSelectionComparaison(selectedIds)]) : url
+  if (!force && requestKey === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value)) return
   const request = ++serieRequete
-  serieRequestKey = url
+  serieRequestKey = requestKey
   serieChargement.value = true
   serieErreur.value = false
   raccordementApiErreur.value = false
@@ -314,24 +330,16 @@ async function chargerSerie(force = false) {
   raccordementApiLecture.value = null
   try {
     if (adapter.indicator === 'raccordement_courbe') {
-      const readUrl = `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/indicators/raccordement_courbe`
-      const compareUrl = `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/indicators/raccordement_courbe/comparison`
-      const selectedIds = niveauSerie.value === 'commune' && (department || epci)
-        ? scopeTerritories.filter((territory) => territory.type === 'commune')
-          .map((territory) => ({ territory_type: 'commune', territory_id: territory.territoire }))
-        : undefined
-      const [readResponse, comparisonResponse] = await Promise.all([
-        fetch(readUrl),
-        fetch(compareUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(selectedIds === undefined ? {} : { selection: selectedIds }) }),
-      ])
-      if (!readResponse.ok || !comparisonResponse.ok) throw new Error('Raccordement API unavailable')
-      const [read, comparison] = await Promise.all([readResponse.json(), comparisonResponse.json()])
+      if (force) raccordementThemeCache.invalidate(focal.type, focal.territoire, 'mobilite')
+      const acquired = await raccordementThemeCache.select(focal.type, focal.territoire, 'mobilite', selectedIds)
       if (request !== serieRequete) return
+      const comparison = acquired.comparisons.get(cleSelectionComparaison(selectedIds))
+      if (!comparison) throw new Error('Comparaison native du raccordement absente')
       const canonicalScopeLabel = selectedIds === undefined
         ? focal.classe_densite_libelle_public ?? undefined
         : typeof model.value?.scopeLabel === 'string' ? model.value.scopeLabel : undefined
-      const adapted = validateRaccordementIndicatorRead(read, comparison, focal, selectedIds, canonicalScopeLabel)
+      const adapted = projectRaccordementSemanticReads(acquired.focal, comparison,
+        focal, selectedIds, canonicalScopeLabel)
       raccordementApiLecture.value = adapted
       return
     }
@@ -394,7 +402,7 @@ const payload = computed<Payload>(() => {
       fact.key !== 'raccordement_reference' && fact.key !== 'raccordement_tc')
     return { ...base, themeMetadata: themeMetadata ? { ...base.themeMetadata, mobilite: {
       ...themeMetadata, indicator_pages: { ...themeMetadata.indicator_pages, raccordement_courbe: updatedPage },
-    } } : base.themeMetadata, indicateurs: [...indicators, ...read.facts, ...read.referenceFacts] } as Payload
+    } } : base.themeMetadata, indicateurs: [...indicators, ...read.facts] } as Payload
   }
   const page = base.themeMetadata?.[adapter.theme]?.indicator_pages?.[adapter.indicator]
   const apiFacts = serieLecture.value && page
@@ -464,13 +472,16 @@ const trajectoire = computed(() => {
   const dispatch = familyDispatch.value
   if (!dispatch || dispatch.family !== 'trajectory' || !model.value) return null
   const { niveau, departement, epci, territoire } = model.value.state
+  const referenceFacts = indicator.value === 'raccordement_courbe' && raccordementApiLecture.value
+    ? raccordementApiLecture.value.referenceFacts
+    : dispatch.representation.reference
   const trajectoryModel = modeleTrajectoire(
     facts.value,
     dispatch.facet,
     dispatch.representation.endpoints,
     payload.value.territoires,
     { niveau, departement, epci, territoire },
-    dispatch.representation.reference,
+    referenceFacts,
     dispatch.representation.extension.reference?.label ?? null,
     { axis: dispatch.representation.extension.axis, labelsDetail: dispatch.representation.labelsDetail },
   )

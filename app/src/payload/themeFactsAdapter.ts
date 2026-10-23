@@ -162,7 +162,7 @@ function histoireDemographieDeSql(target: { territoire: string; type: Territoire
     if (!texteNonVide(reading[key])) throw new Error(`Lecture SQL Démographie invalide : ${key}`)
   }
   if (reading.story_key !== 'trajectoire-demographique' || reading.salience_reason !== 'defaut' ||
-      reading.rate_unit !== '‰' || !(reading.periode === null || text(reading.periode))) {
+      !(reading.periode === null || text(reading.periode))) {
     throw new Error('Lecture SQL Démographie non déclarée')
   }
   for (const key of ['solde_naturel', 'solde_migratoire', 'taux_solde_naturel', 'taux_solde_migratoire']) {
@@ -390,9 +390,17 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
       if (!Array.isArray(data.facts)) throw new Error(`Lecture typée sémantique invalide : ${resource}`)
       for (const candidate of rows(data.facts, 'typed_reading.facts')) {
         if (!texteNonVide(candidate.groupe)) throw new Error('Groupe de lecture typée absent')
+        if (candidate.source !== undefined && (!isRecord(candidate.source) ||
+            candidate.source.source_id !== candidate.source_id || candidate.source.vintage_id !== candidate.vintage_id)) {
+          unavailableReadings.push(resource)
+          continue
+        }
+        const descriptor = isRecord(data.descriptor) ? data.descriptor : null
         const sameResourceSources: Row[] = [
+          ...(isRecord(candidate.source) ? [candidate.source] : []),
           ...normalizeNativeSources(candidate.sources),
           ...normalizeNativeSources(data.sources),
+          ...(descriptor && isRecord(descriptor.source) ? [descriptor.source] : []),
           ...(Array.isArray(data.source_bindings) ? rows(data.source_bindings, 'typed_reading.source_bindings').map((binding) => ({
             ...binding, name: binding.source_name, version: binding.source_version,
             reference_date: binding.reference_date ?? binding.source_reference_date,
@@ -412,7 +420,9 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
           unavailableReadings.push(resource)
           continue
         }
-        const reading: Row = { ...candidate, provenance: actualSource ? {
+        const reading: Row = { ...candidate,
+          ...(descriptor?.rate_unit !== undefined ? { rate_unit: descriptor.rate_unit } : {}),
+          provenance: actualSource ? {
           source_id: actualSource.source_id, source_name: sourceName(actualSource), source_version: actualSource.version,
           source_reference_date: actualSource.reference_date ?? null,
           source_publication_date: actualSource.publication_date ?? null,
@@ -603,13 +613,30 @@ function semanticReadingCloud(response: Row, scopeValue: unknown, selectionValue
   if (selectedIds.some((id) => !cohortIds.has(id))) return null
 
   const points: Row[] = []
+  const sourceAbsences: Row[] = []
+  const sourceBindings: Row[] = []
   for (const id of selectedIds) {
     const member = memberById.get(id)!
     const territory = member.territory as Row
     const facts = rows(member.facts, 'typed_reading.territory.facts')
     const fact = facts.find((candidate) => candidate.groupe === group)
+    if (!fact && cohortRead.resource === 'milieux_selected_reading' && facts.length === 0 &&
+        Array.isArray(member.source_absences) && member.source_absences.length === 1) {
+      const absence = member.source_absences[0]
+      if (!isRecord(absence) || absence.territory_id !== id || absence.territory_type !== territory.type ||
+          absence.reason !== 'source_record_absent' || !texteNonVide(absence.source_id) ||
+          !texteNonVide(absence.vintage_id) || typeof absence.source_snapshot_sha256 !== 'string' ||
+          !/^[a-f0-9]{64}$/.test(absence.source_snapshot_sha256)) return null
+      sourceAbsences.push(absence)
+      continue
+    }
     if (!fact || fact.status !== 'measured' || fact.source_id !== focalFact.source_id ||
         fact.vintage_id !== focalFact.vintage_id) return null
+    if (Array.isArray(member.source_bindings)) {
+      sourceBindings.push(...rows(member.source_bindings, 'typed_reading.source_bindings')
+        .filter((binding) => binding.groupe === group && binding.territory_id === id &&
+          binding.territory_type === territory.type))
+    }
     if (cohortRead.resource === 'demographie_selected_reading') {
       if (!finite(fact.taux_solde_naturel) || !finite(fact.taux_solde_migratoire) ||
           !(fact.periode === null || text(fact.periode))) continue
@@ -631,7 +658,8 @@ function semanticReadingCloud(response: Row, scopeValue: unknown, selectionValue
   return { status: points.length ? 'available' : 'unavailable', groupe: group,
     story_key: cohortRead.resource === 'demographie_selected_reading'
       ? 'trajectoire-demographique' : 'se-densifier-setaler-ou-sen-aller',
-    scope, content_version: data.content_version, reference_content_version: referenceVersion, points }
+    scope, content_version: data.content_version, reference_content_version: referenceVersion, points,
+    source_absences: sourceAbsences, source_bindings: sourceBindings }
 }
 
 export function semanticComparisonForTheme(response: unknown, reference?: SemanticReadingReference,
@@ -662,9 +690,12 @@ export function semanticComparisonForTheme(response: unknown, reference?: Semant
   }
   const readingCloud = semanticReadingCloud(response, scopes[0] ?? null, selections[0] ?? null,
     reference, focalReads)
+  const cloudRequested = Array.isArray(response.cohort_reads) && response.cohort_reads.some((read) =>
+    isRecord(read) && (read.resource === 'demographie_selected_reading' || read.resource === 'milieux_selected_reading'))
   return { results, profile_comparisons: profiles,
     selection: selections[0] ?? response.selection,
     scope: scopes[0] ?? null,
+    reading_cloud_error: response.cohort_error === true || (cloudRequested && !readingCloud),
     ...(readingCloud ? { reading_cloud: readingCloud } : {}) }
 }
 
@@ -695,7 +726,9 @@ export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unkno
       // coordinate, not a label to spread across every point in that series.
       if (item.source_facet !== undefined && item.source_facet !== null) {
         const coordinate = row.dimension ?? row.detail
-        if (coordinate !== item.source_facet) return false
+        // Scalar comparisons identify their indicator as the source facet;
+        // ordered-series comparisons identify the selected axis coordinate.
+        if ((coordinate ?? row.key) !== item.source_facet) return false
       }
       return true
     }) ?? profiles.find((item) => {

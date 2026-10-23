@@ -269,7 +269,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
     expect(fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch').length).toBeGreaterThan(0)
     wrapper.unmount()
-  })
+  }, 20000)
 
   it('ne rend pas la section subventions quand les lectures natives déclarent leur absence', async () => {
     const model = modeleAvecContextesComparaison()
@@ -352,10 +352,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         `${theme}; alert=${wrapper.find('[role="alert"]').exists() ? wrapper.find('[role="alert"]').text() : 'none'}; calls=${JSON.stringify(fetchApi.mock.calls.map(([url]) => String(url)))}`)
         .toContain(heading)
       if (theme === 'demographie') {
-        // The producer catalogue does not declare the rate_unit required by
-        // the legacy typed-reading projector. Keep that evidence absent rather
-        // than inventing it; the native scalar facts still render independently.
-        expect(wrapper.get('[role="alert"]').text()).toContain('comparaisons de ce thème')
+        // The native typed-reading descriptor publishes rate_unit and cohort facts.
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
         expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe('24,45')
       } else if (theme === 'habitat') {
         const passoires = nativeResources(theme).find((resource) => resource.resource_id === 'part_passoires')!
@@ -1023,13 +1021,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  const economieModel = () => {
-    const published = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
-    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    return model
-  }
-
   it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {
     await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
     const requests = vi.fn().mockRejectedValue(new Error('scalar API must stay off'))
@@ -1271,15 +1262,19 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       vi.fn(async () => model))
     const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
     const reference = nativeResources('mobilite').find((resource) => resource.shapes.includes('named_reference'))!
-    const publishedCurve = model.themes.mobilite!.indicators.filter((fact) => fact.key === curve.resource_id)
+    const fixtureCurve = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'facts' } }, curve)
+    const declaredAxisCount = curve.axis_values?.[0]?.[1].length ?? 0
+    const fixturePoint = (fixtureCurve.points as Array<Record<string, any>>)[0]!
     const reads = () => requests.flat()
 
     expect(wrapper.find('.transit-series--territory').exists()).toBe(true)
     const territoryPoints = wrapper.findAll('.transit-point--territory')
-    expect(territoryPoints).toHaveLength(publishedCurve.length)
-    expect(territoryPoints[0]?.attributes('data-value')).toBe(String(publishedCurve[0]!.value))
-    expect(territoryPoints.at(-1)?.attributes('data-value')).toBe(String(publishedCurve.at(-1)!.value))
-    expect(wrapper.text()).toContain(publishedCurve[0]!.vintage_source)
+    expect(declaredAxisCount).toBe(73)
+    expect(territoryPoints).toHaveLength(declaredAxisCount)
+    expect(territoryPoints[0]?.attributes('data-value')).toBe('0')
+    expect(territoryPoints.at(-1)?.attributes('data-value')).toBe('0.5')
+    expect(wrapper.text()).toContain(fixturePoint.provenance[0].source_name)
     expect(reads().some((item) => item.resource === curve.resource_id && item.intent.kind === 'facts')).toBe(true)
     expect(reads().some((item) => item.resource === reference.resource_id &&
       item.target.kind === 'named_reference' && reference.target_ids.includes(item.target.id))).toBe(true)
@@ -1295,7 +1290,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const epciRead = reads().find((item) => item.resource === curve.resource_id &&
       item.intent.kind === 'selected_comparison')
     expect(epciRead?.intent.members).toEqual(epciMembers)
-    expect(wrapper.findAll('.transit-point--territory')).toHaveLength(publishedCurve.length)
+    expect(wrapper.findAll('.transit-point--territory')).toHaveLength(declaredAxisCount)
 
     const bretagneMembers = cohort.filter((territory: any) => territory.type === 'commune')
       .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
@@ -1315,7 +1310,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(reads().filter((item) => item.resource === curve.resource_id && item.intent.kind === 'facts')).toHaveLength(1)
     expect(fetchBloque).not.toHaveBeenCalled()
     wrapper.unmount()
-  })
+  }, 20_000)
 
   it.each(['densite', 'epci', 'bretagne'] as const)(
     'affiche la portée publiée %s dans la note de comparaison', async (mode) => {

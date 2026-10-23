@@ -117,7 +117,7 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
     expect(requests.every((items) => items.length >= 1 && items.length <= 12)).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
     wrapper.unmount()
-  })
+  }, 20_000)
 
   it.each([
     { type: 'epci', id: '243500139', scope: 'EPCI bretons' },

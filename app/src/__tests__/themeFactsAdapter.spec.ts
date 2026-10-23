@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
   themeFactsEnvelopeFromSemantic, themeFactsRowsFromApi, themeFactsRowsFromSemantic, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
+import { projectRaccordementSemanticReads } from '../payload/raccordementSemanticProjection'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
+import { nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
+import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
+import { territoiresFixture } from '../payload/fixtures'
 
 const cible = { territoire: '35238', type: 'commune' as const }
 
@@ -57,7 +63,8 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         contract: 'indicator-comparison-v1', indicator_id: 'part_passoires', shape: 'scalar',
         content_version: 'scalar-v1', reference_content_version: 'territories-v1', selection: null,
         scope: { kind: 'density_class', member_count: 14 },
-        result: { indicator_id: 'part_passoires', status: 'available', direction: 'low', rank: 3, rank_size: 14 },
+        result: { indicator_id: 'part_passoires', source_facet: 'part_passoires',
+          status: 'available', direction: 'low', rank: 3, rank_size: 14 },
       },
     }] }
     validerReponseComparaisonTheme('habitat', response, undefined)
@@ -69,6 +76,36 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(lignesAvecComparaisonApi([row], comparison, 'Même classe de densité')[0]).toMatchObject({
       value: 0.2, rang_epci: null, comparaisonApi: { rang: 3, taille: 14, portee: 'Même classe de densité' },
     })
+  })
+
+  it('retains valid Milieux cloud points alongside explicit source-absence evidence', () => {
+    const members = [{ id: '1', type: 'commune', name: 'Focal' }, { id: '2', type: 'commune', name: 'Absent peer' }]
+    const fact = { groupe: 'artificialisation', source_id: 'population', vintage_id: '2023', status: 'measured',
+      periode_pop: '2020', periode_artif: '2021', taux_variation_population: 0.02,
+      artif_m2_par_habitant: 10, artif_m3_par_habitant: 12 }
+    const absence = { territory_id: '2', territory_type: 'commune', reason: 'source_record_absent',
+      source_id: 'conso', vintage_id: '2025', source_snapshot_sha256: 'a'.repeat(64) }
+    const response = { theme_id: 'milieux', comparison_reads: [{ resource: 'artif_par_habitant', data: {
+      result: {}, scope: { kind: 'explicit_selection', member_count: 2 },
+      selection: members.map(({ id, type }) => ({ territory_id: id, territory_type: type })),
+    } }], cohort_reads: [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
+      content_version: 'reading-v1', reference_content_version: 'reference-v1',
+      cohort: { territory_type: 'commune', member_count: 2, reference_content_version: 'reference-v1', members },
+      territories: [{ territory: members[0], facts: [fact] }, { territory: members[1], facts: [], source_absences: [absence] }],
+    } }] }
+    const focalReads = [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
+      content_version: 'reading-v1', reference_content_version: 'reference-v1', facts: [fact],
+    } }]
+    const comparison = semanticComparisonForTheme(response, { target: { territoire: '1', type: 'commune' } }, focalReads)
+    expect(comparison?.reading_cloud).toMatchObject({ status: 'available',
+      points: [{ territory: { territory_id: '1' }, artif_m2_par_habitant: 10 }],
+      source_absences: [absence] })
+    const unexplainedMissing = structuredClone(response)
+    delete (unexplainedMissing.cohort_reads[0]!.data.territories[1] as Record<string, unknown>).source_absences
+    const unexplained = semanticComparisonForTheme(unexplainedMissing,
+      { target: { territoire: '1', type: 'commune' } }, focalReads)
+    expect(unexplained?.reading_cloud).toBeUndefined()
+    expect(unexplained?.reading_cloud_error).toBe(true)
   })
 
   it('builds a typed cloud from bounded producer facts only inside the API-resolved density scope', () => {
@@ -127,6 +164,30 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       { territoire: '3', type: 'commune', classe_densite_code: 'D2' },
     ] }, focalReads)
     expect(incomplete?.reading_cloud).toBeUndefined()
+  })
+
+  it('consumes a native typed fact source and its published descriptor rate unit', () => {
+    const source = { source_id: 'insee', vintage_id: '2023', name: 'Published reading source', version: '2023',
+      reference_date: null, publication_date: '2026-01-02' }
+    const response = { theme_id: 'demographie', resource_reads: [{ resource: 'demographie_selected_reading',
+      shapes: ['typed_reading'], data: { resource: 'demographie_selected_reading',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire },
+        content_version: 'reading-v1', reference_content_version: 'reference-v1',
+        descriptor: { descriptor_version: 'reading-v1', rate_unit: '‰/an', source },
+        facts: [{ groupe: 'producer-group', story_key: 'trajectoire-demographique',
+          salience_reason: 'defaut', status: 'measured', periode: '2020', solde_naturel: 1,
+          solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2,
+          classification: 'balanced', source_id: 'insee', vintage_id: '2023', source }] } }] }
+    const adapted = themeFactsRowsFromSemantic('demographie', response, cible)
+    expect(adapted.unavailableReadings).toEqual([])
+    expect(adapted.histoires).toEqual([expect.objectContaining({
+      taux_solde_naturel: 0.3, vintage_source: 'Published reading source', vintage_version: '2023',
+      vintage_date_reference: null, vintage_date_publication: '2026-01-02',
+    })])
+    const inconsistentSource = structuredClone(response)
+    inconsistentSource.resource_reads[0]!.data.facts[0]!.source.source_id = 'unrelated-source'
+    expect(themeFactsRowsFromSemantic('demographie', inconsistentSource, cible).unavailableReadings)
+      .toEqual(['demographie_selected_reading'])
   })
 
   it('does not borrow a typed-reading source label from an unrelated resource', () => {
@@ -339,23 +400,134 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       row.vintage_version === 'api-v1')).toBe(true)
   })
 
-  it('projette les prix DVF publiés en détails annuels et conserve le scalaire groupé', () => {
-    // Capture live : habitat-facts.json, commune de Rennes (35238). La réponse
-    // live observée ne portait que le scalaire; la série jointe est le contrat servi.
-    const rows = themeFactsRowsFromApi('habitat', faitsHabitat({
-      indicators: [{ indicator_id: 'prix_m2', label: 'Prix au m²', unit: '€/m²', value: 3819.44,
-        status: 'measured', dimensions: {}, sources: sources() }],
-      owned_series: [{ indicator_id: 'prix_m2', unit: '€/m²', points: [
-        { axis: '2024', value: 3700, status: 'measured', provenance: [{ source_id: 's', source_name: 'DVF', version: '2025', reference_date: null, publication_date: null }] },
-        { axis: '2025', value: 3819.44, status: 'measured', provenance: [{ source_id: 's', source_name: 'DVF', version: '2025', reference_date: null, publication_date: null }] },
-      ] }],
-    }), cible)
-    expect(rows.indicateurs.map((row) => [row.key, row.detail, row.value, row.unit])).toEqual([
-      ['prix_m2', null, 3819.44, '€/m²'], ['prix_m2', '2024', 3700, '€/m²'], ['prix_m2', '2025', 3819.44, '€/m²'],
+  it('keeps the native DVF owned-series response honest when its pooled scalar is not served', () => {
+    const resource = nativeResources('habitat').find((item) => item.resource_id === 'prix_m2')!
+    const response = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '35238' },
+      intent: { kind: 'facts' } }, resource)
+    expect(response.points).toContainEqual(expect.objectContaining({ axis: '2025', value: 3777.777777777778 }))
+    expect(response).not.toHaveProperty('value')
+
+    const declaration = resource as unknown as SemanticResourceDeclaration
+    const envelope = themeFactsEnvelopeFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: response }] }, cible)
+    expect(envelope.owned_series as unknown[]).toHaveLength(1)
+    expect((envelope.indicators as Array<Record<string, unknown>>)
+      .filter((fact) => fact.indicator_id === 'prix_m2')).toEqual([])
+    const rows = themeFactsRowsFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: response }] }, cible).indicateurs
+    expect(rows.some((fact) => fact.key === 'prix_m2' && fact.detail === null)).toBe(false)
+    expect(rows.some((fact) => fact.key === 'prix_m2' && fact.detail === '2025' &&
+      Math.abs(fact.value! - 3777.777777777778) < 0.001)).toBe(true)
+  })
+
+  it('builds an explicitly synthetic 73-axis Mobility curve, selected mean, rank, and named reference from the active producer contract', () => {
+    const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
+    const reference = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_reference')!
+    const target = { kind: 'territory', type: 'commune', id: '22001' }
+    const facts = nativeReadFixture({ target, intent: { kind: 'facts' } }, curve)
+    const axes = facts.axis_values as string[]
+    const numbers = facts.axis_numeric_values as number[]
+    const points = facts.points as Array<Record<string, any>>
+
+    expect(facts.synthetic_fixture).toMatchObject({ kind: 'synthetic_test_fixture', publication_parity: false })
+    expect(facts.completeness).toBe('dense_complete')
+    expect(facts.availability).toBe('complete')
+    expect(axes).toHaveLength(73)
+    expect(numbers).toEqual(Array.from({ length: 73 }, (_, index) => index * 5))
+    expect(points).toHaveLength(73)
+    expect(points[18]).toMatchObject({ axis: 't0090', observation_period: '2026-10-21', value: 0.125, status: 'measured' })
+    expect(points[18]!.provenance[0]).toMatchObject({
+      source_id: curve.sources[0], version: 'national-gtfs-outbound-v1',
+      vintage_id: 'national-gtfs-outbound-v1', reference_date: '2026-10-10', publication_date: '2026-10-10',
+    })
+
+    const comparison = nativeReadFixture({ target,
+      intent: { kind: 'selected_comparison', members: [
+        { type: 'commune', id: '22001' }, { type: 'commune', id: '35238' },
+      ] } }, curve)
+    const result = comparison.result as Record<string, any>
+    const meanCurve = result.mean_curve as Record<string, any>
+    expect(comparison.synthetic_fixture).toMatchObject({ kind: 'synthetic_test_fixture', publication_parity: false })
+    expect(comparison.selection).toEqual([
+      { territory_type: 'commune', territory_id: '22001' },
+      { territory_type: 'commune', territory_id: '35238' },
     ])
-    expect(themeFactsRowsFromApi('habitat', faitsHabitat({ indicators: [{ indicator_id: 'prix_m2', label: 'Prix',
-      unit: '€/m²', value: 3819.44, status: 'measured', dimensions: {}, sources: sources() }] }), cible)
-      .indicateurs).toHaveLength(1)
+    expect(comparison.scope).toMatchObject({ kind: 'explicit_selection', member_count: 2 })
+    expect(result).toMatchObject({ status: 'available', statistic: 'mean', source_facet: 't0090',
+      descriptor_version: facts.descriptor_version, selected_member_count: 2, eligible_count: 2,
+      rank: 2, rank_size: 2, mean: 0.2 })
+    expect(meanCurve.scope).toEqual(comparison.scope)
+    expect(meanCurve.points).toHaveLength(73)
+    expect(meanCurve.points[18]).toEqual({ axis: 't0090', value: 0.2, status: 'measured' })
+    expect(result.comparison_sources[0]).toMatchObject({
+      source_id: curve.sources[0], version: 'national-gtfs-outbound-v1',
+      reference_date: '2026-10-10', publication_date: '2026-10-10',
+    })
+
+    const named = nativeReadFixture({ target: { kind: 'named_reference', id: reference.target_ids[0] },
+      intent: { kind: 'facts' } }, reference)
+    expect(named).toMatchObject({ target: { kind: 'named_reference', id: reference.target_ids[0] },
+      publication_id: facts.publication_id, content_version: facts.content_version,
+      reference_content_version: facts.reference_content_version,
+      reference: { id: 'bretagne_all_assessed_communes_mean', role: 'analytical_reference',
+        statistic: 'mean_all_assessed_communes', required: true },
+      availability: 'complete', synthetic_fixture: { publication_parity: false } })
+    expect(named).not.toHaveProperty('territory')
+    expect(named.points).toHaveLength(73)
+    expect(named.points[18]).toMatchObject({ axis: 't0090', value: 0.2, status: 'measured' })
+  })
+
+  it('projects only publication-coherent Mobility facts, selected means, and named-reference evidence', () => {
+    const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
+    const reference = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_reference')!
+    const model = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    const target = { ...territoiresFixture.find((territory) => territory.territoire === '22001')!,
+      classe_densite_code: model.territory.classe_densite_code,
+      classe_densite_libelle_public: model.territory.classe_densite_libelle_public }
+    const curveDeclaration = curve as unknown as SemanticResourceDeclaration
+    const referenceDeclaration = reference as unknown as SemanticResourceDeclaration
+    const facts = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'facts' } }, curve)
+    const named = nativeReadFixture({ target: { kind: 'named_reference', id: reference.target_ids[0] },
+      intent: { kind: 'facts' } }, reference)
+    const focal = { resource_reads: [{ resource: curve.resource_id, shapes: curve.shapes,
+      declaration: curveDeclaration, data: facts }], named_reference_reads: [{ resource: reference.resource_id,
+      shapes: reference.shapes, declaration: referenceDeclaration, data: named }] }
+    const response = (data: Record<string, any>, selection?: ThemeSelectionMember[]) => ({ theme_id: 'mobilite',
+      ...(selection === undefined ? {} : { selection }), comparison_reads: [{ resource: curve.resource_id,
+        shapes: curve.shapes, declaration: curveDeclaration, data }] })
+    const defaultData = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'fixed_comparison', context: 'default' } }, curve)
+    const projected = projectRaccordementSemanticReads(focal, response(defaultData), target, undefined,
+      target.classe_densite_libelle_public)
+    const comparisonAxis = String(facts.comparison_point)
+    const comparisonAxisIndex = (facts.axis_values as string[]).indexOf(comparisonAxis)
+    expect(projected.facts).toHaveLength((facts.axis_values as string[]).length)
+    expect(projected.referenceFacts[comparisonAxisIndex]).toEqual({
+      detail: comparisonAxis, value: named.points[comparisonAxisIndex]!.value,
+    })
+    expect(projected.comparison).toMatchObject({ statistic: 'mean', selectedMemberCount: defaultData.result.selected_member_count,
+      valueAtComparisonPoint: defaultData.result.mean, scopeLabel: target.classe_densite_libelle_public })
+
+    const selection: ThemeSelectionMember[] = [
+      { territory_type: 'commune', territory_id: '22001' },
+      { territory_type: 'commune', territory_id: '35238' },
+    ]
+    const selectedData = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) =>
+        ({ type: territory_type, id: territory_id })) } }, curve)
+    expect(projectRaccordementSemanticReads(focal, response(selectedData, selection), target, selection,
+      'Deux communes sélectionnées').comparison).toMatchObject({ selectedMemberCount: 2,
+        valueAtComparisonPoint: selectedData.result.mean, scopeLabel: 'Deux communes sélectionnées' })
+
+    const mixedProvenance = structuredClone(facts)
+    mixedProvenance.points[1]!.provenance = [{ ...mixedProvenance.points[1]!.provenance[0],
+      revision_hash: 'f'.repeat(64) }]
+    const incoherentFocal = { ...focal, resource_reads: [{ resource: curve.resource_id, shapes: curve.shapes,
+      declaration: curveDeclaration, data: mixedProvenance }] }
+    expect(() => projectRaccordementSemanticReads(incoherentFocal, response(defaultData), target,
+      undefined, target.classe_densite_libelle_public)).toThrow(/provenances/)
   })
 
   it('refuse une coordonnée de détail non déclarée par les métadonnées du contrat', () => {

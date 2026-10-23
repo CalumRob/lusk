@@ -16,7 +16,7 @@ describe('theme acquisition cache', () => {
     expect(themeAcquisitionEnabled({ VITE_THEME_ACQUISITION_API: '1' })).toBe(true)
     expect(themeAcquisitionEnabled({ VITE_THEME_ACQUISITION_API: '0' })).toBe(false)
   })
-  it('posts typed selections and preserves omitted versus explicitly empty selection', async () => {
+  it('posts default, empty, singleton, and mixed typed selections without conflating their scopes', async () => {
     const catalogue = [{ resource_id: 'part_passoires', theme_id: 'habitat', indicator_id: 'part_passoires',
       label: 'Part des passoires', unit: '%', direction: 'low', allowed_levels: ['commune'], sources: ['dpe'],
       shapes: ['scalar'], target_kinds: ['territory'], fields: ['value', 'status'],
@@ -34,12 +34,12 @@ describe('theme acquisition cache', () => {
           resource: item.resource,
           data: item.intent.kind === 'facts'
             ? { resource: item.resource, target: item.target, content_version: 'facts-v1',
-              reference_content_version: 'territories-v1', value: 0.17, status: 'measured' }
+              reference_content_version: 'territories-v1', descriptor_version: 'scalar-descriptor-v1', value: 0.17, status: 'measured' }
             : { resource: item.resource, target: item.target, contract: 'indicator-comparison-v1',
               indicator_id: item.resource, shape: 'scalar', content_version: 'facts-v1',
               reference_content_version: 'territories-v1', selection: item.intent.kind === 'selected_comparison'
                 ? item.intent.members.map(({ type, id }: { type: string; id: string }) => ({ territory_type: type, territory_id: id })) : null,
-              result: { indicator_id: item.resource, status: 'unavailable', reason: 'not_comparable',
+              result: { indicator_id: item.resource, descriptor_version: 'scalar-descriptor-v1', status: 'unavailable', reason: 'not_comparable',
                 direction: 'low', unit: '%', selected_member_count: 0, eligible_count: 0,
                 missing_count: 0, rank: null, rank_size: null } },
         })).reverse()
@@ -52,20 +52,27 @@ describe('theme acquisition cache', () => {
       const facts = await acquireThemeFacts('commune', '22001', 'habitat')
       await acquireThemeComparison('commune', '22001', 'habitat', [])
       await acquireThemeComparison('commune', '22001', 'habitat', [
+        { territory_type: 'commune', territory_id: '22001' },
+      ])
+      await acquireThemeComparison('commune', '22001', 'habitat', [
         { territory_type: 'epci', territory_id: '200000001' },
         { territory_type: 'commune', territory_id: '22001' },
       ])
       expect(facts.resource_reads).toEqual([expect.objectContaining({ resource: 'part_passoires',
         data: expect.objectContaining({ value: 0.17, target: { kind: 'territory', type: 'commune', id: '22001' } }) })])
       expect(facts.default_comparison).toMatchObject({ theme_id: 'habitat' })
-      expect(requests).toHaveLength(3)
+      expect(requests).toHaveLength(4)
       expect(requests[0]!.items.map(({ intent }) => intent.kind)).toEqual(['facts', 'fixed_comparison'])
       expect(requests[1]!.items[0]!.intent).toEqual({ kind: 'selected_comparison', members: [] })
       expect(requests[2]!.items[0]!.intent).toEqual({ kind: 'selected_comparison', members: [
+        { type: 'commune', id: '22001' },
+      ] })
+      expect(requests[3]!.items[0]!.intent).toEqual({ kind: 'selected_comparison', members: [
         { type: 'epci', id: '200000001' }, { type: 'commune', id: '22001' },
       ] })
       expect(fetcher.mock.calls.map(([url]) => String(url))).toEqual([
-        '/api/resources', '/api/resources/read-batch', '/api/resources/read-batch', '/api/resources/read-batch',
+        '/api/resources', '/api/resources/read-batch', '/api/resources/read-batch',
+        '/api/resources/read-batch', '/api/resources/read-batch',
       ])
     } finally { vi.unstubAllGlobals() }
   })
@@ -282,12 +289,27 @@ describe('theme acquisition cache', () => {
     expect((await cache.select('commune', '22001', 'milieux', [])).focal.focal).toBe(1)
   })
 
+  it('retries a failed auxiliary comparison without reacquiring focal facts', async () => {
+    const facts = vi.fn(async () => ({ theme_id: 'milieux' as const, resource_reads: [], cohort_error: true,
+      default_comparison: { theme_id: 'milieux' as const, comparison_reads: [] } }))
+    const comparisons = vi.fn(async () => ({ theme_id: 'milieux' as const, comparison_reads: [], cohort_reads: [] }))
+    const cache = new ThemeAcquisitionCache(facts, comparisons)
+    const initial = await cache.get('commune', '22001', 'milieux')
+    expect(initial.comparisons.get('omitted')?.cohort_error).toBe(true)
+    const retried = await cache.select('commune', '22001', 'milieux', undefined)
+    expect(comparisons).toHaveBeenCalledTimes(1)
+    expect(facts).toHaveBeenCalledTimes(1)
+    expect(retried.focal).toBe(initial.focal)
+    expect(retried.comparisons.get('omitted')?.cohort_error).not.toBe(true)
+  })
+
   it('requires each native comparison to match its own focal publication and territory-reference token', () => {
-    const facts = { resource_reads: [{ resource: 'densite', data: {
-      content_version: 'scalar-v1', reference_content_version: 'territories-v1',
+    const facts = { resource_reads: [{ resource: 'densite', shapes: ['scalar'], data: {
+      content_version: 'scalar-v1', reference_content_version: 'territories-v1', descriptor_version: 'scalar-descriptor-v1',
     } }] }
     const comparison = { comparison_reads: [{ resource: 'densite', data: {
       content_version: 'scalar-v1', reference_content_version: 'territories-v1',
+      result: { status: 'available', descriptor_version: 'scalar-descriptor-v1' },
     } }] }
     expect(semanticPublicationsCompatible(facts, comparison)).toBe(true)
     expect(semanticPublicationsCompatible(facts, { comparison_reads: [{ resource: 'densite', data: {
@@ -296,9 +318,26 @@ describe('theme acquisition cache', () => {
     expect(semanticPublicationsCompatible(facts, { comparison_reads: [{ resource: 'densite', data: {
       content_version: 'scalar-v1',
     } }] })).toBe(false)
+    expect(semanticPublicationsCompatible(facts, { comparison_reads: [{ resource: 'densite', data: {
+      content_version: 'scalar-v1', reference_content_version: 'territories-v1',
+      result: { status: 'available', descriptor_version: 'stale-scalar-descriptor' },
+    } }] })).toBe(false)
     expect(semanticPublicationsCompatible(facts, { comparison_reads: [{ resource: 'structure_age', data: {
       content_version: 'scalar-v1', reference_content_version: 'territories-v1',
     } }] })).toBe(false)
+  })
+
+  it.each(['ordered_series', 'period_detail'])('rejects %s descriptor drift even when publication tokens match', (shape) => {
+    const facts = { resource_reads: [{ resource: 'resource', shapes: [shape], data: {
+      content_version: 'publication-v1', reference_content_version: 'reference-v1', descriptor_version: 'descriptor-v1',
+    } }] }
+    const comparison = (descriptorVersion?: string) => ({ comparison_reads: [{ resource: 'resource', data: {
+      content_version: 'publication-v1', reference_content_version: 'reference-v1',
+      result: { descriptor_version: descriptorVersion },
+    } }] })
+    expect(semanticPublicationsCompatible(facts, comparison('descriptor-v1'))).toBe(true)
+    expect(semanticPublicationsCompatible(facts, comparison('descriptor-v2'))).toBe(false)
+    expect(semanticPublicationsCompatible(facts, comparison())).toBe(false)
   })
 
   it('requires declared profile comparison dependencies to be present and match exactly', () => {

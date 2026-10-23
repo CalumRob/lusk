@@ -10,6 +10,7 @@ import { PAYLOAD_CHARGER_KEY, type ChargerFichier } from '../payload/usePayload'
 import { routes } from '../router'
 import IndicateurView from '../views/IndicateurView.vue'
 import { validerThemeMetadata } from '../payload/validate'
+import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 
 afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs() })
 
@@ -23,23 +24,37 @@ const metadataMobilite = validerThemeMetadata(rawMetadataMobilite, 'theme_mobili
 describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () => {
   it('mounts the current 73-point national trajectory and visible selected mean on the ordinary indicator route', async () => {
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const read = JSON.parse(readFileSync(join(process.cwd(), 'src', '__tests__', 'fixtures', 'raccordement-indicator-rennes-guarded.json'), 'utf8'))
-    const comparison = JSON.parse(readFileSync(join(process.cwd(), 'src', '__tests__', 'fixtures', 'raccordement-indicator-rennes-comparison-guarded.json'), 'utf8'))
-    const target = { ...territoiresFixture.find((row) => row.territoire === '22001')!, territoire: read.territory.id,
-      nom: read.territory.name, departement: '35', epci: '243500139',
-      classe_densite_code: comparison.result.mean_curve.scope.density_class_code,
-      classe_densite_libelle_public: 'Classe publiée' }
+    const territoryModel = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data',
+      'modeles-lecture', 'territoires', 'commune', '22001.json'), 'utf8'))
+    const target = { ...territoiresFixture.find((row) => row.territoire === '22001')!,
+      classe_densite_code: territoryModel.territory.classe_densite_code,
+      classe_densite_libelle_public: territoryModel.territory.classe_densite_libelle_public }
+    const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
+    const reference = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_reference')!
+    const targetIdentity = { kind: 'territory', type: target.type, id: target.territoire }
+    const nativeRead = nativeReadFixture({ target: targetIdentity, intent: { kind: 'facts' } }, curve)
+    const nativeComparison = nativeReadFixture({ target: targetIdentity,
+      intent: { kind: 'fixed_comparison', context: 'default' } }, curve)
+    const namedReference = nativeReadFixture({ target: { kind: 'named_reference', id: reference.target_ids[0] },
+      intent: { kind: 'facts' } }, reference)
     const loader: ChargerFichier = async (file) => {
-      if (file === 'territoires') return [...territoiresFixture, target]
+      if (file === 'territoires') return territoiresFixture.map((item) =>
+        item.territoire === target.territoire ? target : item)
       if (file === 'indicateurs_mobilite') return indicateursMobiliteFixture
       if (file === 'theme_mobilite') return metadataMobilite
       throw new Error(`unexpected static read: ${file}`)
     }
+    const requests: Array<Array<Record<string, any>>> = []
     const calls: string[] = []
-    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
       const url = String(input); calls.push(url)
-      return new Response(JSON.stringify(url.endsWith('/comparison') ? comparison : read), { status: 200,
-        headers: { 'Content-Type': 'application/json' } })
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        return nativeBatchResponse(items, nativeReadFixture)
+      }
+      throw new Error(`unexpected request: ${url}`)
     })
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push(`/indicateurs/mobilite/raccordement_courbe?territoire=${target.territoire}&niveau=commune`)
@@ -52,13 +67,18 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } } })
     try {
       await flushPromises()
-      expect(calls.filter((url) => url === `/api/territories/commune/${target.territoire}/indicators/raccordement_courbe`).length).toBeGreaterThan(0)
-      expect(calls.filter((url) => url === `/api/territories/commune/${target.territoire}/indicators/raccordement_courbe/comparison`).length).toBeGreaterThan(0)
+      expect(calls).toContain('/api/resources')
+      expect(calls.some((url) => url === '/api/resources/read-batch')).toBe(true)
+      expect(calls.some((url) => url.includes('/indicators/raccordement_courbe'))).toBe(false)
+      expect(requests.flat().some((item) => item.resource === curve.resource_id && item.intent.kind === 'facts')).toBe(true)
+      expect(requests.flat().some((item) => item.resource === curve.resource_id && item.intent.kind === 'fixed_comparison')).toBe(true)
+      expect(requests.flat().some((item) => item.resource === reference.resource_id &&
+        item.target.kind === 'named_reference' && item.target.id === reference.target_ids[0])).toBe(true)
       expect(wrapper.findAll('.trajectoire-territoire-point')).toHaveLength(73)
       const meanPoints = wrapper.findAll('.trajectoire-comparaison-point')
       expect(meanPoints).toHaveLength(73)
       expect(meanPoints.map((point) => [point.attributes('data-detail'), Number(point.attributes('data-value'))]))
-        .toEqual(comparison.result.mean_curve.points.map((point: { axis: string; value: number }) => [point.axis, point.value]))
+        .toEqual((nativeComparison.result as any).mean_curve.points.map((point: { axis: string; value: number }) => [point.axis, point.value]))
       expect(wrapper.find('[data-testid="raccordement-selected-mean"]').exists()).toBe(true)
       expect(wrapper.find('[data-testid="selected-mean-legend"]').exists()).toBe(true)
       const referencePath = wrapper.find('.trajectoire-reference')
@@ -68,9 +88,10 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       const ticks = wrapper.findAll('.trajectoire-tick .trajectoire-axe-x-tick')
       expect.soft(Number(ticks[0]?.attributes('x'))).toBe(60)
       expect.soft(Number(ticks.at(-1)?.attributes('x'))).toBe(588)
-      expect(wrapper.text()).toContain('Classe publiée')
-      expect(wrapper.text()).toContain(read.points[0].provenance[0].source_name)
+      expect(wrapper.text()).toContain(target.classe_densite_libelle_public)
+      expect(wrapper.text()).toContain((nativeRead.points as any[])[0].provenance[0].source_name)
       expect(wrapper.text()).not.toContain('Médiane')
+      expect(namedReference.target.kind).toBe('named_reference')
     } finally { wrapper.unmount() }
   })
   it('mounts prix_m2 through the shared default-off owned-series reader gate', async () => {

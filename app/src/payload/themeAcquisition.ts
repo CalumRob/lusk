@@ -101,6 +101,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
       const comparisons = new Map<string, ThemeResponse>()
       if (focal.default_comparison) comparisons.set('omitted', {
         ...focal.default_comparison, cohort_reads: focal.cohort_reads,
+        cohort_error: focal.cohort_error,
         named_reference_reads: focal.named_reference_reads,
       } as ThemeResponse)
       const result = { focal, comparisons }
@@ -120,7 +121,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     if (!this.acquireComparison) return focal
     const selectionKey = cleSelectionComparaison(selection)
     const existing = focal.comparisons.get(selectionKey)
-    if (existing) return focal
+    if (existing && !existing.cohort_error) return focal
     const pendingKey = JSON.stringify([cacheKey, selectionKey])
     const pending = this.pendingComparisons.get(pendingKey)
     if (pending) {
@@ -294,7 +295,13 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
         focal.reference_content_version !== data.reference_content_version) return false
     const focalDescriptor = focal.descriptor
     const comparisonResult = data.result
-    const profile = focalReads.find((read) => read.resource === resource)?.shapes?.includes('declared_profile')
+    const shapes = focalReads.find((read) => read.resource === resource)?.shapes ?? []
+    const profile = shapes.includes('declared_profile')
+    if (shapes.includes('scalar') || shapes.includes('ordered_series') || shapes.includes('period_detail')) {
+      if (typeof focal.descriptor_version !== 'string' || !focal.descriptor_version ||
+          typeof comparisonResult !== 'object' || comparisonResult === null ||
+          (comparisonResult as Record<string, unknown>).descriptor_version !== focal.descriptor_version) return false
+    }
     if (profile) {
       if (typeof focalDescriptor !== 'object' || focalDescriptor === null ||
           typeof comparisonResult !== 'object' || comparisonResult === null) return false
