@@ -73,7 +73,6 @@ const emit = defineEmits<{
   top: 9px;
   left: 11px;
   color: var(--mode-ring);
-  text-shadow: 0 1px 4px var(--paper);
   font: var(--text-caption);
   font-variant-numeric: tabular-nums;
   letter-spacing: .08em;
