@@ -119,10 +119,15 @@ describe('Cahier typography roles', () => {
     expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('letter-spacing: var(--text-caption-tracking)')
     expectMapLabelTreatment(sharedMapPanelLabelSource, '.map-panel-label', 'var(--mode-ring)')
     const mapTitleRule = cssRule(sharedMapPanelLabelSource, '.map-panel-label')
-    expect(mapTitleRule).toContain('font: var(--text-caption)')
-    expect(mapTitleRule).toContain('font-weight: 600')
-    expect(mapTitleRule).toContain('line-height: 1.3')
+    expect(mapTitleRule).toContain('font: var(--text-overline)')
+    expect(mapTitleRule).not.toMatch(/font-weight\s*:/u)
+    expect(mapTitleRule).not.toMatch(/line-height\s*:/u)
+    expect(mapTitleRule).toContain('letter-spacing: var(--text-overline-tracking)')
+    expect(sharedMapPanelLabelSource).toMatch(
+      /@media\s*\(max-width:\s*760px\)\s*\{\s*\.map-panel-label\s*\{[^}]*font:\s*var\(--text-caption\);/u,
+    )
     expect(tokensSource).toContain('--text-caption: 500 0.75rem/1.4 var(--font-metadata)')
+    expect(tokensSource).toContain('--text-overline: 600 0.6875rem/1.3 var(--font-metadata)')
     for (const source of [blankMapSlotsSource, diversityMapSource, cartographicBreakoutSource]) {
       expect(source).toContain('<style src="./cahierMapPanelLabel.css"></style>')
     }

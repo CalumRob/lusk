@@ -39,6 +39,82 @@ function contrastRatio(foreground, background) {
   return (Math.max(ink, fill) + 0.05) / (Math.min(ink, fill) + 0.05)
 }
 
+async function verifyWaffleLegendInteraction(page) {
+  const action = page.locator('.cahier-figure-legend-action--chip').first()
+  const readActionState = () => action.evaluate((button) => {
+    const style = getComputedStyle(button)
+    const icon = button.querySelector('svg')
+    return {
+      foreground: style.color,
+      fill: style.backgroundColor,
+      icon: icon ? getComputedStyle(icon).color : null,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      outlineColor: style.outlineColor,
+      outlineOffset: style.outlineOffset,
+      borderStyle: style.borderStyle,
+      borderWidth: style.borderWidth,
+      borderColor: style.borderColor,
+      transform: style.transform,
+      focusVisible: button.matches(':focus-visible'),
+    }
+  })
+  const expectContrast = (state, name) => {
+    assert(contrastRatio(state.foreground, state.fill) >= 4.5,
+      `Waffle ${name} foreground must retain 4.5:1 contrast: ${JSON.stringify(state)}`)
+    if (state.icon) assert(contrastRatio(state.icon, state.fill) >= 4.5,
+      `Waffle ${name} icon must retain 4.5:1 contrast: ${JSON.stringify(state)}`)
+  }
+
+  const normal = await readActionState()
+  expectContrast(normal, 'resting')
+  await action.hover()
+  const hover = await readActionState()
+  assert.equal(hover.fill, normal.fill, 'Waffle hover must preserve the contrast-safe chip fill')
+  assert.equal(hover.foreground, normal.foreground, 'Waffle hover must preserve the contrast-safe chip ink')
+  assert.equal(hover.outlineStyle, 'solid', 'Waffle chip hover must add a visible outline')
+  assert.equal(hover.outlineWidth, '2px', 'Waffle chip hover must use the visible 2px affordance')
+  assert.equal(hover.outlineColor, hover.foreground, 'Waffle chip hover outline must use its contrast-safe ink')
+  assert.notDeepEqual(
+    [hover.outlineStyle, hover.outlineWidth, hover.outlineColor],
+    [normal.outlineStyle, normal.outlineWidth, normal.outlineColor],
+    'Waffle chip hover must look visibly different from its resting state',
+  )
+  expectContrast(hover, 'hover')
+
+  const actionBox = await action.boundingBox()
+  assert(actionBox, 'Waffle legend action must have a hit target for its active-state check')
+  await page.mouse.move(actionBox.x + actionBox.width / 2, actionBox.y + actionBox.height / 2)
+  await page.mouse.down()
+  const active = await readActionState()
+  assert.equal(active.fill, normal.fill, 'Waffle active state must preserve the contrast-safe chip fill')
+  assert.equal(active.foreground, normal.foreground, 'Waffle active state must preserve the contrast-safe chip ink')
+  assert.equal(active.borderColor, active.foreground, 'Waffle active state must add a contrast-safe border')
+  assert.notEqual(active.transform, 'none', 'Waffle chip active state must visibly compress the chip')
+  expectContrast(active, 'active')
+  await page.mouse.up()
+
+  const openedDialog = page.locator('dialog[open]')
+  await openedDialog.waitFor({ state: 'visible' })
+  assert.equal(await openedDialog.getAttribute('aria-modal'), 'true',
+    'Activating a Waffle legend chip must preserve modal dialog semantics')
+  await page.keyboard.press('Escape')
+  await openedDialog.waitFor({ state: 'hidden' })
+
+  await page.locator('.aedar-waffle-tile').last().focus()
+  await page.keyboard.press('Tab')
+  assert.equal(await action.evaluate((button) => button.matches(':focus-visible')), true,
+    'Keyboard navigation must give the Waffle legend chip visible focus')
+  const focused = await readActionState()
+  assert.equal(focused.outlineStyle, 'solid', 'Waffle chip focus must retain a visible outline')
+  assert.equal(focused.outlineWidth, '2px', 'Waffle chip focus ring must remain 2px wide')
+  assert.notEqual(focused.outlineColor, 'rgba(0, 0, 0, 0)',
+    'Waffle chip focus ring must use a visible color')
+  expectContrast(focused, 'focused')
+
+  return { normal, hover, active, focused, dialogOpened: true, dialogDismissedWithEscape: true }
+}
+
 const server = await createServer({
   configFile: resolve(appRoot, 'vite.config.ts'),
   // Let Vite select an available ephemeral port; the owner's live server may
@@ -206,15 +282,33 @@ try {
             if (!parent) throw new Error(`${surface} label must have its map panel parent`)
             const probe = document.createElement('span')
             probe.style.color = 'var(--mode-ring)'
-            probe.style.font = 'var(--text-caption)'
-            probe.style.fontWeight = '600'
-            probe.style.lineHeight = '1.3'
+            probe.style.font = 'var(--text-overline)'
             probe.style.letterSpacing = 'var(--text-overline-tracking)'
+            probe.style.textTransform = 'uppercase'
+            probe.style.background = 'transparent'
+            probe.style.padding = '0'
+            probe.style.margin = '0 0 6px'
+            probe.style.minHeight = '28px'
+            probe.style.gap = '6px'
+            probe.style.borderRadius = '0'
             parent.append(probe)
             const modeFill = getComputedStyle(probe).color
-            const originalMetadataFont = getComputedStyle(probe).fontFamily
-            const originalMapTitleTracking = getComputedStyle(probe).letterSpacing
-            const originalMapTitleLineHeight = getComputedStyle(probe).lineHeight
+            const reference = getComputedStyle(probe)
+            const originalMapTitle = {
+              fontFamily: reference.fontFamily,
+              fontSize: reference.fontSize,
+              fontWeight: reference.fontWeight,
+              lineHeight: reference.lineHeight,
+              letterSpacing: reference.letterSpacing,
+              textTransform: reference.textTransform,
+              backgroundColor: reference.backgroundColor,
+              backgroundImage: reference.backgroundImage,
+              padding: [reference.paddingTop, reference.paddingRight, reference.paddingBottom, reference.paddingLeft],
+              margin: [reference.marginTop, reference.marginRight, reference.marginBottom, reference.marginLeft],
+              minHeight: reference.minHeight,
+              gap: reference.gap,
+              borderRadius: reference.borderRadius,
+            }
             probe.remove()
             const style = getComputedStyle(label)
             const { x, right, width, height } = label.getBoundingClientRect()
@@ -229,12 +323,12 @@ try {
               fontFamily: style.fontFamily,
               letterSpacing: style.letterSpacing,
               lineHeight: style.lineHeight,
-              originalMetadataFont,
-              originalMapTitleTracking,
-              originalMapTitleLineHeight,
+              originalMapTitle,
               padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
               minHeight: style.minHeight,
-              marginBottom: style.marginBottom,
+              margin: [style.marginTop, style.marginRight, style.marginBottom, style.marginLeft],
+              gap: style.gap,
+              backgroundImage: style.backgroundImage,
               borderRadius: style.borderRadius,
               iconColor: label.querySelector('svg') ? getComputedStyle(label.querySelector('svg')).color : null,
               width,
@@ -329,14 +423,14 @@ try {
     }
     for (const { surface, labels } of w3Visual.labelSurfaces) {
       for (const label of labels) {
-        assert(Number.parseFloat(label.fontSize) >= 12,
-          `${surface} map title must use a semantic type role at or above 12px at ${width}px: ${JSON.stringify(label)}`)
         assert.equal(label.iconCount, 1, `${surface} must preserve each map mode icon at ${width}px`)
         assert.equal(label.iconColor, label.foreground,
           `${surface} map mode icon must use its label's computed foreground at ${width}px`)
         assert(label.x >= -0.5 && label.right <= width + 0.5,
           `${surface} chip must stay inside the viewport at ${width}px: ${JSON.stringify(label)}`)
         if (width <= 760) {
+          assert(Number.parseFloat(label.fontSize) >= 12,
+            `${surface} mobile map title must use a semantic type role at or above 12px at ${width}px: ${JSON.stringify(label)}`)
           assert.equal(label.fill, label.modeFill,
             `${surface} mobile chip must use its existing mode color at ${width}px: ${JSON.stringify(label)}`)
           assert.equal(label.textTransform, 'none',
@@ -352,20 +446,19 @@ try {
             `${surface} desktop map title must remain unfilled at ${width}px`)
           assert.equal(label.textTransform, 'uppercase',
             `${surface} desktop map title must retain uppercase styling at ${width}px`)
-          assert.deepEqual(label.padding, ['0px', '0px', '0px', '0px'],
-            `${surface} desktop map title must retain its original padding at ${width}px`)
-          assert.equal(label.minHeight, '28px', `${surface} desktop map title must retain its original height at ${width}px`)
-          assert.equal(label.marginBottom, '6px', `${surface} desktop map title must retain its original spacing at ${width}px`)
-          assert.equal(label.fontWeight, '600', `${surface} desktop map title must retain its original weight at ${width}px`)
-          assert.equal(label.fontFamily, label.originalMetadataFont,
-            `${surface} desktop map title must retain its original metadata face at ${width}px`)
-          assert.equal(label.letterSpacing, label.originalMapTitleTracking,
-            `${surface} desktop map title must retain its original tracking at ${width}px`)
-          assert.equal(label.lineHeight, label.originalMapTitleLineHeight,
-            `${surface} desktop map title must retain its original line-height ratio at ${width}px`)
+          for (const property of [
+            'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textTransform',
+            'fill', 'backgroundImage', 'padding', 'margin', 'minHeight', 'gap', 'borderRadius',
+          ]) {
+            const actual = property === 'fill' ? label.fill : label[property]
+            const expected = property === 'fill' ? label.originalMapTitle.backgroundColor : label.originalMapTitle[property]
+            assert.deepEqual(actual, expected,
+              `${surface} desktop map title ${property} must match the original --text-overline probe at ${width}px: ${JSON.stringify(label)}`)
+          }
         }
       }
     }
+    const waffleLegendInteraction = width === 320 ? await verifyWaffleLegendInteraction(page) : null
     const tileColumns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
     const tileRows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
     const w3Summary = {
@@ -1098,6 +1191,7 @@ try {
       width,
       ...metrics,
       w3: w3Summary,
+      waffleLegendInteraction,
       mobileIndexInteraction,
       longYAxisFigure,
       accessRampLongYAxisFigure,

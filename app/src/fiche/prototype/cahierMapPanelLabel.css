@@ -4,9 +4,7 @@
   align-items: center;
   gap: 6px;
   color: var(--mode-ring);
-  font: var(--text-caption);
-  font-weight: 600;
-  line-height: 1.3;
+  font: var(--text-overline);
   letter-spacing: var(--text-overline-tracking);
   text-transform: uppercase;
 }
@@ -37,6 +35,7 @@
     border-radius: var(--radius-full);
     background-color: var(--mode-ring);
     color: var(--map-panel-label-ink, var(--paper));
+    font: var(--text-caption);
     letter-spacing: normal;
     text-transform: none;
   }

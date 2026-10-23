@@ -102,8 +102,16 @@ function chipStyle(key: string): Record<string, string> | undefined {
 }
 
 .cahier-figure-legend-action:hover { background: var(--surface-tertiary); }
-.cahier-figure-legend-action--chip:hover { background-color: var(--cahier-figure-legend-chip-fill); }
+.cahier-figure-legend-action--chip:hover {
+  background-color: var(--cahier-figure-legend-chip-fill);
+  outline: 2px solid currentColor;
+  outline-offset: 2px;
+}
 .cahier-figure-legend-action:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
+.cahier-figure-legend-action--chip:active {
+  border-color: currentColor;
+  transform: scale(0.96);
+}
 </style>
 <style>
 @import "./cahierFigure.css";
