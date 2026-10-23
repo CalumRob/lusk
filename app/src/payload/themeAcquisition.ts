@@ -1,7 +1,7 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
 import type { Theme } from './types'
 import { chargerCatalogueRessources, lireRessourcesBatch } from './semanticResourceClient'
-import type { SemanticReadItem, SemanticResourceDeclaration } from './semanticResourceClient'
+import type { SemanticReadItem, SemanticResourceDeclaration, SemanticTerritoryTarget } from './semanticResourceClient'
 /** Every canonical theme is acquired (active priority, then background warm-up) unless an owner-owned flow handles it. */
 export const THEMES_ACQUISITION_API: readonly Theme[] = ['programmes', 'demographie', 'habitat', 'economie', 'milieux', 'mobilite']
 export type ThemeSelectionMember = { territory_type: 'commune' | 'epci' | 'departement' | 'region'; territory_id: string }
@@ -22,12 +22,23 @@ export interface PublicationTokens {
 
 export interface ThemeResponse {
   tokens?: Record<string, unknown>
-  resource_reads?: Array<{ resource: string; shapes?: string[]; data: Record<string, unknown> }>
-  default_comparison?: { theme_id?: ThemeKey; selection?: readonly ThemeSelectionMember[]; comparison_reads: Array<{ resource: string; shapes?: string[]; data: Record<string, unknown> }> }
-  comparison_reads?: Array<{ resource: string; shapes?: string[]; data: Record<string, unknown> }>
+  resource_reads?: SemanticThemeRead[]
+  default_comparison?: { theme_id?: ThemeKey; selection?: readonly ThemeSelectionMember[]; comparison_reads: SemanticThemeRead[] }
+  comparison_reads?: SemanticThemeRead[]
+  cohort_reads?: SemanticThemeRead[]
+  named_reference_reads?: SemanticThemeRead[]
   comparison_error?: boolean
+  cohort_error?: boolean
+  named_reference_error?: boolean
   selection?: unknown
   [key: string]: unknown
+}
+
+export interface SemanticThemeRead {
+  resource: string
+  shapes?: string[]
+  declaration?: SemanticResourceDeclaration
+  data: Record<string, unknown>
 }
 
 export function normalizePublicationTokens(response: ThemeResponse): Record<string, unknown> {
@@ -88,7 +99,10 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     const request = this.acquireFacts(theme, key).then((focal) => {
       if (generation !== (this.generations.get(cacheKey) ?? 0)) throw new Error('Stale theme acquisition response')
       const comparisons = new Map<string, ThemeResponse>()
-      if (focal.default_comparison) comparisons.set('omitted', focal.default_comparison as ThemeResponse)
+      if (focal.default_comparison) comparisons.set('omitted', {
+        ...focal.default_comparison, cohort_reads: focal.cohort_reads,
+        named_reference_reads: focal.named_reference_reads,
+      } as ThemeResponse)
       const result = { focal, comparisons }
       this.entries.set(cacheKey, result)
       return result
@@ -163,7 +177,15 @@ export function themeAcquisitionEnabled(env: Record<string, unknown>): boolean {
 }
 
 let catalogueRequest: Promise<SemanticResourceDeclaration[]> | null = null
+let catalogueFetcher: typeof fetch | null = null
 function producerCatalogue(): Promise<SemanticResourceDeclaration[]> {
+  // A browser has one stable fetch function for the page lifetime. Keeping its
+  // identity with the cached discovery also avoids leaking one test's mocked
+  // catalogue into another mounted test that installs a different fetcher.
+  if (catalogueFetcher !== fetch) {
+    catalogueFetcher = fetch
+    catalogueRequest = null
+  }
   if (!catalogueRequest) catalogueRequest = chargerCatalogueRessources().catch((error) => {
     catalogueRequest = null
     throw error
@@ -178,11 +200,19 @@ function chunked<T>(items: T[], size = 12): T[][] {
 }
 
 function territoryItem(resource: string, type: string, id: string, intent: SemanticReadItem['intent']): SemanticReadItem {
-  return { resource, target: { kind: 'territory', type: type as SemanticReadItem['target']['type'], id }, intent }
+  return { resource, target: { kind: 'territory', type: type as SemanticTerritoryTarget['type'], id }, intent }
+}
+
+function cohortItem(resource: string, type: string): SemanticReadItem {
+  return { resource, target: { kind: 'territory_cohort', type: type as SemanticTerritoryTarget['type'] }, intent: { kind: 'facts' } }
+}
+
+function namedReferenceItem(resource: string, id: string): SemanticReadItem {
+  return { resource, target: { kind: 'named_reference', id }, intent: { kind: 'facts' } }
 }
 
 function retainedThemeResources(catalogue: SemanticResourceDeclaration[], theme: ThemeKey, type: string) {
-  return catalogue.filter((resource) => resource.theme_id === theme && resource.allowed_levels.includes(type as SemanticReadItem['target']['type']))
+  return catalogue.filter((resource) => resource.theme_id === theme && resource.allowed_levels.includes(type as SemanticTerritoryTarget['type']))
 }
 
 async function readAll(items: SemanticReadItem[]): Promise<Array<{ resource: string; data: Record<string, unknown> }>> {
@@ -210,6 +240,36 @@ function factItems(resources: SemanticResourceDeclaration[], type: string, id: s
     .map((resource) => territoryItem(resource.resource_id, type, id, { kind: 'facts' }))
 }
 
+function typedCohortItems(resources: SemanticResourceDeclaration[], type: string): SemanticReadItem[] {
+  return resources.filter((resource) => resource.shapes.includes('typed_reading') &&
+    resource.allowed_levels.includes(type as SemanticTerritoryTarget['type']) &&
+    resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
+    .map((resource) => cohortItem(resource.resource_id, type))
+}
+
+function namedReferenceItems(resources: SemanticResourceDeclaration[]): SemanticReadItem[] {
+  return resources.filter((resource) => resource.shapes.includes('named_reference') &&
+    resource.target_kinds.includes('named_reference') && resource.intents.includes('facts'))
+    .flatMap((resource) => (resource.target_ids ?? []).map((id) => namedReferenceItem(resource.resource_id, id)))
+}
+
+async function readAuxiliary(resources: SemanticResourceDeclaration[], type: string, includeNamedReferences = true) {
+  const cohorts = typedCohortItems(resources, type)
+  const namedReferences = includeNamedReferences ? namedReferenceItems(resources) : []
+  const [cohortResult, namedResult] = await Promise.allSettled([
+    cohorts.length ? readAll(cohorts) : Promise.resolve([]),
+    namedReferences.length ? readAll(namedReferences) : Promise.resolve([]),
+  ])
+  const wrap = (reads: Array<{ resource: string; data: Record<string, unknown> }>) => reads.map((read) => {
+    const declaration = resources.find((resource) => resource.resource_id === read.resource)
+    return { ...read, shapes: declaration?.shapes, declaration }
+  })
+  return {
+    ...(cohortResult.status === 'fulfilled' ? { cohort_reads: wrap(cohortResult.value) } : { cohort_error: true }),
+    ...(namedResult.status === 'fulfilled' ? { named_reference_reads: wrap(namedResult.value) } : { named_reference_error: true }),
+  }
+}
+
 export function semanticPublicationsCompatible(facts: ThemeResponse, comparison: ThemeResponse): boolean {
   const focalReads = facts.resource_reads
   const comparisonReads = comparison.comparison_reads
@@ -222,7 +282,7 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
         !(name in actual && name in expected) || actual[name] === expected[name])
   }
   const focalByResource = new Map(focalReads.map((read) => [read.resource, read.data]))
-  return comparisonReads.every(({ resource, data }) => {
+  const comparisonCompatible = comparisonReads.every(({ resource, data }) => {
     const focal = focalByResource.get(resource)
     if (!focal) return false
     const focalVersion = focal.content_version ?? focal.publication_id
@@ -234,40 +294,78 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
         focal.reference_content_version !== data.reference_content_version) return false
     const focalDescriptor = focal.descriptor
     const comparisonResult = data.result
-    if (typeof focalDescriptor === 'object' && focalDescriptor !== null &&
-        typeof comparisonResult === 'object' && comparisonResult !== null) {
-      const required = (comparisonResult as Record<string, unknown>).required_scalar_version
-      const declared = (focalDescriptor as Record<string, unknown>).required_scalar_version
-      if (required !== undefined && declared !== undefined && required !== declared) return false
+    const profile = focalReads.find((read) => read.resource === resource)?.shapes?.includes('declared_profile')
+    if (profile) {
+      if (typeof focalDescriptor !== 'object' || focalDescriptor === null ||
+          typeof comparisonResult !== 'object' || comparisonResult === null) return false
+      const descriptor = focalDescriptor as Record<string, unknown>
+      const result = comparisonResult as Record<string, unknown>
+      if (descriptor.comparison_scalar !== null && descriptor.comparison_scalar !== undefined) {
+        const required = descriptor.required_scalar_version
+        const resultRequired = result.required_scalar_version
+        const comparisonScalarVersion = data.scalar_content_version
+        if (typeof required !== 'string' || !required || resultRequired !== required ||
+            comparisonScalarVersion !== required) return false
+      } else if (result.required_scalar_version !== undefined && result.required_scalar_version !== null) {
+        if (typeof descriptor.required_scalar_version !== 'string' ||
+            result.required_scalar_version !== descriptor.required_scalar_version) return false
+      }
+      if (typeof result.profile_descriptor_version === 'string' &&
+          result.profile_descriptor_version !== descriptor.descriptor_version) return false
+      if (typeof result.profile_descriptor_version !== 'string' ||
+          typeof descriptor.descriptor_version !== 'string' || !descriptor.descriptor_version) return false
     }
     return true
   })
+  if (!comparisonCompatible) return false
+  for (const read of comparison.cohort_reads ?? []) {
+    const focal = focalByResource.get(read.resource)
+    if (!focal || (focal.content_version ?? focal.publication_id) !==
+        (read.data.content_version ?? read.data.publication_id) ||
+        focal.reference_content_version !== read.data.reference_content_version) return false
+  }
+  for (const read of comparison.named_reference_reads ?? []) {
+    const owner = typeof read.data.dataset_id === 'string'
+      ? focalReads.find((candidate) => candidate.data.dataset_id === read.data.dataset_id)?.data
+      : undefined
+    const ownerVersion = owner?.content_version ?? owner?.publication_id
+    const referenceVersion = read.data.publication_id ?? read.data.content_version
+    if (!owner || typeof ownerVersion !== 'string' || !ownerVersion || ownerVersion !== referenceVersion ||
+        owner.reference_content_version !== read.data.reference_content_version) return false
+  }
+  return true
 }
 
 export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
   _selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
   return (async () => {
-    const resources = retainedThemeResources(await producerCatalogue(), theme, type)
+    const themeResources = (await producerCatalogue()).filter((resource) => resource.theme_id === theme)
+    const resources = retainedThemeResources(themeResources, theme, type)
     const items = factAndDefaultComparisonItems(resources, type, id)
     if (!items.length) return { theme_id: theme, resource_reads: [],
-      default_comparison: { theme_id: theme, comparison_reads: [] } }
+      default_comparison: { theme_id: theme, comparison_reads: [] },
+      ...(await readAuxiliary(themeResources, type)) }
     try {
       const paired = await readAll(items)
       const resourceReads = paired.filter((_, index) => items[index]!.intent.kind === 'facts')
-        .map((read) => ({ ...read, shapes: resources.find((resource) => resource.resource_id === read.resource)?.shapes }))
+        .map((read) => { const declaration = resources.find((resource) => resource.resource_id === read.resource)
+          return { ...read, shapes: declaration?.shapes, declaration } })
       const comparisonReads = paired.filter((_, index) => items[index]!.intent.kind !== 'facts')
-        .map((read) => ({ ...read, shapes: resources.find((resource) => resource.resource_id === read.resource)?.shapes }))
+        .map((read) => { const declaration = resources.find((resource) => resource.resource_id === read.resource)
+          return { ...read, shapes: declaration?.shapes, declaration } })
       const defaultComparison = { theme_id: theme, comparison_reads: comparisonReads }
       const result: ThemeResponse = { theme_id: theme, resource_reads: resourceReads, default_comparison: defaultComparison }
       if (!semanticPublicationsCompatible(result, defaultComparison)) throw new Error('Les publications sémantiques focales et comparées diffèrent')
-      return result
+      return { ...result, ...(await readAuxiliary(themeResources, type)) }
     } catch (pairedFailure) {
       // A semantic batch is atomic. Never salvage a successful prefix: start a
       // new facts-only read set, which has its own snapshots and dependencies.
       const recovered = (await readAll(factItems(resources, type, id))).map((read) => ({ ...read,
-        shapes: resources.find((resource) => resource.resource_id === read.resource)?.shapes }))
+        shapes: resources.find((resource) => resource.resource_id === read.resource)?.shapes,
+        declaration: resources.find((resource) => resource.resource_id === read.resource) }))
       return { theme_id: theme, resource_reads: recovered, comparison_error: true,
-        comparison_failure: pairedFailure instanceof Error ? pairedFailure.message : String(pairedFailure) }
+        comparison_failure: pairedFailure instanceof Error ? pairedFailure.message : String(pairedFailure),
+        ...(await readAuxiliary(themeResources, type)) }
     }
   })()
 }
@@ -275,14 +373,23 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
 export function acquireThemeComparison(type: string, id: string, theme: ThemeKey,
   selection?: readonly ThemeSelectionMember[]): Promise<ThemeResponse> {
   return (async () => {
-    const resources = retainedThemeResources(await producerCatalogue(), theme, type)
+    const themeResources = (await producerCatalogue()).filter((resource) => resource.theme_id === theme)
+    const resources = retainedThemeResources(themeResources, theme, type)
       .filter((resource) => resource.target_kinds.includes('territory') && resource.intents.includes(selection === undefined ? 'fixed_comparison' : 'selected_comparison'))
     const intent: SemanticReadItem['intent'] = selection === undefined
       ? { kind: 'fixed_comparison', context: 'default' }
       : { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) => ({ type: territory_type, id: territory_id })) }
     const items = resources.map((resource) => territoryItem(resource.resource_id, type, id, intent))
+    const comparisons = await readAll(items)
+    const auxiliary = await readAuxiliary(themeResources, type, false)
+    const echoedSelection = comparisons.length ? comparisons[0]!.data.selection : undefined
+    if (comparisons.some(({ data }) => JSON.stringify(data.selection ?? null) !== JSON.stringify(echoedSelection ?? null))) {
+      throw new Error('Les comparaisons sémantiques ne reflètent pas la même sélection')
+    }
     return { theme_id: theme, ...(selection === undefined ? {} : { selection }),
-      comparison_reads: (await readAll(items)).map((read) => ({ ...read,
-        shapes: resources.find((resource) => resource.resource_id === read.resource)?.shapes })) }
+      comparison_reads: comparisons.map((read) => ({ ...read,
+        shapes: resources.find((resource) => resource.resource_id === read.resource)?.shapes,
+        declaration: resources.find((resource) => resource.resource_id === read.resource) })), ...auxiliary,
+      ...(Array.isArray(echoedSelection) ? { selection: echoedSelection } : {}) }
   })()
 }

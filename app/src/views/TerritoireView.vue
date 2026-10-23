@@ -495,14 +495,17 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       const rows = themeFactsRowsFromSemantic(themeActif, acquired.focal, { territoire: code, type: target.type }, {
         epci: target.epci, region: payloadModele.value?.territoires.find((item) => item.type === 'region')?.territoire ?? null,
       })
-       const comparison = semanticComparisonForTheme(acquired.comparisons.get('omitted'))
+       const comparison = semanticComparisonForTheme(acquired.comparisons.get('omitted'), {
+         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
+         territories: model.cohortTerritories,
+       }, acquired.focal.resource_reads)
        faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, comparison,
           resolutionComparaison.value?.contexte?.scope.label ?? null)
       histoiresThemeRows.value = rows.histoires
-      histoiresNuageDemographie.value = themeActif === 'demographie' && isRecord(acquired.focal.comparison)
-        ? histoiresDemographieNuage(acquired.focal.comparison) : []
-      histoiresNuageMilieux.value = themeActif === 'milieux' && isRecord(acquired.focal.comparison)
-        ? histoiresMilieuxDuNuage(acquired.focal.comparison) : []
+       histoiresNuageDemographie.value = themeActif === 'demographie'
+         ? histoiresDemographieNuage(comparison) : []
+       histoiresNuageMilieux.value = themeActif === 'milieux'
+         ? histoiresMilieuxDuNuage(comparison) : []
        statutAcquisition.value = 'ready'
        statutComparaison.value = acquired.focal.comparison_error ? 'error' : 'ready'
       cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
@@ -565,7 +568,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
       if (cancelled || request !== sequenceComparaison) return
       const nativeComparison = acquired.comparisons.get(cleSelectionComparaison(selectionMembres))
       validerReponseComparaisonTheme(themeActif, nativeComparison, selectionMembres)
-      const comparison = semanticComparisonForTheme(nativeComparison)
+      const comparison = semanticComparisonForTheme(nativeComparison, {
+        target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
+        territories: model.cohortTerritories,
+      }, acquired.focal.resource_reads)
       if (themeActif === 'demographie') {
         histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)
       }

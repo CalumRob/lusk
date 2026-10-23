@@ -43,7 +43,92 @@ const response = (): any => ({
       source_reference_date: null, source_publication_date: null } }],
 })
 
+/** Build actual read-batch resource envelopes from the compact table used by
+ * these product-model tests. Excluded BPE/building evidence and legacy story
+ * fields are intentionally not carried into the semantic resource set. */
+function semanticResponse(envelope: any, territoryId: string, payloadModel = payload): any {
+  const target = payloadModel.territoires.find((territory) => territory.territoire === territoryId)
+  if (!target) throw new Error(`Missing fixture territory ${territoryId}`)
+  const indicators: any[] = envelope.indicators ?? []
+  const metadata: any[] = envelope.indicator_metadata ?? []
+  const ids = [...new Set(indicators.map((fact) => fact.indicator_id))]
+  const resource_reads: any[] = ids.map((resource) => {
+    const facts = indicators.filter((fact) => fact.indicator_id === resource)
+    const descriptor = metadata.find((item) => item.indicator_id === resource) ?? {}
+    const targetRef = { kind: 'territory', type: target.type, id: target.territoire }
+    if (descriptor.axis_kind || facts.some((fact) => fact.dimensions?.axis !== undefined)) {
+      const points = facts.map((fact) => ({ axis: fact.dimensions.axis,
+        observation_period: fact.dimensions.observation_period ?? null,
+        value: fact.value, status: fact.status, missing_reason: fact.missing_reason ?? null,
+        state_role: fact.dimensions.state_role ?? null, provenance: fact.sources }))
+      const axis_values = descriptor.axis_values ?? points.map((point) => point.axis)
+      return { resource, shapes: ['ordered_series'], declaration: { axes: [descriptor.axis_kind].filter(Boolean),
+        comparison_contract: descriptor.comparison_contract }, data: { resource, target: targetRef,
+        dataset_id: resource, publication_id: descriptor.content_version ?? `${resource}-v1`,
+        reference_content_version: envelope.reference_content_version ?? 'territories-v1',
+        indicator_id: resource, unit: facts[0]?.unit ?? descriptor.unit ?? '', direction: descriptor.direction ?? 'none',
+        axis_kind: descriptor.axis_kind ?? 'duration_minute', axis_values,
+        axis_numeric_values: descriptor.axis_numeric_values ?? axis_values.map((axis: unknown) => Number(axis)),
+        completeness: descriptor.completeness ?? 'dense_complete', descriptor_version: descriptor.descriptor_version ?? `${resource}-descriptor-v1`,
+        comparison_point: descriptor.comparison_point ?? null, comparison_contract: descriptor.comparison_contract,
+        points } }
+    }
+    if (Array.isArray(descriptor.axes)) {
+      return { resource, shapes: ['declared_profile'], declaration: {}, data: { resource, target: targetRef,
+        indicator_id: resource, content_version: descriptor.content_version ?? `${resource}-v1`,
+        reference_content_version: envelope.reference_content_version ?? 'territories-v1',
+        descriptor: { ...descriptor, axes: descriptor.axes, unit: descriptor.unit ?? facts[0]?.unit ?? '',
+          label: descriptor.label ?? resource },
+        observations: facts.map((fact) => ({ detail: fact.dimensions?.detail, sex: fact.dimensions?.sex ?? null,
+          value: fact.value, status: fact.status, unit: fact.unit, sources: fact.sources })) } }
+    }
+    const fact = facts[0]!
+    return { resource, shapes: ['scalar'], declaration: {}, data: { resource, target: targetRef,
+      indicator_id: resource, unit: fact.unit, value: fact.value, status: fact.status, sources: fact.sources } }
+  })
+  let owner: any = resource_reads.find((read: any) => read.resource === 'raccordement_courbe')
+  if (!owner && (envelope.named_reference_evidence ?? []).length) {
+    const reference = envelope.named_reference_evidence[0]
+    owner = { resource: 'raccordement_courbe', shapes: ['ordered_series'], declaration: { axes: ['duration_minute'] },
+      data: { resource: 'raccordement_courbe', target: { kind: 'territory', type: target.type, id: target.territoire },
+        dataset_id: 'raccordement_courbe', publication_id: 'raccordement_courbe-v1',
+        reference_content_version: 'territories-v1', indicator_id: 'raccordement_courbe', unit: reference.unit,
+        axis_kind: 'duration_minute', axis_values: [reference.points[0]?.axis],
+        axis_numeric_values: [0], completeness: 'sparse_declared', points: [] } }
+    resource_reads.push(owner)
+  }
+  const named_reference_reads = (envelope.named_reference_evidence ?? []).map((reference: any) => ({
+    resource: 'raccordement_reference', shapes: ['named_reference'], declaration: { target_ids: [reference.id] },
+    data: { resource: 'raccordement_reference', target: { kind: 'named_reference', id: reference.id },
+      dataset_id: owner?.data.dataset_id ?? 'raccordement_courbe',
+      publication_id: owner?.data.publication_id ?? 'raccordement_courbe-v1',
+      reference_content_version: owner?.data.reference_content_version ?? 'territories-v1',
+      indicator_id: 'raccordement_reference', unit: reference.unit,
+      reference: { id: reference.id, label: reference.label, role: reference.role,
+        statistic: reference.statistic, required: true },
+      points: reference.points.map((point: any) => ({ ...point,
+        provenance: (point.provenance ?? []).map((source: any) => ({ ...source,
+          source_id: source.source_id, source_name: source.source_name ?? source.name })) })) },
+  }))
+  return { theme_id: 'mobilite', resource_reads, named_reference_reads }
+}
+
+function mobilityFacts(envelope: any, territoryId: string, payloadModel = payload) {
+  return mobilityFactsFromThemeApi(payloadModel, territoryId, semanticResponse(envelope, territoryId, payloadModel))
+}
+
 describe('SQL Mobilité response to Variant E facts', () => {
+  it('adapts a native semantic scalar resource without a theme-facts envelope', () => {
+    const native = { theme_id: 'mobilite', resource_reads: [{ resource: 'places_stationnement_voiture_1000',
+      shapes: ['scalar'], data: { resource: 'places_stationnement_voiture_1000',
+        target: { kind: 'territory', type: 'commune', id: '22001' }, indicator_id: 'places_stationnement_voiture_1000',
+        unit: 'places / 1 000 habitants', value: 321, status: 'measured', sources } }] }
+    const facts = mobilityFactsFromThemeApi(payload, '22001', native)
+    expect(facts.mobility.indicators.find((fact) => fact.key === 'places_stationnement_voiture_1000'))
+      .toMatchObject({ value: 321, unit: 'places / 1 000 habitants',
+        provenance: { source: 'SQL mobility', version: 'sql-v1' } })
+  })
+
   it('renders regional network profiles and canonical parking facts, including a supported ratio', () => {
     const regionPayload: Payload = { ...payload, territoires: [
       { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
@@ -81,7 +166,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
         unit: indicator_id === 'reseaux_par_habitant' ? 'km / 1 000 hab.' : 'km',
       })),
     }))
-    const facts = mobilityFactsFromThemeApi(regionPayload, '53', data)
+    const facts = mobilityFacts(data, '53', regionPayload)
     expect(facts.mobility.indicators.filter((fact) => fact.key === 'reseaux')).toHaveLength(3)
     expect(facts.mobility.indicators.filter((fact) => fact.key === 'reseaux_par_habitant')).toHaveLength(3)
     expect(facts.mobility.indicators.filter((fact) => fact.key === 'offre_cyclable')).toHaveLength(5)
@@ -106,7 +191,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const bike = incomplete.indicators.find((row: any) => row.indicator_id === 'places_stationnement_velo_1000')
     bike.value = null
     bike.status = 'not_available'
-    const incompleteFacts = mobilityFactsFromThemeApi(regionPayload, '53', incomplete)
+    const incompleteFacts = mobilityFacts(incomplete, '53', regionPayload)
     const incompleteContent = resolveMobiliteThemeContent(incompleteFacts)
     const incompleteSharing = incompleteContent.units.find((unit) => unit.key === 'partage-de-lespace-public')!
     const unavailableParking = incompleteSharing.sections.find((section) => section.key === 'stationnement')!
@@ -116,14 +201,14 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(unavailableParking.evidence.ratioNote).toContain('deux mesures de stationnement')
   })
 
-  it('consumes scalar, profile and selected-reading wire fields with SQL provenance', () => {
-    const facts = mobilityFactsFromThemeApi(payload, '22001', response())
+  it('consumes retained scalar and profile reads with SQL provenance without reviving legacy story values', () => {
+    const facts = mobilityFacts(response(), '22001')
     expect(facts.mobility.indicators.find((fact) => fact.key === 'places_stationnement_velo_1000'))
       .toMatchObject({ value: 123, provenance: { source: 'SQL mobility', referenceDate: null } })
     expect(facts.mobility.indicators.find((fact) => fact.key === 'reseaux_par_habitant'))
       .toMatchObject({ detail: 't_km_1000', value: 456, unit: 'km / 1 000 habitants' })
-    expect(facts.mobility.losses.diversityWalkTransit).toMatchObject({ value: 7, unit: 'types' })
-    expect(facts.mobility.losses.diversityBike).toMatchObject({ value: 8, unit: 'types' })
+    expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
+    expect(facts.mobility.losses.diversityBike.value).toBeNull()
   })
   it('projects regional motorisation and raccordement but renders only the selected curve', () => {
     const regionPayload: Payload = { ...payload, territoires: [
@@ -155,7 +240,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
       label:'Commune bretonne médiane',role:'analytical_reference',statistic:'median_routed_communes',unit:'%',
       points:axes.map((axis,index)=>({axis,value:reference[index],observation_period:'2026-09-16',
         status:'measured',provenance:[{...sources[0],source_name:'SQL mobility',revision_hash:'ref-v1'}]}))}]
-    const facts = mobilityFactsFromThemeApi(regionPayload,'53',data)
+    const facts = mobilityFacts(data, '53', regionPayload)
     const composition = facts.mobility.indicators.filter((fact)=>fact.key==='voitures_menage')
     const curve = facts.mobility.indicators.filter((fact)=>fact.key==='raccordement_courbe')
     expect(composition.map((fact)=>fact.detail)).toEqual(['sans_voiture','une_voiture','deux_plus'])
@@ -203,7 +288,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
       departement: '35', epci: '243500139', classe_densite_code: data.default_comparison.scope.density_class_code,
     }] }
     const numericAxes = data.indicator_metadata.find((item: any) => item.indicator_id === 'raccordement_courbe').axis_numeric_values
-    const facts = mobilityFactsFromThemeApi(sourceFactsPayload, target.territory_id, data)
+    const facts = mobilityFacts(data, target.territory_id, sourceFactsPayload)
     const compared = applyThemeComparisonApiFacts(facts, data.default_comparison, context)
     const content = resolveMobiliteThemeContent(compared)
     const section = content.units.find((unit) => unit.key === 'offre-transports-commun')?.sections[0]
@@ -237,7 +322,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
       territoire: target.territory_id, type: target.territory_type, nom: target.name,
       departement: '35', epci: '243500139', classe_densite_code: data.default_comparison.scope.density_class_code,
     }] }
-    const facts = mobilityFactsFromThemeApi(sourceFactsPayload, target.territory_id, data)
+    const facts = mobilityFacts(data, target.territory_id, sourceFactsPayload)
     const incomplete = structuredClone(data.default_comparison)
     incomplete.results.find((item: any) => item.indicator_id === 'raccordement_courbe').mean_curve.points.pop()
     expect(() => applyThemeComparisonApiFacts(facts, incomplete, context))
@@ -250,7 +335,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
       territoire: target.territory_id, type: target.territory_type, nom: target.name,
       departement: '35', epci: '243500139', classe_densite_code: data.default_comparison.scope.density_class_code,
     }] }
-    const facts = mobilityFactsFromThemeApi(sourceFactsPayload, target.territory_id, data)
+    const facts = mobilityFacts(data, target.territory_id, sourceFactsPayload)
     for (const badScope of [{}, { kind: 'density_class', density_class_code: '4', territory_type: 'commune' }]) {
       const changed = structuredClone(data.default_comparison)
       changed.results.find((item: any) => item.indicator_id === 'raccordement_courbe').mean_curve.scope = badScope
@@ -267,7 +352,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
       departement: '35', epci: '243500139',
       classe_densite_code: comparison.result.mean_curve.scope.density_class_code,
     }] }
-    const facts = mobilityFactsFromThemeApi(sourceFactsPayload, target.territory_id, factsFixture)
+    const facts = mobilityFacts(factsFixture, target.territory_id, sourceFactsPayload)
     const compared = applyThemeComparisonApiFacts(facts, comparison, context)
     expect(compared.mobility.selectedTrajectoryComparison).toMatchObject({
       statistic: 'mean', selectedMemberCount: 14, eligibleCount: 14,
@@ -330,7 +415,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
   it('rejects measured facts without source lineage instead of presenting static provenance', () => {
     const data = response()
     data.indicators[0]!.sources = []
-    expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow()
+    expect(() => mobilityFacts(data, '22001')).toThrow()
   })
   it('rejects unknown named-reference point statuses', () => {
     const data = response()
@@ -339,18 +424,18 @@ describe('SQL Mobilité response to Variant E facts', () => {
       points: [{ axis: 't0000', observation_period: '2026-09-16', value: null,
         status: 'unexpected_status', provenance: [{ source_id: 'mobilite_snapshot', source_name: 'SQL mobility',
           version: 'sql-v1', reference_date: null, publication_date: null }] }] }]
-    expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow(/Point de référence nommée Mobilité/)
+    expect(() => mobilityFacts(data, '22001')).toThrow(/Point de référence nommée Mobilité/)
   })
   it('rejects malformed provided coordinates instead of silently treating them as scalars', () => {
     const data = response()
     data.indicators[1]!.dimensions.detail = 42
-    expect(() => mobilityFactsFromThemeApi(payload, '22001', data)).toThrow(/Dimension SQL/)
+    expect(() => mobilityFacts(data, '22001')).toThrow(/Dimension SQL/)
   })
   it('retains source missingness and never fills absent SQL values from static history', () => {
     const data = response()
     data.readings = []
     data.indicators = []
-    const facts = mobilityFactsFromThemeApi(payload, '22001', data)
+    const facts = mobilityFacts(data, '22001')
     expect(facts.mobility.indicators).toHaveLength(0)
     expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
     expect(mobilityFactsFromThemeApi(payload, '22001', null).mobility.losses.diversityWalkTransit.value).toBeNull()
@@ -359,53 +444,30 @@ describe('SQL Mobilité response to Variant E facts', () => {
     const lineage = { revision_id: 'rev-1', source_id: 'mobilite_snapshot', vintage_id: 'v1',
       source_name: 'SQL mobility', dataset_name: 'Raccordement', version: 'sql-v1',
       reference_date: null, publication_date: null, revision_hash: 'hash-1' }
-    const data = { ...response(), indicator_metadata: [{ indicator_id: 'raccordement',
+    const data = { ...response(), indicator_metadata: [{ indicator_id: 'raccordement_courbe',
       axis_kind: 'duration_minute', axis_values: ['20'], axis_numeric_values: [20],
       completeness: 'dense_complete', direction: 'low', descriptor_version: 'series-v1',
       comparison_point: '20', observation_period_kind: 'source_snapshot' }],
-      indicators: [...response().indicators, { indicator_id: 'raccordement', unit: '%', value: 0.6,
+      indicators: [...response().indicators, { indicator_id: 'raccordement_courbe', unit: '%', value: 0.6,
         status: 'measured', sources: [{ ...lineage, name: lineage.source_name }],
         dimensions: { axis: '20', numeric_axis_value: 20, observation_period: '2026-09-16' } }] }
-    expect(mobilityFactsFromThemeApi(payload, '22001', data).mobility.indicators
-      .find((fact) => fact.key === 'raccordement')?.provenance?.lineage?.revision_hash).toBe('hash-1')
+    expect(mobilityFacts(data, '22001').mobility.indicators
+      .find((fact) => fact.key === 'raccordement_courbe')?.provenance?.lineage?.revision_hash).toBe('hash-1')
   })
-  it('does not manufacture an exemplar for a source-defined empty BPE class', () => {
+  it('ignores excluded legacy BPE and building-access evidence on the semantic Mobilité path', () => {
     const data = { ...response(), bpe_profile_evidence: { sources, classes:
       ['acces-pied-tc', 'velo-compense', 'voiture-requise', 'inaccessible-20-minutes'].map(
         (class_key) => ({ class_key, label: class_key, count: 0, universe_count: 0, exemplar: null }),
       ) } }
-    const facts = mobilityFactsFromThemeApi(payload, '22001', data)
-    expect(facts.mobility.bpeAccess.profiles[0]).toMatchObject({ count: 0, exemplar: null })
-  })
-  it('normalizes the deployed open-ended building bucket marker to an unbounded axis', () => {
-    const data = response()
-    const breadth = ['0', '1-9', '10-24', '25-39', '40-53'].map((key) =>
-      ({ key, label: key, min_value: 0, max_value: 10 }))
-    const depth = ['0', '1-9', '10-49', '50-199', '200-499', '500+'].map((key, index) =>
-      ({ key, label: key, min_value: index * 10, max_value: index === 5 ? 'NA' : index * 10 + 9 }))
-    data.building_access = {
-      publication_id: 'buildings-v1', availability: 'complete',
-      sources: [{ ...sources[0], name: 'SQL mobility' }],
-      presentation: {
-        building_grid: { mode_label: 'À pied + TC', breadth_axis_label: 'types', depth_axis_label: 'équipements', breadth, depth },
-        building_ramp: { modes: { b: 'Vélo', c: 'Voiture', t: 'À pied + TC' }, x_axis_label: 'Bâtiments',
-          y_axis_label: 'Types', quantile_labels: Array.from({ length: 11 }, (_, index) => `${index * 10} %`) },
-      },
-      distribution: breadth.flatMap((breadthBucket) => depth.map((depthBucket) => ({
-        breadth_bucket: breadthBucket.key, depth_bucket: depthBucket.key, total_buildings: 10,
-        building_count: 1, share: 0.1,
-      }))),
-      ramp: ['b', 'c', 't'].flatMap((mode) => Array.from({ length: 11 }, (_, index) => ({
-        mode, quantile_index: index, quantile: index / 10, accessible_types: index, total_buildings: 10,
-      }))),
-    }
-    const facts = mobilityFactsFromThemeApi(payload, '22001', data)
-    expect(facts.mobility.buildingDistribution?.depthBins.at(-1)).toMatchObject({ key: '500+', max: null })
+    const facts = mobilityFacts(data, '22001')
+    expect(facts.mobility.bpeAccess).toMatchObject({ availability: 'absent', profiles: [] })
+    expect(facts.mobility.buildingDistribution).toBeNull()
+    expect(facts.mobility.accessRamp).toBeNull()
   })
   it('matches a profile comparison only to the same detail and sex facet', () => {
     const data = response()
     data.indicators[1]!.dimensions = { detail: 't_km_1000', sex: 'F' }
-    const facts = mobilityFactsFromThemeApi(payload, '22001', data)
+    const facts = mobilityFacts(data, '22001')
     const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', results: [],
       profile_comparisons: [{ indicator: 'reseaux_par_habitant', facet: { detail: 't_km_1000', sex: 'F' },
         status: 'available', direction: 'high', median: 12 }] }
@@ -416,7 +478,7 @@ describe('SQL Mobilité response to Variant E facts', () => {
       .find((fact) => fact.key === 'reseaux_par_habitant')?.comparison).toBeNull()
   })
   it('never interprets an unspecified comparison direction as more-is-better', () => {
-    const facts = mobilityFactsFromThemeApi(payload, '22001', response())
+    const facts = mobilityFacts(response(), '22001')
     const comparisons = { contract: 'theme-comparison-v1', theme_id: 'mobilite', profile_comparisons: [],
       results: [{ indicator_id: 'places_stationnement_velo_1000', status: 'available', direction: 'none', median: 12 }] }
     expect(applyThemeComparisonApiFacts(facts, comparisons, context).mobility.indicators

@@ -1,6 +1,8 @@
 import type { Payload, Indicateur, ProfilAccesBpeRow, DistributionAccesBatimentsRow,
   RampeAccesBatimentsRow } from '@/payload/types'
 import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
+import type { ThemeResponse } from '@/payload/themeAcquisition'
+import { semanticComparisonForTheme, themeFactsEnvelopeFromSemantic } from '@/payload/themeFactsAdapter'
 import { ACCESS_INDICATOR_KEYS, territoryFactsFor } from './territoryFacts'
 import type { FactProvenance, MobilityTrajectoryContract, NamedTrajectoryReference, NumericFact,
   SelectedTrajectoryComparison, TerritoryFacts } from './territoryFacts'
@@ -194,7 +196,7 @@ function payloadFromSql(payload: Payload, response: Row): Payload {
   }
   rows(response.readings, 'readings')
   const bpeRows: ProfilAccesBpeRow[] = []
-  if (response.bpe_profile_evidence !== null) {
+  if (response.bpe_profile_evidence !== null && response.bpe_profile_evidence !== undefined) {
     const bpe = response.bpe_profile_evidence
     if (!isRecord(bpe) || !Array.isArray(bpe.classes)) throw new Error('Profils BPE SQL invalides')
     for (const item of rows(bpe.classes, 'bpe_profile_evidence.classes')) {
@@ -250,14 +252,16 @@ export function mobilityFactsFromThemeApi(
   if (response === null) {
     return loadingFacts(payload, territoryId, context)
   }
-  if (!isRecord(response) || response.contract !== 'theme-facts-v1' || response.theme_id !== 'mobilite' ||
-      !Array.isArray(response.indicators) || !Array.isArray(response.indicator_metadata) ||
-      !Array.isArray(response.named_reference_evidence) ||
-      !Array.isArray(response.readings)) throw new Error('Réponse de faits Mobilité invalide')
-  const projected = payloadFromSql(payload, response)
+  const target = payload.territoires.find((territory) => territory.territoire === territoryId)
+  if (!target || !isRecord(response) || !Array.isArray(response.resource_reads)) {
+    throw new Error('Lectures sémantiques Mobilité invalides')
+  }
+  const normalized = themeFactsEnvelopeFromSemantic('mobilite', response as ThemeResponse,
+    { territoire: target.territoire, type: target.type })
+  const projected = payloadFromSql(payload, normalized)
   let facts = territoryFactsFor(projected, territoryId, context)
   if (!facts) throw new Error('Territoire inconnu')
-  const curveDescriptor = rows(response.indicator_metadata, 'indicator_metadata')
+  const curveDescriptor = rows(normalized.indicator_metadata, 'indicator_metadata')
     .find((row) => row.indicator_id === 'raccordement_courbe')
   let trajectoryContract: MobilityTrajectoryContract | null = null
   if (curveDescriptor && isRecord(curveDescriptor.comparison_contract)) {
@@ -279,7 +283,7 @@ export function mobilityFactsFromThemeApi(
     const axisNumericValues = curveDescriptor.axis_numeric_values as number[]
     const focalAxes = facts.mobility.indicators.filter((fact) => fact.key === 'raccordement_courbe')
       .map((fact) => fact.detail)
-    const rawCurveRows = rows(response.indicators, 'indicators')
+    const rawCurveRows = rows(normalized.indicators, 'indicators')
       .filter((row) => row.indicator_id === 'raccordement_courbe')
     if (curveDescriptor.completeness !== 'dense_complete' ||
         !axisValues.includes(curveDescriptor.comparison_point) ||
@@ -298,7 +302,7 @@ export function mobilityFactsFromThemeApi(
       indicators: facts.mobility.indicators.map((fact) => fact.key === 'raccordement_courbe'
         ? { ...fact, axisValue: numericByAxis.get(fact.detail ?? '') } : fact) } }
   }
-  const namedTrajectoryReferences: NamedTrajectoryReference[] = rows(response.named_reference_evidence,
+  const namedTrajectoryReferences: NamedTrajectoryReference[] = rows(normalized.named_reference_evidence,
     'named_reference_evidence').filter((row) => row.indicator_id === 'raccordement_courbe').map((reference) => {
     if (!text(reference.id) || !text(reference.label) || !text(reference.role) ||
         !text(reference.statistic) || !text(reference.unit)) throw new Error('Référence nommée Mobilité invalide')
@@ -330,7 +334,7 @@ export function mobilityFactsFromThemeApi(
   })
   const subgroup = payload.themeMetadata?.mobilite?.subgroups.find((item) =>
     item.reading?.params.includes('div_loss_t'))
-  const reading = (response.readings as Row[]).find((item) => item.groupe === subgroup?.key)
+  const reading = (normalized.readings as Row[]).find((item) => item.groupe === subgroup?.key)
   const loss = reading ? { diversityWalkTransit: factFromReading('div_loss_t', reading.unit,
     reading.div_loss_t, reading.status, isRecord(reading.provenance) ? [{
       source_id: reading.provenance.source_id, name: reading.provenance.source_name,
@@ -428,6 +432,9 @@ export function applyThemeComparisonApiFacts(
   context?: TerritoryComparisonContext,
   expectedSelection?: readonly { territory_type: string; territory_id: string }[],
 ): TerritoryFacts {
+  if (isRecord(response) && Array.isArray(response.comparison_reads)) {
+    response = semanticComparisonForTheme(response)
+  }
   if (!isRecord(response) || (response.contract !== 'theme-comparison-v1' &&
       response.contract !== 'indicator-comparison-v1' && response.contract !== undefined) ||
       (response.theme_id !== 'mobilite' && response.theme_id !== undefined)) {

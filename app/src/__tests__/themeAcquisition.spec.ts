@@ -105,6 +105,59 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
+  it('reads typed-reading cohorts and producer-named references without inventing territory targets', async () => {
+    vi.resetModules()
+    const { acquireThemeFacts } = await import('../payload/themeAcquisition')
+    const resources = [
+      { resource_id: 'demographie_selected_reading', theme_id: 'demographie', indicator_id: 'demographie_selected_reading',
+        label: 'Reading', unit: '', direction: 'none', allowed_levels: ['commune'], sources: ['serie_historique'],
+        shapes: ['typed_reading'], target_kinds: ['territory', 'territory_cohort'], fields: ['groupe', 'status'], intents: ['facts'] },
+      { resource_id: 'raccordement_reference', theme_id: 'mobilite', indicator_id: 'raccordement_reference',
+        label: 'Curve reference', unit: '%', direction: 'high', allowed_levels: ['commune'], sources: ['gtfs'],
+        shapes: ['named_reference'], target_kinds: ['named_reference'], target_ids: ['bretagne_all_assessed_communes_mean'],
+        fields: ['value'], intents: ['facts'] },
+    ]
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    vi.stubGlobal('fetch', vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources,
+      }))
+      if (String(url) === '/api/resources/read-batch') {
+        const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(request)
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) => ({
+          id: item.id, resource: item.resource, data: { resource: item.resource, target: item.target,
+            content_version: 'v1', reference_content_version: 'reference-v1',
+            ...(item.target.kind === 'territory' ? { facts: [{ groupe: 'producer-group', status: 'measured' }] } : {}),
+            ...(item.target.kind === 'territory_cohort' ? { cohort: { territory_type: 'commune',
+              department_id: null, epci_id: null, member_count: 1, members: [{ id: '22001', type: 'commune', name: 'Focal' }],
+              reference_content_version: 'reference-v1' }, territories: [{ territory: { id: '22001', type: 'commune', name: 'Focal' },
+              facts: [{ groupe: 'producer-group', status: 'measured' }] }] } : {}),
+            ...(item.target.kind === 'named_reference' ? { reference: { id: item.target.id, label: 'Bretagne reference',
+              role: 'analytical_reference', statistic: 'mean' }, axis_values: ['t0010'], points: [
+              { axis: 't0010', status: 'measured', value: 2, provenance: [{ source_id: 'gtfs', vintage_id: 'v1',
+                source_name: 'GTFS', version: 'v1', reference_date: null, publication_date: null }] },
+            ] } : {}),
+          },
+        })) }))
+      }
+      throw new Error(`Unexpected request: ${String(url)}`)
+    }))
+    try {
+      const acquired = await acquireThemeFacts('commune', '22001', 'demographie')
+      expect(acquired.cohort_reads?.[0]?.data.target).toEqual({ kind: 'territory_cohort', type: 'commune' })
+      expect(requests.flatMap(({ items }) => items).map((item) => item.target.kind)).toEqual(['territory', 'territory_cohort'])
+
+      const mobility = await acquireThemeFacts('commune', '22001', 'mobilite')
+      const named = mobility.named_reference_reads?.[0]
+      expect(named?.data).toMatchObject({ resource: 'raccordement_reference',
+        target: { kind: 'named_reference', id: 'bretagne_all_assessed_communes_mean' },
+        reference: { id: 'bretagne_all_assessed_communes_mean', role: 'analytical_reference' } })
+      expect(requests.flatMap(({ items }) => items).some((item) => item.resource === 'raccordement_reference' &&
+        item.target.kind === 'territory')).toBe(false)
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('discards a failed paired batch and recovers focal facts with a separate facts-only read', async () => {
     vi.resetModules()
     const { acquireThemeFacts } = await import('../payload/themeAcquisition')
@@ -245,6 +298,27 @@ describe('theme acquisition cache', () => {
     } }] })).toBe(false)
     expect(semanticPublicationsCompatible(facts, { comparison_reads: [{ resource: 'structure_age', data: {
       content_version: 'scalar-v1', reference_content_version: 'territories-v1',
+    } }] })).toBe(false)
+  })
+
+  it('requires declared profile comparison dependencies to be present and match exactly', () => {
+    const facts = { resource_reads: [{ resource: 'distribution_dpe', shapes: ['declared_profile'], data: {
+      content_version: 'profile-v1', reference_content_version: 'territories-v1',
+      descriptor: { descriptor_version: 'profile-descriptor-v1', comparison_scalar: 'part_passoires',
+        required_scalar_version: 'scalar-v3' },
+    } }] }
+    const comparison = (scalarVersion?: string) => ({ comparison_reads: [{ resource: 'distribution_dpe', data: {
+      content_version: 'profile-v1', reference_content_version: 'territories-v1',
+      scalar_content_version: scalarVersion,
+      result: { profile_descriptor_version: 'profile-descriptor-v1', required_scalar_version: 'scalar-v3' },
+    } }] })
+    expect(semanticPublicationsCompatible(facts, comparison('scalar-v3'))).toBe(true)
+    expect(semanticPublicationsCompatible(facts, comparison())).toBe(false)
+    expect(semanticPublicationsCompatible(facts, comparison('scalar-v2'))).toBe(false)
+    expect(semanticPublicationsCompatible(facts, { comparison_reads: [{ resource: 'distribution_dpe', data: {
+      content_version: 'profile-v1', reference_content_version: 'territories-v1',
+      scalar_content_version: 'scalar-v3',
+      result: { profile_descriptor_version: 'profile-descriptor-v1' },
     } }] })).toBe(false)
   })
 })

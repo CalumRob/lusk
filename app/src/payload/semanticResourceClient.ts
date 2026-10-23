@@ -12,6 +12,10 @@ export interface SemanticResourceDeclaration {
   sources: string[]
   shapes: string[]
   target_kinds: string[]
+  target_ids?: string[]
+  axes?: string[]
+  axis_values?: Array<[string, string[]]>
+  dynamic_axes?: string[]
   fields: string[]
   intents: string[]
 }
@@ -24,9 +28,14 @@ export interface SemanticTerritoryTarget {
   epci_id?: string | null
 }
 
+export interface SemanticNamedReferenceTarget {
+  kind: 'named_reference'
+  id: string
+}
+
 export interface SemanticReadItem {
   resource: string
-  target: SemanticTerritoryTarget
+  target: SemanticTerritoryTarget | SemanticNamedReferenceTarget
   coordinates?: Record<string, string[]>
   fields?: string[]
   intent: { kind: 'facts' } | { kind: 'fixed_comparison'; context: 'default' } |
@@ -66,7 +75,13 @@ export async function chargerCatalogueRessources(): Promise<SemanticResourceDecl
         typeof candidate.label !== 'string' || typeof candidate.unit !== 'string' ||
         typeof candidate.direction !== 'string' || !strings(candidate.allowed_levels) ||
         !strings(candidate.sources) || !strings(candidate.shapes) || !strings(candidate.target_kinds) ||
-        !strings(candidate.fields) || !strings(candidate.intents) || seen.has(candidate.resource_id)) {
+        !strings(candidate.fields) || !strings(candidate.intents) ||
+        (candidate.target_ids !== undefined && !strings(candidate.target_ids)) ||
+        (candidate.axes !== undefined && !strings(candidate.axes)) ||
+        (candidate.dynamic_axes !== undefined && !strings(candidate.dynamic_axes)) ||
+        (candidate.axis_values !== undefined && (!Array.isArray(candidate.axis_values) || candidate.axis_values.some((entry) =>
+          !Array.isArray(entry) || entry.length !== 2 || typeof entry[0] !== 'string' || !strings(entry[1])))) ||
+        seen.has(candidate.resource_id)) {
       throw new PayloadError('validation', path, 'Déclaration de ressource sémantique mal formée ou dupliquée.')
     }
     seen.add(candidate.resource_id)
@@ -115,8 +130,10 @@ export async function lireRessourcesBatch(items: SemanticReadItem[]): Promise<Re
     const expected = request.target
     const sameNullable = (actual: unknown, wanted: string | null | undefined) =>
       (actual === undefined || actual === null ? null : actual) === (wanted ?? null)
-    if (!isRecord(target) || target.kind !== expected.kind || target.type !== expected.type ||
+    if (!isRecord(target) || target.kind !== expected.kind ||
+        (expected.kind !== 'named_reference' && target.type !== expected.type) ||
         (expected.kind === 'territory' && target.id !== expected.id) ||
+        (expected.kind === 'named_reference' && target.id !== expected.id) ||
         (expected.kind === 'territory_cohort' &&
           (!sameNullable(target.department_id, expected.department_id) || !sameNullable(target.epci_id, expected.epci_id)))) {
       throw new PayloadError('validation', path, 'La cible renvoyée par le lot sémantique ne correspond pas à la lecture demandée.')
