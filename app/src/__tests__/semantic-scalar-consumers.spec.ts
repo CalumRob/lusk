@@ -157,6 +157,81 @@ describe('ordinary scalar consumers on semantic resources', () => {
     wrapper.unmount()
   })
 
+  it('ranks the acquired table population with ties and keeps only the newly resolved scope after navigation', async () => {
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
+    let resolveStaleScope: (() => void) | undefined
+    const targets: Array<{ kind: string; type: string; department_id?: string | null; epci_id?: string | null }> = []
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata('demographie')))
+      if (url === '/api/resources') return new Response(JSON.stringify(discovery(resource('demographie', 'densite'))))
+      if (url === '/api/resources/read-batch') {
+        const request = JSON.parse(init?.body as string) as { items: Array<{ id: string; resource: string; target: any }> }
+        const item = request.items[0]!
+        targets.push(item.target)
+        const refs = territoiresFixture.filter((territory) => territory.type === item.target.type &&
+          (!item.target.department_id || territory.departement === item.target.department_id) &&
+          (!item.target.epci_id || territory.epci === item.target.epci_id))
+        const observations = refs.map((territory, index) => {
+          const missing = !item.target.epci_id && territory.territoire === '29002'
+          const value = item.target.epci_id === '200000001' ? 5
+            : item.target.epci_id === '200000002' ? 2 + index * 2
+              : [10, 10, 3, null][index]!
+          return observation('demographie', 'densite', territory.territoire,
+            missing ? 'not_available' : 'measured', value)
+        })
+        const data = cohortResult('demographie', 'densite', item.target, refs.map((territory) => territory.territoire), observations)
+        const response = new Response(JSON.stringify(batch({ id: item.id, resource: 'densite', data })))
+        if (targets.length === 2) return new Promise<Response>((resolve) => { resolveStaleScope = () => resolve(response) })
+        return response
+      }
+      throw new Error(`unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/demographie/densite?territoire=22001&niveau=commune')
+    await router.isReady()
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      throw new Error(`API-selected page requested static numeric facts: ${file}`)
+    }
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    await flushPromises()
+    expect(targets).toHaveLength(1)
+    const defaultRows = wrapper.findAll('tbody tr')
+    expect(defaultRows).toHaveLength(3)
+    const defaultText = defaultRows.map((row) => row.text())
+    expect(defaultText.find((row) => row.includes('Commune A1'))).toContain('1er / 3')
+    expect(defaultText.find((row) => row.includes('Commune D'))).toContain('1er / 3')
+    expect(defaultText.find((row) => row.includes('Commune B'))).toContain('3e / 3')
+    expect(defaultText.some((row) => row.includes('Commune C'))).toBe(false)
+
+    await router.replace({ query: { territoire: '22001', niveau: 'commune', epci: '200000001' } })
+    await flushPromises()
+    expect(targets).toHaveLength(2)
+    expect(targets[1]).toMatchObject({ epci_id: '200000001' })
+
+    await router.replace({ query: { territoire: '29001', niveau: 'commune', epci: '200000002' } })
+    await flushPromises()
+    expect(targets).toHaveLength(3)
+    expect(targets[2]).toMatchObject({ epci_id: '200000002' })
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+    const filteredRows = wrapper.findAll('tbody tr').map((row) => row.text())
+    expect(filteredRows.find((row) => row.includes('Commune B'))).toContain('2e / 2')
+    expect(filteredRows.find((row) => row.includes('Commune C'))).toContain('1er / 2')
+    expect(filteredRows.some((row) => row.includes('Commune A1'))).toBe(false)
+
+    resolveStaleScope!()
+    await flushPromises()
+    expect(wrapper.findAll('tbody tr')).toHaveLength(2)
+    expect(wrapper.findAll('tbody tr').map((row) => row.text())).toEqual(filteredRows)
+    wrapper.unmount()
+  })
+
   it('standalone map replaces deceptive static values while one all-Bretagne cohort is pending or fails', async () => {
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     let failRead: ((error: Error) => void) | undefined
