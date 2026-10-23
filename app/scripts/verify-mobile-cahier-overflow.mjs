@@ -31,6 +31,10 @@ try {
   const { resolveMobiliteThemeContent } = await server.ssrLoadModule('/src/fiche/content/themeContent.ts')
   const { cahierPaginationFor } = await server.ssrLoadModule('/src/fiche/prototype/cahierPagination.ts')
   const { reponseThemeMobiliteApi } = await server.ssrLoadModule('/src/__tests__/helpers/mobiliteThemeApiStub.ts')
+  const { AEDAR_CORE_MEASURE_KEYS, AEDAR_EXPLORER_DETAIL_MEASURE_KEYS } =
+    await server.ssrLoadModule('/src/fiche/content/aedarTimeRampFacts.ts')
+  const { AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU } =
+    await server.ssrLoadModule('/src/fiche/content/aedarAccessSection.ts')
   const { AEDAR_TYPEQU_REGISTRY } = await server.ssrLoadModule('/src/fiche/content/aedarTypequRegistry.ts')
   const semanticContracts = JSON.parse(await readFile(
     resolve(repoRoot, 'pipeline/inst/extdata/semantic-resource-contracts.json'), 'utf8',
@@ -70,20 +74,26 @@ try {
             const equipment = AEDAR_TYPEQU_REGISTRY.find(({ code: candidate }) => candidate === code)
             assert(equipment, `TYPEQU ${code} absent du registre producteur`)
             const measures = {}
+            const selectedMeasures = item.fields?.map((field) => field.replace(/^measures\./u, ''))
             for (const [horizonIndex, horizon] of [5, 10, 15, 20].entries()) {
               for (const [modeIndex, mode] of ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].entries()) {
                 const minimum = 1 + horizonIndex + modeIndex / 10 + (typeIndex % 4) / 10
-                measures[`count_${horizon}_${mode}_share`] = Math.min(0.95, 0.35 + horizonIndex * 0.12 + modeIndex * 0.03 + (typeIndex % 7) * 0.01)
-                measures[`count_${horizon}_${mode}_min`] = minimum
-                measures[`count_${horizon}_${mode}_max`] = minimum + 8
-                for (let decile = 1; decile <= 9; decile += 1) {
-                  measures[`count_${horizon}_${mode}_decile${decile}`] = minimum + decile * 0.8
+                const projection = {
+                  [`count_${horizon}_${mode}_share`]: Math.min(0.95, 0.35 + horizonIndex * 0.12 + modeIndex * 0.03 + (typeIndex % 7) * 0.01),
+                  [`count_${horizon}_${mode}_min`]: minimum,
+                  [`count_${horizon}_${mode}_max`]: minimum + 8,
                 }
-                measures[`count_${horizon}_${mode}_mean`] = minimum + 4
+                for (let decile = 1; decile <= 9; decile += 1) {
+                  projection[`count_${horizon}_${mode}_decile${decile}`] = minimum + decile * 0.8
+                }
+                projection[`count_${horizon}_${mode}_mean`] = minimum + 4
                 const distribution = [minimum, ...Array.from({ length: 9 }, (_, index) => minimum + (index + 1) * 0.8), minimum + 8]
                 assert(distribution.every((value, index) => index === 0 || distribution[index - 1] <= value))
-                assert(distribution[0] <= measures[`count_${horizon}_${mode}_mean`] &&
-                  measures[`count_${horizon}_${mode}_mean`] <= distribution.at(-1))
+                assert(distribution[0] <= projection[`count_${horizon}_${mode}_mean`] &&
+                  projection[`count_${horizon}_${mode}_mean`] <= distribution.at(-1))
+                for (const [key, value] of Object.entries(projection)) {
+                  if (!selectedMeasures || selectedMeasures.includes(key)) measures[key] = value
+                }
               }
             }
             return {
@@ -115,6 +125,7 @@ try {
   for (const width of [320, 360, 390, 601, 760, 761, 1440, 1800]) {
     const page = await browser.newPage({ viewport: { width, height: 844 }, deviceScaleFactor: 1 })
     const readCalls = { mobilityFacts: 0, aedarBatches: 0, aedarItems: [] }
+    page.on('pageerror', (error) => console.error(`[browser pageerror ${width}px]`, error))
     await page.route('**/api/territories/commune/35238/themes/mobilite/facts', async (route) => {
       readCalls.mobilityFacts += 1
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(mobilityFacts) })
@@ -130,12 +141,69 @@ try {
         resource: item.resource,
         target: item.target,
         typequ: item.coordinates.typequ,
+        fields: item.fields ?? [],
       })))
       await route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(aedarBatchResponse(request)) })
     })
     await page.goto(`${baseUrl}territoire/commune/35238?theme=mobilite`, { waitUntil: 'networkidle' })
-    await page.locator('#section-aedar-car-overview').waitFor({ state: 'visible' })
+    try {
+      await page.locator('#section-aedar-car-overview').waitFor({ state: 'visible', timeout: 10000 })
+    } catch (error) {
+      console.error(`[browser body ${width}px]`, (await page.locator('body').innerText()).slice(0, 2000))
+      throw error
+    }
     await page.locator('#section-aedar-equipment-explorer').waitFor({ state: 'visible' })
+
+    const longYAxisFigure = await page.evaluate(async ({ baseUrl }) => {
+      const root = document.createElement('div')
+      root.id = 'long-y-axis-browser-fixture'
+      root.style.cssText = `position:fixed;top:0;left:0;width:${innerWidth}px;visibility:hidden;pointer-events:none;z-index:-1`
+      document.body.append(root)
+      const fixture = await import(new URL('src/__tests__/helpers/mobileCahierBrowserFixture.ts', baseUrl).href)
+      const app = await fixture.mountLongYAxisFigure(root)
+      try {
+        await new Promise((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => requestAnimationFrame(resolve))))
+        const frame = root.querySelector('.bpe-profile-visual')
+        const plot = root.querySelector('.bpe-profile-chart')
+        const labels = [...root.querySelectorAll('.cahier-figure-tick-label--y')]
+        const title = root.querySelector('.cahier-figure-axis-title--y')
+        if (!frame || !plot || !labels.length || !title) throw new Error('Long-y-label figure fixture did not mount completely')
+        const labelStyle = getComputedStyle(labels[0])
+        const context = document.createElement('canvas').getContext('2d')
+        if (!context) throw new Error('Canvas text measurement is required for the long-y-label fixture')
+        context.font = [labelStyle.fontStyle, labelStyle.fontVariant, labelStyle.fontWeight,
+          labelStyle.fontStretch, labelStyle.fontSize, labelStyle.fontFamily]
+          .filter((part) => part && part !== 'normal').join(' ')
+        const letterSpacing = Number.parseFloat(labelStyle.letterSpacing) || 0
+        const longestTick = labels.reduce((longest, label) => label.textContent.length > longest.length ? label.textContent : longest, '')
+        const measuredLabelWidth = Math.max(...labels.map((label) =>
+          context.measureText(label.textContent).width + Math.max(0, label.textContent.length - 1) * letterSpacing,
+        ))
+        const frameWidth = frame.getBoundingClientRect().width
+        const railPercent = Number.parseFloat(getComputedStyle(frame).getPropertyValue('--cahier-figure-grid-left'))
+        const railWidth = railPercent * frameWidth / 100
+        const titleRight = title.getBoundingClientRect().right
+        const labelBandLeft = Math.min(...labels.map((label) => label.getBoundingClientRect().left))
+        return {
+          viewport: innerWidth,
+          longestTick,
+          measuredLabelWidth,
+          railWidth,
+          requiredRailWidth: 16 + measuredLabelWidth + 8,
+          labelBandLeft,
+          titleRight,
+        }
+      } finally {
+        app.unmount()
+        root.remove()
+      }
+    }, { baseUrl })
+    assert(longYAxisFigure.longestTick.replace(/\D/gu, '').length >= 4 && longYAxisFigure.measuredLabelWidth > 24,
+      `Long y-axis fixture must contain a measured four-digit tick at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
+    assert(longYAxisFigure.railWidth >= longYAxisFigure.requiredRailWidth - 1,
+      `Measured y-axis rail must reserve the label width and title lane at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
+    assert(longYAxisFigure.labelBandLeft >= longYAxisFigure.titleRight + 5,
+      `Long tick-label band must stay outside the rotated title lane at ${width}px: ${JSON.stringify(longYAxisFigure)}`)
 
     let mobileIndexInteraction = null
     if (width <= 760) {
@@ -156,20 +224,36 @@ try {
 
     assert.equal(readCalls.mobilityFacts, 1,
       `Expected exactly one theme-facts fixture request at ${width}px; got ${readCalls.mobilityFacts}. The theme-facts route may not have been requested or matched.`)
-    const expectedAedarBatches = Math.ceil(AEDAR_TYPEQU_REGISTRY.length / 100)
-    assert.equal(readCalls.aedarBatches, 1,
-      `Expected exactly one semantic read-batch POST at ${width}px; got ${readCalls.aedarBatches}. The AEDAR fixture route may not have been requested or matched.`)
-    assert.equal(readCalls.aedarItems.length, expectedAedarBatches,
-      `Expected ${expectedAedarBatches} AEDAR resource items at ${width}px; got ${readCalls.aedarItems.length}.`)
-    for (const [index, item] of readCalls.aedarItems.entries()) {
-      const start = index * 100
-      const expectedCodes = AEDAR_TYPEQU_REGISTRY.slice(start, start + 100).map(({ code }) => code)
-      assert.equal(item.id, `aedar-${index}`, `Unexpected AEDAR item id at ${width}px, index ${index}`)
-      assert.equal(item.resource, 'aedar_territorial_aggregate', `Unexpected AEDAR resource at ${width}px, item ${index}`)
-      assert.deepEqual(item.target, { kind: 'territory', type: 'commune', id: '35238' },
-        `Unexpected AEDAR target at ${width}px, item ${index}`)
-      assert.deepEqual(item.typequ, expectedCodes,
-        `AEDAR TYPEQU range mismatch at ${width}px, item ${index}; fixture must cover the registered codes in producer order.`)
+    const chunk = (values, size) => Array.from({ length: Math.ceil(values.length / size) }, (_, index) =>
+      values.slice(index * size, (index + 1) * size))
+    const coreProjections = chunk(AEDAR_CORE_MEASURE_KEYS, 32)
+    const detailProjections = chunk(AEDAR_EXPLORER_DETAIL_MEASURE_KEYS, 32)
+    const expectedAedarBatches = coreProjections.length + detailProjections.length
+    assert.equal(readCalls.aedarBatches, expectedAedarBatches,
+      `Expected ${expectedAedarBatches} semantic read-batch POSTs for the current core/detail field projections at ${width}px; got ${readCalls.aedarBatches}.`)
+    const expectedTypequPartitions = chunk(AEDAR_TYPEQU_REGISTRY.map(({ code }) => code), 100)
+    const expectedAedarItems = coreProjections.length * expectedTypequPartitions.length + detailProjections.length
+    assert.equal(readCalls.aedarItems.length, expectedAedarItems,
+      `Expected ${expectedAedarItems} AEDAR resource items across the core universe and explorer projections at ${width}px; got ${readCalls.aedarItems.length}.`)
+    const expectedProjections = [
+      ...coreProjections.map((keys) => ({ fields: keys.map((key) => `measures.${key}`), partitions: expectedTypequPartitions })),
+      ...detailProjections.map((keys) => ({
+        fields: keys.map((key) => `measures.${key}`),
+        partitions: [[AEDAR_EQUIPMENT_EXPLORER_INITIAL_TYPEQU]],
+      })),
+    ]
+    for (const projection of expectedProjections) {
+      const items = readCalls.aedarItems.filter((item) => JSON.stringify(item.fields) === JSON.stringify(projection.fields))
+      assert.equal(items.length, projection.partitions.length,
+        `Unexpected TYPEQU partition count for AEDAR projection at ${width}px: ${JSON.stringify(projection.fields)}`)
+      for (const [index, item] of items.entries()) {
+        assert.equal(item.id, `aedar-${index}`, `Unexpected AEDAR item id at ${width}px, projection index ${index}`)
+        assert.equal(item.resource, 'aedar_territorial_aggregate', `Unexpected AEDAR resource at ${width}px, item ${index}`)
+        assert.deepEqual(item.target, { kind: 'territory', type: 'commune', id: '35238' },
+          `Unexpected AEDAR target at ${width}px, item ${index}`)
+        assert.deepEqual(item.typequ, projection.partitions[index],
+          `AEDAR TYPEQU range mismatch at ${width}px, item ${index}; fixture must cover the registered codes in producer order.`)
+      }
     }
 
     // Disable the inherited clipping while measuring; otherwise scrollWidth can
@@ -394,6 +478,7 @@ try {
       width,
       ...metrics,
       mobileIndexInteraction,
+      longYAxisFigure,
       plainMarginLayout,
       oversizedMutationDetected,
       readCalls: {
