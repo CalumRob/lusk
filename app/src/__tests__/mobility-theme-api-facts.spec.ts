@@ -7,6 +7,7 @@ import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import CahierOffreTransportsFigure from '@/fiche/prototype/CahierOffreTransportsFigure.vue'
 import { mount } from '@vue/test-utils'
 import { nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
+import { projectRaccordementSemanticComparison } from '../payload/raccordementSemanticProjection'
 
 // Wire fields are producer-owned indicator observations, not storage-family rows.
 const sources = [{ source_id: 'mobilite_snapshot', name: 'SQL mobility', version: 'sql-v1',
@@ -375,6 +376,44 @@ describe('SQL Mobilité response to Variant E facts', () => {
         detail: point.axis, value: point.value,
       })),
     })
+  })
+  it.each([
+    {
+      label: 'an EPCI and one of its communes',
+      requested: [
+        { territory_type: 'epci' as const, territory_id: 'synthetic-epci-1' },
+        { territory_type: 'commune' as const, territory_id: '22001' },
+      ],
+      resolved: ['22001', '35238', '35001'],
+    },
+    {
+      label: 'a department and one of its communes',
+      requested: [
+        { territory_type: 'departement' as const, territory_id: 'synthetic-department-22' },
+        { territory_type: 'commune' as const, territory_id: '22001' },
+      ],
+      resolved: ['22001', '35238', '35001', '29001'],
+    },
+  ])('projects the API-resolved unique commune count for $label', ({ requested, resolved }) => {
+    const synthetic = nativeRaccordementReads()
+    const resolvedMembers = resolved.map((id) => ({ type: 'commune', id }))
+    const data = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'selected_comparison', members: resolvedMembers } }, synthetic.curve)
+    const echoedSelection = requested.map((member) => ({ territory_type: member.territory_type,
+      territory_id: member.territory_id }))
+    // The fake producer resolved its parent/child input to these distinct
+    // communes; the API echoes the typed request but publishes the resolved
+    // count and the mean calculated over the resolved members.
+    data.selection = echoedSelection
+    const comparison = { theme_id: 'mobilite', selection: echoedSelection,
+      comparison_reads: [{ resource: synthetic.curve.resource_id, shapes: synthetic.curve.shapes,
+        declaration: synthetic.curve, data }] }
+    const projected = projectRaccordementSemanticComparison(synthetic.focal as any, comparison as any,
+      payload.territoires[0]!, requested)
+
+    expect(projected).toMatchObject({ selectedMemberCount: resolved.length, eligibleCount: resolved.length,
+      rankSize: resolved.length, scope: { kind: 'explicit_selection', member_count: resolved.length } })
+    expect(data.synthetic_fixture).toMatchObject({ kind: 'synthetic_test_fixture', publication_parity: false })
   })
   it('plots a synthetic measured zero without changing its status into an absence claim', () => {
     const synthetic = nativeRaccordementReads()

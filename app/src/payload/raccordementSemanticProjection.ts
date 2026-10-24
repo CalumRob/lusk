@@ -149,9 +149,9 @@ function validateScope(data: Row, result: Row, target: Territoire,
     const expectedKeys = selection.map((member) => `${member.territory_type}/${member.territory_id}`)
     const actualKeys = Array.isArray(returned) ? returned.filter(isRecord)
       .map((member) => `${String(member.territory_type)}/${String(member.territory_id)}`) : []
-    if (scope.kind !== 'explicit_selection' || scope.member_count !== selection.length ||
+    if (scope.kind !== 'explicit_selection' || scope.member_count !== count ||
         actualKeys.length !== expectedKeys.length || actualKeys.some((key, index) => key !== expectedKeys[index]) ||
-        new Set(actualKeys).size !== actualKeys.length || count !== selection.length ||
+        new Set(actualKeys).size !== actualKeys.length ||
         comparisonTargetMismatch(data.target, target)) {
       throw new Error('La comparaison native du raccordement ne reflète pas la sélection demandée')
     }
@@ -224,10 +224,11 @@ export function projectRaccordementSemanticComparison(
   target: Territoire,
   selection: readonly ThemeSelectionMember[] | undefined,
 ): RaccordementSemanticComparison {
-  if (!semanticPublicationsCompatible(focal, comparison)) {
+  if (!semanticPublicationsCompatible(focal, comparison, { type: target.type, id: target.territoire })) {
     throw new Error('Les publications natives focales et comparées du raccordement diffèrent')
   }
-  validerReponseComparaisonTheme('mobilite', comparison, selection)
+  validerReponseComparaisonTheme('mobilite', comparison, selection,
+    { type: target.type, id: target.territoire })
   const { seriesData } = validatedFocalReads(focal, target)
   const comparisonRead = readFor(comparison, 'raccordement_courbe', 'comparison_reads')
   const comparisonData = comparisonRead && isRecord(comparisonRead.data) ? comparisonRead.data : null

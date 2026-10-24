@@ -4,6 +4,7 @@ import { acquireThemeComparison, acquireThemeFacts, semanticPublicationsCompatib
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 import { THEMES_ACQUISITION_API } from '../payload/themeAcquisition'
 import { THEMES_CANONIQUES } from '../payload/types'
+import { semanticComparisonForTheme, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
 
 describe('theme acquisition cache', () => {
   it('registers every canonical theme for lazy acquisition', () => {
@@ -76,6 +77,105 @@ describe('theme acquisition cache', () => {
       ])
     } finally { vi.unstubAllGlobals() }
   })
+  it.each([
+    {
+      label: 'an EPCI plus one of its communes',
+      selection: [
+        { territory_type: 'epci' as const, territory_id: 'synthetic-epci-1' },
+        { territory_type: 'commune' as const, territory_id: 'synthetic-commune-1' },
+      ],
+      resolvedCount: 3,
+    },
+    {
+      label: 'a department plus one of its communes',
+      selection: [
+        { territory_type: 'departement' as const, territory_id: 'synthetic-department-22' },
+        { territory_type: 'commune' as const, territory_id: 'synthetic-commune-1' },
+      ],
+      resolvedCount: 4,
+    },
+  ])('keeps the API-resolved unique commune count for $label', async ({ selection, resolvedCount }) => {
+    // Producer-shaped synthetic read: these two requested identities resolve
+    // to a known three/four-commune set after ancestor overlap is deduplicated.
+    // The count is intentionally independent of selection.length; this is not
+    // a claim of publication parity.
+    const catalogue = [{ resource_id: 'part_passoires', theme_id: 'habitat', indicator_id: 'part_passoires',
+      label: 'Part des passoires', unit: '%', direction: 'low', allowed_levels: ['commune'], sources: ['dpe'],
+      shapes: ['scalar'], target_kinds: ['territory'], fields: ['value', 'status'],
+      intents: ['selected_comparison'] }]
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') {
+        return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: catalogue }))
+      }
+      if (String(url) === '/api/resources/read-batch') {
+        const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) => ({
+          id: item.id, resource: item.resource, data: {
+            resource: item.resource, target: item.target, contract: 'indicator-comparison-v1',
+            indicator_id: item.resource, shape: 'scalar', content_version: 'synthetic-publication-v1',
+            reference_content_version: 'synthetic-territories-v1',
+            selection: item.intent.members.map(({ type, id }: { type: string; id: string }) =>
+              ({ territory_type: type, territory_id: id })),
+            scope: { kind: 'explicit_selection', member_count: resolvedCount },
+            result: { indicator_id: item.resource, source_facet: item.resource, status: 'available', direction: 'low',
+              selected_member_count: resolvedCount, eligible_count: resolvedCount, missing_count: 0,
+              rank: 2, rank_size: resolvedCount },
+          },
+        })) }))
+      }
+      throw new Error(`Unexpected request: ${String(url)}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    try {
+      const acquired = await acquireThemeComparison('commune', 'synthetic-focal', 'habitat', selection)
+      const target = { type: 'commune' as const, id: 'synthetic-focal' }
+      validerReponseComparaisonTheme('habitat', acquired, selection, target)
+      const projected = semanticComparisonForTheme(acquired, undefined, undefined, target)
+
+      expect(projected).toMatchObject({ scope: { kind: 'explicit_selection', member_count: resolvedCount },
+        results: [{ indicator_id: 'part_passoires', rank: 2, rank_size: resolvedCount }] })
+      expect((acquired.comparison_reads?.[0]?.data as Record<string, any>)?.selection).toEqual(selection.map((member) => ({
+        territory_type: member.territory_type, territory_id: member.territory_id,
+      })))
+    } finally { vi.unstubAllGlobals() }
+  })
+  it.each(['target', 'owned_content_version', 'result.indicator_id'] as const)(
+    'rejects a regional series comparison with a changed %s binding and retries without replacing focal facts',
+    async (binding) => {
+      const resource = 'raccordement_courbe'
+      const target = { kind: 'territory', type: 'region', id: '53' }
+      const focal = { theme_id: 'mobilite' as const, resource_reads: [{ resource, shapes: ['ordered_series'], data: {
+        resource, target, content_version: 'series-owner-v1', reference_content_version: 'territories-v1',
+        descriptor_version: 'series-descriptor-v1',
+      } }] }
+      const comparison = (patch: Record<string, unknown> = {}) => ({ theme_id: 'mobilite' as const,
+        comparison_reads: [{ resource, shapes: ['ordered_series'], data: {
+          resource, target, contract: 'indicator-comparison-v1', indicator_id: resource, shape: 'series',
+          content_version: 'series-owner-v1', reference_content_version: 'territories-v1',
+          result: { indicator_id: resource, source_facet: 't0090', descriptor_version: 'series-descriptor-v1',
+            status: 'unavailable', reason: 'unsupported_comparison_contract',
+            owned_content_version: 'series-owner-v1', ...patch },
+          scope: null, selection: null,
+        } }] })
+      const invalid = structuredClone(comparison())
+      const invalidData = invalid.comparison_reads[0]!.data as Record<string, any>
+      if (binding === 'target') invalidData.target.id = '54'
+      if (binding === 'owned_content_version') invalidData.result.owned_content_version = 'stale-series-v0'
+      if (binding === 'result.indicator_id') invalidData.result.indicator_id = 'other-series'
+      let attempts = 0
+      const acquire = vi.fn(async () => attempts++ === 0 ? invalid : comparison())
+      const cache = new ThemeAcquisitionCache(async () => focal, acquire)
+      const first = await cache.get('region', '53', 'mobilite')
+
+      await expect(cache.select('region', '53', 'mobilite', undefined)).rejects.toThrow(/publication/i)
+      expect((await cache.get('region', '53', 'mobilite')).focal).toBe(first.focal)
+      const retried = await cache.select('region', '53', 'mobilite', undefined)
+
+      expect(acquire).toHaveBeenCalledTimes(2)
+      expect(retried.focal).toBe(first.focal)
+      expect(retried.comparisons.get('omitted')).toBeDefined()
+    },
+  )
   it('discovers theme resources from the complete catalogue and keeps every semantic batch within twelve items', async () => {
     vi.resetModules()
     const { acquireThemeFacts } = await import('../payload/themeAcquisition')
@@ -349,6 +449,22 @@ describe('theme acquisition cache', () => {
     } }] })).toBe(false)
   })
 
+  it('binds a matching focal/comparison pair to the target requested by the cache', () => {
+    const target = { kind: 'territory', type: 'region', id: '54' }
+    const facts = { resource_reads: [{ resource: 'regional_series', shapes: ['ordered_series'], data: {
+      target, content_version: 'series-v1', reference_content_version: 'territories-v1',
+      descriptor_version: 'series-descriptor-v1',
+    } }] }
+    const comparison = { comparison_reads: [{ resource: 'regional_series', shapes: ['ordered_series'], data: {
+      target, shape: 'series', indicator_id: 'regional_series', content_version: 'series-v1',
+      reference_content_version: 'territories-v1',
+      result: { indicator_id: 'regional_series', owned_content_version: 'series-v1',
+        descriptor_version: 'series-descriptor-v1' },
+    } }] }
+    expect(semanticPublicationsCompatible(facts, comparison, { type: 'region', id: '54' })).toBe(true)
+    expect(semanticPublicationsCompatible(facts, comparison, { type: 'region', id: '53' })).toBe(false)
+  })
+
   it('binds dual-shape scalar comparisons to the scalar facet and keeps annual tokens independent', async () => {
     const target = { kind: 'territory', type: 'commune', id: '22001' }
     const scalarDescriptor = { indicator_id: 'prix_m2', unit: '€/m²', descriptor_version: 'scalar-desc-v1' }
@@ -364,8 +480,9 @@ describe('theme acquisition cache', () => {
     const comparisonRead = (facetPatch: Record<string, unknown> = {}) => ({ resource: 'prix_m2',
       data: { resource: 'prix_m2', target, contract: 'indicator-comparison-v1', indicator_id: 'prix_m2',
         shape: 'ordered_series', content_version: 'series-v1', reference_content_version: 'series-ref-v1',
-        selection: null, scope, result: { indicator_id: 'prix_m2', source_facet: '2025',
-          descriptor_version: 'series-desc-v1', status: 'available', rank: 2, rank_size: 2 },
+         selection: null, scope, result: { indicator_id: 'prix_m2', source_facet: '2025',
+           descriptor_version: 'series-desc-v1', status: 'available', rank: 2, rank_size: 2,
+           owned_content_version: 'series-v1' },
         scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-v1',
           reference_content_version: 'scalar-ref-v1', descriptor_version: 'scalar-desc-v1',
           descriptor: scalarDescriptor, selection: null, scope,

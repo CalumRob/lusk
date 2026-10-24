@@ -607,7 +607,8 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
       const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
       if (cancelled || request !== sequenceComparaison) return
       const nativeComparison = acquired.comparisons.get(cleSelectionComparaison(selectionMembres))
-      validerReponseComparaisonTheme(themeActif, nativeComparison, selectionMembres)
+      validerReponseComparaisonTheme(themeActif, nativeComparison, selectionMembres,
+        { type: target.type, id: target.territoire })
       const comparison = semanticComparisonForTheme(nativeComparison, {
         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
         territories: model.cohortTerritories,
@@ -774,7 +775,8 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
     void cacheAcquisition.select(typeRoute.value, idRoute.value, 'mobilite', explicitSelection).then((acquired) => {
       if (request !== comparisonRequestSequence || controller.signal.aborted || !mobilityFocal.value) return
       const data = acquired.comparisons.get(cleSelectionComparaison(explicitSelection))
-      validerReponseComparaisonTheme('mobilite', data, explicitSelection)
+      validerReponseComparaisonTheme('mobilite', data, explicitSelection,
+        { type: target.type, id: target.territoire })
       const updated = applyThemeComparisonApiFacts(mobilityFocal.value, data, context, explicitSelection)
        mobilityComparisonFacts.value = updated
        mobilityCurveComparison.value = updated.mobility.selectedTrajectoryComparison ?? null

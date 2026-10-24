@@ -382,7 +382,7 @@ function selectedTrajectoryComparison(
       ? envelopeScope?.kind === 'explicit_selection' && sourceScope?.kind === 'explicit_selection' &&
         expectedKeys.length >= 2 && actualSelection.length === expectedKeys.length &&
         actualSelection.every((key, index) => key === expectedKeys[index]) &&
-        finite(envelopeScope.member_count) && envelopeScope.member_count === expectedKeys.length
+        finite(envelopeScope.member_count) && envelopeScope.member_count === result.selected_member_count
       : false
   if (!sourceScope || !envelopeScope || !modeMatches ||
       envelopeScope.member_count !== result.selected_member_count ||
@@ -433,7 +433,8 @@ export function applyThemeComparisonApiFacts(
   expectedSelection?: readonly { territory_type: string; territory_id: string }[],
 ): TerritoryFacts {
   if (isRecord(response) && Array.isArray(response.comparison_reads)) {
-    response = semanticComparisonForTheme(response)
+    response = semanticComparisonForTheme(response, undefined, undefined,
+      { type: facts.territory.type, id: facts.territory.code })
   }
   if (!isRecord(response) || (response.contract !== 'theme-comparison-v1' &&
       response.contract !== 'indicator-comparison-v1' && response.contract !== undefined) ||

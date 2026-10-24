@@ -1297,7 +1297,8 @@ export function programmesPourTerritoire(payload: Payload, territoire: string): 
         territoire: ligne.territoire,
         type: ligne.type as 'commune' | 'epci',
         sigle: ligne.detail as SigleProgramme,
-        convention_valant_ort: ligne.rider === 'convention valant ORT',
+        convention_valant_ort: ligne.rider === 'Convention valant ORT' ||
+          ligne.rider === 'convention valant ORT',
         vintage_source: ligne.vintage_source,
         vintage_version: ligne.vintage_version,
         vintage_date_reference: ligne.vintage_date_reference,

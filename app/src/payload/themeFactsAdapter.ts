@@ -29,14 +29,20 @@ const finite = (value: unknown): value is number => typeof value === 'number' &&
 const sameSemanticJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
 
 function validerPorteeComparaison(scope: unknown, selection: unknown, target: unknown,
-  result: Row, shape: unknown): void {
+  result: Row, shape: unknown, data: Row): void {
   if (!isRecord(target) || !texteNonVide(target.id) ||
       !['commune', 'epci', 'departement', 'region'].includes(String(target.type))) {
     throw new Error('Cible de comparaison sémantique invalide')
   }
   if (scope === null || scope === undefined) {
+    if (target.type === 'region' && selection == null && shape === 'series' &&
+        result.status === 'unavailable' && result.reason === 'unsupported_comparison_contract' &&
+        (!texteNonVide(data.content_version) || result.owned_content_version !== data.content_version)) {
+      throw new Error('Version propriétaire de la série comparée incohérente avec sa publication')
+    }
     const unsupportedRegion = target.type === 'region' && selection == null && shape === 'series' &&
       result.status === 'unavailable' && result.reason === 'unsupported_comparison_contract' &&
+      texteNonVide(data.content_version) && result.owned_content_version === data.content_version &&
       result.selected_member_count === 0 && result.eligible_count === 0 && result.missing_count === 0 &&
       result.mean === null && result.mean_curve === null && result.rank === null && result.rank_size === null &&
       Array.isArray(result.comparison_sources) && result.comparison_sources.length === 0
@@ -68,7 +74,8 @@ function validerPorteeComparaison(scope: unknown, selection: unknown, target: un
       }
       return `${member.territory_type}\u0000${member.territory_id}`
     })
-    if (scope.member_count !== selected.length || new Set(identities).size !== identities.length) {
+    if (!Number.isInteger(result.selected_member_count) || (result.selected_member_count as number) < 0 ||
+        scope.member_count !== result.selected_member_count || new Set(identities).size !== identities.length) {
       throw new Error('Portée de comparaison sémantique invalide')
     }
     return
@@ -120,22 +127,49 @@ function validerResultatComparaison(result: Row, data: Row, declaration?: Row): 
   }
 }
 
-function validerLectureComparaison(read: Row, focalReads?: unknown, requireFocalSeries = false): void {
+function validerLectureComparaison(read: Row, focalReads?: unknown, requireFocalSeries = false,
+  expectedTarget?: { type: TerritoireType; id: string }): void {
   const data = isRecord(read.data) ? read.data : null
   const result = data && isRecord(data.result) ? data.result : null
   if (!data || !result || !isRecord(data.target)) {
     throw new Error('Lecture de comparaison sémantique incomplète')
   }
+  if (!texteNonVide(read.resource) || data.indicator_id !== read.resource ||
+      result.indicator_id !== data.indicator_id) {
+    throw new Error('Identité d’indicateur de comparaison sémantique incohérente')
+  }
+  const focal = Array.isArray(focalReads) ? focalReads.find((candidate) =>
+    isRecord(candidate) && candidate.resource === read.resource) : undefined
+  const focalData = isRecord(focal) && isRecord(focal.data) ? focal.data : null
+  const expected = expectedTarget ?? (focalData && isRecord(focalData.target) &&
+    focalData.target.type && focalData.target.id
+    ? { type: focalData.target.type as TerritoireType, id: String(focalData.target.id) } : undefined)
+  if (!expected || data.target.kind !== 'territory' || data.target.type !== expected.type ||
+      data.target.id !== expected.id || (focalData && (!isRecord(focalData.target) ||
+        focalData.target.kind !== 'territory' || focalData.target.type !== expected.type ||
+        focalData.target.id !== expected.id))) {
+    throw new Error('Cible de comparaison sémantique différente de la requête focale')
+  }
   const declaration = isRecord(read.declaration) ? read.declaration : undefined
-  validerPorteeComparaison(data.scope, data.selection, data.target, result, data.shape)
+  if (declaration && declaration.resource_id !== read.resource) {
+    throw new Error('Identité de ressource de comparaison sémantique incohérente avec sa déclaration')
+  }
+  if (Array.isArray(focalReads) && data.shape === 'series' && data.target.type === 'region' &&
+      data.scope == null && result.status === 'unavailable' &&
+      result.reason === 'unsupported_comparison_contract') {
+    const ownerContentVersion = focalData?.content_version
+    if (!texteNonVide(ownerContentVersion) || data.content_version !== ownerContentVersion ||
+        result.owned_content_version !== ownerContentVersion) {
+      throw new Error('Version propriétaire de la série comparée incohérente avec les faits focaux')
+    }
+  }
+  validerPorteeComparaison(data.scope, data.selection, data.target, result, data.shape, data)
   validerResultatComparaison(result, data, declaration)
   if (data.shape === 'series' && result.status === 'available' && requireFocalSeries && !Array.isArray(focalReads)) {
     throw new Error('Faits focaux absents pour valider la facette de série comparée')
   }
   if (data.shape === 'series' && (result.status === 'available' ||
       (result.source_facet !== null && result.source_facet !== undefined)) && Array.isArray(focalReads)) {
-    const focal = focalReads.find((candidate) => isRecord(candidate) && candidate.resource === read.resource)
-    const focalData = isRecord(focal) && isRecord(focal.data) ? focal.data : null
     const comparisonPoint = focalData?.comparison_point
     if (!focalData || !texteNonVide(comparisonPoint) || result.source_facet !== comparisonPoint ||
         (Array.isArray(focalData.axis_values) && !focalData.axis_values.includes(comparisonPoint))) {
@@ -837,7 +871,7 @@ function semanticReadingCloud(response: Row, scopeValue: unknown, selectionValue
 }
 
 export function semanticComparisonForTheme(response: unknown, reference?: SemanticReadingReference,
-  focalReads?: unknown): Row | null {
+  focalReads?: unknown, expectedTarget?: { type: TerritoireType; id: string }): Row | null {
   if (!isRecord(response) || !Array.isArray(response.comparison_reads)) return null
   const results: Row[] = []
   const profiles: Row[] = []
@@ -847,7 +881,9 @@ export function semanticComparisonForTheme(response: unknown, reference?: Semant
     if (!isRecord(item) || !texteNonVide(item.resource) || !isRecord(item.data) || !isRecord(item.data.result)) {
       throw new Error('Résultat de comparaison sémantique invalide')
     }
-    validerLectureComparaison(item, focalReads, focalReads !== undefined)
+    const referenceTarget = reference?.target
+    validerLectureComparaison(item, focalReads, focalReads !== undefined,
+      expectedTarget ?? (referenceTarget ? { type: referenceTarget.type, id: referenceTarget.territoire } : undefined))
     const result = item.data.result
     const shape = item.data.shape
     scopes.push(item.data.scope ?? null)
@@ -1118,10 +1154,13 @@ export function validerReponseComparaisonTheme(
   theme: ThemeKey,
   response: unknown,
   selectionAttendue: readonly ThemeSelectionMember[] | undefined,
+  targetAttendu?: { type: TerritoireType; id: string },
 ): void {
   if (isRecord(response) && Array.isArray(response.comparison_reads)) {
     if (response.theme_id !== theme ||
-        (selectionAttendue === undefined ? response.selection !== undefined : !Array.isArray(response.selection))) {
+        (selectionAttendue === undefined ? response.selection !== undefined : !Array.isArray(response.selection)) ||
+        !targetAttendu || !texteNonVide(targetAttendu.id) ||
+        !['commune', 'epci', 'departement', 'region'].includes(targetAttendu.type)) {
       throw new Error('Réponse de comparaison sémantique incompatible')
     }
     if (selectionAttendue !== undefined) {
@@ -1143,7 +1182,7 @@ export function validerReponseComparaisonTheme(
             : !Array.isArray(comparison.data.selection))) {
         throw new Error('Résultat de comparaison sémantique mal formé')
       }
-      validerLectureComparaison(comparison)
+      validerLectureComparaison(comparison, undefined, false, targetAttendu)
       if (selectionAttendue !== undefined) {
         const actual = comparison.data.selection as unknown[]
         if (actual.length !== selectionAttendue.length || actual.some((item, index) => !isRecord(item) ||

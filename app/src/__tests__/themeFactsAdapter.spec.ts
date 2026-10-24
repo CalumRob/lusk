@@ -9,9 +9,11 @@ import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparais
 import { projectRaccordementSemanticReads } from '../payload/raccordementSemanticProjection'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 import { semanticPublicationsCompatible } from '../payload/themeAcquisition'
+import { programmesPourTerritoire } from '../payload/selectors'
 import { nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import { territoiresFixture } from '../payload/fixtures'
+import type { Payload } from '../payload/types'
 
 const cible = { territoire: '35238', type: 'commune' as const }
 
@@ -78,44 +80,109 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         ...patch,
       },
     }] })
+    const targetAttendu = { type: cible.type, id: cible.territoire }
 
     expect(() => validerReponseComparaisonTheme('habitat', response({ result: {
       indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'available',
       direction: 'high', rank: 1, rank_size: 2,
-    } }), undefined)).toThrow(/direction/i)
+    } }), undefined, targetAttendu)).toThrow(/direction/i)
     expect(() => validerReponseComparaisonTheme('habitat', response({ result: {
       indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'measured',
       direction: 'low', rank: 1, rank_size: 2,
-    } }), undefined)).toThrow(/statut|status/i)
+    } }), undefined, targetAttendu)).toThrow(/statut|status/i)
     expect(() => validerReponseComparaisonTheme('habitat', response({ result: {
       indicator_id: 'prix_m2', source_facet: '2025', status: 'available',
       direction: 'low', rank: 1, rank_size: 2,
-    } }), undefined)).toThrow(/facette/i)
+    } }), undefined, targetAttendu)).toThrow(/facette/i)
     expect(() => validerReponseComparaisonTheme('habitat', response({
       scope: { kind: 'invented_scope', member_count: 2 },
-    }), undefined)).toThrow(/portée|scope/i)
-    expect(() => validerReponseComparaisonTheme('habitat', response({ scope: null }), undefined))
+    }), undefined, targetAttendu)).toThrow(/portée|scope/i)
+    expect(() => validerReponseComparaisonTheme('habitat', response({ scope: null }), undefined, targetAttendu))
       .toThrow(/portée|scope/i)
+    const requestedMixed = [
+      { territory_type: 'epci' as const, territory_id: 'synthetic-epci-1' },
+      { territory_type: 'commune' as const, territory_id: 'synthetic-commune-1' },
+    ]
+    const explicitResponse = (selected: typeof requestedMixed, resolvedCount: number, scopeCount = resolvedCount) => {
+      const available = resolvedCount >= 2
+      const eligibleCount = available ? resolvedCount - 1 : resolvedCount
+      const body = response({ selection: selected.map(({ territory_type, territory_id }) =>
+        ({ territory_type, territory_id })),
+      scope: { kind: 'explicit_selection', member_count: scopeCount },
+      result: { indicator_id: 'prix_m2', source_facet: 'prix_m2', status: available ? 'available' : 'unavailable',
+        reason: available ? null : resolvedCount === 0 ? 'no_selected_comparable_values' : 'fewer_than_two_comparable_values',
+        direction: 'low', selected_member_count: resolvedCount, eligible_count: eligibleCount,
+        missing_count: resolvedCount - eligibleCount, rank: available ? 2 : null,
+        rank_size: available ? eligibleCount : null } }) as Record<string, any>
+      body.selection = selected.map((member) => ({ ...member }))
+      return body
+    }
+    const resolvedMixed = explicitResponse(requestedMixed, 3)
+    expect(() => validerReponseComparaisonTheme('habitat', resolvedMixed, requestedMixed, targetAttendu)).not.toThrow()
+    expect(semanticComparisonForTheme(resolvedMixed, { target: { territoire: cible.territoire, type: cible.type } }))
+      .toMatchObject({ scope: { kind: 'explicit_selection', member_count: 3 },
+        results: [{ selected_member_count: 3, rank_size: 2 }] })
+    for (const malformedScope of [-1, 1.5, 2]) {
+      expect(() => validerReponseComparaisonTheme('habitat', explicitResponse(requestedMixed, 3, malformedScope),
+        requestedMixed, targetAttendu)).toThrow(/portée|scope/i)
+    }
+    const duplicateMixed = [requestedMixed[0]!, requestedMixed[0]!]
+    expect(() => validerReponseComparaisonTheme('habitat', explicitResponse(duplicateMixed, 3), duplicateMixed,
+      targetAttendu)).toThrow(/portée|scope/i)
+    const wrongEcho = explicitResponse(requestedMixed, 3)
+    wrongEcho.selection[1]!.territory_id = 'another-commune'
+    expect(() => validerReponseComparaisonTheme('habitat', wrongEcho, requestedMixed, targetAttendu))
+      .toThrow(/sélection/i)
+    const wrongDataEcho = explicitResponse(requestedMixed, 3)
+    wrongDataEcho.comparison_reads[0]!.data.selection[1]!.territory_id = 'another-commune'
+    expect(() => validerReponseComparaisonTheme('habitat', wrongDataEcho, requestedMixed, targetAttendu))
+      .toThrow(/sélection/i)
+    const invalidResolvedCount = explicitResponse(requestedMixed, 3)
+    invalidResolvedCount.comparison_reads[0]!.data.result.selected_member_count = -1
+    expect(() => validerReponseComparaisonTheme('habitat', invalidResolvedCount, requestedMixed, targetAttendu))
+      .toThrow(/portée|scope/i)
+    const singleton = [{ territory_type: 'commune' as const, territory_id: 'synthetic-commune-1' }]
+    expect(() => validerReponseComparaisonTheme('habitat', explicitResponse(singleton, 1), singleton,
+      targetAttendu)).not.toThrow()
+    expect(() => validerReponseComparaisonTheme('habitat', explicitResponse([], 0), [], targetAttendu)).not.toThrow()
     expect(() => semanticComparisonForTheme(response({
       selection: [{ territory_type: 'commune', territory_id: '1' },
         { territory_type: 'commune', territory_id: '2' }],
       scope: { kind: 'explicit_selection', member_count: 1 },
-    }))).toThrow(/portée|scope/i)
+    }), { target: { territoire: cible.territoire, type: cible.type } })).toThrow(/portée|scope/i)
     const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
-    const focalCurve = nativeReadFixture({ target: { kind: 'territory', type: 'region', id: '53' },
+    const regionTarget = { type: 'region' as const, id: '53' }
+    const focalCurve = nativeReadFixture({ target: { kind: 'territory', ...regionTarget },
       intent: { kind: 'facts' } }, curve)
-    const regionComparison = (resultPatch: Record<string, unknown> = {}) => ({ theme_id: 'mobilite',
+    const focalCurveRead = { resource: curve.resource_id, declaration: curve, shapes: curve.shapes, data: focalCurve }
+    const regionComparison = (resultPatch: Record<string, unknown> = {}, targetId = regionTarget.id) => ({ theme_id: 'mobilite',
       comparison_reads: [{ resource: curve.resource_id, declaration: curve, shapes: curve.shapes, data: {
         contract: 'indicator-comparison-v1', indicator_id: curve.indicator_id, shape: 'series',
-        target: { kind: 'territory', type: 'region', id: '53' }, selection: null, scope: null,
+        content_version: focalCurve.content_version, reference_content_version: focalCurve.reference_content_version,
+        target: { kind: 'territory', type: regionTarget.type, id: targetId }, selection: null, scope: null,
         result: { indicator_id: curve.indicator_id, source_facet: focalCurve.comparison_point, status: 'unavailable',
           reason: 'unsupported_comparison_contract', direction: curve.direction, selected_member_count: 0,
           eligible_count: 0, missing_count: 0, mean: null, mean_curve: null, comparison_sources: [],
-          rank: null, rank_size: null, ...resultPatch },
+          rank: null, rank_size: null, owned_content_version: focalCurve.content_version, ...resultPatch },
       } }] })
-    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison(), undefined)).not.toThrow()
-    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({ status: 'available' }), undefined))
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison(), undefined, regionTarget)).not.toThrow()
+    expect(semanticComparisonForTheme(regionComparison(), undefined, [focalCurveRead], regionTarget))
+      .toMatchObject({ results: [{ indicator_id: curve.resource_id, status: 'unavailable', mean: null }],
+        scope: null })
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({ status: 'available' }), undefined, regionTarget))
       .toThrow(/portée|scope/i)
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({}, '54'), undefined, regionTarget))
+      .toThrow(/cible|territoire|incompatible/i)
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({ owned_content_version: 'stale-series-v0' }),
+      undefined, regionTarget)).toThrow(/publication|version|propriét|série/i)
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({ indicator_id: 'other-series' }),
+      undefined, regionTarget)).toThrow(/identité|indicateur|ressource|facette/i)
+    expect(() => semanticComparisonForTheme(regionComparison({}, '54'), undefined,
+      [focalCurveRead], regionTarget)).toThrow(/cible|territoire|incompatible/i)
+    expect(() => semanticComparisonForTheme(regionComparison({ owned_content_version: 'stale-series-v0' }),
+      undefined, [focalCurveRead], regionTarget)).toThrow(/publication|version|propriét|série/i)
+    expect(() => semanticComparisonForTheme(regionComparison({ indicator_id: 'other-series' }), undefined,
+      [focalCurveRead], regionTarget)).toThrow(/identité|indicateur|ressource|facette/i)
   })
 
   it('projects native semantic comparison results onto the fiche rank seam without replacing focal values', () => {
@@ -129,8 +196,9 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
           status: 'available', direction: 'low', rank: 3, rank_size: 14 },
       },
     }] }
-    validerReponseComparaisonTheme('habitat', response, undefined)
-    const comparison = semanticComparisonForTheme(response)
+    const target = { type: cible.type, id: cible.territoire }
+    validerReponseComparaisonTheme('habitat', response, undefined, target)
+    const comparison = semanticComparisonForTheme(response, { target: { territoire: target.id, type: target.type } })
     const row = { territoire: cible.territoire, type: 'commune' as const, theme: 'habitat' as const,
       key: 'part_passoires', detail: null, value: 0.2, unit: '%', vintage_source: '', vintage_version: '',
       vintage_date_reference: null, vintage_date_publication: null, rang_epci: null, rang_epci_n: null,
@@ -151,10 +219,13 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const response = { theme_id: 'milieux', comparison_reads: [{ resource: 'artif_par_habitant',
       declaration, shapes: declaration.shapes, data: {
       contract: 'indicator-comparison-v1', indicator_id: 'artif_par_habitant', shape: 'series',
+      content_version: 'milieux-series-v1', reference_content_version: 'reference-v1',
       target: { kind: 'territory', type: 'commune', id: '1' }, selection: members.map(({ id, type }) =>
         ({ territory_id: id, territory_type: type })),
       result: { indicator_id: 'artif_par_habitant', source_facet: null, status: 'unavailable',
-        direction: declaration.direction, rank: null, rank_size: null }, scope: { kind: 'explicit_selection', member_count: 2 },
+        reason: 'fewer_than_two_comparable_values', direction: declaration.direction,
+        selected_member_count: 2, eligible_count: 1, missing_count: 1, rank: null, rank_size: null },
+      scope: { kind: 'explicit_selection', member_count: 2 },
     } }], cohort_reads: [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
       content_version: 'reading-v1', reference_content_version: 'reference-v1',
       cohort: { territory_type: 'commune', member_count: 2, reference_content_version: 'reference-v1', members },
@@ -399,6 +470,34 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(absent.indicateurs).toEqual([])
   })
 
+  it('recognizes only the API ORT rider and its explicit legacy spelling at the badge selector', () => {
+    const target = { territoire: '22001', type: 'commune' as const }
+    const source = [{ source_id: 'src', name: 'Source programmes', version: '2026',
+      reference_date: '2026-01-01', publication_date: null }]
+    const badgeFor = (sigle: string, rider: string | null) => {
+      const adapted = themeFactsRowsFromApi('programmes', {
+        contract: 'theme-facts-v1', theme_id: 'programmes',
+        territory: { territory_id: target.territoire, territory_type: target.type },
+        indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [], owned_series: [],
+        collections: [{ indicator_id: 'programme_membership', kind: 'anchored_membership', unit: 'adhésion',
+          availability: 'observed', entries: [{ detail: sigle, rider, sources: source }], relationships: [] }],
+      }, target).indicateurs
+      const payload: Payload = { territoires: territoiresFixture, indicateurs: adapted, histoires: [],
+        apercu: null, runReport: null, vintages: [], programmes: null }
+      return { rawRider: adapted[0]?.rider,
+        badge: programmesPourTerritoire(payload, target.territoire).badges.find((item) => item.sigle === sigle) }
+    }
+
+    expect(badgeFor('ACV', 'Convention valant ORT')).toMatchObject({ rawRider: 'Convention valant ORT',
+      badge: { conventionValantOrt: true } })
+    expect(badgeFor('PVD', 'convention valant ORT')).toMatchObject({ rawRider: 'convention valant ORT',
+      badge: { conventionValantOrt: true } })
+    for (const unrelated of ['Aid rider', null, '']) {
+      expect(badgeFor('ACV', unrelated)).toMatchObject({ rawRider: unrelated,
+        badge: { conventionValantOrt: false } })
+    }
+  })
+
   it('projette le total parent de même année depuis le contexte servi (capture live programmes-facts.json)', () => {
     const provenance = [{ revision_id: 'r1', source_id: 'subventions_scdl', source_name: 'Source subventions', name: 'Source subventions',
       version: '2026-08-05', reference_date: '2026-08-05', publication_date: '2026-08-05' }]
@@ -573,7 +672,8 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
         reference_content_version: 'reference-v1', selection: null,
         scope: densityScope,
         result: { indicator_id: 'prix_m2', source_facet: '2025', status: 'available', direction: apiDirection,
-          descriptor_version: 'series-descriptor-v1', rank: 2, rank_size: 2 },
+          descriptor_version: 'series-descriptor-v1', rank: 2, rank_size: 2,
+          owned_content_version: 'series-publication-v1' },
         scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-publication-v1',
           reference_content_version: 'reference-v1', descriptor_version: 'scalar-descriptor-v1',
           comparison_content_version: 'scalar-comparison-publication-v1',
@@ -621,6 +721,10 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const corruptedComparison: any = structuredClone(comparison)
     corruptedComparison.comparison_reads[0].data.scalar_facet.result.source_facet = '2025'
     expect(() => semanticComparisonForTheme(corruptedComparison, undefined, reads))
+      .toThrow(/facette de comparaison scalaire/i)
+    const wrongScalarFacetIdentity: any = structuredClone(comparison)
+    wrongScalarFacetIdentity.comparison_reads[0].data.scalar_facet.result.indicator_id = 'other-indicator'
+    expect(() => semanticComparisonForTheme(wrongScalarFacetIdentity, undefined, reads))
       .toThrow(/facette de comparaison scalaire/i)
     const incorrectAnnualFacet: any = structuredClone(comparison)
     incorrectAnnualFacet.comparison_reads[0].data.result.source_facet = '2024'

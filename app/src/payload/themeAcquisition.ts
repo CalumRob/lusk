@@ -133,7 +133,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     this.comparisonGenerations.set(pendingKey, generation)
     const request = this.acquireComparison(selection, theme, key).then((comparison) => {
       if (generation !== this.comparisonGenerations.get(pendingKey)) throw new Error('Stale theme comparison response')
-      const compatible = semanticPublicationsCompatible(focal.focal, comparison)
+      const compatible = semanticPublicationsCompatible(focal.focal, comparison, { type, id })
       if (!compatible) throw new Error('Theme publication tokens do not match; retry comparison')
       const result = { ...focal, comparisons: new Map(focal.comparisons).set(selectionKey, comparison) }
       this.entries.set(cacheKey, result)
@@ -289,7 +289,8 @@ async function readAuxiliary(resources: SemanticResourceDeclaration[], type: str
   }
 }
 
-export function semanticPublicationsCompatible(facts: ThemeResponse, comparison: ThemeResponse): boolean {
+export function semanticPublicationsCompatible(facts: ThemeResponse, comparison: ThemeResponse,
+  expectedTarget?: { type: string; id: string }): boolean {
   const focalReads = facts.resource_reads
   const comparisonReads = comparison.comparison_reads
   if (!Array.isArray(focalReads) || !Array.isArray(comparisonReads)) {
@@ -301,6 +302,8 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
         !(name in actual && name in expected) || actual[name] === expected[name])
   }
   const focalByResource = new Map(focalReads.map((read) => [read.resource, read.data]))
+  const isRecord = (value: unknown): value is Record<string, unknown> =>
+    typeof value === 'object' && value !== null && !Array.isArray(value)
   const validDualScalarFacet = (focal: Record<string, unknown>, compared: Record<string, unknown>, resource: string): boolean => {
     const focalFacet = focal.scalar_facet
     const comparedFacet = compared.scalar_facet
@@ -353,6 +356,20 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
   const comparisonCompatible = comparisonReads.every(({ resource, data }) => {
     const focal = focalByResource.get(resource)
     if (!focal) return false
+    const focalTarget = focal.target
+    const comparedTarget = data.target
+    if (expectedTarget || focalTarget !== undefined || comparedTarget !== undefined) {
+      if (!isRecord(focalTarget) || !isRecord(comparedTarget) ||
+          focalTarget.kind !== 'territory' || comparedTarget.kind !== 'territory' ||
+          focalTarget.type !== comparedTarget.type || focalTarget.id !== comparedTarget.id ||
+          (expectedTarget && (focalTarget.type !== expectedTarget.type || focalTarget.id !== expectedTarget.id))) {
+        return false
+      }
+    }
+    const comparisonResult = data.result
+    if ((data.indicator_id !== undefined && data.indicator_id !== resource) ||
+        (isRecord(comparisonResult) && comparisonResult.indicator_id !== undefined &&
+         comparisonResult.indicator_id !== resource)) return false
     const focalVersion = focal.content_version ?? focal.publication_id
     const comparisonVersion = data.content_version ?? data.publication_id
     if (typeof focalVersion !== 'string' || !focalVersion || typeof comparisonVersion !== 'string' ||
@@ -361,8 +378,10 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
         typeof data.reference_content_version !== 'string' || !data.reference_content_version ||
         focal.reference_content_version !== data.reference_content_version) return false
     const focalDescriptor = focal.descriptor
-    const comparisonResult = data.result
     const shapes = focalReads.find((read) => read.resource === resource)?.shapes ?? []
+    if (data.shape === 'series' && (!isRecord(comparisonResult) || data.indicator_id !== resource ||
+        comparisonResult.indicator_id !== resource || typeof data.content_version !== 'string' ||
+        comparisonResult.owned_content_version !== data.content_version)) return false
     const dualScalarSeries = shapes.includes('scalar') && shapes.includes('ordered_series')
     if (dualScalarSeries && !validDualScalarFacet(focal, data, resource)) return false
     const profile = shapes.includes('declared_profile')
@@ -431,7 +450,9 @@ export function acquireThemeFacts(type: string, id: string, theme: ThemeKey,
           return { ...read, shapes: declaration?.shapes, declaration } })
       const defaultComparison = { theme_id: theme, comparison_reads: comparisonReads }
       const result: ThemeResponse = { theme_id: theme, resource_reads: resourceReads, default_comparison: defaultComparison }
-      if (!semanticPublicationsCompatible(result, defaultComparison)) throw new Error('Les publications sémantiques focales et comparées diffèrent')
+      if (!semanticPublicationsCompatible(result, defaultComparison, { type, id })) {
+        throw new Error('Les publications sémantiques focales et comparées diffèrent')
+      }
       return { ...result, ...(await readAuxiliary(themeResources, type)) }
     } catch (pairedFailure) {
       // A semantic batch is atomic. Never salvage a successful prefix: start a
