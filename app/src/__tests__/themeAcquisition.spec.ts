@@ -513,6 +513,154 @@ describe('theme acquisition cache', () => {
     expect(acquire).toHaveBeenCalledTimes(2)
   })
 
+  it('does not register a legacy comparison after its cached focal generation is invalidated', async () => {
+    const declaration = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const target = { kind: 'territory', type: 'commune', id: 'cohort-c1' }
+    const selection = [{ territory_type: 'commune' as const, territory_id: 'cohort-c2' }]
+    const focal = (publication: string): ThemeResponse => ({
+      theme_id: 'programmes',
+      resource_reads: [{ resource: declaration.resource_id, shapes: declaration.shapes, declaration,
+        data: { resource: declaration.resource_id, target, publication_id: publication,
+          territory: { id: target.id, type: target.type, name: 'Cohort one' },
+          indicator_id: declaration.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+          label: declaration.label, unit: declaration.unit, direction: declaration.direction,
+          descriptor_version: 'legacy-series-descriptor-v1', comparison_point: null,
+          points: [], availability: 'no_record' } }],
+    } as unknown as ThemeResponse)
+    const comparison = (publication: string, reference: string): ThemeResponse => ({
+      theme_id: 'programmes', selection,
+      comparison_reads: [{ resource: declaration.resource_id, shapes: declaration.shapes, declaration,
+        data: { resource: declaration.resource_id, target, contract: 'indicator-comparison-v1',
+          complete_theme: false, indicator_id: declaration.indicator_id, shape: 'series',
+          content_version: publication, reference_content_version: reference,
+          selection: [{ territory_type: 'commune', territory_id: 'cohort-c2' }],
+          scope: { kind: 'explicit_selection', member_count: 1 },
+          result: { indicator_id: declaration.indicator_id, label: declaration.label, facet: null,
+            source_facet: null, unit: declaration.unit, direction: declaration.direction,
+            descriptor_version: 'legacy-series-descriptor-v1', status: 'unavailable',
+            reason: 'unsupported_comparison_contract', selected_member_count: 1,
+            eligible_count: 0, missing_count: 1, median: null, rank: null, comparison_sources: [] } },
+      }],
+    } as unknown as ThemeResponse)
+    let factsCount = 0
+    const acquireFacts = vi.fn(async () => focal(factsCount++ === 0 ? 'legacy-publication-v1' : 'legacy-publication-v2'))
+    const acquireComparison = vi.fn(async () => factsCount === 1
+      ? comparison('legacy-publication-v1', 'legacy-reference-v1')
+      : comparison('legacy-publication-v2', 'legacy-reference-v2'))
+    const cache = new ThemeAcquisitionCache(acquireFacts, acquireComparison)
+
+    await cache.get('commune', target.id, 'programmes')
+    const staleSelection = cache.select('commune', target.id, 'programmes', selection)
+    const staleOutcome = expect(staleSelection).rejects.toThrow(/stale/i)
+    cache.invalidate('commune', target.id, 'programmes')
+    await staleOutcome
+
+    expect(acquireComparison).not.toHaveBeenCalled()
+    const fresh = await cache.get('commune', target.id, 'programmes')
+    expect(fresh.focal.resource_reads?.[0]?.data.publication_id).toBe('legacy-publication-v2')
+    const selected = await cache.select('commune', target.id, 'programmes', selection)
+    expect(acquireComparison).toHaveBeenCalledTimes(1)
+    expect(selected.focal).toBe(fresh.focal)
+    expect(selected.comparisons.get(cleSelectionComparaison(selection))?.comparison_reads?.[0]?.data)
+      .toMatchObject({ content_version: 'legacy-publication-v2', reference_content_version: 'legacy-reference-v2' })
+  })
+
+  it('does not let an invalidated legacy response poison a replacement entry or its reference anchor', async () => {
+    const declaration = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const target = { kind: 'territory', type: 'commune', id: 'cohort-c1' }
+    const selection = [{ territory_type: 'commune' as const, territory_id: 'cohort-c2' }]
+    const selectionKey = cleSelectionComparaison(selection)
+    const focal = (publication: string): ThemeResponse => ({
+      theme_id: 'programmes',
+      resource_reads: [{ resource: declaration.resource_id, shapes: declaration.shapes, declaration,
+        data: { resource: declaration.resource_id, target, publication_id: publication,
+          territory: { id: target.id, type: target.type, name: 'Cohort one' },
+          indicator_id: declaration.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+          label: declaration.label, unit: declaration.unit, direction: declaration.direction,
+          descriptor_version: 'legacy-series-descriptor-v1', comparison_point: null,
+          points: [], availability: 'no_record' } }],
+    } as unknown as ThemeResponse)
+    const comparison = (publication: string, reference: string): ThemeResponse => ({
+      theme_id: 'programmes', selection,
+      comparison_reads: [{ resource: declaration.resource_id, shapes: declaration.shapes, declaration,
+        data: { resource: declaration.resource_id, target, contract: 'indicator-comparison-v1',
+          complete_theme: false, indicator_id: declaration.indicator_id, shape: 'series',
+          content_version: publication, reference_content_version: reference,
+          selection: [{ territory_type: 'commune', territory_id: 'cohort-c2' }],
+          scope: { kind: 'explicit_selection', member_count: 1 },
+          result: { indicator_id: declaration.indicator_id, label: declaration.label, facet: null,
+            source_facet: null, unit: declaration.unit, direction: declaration.direction,
+            descriptor_version: 'legacy-series-descriptor-v1', status: 'unavailable',
+            reason: 'unsupported_comparison_contract', selected_member_count: 1,
+            eligible_count: 0, missing_count: 1, median: null, rank: null, comparison_sources: [] } },
+      }],
+    } as unknown as ThemeResponse)
+    let factsCount = 0
+    let resolveOld!: (value: ThemeResponse) => void
+    let resolveCurrent!: (value: ThemeResponse) => void
+    let signalOldStarted!: () => void
+    let signalCurrentStarted!: () => void
+    const oldStarted = new Promise<void>((resolve) => { signalOldStarted = resolve })
+    const currentStarted = new Promise<void>((resolve) => { signalCurrentStarted = resolve })
+    const oldResponse = new Promise<ThemeResponse>((resolve) => { resolveOld = resolve })
+    const currentResponse = new Promise<ThemeResponse>((resolve) => { resolveCurrent = resolve })
+    let comparisonCount = 0
+    const cache = new ThemeAcquisitionCache(
+      async () => focal(factsCount++ === 0 ? 'legacy-publication-v1' : 'legacy-publication-v2'),
+      () => {
+        if (comparisonCount++ === 0) {
+          signalOldStarted()
+          return oldResponse
+        }
+        signalCurrentStarted()
+        return currentResponse
+      },
+    )
+
+    await cache.get('commune', target.id, 'programmes')
+    const staleSelection = cache.select('commune', target.id, 'programmes', selection)
+    const staleOutcome = expect(staleSelection).rejects.toThrow(/stale/i)
+    await oldStarted
+
+    cache.invalidate('commune', target.id, 'programmes')
+    const fresh = await cache.get('commune', target.id, 'programmes')
+    expect(fresh.focal.resource_reads?.[0]?.data.publication_id).toBe('legacy-publication-v2')
+    const currentSelection = cache.select('commune', target.id, 'programmes', selection)
+    await currentStarted
+
+    resolveOld(comparison('legacy-publication-v1', 'legacy-reference-v1'))
+    await staleOutcome
+    expect((await cache.get('commune', target.id, 'programmes')).focal).toBe(fresh.focal)
+    expect((await cache.get('commune', target.id, 'programmes')).comparisons.has(selectionKey)).toBe(false)
+
+    resolveCurrent(comparison('legacy-publication-v2', 'legacy-reference-v2'))
+    const selected = await currentSelection
+    expect(selected.focal).toBe(fresh.focal)
+    expect(selected.comparisons.get(selectionKey)?.comparison_reads?.[0]?.data)
+      .toMatchObject({ content_version: 'legacy-publication-v2', reference_content_version: 'legacy-reference-v2' })
+    expect(comparisonCount).toBe(2)
+  })
+
+  it('allows an uncached select to finish when only an unrelated theme is invalidated', async () => {
+    const acquireFacts = vi.fn(async (theme: string) => ({ theme_id: theme,
+      content_version: 'publication-v1', reference_content_version: 'reference-v1' }))
+    const acquireComparison = vi.fn(async (_selection: readonly ThemeSelectionMember[] | undefined,
+      theme: string) => ({ theme_id: theme,
+      content_version: 'publication-v1', reference_content_version: 'reference-v1' }))
+    const cache = new ThemeAcquisitionCache(acquireFacts, acquireComparison)
+
+    const selected = cache.select('commune', '22001', 'programmes', undefined)
+    cache.invalidate('commune', '22001', 'habitat')
+    const result = await selected
+
+    expect(acquireFacts).toHaveBeenCalledTimes(1)
+    expect(acquireFacts).toHaveBeenCalledWith('programmes', { type: 'commune', id: '22001', theme: 'programmes' })
+    expect(acquireComparison).toHaveBeenCalledTimes(1)
+    expect(result.comparisons.get('omitted')?.theme_id).toBe('programmes')
+  })
+
   it('merges a comparison-only response while retaining focal facts and distinguishing empty from default', async () => {
     const facts = vi.fn(async () => ({ content_version: 'v1', reference_content_version: 'r1', focal: { value: 17 } }))
     const comparison = vi.fn(async (selection: readonly ThemeSelectionMember[] | undefined) => ({

@@ -137,6 +137,13 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
 
   private key({ type, id, theme }: Key): string { return JSON.stringify([type, id, theme]) }
 
+  private assertCurrentFocal(cacheKey: string, generation: number, focal: AcquiredTheme<T>): void {
+    if (generation !== (this.generations.get(cacheKey) ?? 0) ||
+        this.entries.get(cacheKey)?.focal !== focal.focal) {
+      throw new Error('Stale theme acquisition response')
+    }
+  }
+
   async get(type: string, id: string, theme: ThemeKey): Promise<AcquiredTheme<T>> {
     const key = { type, id, theme }
     const cacheKey = this.key(key)
@@ -166,21 +173,25 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
   async select(type: string, id: string, theme: ThemeKey, selection: readonly ThemeSelectionMember[] | undefined): Promise<AcquiredTheme<T>> {
     const key = { type, id, theme }
     const cacheKey = this.key(key)
+    const focalGeneration = this.generations.get(cacheKey) ?? 0
     const focal = await this.get(type, id, theme)
+    this.assertCurrentFocal(cacheKey, focalGeneration, focal)
     if (!this.acquireComparison) return focal
     const selectionKey = cleSelectionComparaison(selection)
     const existing = focal.comparisons.get(selectionKey)
-    if (existing && !existing.cohort_error) return focal
+    if (existing && !existing.cohort_error) return this.entries.get(cacheKey)!
     const pendingKey = JSON.stringify([cacheKey, selectionKey])
     const pending = this.pendingComparisons.get(pendingKey)
     if (pending) {
       await pending
-      return this.entries.get(cacheKey) ?? focal
+      this.assertCurrentFocal(cacheKey, focalGeneration, focal)
+      return this.entries.get(cacheKey)!
     }
     const generation = (this.comparisonGenerations.get(pendingKey) ?? 0) + 1
     this.comparisonGenerations.set(pendingKey, generation)
     const request = this.acquireComparison(selection, theme, key).then((comparison) => {
       if (generation !== this.comparisonGenerations.get(pendingKey)) throw new Error('Stale theme comparison response')
+      this.assertCurrentFocal(cacheKey, focalGeneration, focal)
       const legacySeriesResponse = (focal.focal.resource_reads ?? []).some((read) =>
         isNativeLegacySeriesFocal(read) && comparison.comparison_reads?.some((candidate) =>
           candidate.resource === read.resource && candidate.data.shape === 'series'))
@@ -204,12 +215,14 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
           throw new Error('Theme publication tokens do not match; retry comparison')
         }
       }
+      this.assertCurrentFocal(cacheKey, focalGeneration, focal)
+      const current = this.entries.get(cacheKey)!
       if (learnedReferences.size) {
         const boundReferences = new Map(currentReferences)
         for (const [resource, reference] of learnedReferences) boundReferences.set(resource, reference)
         this.legacyReferenceVersions.set(cacheKey, boundReferences)
       }
-      const result = { ...focal, comparisons: new Map(focal.comparisons).set(selectionKey, comparison) }
+      const result = { ...current, comparisons: new Map(current.comparisons).set(selectionKey, comparison) }
       this.entries.set(cacheKey, result)
       return comparison
     }).finally(() => {
@@ -217,7 +230,8 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     })
     this.pendingComparisons.set(pendingKey, request)
     await request
-    return this.entries.get(cacheKey) ?? focal
+    this.assertCurrentFocal(cacheKey, focalGeneration, focal)
+    return this.entries.get(cacheKey)!
   }
 
   /** Drop one aggregate without disturbing its already acquired focal facts or sibling selections. */
