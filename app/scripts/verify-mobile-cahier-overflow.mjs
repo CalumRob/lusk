@@ -112,7 +112,49 @@ async function verifyWaffleLegendInteraction(page) {
     'Waffle chip focus ring must use a visible color')
   expectContrast(focused, 'focused')
 
-  return { normal, hover, active, focused, dialogOpened: true, dialogDismissedWithEscape: true }
+  const keyboardTile = page.locator('.aedar-waffle-tile').last()
+  await page.keyboard.press('Shift+Tab')
+  const focusedTile = await keyboardTile.evaluate((button) => {
+    const style = getComputedStyle(button)
+    const { width, height } = button.getBoundingClientRect()
+    return {
+      active: document.activeElement === button,
+      focusVisible: button.matches(':focus-visible'),
+      width,
+      height,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      outlineColor: style.outlineColor,
+      name: button.getAttribute('aria-label')?.trim() ?? '',
+    }
+  })
+  assert.equal(focusedTile.active, true, 'Keyboard reverse navigation must return focus to the Waffle tile')
+  assert.equal(focusedTile.focusVisible, true, 'The focused Waffle tile must expose keyboard-visible focus')
+  assert.equal(focusedTile.outlineStyle, 'solid', 'Waffle tile focus must retain a visible outline')
+  assert.equal(focusedTile.outlineWidth, '2px', 'Waffle tile focus outline must remain 2px wide')
+  assert.notEqual(focusedTile.outlineColor, 'rgba(0, 0, 0, 0)',
+    'Waffle tile focus outline must use a visible color')
+  assert.equal(focusedTile.width, 14, 'The focused mobile Waffle tile hit box must stay exactly 14px wide')
+  assert.equal(focusedTile.height, 14, 'The focused mobile Waffle tile hit box must stay exactly 14px high')
+  assert(focusedTile.name.length > 0, 'The focused Waffle tile must retain its accessible name')
+  await page.keyboard.press('Enter')
+  const tileDialog = page.locator('dialog[open]')
+  await tileDialog.waitFor({ state: 'visible' })
+  assert.equal(await tileDialog.getAttribute('aria-modal'), 'true',
+    'Keyboard activation of a Waffle tile must open the accessible modal detail')
+  await page.keyboard.press('Escape')
+  await tileDialog.waitFor({ state: 'hidden' })
+
+  return {
+    normal,
+    hover,
+    active,
+    focused,
+    focusedTile,
+    dialogOpened: true,
+    dialogDismissedWithEscape: true,
+    tileKeyboardActivation: true,
+  }
 }
 
 const server = await createServer({
@@ -267,15 +309,20 @@ try {
         return { x, y, right, bottom, width, height, center: x + width / 2 }
       }
       const gridBox = grid ? box(grid) : null
+      const waffleBox = waffle ? box(waffle) : null
       const tileBoxes = tiles.map(box)
+      const tileSemantics = tiles.map((tile) => ({
+        tagName: tile.tagName,
+        name: tile.getAttribute('aria-label')?.trim() ?? '',
+      }))
       const tileVisuals = tiles.map((tile) => {
         const style = getComputedStyle(tile)
         const paint = getComputedStyle(tile, '::before')
         const target = box(tile)
         return {
-          width: innerWidth <= 760 ? Number.parseFloat(paint.width) : target.width,
-          height: innerWidth <= 760 ? Number.parseFloat(paint.height) : target.height,
-          fill: innerWidth <= 760 ? paint.backgroundColor : style.backgroundColor,
+          width: target.width,
+          height: target.height,
+          fill: style.backgroundColor,
           pseudoContent: paint.content,
         }
       })
@@ -370,7 +417,9 @@ try {
           tileCount: tiles.length,
           gridWidth: gridBox?.width ?? 0,
           gridHeight: gridBox?.height ?? 0,
-          waffleWidth: waffle ? box(waffle).width : 0,
+          gridCenter: gridBox?.center ?? 0,
+          waffleWidth: waffleBox?.width ?? 0,
+          waffleCenter: waffleBox?.center ?? 0,
           gridClientWidth: grid?.clientWidth ?? 0,
           gridScrollWidth: grid?.scrollWidth ?? 0,
           gridTemplateRows: gridStyle?.gridTemplateRows ?? '',
@@ -379,12 +428,11 @@ try {
           gridGap: gridStyle?.gap ?? '',
           classes: grid?.className ?? '',
           tileBoxes,
+          tileSemantics,
           tileVisuals,
           tileBucketOrder: tiles.map((tile) => tile.getAttribute('data-bucket')),
           tileFillsByBucket: Object.fromEntries(tiles.map((tile) => [
-            tile.getAttribute('data-bucket'), innerWidth <= 760
-              ? getComputedStyle(tile, '::before').backgroundColor
-              : getComputedStyle(tile).backgroundColor,
+            tile.getAttribute('data-bucket'), getComputedStyle(tile).backgroundColor,
           ])),
           legend: legend.map((button) => {
             const style = getComputedStyle(button)
@@ -448,6 +496,9 @@ try {
     })
     assert.equal(w3Visual.waffle.tileCount, 235,
       `W3 must exercise the full production AEDAR category universe at ${width}px`)
+    assert(w3Visual.waffle.tileSemantics.every(({ tagName, name }) =>
+      tagName === 'BUTTON' && name.length > 0),
+    `All real AEDAR category tiles must remain native buttons with accessible names at ${width}px`)
     assert.deepEqual(w3Visual.labelSurfaces.map(({ surface, count }) => ({ surface, count: count > 0 })), [
       { surface: 'CahierBlankMapSlots', count: true },
       { surface: 'AedarDiversityLossMapsCahier', count: true },
@@ -464,12 +515,44 @@ try {
       `All Waffle bucket actions must keep their existing icon at ${width}px`)
     if (width <= 760) {
       assert(w3Visual.waffle.tileBoxes.every(({ width: tileWidth, height: tileHeight }) =>
-        tileWidth >= 24 - 0.5 && tileHeight >= 24 - 0.5),
-      `Every mobile Waffle button must retain a 24×24px target at ${width}px: ${JSON.stringify(w3Visual.waffle.tileBoxes.slice(0, 4))}`)
+        Math.abs(tileWidth - 14) < 0.1 && Math.abs(tileHeight - 14) < 0.1),
+      `Every mobile Waffle button hit box must be exactly 14×14 CSS px at ${width}px: ${JSON.stringify(w3Visual.waffle.tileBoxes.slice(0, 4))}`)
       assert(w3Visual.waffle.tileVisuals.every(({ width: tileWidth, height: tileHeight, fill, pseudoContent }) =>
-        tileWidth > 0 && tileHeight > 0 && tileWidth <= 16 && tileHeight <= 16 && pseudoContent !== 'none' &&
+        Math.abs(tileWidth - 14) < 0.1 && Math.abs(tileHeight - 14) < 0.1 && pseudoContent === 'none' &&
         fill !== 'rgba(0, 0, 0, 0)'),
-      `Mobile Waffle paint must stay at or below 16×16px inside accessible targets at ${width}px: ${JSON.stringify(w3Visual.waffle.tileVisuals.slice(0, 4))}`)
+      `Mobile Waffle buttons themselves must paint at 14×14px without a larger hit-area wrapper at ${width}px: ${JSON.stringify(w3Visual.waffle.tileVisuals.slice(0, 4))}`)
+      const columns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
+      const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
+      const rowCounts = new Map()
+      const columnCounts = new Map()
+      for (const { x, y } of w3Visual.waffle.tileBoxes) {
+        const row = Math.round(y * 10) / 10
+        const column = Math.round(x * 10) / 10
+        rowCounts.set(row, (rowCounts.get(row) ?? 0) + 1)
+        columnCounts.set(column, (columnCounts.get(column) ?? 0) + 1)
+      }
+      assert.equal(columns, 5,
+        `Mobile Waffle must use five columns (not overflow horizontally) at ${width}px, got ${columns}`)
+      assert.equal(rows, 47,
+        `Mobile Waffle must use 47 rows at ${width}px, got ${rows}`)
+      assert([...rowCounts.values()].every((count) => count === 5),
+        `All 47 mobile rows must contain five actual category buttons at ${width}px`)
+      assert([...columnCounts.values()].every((count) => count === 47),
+        `All five mobile columns must contain 47 actual category buttons at ${width}px`)
+      assert(Math.abs(w3Visual.waffle.gridCenter - w3Visual.waffle.waffleCenter) <= 1,
+        `Complete mobile Waffle grid must be centered in the available figure width at ${width}px`)
+      assert(w3Visual.waffle.gridWidth <= w3Visual.waffle.waffleWidth,
+        `Complete mobile Waffle grid must fit inside its figure at ${width}px`)
+      assert(Math.abs(w3Visual.waffle.gridWidth - 78) < 0.1,
+        `Five 14px columns and four 2px gaps must form a 78px mobile grid at ${width}px, got ${w3Visual.waffle.gridWidth}`)
+      assert(Math.abs(w3Visual.waffle.gridHeight - 750) < 0.1,
+        `Forty-seven 14px rows and forty-six 2px gaps must form a 750px mobile grid at ${width}px, got ${w3Visual.waffle.gridHeight}`)
+      for (let index = 1; index < w3Visual.waffle.tileBoxes.length; index += 1) {
+        const previous = w3Visual.waffle.tileBoxes[index - 1]
+        const current = w3Visual.waffle.tileBoxes[index]
+        assert(current.y > previous.y || (current.y === previous.y && current.x > previous.x),
+          `Mobile category buttons must preserve row-major category order at ${width}px`)
+      }
       for (const chip of w3Visual.waffle.legend) {
         const tileFill = w3Visual.waffle.tileFillsByBucket[chip.key]
         if (tileFill) assert.equal(chip.fill, tileFill,
@@ -528,24 +611,6 @@ try {
     assert(w3Visual.waffle.tileBucketOrder.every((bucket, index, buckets) =>
       index === 0 || bucket === buckets[index - 1] || !buckets.slice(0, index).includes(bucket)),
     `Waffle tiles must remain grouped in their existing bucket order at ${width}px`)
-    if (width === 320) {
-      const columns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
-      const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
-      const rowCounts = new Map()
-      for (const { y } of w3Visual.waffle.tileBoxes) {
-        const row = Math.round(y * 10) / 10
-        rowCounts.set(row, (rowCounts.get(row) ?? 0) + 1)
-      }
-      const tilesPerRow = [...rowCounts.values()]
-      assert.equal(columns, 11,
-        `320px Waffle should use 11 columns with its 24px target floor, got ${columns} (${w3Visual.waffle.gridWidth}px grid)`)
-      assert.equal(rows, 22,
-        `320px Waffle should reflow to 22 rows, got ${rows}`)
-      assert(tilesPerRow.slice(0, -1).every((count) => count === 11),
-        `The first 21 mobile rows must be full: ${JSON.stringify(tilesPerRow)}`)
-      assert.equal(tilesPerRow.at(-1), 4,
-        `With 235 real categories, the 22nd row must contain four tiles (no phantom categories): ${JSON.stringify(tilesPerRow)}`)
-    }
     for (const { surface, labels } of w3Visual.labelSurfaces) {
       for (const label of labels) {
         assert.equal(label.iconCount, 1, `${surface} must preserve each map mode icon at ${width}px`)

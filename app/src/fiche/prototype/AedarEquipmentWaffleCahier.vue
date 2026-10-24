@@ -328,29 +328,25 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle-empty { margin: 0; padding: var(--space-4); color: var(--text-secondary); text-align: center; }
 @media (max-width: 760px) {
   .aedar-waffle-grid {
-    grid-template-columns: repeat(auto-fit, minmax(24px, 1fr));
+    grid-template-columns: repeat(5, 14px);
     grid-template-rows: none;
     grid-auto-flow: row;
     grid-auto-columns: auto;
-    grid-auto-rows: auto;
+    grid-auto-rows: 14px;
     gap: 2px;
-    width: min(calc(100% + var(--space-3) + var(--space-3)), 760px);
-    margin-inline: calc(0px - var(--space-3));
+    width: fit-content;
+    max-width: 100%;
+    margin-inline: auto;
   }
   .aedar-waffle-tile {
-    display: grid;
-    width: 100%;
-    min-width: 24px;
-    min-height: 24px;
-    place-items: center;
-    background: transparent;
-  }
-  .aedar-waffle-tile::before {
+    box-sizing: border-box;
+    display: block;
     width: 14px;
     height: 14px;
+    min-width: 14px;
+    min-height: 14px;
     border-radius: 2px;
     background: var(--aedar-bucket-color);
-    content: '';
   }
   .aedar-waffle-dialog-horizon { order: 1; flex: 1 1 auto; min-width: 0; }
   .aedar-waffle-search { order: 3; flex-basis: 100%; }
