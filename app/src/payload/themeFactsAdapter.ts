@@ -26,7 +26,22 @@ const rows = (value: unknown, field: string): Row[] => {
 const text = (value: unknown): value is string => typeof value === 'string'
 const texteNonVide = (value: unknown): value is string => typeof value === 'string' && value.length > 0
 const finite = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
-const sameSemanticJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
+// JSON object member order is not contractual; array order and JSON value types are.
+const sameSemanticJson = (left: unknown, right: unknown): boolean => {
+  if (left === right) return true
+  if (Array.isArray(left) || Array.isArray(right)) {
+    return Array.isArray(left) && Array.isArray(right) && left.length === right.length &&
+      left.every((value, index) => sameSemanticJson(value, right[index]))
+  }
+  if (isRecord(left) || isRecord(right)) {
+    if (!isRecord(left) || !isRecord(right)) return false
+    const leftKeys = Object.keys(left)
+    const rightKeys = Object.keys(right)
+    return leftKeys.length === rightKeys.length && leftKeys.every((key) =>
+      Object.prototype.hasOwnProperty.call(right, key) && sameSemanticJson(left[key], right[key]))
+  }
+  return false
+}
 
 function validerPorteeComparaison(scope: unknown, selection: unknown, target: unknown,
   result: Row, shape: unknown, data: Row): void {
@@ -1085,9 +1100,8 @@ export function semanticComparisonForTheme(response: unknown, reference?: Semant
     } else results.push({ ...result, indicator_id: item.data.indicator_id ?? item.resource,
       source_facet: result.source_facet })
   }
-  const sameJson = (left: unknown, right: unknown) => JSON.stringify(left) === JSON.stringify(right)
-  if (scopes.some((scope) => !sameJson(scope, scopes[0])) ||
-      selections.some((selection) => !sameJson(selection, selections[0]))) {
+  if (scopes.some((scope) => !sameSemanticJson(scope, scopes[0])) ||
+      selections.some((selection) => !sameSemanticJson(selection, selections[0]))) {
     throw new Error('Portée ou sélection des comparaisons sémantiques incohérente')
   }
   const readingCloud = semanticReadingCloud(response, scopes[0] ?? null, selections[0] ?? null,

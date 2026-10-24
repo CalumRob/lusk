@@ -10,7 +10,7 @@ import { projectRaccordementSemanticReads } from '../payload/raccordementSemanti
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 import { semanticPublicationsCompatible } from '../payload/themeAcquisition'
 import { programmesPourTerritoire } from '../payload/selectors'
-import { nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
+import { nativeBatchResponse, nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
 import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
 import { territoiresFixture } from '../payload/fixtures'
 import type { Payload } from '../payload/types'
@@ -215,6 +215,95 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(lignesAvecComparaisonApi([row], comparison, 'Même classe de densité')[0]).toMatchObject({
       value: 0.2, rang_epci: null, comparaisonApi: { rang: 3, taille: 14, portee: 'Même classe de densité' },
     })
+  })
+
+  it('aggregates native comparison scopes and typed selections by JSON values, not object key order', async () => {
+    const resourceIds = ['densite', 'taille_menages']
+    const declarations = nativeResources('demographie')
+    const target = { kind: 'territory', type: cible.type, id: cible.territoire }
+    const readsFor = async (intent: Record<string, unknown>) => {
+      const batch = await nativeBatchResponse(resourceIds.map((resource) => ({ id: resource, resource, target, intent })),
+        nativeReadFixture).json() as { results: Array<{ resource: string; data: Record<string, any> }> }
+      return batch.results.map(({ resource, data }) => {
+        const declaration = declarations.find((candidate) => candidate.resource_id === resource)!
+        return { resource, declaration, shapes: declaration.shapes, data }
+      })
+    }
+    const aggregate = (comparisonReads: unknown) => semanticComparisonForTheme({ theme_id: 'demographie',
+      comparison_reads: comparisonReads }, undefined, undefined, { type: cible.type, id: cible.territoire })
+
+    const defaultReads = await readsFor({ kind: 'fixed_comparison', context: 'default' })
+    const byResource = (reads: typeof defaultReads, resource: string) => reads.find((read) => read.resource === resource)!
+    const density = byResource(defaultReads, 'densite')
+    const household = byResource(defaultReads, 'taille_menages')
+    const scope = household.data.scope as Record<string, unknown>
+    household.data.scope = { kind: scope.kind, density_class_code: scope.density_class_code,
+      territory_type: scope.territory_type, member_count: scope.member_count }
+
+    expect(density.data.scope).toEqual(household.data.scope)
+    expect(JSON.stringify(density.data.scope)).not.toBe(JSON.stringify(household.data.scope))
+    expect(density.data.reference_content_version).toBe(household.data.reference_content_version)
+    expect(density.data.selection).toBeNull()
+    expect(household.data.selection).toBeNull()
+    expect(aggregate(defaultReads)?.results).toHaveLength(2)
+
+    const focalReads = await readsFor({ kind: 'facts' })
+    const facts = { resource_reads: focalReads }
+    const comparison = { comparison_reads: defaultReads }
+    expect(semanticPublicationsCompatible(facts as any, comparison as any,
+      { type: cible.type, id: cible.territoire })).toBe(true)
+    const wrongReference = structuredClone(comparison)
+    wrongReference.comparison_reads.find((read) => read.resource === 'taille_menages')!.data.reference_content_version =
+      'different-territory-reference'
+    expect(semanticPublicationsCompatible(facts as any, wrongReference as any,
+      { type: cible.type, id: cible.territoire })).toBe(false)
+
+    const expectAggregateMismatch = (mutate: (data: Record<string, any>) => void) => {
+      const changed = structuredClone(defaultReads)
+      mutate(changed.find((read) => read.resource === 'taille_menages')!.data)
+      expect(() => aggregate(changed)).toThrow()
+    }
+    expectAggregateMismatch((data) => { data.scope = { kind: 'same_level', territory_type: 'commune',
+      member_count: data.scope.member_count } })
+    expectAggregateMismatch((data) => { data.scope.density_class_code = data.scope.density_class_code === '1' ? '2' : '1' })
+    expectAggregateMismatch((data) => { data.scope.member_count += 1 })
+    expectAggregateMismatch((data) => { data.target.id = '22001' })
+
+    const selectedMembers = [{ type: 'commune', id: '22001' }, { type: 'commune', id: '22002' }]
+    const selectedReads = await readsFor({ kind: 'selected_comparison', members: selectedMembers })
+    const selectedPeer = byResource(selectedReads, 'taille_menages')
+    selectedPeer.data.selection = (selectedPeer.data.selection as Array<Record<string, string>>).map((member) => ({
+      territory_id: member.territory_id!, territory_type: member.territory_type!,
+    }))
+    const selectedReference = byResource(selectedReads, 'densite')
+    expect(selectedReference.data.selection).toEqual(selectedPeer.data.selection)
+    expect(JSON.stringify(selectedReference.data.selection)).not.toBe(JSON.stringify(selectedPeer.data.selection))
+    expect(aggregate(selectedReads)?.selection).toEqual(selectedMembers.map(({ type, id }) => ({
+      territory_type: type, territory_id: id,
+    })))
+
+    const changedMember = structuredClone(selectedReads)
+    changedMember.find((read) => read.resource === 'taille_menages')!.data.selection[1]!.territory_id = '29001'
+    expect(() => aggregate(changedMember)).toThrow(/portée|sélection/i)
+    const missingMemberId = structuredClone(selectedReads)
+    delete missingMemberId.find((read) => read.resource === 'taille_menages')!.data.selection[1]!.territory_id
+    expect(() => aggregate(missingMemberId)).toThrow(/portée|sélection/i)
+    const nullMemberId = structuredClone(selectedReads)
+    nullMemberId.find((read) => read.resource === 'taille_menages')!.data.selection[1]!.territory_id = null
+    expect(() => aggregate(nullMemberId)).toThrow(/portée|sélection/i)
+    const nonStringMemberId = structuredClone(selectedReads)
+    nonStringMemberId.find((read) => read.resource === 'taille_menages')!.data.selection[1]!.territory_id = 22002
+    expect(() => aggregate(nonStringMemberId)).toThrow(/portée|sélection/i)
+    const reorderedMembers = structuredClone(selectedReads)
+    reorderedMembers.find((read) => read.resource === 'taille_menages')!.data.selection.reverse()
+    expect(() => aggregate(reorderedMembers)).toThrow(/portée|sélection/i)
+
+    const emptyReads = await readsFor({ kind: 'selected_comparison', members: [] })
+    const emptyComparison = aggregate(emptyReads)
+    const defaultComparison = aggregate(await readsFor({ kind: 'fixed_comparison', context: 'default' }))
+    expect(emptyComparison).toMatchObject({ selection: [], scope: { kind: 'explicit_selection', member_count: 0 } })
+    expect(defaultComparison?.selection).toBeUndefined()
+    expect(defaultComparison?.scope).toMatchObject({ kind: 'density_class' })
   })
 
   it('retains valid Milieux cloud points alongside explicit source-absence evidence', () => {
@@ -921,6 +1010,17 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     ])
     expect(annual.value).toBe(230)
     expect(focal.data).not.toHaveProperty('value')
+
+    const permutedFacetScope: any = structuredClone(comparison)
+    const annualScope = permutedFacetScope.comparison_reads[0].data.scope
+    permutedFacetScope.comparison_reads[0].data.scope = { kind: annualScope.kind,
+      density_class_code: annualScope.density_class_code, territory_type: annualScope.territory_type,
+      member_count: annualScope.member_count }
+    expect(permutedFacetScope.comparison_reads[0].data.scalar_facet.scope)
+      .toEqual(permutedFacetScope.comparison_reads[0].data.scope)
+    expect(JSON.stringify(permutedFacetScope.comparison_reads[0].data.scalar_facet.scope))
+      .not.toBe(JSON.stringify(permutedFacetScope.comparison_reads[0].data.scope))
+    expect(semanticComparisonForTheme(permutedFacetScope, undefined, reads)?.results).toHaveLength(2)
 
     const semantic = semanticComparisonForTheme(comparison, undefined, reads)
     const ranked = lignesAvecComparaisonApi(projected, semantic, 'Classe publiée')
