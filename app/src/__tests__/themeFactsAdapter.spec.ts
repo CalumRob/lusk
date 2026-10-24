@@ -144,7 +144,16 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const singleton = [{ territory_type: 'commune' as const, territory_id: 'synthetic-commune-1' }]
     expect(() => validerReponseComparaisonTheme('habitat', explicitResponse(singleton, 1), singleton,
       targetAttendu)).not.toThrow()
+    expect(() => validerReponseComparaisonTheme('habitat', explicitResponse(singleton, 0), singleton,
+      targetAttendu)).toThrow(/portée|scope/i)
     expect(() => validerReponseComparaisonTheme('habitat', explicitResponse([], 0), [], targetAttendu)).not.toThrow()
+    const resolvedWithoutMeasuredComparables = explicitResponse(requestedMixed, 2)
+    Object.assign(resolvedWithoutMeasuredComparables.comparison_reads[0]!.data.result, {
+      status: 'unavailable', reason: 'no_selected_comparable_values', eligible_count: 0,
+      missing_count: 2, rank: null, rank_size: null,
+    })
+    expect(() => validerReponseComparaisonTheme('habitat', resolvedWithoutMeasuredComparables,
+      requestedMixed, targetAttendu)).not.toThrow()
     expect(() => semanticComparisonForTheme(response({
       selection: [{ territory_type: 'commune', territory_id: '1' },
         { territory_type: 'commune', territory_id: '2' }],
@@ -653,7 +662,9 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       resource: 'prix_m2', target: { kind: 'territory', type: 'commune', id: cible.territoire },
       dataset_id: 'dvf_prix_m2', publication_id: 'series-publication-v1',
       content_version: 'series-publication-v1', reference_content_version: 'reference-v1',
+      territory: { id: cible.territoire, type: 'commune' },
       descriptor_version: 'series-descriptor-v1', indicator_id: 'prix_m2', unit: '€/m²',
+      label: nativeResource.label, direction: apiDirection,
       axis_kind: 'year', axis_values: ['2024', '2025'], axis_numeric_values: [2024, 2025], comparison_point: '2025',
       points: [
         { axis: '2024', observation_period: '2024', value: 211, status: 'measured', provenance: seriesSources },
@@ -668,10 +679,11 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const densityScope = { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 }
     const comparison = { theme_id: 'habitat', comparison_reads: [{ resource: 'prix_m2', shapes: focal.shapes,
       data: { resource: 'prix_m2', target: focal.data.target, contract: 'indicator-comparison-v1',
-        indicator_id: 'prix_m2', shape: 'series', content_version: 'series-publication-v1',
+        complete_theme: false, indicator_id: 'prix_m2', shape: 'series', content_version: 'series-publication-v1',
         reference_content_version: 'reference-v1', selection: null,
         scope: densityScope,
         result: { indicator_id: 'prix_m2', source_facet: '2025', status: 'available', direction: apiDirection,
+          unit: '€/m²',
           descriptor_version: 'series-descriptor-v1', rank: 2, rank_size: 2,
           owned_content_version: 'series-publication-v1' },
         scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-publication-v1',
@@ -736,6 +748,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       const target = { kind: 'territory', type, id }
       const focalAtLevel = structuredClone(focal)
       focalAtLevel.data.target = target
+      focalAtLevel.data.territory = { ...focalAtLevel.data.territory, id, type }
       focalAtLevel.data.scalar_facet.observation = { ...focalAtLevel.data.scalar_facet.observation,
         territory_id: id, territory_type: type }
       const comparisonAtLevel: any = structuredClone(comparison)

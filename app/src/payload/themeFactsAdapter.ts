@@ -75,6 +75,7 @@ function validerPorteeComparaison(scope: unknown, selection: unknown, target: un
       return `${member.territory_type}\u0000${member.territory_id}`
     })
     if (!Number.isInteger(result.selected_member_count) || (result.selected_member_count as number) < 0 ||
+        (selected.length > 0 && result.selected_member_count === 0) ||
         scope.member_count !== result.selected_member_count || new Set(identities).size !== identities.length) {
       throw new Error('Portée de comparaison sémantique invalide')
     }

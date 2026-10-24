@@ -212,10 +212,21 @@ function producerCatalogue(): Promise<SemanticResourceDeclaration[]> {
   return catalogueRequest
 }
 
-function chunked<T>(items: T[], size = 12): T[][] {
+function chunked<T>(items: T[], size = 12, keepTogether?: (left: T, right: T) => boolean): T[][] {
   const batches: T[][] = []
-  for (let index = 0; index < items.length; index += size) batches.push(items.slice(index, index + size))
+  for (let index = 0; index < items.length;) {
+    let end = Math.min(index + size, items.length)
+    if (end < items.length && keepTogether?.(items[end - 1]!, items[end]!)) end -= 1
+    batches.push(items.slice(index, end))
+    index = end
+  }
   return batches
+}
+
+function sharesFocalDefaultComparison(left: SemanticReadItem, right: SemanticReadItem): boolean {
+  return left.resource === right.resource && left.target.kind === 'territory' && right.target.kind === 'territory' &&
+    left.target.type === right.target.type && left.target.id === right.target.id &&
+    left.intent.kind === 'facts' && right.intent.kind === 'fixed_comparison' && right.intent.context === 'default'
 }
 
 function territoryItem(resource: string, type: string, id: string, intent: SemanticReadItem['intent']): SemanticReadItem {
@@ -236,7 +247,7 @@ function retainedThemeResources(catalogue: SemanticResourceDeclaration[], theme:
 
 async function readAll(items: SemanticReadItem[]): Promise<Array<{ resource: string; data: Record<string, unknown> }>> {
   const output: Array<{ resource: string; data: Record<string, unknown> }> = []
-  for (const batch of chunked(items)) {
+  for (const batch of chunked(items, 12, sharesFocalDefaultComparison)) {
     const data = await lireRessourcesBatch(batch)
     output.push(...batch.map((item, index) => ({ resource: item.resource, data: data[index]! })))
   }
@@ -356,6 +367,8 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
   const comparisonCompatible = comparisonReads.every(({ resource, data }) => {
     const focal = focalByResource.get(resource)
     if (!focal) return false
+    const focalRead = focalReads.find((read) => read.resource === resource)
+    const shapes = focalRead?.shapes ?? []
     const focalTarget = focal.target
     const comparedTarget = data.target
     if (expectedTarget || focalTarget !== undefined || comparedTarget !== undefined) {
@@ -370,17 +383,60 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
     if ((data.indicator_id !== undefined && data.indicator_id !== resource) ||
         (isRecord(comparisonResult) && comparisonResult.indicator_id !== undefined &&
          comparisonResult.indicator_id !== resource)) return false
+    const nativeSeriesComparison = data.shape === 'series'
+    const hasOwnedDatasetIdentity = Object.prototype.hasOwnProperty.call(focal, 'dataset_id')
+    const ownedSeries = nativeSeriesComparison && hasOwnedDatasetIdentity
+    const legacySeries = nativeSeriesComparison && !hasOwnedDatasetIdentity
+    if (nativeSeriesComparison) {
+      const territory = focal.territory
+      if (!shapes.includes('ordered_series') || !isRecord(comparisonResult) ||
+          data.contract !== 'indicator-comparison-v1' || data.complete_theme !== false ||
+          data.indicator_id !== resource || comparisonResult.indicator_id !== resource ||
+          focal.resource !== resource || focal.indicator_id !== resource ||
+          !isRecord(territory) || !isRecord(focalTarget) ||
+          territory.id !== focalTarget.id || territory.type !== focalTarget.type ||
+          typeof focal.descriptor_version !== 'string' || !focal.descriptor_version ||
+          comparisonResult.descriptor_version !== focal.descriptor_version ||
+          comparisonResult.source_facet !== focal.comparison_point ||
+          comparisonResult.unit !== focal.unit || comparisonResult.direction !== focal.direction) return false
+      if (ownedSeries) {
+        if (typeof focal.dataset_id !== 'string' || !focal.dataset_id ||
+            comparisonResult.owned_content_version !== data.content_version) return false
+      } else if (typeof focal.publication_id !== 'string' || !focal.publication_id ||
+          Object.prototype.hasOwnProperty.call(focal, 'content_version') ||
+          Object.prototype.hasOwnProperty.call(focal, 'reference_content_version') ||
+          !Object.prototype.hasOwnProperty.call(focal, 'comparison_point') ||
+          typeof focal.axis_kind !== 'string' || !focal.axis_kind || !Array.isArray(focal.points) ||
+          Object.prototype.hasOwnProperty.call(comparisonResult, 'owned_content_version')) return false
+    }
     const focalVersion = focal.content_version ?? focal.publication_id
     const comparisonVersion = data.content_version ?? data.publication_id
     if (typeof focalVersion !== 'string' || !focalVersion || typeof comparisonVersion !== 'string' ||
         !comparisonVersion || focalVersion !== comparisonVersion) return false
-    if (typeof focal.reference_content_version !== 'string' || !focal.reference_content_version ||
-        typeof data.reference_content_version !== 'string' || !data.reference_content_version ||
-        focal.reference_content_version !== data.reference_content_version) return false
+    if (nativeSeriesComparison && (typeof data.content_version !== 'string' ||
+        data.content_version !== focalVersion ||
+        (typeof focal.content_version === 'string' && typeof focal.publication_id === 'string' &&
+         focal.content_version !== focal.publication_id))) return false
+    const hasFocalReferenceVersion = typeof focal.reference_content_version === 'string' &&
+      focal.reference_content_version.length > 0
+    if (hasFocalReferenceVersion) {
+      if (focal.reference_content_version !== data.reference_content_version) return false
+    } else if (legacySeries && !Object.prototype.hasOwnProperty.call(focal, 'reference_content_version')) {
+      if (typeof data.reference_content_version !== 'string' || !data.reference_content_version) return false
+      // The legacy series reader's focal envelope has no reference marker. Its
+      // default comparison is read beside focal facts in one API snapshot;
+      // later selected reads must retain that published reference token.
+      const pairedDefault = facts.default_comparison
+      const defaultRead = pairedDefault?.comparison_reads.find((read) => read.resource === resource)
+      const defaultData = defaultRead?.data
+      const sameSnapshotPair = comparison === pairedDefault || comparisonReads === pairedDefault?.comparison_reads
+      if (!sameSnapshotPair && (!defaultData || typeof defaultData.reference_content_version !== 'string' ||
+          !defaultData.reference_content_version || data.reference_content_version !== defaultData.reference_content_version)) {
+        return false
+      }
+    } else return false
     const focalDescriptor = focal.descriptor
-    const shapes = focalReads.find((read) => read.resource === resource)?.shapes ?? []
-    if (data.shape === 'series' && (!isRecord(comparisonResult) || data.indicator_id !== resource ||
-        comparisonResult.indicator_id !== resource || typeof data.content_version !== 'string' ||
+    if (ownedSeries && (!isRecord(comparisonResult) || typeof data.content_version !== 'string' ||
         comparisonResult.owned_content_version !== data.content_version)) return false
     const dualScalarSeries = shapes.includes('scalar') && shapes.includes('ordered_series')
     if (dualScalarSeries && !validDualScalarFacet(focal, data, resource)) return false
