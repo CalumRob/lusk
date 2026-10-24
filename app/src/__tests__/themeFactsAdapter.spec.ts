@@ -660,7 +660,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       descriptor_version: 'scalar-descriptor-v1' }
     const focal = { resource: 'prix_m2', shapes: ['scalar', 'ordered_series'], data: {
       resource: 'prix_m2', target: { kind: 'territory', type: 'commune', id: cible.territoire },
-      dataset_id: 'dvf_prix_m2', publication_id: 'series-publication-v1',
+      dataset_id: 'dvf_prix_m2', theme_id: 'habitat', publication_id: 'series-publication-v1',
       content_version: 'series-publication-v1', reference_content_version: 'reference-v1',
       territory: { id: cible.territoire, type: 'commune' },
       descriptor_version: 'series-descriptor-v1', indicator_id: 'prix_m2', unit: '€/m²',
@@ -679,7 +679,8 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const densityScope = { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 }
     const comparison = { theme_id: 'habitat', comparison_reads: [{ resource: 'prix_m2', shapes: focal.shapes,
       data: { resource: 'prix_m2', target: focal.data.target, contract: 'indicator-comparison-v1',
-        complete_theme: false, indicator_id: 'prix_m2', shape: 'series', content_version: 'series-publication-v1',
+        complete_theme: false, indicator_id: 'prix_m2', theme_id: 'habitat', shape: 'series',
+        content_version: 'series-publication-v1',
         reference_content_version: 'reference-v1', selection: null,
         scope: densityScope,
         result: { indicator_id: 'prix_m2', source_facet: '2025', status: 'available', direction: apiDirection,

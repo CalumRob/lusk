@@ -1,5 +1,6 @@
 export type ThemeKey = 'programmes' | 'demographie' | 'habitat' | 'economie' | 'milieux' | 'mobilite'
-import type { Theme } from './types'
+import type { TerritoireType, Theme } from './types'
+import { validerReponseComparaisonTheme } from './themeFactsAdapter'
 import { chargerCatalogueRessources, lireRessourcesBatch } from './semanticResourceClient'
 import type { SemanticReadItem, SemanticResourceDeclaration, SemanticTerritoryTarget } from './semanticResourceClient'
 /** Every canonical theme is acquired (active priority, then background warm-up) unless an owner-owned flow handles it. */
@@ -67,6 +68,52 @@ export function cleSelectionComparaison(selection: readonly ThemeSelectionMember
   return selection === undefined ? 'omitted' : JSON.stringify(selection)
 }
 
+type SemanticCompatibilityOptions = {
+  legacyReferenceVersions?: ReadonlyMap<string, string>
+  allowLegacyReferenceBootstrap?: boolean
+}
+
+const OWNED_SERIES_FACT_MARKERS = ['dataset_id', 'theme_id', 'axis_values', 'axis_numeric_values',
+  'reference_content_version', 'published_at', 'observation_period_kind', 'comparison_contract',
+  'scope_series', 'named_references', 'context'] as const
+const OWNED_SERIES_COMPARISON_MARKERS = ['dataset_id', 'theme_id', 'axis_values', 'axis_numeric_values',
+  'published_at', 'observation_period_kind', 'comparison_contract', 'scope_series', 'named_references', 'context'] as const
+
+function hasOwnAny(value: Record<string, unknown>, keys: readonly string[]): boolean {
+  return keys.some((key) => Object.prototype.hasOwnProperty.call(value, key))
+}
+
+function isNativeLegacySeriesFocal(read: SemanticThemeRead): boolean {
+  const data = read.data
+  return read.shapes?.includes('ordered_series') === true && !hasOwnAny(data, OWNED_SERIES_FACT_MARKERS) &&
+    typeof data.publication_id === 'string' && Boolean(data.publication_id) &&
+    typeof data.axis_kind === 'string' && Boolean(data.axis_kind) &&
+    typeof data.completeness === 'string' && Boolean(data.completeness) &&
+    typeof data.label === 'string' && Boolean(data.label) && typeof data.unit === 'string' &&
+    typeof data.direction === 'string' && Boolean(data.direction) &&
+    typeof data.descriptor_version === 'string' && Boolean(data.descriptor_version) &&
+    Object.prototype.hasOwnProperty.call(data, 'comparison_point') &&
+    typeof data.availability === 'string' && Boolean(data.availability) && Array.isArray(data.points)
+}
+
+function legacySeriesReferenceVersions(facts: ThemeResponse, comparison: ThemeResponse): Map<string, string> {
+  const focalByResource = new Map((facts.resource_reads ?? []).map((read) => [read.resource, read]))
+  const references = new Map<string, string>()
+  for (const read of comparison.comparison_reads ?? []) {
+    const focal = focalByResource.get(read.resource)
+    if (!focal || !isNativeLegacySeriesFocal(focal) || read.data.shape !== 'series') continue
+    const result = read.data.result
+    const ownedEvidence = hasOwnAny(read.data, OWNED_SERIES_COMPARISON_MARKERS) ||
+      (typeof result === 'object' && result !== null && !Array.isArray(result) &&
+       Object.prototype.hasOwnProperty.call(result, 'owned_content_version'))
+    const reference = read.data.reference_content_version
+    if (!ownedEvidence && typeof reference === 'string' && reference.length > 0) {
+      references.set(read.resource, reference)
+    }
+  }
+  return references
+}
+
 export interface AcquiredTheme<T extends ThemeResponse = ThemeResponse> {
   focal: T
   comparisons: Map<string, ThemeResponse>
@@ -81,6 +128,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
   private readonly pendingComparisons = new Map<string, Promise<ThemeResponse>>()
   private readonly generations = new Map<string, number>()
   private readonly comparisonGenerations = new Map<string, number>()
+  private readonly legacyReferenceVersions = new Map<string, Map<string, string>>()
 
   constructor(
     private readonly acquireFacts: (theme: ThemeKey, key?: Key) => Promise<T>,
@@ -133,8 +181,34 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
     this.comparisonGenerations.set(pendingKey, generation)
     const request = this.acquireComparison(selection, theme, key).then((comparison) => {
       if (generation !== this.comparisonGenerations.get(pendingKey)) throw new Error('Stale theme comparison response')
-      const compatible = semanticPublicationsCompatible(focal.focal, comparison, { type, id })
+      const legacySeriesResponse = (focal.focal.resource_reads ?? []).some((read) =>
+        isNativeLegacySeriesFocal(read) && comparison.comparison_reads?.some((candidate) =>
+          candidate.resource === read.resource && candidate.data.shape === 'series'))
+      if (legacySeriesResponse) {
+        validerReponseComparaisonTheme(theme, comparison, selection, { type: type as TerritoireType, id })
+      }
+      const references = this.legacyReferenceVersions.get(cacheKey) ?? new Map<string, string>()
+      const compatible = semanticPublicationsCompatible(focal.focal, comparison, { type, id }, {
+        legacyReferenceVersions: references, allowLegacyReferenceBootstrap: true,
+      })
       if (!compatible) throw new Error('Theme publication tokens do not match; retry comparison')
+      // A successful comparison-only read can bootstrap the missing legacy
+      // reference anchor after facts-only recovery. Re-read the binding map in
+      // this synchronous commit section so concurrent selections cannot race
+      // each other into establishing different references for one focal entry.
+      const currentReferences = this.legacyReferenceVersions.get(cacheKey) ?? new Map<string, string>()
+      const learnedReferences = legacySeriesReferenceVersions(focal.focal, comparison)
+      for (const [resource, reference] of learnedReferences) {
+        const current = currentReferences.get(resource)
+        if (current !== undefined && current !== reference) {
+          throw new Error('Theme publication tokens do not match; retry comparison')
+        }
+      }
+      if (learnedReferences.size) {
+        const boundReferences = new Map(currentReferences)
+        for (const [resource, reference] of learnedReferences) boundReferences.set(resource, reference)
+        this.legacyReferenceVersions.set(cacheKey, boundReferences)
+      }
       const result = { ...focal, comparisons: new Map(focal.comparisons).set(selectionKey, comparison) }
       this.entries.set(cacheKey, result)
       return comparison
@@ -172,6 +246,7 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
       const key = this.key({ type, id, theme: selectedTheme })
       this.generations.set(key, (this.generations.get(key) ?? 0) + 1)
       this.pendingFacts.delete(key)
+      this.legacyReferenceVersions.delete(key)
     }
     for (const pendingKey of [...this.pendingComparisons.keys()]) {
       const [entryKey] = JSON.parse(pendingKey) as [string, string]
@@ -301,7 +376,7 @@ async function readAuxiliary(resources: SemanticResourceDeclaration[], type: str
 }
 
 export function semanticPublicationsCompatible(facts: ThemeResponse, comparison: ThemeResponse,
-  expectedTarget?: { type: string; id: string }): boolean {
+  expectedTarget?: { type: string; id: string }, options: SemanticCompatibilityOptions = {}): boolean {
   const focalReads = facts.resource_reads
   const comparisonReads = comparison.comparison_reads
   if (!Array.isArray(focalReads) || !Array.isArray(comparisonReads)) {
@@ -384,9 +459,11 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
         (isRecord(comparisonResult) && comparisonResult.indicator_id !== undefined &&
          comparisonResult.indicator_id !== resource)) return false
     const nativeSeriesComparison = data.shape === 'series'
-    const hasOwnedDatasetIdentity = Object.prototype.hasOwnProperty.call(focal, 'dataset_id')
-    const ownedSeries = nativeSeriesComparison && hasOwnedDatasetIdentity
-    const legacySeries = nativeSeriesComparison && !hasOwnedDatasetIdentity
+    const hasOwnedFocalEvidence = hasOwnAny(focal, OWNED_SERIES_FACT_MARKERS)
+    const hasOwnedComparisonEvidence = hasOwnAny(data, OWNED_SERIES_COMPARISON_MARKERS) ||
+      (isRecord(comparisonResult) && Object.prototype.hasOwnProperty.call(comparisonResult, 'owned_content_version'))
+    const ownedSeries = nativeSeriesComparison && (hasOwnedFocalEvidence || hasOwnedComparisonEvidence)
+    const legacySeries = nativeSeriesComparison && !ownedSeries
     if (nativeSeriesComparison) {
       const territory = focal.territory
       if (!shapes.includes('ordered_series') || !isRecord(comparisonResult) ||
@@ -401,12 +478,23 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
           comparisonResult.unit !== focal.unit || comparisonResult.direction !== focal.direction) return false
       if (ownedSeries) {
         if (typeof focal.dataset_id !== 'string' || !focal.dataset_id ||
+            typeof focal.theme_id !== 'string' || !focal.theme_id ||
+            (typeof focalRead?.declaration?.theme_id === 'string' &&
+             focalRead.declaration.theme_id !== focal.theme_id) ||
+            !Array.isArray(focal.axis_values) || focal.axis_values.some((axis) => typeof axis !== 'string' || !axis) ||
+            typeof data.theme_id !== 'string' || data.theme_id !== focal.theme_id ||
+            typeof focal.reference_content_version !== 'string' || !focal.reference_content_version ||
             comparisonResult.owned_content_version !== data.content_version) return false
       } else if (typeof focal.publication_id !== 'string' || !focal.publication_id ||
           Object.prototype.hasOwnProperty.call(focal, 'content_version') ||
           Object.prototype.hasOwnProperty.call(focal, 'reference_content_version') ||
+          hasOwnedFocalEvidence || hasOwnedComparisonEvidence ||
           !Object.prototype.hasOwnProperty.call(focal, 'comparison_point') ||
-          typeof focal.axis_kind !== 'string' || !focal.axis_kind || !Array.isArray(focal.points) ||
+          typeof focal.axis_kind !== 'string' || !focal.axis_kind ||
+          typeof focal.completeness !== 'string' || !focal.completeness ||
+          typeof focal.label !== 'string' || !focal.label || typeof focal.unit !== 'string' ||
+          typeof focal.direction !== 'string' || !focal.direction ||
+          typeof focal.availability !== 'string' || !focal.availability || !Array.isArray(focal.points) ||
           Object.prototype.hasOwnProperty.call(comparisonResult, 'owned_content_version')) return false
     }
     const focalVersion = focal.content_version ?? focal.publication_id
@@ -430,9 +518,17 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
       const defaultRead = pairedDefault?.comparison_reads.find((read) => read.resource === resource)
       const defaultData = defaultRead?.data
       const sameSnapshotPair = comparison === pairedDefault || comparisonReads === pairedDefault?.comparison_reads
-      if (!sameSnapshotPair && (!defaultData || typeof defaultData.reference_content_version !== 'string' ||
-          !defaultData.reference_content_version || data.reference_content_version !== defaultData.reference_content_version)) {
-        return false
+      if (!sameSnapshotPair) {
+        if (defaultData) {
+          if (typeof defaultData.reference_content_version !== 'string' ||
+              !defaultData.reference_content_version ||
+              data.reference_content_version !== defaultData.reference_content_version) return false
+        } else {
+          const boundReference = options.legacyReferenceVersions?.get(resource)
+          if (boundReference !== undefined) {
+            if (data.reference_content_version !== boundReference) return false
+          } else if (!options.allowLegacyReferenceBootstrap) return false
+        }
       }
     } else return false
     const focalDescriptor = focal.descriptor

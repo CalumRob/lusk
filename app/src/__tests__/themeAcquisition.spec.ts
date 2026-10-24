@@ -1,6 +1,13 @@
 import { describe, expect, it, vi } from 'vitest'
-import { acquireThemeComparison, acquireThemeFacts, semanticPublicationsCompatible, ThemeAcquisitionCache,
-  themeAcquisitionEnabled } from '../payload/themeAcquisition'
+import {
+  acquireThemeComparison,
+  acquireThemeFacts,
+  cleSelectionComparaison,
+  semanticPublicationsCompatible,
+  ThemeAcquisitionCache,
+  themeAcquisitionEnabled,
+} from '../payload/themeAcquisition'
+import type { ThemeResponse } from '../payload/themeAcquisition'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 import { THEMES_ACQUISITION_API } from '../payload/themeAcquisition'
 import { THEMES_CANONIQUES } from '../payload/types'
@@ -356,6 +363,114 @@ describe('theme acquisition cache', () => {
     } finally { vi.unstubAllGlobals() }
   })
 
+  it('binds comparison-only retries to a native legacy series after facts-only recovery', async () => {
+    const legacy = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const requests: Array<{ items: Array<Record<string, any>> }> = []
+    const target = { kind: 'territory', type: 'commune', id: 'cohort-c1' }
+    const focal = (requestTarget: Record<string, any>) => ({ resource: legacy.resource_id,
+      target: requestTarget, publication_id: 'legacy-series-v1',
+      territory: { id: requestTarget.id, type: requestTarget.type, name: 'Cohort one' },
+      indicator_id: legacy.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+      label: legacy.label, unit: legacy.unit, direction: legacy.direction,
+      descriptor_version: 'legacy-series-descriptor-v1', comparison_point: null,
+      points: [{ axis: '2024', observation_period: '2025', value: 10, status: 'measured',
+        source_id: 'cohort-source', vintage_id: 'cohort-v1', source_version: '2026',
+        source_reference_date: '2026-01-01', source_publication_date: '2026-01-02' }],
+      availability: 'incomplete' })
+    let comparisonPatch: (data: Record<string, any>) => void = () => {}
+    const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
+      if (String(url) === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources: [legacy],
+      }))
+      if (String(url) === '/api/resources/read-batch') {
+        const request = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(request)
+        if (requests.length === 1) return new Response('paired snapshot unavailable', { status: 503 })
+        const results = request.items.map((item) => {
+          const data = item.intent.kind === 'facts' ? focal(item.target) : {
+            resource: legacy.resource_id, target: item.target, contract: 'indicator-comparison-v1',
+            complete_theme: false, indicator_id: legacy.indicator_id, shape: 'series',
+            content_version: 'legacy-series-v1', reference_content_version: 'legacy-reference-v1',
+            selection: item.intent.kind === 'selected_comparison'
+              ? item.intent.members.map(({ type, id }: { type: string; id: string }) =>
+                ({ territory_type: type, territory_id: id })) : null,
+            scope: item.intent.kind === 'selected_comparison'
+              ? { kind: 'explicit_selection', member_count: item.intent.members.length }
+              : { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 },
+            result: { indicator_id: legacy.indicator_id, label: legacy.label, facet: null,
+              source_facet: null, unit: legacy.unit, direction: legacy.direction,
+              descriptor_version: 'legacy-series-descriptor-v1', status: 'unavailable',
+              reason: 'unsupported_comparison_contract',
+              selected_member_count: item.intent.kind === 'selected_comparison' ? item.intent.members.length : 2,
+              eligible_count: 0,
+              missing_count: item.intent.kind === 'selected_comparison' ? item.intent.members.length : 2,
+              median: null, rank: null, comparison_sources: [] },
+          }
+          if (item.intent.kind !== 'facts') comparisonPatch(data)
+          return { id: item.id, resource: item.resource, data }
+        })
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results }))
+      }
+      throw new Error(`Unexpected request: ${String(url)}`)
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const cache = new ThemeAcquisitionCache(
+      (_theme, key) => acquireThemeFacts(key!.type, key!.id, _theme),
+      (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
+    )
+    try {
+      const recovered = await cache.get('commune', target.id, 'programmes')
+      expect(requests.map(({ items }) => items.map((item) => item.intent.kind)))
+        .toEqual([['facts', 'fixed_comparison'], ['facts']])
+      expect(recovered.focal.comparison_error).toBe(true)
+      expect(recovered.focal.resource_reads?.[0]?.data).not.toHaveProperty('dataset_id')
+      expect(recovered.focal.resource_reads?.[0]?.data).not.toHaveProperty('theme_id')
+      expect(recovered.focal.resource_reads?.[0]?.data).not.toHaveProperty('axis_values')
+      expect(recovered.focal.resource_reads?.[0]?.data).not.toHaveProperty('reference_content_version')
+      expect(recovered.focal.resource_reads?.[0]?.data.points).toMatchObject([
+        { axis: '2024', value: 10, source_id: 'cohort-source', vintage_id: 'cohort-v1',
+          source_version: '2026', source_reference_date: '2026-01-01', source_publication_date: '2026-01-02' },
+      ])
+
+      comparisonPatch = (data) => { data.content_version = 'stale-series-v0' }
+      await expect(cache.select('commune', target.id, 'programmes', undefined)).rejects.toThrow(/publication/i)
+      expect((await cache.get('commune', target.id, 'programmes')).comparisons.has('omitted')).toBe(false)
+
+      comparisonPatch = () => {}
+      const defaultRetry = await cache.select('commune', target.id, 'programmes', undefined)
+      const defaultComparison = defaultRetry.comparisons.get('omitted')
+      expect(defaultComparison?.comparison_reads?.[0]?.data.reference_content_version).toBe('legacy-reference-v1')
+      expect(defaultRetry.focal).toBe(recovered.focal)
+      expect(requests[3]!.items.map((item) => item.intent.kind)).toEqual(['fixed_comparison'])
+
+      const cases: Array<{ name: string; patch: (data: Record<string, any>) => void }> = [
+        { name: 'publication', patch: (data) => { data.content_version = 'stale-series-v0' } },
+        { name: 'descriptor', patch: (data) => { data.result.descriptor_version = 'stale-descriptor-v0' } },
+        { name: 'target', patch: (data) => { data.target.id = 'another-cohort' } },
+        { name: 'identity', patch: (data) => { data.indicator_id = 'another-series' } },
+        { name: 'reference', patch: (data) => { data.reference_content_version = 'stale-reference-v0' } },
+        { name: 'selection', patch: (data) => { data.selection[0]!.territory_id = 'wrong-member' } },
+        { name: 'scope', patch: (data) => { data.scope = null } },
+      ]
+      for (const [index, item] of cases.entries()) {
+        const selection = [{ territory_type: 'commune' as const, territory_id: `cohort-c${index + 2}` }]
+        const selectionKey = cleSelectionComparaison(selection)
+        comparisonPatch = item.patch
+        await expect(cache.select('commune', target.id, 'programmes', selection), item.name)
+          .rejects.toThrow()
+        expect((await cache.get('commune', target.id, 'programmes')).comparisons.has(selectionKey), item.name)
+          .toBe(false)
+
+        comparisonPatch = () => {}
+        const retried = await cache.select('commune', target.id, 'programmes', selection)
+        expect(retried.focal).toBe(recovered.focal)
+        expect(retried.comparisons.has(selectionKey), item.name).toBe(true)
+      }
+      expect(fetcher.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')).toHaveLength(18)
+    } finally { vi.unstubAllGlobals() }
+  })
+
   it('loads only requested themes and caches by territory, theme, and comparison context', async () => {
     const acquire = vi.fn(async (theme: string) => ({ theme, focal: 42, tokens: {} }))
     const cache = new ThemeAcquisitionCache(acquire)
@@ -507,14 +622,15 @@ describe('theme acquisition cache', () => {
   it('binds a matching focal/comparison pair to the target requested by the cache', () => {
     const target = { kind: 'territory', type: 'region', id: '54' }
     const facts = { resource_reads: [{ resource: 'regional_series', shapes: ['ordered_series'], data: {
-      resource: 'regional_series', target, dataset_id: 'regional-series-dataset',
+      resource: 'regional_series', target, dataset_id: 'regional-series-dataset', theme_id: 'mobilite',
+      axis_values: ['2024'],
       publication_id: 'series-v1', content_version: 'series-v1', reference_content_version: 'territories-v1',
       territory: { id: '54', type: 'region' }, indicator_id: 'regional_series', axis_kind: 'year', points: [],
       comparison_point: '2024', unit: 'units', direction: 'low', descriptor_version: 'series-descriptor-v1',
     } }] }
     const comparison = { comparison_reads: [{ resource: 'regional_series', shapes: ['ordered_series'], data: {
       resource: 'regional_series', target, contract: 'indicator-comparison-v1', complete_theme: false,
-      shape: 'series', indicator_id: 'regional_series', content_version: 'series-v1',
+      shape: 'series', indicator_id: 'regional_series', theme_id: 'mobilite', content_version: 'series-v1',
       reference_content_version: 'territories-v1',
       result: { indicator_id: 'regional_series', source_facet: '2024', unit: 'units', direction: 'low',
         owned_content_version: 'series-v1', descriptor_version: 'series-descriptor-v1' },
@@ -529,7 +645,23 @@ describe('theme acquisition cache', () => {
     expect(semanticPublicationsCompatible(facts, missingOwner, { type: 'region', id: '54' })).toBe(false)
     const ownerWithoutDatasetIdentity = structuredClone(facts)
     delete (ownerWithoutDatasetIdentity.resource_reads[0]!.data as Record<string, unknown>).dataset_id
-    expect(semanticPublicationsCompatible(ownerWithoutDatasetIdentity, missingOwner,
+    expect(semanticPublicationsCompatible(ownerWithoutDatasetIdentity, comparison,
+      { type: 'region', id: '54' })).toBe(false)
+    const ownerWithoutReference = structuredClone(facts)
+    delete (ownerWithoutReference.resource_reads[0]!.data as Record<string, unknown>).reference_content_version
+    expect(semanticPublicationsCompatible(ownerWithoutReference, comparison,
+      { type: 'region', id: '54' })).toBe(false)
+    const ownerWithoutTheme = structuredClone(facts)
+    delete (ownerWithoutTheme.resource_reads[0]!.data as Record<string, unknown>).theme_id
+    expect(semanticPublicationsCompatible(ownerWithoutTheme, comparison,
+      { type: 'region', id: '54' })).toBe(false)
+    const ownerWithoutAxes = structuredClone(facts)
+    delete (ownerWithoutAxes.resource_reads[0]!.data as Record<string, unknown>).axis_values
+    expect(semanticPublicationsCompatible(ownerWithoutAxes, comparison,
+      { type: 'region', id: '54' })).toBe(false)
+    const comparisonWithoutTheme = structuredClone(comparison)
+    delete (comparisonWithoutTheme.comparison_reads[0]!.data as Record<string, unknown>).theme_id
+    expect(semanticPublicationsCompatible(facts, comparisonWithoutTheme,
       { type: 'region', id: '54' })).toBe(false)
   })
 
@@ -582,6 +714,100 @@ describe('theme acquisition cache', () => {
     const falseOwnedResult = falseOwned.comparison_reads[0]!.data.result as Record<string, unknown>
     falseOwnedResult.owned_content_version = 'cohort-legacy-series-v1'
     expect(semanticPublicationsCompatible(facts, falseOwned, target)).toBe(false)
+  })
+
+  it('does not downgrade an owned series when owner and reference tokens are stripped together', async () => {
+    const declaration = nativeResources('mobilite').find((resource) =>
+      resource.resource_id === 'raccordement_courbe')!
+    const target = { kind: 'territory', type: 'region', id: '53' }
+    const selection = [{ territory_type: 'region' as const, territory_id: '53' }]
+    const focalData = nativeReadFixture({ target, intent: { kind: 'facts' } }, declaration)
+    // The native owned reader omits a focal content_version; it carries
+    // publication_id, dataset_id, theme_id, axis_values and the reference token.
+    delete focalData.content_version
+    const defaultData = nativeReadFixture({ target, intent: { kind: 'fixed_comparison', context: 'default' } }, declaration)
+    const selectedData = nativeReadFixture({ target,
+      intent: { kind: 'selected_comparison', members: [{ type: 'region', id: '53' }] } }, declaration)
+    const defaultComparison = { theme_id: 'mobilite' as const,
+      comparison_reads: [{ resource: declaration.resource_id, shapes: declaration.shapes, data: defaultData }] }
+    const downgradedFacts = { theme_id: 'mobilite' as const,
+      resource_reads: [{ resource: declaration.resource_id, shapes: declaration.shapes, declaration,
+        data: structuredClone(focalData) }], default_comparison: defaultComparison }
+    const downgraded = downgradedFacts.resource_reads[0]!.data as Record<string, any>
+    delete downgraded.dataset_id
+    delete downgraded.reference_content_version
+    const malformedComparison = structuredClone(selectedData)
+    delete malformedComparison.result.owned_content_version
+    const cache = new ThemeAcquisitionCache(async () => downgradedFacts as unknown as ThemeResponse, async () => ({
+      theme_id: 'mobilite' as const,
+      selection,
+      comparison_reads: [{ resource: declaration.resource_id, shapes: declaration.shapes,
+        declaration, data: malformedComparison }],
+    } as unknown as ThemeResponse))
+
+    const initial = await cache.get('region', '53', 'mobilite')
+    expect(initial.comparisons.has('omitted')).toBe(true)
+    await expect(cache.select('region', '53', 'mobilite', selection)).rejects.toThrow(/publication/i)
+    expect((await cache.get('region', '53', 'mobilite')).comparisons.size).toBe(1)
+  })
+
+  it('binds concurrent legacy reference bootstraps to one territory and one selection snapshot', async () => {
+    const declaration = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const target = (id: string) => ({ kind: 'territory', type: 'commune', id })
+    const facts = (id: string): ThemeResponse => ({ theme_id: 'programmes' as const, resource_reads: [{
+      resource: declaration.resource_id, shapes: declaration.shapes, declaration,
+      data: { resource: declaration.resource_id, target: target(id), publication_id: 'legacy-series-v1',
+        territory: { id, type: 'commune', name: 'Fixture' }, indicator_id: declaration.indicator_id,
+        axis_kind: 'year', completeness: 'may_be_missing', label: declaration.label, unit: declaration.unit,
+        direction: declaration.direction, descriptor_version: 'legacy-series-descriptor-v1',
+        comparison_point: null, points: [], availability: 'no_record' },
+    }] } as unknown as ThemeResponse)
+    const response = (id: string, selection: readonly ThemeSelectionMember[], reference: string): ThemeResponse => ({
+      theme_id: 'programmes' as const, selection,
+      comparison_reads: [{ resource: declaration.resource_id, shapes: declaration.shapes, declaration,
+        data: { resource: declaration.resource_id, target: target(id), contract: 'indicator-comparison-v1',
+          complete_theme: false, indicator_id: declaration.indicator_id, shape: 'series',
+          content_version: 'legacy-series-v1', reference_content_version: reference,
+          selection: selection.map(({ territory_type, territory_id }) => ({ territory_type, territory_id })),
+          scope: { kind: 'explicit_selection', member_count: 1 },
+          result: { indicator_id: declaration.indicator_id, label: declaration.label, facet: null,
+            source_facet: null, unit: declaration.unit, direction: declaration.direction,
+            descriptor_version: 'legacy-series-descriptor-v1', status: 'unavailable',
+            reason: 'unsupported_comparison_contract', selected_member_count: 1,
+            eligible_count: 0, missing_count: 1, median: null, rank: null, comparison_sources: [] } },
+      }],
+    } as unknown as ThemeResponse)
+    const pending: Array<(value: ThemeResponse) => void> = []
+    const cache = new ThemeAcquisitionCache(
+      async (_theme, key) => facts(key!.id),
+      () => new Promise((resolve) => pending.push(resolve)),
+    )
+    const firstSelection = [{ territory_type: 'commune' as const, territory_id: 'cohort-c2' }]
+    const secondSelection = [{ territory_type: 'commune' as const, territory_id: 'cohort-c3' }]
+    await cache.get('commune', 'cohort-c1', 'programmes')
+
+    const first = cache.select('commune', 'cohort-c1', 'programmes', firstSelection)
+    const competing = cache.select('commune', 'cohort-c1', 'programmes', secondSelection)
+    await vi.waitFor(() => expect(pending).toHaveLength(2))
+    pending[0]!(response('cohort-c1', firstSelection, 'legacy-reference-v1'))
+    const firstResult = await first
+    pending[1]!(response('cohort-c1', secondSelection, 'raced-reference-v2'))
+    await expect(competing).rejects.toThrow(/publication/i)
+    expect(firstResult.comparisons.has(cleSelectionComparaison(firstSelection))).toBe(true)
+    expect((await cache.get('commune', 'cohort-c1', 'programmes')).comparisons
+      .has(cleSelectionComparaison(secondSelection))).toBe(false)
+
+    const retry = cache.select('commune', 'cohort-c1', 'programmes', secondSelection)
+    await vi.waitFor(() => expect(pending).toHaveLength(3))
+    pending[2]!(response('cohort-c1', secondSelection, 'legacy-reference-v1'))
+    expect((await retry).comparisons.has(cleSelectionComparaison(secondSelection))).toBe(true)
+
+    await cache.get('commune', 'cohort-c4', 'programmes')
+    const separateTerritory = cache.select('commune', 'cohort-c4', 'programmes', secondSelection)
+    await vi.waitFor(() => expect(pending).toHaveLength(4))
+    pending[3]!(response('cohort-c4', secondSelection, 'raced-reference-v2'))
+    expect((await separateTerritory).comparisons.has(cleSelectionComparaison(secondSelection))).toBe(true)
   })
 
   it('binds dual-shape scalar comparisons to the scalar facet and keeps annual tokens independent', async () => {

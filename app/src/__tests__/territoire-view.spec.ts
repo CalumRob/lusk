@@ -27,7 +27,11 @@ import {
 } from '../payload/territoryReadModel'
 import type { ChargerModeleTerritoire } from '../payload/territoryReadModel'
 import { acquireThemeFacts } from '../payload/themeAcquisition'
-import { themeFactsRowsFromSemantic } from '../payload/themeFactsAdapter'
+import {
+  semanticComparisonForTheme,
+  themeFactsRowsFromSemantic,
+  validerReponseComparaisonTheme,
+} from '../payload/themeFactsAdapter'
 import { PayloadError, validerThemeMetadata } from '../payload/validate'
 import { routes } from '../router'
 import {
@@ -270,6 +274,94 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch').length).toBeGreaterThan(0)
     wrapper.unmount()
   }, 20000)
+
+  it('retries the mounted Programmes comparison after legacy focal facts recover from a failed pair', async () => {
+    const model = modeleAvecContextesComparaison()
+    const legacy = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const requests: Array<Array<Record<string, any>>> = []
+    const focalReads: Array<Record<string, any>> = []
+    let successfulComparison: Record<string, any> | undefined
+    let comparisonAttempts = 0
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources: [legacy],
+      }))
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        if (items.some((item) => item.intent.kind === 'facts') &&
+            items.some((item) => item.intent.kind === 'fixed_comparison')) {
+          return new Response('paired legacy snapshot unavailable', { status: 503 })
+        }
+        if (items.every((item) => item.intent.kind === 'facts')) {
+          return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
+            const data = { resource: legacy.resource_id, target: item.target,
+              publication_id: 'legacy-series-v1',
+              territory: { id: item.target.id, type: item.target.type, name: model.territory.nom },
+              indicator_id: legacy.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+              label: legacy.label, unit: legacy.unit, direction: legacy.direction,
+              descriptor_version: 'legacy-series-descriptor-v1', comparison_point: null,
+              points: [], availability: 'no_record' }
+            focalReads.push(data)
+            return { id: item.id, resource: item.resource, data }
+          }) }))
+        }
+        if (comparisonAttempts++ === 0) return new Response('comparison retry offline', { status: 503 })
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
+          const data = { resource: legacy.resource_id, target: item.target,
+            contract: 'indicator-comparison-v1', complete_theme: false,
+            indicator_id: legacy.indicator_id, shape: 'series', content_version: 'legacy-series-v1',
+            reference_content_version: 'legacy-reference-v1', selection: null,
+            scope: { kind: 'density_class', territory_type: 'commune',
+              density_class_code: model.territory.classe_densite_code, member_count: 2 },
+            result: { indicator_id: legacy.indicator_id, label: legacy.label, facet: null,
+              source_facet: null, unit: legacy.unit, direction: legacy.direction,
+              descriptor_version: 'legacy-series-descriptor-v1', status: 'unavailable',
+              reason: 'unsupported_comparison_contract', selected_member_count: 2,
+              eligible_count: 0, missing_count: 2, median: null, rank: null, comparison_sources: [] } }
+          successfulComparison = data
+          return { id: item.id, resource: item.resource, data }
+        }) }))
+      }
+      if (url.startsWith('/data/')) {
+        return new Response(readFileSync(resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'))
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    await flushPromises()
+
+    expect(requests.map((items) => items.map((item) => item.intent.kind))).toEqual([
+      ['facts', 'fixed_comparison'], ['facts'], ['fixed_comparison'],
+    ])
+    expect(focalReads[0]).not.toHaveProperty('dataset_id')
+    expect(focalReads[0]).not.toHaveProperty('reference_content_version')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
+
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+
+    expect(requests).toHaveLength(4)
+    expect(requests[3]!.map((item) => item.intent.kind)).toEqual(['fixed_comparison'])
+    const comparison = { theme_id: 'programmes' as const, comparison_reads: [{
+      resource: legacy.resource_id, shapes: legacy.shapes, declaration: legacy, data: successfulComparison!,
+    }] }
+    expect(() => validerReponseComparaisonTheme('programmes', comparison, undefined,
+      { type: 'commune', id: '22001' })).not.toThrow()
+    expect(() => semanticComparisonForTheme(comparison, {
+      target: { territoire: '22001', type: 'commune', classe_densite_code: model.territory.classe_densite_code },
+      territories: model.cohortTerritories,
+    }, [{ resource: legacy.resource_id, shapes: legacy.shapes, declaration: legacy, data: focalReads[0]! }],
+    { type: 'commune', id: '22001' })).not.toThrow()
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Programmes et subventions')
+    expect(focalReads).toHaveLength(1)
+    wrapper.unmount()
+  })
 
   it('ne rend pas la section subventions quand les lectures natives déclarent leur absence', async () => {
     const model = modeleAvecContextesComparaison()
