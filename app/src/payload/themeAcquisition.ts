@@ -322,8 +322,14 @@ function territoryItem(resource: string, type: string, id: string, intent: Seman
   return { resource, target: { kind: 'territory', type: type as SemanticTerritoryTarget['type'], id }, intent }
 }
 
-function cohortItem(resource: string, type: string): SemanticReadItem {
-  return { resource, target: { kind: 'territory_cohort', type: type as SemanticTerritoryTarget['type'] }, intent: { kind: 'facts' } }
+function cohortItem(resource: string, type: string,
+  selection?: readonly ThemeSelectionMember[]): SemanticReadItem {
+  const selectedParent = selection?.length === 1 ? selection[0] : undefined
+  const parentFilter = type === 'commune' && selectedParent?.territory_type === 'epci'
+    ? { epci_id: selectedParent.territory_id }
+    : {}
+  return { resource, target: { kind: 'territory_cohort', type: type as SemanticTerritoryTarget['type'],
+    ...parentFilter }, intent: { kind: 'facts' } }
 }
 
 function namedReferenceItem(resource: string, id: string): SemanticReadItem {
@@ -359,11 +365,12 @@ function factItems(resources: SemanticResourceDeclaration[], type: string, id: s
     .map((resource) => territoryItem(resource.resource_id, type, id, { kind: 'facts' }))
 }
 
-function typedCohortItems(resources: SemanticResourceDeclaration[], type: string): SemanticReadItem[] {
+function typedCohortItems(resources: SemanticResourceDeclaration[], type: string,
+  selection?: readonly ThemeSelectionMember[]): SemanticReadItem[] {
   return resources.filter((resource) => resource.shapes.includes('typed_reading') &&
     resource.allowed_levels.includes(type as SemanticTerritoryTarget['type']) &&
     resource.target_kinds.includes('territory_cohort') && resource.intents.includes('facts'))
-    .map((resource) => cohortItem(resource.resource_id, type))
+    .map((resource) => cohortItem(resource.resource_id, type, selection))
 }
 
 function namedReferenceItems(resources: SemanticResourceDeclaration[]): SemanticReadItem[] {
@@ -372,8 +379,9 @@ function namedReferenceItems(resources: SemanticResourceDeclaration[]): Semantic
     .flatMap((resource) => (resource.target_ids ?? []).map((id) => namedReferenceItem(resource.resource_id, id)))
 }
 
-async function readAuxiliary(resources: SemanticResourceDeclaration[], type: string, includeNamedReferences = true) {
-  const cohorts = typedCohortItems(resources, type)
+async function readAuxiliary(resources: SemanticResourceDeclaration[], type: string, includeNamedReferences = true,
+  selection?: readonly ThemeSelectionMember[]) {
+  const cohorts = typedCohortItems(resources, type, selection)
   const namedReferences = includeNamedReferences ? namedReferenceItems(resources) : []
   const [cohortResult, namedResult] = await Promise.allSettled([
     cohorts.length ? readAll(cohorts) : Promise.resolve([]),
@@ -644,7 +652,7 @@ export function acquireThemeComparison(type: string, id: string, theme: ThemeKey
       : { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) => ({ type: territory_type, id: territory_id })) }
     const items = resources.map((resource) => territoryItem(resource.resource_id, type, id, intent))
     const comparisons = await readAll(items)
-    const auxiliary = await readAuxiliary(themeResources, type, false)
+    const auxiliary = await readAuxiliary(themeResources, type, false, selection)
     const echoedSelection = comparisons.length ? comparisons[0]!.data.selection : undefined
     if (comparisons.some(({ data }) => JSON.stringify(data.selection ?? null) !== JSON.stringify(echoedSelection ?? null))) {
       throw new Error('Les comparaisons sémantiques ne reflètent pas la même sélection')

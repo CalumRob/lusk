@@ -898,7 +898,7 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
 
 interface SemanticReadingReference {
   target: { territoire: string; type: TerritoireType; classe_densite_code?: string | null }
-  territories?: Array<{ territoire?: string; type?: string; classe_densite_code?: string | null }>
+  territories?: Array<{ territoire?: string; type?: string; classe_densite_code?: string | null; epci?: string | null }>
 }
 
 function semanticReadingCloud(response: Row, scopeValue: unknown, selectionValue: unknown,
@@ -936,6 +936,8 @@ function semanticReadingCloud(response: Row, scopeValue: unknown, selectionValue
 
   const scope = isRecord(scopeValue) ? scopeValue : null
   if (!scope || !Number.isInteger(scope.member_count)) return null
+  const cohortTarget = isRecord(data.target) ? data.target : null
+  const sameNullable = (actual: unknown, wanted: unknown) => (actual ?? null) === (wanted ?? null)
   let selectedIds: string[]
   if (scope.kind === 'density_class') {
     const density = scope.density_class_code
@@ -949,14 +951,43 @@ function semanticReadingCloud(response: Row, scopeValue: unknown, selectionValue
     if (scope.territory_type !== cohort.territory_type || scope.member_count !== cohort.member_count) return null
     selectedIds = [...cohortIds]
   } else if (scope.kind === 'explicit_selection') {
-    if (!Array.isArray(selectionValue) || selectionValue.length !== scope.member_count) return null
+    if (!Array.isArray(selectionValue)) return null
     const selection = rows(selectionValue, 'comparison.selection')
-    selectedIds = []
-    for (const member of selection) {
-      if (member.territory_type !== cohort.territory_type || !texteNonVide(member.territory_id)) return null
-      selectedIds.push(member.territory_id)
+    if (selection.length === 1 && cohort.territory_type === 'commune' &&
+        selection[0]!.territory_type === 'epci') {
+      const parent = selection[0]!
+      if (!texteNonVide(parent.territory_id) || !cohortTarget || cohortTarget.kind !== 'territory_cohort' ||
+          cohortTarget.type !== 'commune' || !sameNullable(cohort.department_id, cohortTarget.department_id) ||
+          !sameNullable(cohort.epci_id, cohortTarget.epci_id) || scope.member_count !== cohort.member_count) return null
+      const parentKnown = reference.territories?.some((territory) =>
+        territory.type === parent.territory_type && territory.territoire === parent.territory_id)
+      const focalReference = reference.territories?.find((territory) =>
+        territory.type === reference.target.type && territory.territoire === reference.target.territoire)
+      if (!parentKnown || !focalReference ||
+          !sameNullable(cohortTarget.department_id, null) ||
+          !sameNullable(cohortTarget.epci_id, parent.territory_id) ||
+          focalReference.epci !== parent.territory_id) return null
+      selectedIds = [...cohortIds]
+    } else if (selection.length === 1 && selection[0]!.territory_type === 'region' &&
+        cohort.territory_type === 'commune') {
+      const regionId = selection[0]!.territory_id
+      if (!texteNonVide(regionId) || !cohortTarget || cohortTarget.kind !== 'territory_cohort' ||
+          cohortTarget.type !== 'commune' || !sameNullable(cohort.department_id, null) ||
+          !sameNullable(cohort.epci_id, null) || !sameNullable(cohortTarget.department_id, null) ||
+          !sameNullable(cohortTarget.epci_id, null) || scope.member_count !== cohort.member_count ||
+          !reference.territories?.some((territory) => territory.type === 'region' && territory.territoire === regionId)) {
+        return null
+      }
+      selectedIds = [...cohortIds]
+    } else {
+      if (selection.length !== scope.member_count) return null
+      selectedIds = []
+      for (const member of selection) {
+        if (member.territory_type !== cohort.territory_type || !texteNonVide(member.territory_id)) return null
+        selectedIds.push(member.territory_id)
+      }
+      if (new Set(selectedIds).size !== selectedIds.length) return null
     }
-    if (new Set(selectedIds).size !== selectedIds.length) return null
   } else return null
   if (selectedIds.some((id) => !cohortIds.has(id))) return null
 

@@ -8,6 +8,9 @@ import { computed } from 'vue'
 
 import TerritoireView from '../views/TerritoireView.vue'
 import BlocProgrammes from '../components/fiche/BlocProgrammes.vue'
+import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
+import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
+import OngletTheme from '../components/fiche/OngletTheme.vue'
 import CahierComparisonNote from '../fiche/prototype/CahierComparisonNote.vue'
 import { OPTIONS_COMPARAISON_KEY, optionsContexteComparaison } from '../fiche/comparisonContext'
 import { varianteDeUrl } from '../fiche/prototype/variantes'
@@ -922,6 +925,112 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.text()).not.toContain('Choisir les territoires du groupe comparé')
     wrapper.unmount()
   })
+
+  it.each(['demographie', 'milieux'] as const)(
+    'renders API-resolved named-scope reading clouds for %s with the default API flags and no full cohort reference',
+    async (theme) => {
+      for (const name of ['VITE_THEME_ACQUISITION_API', 'VITE_SCALAR_COHORT_API']) {
+        Reflect.deleteProperty(import.meta.env, name)
+        Reflect.deleteProperty(process.env, name)
+        expect(import.meta.env[name]).toBeUndefined()
+      }
+
+      const model = validerModeleTerritoire(structuredClone(modelePublie22001),
+        'territoires/commune/22001.json', { type: 'commune', territoire: '22001' },
+        { requireAllThemes: true })
+      expect(model.cohortTerritories).toBeUndefined()
+      const parent = model.territories.find((territory) => territory.type === 'epci' &&
+        territory.territoire === model.territory.epci)!
+      const region = model.territories.find((territory) => territory.type === 'region')!
+      const apiReference = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')) as any[]
+      const epciMembers = apiReference.filter((territory) => territory.type === 'commune' && territory.epci === parent.territoire)
+      const bretagneMembers = apiReference.filter((territory) => territory.type === 'commune')
+      const resources = nativeResources(theme)
+      const readingResource = resources.find((resource) => resource.shapes.includes('typed_reading') &&
+        resource.target_kinds.includes('territory_cohort'))!
+      const rankResource = resources.find((resource) => resource.shapes.includes('scalar') &&
+        resource.intents.includes('selected_comparison')) ?? resources.find((resource) =>
+        resource.shapes.includes('ordered_series') && resource.intents.includes('selected_comparison'))!
+      const selectedRanks: Array<{ scopeCount: number; rankSize: number | null }> = []
+      const focalReads = new Map<string, Record<string, any>>()
+      const requests: Array<Array<Record<string, any>>> = []
+      const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/resources') {
+          return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1',
+            resources: [rankResource, readingResource] }))
+        }
+        if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        return nativeBatchResponse(items, (item, resource) => {
+          let data = nativeReadFixture(item, resource)
+          if (item.intent.kind === 'facts' && item.target.kind === 'territory' &&
+              resource.resource_id === rankResource.resource_id && resource.shapes.includes('ordered_series')) {
+            const comparisonPoint = model.themes[theme]?.metadata?.indicator_pages?.[resource.indicator_id]?.comparison?.detail
+            if (!comparisonPoint) throw new Error(`No producer comparison facet for ${resource.resource_id}`)
+            data = { ...data, comparison_point: comparisonPoint }
+          }
+          if (item.intent.kind === 'facts' && item.target.kind === 'territory') {
+            focalReads.set(resource.resource_id, data)
+          }
+          if (item.intent.kind !== 'selected_comparison') return data
+          const selected = item.intent.members[0]!
+          const selectedMembers = selected.type === 'epci' ? epciMembers : bretagneMembers
+          const scopeCount = selectedMembers.length
+          const focal = focalReads.get(resource.resource_id)
+          const comparisonFacet = resource.shapes.includes('ordered_series')
+            ? focal?.comparison_point : resource.indicator_id
+          const result = { ...data.result, status: 'available', direction: resource.direction,
+            source_facet: comparisonFacet, selected_member_count: scopeCount, eligible_count: scopeCount,
+            missing_count: 0, rank: 1, rank_size: scopeCount }
+          selectedRanks.push({ scopeCount, rankSize: result.rank_size })
+          return { ...data, selection: item.intent.members.map((member: { type: string; id: string }) =>
+            ({ territory_type: member.type, territory_id: member.id })),
+          scope: { kind: 'explicit_selection', member_count: scopeCount }, result }
+        })
+      })
+      vi.stubGlobal('fetch', fetchApi)
+      const { router, wrapper } = await monter(
+        `/territoire/commune/22001?theme=${theme}&comparaison=epci`, vi.fn(async () => model))
+
+      const graph = () => theme === 'demographie'
+        ? wrapper.findComponent(GraphiqueSoldes) : wrapper.findComponent(GraphiqueQuadrantMilieux)
+      const cloudPoints = () => theme === 'demographie'
+        ? wrapper.findComponent(GraphiqueSoldes).props().nuage
+        : wrapper.findComponent(GraphiqueQuadrantMilieux).props().nuage
+      const themePayload = () => wrapper.findComponent(OngletTheme).props('payload') as Payload
+      const verifyCloudAndRank = (count: number, label: string, memberIds: string[]) => {
+        expect(graph().exists()).toBe(true)
+        const cloud = cloudPoints()
+        expect(cloud.length).toBeGreaterThan(0)
+        expect(cloud.every((point) => memberIds.includes(point.territoire))).toBe(true)
+        const rows = themePayload().indicateurs.filter((row) => row.theme === theme &&
+          row.key === rankResource.indicator_id)
+        expect(rows.some((row) => row.comparaisonApi?.taille === count && row.comparaisonApi.portee === label)).toBe(true)
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      }
+
+      await flushPromises()
+      const epciLabel = model.themes.mobilite!.comparisons.epci!.scope.label
+      verifyCloudAndRank(epciMembers.length, epciLabel, epciMembers.map((member) => member.territoire))
+      expect(requests.flat().some((item) => item.target.kind === 'territory_cohort' &&
+        item.target.epci_id === parent.territoire && item.resource === readingResource.resource_id)).toBe(true)
+      expect(selectedRanks.at(-1)).toEqual({ scopeCount: epciMembers.length, rankSize: epciMembers.length })
+
+      const requestCountBeforeRegion = requests.length
+      await router.replace({ query: { theme, comparaison: 'bretagne' } })
+      await flushPromises()
+      const bretagneLabel = model.themes.mobilite!.comparisons.bretagne!.scope.label
+      verifyCloudAndRank(bretagneMembers.length, bretagneLabel, bretagneMembers.map((member) => member.territoire))
+      expect(requests.slice(requestCountBeforeRegion).flat().some((item) => item.target.kind === 'territory_cohort' &&
+        item.resource === readingResource.resource_id && item.target.type === 'commune' && !item.target.epci_id &&
+        !item.target.department_id)).toBe(true)
+      expect(selectedRanks.at(-1)).toEqual({ scopeCount: bretagneMembers.length, rankSize: bretagneMembers.length })
+      expect(region.type).toBe('region')
+      wrapper.unmount()
+    },
+  )
 
   it('renders registered scalar API values in the mounted fiche instead of the static model value', async () => {
     // La famille overlay vit sur un thème NON-mobilité : le cahier plié

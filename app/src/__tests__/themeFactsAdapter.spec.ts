@@ -313,6 +313,61 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(incomplete?.reading_cloud).toBeUndefined()
   })
 
+  it('uses API-resolved commune members for named EPCI and Bretagne reading clouds', () => {
+    const members = [
+      { id: 'commune-1', type: 'commune', name: 'Focal' },
+      { id: 'commune-2', type: 'commune', name: 'Peer' },
+    ]
+    const territories: Array<{ territoire: string; type: string; classe_densite_code: string | null; epci: string | null }> =
+      members.map((member) => ({ territoire: member.id, type: member.type,
+        classe_densite_code: 'D1', epci: 'epci-1' }))
+    territories.push({ territoire: 'epci-1', type: 'epci', classe_densite_code: null, epci: null })
+    territories.push({ territoire: 'region-1', type: 'region', classe_densite_code: null, epci: null })
+    const reference = { target: { territoire: 'commune-1', type: 'commune' as const,
+      classe_densite_code: 'D1' }, territories }
+    const focalFact = { groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured',
+      periode: '2020', taux_solde_naturel: 1, taux_solde_migratoire: -1 }
+    const focalReads = [{ resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
+      content_version: 'reading-v1', reference_content_version: 'reference-v1', facts: [focalFact],
+    } }]
+
+    for (const selected of [
+      { territory_type: 'epci', territory_id: 'epci-1', epci_id: 'epci-1' },
+      { territory_type: 'region', territory_id: 'region-1', epci_id: null },
+    ]) {
+      const selection = [{ territory_type: selected.territory_type, territory_id: selected.territory_id }]
+      const response = { comparison_reads: [{ resource: 'densite', shapes: ['scalar'], data: {
+        resource: 'densite', indicator_id: 'densite', shape: 'scalar',
+        target: { kind: 'territory', type: 'commune', id: 'commune-1' },
+        selection, scope: { kind: 'explicit_selection', member_count: members.length },
+        result: { indicator_id: 'densite', status: 'available', direction: 'high', source_facet: 'densite',
+          selected_member_count: members.length, eligible_count: members.length, missing_count: 0,
+          rank: 1, rank_size: members.length },
+      } }], cohort_reads: [{ resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
+        resource: 'demographie_selected_reading',
+        target: { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: selected.epci_id },
+        content_version: 'reading-v1', reference_content_version: 'reference-v1',
+        cohort: { territory_type: 'commune', department_id: null, epci_id: selected.epci_id,
+          member_count: members.length, reference_content_version: 'reference-v1', members },
+        territories: members.map((member, index) => ({ territory: member, facts: [{ ...focalFact,
+          taux_solde_naturel: index + 1, taux_solde_migratoire: -(index + 1) }] })),
+      } }] }
+
+      const comparison = semanticComparisonForTheme(response, reference, focalReads)
+      expect(comparison?.reading_cloud).toMatchObject({ status: 'available',
+        points: members.map((member, index) => ({ territory: { territory_id: member.id },
+          taux_solde_naturel: index + 1 })) })
+      expect(histoiresDemographieNuage(comparison).map(({ territoire }) => territoire))
+        .toEqual(members.map(({ id }) => id))
+
+      const wrongCohortTarget = structuredClone(response)
+      wrongCohortTarget.cohort_reads[0]!.data.target.epci_id = 'epci-other'
+      const rejected = semanticComparisonForTheme(wrongCohortTarget, reference, focalReads)
+      expect(rejected?.reading_cloud).toBeUndefined()
+      expect(rejected?.reading_cloud_error).toBe(true)
+    }
+  })
+
   it('consumes a native typed fact source and its published descriptor rate unit', () => {
     const source = { source_id: 'insee', vintage_id: '2023', name: 'Published reading source', version: '2023',
       reference_date: null, publication_date: '2026-01-02' }
