@@ -230,6 +230,18 @@ function libellePorteeSemantic(comparison: unknown, model: TerritoryReadModel, t
   }
   if (scope.kind !== 'explicit_selection' || !Array.isArray(data.selection)) return null
   const selected = data.selection as unknown[]
+  if (target.type === 'commune' && selected.length === 1) {
+    const identity = selected[0]
+    if (typeof identity === 'object' && identity !== null && !Array.isArray(identity)) {
+      const actual = identity as Record<string, unknown>
+      for (const mode of ['epci', 'bretagne'] as const) {
+        const reference = territoireReferencePourComparaison({ territoire: target, mode, territoires: model.territories })
+        if (reference && actual.territory_type === reference.type && actual.territory_id === reference.id) {
+          return model.themes.mobilite?.comparisons[mode]?.scope.label ?? null
+        }
+      }
+    }
+  }
   const territories = model.cohortTerritories ?? model.territories
   const candidates = [
     ['epci', target.type === 'commune' && target.epci
@@ -582,17 +594,17 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
     }
     const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
     if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'idle'; return }
-    const cohort = model.cohortTerritories
     const themeActif = theme as Theme
-    const selectionMembres: ThemeSelectionMember[] | undefined = target.type !== 'commune' || mode === 'densite' || mode === null || mode === undefined
+    const selectionMembres: readonly ThemeSelectionMember[] | null | undefined = target.type !== 'commune' ||
+      mode === 'densite' || mode === null || mode === undefined
       ? undefined
-      : !cohort ? [] : mode === 'bretagne'
-      ? cohort.filter((item) => item.type === 'commune')
-        .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
-      : mode === 'epci' && target.epci
-        ? cohort.filter((item) => item.type === 'commune' && item.epci === target.epci)
-          .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
-        : []
+      : mode === 'epci' || mode === 'bretagne'
+        ? (() => {
+          const reference = territoireReferencePourComparaison({ territoire: target, mode,
+            territoires: model.territories })
+          return reference ? [{ territory_type: reference.type, territory_id: reference.id }] : null
+        })()
+        : null
     const request = ++sequenceComparaison
     let cancelled = false
     onCleanup(() => { cancelled = true })
@@ -603,6 +615,12 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
     // ne rend pas (le flux E Mobilité nettoie de même avant la requête).
     if (themeActif === 'milieux') histoiresNuageMilieux.value = []
     if (themeActif === 'demographie') histoiresNuageDemographie.value = []
+    if (selectionMembres === null) {
+      // Un périmètre nommé sans identité parente résolue est indisponible,
+      // jamais une sélection vide ni le contexte fixe par défaut.
+      statutComparaison.value = 'error'
+      return
+    }
     try {
       const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
       if (cancelled || request !== sequenceComparaison) return
@@ -611,7 +629,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
         { type: target.type, id: target.territoire })
       const comparison = semanticComparisonForTheme(nativeComparison, {
         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
-        territories: model.cohortTerritories,
+        territories: model.cohortTerritories ?? model.territories,
       }, acquired.focal.resource_reads)
       if (themeActif === 'demographie') {
         histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)

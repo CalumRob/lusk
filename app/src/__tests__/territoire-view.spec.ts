@@ -393,6 +393,149 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
+  it('selects a commune EPCI perimeter by its typed parent identity without loading scalar cohorts', async () => {
+    Reflect.deleteProperty(import.meta.env, 'VITE_THEME_ACQUISITION_API')
+    Reflect.deleteProperty(import.meta.env, 'VITE_SCALAR_COHORT_API')
+    Reflect.deleteProperty(process.env, 'VITE_THEME_ACQUISITION_API')
+    Reflect.deleteProperty(process.env, 'VITE_SCALAR_COHORT_API')
+    expect(import.meta.env.VITE_THEME_ACQUISITION_API).toBeUndefined()
+    expect(import.meta.env.VITE_SCALAR_COHORT_API).toBeUndefined()
+
+    const territoryId = '22285'
+    const file = `territoires/commune/${territoryId}.json`
+    const published = JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/modeles-lecture/${file}`), 'utf8'))
+    const model = validerModeleTerritoire(published, file, { type: 'commune', territoire: territoryId },
+      { requireAllThemes: true })
+    expect(model.cohortTerritories).toBeUndefined()
+    const parent = model.territories.find((candidate) => candidate.type === 'epci' &&
+      candidate.territoire === model.territory.epci)!
+    const region = model.territories.find((candidate) => candidate.type === 'region')!
+    const reference = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    const resolvedMembers = reference.filter((candidate: any) => candidate.type === 'commune' &&
+      candidate.epci === parent.territoire)
+    const resolvedBretagne = reference.filter((candidate: any) => candidate.type === 'commune')
+    expect(resolvedMembers.length).toBeGreaterThan(1)
+
+    const legacy = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const sourceId = legacy.sources[0]!
+    const vintageId = model.themes.programmes!.metadata.source_records?.[sourceId]?.vintages?.[0]?.id
+    expect(vintageId).toBeTruthy()
+    const descriptorVersion = 'programmes-series-descriptor-v1'
+    const publicationVersion = 'programmes-api-facts-sentinel-v1'
+    const factValue = 987654
+    const requests: Array<Array<Record<string, any>>> = []
+    const selectedReads: Array<Record<string, any>> = []
+
+    const comparisonData = (item: Record<string, any>) => {
+      const isSelected = item.intent.kind === 'selected_comparison'
+      const selection = isSelected ? item.intent.members.map((member: { type: string; id: string }) => ({
+        territory_type: member.type, territory_id: member.id,
+      })) : null
+      // Model the API resolver: one typed EPCI identity expands against the
+      // canonical reference to the actual commune perimeter used for rank.
+      const selectedIdentity = selection?.[0]
+      const resolvedSelection = selection?.length === 0 ? [] : selectedIdentity?.territory_type === 'epci'
+        ? resolvedMembers : selectedIdentity?.territory_type === 'region' ? resolvedBretagne : []
+      const memberCount = isSelected ? resolvedSelection.length : reference.filter((candidate: any) =>
+        candidate.type === 'commune' && candidate.classe_densite_code === model.territory.classe_densite_code).length
+      const data = { resource: legacy.resource_id, target: item.target,
+        contract: 'indicator-comparison-v1', complete_theme: false,
+        indicator_id: legacy.indicator_id, shape: 'series', content_version: publicationVersion,
+        reference_content_version: 'programmes-reference-v1', selection,
+        scope: isSelected ? { kind: 'explicit_selection', member_count: memberCount }
+          : { kind: 'density_class', territory_type: 'commune',
+            density_class_code: model.territory.classe_densite_code, member_count: memberCount },
+        result: { indicator_id: legacy.indicator_id, source_facet: '2024', unit: legacy.unit,
+          direction: legacy.direction, descriptor_version: descriptorVersion, status: 'available',
+          selected_member_count: memberCount, eligible_count: memberCount, missing_count: 0,
+          median: factValue, rank: 1, rank_size: memberCount } }
+      if (isSelected) selectedReads.push(data)
+      return data
+    }
+
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') {
+        return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [legacy] }))
+      }
+      if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(items)
+      return nativeBatchResponse(items, (item) => {
+        if (item.intent.kind !== 'facts') return comparisonData(item)
+        return { resource: legacy.resource_id, target: item.target,
+          publication_id: publicationVersion,
+          territory: { id: territoryId, type: 'commune', name: model.territory.nom },
+          indicator_id: legacy.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+          label: legacy.label, unit: legacy.unit, direction: legacy.direction,
+          descriptor_version: descriptorVersion, comparison_point: '2024',
+          points: [{ axis: '2024', status: 'measured', observation_period: '2024', value: factValue,
+            source_id: sourceId, vintage_id: vintageId, source_version: 'api-facts-clock-v1',
+            source_reference_date: null, source_publication_date: '2026-08-05' }],
+          availability: 'observed' }
+      })
+    })
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter(`/territoire/commune/${territoryId}?theme=programmes`,
+      vi.fn(async () => model))
+    await flushPromises()
+
+    expect(wrapper.find('.subvention-total').text()).toContain('987')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.map((item) => item.intent.kind)).toEqual(['facts', 'fixed_comparison'])
+
+    await router.replace({ query: { theme: 'programmes', comparaison: 'epci' } })
+    await flushPromises()
+
+    const selectedBatch = requests.at(-1)!
+    const selectedItem = selectedBatch.find((item) => item.intent.kind === 'selected_comparison')!
+    expect(selectedItem.intent.members).toEqual([{ type: 'epci', id: parent.territoire }])
+    expect(selectedBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    expect(requests.flat().filter((item) => item.intent.kind === 'facts')).toHaveLength(1)
+    expect(wrapper.find('.subvention-total').text()).toContain('987')
+    expect(selectedReads.at(-1)?.selection).toEqual([{ territory_type: 'epci', territory_id: parent.territoire }])
+    expect(selectedReads.at(-1)?.scope.member_count).toBe(resolvedMembers.length)
+    expect(selectedReads.at(-1)?.result.selected_member_count).toBe(resolvedMembers.length)
+    expect(selectedReads.at(-1)?.result.rank_size).toBe(resolvedMembers.length)
+    const renderedPayload = wrapper.findComponent(BlocProgrammes).props('payload') as Payload
+    const annual = renderedPayload.indicateurs.find((row) => row.territoire === territoryId &&
+      row.theme === 'programmes' && row.key === 'subventions_annuelles')
+    expect(annual?.comparaisonApi).toMatchObject({ rang: 1, taille: resolvedMembers.length,
+      portee: model.themes.mobilite!.comparisons.epci!.scope.label, direction: 'high' })
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
+
+    const epciRead = selectedReads.at(-1)
+    await router.replace({ query: { theme: 'programmes', comparaison: 'bretagne' } })
+    await flushPromises()
+    const bretagneBatch = requests.at(-1)!
+    const bretagneItem = bretagneBatch.find((item) => item.intent.kind === 'selected_comparison')!
+    expect(bretagneItem.intent.members).toEqual([{ type: 'region', id: region.territoire }])
+    expect(bretagneBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    expect(requests.flat().filter((item) => item.intent.kind === 'facts')).toHaveLength(1)
+    expect(selectedReads.at(-1)?.selection).toEqual([{ territory_type: 'region', territory_id: region.territoire }])
+    expect(selectedReads.at(-1)?.scope.member_count).toBe(resolvedBretagne.length)
+    expect(selectedReads.at(-1)?.result.selected_member_count).toBe(resolvedBretagne.length)
+    expect(selectedReads.at(-1)?.result.rank_size).toBe(resolvedBretagne.length)
+    expect(epciRead?.result.selected_member_count).toBe(resolvedMembers.length)
+    const bretagnePayload = wrapper.findComponent(BlocProgrammes).props('payload') as Payload
+    const bretagneAnnual = bretagnePayload.indicateurs.find((row) => row.territoire === territoryId &&
+      row.theme === 'programmes' && row.key === 'subventions_annuelles')
+    expect(bretagneAnnual?.comparaisonApi).toMatchObject({ rang: 1, taille: resolvedBretagne.length,
+      portee: model.themes.mobilite!.comparisons.bretagne!.scope.label, direction: 'high' })
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
+
+    // If a named scope's canonical identity is missing, fail closed rather
+    // than send [] or silently request the density/default comparison.
+    model.territories = model.territories.filter((candidate) => candidate.type !== 'epci')
+    const requestCountBeforeMissingParent = requests.length
+    await router.replace({ query: { theme: 'programmes', comparaison: 'epci' } })
+    await flushPromises()
+    expect(requests).toHaveLength(requestCountBeforeMissingParent)
+    expect(wrapper.find('[role="alert"]').text()).toContain('Réessayer')
+    wrapper.unmount()
+  })
+
   it('ne rend pas la section subventions quand les lectures natives déclarent leur absence', async () => {
     const model = modeleAvecContextesComparaison()
     expect(model.themes.programmes!.indicators.some((fact) => fact.key === 'subventions_annuelles')).toBe(true)
@@ -741,13 +884,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
 
     await router.replace({ query: { theme: 'economie', comparaison: 'bretagne' } })
     await flushPromises()
-    const bretagneMembers = model.cohortTerritories!
-      .filter((territory) => territory.type === 'commune')
-      .map((territory) => ({ type: territory.type, id: territory.territoire }))
-      .sort((left, right) => left.id.localeCompare(right.id))
+    const bretagne = model.territories.find((territory) => territory.type === 'region')!
     const selectedReads = requests.filter((items) =>
       items.some((item) => item.intent.kind === 'selected_comparison'))
-    expect(selectedReads.at(-1)?.[0]?.intent.members).toEqual(bretagneMembers)
+    expect(selectedReads.at(-1)?.[0]?.intent.members).toEqual([{ type: bretagne.type, id: bretagne.territoire }])
     expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
 
     resolveOldComparison!()
