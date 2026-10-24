@@ -65,6 +65,13 @@ function secondSectionEvidence(): AedarEquipmentProfileEvidence {
 }
 
 describe('AedarEquipmentWaffleCahier', () => {
+  it('omits the Waffle color-limitation note', () => {
+    const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
+
+    expect(wrapper.find('.aedar-waffle-legend-note').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Les teintes proches ne distinguent pas toutes les catégories.')
+  })
+
   it('uses the time-ramp mode colors for the waffle tiles and mode filters', async () => {
     const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
     const modeColors = {
@@ -126,6 +133,27 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.find('.cahier-travel-time-label svg').exists()).toBe(true)
     expect(wrapper.find('.aedar-waffle-threshold').exists()).toBe(false)
     expect(wrapper.find('.aedar-travel-time-selector button').exists()).toBe(true)
+    expect(wrapper.find('.aedar-waffle-legend-note').exists()).toBe(false)
+  })
+
+  it('keeps bucket legend actions named and icon-coded, and opens the matching bucket detail', async () => {
+    const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
+    const transitAction = wrapper.findAll('.cahier-figure-legend-action')
+      .find((button) => button.text().includes('Transports en commun'))
+
+    expect(transitAction).toBeDefined()
+    expect(transitAction!.text()).toContain('Transports en commun')
+    expect(transitAction!.find('svg[aria-hidden="true"]').exists()).toBe(true)
+    await transitAction!.trigger('click')
+
+    const dialog = wrapper.get('dialog[open]')
+    expect(dialog.get('.aedar-waffle-mode-filter button[data-mode="transit"]').attributes('aria-pressed')).toBe('true')
+    expect(dialog.find('.aedar-waffle-mode-filter').text()).toContain('Transports en commun')
+    expect(dialog.findAll('.aedar-waffle-dialog-row').length).toBe(
+      Number(wrapper.findAll('.cahier-figure-legend-action')
+        .find((button) => button.text().includes('Transports en commun'))!
+        .find('.cahier-figure-legend-count').text()),
+    )
   })
 
   it('opens full exploration from the nearby control, then filters all-mode results by search', async () => {

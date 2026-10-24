@@ -7,7 +7,7 @@ import { AEDAR_EQUIPMENT_BUCKET_HORIZONS, AEDAR_EQUIPMENT_MODES, aedarEquipmentS
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
-import { AEDAR_TIME_MODE_COLORS } from './aedarTimeModeColors'
+import { AEDAR_TIME_MODE_COLORS, AEDAR_TIME_MODE_LABEL_INKS } from './aedarTimeModeColors'
 import CahierFigureLegend from './CahierFigureLegend.vue'
 import CahierDialog from './CahierDialog.vue'
 import AedarTravelTimeSelector from './AedarTravelTimeSelector.vue'
@@ -57,14 +57,15 @@ const modeIcons: Readonly<Record<string, Component>> = {
   car: CarFront,
 }
 const bucketPresentation = {
-  walk: { iconKey: 'walk', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.walk },
-  transit: { iconKey: 'transit', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.transit },
-  bike_lts2: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts2 },
-  bike_lts4: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts4 },
-  car: { iconKey: 'car', tone: 'car', color: AEDAR_TIME_MODE_COLORS.car },
-  inaccessible: { iconKey: null, tone: 'foot', color: 'var(--text-tertiary)' },
-} satisfies Record<AedarEquipmentBucketKey, { iconKey: keyof typeof modeIcons | null; tone: string; color: string }>
+  walk: { iconKey: 'walk', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.walk, ink: AEDAR_TIME_MODE_LABEL_INKS.walk },
+  transit: { iconKey: 'transit', tone: 'foot', color: AEDAR_TIME_MODE_COLORS.transit, ink: AEDAR_TIME_MODE_LABEL_INKS.transit },
+  bike_lts2: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts2, ink: AEDAR_TIME_MODE_LABEL_INKS.bike_lts2 },
+  bike_lts4: { iconKey: 'bike', tone: 'bike', color: AEDAR_TIME_MODE_COLORS.bike_lts4, ink: AEDAR_TIME_MODE_LABEL_INKS.bike_lts4 },
+  car: { iconKey: 'car', tone: 'car', color: AEDAR_TIME_MODE_COLORS.car, ink: AEDAR_TIME_MODE_LABEL_INKS.car },
+  inaccessible: { iconKey: null, tone: 'foot', color: 'var(--text-tertiary)', ink: 'var(--editorial-ink)' },
+} satisfies Record<AedarEquipmentBucketKey, { iconKey: keyof typeof modeIcons | null; tone: string; color: string; ink: string }>
 const bucketColors = Object.fromEntries(Object.entries(bucketPresentation).map(([key, value]) => [key, value.color])) as Record<AedarEquipmentBucketKey, string>
+const bucketInks = Object.fromEntries(Object.entries(bucketPresentation).map(([key, value]) => [key, value.ink])) as Record<AedarEquipmentBucketKey, string>
 const bucketEntries = computed<FigureLegendEntry[]>(() => (profile.value?.buckets ?? []).map((bucket) => ({
   key: bucket.key,
   label: bucket.label,
@@ -196,6 +197,8 @@ watch(horizonMinutes, (horizon) => {
         :action-keys="bucketEntries.map((entry) => entry.key)"
         :counts="bucketCounts"
         :mark-colors="bucketColors"
+        :chip-fills="bucketColors"
+        :chip-inks="bucketInks"
         label="Types par premier mode d’accès — ouvrir le détail d’une catégorie"
         @activate="openBucket"
       />
@@ -324,6 +327,31 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle-share-table tbody tr:last-child th, .aedar-waffle-share-table tbody tr:last-child td { border-bottom: 0; }
 .aedar-waffle-empty { margin: 0; padding: var(--space-4); color: var(--text-secondary); text-align: center; }
 @media (max-width: 760px) {
+  .aedar-waffle-grid {
+    grid-template-columns: repeat(auto-fit, minmax(24px, 1fr));
+    grid-template-rows: none;
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    grid-auto-rows: auto;
+    gap: 2px;
+    width: min(calc(100% + var(--space-3) + var(--space-3)), 760px);
+    margin-inline: calc(0px - var(--space-3));
+  }
+  .aedar-waffle-tile {
+    display: grid;
+    width: 100%;
+    min-width: 24px;
+    min-height: 24px;
+    place-items: center;
+    background: transparent;
+  }
+  .aedar-waffle-tile::before {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    background: var(--aedar-bucket-color);
+    content: '';
+  }
   .aedar-waffle-dialog-horizon { order: 1; flex: 1 1 auto; min-width: 0; }
   .aedar-waffle-search { order: 3; flex-basis: 100%; }
   .aedar-waffle-field-control { justify-content: center; }

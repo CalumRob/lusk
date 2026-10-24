@@ -46,6 +46,10 @@ const cartographicBreakoutSource = readFileSync(
   join(process.cwd(), 'src', 'fiche', 'prototype', 'CartographicBreakoutPrototype.vue'),
   'utf8',
 )
+const sharedMapPanelLabelSource = readFileSync(
+  join(process.cwd(), 'src', 'fiche', 'prototype', 'cahierMapPanelLabel.css'),
+  'utf8',
+)
 const tokensSource = readFileSync(
   join(process.cwd(), 'src', 'styles', 'tokens.css'),
   'utf8',
@@ -113,13 +117,23 @@ describe('Cahier typography roles', () => {
     expectMapLabelTreatment(mapPanelSource, '.map-panel-number', 'var(--mode-ring)', '0 1px 4px var(--paper)')
     expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('font: var(--text-caption)')
     expect(cssRule(mapPanelSource, '.map-panel-number')).toContain('letter-spacing: var(--text-caption-tracking)')
-    expectMapLabelTreatment(blankMapSlotsSource, '.map-panel-label', 'var(--mode-ring)')
-    expect(cssRule(blankMapSlotsSource, '.map-panel-label')).toContain('font: var(--text-overline)')
+    expectMapLabelTreatment(sharedMapPanelLabelSource, '.map-panel-label', 'var(--mode-ring)')
+    const mapTitleRule = cssRule(sharedMapPanelLabelSource, '.map-panel-label')
+    expect(mapTitleRule).toContain('font: var(--text-overline)')
+    expect(mapTitleRule).not.toMatch(/font-weight\s*:/u)
+    expect(mapTitleRule).not.toMatch(/line-height\s*:/u)
+    expect(mapTitleRule).toContain('letter-spacing: var(--text-overline-tracking)')
+    expect(sharedMapPanelLabelSource).toMatch(
+      /@media\s*\(max-width:\s*760px\)\s*\{\s*\.map-panel-label\s*\{[^}]*font:\s*var\(--text-caption\);/u,
+    )
+    expect(tokensSource).toContain('--text-caption: 500 0.75rem/1.4 var(--font-metadata)')
+    expect(tokensSource).toContain('--text-overline: 600 0.6875rem/1.3 var(--font-metadata)')
+    for (const source of [blankMapSlotsSource, diversityMapSource, cartographicBreakoutSource]) {
+      expect(source).toContain('<style src="./cahierMapPanelLabel.css"></style>')
+    }
     expectMapLabelTreatment(blankMapSlotsSource, '.blank-map-slot__number', 'var(--mode-ring)')
     expect(cssRule(blankMapSlotsSource, '.blank-map-slot__number')).toContain('font: var(--text-caption)')
-    expectMapLabelTreatment(diversityMapSource, '.aedar-diversity-loss-map-label', 'var(--mode-ring)')
     expectMapLabelTreatment(diversityMapSource, '.aedar-diversity-loss-map__number', 'var(--mode-ring)')
-    expectMapLabelTreatment(cartographicBreakoutSource, '.map-panel-label', 'var(--mode-ring)')
     expectMapLabelTreatment(cartographicBreakoutSource, '.map-section-number', 'var(--red)')
     expectMapLabelTreatment(cartographicBreakoutSource, '.plate-apparatus-heading > .map-section-number', 'var(--red)')
     expect(cssRule(cartographicBreakoutSource, '.map-section-number')).toContain('letter-spacing: var(--text-caption-tracking)')
