@@ -528,16 +528,23 @@ try {
     assert(w3Visual.waffle.tileBucketOrder.every((bucket, index, buckets) =>
       index === 0 || bucket === buckets[index - 1] || !buckets.slice(0, index).includes(bucket)),
     `Waffle tiles must remain grouped in their existing bucket order at ${width}px`)
-    if (width <= 375) {
+    if (width === 320) {
       const columns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
       const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
-      assert.equal(columns, 12,
-        `Narrow mobile Waffle should use 12 columns with its 24px target floor, got ${columns} (${w3Visual.waffle.gridWidth}px grid)`)
-      assert.equal(rows, 20,
-        `Narrow mobile Waffle should reflow to 20 rows, got ${rows}`)
-      const lastRowY = Math.max(...w3Visual.waffle.tileBoxes.map(({ y }) => y))
-      assert.equal(w3Visual.waffle.tileBoxes.filter(({ y }) => Math.abs(y - lastRowY) < 0.5).length, 7,
-        'With 235 categories and 12 accessible columns, the unavoidable final row contains seven tiles')
+      const rowCounts = new Map()
+      for (const { y } of w3Visual.waffle.tileBoxes) {
+        const row = Math.round(y * 10) / 10
+        rowCounts.set(row, (rowCounts.get(row) ?? 0) + 1)
+      }
+      const tilesPerRow = [...rowCounts.values()]
+      assert.equal(columns, 11,
+        `320px Waffle should use 11 columns with its 24px target floor, got ${columns} (${w3Visual.waffle.gridWidth}px grid)`)
+      assert.equal(rows, 22,
+        `320px Waffle should reflow to 22 rows, got ${rows}`)
+      assert(tilesPerRow.slice(0, -1).every((count) => count === 11),
+        `The first 21 mobile rows must be full: ${JSON.stringify(tilesPerRow)}`)
+      assert.equal(tilesPerRow.at(-1), 4,
+        `With 235 real categories, the 22nd row must contain four tiles (no phantom categories): ${JSON.stringify(tilesPerRow)}`)
     }
     for (const { surface, labels } of w3Visual.labelSurfaces) {
       for (const label of labels) {

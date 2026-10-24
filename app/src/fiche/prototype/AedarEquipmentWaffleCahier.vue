@@ -333,7 +333,7 @@ watch(horizonMinutes, (horizon) => {
     grid-auto-flow: row;
     grid-auto-columns: auto;
     grid-auto-rows: auto;
-    gap: 0;
+    gap: 2px;
     width: min(calc(100% + var(--space-3) + var(--space-3)), 760px);
     margin-inline: calc(0px - var(--space-3));
   }
@@ -355,9 +355,6 @@ watch(horizonMinutes, (horizon) => {
   .aedar-waffle-dialog-horizon { order: 1; flex: 1 1 auto; min-width: 0; }
   .aedar-waffle-search { order: 3; flex-basis: 100%; }
   .aedar-waffle-field-control { justify-content: center; }
-}
-@media (max-width: 375px) {
-  .aedar-waffle-grid { grid-template-columns: repeat(12, minmax(24px, 1fr)); }
 }
 @media (max-width: 520px) { .aedar-waffle-share-table thead th, .aedar-waffle-share-table th, .aedar-waffle-share-table td { padding-inline: var(--space-2); } .aedar-waffle-table-scroll { max-height: 36dvh; } }
 </style>
