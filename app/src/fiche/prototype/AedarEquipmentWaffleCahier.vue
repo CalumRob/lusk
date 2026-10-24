@@ -328,7 +328,7 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle-empty { margin: 0; padding: var(--space-4); color: var(--text-secondary); text-align: center; }
 @media (max-width: 760px) {
   .aedar-waffle-grid {
-    grid-template-columns: repeat(5, 14px);
+    grid-template-columns: repeat(11, 14px);
     grid-template-rows: none;
     grid-auto-flow: row;
     grid-auto-columns: auto;

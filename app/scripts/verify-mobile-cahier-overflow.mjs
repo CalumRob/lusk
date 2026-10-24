@@ -531,22 +531,28 @@ try {
         rowCounts.set(row, (rowCounts.get(row) ?? 0) + 1)
         columnCounts.set(column, (columnCounts.get(column) ?? 0) + 1)
       }
-      assert.equal(columns, 5,
-        `Mobile Waffle must use five columns (not overflow horizontally) at ${width}px, got ${columns}`)
-      assert.equal(rows, 47,
-        `Mobile Waffle must use 47 rows at ${width}px, got ${rows}`)
-      assert([...rowCounts.values()].every((count) => count === 5),
-        `All 47 mobile rows must contain five actual category buttons at ${width}px`)
-      assert([...columnCounts.values()].every((count) => count === 47),
-        `All five mobile columns must contain 47 actual category buttons at ${width}px`)
+      assert.equal(columns, 11,
+        `Mobile Waffle must use eleven columns without horizontal overflow at ${width}px, got ${columns}`)
+      assert.equal(rows, 22,
+        `Mobile Waffle must use 22 rows at ${width}px, got ${rows}`)
+      assert([...rowCounts.values()].slice(0, -1).every((count) => count === 11),
+        `The first 21 mobile rows must contain eleven actual category buttons at ${width}px`)
+      assert.equal([...rowCounts.values()].at(-1), 4,
+        `The final mobile row must contain the four remaining real category buttons at ${width}px`)
+      const columnsWithTwentyTwoTiles = [...columnCounts.values()].filter((count) => count === 22).length
+      const columnsWithTwentyOneTiles = [...columnCounts.values()].filter((count) => count === 21).length
+      assert.equal(columnsWithTwentyTwoTiles, 4,
+        `Four mobile columns must contain 22 actual category buttons at ${width}px`)
+      assert.equal(columnsWithTwentyOneTiles, 7,
+        `Seven mobile columns must contain 21 actual category buttons at ${width}px`)
       assert(Math.abs(w3Visual.waffle.gridCenter - w3Visual.waffle.waffleCenter) <= 1,
-        `Complete mobile Waffle grid must be centered in the available figure width at ${width}px`)
+        `Mobile Waffle grid must be centered in the available figure width at ${width}px`)
       assert(w3Visual.waffle.gridWidth <= w3Visual.waffle.waffleWidth,
-        `Complete mobile Waffle grid must fit inside its figure at ${width}px`)
-      assert(Math.abs(w3Visual.waffle.gridWidth - 78) < 0.1,
-        `Five 14px columns and four 2px gaps must form a 78px mobile grid at ${width}px, got ${w3Visual.waffle.gridWidth}`)
-      assert(Math.abs(w3Visual.waffle.gridHeight - 750) < 0.1,
-        `Forty-seven 14px rows and forty-six 2px gaps must form a 750px mobile grid at ${width}px, got ${w3Visual.waffle.gridHeight}`)
+        `Mobile Waffle grid must fit inside its figure at ${width}px`)
+      assert(Math.abs(w3Visual.waffle.gridWidth - 174) < 0.1,
+        `Eleven 14px columns and ten 2px gaps must form a 174px mobile grid at ${width}px, got ${w3Visual.waffle.gridWidth}`)
+      assert(Math.abs(w3Visual.waffle.gridHeight - 350) < 0.1,
+        `Twenty-two 14px rows and twenty-one 2px gaps must form a 350px mobile grid at ${width}px, got ${w3Visual.waffle.gridHeight}`)
       for (let index = 1; index < w3Visual.waffle.tileBoxes.length; index += 1) {
         const previous = w3Visual.waffle.tileBoxes[index - 1]
         const current = w3Visual.waffle.tileBoxes[index]
