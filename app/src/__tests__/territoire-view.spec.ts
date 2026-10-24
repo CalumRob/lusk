@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { computed } from 'vue'
 
 import TerritoireView from '../views/TerritoireView.vue'
+import BlocProgrammes from '../components/fiche/BlocProgrammes.vue'
 import CahierComparisonNote from '../fiche/prototype/CahierComparisonNote.vue'
 import { OPTIONS_COMPARAISON_KEY, optionsContexteComparaison } from '../fiche/comparisonContext'
 import { varianteDeUrl } from '../fiche/prototype/variantes'
@@ -19,7 +20,7 @@ import {
   metadonneesThemesFixtures,
   territoiresFixture,
 } from '../payload/fixtures'
-import type { Histoire, Indicateur, Theme } from '../payload/types'
+import type { Histoire, Indicateur, Payload, Theme } from '../payload/types'
 import {
   chargerModeleTerritoire,
   TERRITORY_READ_MODEL_CHARGER_KEY,
@@ -275,10 +276,18 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   }, 20000)
 
-  it('retries the mounted Programmes comparison after legacy focal facts recover from a failed pair', async () => {
+  it('keeps the measured Programmes year visible when a legacy no-record axis follows it', async () => {
     const model = modeleAvecContextesComparaison()
     const legacy = nativeResources('programmes').find((resource) =>
       resource.resource_id === 'subventions_annuelles')!
+    const producerMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/theme_programmes.json'), 'utf8'))
+    // The real territory loader reconciles this canonical catalogue over the
+    // snapshot's older per-territory metadata before semantic acquisition.
+    model.themes.programmes!.metadata.indicator_pages =
+      validerThemeMetadata(producerMetadata, 'theme_programmes.json').indicator_pages
+    const sourceId = legacy.sources[0]!
+    const descriptorVintageId = producerMetadata.source_records[sourceId].vintages[0].id
     const requests: Array<Array<Record<string, any>>> = []
     const focalReads: Array<Record<string, any>> = []
     let successfulComparison: Record<string, any> | undefined
@@ -297,7 +306,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         }
         if (items.every((item) => item.intent.kind === 'facts')) {
           return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
-            const sourceId = legacy.sources[0]!
             const data = { resource: legacy.resource_id, target: item.target,
               publication_id: 'legacy-series-v1',
               territory: { id: item.target.id, type: item.target.type, name: model.territory.nom },
@@ -308,9 +316,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
                 { axis: '2024', status: 'measured', observation_period: '2024', value: 230,
                   source_id: sourceId, vintage_id: 'api-vintage-2027', source_version: 'api-v7-updated',
                   source_reference_date: null, source_publication_date: '2027-09-01' },
-                { axis: '2025', status: 'measured', observation_period: '2025', value: 73_100,
-                  source_id: sourceId, vintage_id: 'api-vintage-2028', source_version: 'api-v8-updated',
-                  source_reference_date: '2028-01-01', source_publication_date: null },
+                { axis: '2025', status: 'missing', observation_period: null, value: null,
+                  source_id: sourceId, vintage_id: descriptorVintageId, source_version: null,
+                  source_reference_date: null, source_publication_date: null },
               ], availability: 'incomplete' }
             focalReads.push(data)
             return { id: item.id, resource: item.resource, data }
@@ -343,15 +351,26 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
     await flushPromises()
 
-    expect(requests.map((items) => items.map((item) => item.intent.kind))).toEqual([
-      ['facts', 'fixed_comparison'], ['facts'], ['fixed_comparison'],
-    ])
     expect(focalReads[0]).not.toHaveProperty('dataset_id')
     expect(focalReads[0]).not.toHaveProperty('reference_content_version')
     expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
-    expect(wrapper.find('.subvention-total').text()).toContain('73')
-    expect(wrapper.find('.subvention-total').text()).toContain('en 2025')
+    expect(wrapper.find('.subvention-total').text()).toContain('230 €')
+    expect(wrapper.find('.subvention-total').text()).toContain('en 2024')
+    expect(wrapper.find('.subvention-total').text()).not.toMatch(/(^|\s)0\s*€/)
     expect(wrapper.find('.subvention-vintage').text()).toContain('Région Bretagne')
+    const renderedPayload = wrapper.findComponent(BlocProgrammes).props('payload') as Payload
+    const renderedAnnual = renderedPayload.indicateurs.filter((row) => row.territoire === '22001' &&
+      row.theme === 'programmes' && row.key === 'subventions_annuelles')
+    expect(renderedAnnual.map((row) => [row.dimension, row.value, row.observation_status])).toEqual([
+      ['2024', 230, 'measured'], ['2025', null, 'missing'],
+    ])
+    expect(renderedAnnual[1]).toMatchObject({ source_id: sourceId, vintage_id: descriptorVintageId,
+      source_version: null, source_reference_date: null, source_publication_date: null,
+      vintage_version: null, vintage_date_reference: null, vintage_date_publication: null })
+    expect(renderedAnnual[1]).not.toHaveProperty('fact_sources')
+    expect(requests.map((items) => items.map((item) => item.intent.kind))).toEqual([
+      ['facts', 'fixed_comparison'], ['facts'], ['fixed_comparison'],
+    ])
 
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()

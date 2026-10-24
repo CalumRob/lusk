@@ -524,13 +524,14 @@ function normalizeNativeSources(value: unknown): Row[] {
   return value.filter(isRecord).map((source) => ({ ...source, name: sourceName(source) }))
 }
 
-export type ThemeSourceMetadata = Pick<ThemeMetadata, 'sources' | 'source_records'>
+export type ThemeSourceMetadata = Pick<ThemeMetadata, 'sources' | 'source_records' | 'indicator_pages'>
 
 const OWNED_SERIES_FACT_MARKERS = ['dataset_id', 'theme_id', 'axis_values', 'axis_numeric_values',
   'content_version', 'reference_content_version', 'published_at', 'observation_period_kind',
   'comparison_contract', 'scope_series', 'named_references', 'context'] as const
 const LEGACY_SERIES_POINT_FIELDS = ['source_id', 'vintage_id', 'source_version',
   'source_reference_date', 'source_publication_date'] as const
+const LEGACY_NO_RECORD_SOURCE_NAME = Symbol('legacy-no-record-source-name')
 
 function hasOwn(value: Row, key: string): boolean {
   return Object.prototype.hasOwnProperty.call(value, key)
@@ -570,12 +571,56 @@ function boundLegacySourceLabel(read: SemanticThemeRead, themeMetadata: ThemeSou
 }
 
 /** Convert only the legacy point envelope; values and all clocks remain API-owned. */
+interface LegacySeriesPointSources {
+  sources: Row[]
+  noRecordSourceName?: string
+}
+
 function legacySeriesPointSources(point: Row, read: SemanticThemeRead,
-  themeMetadata: ThemeSourceMetadata | undefined): Row[] {
+  themeMetadata: ThemeSourceMetadata | undefined): LegacySeriesPointSources {
   if (!LEGACY_SERIES_POINT_FIELDS.every((field) => hasOwn(point, field)) ||
-      !texteNonVide(point.source_id) || !texteNonVide(point.vintage_id) || !texteNonVide(point.source_version) ||
+      !texteNonVide(point.source_id) || !texteNonVide(point.vintage_id) ||
+      !(point.source_version === null || texteNonVide(point.source_version)) ||
       !(point.source_reference_date === null || text(point.source_reference_date)) ||
       !(point.source_publication_date === null || text(point.source_publication_date))) {
+    throw new Error(`Provenance de série legacy invalide : ${String(point.axis)}`)
+  }
+
+  // source_vintage.version is NOT NULL. In the legacy focal API projection a
+  // null version and null dates therefore identify its descriptor-only point
+  // (row=None), not an observed point with relaxed provenance.
+  const noRecordPoint = point.status === 'missing' && point.value === null &&
+    point.observation_period === null && point.source_version === null &&
+    point.source_reference_date === null && point.source_publication_date === null
+  if (noRecordPoint) {
+    const data = read.data
+    const declaration = isRecord(read.declaration) ? read.declaration : null
+    const indicatorId = data.indicator_id
+    const absenceContract = texteNonVide(indicatorId)
+      ? themeMetadata?.indicator_pages?.[indicatorId] : undefined
+    if (!texteNonVide(indicatorId) || declaration?.indicator_id !== indicatorId ||
+        absenceContract?.indicator !== indicatorId ||
+        absenceContract.completeness !== 'may_be_missing' ||
+        absenceContract.absence_semantics !== 'no_record' ||
+        data.completeness !== absenceContract.completeness || data.availability !== 'incomplete') {
+      throw new Error(`Absence de série legacy non déclarée : ${String(point.axis)}`)
+    }
+    if (hasOwn(point, 'provenance') && rows(point.provenance, 'legacy_series.provenance').length !== 0) {
+      throw new Error(`Provenance observée sur un axe sans ligne : ${String(point.axis)}`)
+    }
+    const sourceId = point.source_id
+    const label = boundLegacySourceLabel(read, themeMetadata, sourceId)
+    const sourceRecord = themeMetadata?.source_records?.[sourceId]
+    const vintages = isRecord(sourceRecord) && Array.isArray(sourceRecord.vintages)
+      ? sourceRecord.vintages.filter(isRecord).map((vintage) => vintage.id).filter(texteNonVide)
+      : []
+    if (!vintages.includes(point.vintage_id)) {
+      throw new Error(`Millésime de série non déclaré pour la ressource ${read.resource} : ${point.vintage_id}`)
+    }
+    return { sources: [], noRecordSourceName: label }
+  }
+
+  if (!texteNonVide(point.source_version)) {
     throw new Error(`Provenance de série legacy invalide : ${String(point.axis)}`)
   }
 
@@ -603,11 +648,12 @@ function legacySeriesPointSources(point: Row, read: SemanticThemeRead,
     throw new Error(`Libellé API de provenance invalide : ${String(point.axis)}`)
   }
   const label = hasApiLabel ? apiLabel as string : boundLegacySourceLabel(read, themeMetadata, sourceId)
-  return [{ ...(source ?? {}), source_id: sourceId, vintage_id: point.vintage_id,
+  const normalizedSource = { ...(source ?? {}), source_id: sourceId, vintage_id: point.vintage_id,
     source_name: label, name: label, version: point.source_version,
     reference_date: point.source_reference_date, publication_date: point.source_publication_date,
     source_version: point.source_version, source_reference_date: point.source_reference_date,
-    source_publication_date: point.source_publication_date }]
+    source_publication_date: point.source_publication_date }
+  return { sources: [normalizedSource] }
 }
 
 function dualShapeScalarObservation(data: Row, resource: string,
@@ -753,9 +799,13 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
       const series: Row = { ...data, indicator_id: resource,
         axis_kind: data.axis_kind ?? declaredAxis,
         axis_values: axisValues,
-        points: points.map((point) => ({ ...point, provenance: legacySeries
-          ? legacySeriesPointSources(point, read, themeMetadata)
-          : normalizeNativeSources(point.provenance) })) }
+        points: points.map((point) => {
+          if (!legacySeries) return { ...point, provenance: normalizeNativeSources(point.provenance) }
+          const normalized = legacySeriesPointSources(point, read, themeMetadata)
+          return { ...point, provenance: normalized.sources,
+            ...(normalized.noRecordSourceName
+              ? { [LEGACY_NO_RECORD_SOURCE_NAME]: normalized.noRecordSourceName } : {}) }
+        }) }
       if (resource === 'subventions_annuelles' || resource === 'prix_m2') ownedSeries.push(series)
       else {
         const axisValues = Array.isArray(data.axis_values) ? data.axis_values : []
@@ -1132,15 +1182,34 @@ function programmesRows(response: Row, target: { territoire: string; type: Terri
           !(point.status === 'measured' ? finite(point.value) : point.value === null)) {
         throw new Error('Point annuel Programmes invalide')
       }
+      const noRecordSourceName = (point as Row & { [LEGACY_NO_RECORD_SOURCE_NAME]?: string })[
+        LEGACY_NO_RECORD_SOURCE_NAME]
+      const noRecord = texteNonVide(noRecordSourceName)
+      if (noRecord && (point.status !== 'missing' || point.value !== null ||
+          point.source_version !== null || point.source_reference_date !== null ||
+          point.source_publication_date !== null || !texteNonVide(point.source_id) ||
+          !texteNonVide(point.vintage_id))) {
+        throw new Error(`Sentinelle d’absence de série Programmes invalide : ${point.axis}`)
+      }
       const pointSources = rows(point.provenance, 'series provenance')
-      const vintage = vintageSql(pointSources, point.axis)
-      const pointSource = pointSources[0]!
+      if (noRecord && pointSources.length !== 0) {
+        throw new Error(`Provenance observée sur un axe Programmes sans ligne : ${point.axis}`)
+      }
+      const vintage = noRecord
+        ? { vintage_source: noRecordSourceName as string, vintage_version: null,
+          vintage_date_reference: point.source_reference_date as null,
+          vintage_date_publication: point.source_publication_date as null }
+        : vintageSql(pointSources, point.axis)
+      const pointSource = noRecord ? null : pointSources[0]!
       result.push({ territoire: target.territoire, type: target.type, theme: 'programmes', key: 'subventions_annuelles',
         detail: null, dimension: point.axis, value: point.status === 'measured' ? point.value as number : null,
         unit: series.unit, rider: point.status === 'measured' ? null : text(point.missing_reason) ? point.missing_reason : String(point.status),
         observation_status: point.status, observation_period: text(point.observation_period) ? point.observation_period : null,
-        source_id: texteNonVide(pointSource.source_id) ? pointSource.source_id : null,
-        vintage_id: texteNonVide(pointSource.vintage_id) ? pointSource.vintage_id : null,
+        source_id: noRecord ? point.source_id as string : texteNonVide(pointSource?.source_id) ? pointSource.source_id : null,
+        vintage_id: noRecord ? point.vintage_id as string : texteNonVide(pointSource?.vintage_id) ? pointSource.vintage_id : null,
+        ...(noRecord ? { source_version: point.source_version as null,
+          source_reference_date: point.source_reference_date as null,
+          source_publication_date: point.source_publication_date as null } : {}),
         ...vintage,
         rang_epci: null, rang_epci_n: null,
         rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null })

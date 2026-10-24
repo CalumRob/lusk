@@ -477,6 +477,74 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       .toBe(sourceRecord.dataset)
   })
 
+  it('keeps a declared no-record series axis without inventing an observation clock', () => {
+    const target = { kind: 'territory' as const, type: 'commune' as const, id: cible.territoire }
+    const resource = nativeResources('programmes').find((item) => item.resource_id === 'subventions_annuelles')!
+    const producerMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../pipeline/inst/extdata/theme-metadata/theme_programmes.json'), 'utf8'))
+    const sourceId = resource.sources[0]!
+    const sourceRecord = producerMetadata.source_records[sourceId]
+    expect(producerMetadata.indicator_pages[resource.indicator_id]).toMatchObject({
+      completeness: 'may_be_missing', absence_semantics: 'no_record',
+    })
+    const descriptorVintageId = sourceRecord.vintages[0].id
+    const displayLabel = sourceRecord.publisher ?? sourceRecord.dataset
+    const reads: any = [{ resource: resource.resource_id, shapes: resource.shapes, declaration: resource,
+      data: { resource: resource.resource_id, target, publication_id: 'legacy-series-no-record-v1',
+        territory: { id: target.id, type: target.type, name: 'Commune 35238' },
+        indicator_id: resource.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+        label: 'Subventions annuelles', unit: '€', direction: 'none',
+        descriptor_version: 'legacy-series-no-record-desc-v1', comparison_point: null,
+        points: [
+          { axis: '2024', status: 'measured', observation_period: '2024', value: 230,
+            source_id: sourceId, vintage_id: 'api-observed-vintage-2024', source_version: 'api-v4',
+            source_reference_date: null, source_publication_date: '2025-01-10' },
+          { axis: '2025', status: 'missing', observation_period: null, value: null,
+            source_id: sourceId, vintage_id: descriptorVintageId, source_version: null,
+            source_reference_date: null, source_publication_date: null },
+        ], availability: 'incomplete' } }]
+
+    const annual = themeFactsRowsFromSemantic('programmes', { resource_reads: reads },
+      { territoire: target.id, type: target.type }, {}, producerMetadata).indicateurs
+      .filter((row) => row.key === 'subventions_annuelles')
+    expect(annual.map((row) => [row.dimension, row.value, row.observation_status])).toEqual([
+      ['2024', 230, 'measured'], ['2025', null, 'missing'],
+    ])
+    expect(annual[0]).toMatchObject({ vintage_source: displayLabel, vintage_version: 'api-v4',
+      vintage_date_reference: null, vintage_date_publication: '2025-01-10',
+      fact_sources: [expect.objectContaining({ version: 'api-v4' })] })
+    expect(annual[1]).toMatchObject({ dimension: '2025', source_id: sourceId,
+      vintage_id: descriptorVintageId, source_version: null, source_reference_date: null,
+      source_publication_date: null, vintage_source: displayLabel, vintage_version: null,
+      vintage_date_reference: null, vintage_date_publication: null })
+    expect(annual[1]).not.toHaveProperty('fact_sources')
+
+    const measuredWithoutVersion = structuredClone(reads)
+    measuredWithoutVersion[0].data.points[0].source_version = null
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: measuredWithoutVersion },
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Provenance de série legacy invalide/)
+
+    const malformedNoRecordClock = structuredClone(reads)
+    malformedNoRecordClock[0].data.points[1].source_publication_date = '2025-01-10'
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: malformedNoRecordClock },
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Provenance de série legacy invalide/)
+
+    const unboundNoRecordSource = structuredClone(reads)
+    unboundNoRecordSource[0].data.points[1].source_id = 'cohort-source'
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: unboundNoRecordSource },
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Source de série non déclarée/)
+
+    const unboundNoRecordVintage = structuredClone(reads)
+    unboundNoRecordVintage[0].data.points[1].vintage_id = 'unknown-descriptor-vintage'
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: unboundNoRecordVintage },
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Millésime de série non déclaré/)
+
+    const undeclaredAbsence = structuredClone(producerMetadata)
+    undeclaredAbsence.indicator_pages[resource.indicator_id].absence_semantics = 'unavailable'
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: reads },
+      { territoire: target.id, type: target.type }, {}, undeclaredAbsence)).toThrow(/Absence de série legacy non déclarée/)
+  })
+
   it('does not downgrade an owned ordered series with missing nested provenance to the legacy contract', () => {
     const resource = nativeResources('habitat').find((item) => item.resource_id === 'prix_m2')!
     const data = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: cible.territoire },

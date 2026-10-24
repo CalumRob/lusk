@@ -14,6 +14,7 @@ import type {
 } from './types'
 import { THEMES_CANONIQUES } from './types'
 import { scalarCohortEnabled } from './scalarCohort'
+import { themeAcquisitionEnabled } from './themeAcquisition'
 import {
   PayloadError,
   validerDistributionAccesBatiments,
@@ -631,14 +632,15 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
     throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
   }
   const model = validerModeleTerritoire(raw, file, { type, territoire }, { requireAllThemes: true })
-  // Registrations are owned by the canonical theme catalogue, and may postdate
-  // the atomic territory snapshot. Reconcile only this readiness metadata here.
-  if (scalarCohortEnabled(import.meta.env)) {
+  // Theme contracts are producer-owned and may postdate the atomic territory
+  // snapshot. Reconcile them before either semantic fact or scalar acquisition.
+  const scalarApiEnabled = scalarCohortEnabled(import.meta.env)
+  if (scalarApiEnabled || themeAcquisitionEnabled(import.meta.env)) {
     await Promise.all(Object.values(model.themes).filter((theme) => theme !== undefined).map(async (theme) => {
       const metadataUrl = `/data/theme_${theme.theme}.json`
       let metadataResponse: Response
       try { metadataResponse = await fetch(metadataUrl) }
-      catch (cause) { throw new PayloadError('fetch', metadataUrl, `Impossible de charger les contrats scalaires : ${cause instanceof Error ? cause.message : String(cause)}`) }
+      catch (cause) { throw new PayloadError('fetch', metadataUrl, `Impossible de charger le catalogue thématique : ${cause instanceof Error ? cause.message : String(cause)}`) }
       if (!metadataResponse.ok) throw new PayloadError('fetch', metadataUrl, `Réponse HTTP ${metadataResponse.status} pour ${metadataUrl}`)
       let catalogue: unknown
       try { catalogue = await metadataResponse.json() }
@@ -653,10 +655,14 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
       // remain current; reconcile contracts before API validation/rendering.
       theme.metadata.subgroups = canonicalMetadata.subgroups
       theme.metadata.indicator_pages = canonicalMetadata.indicator_pages
-      if (catalogue && typeof catalogue === 'object' && 'scalar_contracts' in catalogue) {
-        theme.metadata.scalar_contracts = catalogue.scalar_contracts
-      } else delete theme.metadata.scalar_contracts
+      if (scalarApiEnabled) {
+        if (catalogue && typeof catalogue === 'object' && 'scalar_contracts' in catalogue) {
+          theme.metadata.scalar_contracts = catalogue.scalar_contracts
+        } else delete theme.metadata.scalar_contracts
+      }
     }))
+  }
+  if (scalarApiEnabled) {
     const referenceUrl = '/data/territoires.json'
     let referenceResponse: Response
     try { referenceResponse = await fetch(referenceUrl) }

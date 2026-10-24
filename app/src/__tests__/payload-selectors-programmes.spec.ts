@@ -12,7 +12,7 @@ import {
   territoiresLadderFixture,
   vintagesFixture as vintagesFrais,
 } from '../payload/fixtures'
-import { programmesPourTerritoire } from '../payload/selectors'
+import { formaterVintage, programmesPourTerritoire } from '../payload/selectors'
 import type { Indicateur, MembreProgramme, Payload, SubventionProgramme } from '../payload/types'
 
 /**
@@ -417,6 +417,11 @@ describe('programmesPourTerritoire — les subventions', () => {
     expect(programmesPourTerritoire(payloadDemographie, '29').subventions).toBeNull()
     // une commune avec des badges mais sans subventions : la figure est absente
     expect(programmesPourTerritoire(payloadDemographie, '29002').subventions).toBeNull()
+  })
+
+  it('ne formate pas de millésime pour un axe sans ligne source', () => {
+    expect(formaterVintage({ vintage_source: 'Région Bretagne', vintage_version: null,
+      vintage_date_reference: null, vintage_date_publication: null })).toBe('')
   })
 
   it('calcule la part de contexte d\u2019une commune — son total dans celui de SON EPCI (même année de référence)', () => {

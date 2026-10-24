@@ -89,6 +89,34 @@ describe('le modèle de lecture d’un territoire', () => {
     }
   })
 
+  it('reconciles canonical producer absence semantics before default theme acquisition', async () => {
+    const calls: string[] = []
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (!url.startsWith('/data/')) throw new Error(`Unexpected request: ${url}`)
+      const file = url.slice('/data/'.length)
+      const body = file === 'modeles-lecture/territoires/commune/22001.json'
+        ? modelePublie22001
+        : JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/${file}`), 'utf8'))
+      return new Response(JSON.stringify(body), { status: 200 })
+    }))
+
+    try {
+      const model = await chargerModeleTerritoire('commune', target.territoire)
+      expect(calls).toContain('/data/theme_programmes.json')
+      expect(calls).not.toContain('/data/territoires.json')
+      expect(model.themes.programmes?.metadata.indicator_pages?.subventions_annuelles).toMatchObject({
+        completeness: 'may_be_missing', absence_semantics: 'no_record',
+      })
+    } finally {
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('porte les faits Mobilité et ses preuves auxiliaires dans une unité atomique', () => {
     const modele = validerModeleTerritoire(
       {

@@ -694,10 +694,11 @@ function formaterDateCourt(iso: string): string {
  */
 export function formaterVintage(vintage: {
   vintage_source: string
-  vintage_version: string
+  vintage_version: string | null
   vintage_date_reference: string | null
   vintage_date_publication: string | null
 }): string {
+  if (vintage.vintage_version === null) return ''
   const reference = vintage.vintage_date_reference
     ? `réf. ${formaterDateCourt(vintage.vintage_date_reference)} · `
     : ''
@@ -1288,9 +1289,9 @@ export function programmesPourTerritoire(payload: Payload, territoire: string): 
   const membres: MembreProgramme[] = payload.indicateurs
     .filter((l) => l.theme === 'programmes' && l.key === CLE_COUVERTURE_PROGRAMMES)
     .map((ligne) => {
-      if (ligne.vintage_date_reference === null) {
+      if (ligne.vintage_date_reference === null || ligne.vintage_version === null) {
         throw new Error(
-          `Fait « couverture_programmes » de « ${ligne.territoire} » sans date de référence — la dérive ne rend jamais.`,
+          `Fait « couverture_programmes » de « ${ligne.territoire} » sans horloge source — la dérive ne rend jamais.`,
         )
       }
       return {
@@ -1317,12 +1318,13 @@ export function programmesPourTerritoire(payload: Payload, territoire: string): 
   )
 
   let subventionsFiche: SubventionsFiche | null = null
-  if (annuelles.length > 0) {
-    // L'année de référence : la plus récente présente — le total et la part
-    // de contexte ne mélangent JAMAIS deux millésimes
-    const annee = Math.max(...annuelles.map((l) => Number(l.dimension)))
-    const ligneAnnee = annuelles.find((l) => Number(l.dimension) === annee)!
-    const total = ligneAnnee.value ?? 0
+  const annuellesMesurees = annuelles.filter((ligne) => ligne.value !== null)
+  if (annuellesMesurees.length > 0) {
+    // Une année sans ligne est un axe manquant, jamais un total de 0. La fiche
+    // montre la dernière observation mesurée et garde l'axe absent dans les faits.
+    const annee = Math.max(...annuellesMesurees.map((l) => Number(l.dimension)))
+    const ligneAnnee = annuellesMesurees.find((l) => Number(l.dimension) === annee)!
+    const total = ligneAnnee.value!
     // la ventilation COMPLÈTE du pipeline, triée ici par montant décroissant
     // (le libellé en départage) — le top-5 + la révélation sont l'affaire du
     // composant, le sélecteur reste pur (issue #305)
