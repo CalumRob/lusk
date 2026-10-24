@@ -297,13 +297,21 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         }
         if (items.every((item) => item.intent.kind === 'facts')) {
           return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
+            const sourceId = legacy.sources[0]!
             const data = { resource: legacy.resource_id, target: item.target,
               publication_id: 'legacy-series-v1',
               territory: { id: item.target.id, type: item.target.type, name: model.territory.nom },
               indicator_id: legacy.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
               label: legacy.label, unit: legacy.unit, direction: legacy.direction,
               descriptor_version: 'legacy-series-descriptor-v1', comparison_point: null,
-              points: [], availability: 'no_record' }
+              points: [
+                { axis: '2024', status: 'measured', observation_period: '2024', value: 230,
+                  source_id: sourceId, vintage_id: 'api-vintage-2027', source_version: 'api-v7-updated',
+                  source_reference_date: null, source_publication_date: '2027-09-01' },
+                { axis: '2025', status: 'measured', observation_period: '2025', value: 73_100,
+                  source_id: sourceId, vintage_id: 'api-vintage-2028', source_version: 'api-v8-updated',
+                  source_reference_date: '2028-01-01', source_publication_date: null },
+              ], availability: 'incomplete' }
             focalReads.push(data)
             return { id: item.id, resource: item.resource, data }
           }) }))
@@ -341,6 +349,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(focalReads[0]).not.toHaveProperty('dataset_id')
     expect(focalReads[0]).not.toHaveProperty('reference_content_version')
     expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
+    expect(wrapper.find('.subvention-total').text()).toContain('73')
+    expect(wrapper.find('.subvention-total').text()).toContain('en 2025')
+    expect(wrapper.find('.subvention-vintage').text()).toContain('Région Bretagne')
 
     await wrapper.get('[role="alert"] button').trigger('click')
     await flushPromises()

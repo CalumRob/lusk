@@ -394,6 +394,100 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(adapted.indicateurs.every((row) => row.fact_sources?.[0]?.source === 'DPE source')).toBe(true)
   })
 
+  it('fails closed when a legacy ordered-series point source is not bound to the producer declaration', () => {
+    const target = { kind: 'territory' as const, type: 'commune' as const, id: 'cohort-c1' }
+    const resource = nativeResources('programmes').find((item) => item.resource_id === 'subventions_annuelles')!
+    const producerMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../pipeline/inst/extdata/theme-metadata/theme_programmes.json'), 'utf8'))
+    // These fields and clocks are seeded by the guarded synthetic SQL fixture
+    // in test_cohort_facts_http.py; the API reader projects them flat per point.
+    const sourceClock = { source_id: 'cohort-source', vintage_id: 'cohort-v1',
+      source_version: '2026', source_reference_date: '2026-01-01',
+      source_publication_date: '2026-01-02' }
+    const reads = [{ resource: resource.resource_id, shapes: resource.shapes, declaration: resource,
+      data: { resource: resource.resource_id, target, publication_id: 'cohort-legacy-series-v1',
+        territory: { id: target.id, type: target.type, name: 'Commune 1' },
+        indicator_id: resource.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+        label: 'Subventions annuelles', unit: '€', direction: 'none',
+        descriptor_version: 'cohort-legacy-series-desc-v1', comparison_point: null,
+        points: [
+          { axis: '2024', status: 'measured', observation_period: '2025', ...sourceClock, value: 230 },
+          { axis: '2025', status: 'missing', observation_period: '2025', ...sourceClock, value: null },
+        ], availability: 'incomplete' } }]
+
+    expect(resource.sources).not.toContain(sourceClock.source_id)
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: reads } as any,
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/source.*déclarée/i)
+  })
+
+  it('projects producer-bound legacy series provenance using only its API clocks and point status', () => {
+    const target = { kind: 'territory' as const, type: 'commune' as const, id: cible.territoire }
+    const resource = nativeResources('programmes').find((item) => item.resource_id === 'subventions_annuelles')!
+    const producerMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../pipeline/inst/extdata/theme-metadata/theme_programmes.json'), 'utf8'))
+    const sourceId = resource.sources[0]!
+    const sourceRecord = producerMetadata.source_records[sourceId]
+    const displayLabel = sourceRecord.publisher ?? sourceRecord.dataset
+    const point = (axis: string, status: 'measured' | 'missing', value: number | null,
+      provenance: { vintage_id: string; source_version: string; source_reference_date: string | null;
+        source_publication_date: string | null }) => ({ axis, status, observation_period: '2025', value,
+      source_id: sourceId, ...provenance })
+    const reads = [{ resource: resource.resource_id, shapes: resource.shapes, declaration: resource,
+      data: { resource: resource.resource_id, target, publication_id: 'legacy-series-api-v7',
+        territory: { id: target.id, type: target.type, name: 'Commune 35238' },
+        indicator_id: resource.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+        label: 'Subventions annuelles', unit: '€', direction: 'none',
+        descriptor_version: 'legacy-series-descriptor-v7', comparison_point: null,
+        points: [
+          point('2024', 'measured', 230, { vintage_id: 'api-vintage-2027', source_version: 'api-v7-updated',
+            source_reference_date: null, source_publication_date: '2027-09-01' }),
+          point('2025', 'missing', null, { vintage_id: 'api-vintage-2028', source_version: 'api-v8-updated',
+            source_reference_date: '2028-01-01', source_publication_date: null }),
+        ], availability: 'incomplete' } }]
+
+    const adapted = themeFactsRowsFromSemantic('programmes', { resource_reads: reads } as any,
+      { territoire: target.id, type: target.type }, {}, producerMetadata)
+    const annual = adapted.indicateurs.filter((row) => row.key === 'subventions_annuelles')
+    expect(annual.map((row) => [row.dimension, row.value, row.observation_status])).toEqual([
+      ['2024', 230, 'measured'], ['2025', null, 'missing'],
+    ])
+    expect(annual[0]).toMatchObject({ source_id: sourceId, vintage_id: 'api-vintage-2027',
+      vintage_source: displayLabel, vintage_version: 'api-v7-updated',
+      vintage_date_reference: null, vintage_date_publication: '2027-09-01',
+      fact_sources: [expect.objectContaining({ sourceId, source: displayLabel, version: 'api-v7-updated',
+        referenceDate: null, publicationDate: '2027-09-01', lineage: expect.objectContaining({
+          source_id: sourceId, vintage_id: 'api-vintage-2027', source_version: 'api-v7-updated',
+          source_reference_date: null, source_publication_date: '2027-09-01',
+        }) })] })
+    expect(annual[1]).toMatchObject({ source_id: sourceId, vintage_id: 'api-vintage-2028',
+      vintage_source: displayLabel, vintage_version: 'api-v8-updated',
+      vintage_date_reference: '2028-01-01', vintage_date_publication: null,
+      fact_sources: [expect.objectContaining({ lineage: expect.objectContaining({
+        vintage_id: 'api-vintage-2028', source_version: 'api-v8-updated',
+        source_reference_date: '2028-01-01', source_publication_date: null,
+      }) })] })
+
+    const apiNamedReads: any = structuredClone(reads)
+    apiNamedReads[0].data.points[0].provenance = [{ source_id: sourceId, vintage_id: 'api-vintage-2027',
+      source_name: sourceRecord.dataset, version: 'api-v7-updated', reference_date: null,
+      publication_date: '2027-09-01' }]
+    const apiNamedRows = themeFactsRowsFromSemantic('programmes', { resource_reads: apiNamedReads },
+      { territoire: target.id, type: target.type }, {}, producerMetadata).indicateurs
+    expect(apiNamedRows.find((row) => row.key === 'subventions_annuelles' && row.dimension === '2024')?.vintage_source)
+      .toBe(sourceRecord.dataset)
+  })
+
+  it('does not downgrade an owned ordered series with missing nested provenance to the legacy contract', () => {
+    const resource = nativeResources('habitat').find((item) => item.resource_id === 'prix_m2')!
+    const data = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: cible.territoire },
+      intent: { kind: 'facts' } }, resource)
+    delete data.points[0]!.provenance
+    expect(data).toHaveProperty('content_version')
+    expect(() => themeFactsRowsFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration: resource, data }] } as any, cible))
+      .toThrow(/Provenance SQL du thème invalide/)
+  })
+
   it('retains the named-reference target and joins its publication to the matching owner series', () => {
     const source = [{ source_id: 'gtfs', vintage_id: '2026', source_name: 'GTFS source', version: '2026',
       reference_date: null, publication_date: null }]

@@ -529,7 +529,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
       const rows = themeFactsRowsFromSemantic(themeActif, acquired.focal, { territoire: code, type: target.type }, {
         epci: target.epci, region: payloadModele.value?.territoires.find((item) => item.type === 'region')?.territoire ?? null,
-      })
+      }, payloadModele.value?.themeMetadata?.[themeActif])
        const comparison = semanticComparisonForTheme(acquired.comparisons.get('omitted'), {
          target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
          territories: model.cohortTerritories,
