@@ -678,6 +678,7 @@ async function inspect(mode: ModeKey): Promise<void> {
   .map-breakout--c .plate { grid-template-areas: 'header' 'title' 'car' 'walk' 'bike' 'keys' 'apparatus'; }
   .plate-apparatus { padding-inline: 0; }
   .map-breakout--c .map-panel { max-width: 520px; margin-inline: auto; }
+  .map-breakout .map-panel-label { justify-content: center; margin-inline: auto; text-align: center; }
   .map-breakout--c .plate-keys { grid-template-columns: 1fr; }
   .plate-switcher { right: 50%; transform: translateX(50%); }
 }

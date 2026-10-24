@@ -77,14 +77,6 @@ function chipStyle(key: string): Record<string, string> | undefined {
   cursor: pointer;
 }
 
-.cahier-figure-legend-action--chip {
-  min-height: 36px;
-  border-color: transparent;
-  border-radius: var(--radius-full);
-  background-color: var(--cahier-figure-legend-chip-fill);
-  color: var(--cahier-figure-legend-chip-ink);
-}
-
 .cahier-figure-legend-count { font-variant-numeric: tabular-nums; }
 
 .cahier-figure-legend-toggle:hover,
@@ -102,15 +94,27 @@ function chipStyle(key: string): Record<string, string> | undefined {
 }
 
 .cahier-figure-legend-action:hover { background: var(--surface-tertiary); }
-.cahier-figure-legend-action--chip:hover {
-  background-color: var(--cahier-figure-legend-chip-fill);
-  outline: 2px solid currentColor;
-  outline-offset: 2px;
-}
 .cahier-figure-legend-action:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
-.cahier-figure-legend-action--chip:active {
-  border-color: currentColor;
-  transform: scale(0.96);
+@media (max-width: 760px) {
+  .cahier-figure-legend-action--chip {
+    min-height: 36px;
+    border-color: transparent;
+    border-radius: var(--radius-full);
+    background-color: var(--cahier-figure-legend-chip-fill);
+    color: var(--cahier-figure-legend-chip-ink);
+  }
+  .cahier-figure-legend-action--chip .cahier-figure-legend-icon {
+    color: var(--cahier-figure-legend-chip-ink) !important;
+  }
+  .cahier-figure-legend-action--chip:hover {
+    background-color: var(--cahier-figure-legend-chip-fill);
+    outline: 2px solid currentColor;
+    outline-offset: 2px;
+  }
+  .cahier-figure-legend-action--chip:active {
+    border-color: currentColor;
+    transform: scale(0.96);
+  }
 }
 </style>
 <style>

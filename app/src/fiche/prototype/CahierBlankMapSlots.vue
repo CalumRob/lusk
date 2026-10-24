@@ -182,5 +182,5 @@ function markInspectionUnavailable(): void {
 .blank-map-slot__number { position: absolute; top: 9px; left: 11px; color: var(--mode-ring); font: var(--text-caption); font-variant-numeric: tabular-nums; }
 .blank-map-slot__state { font: var(--text-caption); font-weight: 700; }
 .blank-map-slot__territory, .blank-map-slot__horizon { color: var(--muted); font: var(--text-caption); }
-@media (max-width: 760px) { .blank-map-slots__grid, .blank-map-slots__legend-grid { grid-template-columns: 1fr; } .blank-map-slot { width: min(100%, 520px); } }
+@media (max-width: 760px) { .blank-map-slots__grid, .blank-map-slots__legend-grid { grid-template-columns: 1fr; } .blank-map-slot { width: min(100%, 520px); } .map-panel-label { margin-inline: auto; } }
 </style>

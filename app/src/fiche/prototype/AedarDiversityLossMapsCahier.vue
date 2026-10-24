@@ -187,4 +187,5 @@ function mapStateLabel(map: AedarDiversityLossMapEvidence): string {
   .aedar-diversity-loss__legend { grid-column: 1; }
   .aedar-diversity-loss__comparison-copy { grid-column: auto; }
 }
+@media (max-width: 760px) { .aedar-diversity-loss-map-label { margin-inline: auto; } }
 </style>

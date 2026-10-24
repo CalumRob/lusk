@@ -4,14 +4,8 @@ import { resolve } from 'node:path'
 import { describe, expect, it } from 'vitest'
 
 import AedarEquipmentWaffleCahier from '@/fiche/prototype/AedarEquipmentWaffleCahier.vue'
-import { AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE } from '@/fiche/content/aedarEquipmentPresentation'
 import type { AedarFact } from '@/fiche/content/aedarApiClient'
 import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent'
-
-const waffleRendererSource = readFileSync(
-  resolve(process.cwd(), 'src/fiche/prototype/AedarEquipmentWaffleCahier.vue'),
-  'utf8',
-)
 
 function evidence(): AedarEquipmentProfileEvidence {
   const [header, ...lines] = readFileSync(resolve(process.cwd(), '../pipeline/inst/extdata/aedar-typequ-2025.csv'), 'utf8').trim().split(/\r?\n/)
@@ -71,20 +65,11 @@ function secondSectionEvidence(): AedarEquipmentProfileEvidence {
 }
 
 describe('AedarEquipmentWaffleCahier', () => {
-  it('consumes the accepted limitation copy from app-owned Waffle presentation content', () => {
-    expect(AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE).toBe(
-      'Les teintes proches ne distinguent pas toutes les catégories. Sélectionnez une tuile pour voir son mode d’accès.',
-    )
-    expect(waffleRendererSource).toContain(
-      "import { AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE } from '@/fiche/content/aedarEquipmentPresentation'",
-    )
-    expect(waffleRendererSource).toContain('{{ AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE }}')
-    expect(waffleRendererSource).not.toContain(AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE)
+  it('omits the Waffle color-limitation note', () => {
     const wrapper = mount(AedarEquipmentWaffleCahier, { props: { evidence: evidence() } })
-    const legend = wrapper.get('.cahier-figure-legend')
-    const note = wrapper.get('.aedar-waffle-legend-note')
-    expect(note.text()).toBe(AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE)
-    expect(legend.element.compareDocumentPosition(note.element) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy()
+
+    expect(wrapper.find('.aedar-waffle-legend-note').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Les teintes proches ne distinguent pas toutes les catégories.')
   })
 
   it('uses the time-ramp mode colors for the waffle tiles and mode filters', async () => {
@@ -121,7 +106,7 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.find('.cahier-figure-title').text()).toBe('Services de proximité par premier mode')
     expect(wrapper.findAll('.aedar-waffle-tile')).toHaveLength(2)
     expect(wrapper.find('.aedar-waffle-grid').attributes('aria-label')).toContain('2 types')
-    expect(wrapper.get('.aedar-waffle-grid').classes()).toContain('aedar-waffle-grid--responsive')
+    expect(wrapper.get('.aedar-waffle-grid').classes()).toContain('aedar-waffle-grid--five-rows')
     expect(wrapper.get('.aedar-waffle-horizon button[aria-pressed="true"]').attributes('value')).toBe('10')
 
     await wrapper.get('.aedar-waffle-explore').trigger('click')
@@ -140,7 +125,7 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.find('.cahier-figure-title').text()).toBe('Types d’équipements accessibles par premier mode')
     expect(wrapper.find('.aedar-waffle-grid').attributes('aria-label')).toContain('235 types')
     expect(wrapper.find('.aedar-waffle').classes()).toContain('aedar-waffle--centered')
-    expect(wrapper.find('.aedar-waffle-grid').classes()).toContain('aedar-waffle-grid--responsive')
+    expect(wrapper.find('.aedar-waffle-grid').classes()).toContain('aedar-waffle-grid--five-rows')
     expect(wrapper.findAll('.aedar-waffle-tile').every((tile) => tile.element.tagName === 'BUTTON')).toBe(true)
     expect(wrapper.find('.cahier-figure-legend').exists()).toBe(true)
     expect(wrapper.find('.cahier-figure-legend').classes()).toContain('aedar-waffle-legend--centered')
@@ -148,7 +133,7 @@ describe('AedarEquipmentWaffleCahier', () => {
     expect(wrapper.find('.cahier-travel-time-label svg').exists()).toBe(true)
     expect(wrapper.find('.aedar-waffle-threshold').exists()).toBe(false)
     expect(wrapper.find('.aedar-travel-time-selector button').exists()).toBe(true)
-    expect(wrapper.find('.aedar-waffle-legend-note').text()).toBe(AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE)
+    expect(wrapper.find('.aedar-waffle-legend-note').exists()).toBe(false)
   })
 
   it('keeps bucket legend actions named and icon-coded, and opens the matching bucket detail', async () => {

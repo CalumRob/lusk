@@ -264,10 +264,22 @@ try {
       const legend = [...(waffle?.querySelectorAll('.cahier-figure-legend-action') ?? [])]
       const box = (element) => {
         const { x, y, right, bottom, width, height } = element.getBoundingClientRect()
-        return { x, y, right, bottom, width, height }
+        return { x, y, right, bottom, width, height, center: x + width / 2 }
       }
       const gridBox = grid ? box(grid) : null
       const tileBoxes = tiles.map(box)
+      const tileVisuals = tiles.map((tile) => {
+        const style = getComputedStyle(tile)
+        const paint = getComputedStyle(tile, '::before')
+        const target = box(tile)
+        return {
+          width: innerWidth <= 760 ? Number.parseFloat(paint.width) : target.width,
+          height: innerWidth <= 760 ? Number.parseFloat(paint.height) : target.height,
+          fill: innerWidth <= 760 ? paint.backgroundColor : style.backgroundColor,
+          pseudoContent: paint.content,
+        }
+      })
+      const gridStyle = grid ? getComputedStyle(grid) : null
       const labelSurfaces = [
         ['CahierBlankMapSlots', '.blank-map-slots .map-panel-label'],
         ['AedarDiversityLossMapsCahier', '.aedar-diversity-loss-map-label'],
@@ -280,6 +292,11 @@ try {
           labels: labels.map((label) => {
             const parent = label.parentElement
             if (!parent) throw new Error(`${surface} label must have its map panel parent`)
+            const panelBounds = box(parent)
+            const icon = label.querySelector('svg')
+            const text = label.querySelector('span')
+            const iconBounds = icon ? box(icon) : null
+            const textBounds = text ? box(text) : null
             const probe = document.createElement('span')
             probe.style.color = 'var(--mode-ring)'
             probe.style.font = 'var(--text-overline)'
@@ -316,6 +333,13 @@ try {
               text: label.textContent.trim(),
               fill: style.backgroundColor,
               foreground: style.color,
+              justifyContent: style.justifyContent,
+              textAlign: style.textAlign,
+              center: x + width / 2,
+              panelCenter: panelBounds.center,
+              contentCenter: iconBounds && textBounds
+                ? (Math.min(iconBounds.x, textBounds.x) + Math.max(iconBounds.right, textBounds.right)) / 2
+                : null,
               modeFill,
               textTransform: style.textTransform,
               fontSize: style.fontSize,
@@ -346,26 +370,78 @@ try {
           tileCount: tiles.length,
           gridWidth: gridBox?.width ?? 0,
           gridHeight: gridBox?.height ?? 0,
+          waffleWidth: waffle ? box(waffle).width : 0,
           gridClientWidth: grid?.clientWidth ?? 0,
           gridScrollWidth: grid?.scrollWidth ?? 0,
+          gridTemplateRows: gridStyle?.gridTemplateRows ?? '',
+          gridTemplateColumns: gridStyle?.gridTemplateColumns ?? '',
+          gridAutoFlow: gridStyle?.gridAutoFlow ?? '',
+          gridGap: gridStyle?.gap ?? '',
+          classes: grid?.className ?? '',
           tileBoxes,
+          tileVisuals,
           tileBucketOrder: tiles.map((tile) => tile.getAttribute('data-bucket')),
           tileFillsByBucket: Object.fromEntries(tiles.map((tile) => [
-            tile.getAttribute('data-bucket'), getComputedStyle(tile).backgroundColor,
+            tile.getAttribute('data-bucket'), innerWidth <= 760
+              ? getComputedStyle(tile, '::before').backgroundColor
+              : getComputedStyle(tile).backgroundColor,
           ])),
           legend: legend.map((button) => {
             const style = getComputedStyle(button)
+            let desktopBaseline = null
+            if (innerWidth > 760 && button.parentElement) {
+              const probe = button.cloneNode(true)
+              probe.classList.remove('cahier-figure-legend-action--chip')
+              probe.removeAttribute('style')
+              probe.style.cssText = 'position:fixed;left:-10000px;top:0;visibility:hidden'
+              button.parentElement.append(probe)
+              const reference = getComputedStyle(probe)
+              desktopBaseline = {
+                style: {
+                  backgroundColor: reference.backgroundColor,
+                  color: reference.color,
+                  fontFamily: reference.fontFamily,
+                  fontSize: reference.fontSize,
+                  fontWeight: reference.fontWeight,
+                  lineHeight: reference.lineHeight,
+                  letterSpacing: reference.letterSpacing,
+                  textTransform: reference.textTransform,
+                  borderColor: reference.borderColor,
+                  borderWidth: reference.borderWidth,
+                  borderStyle: reference.borderStyle,
+                  borderRadius: reference.borderRadius,
+                  padding: [reference.paddingTop, reference.paddingRight, reference.paddingBottom, reference.paddingLeft],
+                  minHeight: reference.minHeight,
+                },
+                iconColor: probe.querySelector('svg') ? getComputedStyle(probe.querySelector('svg')).color : null,
+              }
+              probe.remove()
+            }
             return {
               key: button.getAttribute('data-legend-key'),
               label: button.querySelector('.cahier-figure-legend-label')?.textContent.trim() ?? '',
               fill: style.backgroundColor,
               foreground: style.color,
+              fontFamily: style.fontFamily,
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight,
+              lineHeight: style.lineHeight,
+              letterSpacing: style.letterSpacing,
+              textTransform: style.textTransform,
+              borderColor: style.borderColor,
+              borderWidth: style.borderWidth,
+              borderStyle: style.borderStyle,
+              borderRadius: style.borderRadius,
+              padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+              minHeight: style.minHeight,
+              desktopBaseline,
               iconColor: button.querySelector('svg') ? getComputedStyle(button.querySelector('svg')).color : null,
               iconCount: button.querySelectorAll('svg').length,
               height: box(button).height,
             }
           }),
           note: waffle.querySelector('.aedar-waffle-legend-note')?.textContent.trim() ?? null,
+          text: waffle.innerText,
         },
         labelSurfaces,
       }
@@ -377,49 +453,91 @@ try {
       { surface: 'AedarDiversityLossMapsCahier', count: true },
       { surface: 'CartographicBreakoutPrototype', count: true },
     ], `W3 browser fixture must render each real map-title surface at ${width}px: ${JSON.stringify(w3Visual.labelSurfaces)}`)
-    assert(w3Visual.waffle.tileBoxes.every(({ width: tileWidth, height: tileHeight }) =>
-      tileWidth >= 24 - 0.5 && tileHeight >= 24 - 0.5),
-    `Every Waffle tile must meet the 24×24px target floor at ${width}px: ${JSON.stringify(w3Visual.waffle.tileBoxes.slice(0, 4))}`)
     assert.equal(w3Visual.waffle.gridScrollWidth, w3Visual.waffle.gridClientWidth,
-      `Waffle reflow must not create an internal horizontal scroller at ${width}px`)
+      `Waffle layout must not create an internal horizontal scroller at ${width}px`)
     assert.equal(w3Visual.waffle.legend.length, 6,
       `All six AEDAR buckets must retain a Waffle legend action at ${width}px`)
     const legendKeys = w3Visual.waffle.legend.map(({ key }) => key)
     assert(legendKeys.every((key) => typeof key === 'string') && new Set(legendKeys).size === 6,
       `Waffle legend actions must keep a distinct key for every AEDAR bucket at ${width}px`)
-    for (const chip of w3Visual.waffle.legend) {
-      const tileFill = w3Visual.waffle.tileFillsByBucket[chip.key]
-      if (tileFill) assert.equal(chip.fill, tileFill,
-        `Waffle ${chip.key} chip must match its unchanged bucket tile fill at ${width}px`)
-      assert.notEqual(chip.fill, 'rgba(0, 0, 0, 0)',
-        `Waffle bucket ${chip.label} must render as a filled chip at ${width}px`)
-      assert(contrastRatio(chip.foreground, chip.fill) >= 4.5,
-        `Waffle bucket ${chip.label} must have 4.5:1 computed contrast at ${width}px: ${JSON.stringify(chip)}`)
-      assert.equal(chip.iconCount, 1, `Waffle bucket ${chip.label} must keep its existing icon at ${width}px`)
-      assert(contrastRatio(chip.iconColor, chip.fill) >= 4.5,
-        `Waffle bucket ${chip.label} icon must remain visible against its filled chip at ${width}px: ${JSON.stringify(chip)}`)
-      assert(chip.height >= 36 - 0.5,
-        `Waffle legend action ${chip.label} must retain its 36px target at ${width}px`)
+    assert.equal(w3Visual.waffle.legend.every(({ iconCount }) => iconCount === 1), true,
+      `All Waffle bucket actions must keep their existing icon at ${width}px`)
+    if (width <= 760) {
+      assert(w3Visual.waffle.tileBoxes.every(({ width: tileWidth, height: tileHeight }) =>
+        tileWidth >= 24 - 0.5 && tileHeight >= 24 - 0.5),
+      `Every mobile Waffle button must retain a 24×24px target at ${width}px: ${JSON.stringify(w3Visual.waffle.tileBoxes.slice(0, 4))}`)
+      assert(w3Visual.waffle.tileVisuals.every(({ width: tileWidth, height: tileHeight, fill, pseudoContent }) =>
+        tileWidth > 0 && tileHeight > 0 && tileWidth <= 16 && tileHeight <= 16 && pseudoContent !== 'none' &&
+        fill !== 'rgba(0, 0, 0, 0)'),
+      `Mobile Waffle paint must stay at or below 16×16px inside accessible targets at ${width}px: ${JSON.stringify(w3Visual.waffle.tileVisuals.slice(0, 4))}`)
+      for (const chip of w3Visual.waffle.legend) {
+        const tileFill = w3Visual.waffle.tileFillsByBucket[chip.key]
+        if (tileFill) assert.equal(chip.fill, tileFill,
+          `Mobile Waffle ${chip.key} chip must match its unchanged bucket tile fill at ${width}px`)
+        assert.notEqual(chip.fill, 'rgba(0, 0, 0, 0)',
+          `Mobile Waffle bucket ${chip.label} must render as a filled chip at ${width}px`)
+        assert(contrastRatio(chip.foreground, chip.fill) >= 4.5,
+          `Mobile Waffle bucket ${chip.label} must have 4.5:1 computed contrast at ${width}px: ${JSON.stringify(chip)}`)
+        assert(contrastRatio(chip.iconColor, chip.fill) >= 4.5,
+          `Mobile Waffle bucket ${chip.label} icon must have 4.5:1 contrast at ${width}px: ${JSON.stringify(chip)}`)
+        assert(chip.height >= 36 - 0.5,
+          `Mobile Waffle legend action ${chip.label} must retain its 36px target at ${width}px`)
+      }
+    } else {
+      assert(w3Visual.waffle.classes.includes('aedar-waffle-grid--five-rows'),
+        `Desktop Waffle must retain the original five-row layout class at ${width}px`)
+      const columns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
+      const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
+      assert.equal(rows, 5, `Desktop Waffle must retain its original five rows at ${width}px`)
+      assert.equal(columns, 47, `Desktop Waffle must retain its original 47 columns at ${width}px`)
+      assert.equal(w3Visual.waffle.gridAutoFlow, 'column',
+        `Desktop Waffle must retain the original column-major order at ${width}px`)
+      assert.equal(w3Visual.waffle.gridGap, '2px',
+        `Desktop Waffle must retain the original 2px tile gap at ${width}px`)
+      assert(Math.abs(w3Visual.waffle.gridWidth - Math.min(w3Visual.waffle.waffleWidth, 1000)) < 1,
+        `Desktop Waffle must retain its original 1000px width cap at ${width}px: ${JSON.stringify(w3Visual.waffle)}`)
+      for (const chip of w3Visual.waffle.legend) {
+        const style = {
+          backgroundColor: chip.fill,
+          color: chip.foreground,
+          fontFamily: chip.fontFamily,
+          fontSize: chip.fontSize,
+          fontWeight: chip.fontWeight,
+          lineHeight: chip.lineHeight,
+          letterSpacing: chip.letterSpacing,
+          textTransform: chip.textTransform,
+          borderColor: chip.borderColor,
+          borderWidth: chip.borderWidth,
+          borderStyle: chip.borderStyle,
+          borderRadius: chip.borderRadius,
+          padding: chip.padding,
+          minHeight: chip.minHeight,
+        }
+        assert.deepEqual(style, chip.desktopBaseline.style,
+          `Desktop Waffle ${chip.label} legend label must match the original unfilled action at ${width}px`)
+        assert.equal(chip.iconColor, chip.desktopBaseline.iconColor,
+          `Desktop Waffle ${chip.label} icon must retain its original bucket color at ${width}px`)
+        assert.equal(chip.fill, 'rgba(0, 0, 0, 0)',
+          `Desktop Waffle ${chip.label} label must not be a filled chip at ${width}px`)
+      }
     }
-    assert(w3Visual.waffle.note?.trim().length > 0,
-      `Waffle legend must show its app-owned color limitation note beside its controls at ${width}px`)
+    assert.equal(w3Visual.waffle.note, null,
+      `Waffle color-limitation note must be absent at ${width}px`)
+    assert(!w3Visual.waffle.text.includes('Les teintes proches ne distinguent pas toutes les catégories.'),
+      `Waffle must not replace the removed note with its limitation copy at ${width}px`)
     assert(w3Visual.waffle.tileBucketOrder.every((bucket, index, buckets) =>
       index === 0 || bucket === buckets[index - 1] || !buckets.slice(0, index).includes(bucket)),
     `Waffle tiles must remain grouped in their existing bucket order at ${width}px`)
-    if (width === 320) {
+    if (width <= 375) {
       const columns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
       const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
-      assert.equal(columns, 11,
-        `320px Waffle should reflow to about 11 columns, got ${columns} (${w3Visual.waffle.gridWidth}px grid)`)
-      assert.equal(rows, 22,
-        `320px Waffle should reflow to about 22 rows, got ${rows}`)
-    }
-    const columnsForFiveRows = Math.ceil(w3Visual.waffle.tileCount / 5)
-    const requiredWidthForFiveRows = columnsForFiveRows * 24 + (columnsForFiveRows - 1) * 2
-    if (w3Visual.waffle.gridWidth >= requiredWidthForFiveRows) {
-      const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
-      assert.equal(rows, 5,
-        `Waffle should preserve the original five rows when the grid can fit 47 tiles at the 24px floor, got ${rows} at ${width}px`)
+      assert.equal(columns, 12,
+        `Narrow mobile Waffle should use 12 columns with its 24px target floor, got ${columns} (${w3Visual.waffle.gridWidth}px grid)`)
+      assert.equal(rows, 20,
+        `Narrow mobile Waffle should reflow to 20 rows, got ${rows}`)
+      const lastRowY = Math.max(...w3Visual.waffle.tileBoxes.map(({ y }) => y))
+      assert.equal(w3Visual.waffle.tileBoxes.filter(({ y }) => Math.abs(y - lastRowY) < 0.5).length, 7,
+        'With 235 categories and 12 accessible columns, the unavoidable final row contains seven tiles')
     }
     for (const { surface, labels } of w3Visual.labelSurfaces) {
       for (const label of labels) {
@@ -429,6 +547,14 @@ try {
         assert(label.x >= -0.5 && label.right <= width + 0.5,
           `${surface} chip must stay inside the viewport at ${width}px: ${JSON.stringify(label)}`)
         if (width <= 760) {
+          assert(Math.abs(label.center - label.panelCenter) <= 1,
+            `${surface} mobile map chip must be centered in its panel at ${width}px: ${JSON.stringify(label)}`)
+          assert.equal(label.justifyContent, 'center',
+            `${surface} mobile map label content must be centered inside the chip at ${width}px`)
+          assert.equal(label.textAlign, 'center',
+            `${surface} mobile map label text must be centered at ${width}px`)
+          assert(Math.abs(label.contentCenter - label.center) <= 2,
+            `${surface} mobile map icon/text group must be centered in the chip at ${width}px: ${JSON.stringify(label)}`)
           assert(Number.parseFloat(label.fontSize) >= 12,
             `${surface} mobile map title must use a semantic type role at or above 12px at ${width}px: ${JSON.stringify(label)}`)
           assert.equal(label.fill, label.modeFill,
@@ -458,9 +584,24 @@ try {
         }
       }
     }
+    if (width === 320) {
+      const mapLabelSelectors = [
+        ['CahierBlankMapSlots', '.blank-map-slots .map-panel-label'],
+        ['AedarDiversityLossMapsCahier', '.aedar-diversity-loss-map-label'],
+        ['CartographicBreakoutPrototype', '.map-breakout .map-panel-label'],
+      ]
+      for (const [surface, selector] of mapLabelSelectors) {
+        await page.locator(selector).first().scrollIntoViewIfNeeded()
+        await page.screenshot({ path: resolve(evidenceDir, `issue829-map-chip-${surface}-320.png`), fullPage: false })
+      }
+      await page.locator('.aedar-waffle-grid').screenshot({
+        path: resolve(evidenceDir, 'issue829-waffle-mobile-grid-320.png'),
+      })
+    }
     const waffleLegendInteraction = width === 320 ? await verifyWaffleLegendInteraction(page) : null
     const tileColumns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
     const tileRows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
+    const finalRowY = Math.max(...w3Visual.waffle.tileBoxes.map(({ y }) => y))
     const w3Summary = {
       waffle: {
         tileCount: w3Visual.waffle.tileCount,
@@ -468,22 +609,28 @@ try {
         gridHeight: w3Visual.waffle.gridHeight,
         columns: tileColumns,
         rows: tileRows,
-        minimumTile: {
+        finalRowTileCount: w3Visual.waffle.tileBoxes.filter(({ y }) => Math.abs(y - finalRowY) < 0.5).length,
+        minimumHitTarget: {
           width: Math.min(...w3Visual.waffle.tileBoxes.map(({ width: tileWidth }) => tileWidth)),
           height: Math.min(...w3Visual.waffle.tileBoxes.map(({ height: tileHeight }) => tileHeight)),
+        },
+        minimumVisualTile: {
+          width: Math.min(...w3Visual.waffle.tileVisuals.map(({ width: tileWidth }) => tileWidth)),
+          height: Math.min(...w3Visual.waffle.tileVisuals.map(({ height: tileHeight }) => tileHeight)),
         },
         legend: w3Visual.waffle.legend.map((chip) => ({
           key: chip.key,
           label: chip.label,
           fill: chip.fill,
           foreground: chip.foreground,
-          contrast: Number(contrastRatio(chip.foreground, chip.fill).toFixed(2)),
+          contrast: width <= 760 ? Number(contrastRatio(chip.foreground, chip.fill).toFixed(2)) : null,
         })),
       },
       mapLabels: w3Visual.labelSurfaces.map(({ surface, labels }) => ({
         surface,
         labels: labels.map((label) => ({
           text: label.text,
+          centeredInPanel: width <= 760 ? Math.abs(label.center - label.panelCenter) <= 1 : null,
           fill: width <= 760 ? label.fill : null,
           foreground: width <= 760 ? label.foreground : null,
           contrast: width <= 760 ? Number(contrastRatio(label.foreground, label.fill).toFixed(2)) : null,

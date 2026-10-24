@@ -4,7 +4,6 @@ import { Bike, BusFront, CarFront, ChevronDown, Footprints } from 'lucide-vue-ne
 import type { Component } from 'vue'
 import type { AedarEquipmentProfileEvidence } from '@/fiche/content/themeContent'
 import { AEDAR_EQUIPMENT_BUCKET_HORIZONS, AEDAR_EQUIPMENT_MODES, aedarEquipmentShareMeasureKey, classifyAedarEquipmentTypes } from '@/fiche/content/aedarEquipmentBuckets'
-import { AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE } from '@/fiche/content/aedarEquipmentPresentation'
 import type { AedarEquipmentHorizon } from '@/fiche/content/aedarEquipmentBuckets'
 import type { AedarEquipmentBucketKey, AedarEquipmentModeKey } from '@/fiche/content/aedarEquipmentBuckets'
 import type { FigureLegendEntry } from '@/fiche/cahierFigureGrammaire'
@@ -177,7 +176,7 @@ watch(horizonMinutes, (horizon) => {
 
     <p v-if="profile?.status !== 'complete'" class="aedar-waffle-state" role="status">{{ summary }}</p>
     <template v-else>
-      <div class="aedar-waffle-grid aedar-waffle-grid--responsive" role="group" :aria-label="summary">
+      <div class="aedar-waffle-grid aedar-waffle-grid--five-rows" role="group" :aria-label="summary">
         <button
           v-for="(type, index) in profile.buckets.flatMap((item) => item.types.map((entry) => ({ ...entry, bucket: item.key, bucketLabel: item.label })))"
           :key="type.typequ"
@@ -197,13 +196,12 @@ watch(horizonMinutes, (horizon) => {
         :icons="modeIcons"
         :action-keys="bucketEntries.map((entry) => entry.key)"
         :counts="bucketCounts"
-        :mark-colors="bucketInks"
+        :mark-colors="bucketColors"
         :chip-fills="bucketColors"
         :chip-inks="bucketInks"
         label="Types par premier mode d’accès — ouvrir le détail d’une catégorie"
         @activate="openBucket"
       />
-      <p class="aedar-waffle-legend-note">{{ AEDAR_EQUIPMENT_WAFFLE_LIMITATION_NOTE }}</p>
       <CahierActionButton class="aedar-waffle-explore" @click="openExplorer">Parcourir les équipements</CahierActionButton>
     </template>
 
@@ -287,13 +285,12 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle > .cahier-figure-title { width: 100%; margin: 0; text-align: center; }
 .aedar-waffle-controls { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: var(--space-3) var(--space-5); width: 100%; }
 .aedar-waffle-dialog button:focus-visible, .aedar-waffle-dialog input:focus-visible { outline: 2px solid var(--accent-primary); outline-offset: 2px; }
-.aedar-waffle-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(24px, 1fr)); grid-auto-flow: row; grid-auto-rows: auto; gap: 2px; width: min(100%, 1220px); margin-inline: auto; }
-.aedar-waffle-tile { display: block; width: 100%; min-width: 24px; min-height: 24px; aspect-ratio: 1; padding: 0; border: 0; border-radius: 2px; background: var(--aedar-bucket-color); cursor: pointer; }
+.aedar-waffle-grid { display: grid; grid-template-rows: repeat(5, minmax(0, 1fr)); grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; width: min(100%, 1000px); margin-inline: auto; }
+.aedar-waffle-tile { display: block; aspect-ratio: 1; min-width: 0; padding: 0; border: 0; border-radius: 2px; background: var(--aedar-bucket-color); cursor: pointer; }
 .aedar-waffle-tile:hover { filter: brightness(0.88); }
 .aedar-waffle-tile:focus-visible { position: relative; z-index: 1; outline: 2px solid var(--text-primary); outline-offset: 1px; }
 .aedar-waffle :deep(.aedar-waffle-legend--centered) { justify-content: center; width: 100%; margin: 0; }
 .aedar-waffle :deep(.cahier-figure-legend-action) { min-height: 36px; }
-.aedar-waffle-legend-note { width: 100%; max-width: 72ch; margin: 0; color: var(--cahier-default); font: var(--type-figure-label); line-height: 1.5; text-align: center; }
 .aedar-waffle-state { max-width: 72ch; margin: 0; color: var(--text-secondary); font: var(--type-figure-label); line-height: 1.5; }
 /* Shared control primitive: a field is one label plus one control, so the
  * dialog's travel-time selector and search box read as the same object. */
@@ -330,10 +327,37 @@ watch(horizonMinutes, (horizon) => {
 .aedar-waffle-share-table tbody tr:last-child th, .aedar-waffle-share-table tbody tr:last-child td { border-bottom: 0; }
 .aedar-waffle-empty { margin: 0; padding: var(--space-4); color: var(--text-secondary); text-align: center; }
 @media (max-width: 760px) {
-  .aedar-waffle-grid { width: min(calc(100% + var(--space-3) + var(--space-3)), 1220px); margin-inline: calc(0px - var(--space-3)); }
+  .aedar-waffle-grid {
+    grid-template-columns: repeat(auto-fit, minmax(24px, 1fr));
+    grid-template-rows: none;
+    grid-auto-flow: row;
+    grid-auto-columns: auto;
+    grid-auto-rows: auto;
+    gap: 0;
+    width: min(calc(100% + var(--space-3) + var(--space-3)), 760px);
+    margin-inline: calc(0px - var(--space-3));
+  }
+  .aedar-waffle-tile {
+    display: grid;
+    width: 100%;
+    min-width: 24px;
+    min-height: 24px;
+    place-items: center;
+    background: transparent;
+  }
+  .aedar-waffle-tile::before {
+    width: 14px;
+    height: 14px;
+    border-radius: 2px;
+    background: var(--aedar-bucket-color);
+    content: '';
+  }
   .aedar-waffle-dialog-horizon { order: 1; flex: 1 1 auto; min-width: 0; }
   .aedar-waffle-search { order: 3; flex-basis: 100%; }
   .aedar-waffle-field-control { justify-content: center; }
+}
+@media (max-width: 375px) {
+  .aedar-waffle-grid { grid-template-columns: repeat(12, minmax(24px, 1fr)); }
 }
 @media (max-width: 520px) { .aedar-waffle-share-table thead th, .aedar-waffle-share-table th, .aedar-waffle-share-table td { padding-inline: var(--space-2); } .aedar-waffle-table-scroll { max-height: 36dvh; } }
 </style>

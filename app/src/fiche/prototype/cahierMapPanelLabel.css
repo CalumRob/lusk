@@ -32,11 +32,13 @@
     max-width: 100%;
     min-height: 36px;
     padding: 6px 10px;
+    justify-content: center;
     border-radius: var(--radius-full);
     background-color: var(--mode-ring);
     color: var(--map-panel-label-ink, var(--paper));
     font: var(--text-caption);
     letter-spacing: normal;
     text-transform: none;
+    text-align: center;
   }
 }
