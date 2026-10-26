@@ -149,7 +149,7 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         histoires: histoiresDemographieFixture,
         expected: [
           ['etat-de-la-population', 'État de la population', 'La population de la commune : sa taille, sa densité et la structure de ses ménages.'],
-          ['trajectoire-demographique', 'Trajectoire démographique', 'L’évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire.'],
+          ['trajectoire-demographique', 'Trajectoire démographique', "L'évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire."],
         ],
       },
       {
@@ -157,7 +157,7 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         indicateurs: indicateursHabitatFixture,
         histoires: histoiresHabitatFixture,
         expected: [
-          ['composition-du-parc', 'La composition du parc', 'La composition du parc de logements de la commune : le mix, le statut d’occupation et le type.'],
+          ['composition-du-parc', 'La composition du parc', "La composition du parc de logements de la commune : le mix, le statut d'occupation et le type."],
           ['etat-energetique-du-parc', 'L’état énergétique du parc', 'L’état énergétique du parc : la distribution des étiquettes DPE, la part de passoires thermiques et l’âge du bâti.'],
           ['marche', 'Le marché', 'Le marché immobilier de la commune : la médiane du prix au m² des ventes.'],
         ],
@@ -167,7 +167,7 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         indicateurs: indicateursEconomieFixture,
         histoires: histoiresEconomieFixture,
         expected: [
-          ['sante-et-taille', 'Santé et taille du tissu productif', 'La santé du tissu productif local : l’emploi salarié au lieu de travail et le chômage au sens du recensement.'],
+          ['sante-et-taille', 'Santé et taille du tissu productif', "La santé du tissu productif local : l'emploi salarié au lieu de travail et le chômage au sens du recensement."],
           ['structure-verte', 'La structure verte', 'La place des établissements verts dans le tissu productif.'],
         ],
       },
@@ -195,7 +195,7 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         indicateurs: indicateursProgrammesFixture,
         histoires: [] as Histoire[],
         expected: [
-          ['couverture', 'Programmes et contrats', 'Les programmes de l’État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d’action publique, jamais des résultats.'],
+          ['couverture', 'Programmes et contrats', "Les programmes de l'État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d'action publique, jamais des résultats."],
           ['subventions', 'Subventions attribuées', 'Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.'],
         ],
       },
@@ -256,7 +256,7 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         theme: 'mobilite', indicateurs: indicateursMobiliteFixture, histoires: histoiresMobiliteFixture,
         expected: [
           { key: 'acces-aux-services', rows: ['iso_alimentation', 'iso_sante', 'iso_administration', 'iso_ecole', 'iso_banque', 'share_food_t', 'share_food_b', 'share_food_c', 'share_health_t', 'share_health_b', 'share_health_c', 'share_admin_t', 'share_admin_b', 'share_admin_c', 'share_school_t', 'share_school_b', 'share_school_c', 'share_bank_t', 'share_bank_b', 'share_bank_c'], figure: ['comparison-bars', 'iso_alimentation'], story: 'vingt-minutes-sans-voiture' },
-          { key: 'partage-de-lespace-public', rows: ['reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers', 'places_stationnement_velo_1000', 'offre_cyclable'], figure: ['scalar', 'offre_cyclable'], story: null },
+          { key: 'partage-de-lespace-public', rows: ['reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers', 'places_stationnement_velo_1000', 'offre_cyclable'], figure: ['composition', 'offre_cyclable'], story: null },
           { key: 'motorisation', rows: ['voitures_menage', 'bornes_recharge'], figure: ['composition', 'voitures_menage'], story: null },
           { key: 'offre-transports-commun', rows: ['offre_tc'], figure: ['scalar', 'offre_tc'], story: null },
         ],

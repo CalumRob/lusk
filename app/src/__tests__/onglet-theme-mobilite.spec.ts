@@ -1,8 +1,11 @@
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 import { describe, expect, it } from 'vitest'
 
 import GraphiqueDistributionMobilite from '../components/fiche/GraphiqueDistributionMobilite.vue'
+import FigureOffreCyclable from '../components/fiche/FigureOffreCyclable.vue'
 import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
   apercuAvecNAFixture,
@@ -13,7 +16,7 @@ import {
   territoiresFixture,
   vintagesFixture,
 } from '../payload/fixtures'
-import type { Payload } from '../payload/types'
+import type { Payload, ThemeMetadata } from '../payload/types'
 
 /**
  * OngletTheme — the Mobilité block through the SHARED subgroup anatomy
@@ -42,6 +45,19 @@ async function monter(territoire: string, payload: Payload = payloadMobilite) {
   })
   await flushPromises()
   return wrapper
+}
+
+function monterFigureOffreCyclable(territoire: string) {
+  return mount(FigureOffreCyclable, {
+    props: {
+      clef: 'offre_cyclable',
+      lignes: indicateursMobiliteFixture.filter((row) => row.territoire === territoire && row.key === 'offre_cyclable'),
+      reseaux: indicateursMobiliteFixture.filter((row) => row.territoire === territoire && row.key === 'reseaux'),
+      libelle: 'L’offre cyclable',
+      labelsDetail: metadonneesThemesFixtures.mobilite?.detail_labels?.offre_cyclable,
+      theme: 'mobilite',
+    },
+  })
 }
 
 describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le sous-bloc)', () => {
@@ -85,12 +101,24 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     ])
   })
 
-  it('renders the app-owned compact figure in the public-space subgroup', async () => {
-    const wrapper = await monter('22001')
+  it('preserves the production compact figure family for cycling offer', async () => {
+    const publishedMetadata = JSON.parse(readFileSync(
+      join(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8',
+    )) as ThemeMetadata
+    const productionFigure = publishedMetadata.subgroups.find(
+      (subgroup) => subgroup.key === 'partage-de-lespace-public',
+    )?.figure
+    expect(productionFigure).toEqual({ family: 'composition', indicator: 'offre_cyclable' })
+
+    const wrapper = await monter('22001', {
+      ...payloadMobilite,
+      themeMetadata: { ...payloadMobilite.themeMetadata, mobilite: publishedMetadata },
+    })
 
     const compacte = wrapper.find('.sous-groupe[data-groupe="partage-de-lespace-public"] .figure-compacte')
     expect(compacte.exists()).toBe(true)
-    expect(compacte.attributes('data-famille')).toBe('scalar')
+    expect(compacte.attributes('data-famille')).toBe(productionFigure!.family)
+    expect(compacte.attributes('data-famille')).toBe('composition')
     expect(compacte.find('.figure-indicateur').attributes('data-clef')).toBe('offre_cyclable')
     expect(wrapper.findAll('.figure-indicateur[data-clef="offre_cyclable"]')).toHaveLength(1)
   })
@@ -249,10 +277,10 @@ describe('OngletTheme — the reading slot (the app template + the flagship figu
   })
 })
 
-describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () => {
+describe('FigureOffreCyclable — sa présentation spécialisée reste testée hors du binding fiche', () => {
   it("renders the headline « X % de l'infrastructure routière » — computed app-side from the payload rows", async () => {
     // la région 53 : 4 913,233 km ÷ 101 353,736 km ≈ 4,8 % (l'e2e #231)
-    const wrapper = await monter('53')
+    const wrapper = monterFigureOffreCyclable('53')
 
     const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
     expect(figure.exists()).toBe(true)
@@ -261,7 +289,7 @@ describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () =
   })
 
   it('renders the protégé vs partagé bars in km / 1 000 hab with their labels', async () => {
-    const wrapper = await monter('53')
+    const wrapper = monterFigureOffreCyclable('53')
 
     const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
     expect(figure.text()).toContain('Protégé')
@@ -274,7 +302,7 @@ describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () =
   })
 
   it('shows 0 for a commune at 0 km — never an absent figure, never « à venir »', async () => {
-    const wrapper = await monter('22001')
+    const wrapper = monterFigureOffreCyclable('22001')
 
     const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
     expect(figure.exists()).toBe(true)
@@ -284,7 +312,7 @@ describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () =
   })
 
   it('keeps its vintage stamp (osm_reseaux) and its per-detail ranks as labels', async () => {
-    const wrapper = await monter('22001')
+    const wrapper = monterFigureOffreCyclable('22001')
 
     const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
     expect(figure.find('.estampille-vintage').text()).toContain(
@@ -300,7 +328,7 @@ describe('OngletTheme — la figure « L’offre cyclable » (issue #232)', () =
 
   it("reads the c network denominator from the SAME territory (la règle « dans l'EPCI : X % »)", async () => {
     // l'EPCI X : 34,2 km ÷ 1 140,338 km ≈ 3 %
-    const wrapper = await monter('200000001')
+    const wrapper = monterFigureOffreCyclable('200000001')
 
     const figure = wrapper.find('.figure-indicateur[data-clef="offre_cyclable"]')
     expect(figure.find('.valeur-numerique').text()).toBe('3 %')

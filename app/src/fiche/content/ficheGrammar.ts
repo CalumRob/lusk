@@ -79,7 +79,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       ],
       // The shared compact renderer's specialized offer treatment is selected
       // by the scalar family; this remains app presentation, not producer policy.
-      figure: { family: 'scalar', indicator: 'offre_cyclable' },
+      figure: { family: 'composition', indicator: 'offre_cyclable' },
     },
     {
       key: 'motorisation',
@@ -107,7 +107,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'trajectoire-demographique',
       label: 'Trajectoire démographique',
-      framing: 'L’évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire.',
+      framing: "L'évolution de la population depuis 1968 et les deux forces qui la portent : le solde naturel et le solde migratoire.",
       indicators: ['evolution_1968'],
       figure: { family: 'scalar', indicator: 'evolution_1968' },
       reading: {
@@ -124,7 +124,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'composition-du-parc',
       label: 'La composition du parc',
-      framing: 'La composition du parc de logements de la commune : le mix, le statut d’occupation et le type.',
+      framing: "La composition du parc de logements de la commune : le mix, le statut d'occupation et le type.",
       indicators: ['mix_logements', 'statut', 'type'],
       figure: { family: 'composition', indicator: 'mix_logements' },
     },
@@ -154,7 +154,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'sante-et-taille',
       label: 'Santé et taille du tissu productif',
-      framing: 'La santé du tissu productif local : l’emploi salarié au lieu de travail et le chômage au sens du recensement.',
+      framing: "La santé du tissu productif local : l'emploi salarié au lieu de travail et le chômage au sens du recensement.",
       indicators: ['effectifs_salaries', 'chomage'],
       figure: { family: 'scalar', indicator: 'effectifs_salaries' },
       reading: {
@@ -196,7 +196,7 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'couverture',
       label: 'Programmes et contrats',
-      framing: 'Les programmes de l’État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d’action publique, jamais des résultats.',
+      framing: "Les programmes de l'État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d'action publique, jamais des résultats.",
       indicators: ['couverture_programmes'],
       figure: { family: 'list', indicator: 'couverture_programmes' },
     },
