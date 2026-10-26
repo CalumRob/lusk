@@ -1,4 +1,4 @@
-import { cpSync, existsSync, realpathSync } from 'node:fs'
+import { realpathSync } from 'node:fs'
 import { readFile } from 'node:fs/promises'
 import { fileURLToPath } from 'node:url'
 import path from 'node:path'
@@ -8,6 +8,7 @@ import { defineConfig } from 'vitest/config'
 import type { Connect, Plugin } from 'vite'
 import type { ServerResponse } from 'node:http'
 import { territoryModelBuffer } from './scripts/territory-model-dev'
+import { copierPayloadEnBuild } from './scripts/copy-payload-build'
 
 // Vite 7 + Vitest 4 share this config. The `test` block wires Vitest:
 // happy-dom (no browser), unit specs under src/.
@@ -91,25 +92,8 @@ function servirPayloadEnDev(): Plugin {
   }
 }
 
-// Vercel (ADR-0010): /data/ must live in the build output — a per-deploy
-// snapshot of public/data, the Vercel-side equivalent of the Pi's nginx alias.
-function copierPayloadEnBuild(): Plugin {
-  return {
-    name: 'copier-payload-build',
-    closeBundle() {
-      const cibleData = path.resolve(fileURLToPath(new URL('.', import.meta.url)), 'dist', 'data')
-      if (!existsSync(racinePayload)) {
-        console.warn('[copier-payload-build] payload introuvable — rien à copier dans dist/data')
-        return
-      }
-      cpSync(racinePayload, cibleData, { recursive: true })
-      console.log('[copier-payload-build] payload copié dans dist/data')
-    },
-  }
-}
-
 export default defineConfig({
-  plugins: [vue(), servirPayloadEnDev(), copierPayloadEnBuild()],
+  plugins: [vue(), servirPayloadEnDev(), copierPayloadEnBuild(racinePayload)],
   // [PROTOTYPE CARTOGRAPHIE — JETABLE] Variant E reads the existing QGIS
   // exports from pipeline/maps through Vite's /@fs seam; keep the allowance
   // bounded to this repository and remove it with the map-layout prototype.
