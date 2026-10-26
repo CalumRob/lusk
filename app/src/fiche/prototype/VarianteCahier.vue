@@ -104,7 +104,7 @@ function preuvesDuGroupe(groupe: SousGroupeMatiere): string[] {
       <div class="cahier-rail">
         <span class="rail-numero" aria-hidden="true">{{ String(gi + 1).padStart(2, '0') }}</span>
         <h3 class="rail-titre">{{ groupe.label }}</h3>
-        <p class="rail-cadrage">{{ groupe.framing }}</p>
+        <p v-if="groupe.framing" class="rail-cadrage">{{ groupe.framing }}</p>
 
         <template v-if="groupe.lecture">
           <p class="rail-recit voix-recit">

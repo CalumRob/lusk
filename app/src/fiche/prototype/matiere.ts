@@ -117,12 +117,12 @@ export interface LectureMatiere {
 export interface SousGroupeMatiere {
   key: string
   label: string
-  framing: string
+  framing: string | null
   lecture: LectureMatiere | null
   lectureIndisponible: boolean
-  /** La figure compacte déclarée par la métadonnée (la matière du groupe). */
+  /** The compact figure selected by app-owned fiche grammar (the subgroup's matter). */
   valeurPrincipale: ValeurIndicateur | null
-  /** Les autres indicateurs du groupe, ordre de la métadonnée. */
+  /** The other producer indicator rows in app-owned presentation order. */
   valeurs: ValeurIndicateur[]
 }
 

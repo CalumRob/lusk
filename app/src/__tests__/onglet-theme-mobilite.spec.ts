@@ -123,6 +123,23 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     expect(wrapper.findAll('.figure-indicateur[data-clef="offre_cyclable"]')).toHaveLength(1)
   })
 
+  it('reads the factual public-transport framing from retained producer metadata', async () => {
+    const upstream = JSON.parse(readFileSync(
+      join(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8',
+    )) as ThemeMetadata
+    upstream.subgroups.find((subgroup) => subgroup.key === 'offre-transports-commun')!.framing =
+      'Cadrage factuel du réseau fourni par le producteur.'
+    const wrapper = await monter('22001', {
+      ...payloadMobilite,
+      themeMetadata: { mobilite: upstream },
+    })
+
+    expect(wrapper.find('[data-groupe="offre-transports-commun"] .sous-groupe-titre').text())
+      .toBe('L’offre de transports en commun')
+    expect(wrapper.find('[data-groupe="offre-transports-commun"] .sous-groupe-cadrage').text())
+      .toBe('Cadrage factuel du réseau fourni par le producteur.')
+  })
+
   it('labels say « à pied ou en transports en commun », NEVER « sans voiture » — the reading is the one exception', async () => {
     const wrapper = await monter('22001')
 

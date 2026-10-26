@@ -1,4 +1,4 @@
-import type { FamilleFigure, NoeudTexteRiche, Theme } from '@/payload/types'
+import type { FamilleFigure, NoeudTexteRiche, Theme, ThemeMetadata } from '@/payload/types'
 
 /** App-owned display names shared by the fiche and Mobilité's semantic content. */
 export const CONTENU_SOUS_GROUPES_FICHE = {
@@ -21,7 +21,9 @@ export interface FicheSubgroupGrammar {
   /** Structural binding to the producer's subgroup identity. */
   readonly key: string
   readonly label: string
-  readonly framing: string
+  /** Null only when the whole factual clause remains on producer metadata. */
+  readonly framing: string | null
+  readonly framingSource?: 'theme-metadata'
   /** Producer resource identities and their display order, not availability. */
   readonly indicators: readonly string[]
   readonly figure: { readonly family: FamilleFigure; readonly indicator: string }
@@ -91,7 +93,8 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'offre-transports-commun',
       label: CONTENU_SOUS_GROUPES_FICHE.mobilite['offre-transports-commun'],
-      framing: 'La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.',
+      framing: null,
+      framingSource: 'theme-metadata',
       indicators: ['offre_tc', 'raccordement_tc', 'raccordement_courbe', 'raccordement_reference'],
       figure: { family: 'scalar', indicator: 'offre_tc' },
     },
@@ -203,7 +206,8 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
     {
       key: 'subventions',
       label: 'Subventions attribuées',
-      framing: 'Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.',
+      framing: null,
+      framingSource: 'theme-metadata',
       indicators: ['subventions_annuelles', 'subventions_par_domaine'],
       figure: { family: 'scalar', indicator: 'subventions_annuelles' },
     },
@@ -216,4 +220,16 @@ export function sousGroupesFiche(theme: Theme): readonly FicheSubgroupGrammar[] 
 
 export function sousGroupeFiche(theme: Theme, key: string): FicheSubgroupGrammar | undefined {
   return sousGroupesFiche(theme).find((subgroup) => subgroup.key === key)
+}
+
+/**
+ * Resolve app editorial framing, retaining only the two current fact-bearing
+ * clauses from their existing producer subgroup declarations.
+ */
+export function cadrageSousGroupeFiche(
+  subgroup: FicheSubgroupGrammar,
+  metadata?: ThemeMetadata,
+): string | null {
+  if (subgroup.framingSource !== 'theme-metadata') return subgroup.framing
+  return metadata?.subgroups.find((candidate) => candidate.key === subgroup.key)?.framing ?? null
 }

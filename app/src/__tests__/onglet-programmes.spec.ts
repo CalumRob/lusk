@@ -17,8 +17,9 @@ import type { Payload } from '../payload/types'
  *     couverte / porte / compte / ort), la ventilation communale pliée
  *     top-5 + révélation, la part de contexte, la provenance, le lien
  *     portail Région ;
- *   - l'overline et les factual/page bindings remain in metadata, while
- *     subgroup labels/framing use the shared app-owned fiche grammar ;
+ *   - l'overline, factual/page bindings and the grant-eligibility framing
+ *     remain in metadata, while subgroup labels/editorial framing use the
+ *     shared app-owned fiche grammar ;
  *   - les faits d'action publique JAMAIS des résultats : aucune formulation
  *     ne présente une adhésion ou une subvention comme un effet mesuré ;
  *   - les états d'absence honnêtes : « Aucun programme référencé. » quand le
@@ -73,7 +74,20 @@ describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
     expect(titres).toEqual(['Programmes et contrats', 'Subventions attribuées'])
     expect(wrapper.find('[data-groupe="couverture"]').exists()).toBe(true)
     expect(wrapper.find('[data-groupe="subventions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Libellé amont périmé')
+  })
+
+  it('reads the factual grant-eligibility clause from retained producer metadata', () => {
+    const upstream = structuredClone(payloadPlein)
+    upstream.themeMetadata!.programmes!.subgroups.find((subgroup) => subgroup.key === 'subventions')!.framing =
+      'Cadrage factuel des niveaux de ventilation fourni par le producteur.'
+    const wrapper = montage(upstream, '22001')
+
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-titre').text())
+      .toBe('Subventions attribuées')
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').text())
+      .toBe('Cadrage factuel des niveaux de ventilation fourni par le producteur.')
   })
 
   it('rend les badges avec leurs voix honnêtes — lauréate, couverte, portage nommé', () => {

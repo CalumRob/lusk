@@ -19,8 +19,9 @@ const payload: Payload = {
   indicateurs: [], histoires: histoiresMobiliteFixture, apercu: null, runReport: null,
   vintages: [], programmes: null, themeMetadata: metadonneesThemesFixtures,
 }
-// Independent producer reading key for the shared app grammar's access unit.
-const readingGroup = 'acces-aux-services'
+const readingGroup = metadonneesThemesFixtures.mobilite!.subgroups.find(
+  (group) => group.reading?.params.includes('div_loss_t'),
+)!.key
 const response = (): any => ({
   contract: 'theme-facts-v1', complete_theme: false, theme_id: 'mobilite',
   territory: { territory_id: '22001', territory_type: 'commune', name: 'Commune' },
@@ -36,7 +37,7 @@ const response = (): any => ({
       { name: 'sex', key: 'F', label: 'Femmes', order: 0, unit: null }] }],
   named_reference_evidence: [],
   series: [], bpe_profile_evidence: null,
-  readings: [{ groupe: readingGroup, story_key: 'vingt-minutes-sans-voiture', salience_reason: 'sql',
+  readings: [{ groupe: readingGroup, story_key: 'sql-story', salience_reason: 'sql',
     classification_saillance: null, div_loss_t: 7, div_loss_b: 8, status: 'measured', unit: 'types',
     provenance: { source_id: 'mobilite_snapshot', source_name: 'SQL mobility', source_version: 'sql-v1',
       source_reference_date: null, source_publication_date: null } }],
@@ -45,8 +46,7 @@ const response = (): any => ({
 /** Build actual read-batch resource envelopes from the compact table used by
  * these product-model tests. Excluded BPE/building evidence and legacy story
  * fields are intentionally not carried into the semantic resource set. */
-function semanticResponse(envelope: any, territoryId: string, payloadModel = payload,
-  includeTypedReadings = false): any {
+function semanticResponse(envelope: any, territoryId: string, payloadModel = payload): any {
   const target = payloadModel.territoires.find((territory) => territory.territoire === territoryId)
   if (!target) throw new Error(`Missing fixture territory ${territoryId}`)
   const indicators: any[] = envelope.indicators ?? []
@@ -86,27 +86,6 @@ function semanticResponse(envelope: any, territoryId: string, payloadModel = pay
     return { resource, shapes: ['scalar'], declaration: {}, data: { resource, target: targetRef,
       indicator_id: resource, unit: fact.unit, value: fact.value, status: fact.status, sources: fact.sources } }
   })
-  const typedReadingFacts = (includeTypedReadings ? envelope.readings ?? [] : []).map((reading: any) => {
-    const provenance = reading.provenance
-    const source = {
-      source_id: provenance.source_id,
-      vintage_id: `${provenance.source_version}-vintage`,
-      name: provenance.source_name,
-      version: provenance.source_version,
-      reference_date: provenance.source_reference_date,
-      publication_date: provenance.source_publication_date,
-    }
-    return { ...reading, source_id: source.source_id, vintage_id: source.vintage_id, source }
-  })
-  if (typedReadingFacts.length) {
-    const resource = 'mobilite_selected_reading'
-    resource_reads.push({ resource, shapes: ['typed_reading'], data: {
-      resource,
-      target: { kind: 'territory', type: target.type, id: target.territoire },
-      descriptor: { source: typedReadingFacts[0]?.source },
-      facts: typedReadingFacts,
-    } })
-  }
   let owner: any = resource_reads.find((read: any) => read.resource === 'raccordement_courbe')
   if (!owner && (envelope.named_reference_evidence ?? []).length) {
     const reference = envelope.named_reference_evidence[0]
@@ -134,9 +113,8 @@ function semanticResponse(envelope: any, territoryId: string, payloadModel = pay
   return { theme_id: 'mobilite', resource_reads, named_reference_reads }
 }
 
-function mobilityFacts(envelope: any, territoryId: string, payloadModel = payload, includeTypedReadings = false) {
-  return mobilityFactsFromThemeApi(payloadModel, territoryId,
-    semanticResponse(envelope, territoryId, payloadModel, includeTypedReadings))
+function mobilityFacts(envelope: any, territoryId: string, payloadModel = payload) {
+  return mobilityFactsFromThemeApi(payloadModel, territoryId, semanticResponse(envelope, territoryId, payloadModel))
 }
 
 function nativeRaccordementReads(territoryId = '22001', territoryType = 'commune',
@@ -260,27 +238,17 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
     expect(facts.mobility.losses.diversityBike.value).toBeNull()
   })
+  it('keeps the retired Mobility reading unavailable on the actual native resource catalogue', () => {
+    const resources = nativeResources('mobilite')
+    expect(resources.map((resource) => resource.resource_id)).not.toContain('mobilite_selected_reading')
 
-  it('binds the resolved reading by the app grammar key when upstream subgroup presentation is stale', () => {
-    const stalePayload = structuredClone(payload)
-    stalePayload.themeMetadata!.mobilite!.subgroups = [{
-      ...stalePayload.themeMetadata!.mobilite!.subgroups[0]!,
-      key: 'upstream-stale',
-      label: 'Libellé amont périmé',
-      framing: 'Cadrage amont périmé.',
-      indicators: ['resource-amont-perime'],
-      figure: { family: 'scalar', indicator: 'resource-amont-perime' },
-      reading: undefined,
-    }]
-
-    const facts = mobilityFacts(response(), '22001', stalePayload, true)
-
-    expect(facts.mobility.losses.diversityWalkTransit.value).toBe(7)
-    expect(facts.mobility.losses.diversityBike.value).toBe(8)
-    expect(facts.mobility.losses.diversityWalkTransit.provenance).toMatchObject({
-      source: 'SQL mobility', version: 'sql-v1', referenceDate: null,
+    const facts = mobilityFactsFromThemeApi(payload, '22001', {
+      theme_id: 'mobilite', resource_reads: [],
     })
+    expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
+    expect(facts.mobility.losses.diversityBike.value).toBeNull()
   })
+
   it('combines regional motorisation with a synthetic producer-derived curve without rendering its named reference', () => {
     const regionPayload: Payload = { ...payload, territoires: [
       { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },

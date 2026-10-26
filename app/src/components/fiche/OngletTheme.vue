@@ -3,8 +3,9 @@
  * OngletTheme — one theme's tab content (ui-elements.md §ThemeBlock). Since
  * issue #314 (parent #308) the block is ONE shared subgroup loop driven by
  * app-owned fiche content and the resolved producer readings — there are no
- * per-theme branches. The app grammar owns subgroup order, headings, framing,
- * indicator order, compact figures and reading copy; the producer row owns
+ * per-theme branches. The app grammar owns subgroup order, headings, editorial
+ * framing, indicator order, compact figures and reading copy; two fact-bearing
+ * framing clauses retain their producer metadata reader. Producer rows own
  * reading identity and values. Theme metadata remains for the theme label,
  * factual labels and indicator-page contracts used by the fiche and other
  * consumers.
@@ -201,7 +202,7 @@ const lignesReseaux = computed(
         :data-groupe="groupe.key"
       >
         <h3 class="sous-groupe-titre">{{ groupe.label }}</h3>
-        <p class="sous-groupe-cadrage">{{ groupe.framing }}</p>
+        <p v-if="groupe.framing" class="sous-groupe-cadrage">{{ groupe.framing }}</p>
 
         <!-- The reading slot — the app-owned template rendered with the
              resolved row's values, the reading's compact figure and its

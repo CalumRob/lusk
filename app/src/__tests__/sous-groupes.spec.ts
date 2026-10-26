@@ -187,7 +187,7 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
           ['acces-aux-services', 'L’accès aux services', 'Ce que les bâtiments de la commune peuvent atteindre à pied ou en transports en commun : les parts de bâtiments sans accès aux services essentiels.'],
           ['partage-de-lespace-public', 'Le partage de l’espace public', 'La place laissée aux vélos et à la voiture dans l’espace public : les réseaux, le stationnement vélo et l’offre cyclable.'],
           ['motorisation', 'La motorisation', 'L’équipement automobile des ménages et les bornes de recharge pour véhicules électriques.'],
-          ['offre-transports-commun', 'L’offre de transports en commun', 'La part des bâtiments à moins de 500 mètres d’un arrêt, et le raccordement du territoire au réseau : la population bretonne joignable en 90 minutes en train, en car ou en bus, de mairie à mairie.'],
+          ['offre-transports-commun', 'L’offre de transports en commun', null],
         ],
       },
       {
@@ -196,7 +196,7 @@ describe('sousGroupesPourTerritoire — la grammaire éditoriale appartient à l
         histoires: [] as Histoire[],
         expected: [
           ['couverture', 'Programmes et contrats', "Les programmes de l'État et les outils juridiques qui couvrent le territoire : labels communaux, contrats intercommunaux et convention ORT — des faits d'action publique, jamais des résultats."],
-          ['subventions', 'Subventions attribuées', 'Les subventions attribuées par la Région Bretagne au territoire : le total annuel partout, la ventilation par domaine sur les fiches communales.'],
+          ['subventions', 'Subventions attribuées', null],
         ],
       },
     ] as const

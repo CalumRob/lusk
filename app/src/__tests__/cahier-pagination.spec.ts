@@ -16,11 +16,14 @@ function contenuPour(theme: Theme) {
 const payloadCanonique = { themeMetadata: metadonneesThemesFixtures } as Payload
 
 const payloadPresentationAmontPerimee = {
-  themeMetadata: Object.fromEntries(THEMES_CANONIQUES.map((theme) => [
-    theme,
-    { ...metadonneesThemesFixtures[theme], subgroups: [] },
-  ])),
-} as Payload
+  themeMetadata: Object.fromEntries(THEMES_CANONIQUES.map((theme) => {
+    const metadata = metadonneesThemesFixtures[theme]!
+    const subgroups = [...metadata.subgroups]
+    if (theme === 'mobilite') subgroups.push({ ...subgroups[0]!, key: 'upstream-extra' })
+    if (theme === 'habitat') subgroups.reverse()
+    return [theme, { ...metadata, subgroups }]
+  })),
+} as unknown as Payload
 
 describe('cahierPaginationFor — le fil global de présentation du Cahier', () => {
   it('keeps all six canonical theme groups in the continuous spine in both render modes', () => {

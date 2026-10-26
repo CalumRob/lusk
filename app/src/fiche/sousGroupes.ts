@@ -1,11 +1,14 @@
 /**
  * The shared fiche subgroup mapper (issue #314, parent #308) — ONE loop over
  * the app-owned presentation grammar for every theme, never a per-theme branch.
- * Stable headings, grouping, figure choices and reading templates are app
- * content; the payload remains the authority for rows and resolved readings:
+ * Stable headings, grouping, figure choices, editorial framing and reading
+ * templates are app content; the payload remains the authority for rows and
+ * resolved readings:
  *
- * - subgroup order, label, framing, resource bindings and figure presentation
- *   from ficheGrammar.ts; an app declaration never establishes availability;
+ * - subgroup order, label, editorial framing, resource bindings and figure
+ *   presentation from ficheGrammar.ts; the two fact-bearing framing clauses
+ *   use their explicitly retained producer metadata reader, and an app
+ *   declaration never establishes availability;
  * - compact and indicator figures use only rows actually present in the payload;
  * - the RESOLVED reading from the histoires row joined by
  *   (territoire, groupe) — the explicit subgroup link of the contract
@@ -31,7 +34,7 @@ import type {
   Theme,
   ThemeMetadata,
 } from '@/payload/types'
-import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
+import { cadrageSousGroupeFiche, sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 import type { FicheReadingGrammar } from '@/fiche/content/ficheGrammar'
 import {
   formaterNombreFR,
@@ -81,7 +84,7 @@ export interface LectureSousGroupe {
 export interface SousGroupeRendu {
   key: string
   label: string
-  framing: string
+  framing: string | null
   /** The subgroup's indicators in app-owned presentation order, when rows exist. */
   figures: GroupeIndicateur[]
   /** The subgroup's compact figure (app-owned family + producer resource key). */
@@ -322,7 +325,7 @@ export function sousGroupesPourTerritoire(
     return {
       key: sousGroupe.key,
       label: sousGroupe.label,
-      framing: sousGroupe.framing,
+      framing: cadrageSousGroupeFiche(sousGroupe, metadata),
       figures,
       figureCompacte,
       lecture,
