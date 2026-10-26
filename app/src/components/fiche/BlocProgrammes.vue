@@ -8,8 +8,9 @@
  * les faits d'action publique ne sont ni une courbe ni un classement.
  *
  * Le bloc lit SES fichiers hermétiques uniquement (#408) :
- *   - theme_programmes.json — les labels/cadrages des sous-groupes (jamais un
- *     vocabulaire app-side) ;
+ *   - ficheGrammar.ts — stable subgroup labels/framing and figure choices ;
+ *   - theme_programmes.json — the remaining indicator labels, descriptors and
+ *     source records used by factual/page readers ;
  *   - indicateurs_programmes.json — les faits, via programmesPourTerritoire
  *     (la dérivation en échelle : jointure relationnelle + voix honnêtes,
  *     ADR-0013 ; le total poolé est calculé côté pipeline) ;
@@ -27,6 +28,7 @@ import { ExternalLink } from 'lucide-vue-next'
 import AppIcon from '@/components/AppIcon.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { handoffExploration } from '@/fiche/explorationHandoff'
+import { sousGroupeFiche } from '@/fiche/content/ficheGrammar'
 import {
   LIEN_SUBVENTIONS,
   formaterMontant,
@@ -44,15 +46,13 @@ const props = defineProps<{
   territoire: string
 }>()
 
-// Les labels du bloc viennent de la métadonnée publiée (theme_programmes.json)
-// — l'overline du thème et les titres/cadrages des sous-groupes, jamais une
-// seconde liste app-side (le contrat #318/#314, validerThemeMetadata garantit
-// la forme ; un thème rendu implique sa métadonnée, #313).
+// The theme label and remaining factual/page contracts still use metadata;
+// subgroup presentation comes from the shared app-owned fiche grammar.
 const metadata = computed(() => props.payload.themeMetadata?.programmes ?? null)
 
 function groupe(key: string): { label: string; framing: string } {
-  const g = metadata.value?.subgroups.find((sousGroupe) => sousGroupe.key === key)
-  if (!g) throw new Error(`Sous-groupe « ${key} » absent des métadonnées « programmes »`)
+  const g = sousGroupeFiche('programmes', key)
+  if (!g) throw new Error(`Sous-groupe « ${key} » absent de la grammaire fiche « programmes »`)
   return { label: g.label, framing: g.framing }
 }
 

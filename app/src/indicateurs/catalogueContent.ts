@@ -1,5 +1,7 @@
 import type { Theme } from '@/payload/types'
 
+export { CONTENU_SOUS_GROUPES_FICHE } from '@/fiche/content/ficheGrammar'
+
 /** Stable product wording and organization for published indicator pages. */
 export interface PageCatalogueContent {
   /** The producer resource key bound to this product page and its URL. */
@@ -18,16 +20,6 @@ export interface ThemeCatalogueContent {
   readonly label: string
   readonly sousGroupes: readonly SousGroupeCatalogueContent[]
 }
-
-/** Stable fiche subgroup labels; structural keys bind this content to theme facts. */
-export const CONTENU_SOUS_GROUPES_FICHE = {
-  mobilite: {
-    'acces-aux-services': 'L’accès aux services',
-    'partage-de-lespace-public': 'Le partage de l’espace public',
-    motorisation: 'La motorisation',
-    'offre-transports-commun': 'L’offre de transports en commun',
-  },
-} as const satisfies Partial<Record<Theme, Readonly<Record<string, string>>>>
 
 /**
  * App-owned editorial content for the /indicateurs catalogue and its grouped

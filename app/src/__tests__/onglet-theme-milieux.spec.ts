@@ -19,10 +19,10 @@ import type { Payload, Theme } from '../payload/types'
 /**
  * OngletTheme — the Milieux block through the SHARED subgroup anatomy
  * (issue #314) : le sous-groupe « L'artificialisation » — la lecture du
- * template de métadonnée (les deux horloges nommées, la classification et la
+ * template app-owned (les deux horloges nommées, la classification et la
  * trajectoire), le GRAPHE QUADRANT au premier plan de la lecture (le nuage
  * des pairs au même échelle, ADR-0011 + ADR-0017), la source exhaustive, la
- * figure compacte « Intensité état » (famille trajectory) puis la série
+ * figure compacte « Intensité état » (famille comparison-bars) puis la série
  * annuelle. La fenêtre et la trajectoire ZAN sont mortes avec les flux
  * CONSOENAF : leurs figures ne rendent plus. Une lecture absente (M2 = 0, ou
  * le trou NA) échoue honnêtement — jamais inventée.
@@ -58,7 +58,7 @@ describe('OngletTheme — the Milieux subgroup (la lecture + les deux figures In
       .findAll('.grille-indicateurs .figure-indicateur')
       .map((f) => f.attributes('data-clef'))
     expect(figures).toEqual(['artif_par_habitant', 'conso_enaf_annuel'])
-    expect(wrapper.find('.figure-compacte').attributes('data-famille')).toBe('trajectory')
+    expect(wrapper.find('.figure-compacte').attributes('data-famille')).toBe('comparison-bars')
   })
 
   it('labels the two figures in French public (the product terms)', async () => {
@@ -101,7 +101,7 @@ describe('OngletTheme — the Milieux subgroup (la lecture + les deux figures In
 })
 
 describe('OngletTheme — the reading slot (le template + le graphe quadrant)', () => {
-  it('renders the reading from the metadata template — les deux horloges nommées, la classification, la trajectoire', async () => {
+  it('renders the reading from the app template — les deux horloges nommées, la classification, la trajectoire', async () => {
     const wrapper = await monter('22001') // grandir-en-setalant
 
     const texte = wrapper.find('.lecture-texte')

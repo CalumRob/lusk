@@ -17,10 +17,10 @@ import type { Histoire, Payload } from '../payload/types'
 
 /**
  * OngletTheme — the shared subgroup block (issue #314, parent #308): the
- * overline (the theme's published label) → ONE loop over the metadata
- * subgroups — label + framing, the reading slot (the metadata template with
- * the row's values, the reading's figure and its exhaustive source) and the
- * indicator grid (the compact figure first, then the metadata key order).
+ * overline (the theme's published label) → ONE loop over the app-owned
+ * subgroups — labels + framing, the reading slot (the app template
+ * with producer-resolved values, the reading's figure and its exhaustive
+ * source) and the indicator grid (the compact figure first, then app order).
  * There is no per-theme branch left: Démographie exercises the shared
  * anatomy with its « Trajectoire démographique » reading and its soldes chart.
  */
@@ -36,11 +36,15 @@ const payloadDemographie: Payload = {
   themeMetadata: { demographie: metadonneesThemesFixtures.demographie },
 }
 
-async function monter(territoire: string, histoires: Histoire[] = histoiresDemographieFixture) {
+async function monter(
+  territoire: string,
+  histoires: Histoire[] = histoiresDemographieFixture,
+  themeMetadata = payloadDemographie.themeMetadata,
+) {
   const wrapper = mount(OngletTheme, {
     props: {
       theme: 'demographie',
-      payload: { ...payloadDemographie, histoires },
+      payload: { ...payloadDemographie, histoires, themeMetadata },
       territoire,
     },
     global: { stubs: { RouterLink: RouterLinkStub } },
@@ -49,31 +53,54 @@ async function monter(territoire: string, histoires: Histoire[] = histoiresDemog
   return wrapper
 }
 
-describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
+describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)', () => {
   it('renders the theme overline from the metadata label', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Démographie')
   })
 
-  it('renders the metadata subgroup — label and framing', async () => {
+  it('renders the app subgroup labels and framing, with the resolved-reading slot separate', async () => {
     const wrapper = await monter('22001')
 
-    const sousGroupe = wrapper.find('.sous-groupe[data-groupe="trajectoire-demographique"]')
-    expect(sousGroupe.exists()).toBe(true)
-    expect(wrapper.find('.sous-groupe-titre').text()).toBe(
-      'État et dynamique de la population',
-    )
-    expect(wrapper.find('.sous-groupe-cadrage').text()).toContain('sa densité')
+    expect(wrapper.find('.sous-groupe[data-groupe="etat-de-la-population"]').exists()).toBe(true)
+    expect(wrapper.find('.sous-groupe[data-groupe="trajectoire-demographique"]').exists()).toBe(true)
+    expect(wrapper.findAll('.sous-groupe-titre').map((node) => node.text())).toEqual([
+      'État de la population',
+      'Trajectoire démographique',
+    ])
+    expect(wrapper.findAll('.sous-groupe-cadrage')[0].text()).toContain('sa densité')
   })
 
-  it('renders the indicator grid in the metadata key order — the compact figure first (structure_age → densite → evolution → menages)', async () => {
+  it('renders indicator rows in app group order — compact figure first within each subgroup', async () => {
     const wrapper = await monter('22001')
 
     const figures = wrapper
       .findAll('.grille-indicateurs .figure-indicateur')
       .map((f) => f.attributes('data-clef'))
-    expect(figures).toEqual(['structure_age', 'densite', 'evolution_1968', 'taille_menages'])
+    expect(figures).toEqual(['structure_age', 'densite', 'taille_menages', 'evolution_1968'])
+  })
+
+  it('does not let stale upstream subgroup presentation override the mounted fiche', async () => {
+    const metadata = structuredClone(metadonneesThemesFixtures.demographie)
+    metadata.subgroups = [{
+      ...metadata.subgroups[0]!,
+      key: 'upstream-stale',
+      label: 'Libellé amont périmé',
+      framing: 'Cadrage amont périmé.',
+      indicators: ['resource-amont-perime'],
+      figure: { family: 'scalar', indicator: 'resource-amont-perime' },
+      reading: undefined,
+    }]
+    const wrapper = await monter('22001', histoiresDemographieFixture, { demographie: metadata })
+
+    expect(wrapper.find('.sous-groupe[data-groupe="upstream-stale"]').exists()).toBe(false)
+    expect(wrapper.findAll('.sous-groupe-titre').map((node) => node.text())).toEqual([
+      'État de la population',
+      'Trajectoire démographique',
+    ])
+    expect(wrapper.find('.lecture-texte').text()).toContain('5,98 par an (naturel)')
+    expect(wrapper.text()).not.toContain('Libellé amont périmé')
   })
 
   it('renders each figure with its French label and its vintage stamp', async () => {
@@ -86,7 +113,7 @@ describe('OngletTheme — the shared subgroup anatomy (Démographie)', () => {
   })
 })
 
-describe('OngletTheme — the reading slot (the metadata template + the row’s values)', () => {
+describe('OngletTheme — the reading slot (the app template + the row’s values)', () => {
   it('renders the reading template with the resolved params — the payload-owned copy', async () => {
     const wrapper = await monter('22001')
 
@@ -167,12 +194,12 @@ describe('OngletTheme — the reading slot (the metadata template + the row’s 
 })
 
 describe('OngletTheme — the compact figure and the grid', () => {
-  it('renders the compact figure first — the metadata family + indicator (composition/structure_age)', async () => {
+  it('renders the compact figure first — the app family + indicator (pyramid/structure_age)', async () => {
     const wrapper = await monter('22001')
 
     const compacte = wrapper.find('.figure-compacte')
     expect(compacte.exists()).toBe(true)
-    expect(compacte.attributes('data-famille')).toBe('composition')
+    expect(compacte.attributes('data-famille')).toBe('pyramid')
     expect(compacte.find('.figure-indicateur').attributes('data-clef')).toBe('structure_age')
     // the compact figure renders once — never twice in the grid
     expect(wrapper.findAll('.figure-indicateur[data-clef="structure_age"]')).toHaveLength(1)

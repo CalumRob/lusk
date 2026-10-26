@@ -17,11 +17,10 @@ import type { Payload } from '../payload/types'
 
 /**
  * OngletTheme — the Mobilité block through the SHARED subgroup anatomy
- * (issue #314): the metadata subgroup « L'accès aux services » — the reading
- * slot (the metadata template with the resolved div_loss, the flagship's
- * distribution chart and the snapshot stamp), the compact figure (famille
- * scalar → « L'offre cyclable ») and the 11 other indicator figures in the
- * metadata key order, ranks and vintages intact. The vélo salience keeps its
+ * (issue #314): the app-owned four subgroup layout — the reading slot in
+ * « L'accès aux services », the compact « L'offre cyclable » figure in
+ * « Le partage de l'espace public », and producer rows kept in their app
+ * presentation order with ranks and vintages intact. The vélo salience keeps its
  * row-driven no-chart honesty. Consumes the payload selectors — never raw JSON.
  */
 
@@ -46,7 +45,7 @@ async function monter(territoire: string, payload: Payload = payloadMobilite) {
 }
 
 describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le sous-bloc)', () => {
-  it('renders the metadata subgroup and the published figures — compact figure first, then the key order', async () => {
+  it('renders the app subgroup and producer figures — compact figure first, then app order', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Mobilité')
@@ -55,14 +54,6 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
       .findAll('.grille-indicateurs .figure-indicateur')
       .map((f) => f.attributes('data-clef'))
     expect(figures).toEqual([
-      'offre_cyclable',
-      'voitures_menage',
-      'reseaux',
-      'reseaux_par_habitant',
-      'surface_reseaux_routiers',
-      'offre_tc',
-      'bornes_recharge',
-      'places_stationnement_velo_1000',
       'iso_alimentation',
       'iso_sante',
       'iso_administration',
@@ -83,13 +74,21 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
       'share_bank_t',
       'share_bank_b',
       'share_bank_c',
+      'offre_cyclable',
+      'reseaux',
+      'reseaux_par_habitant',
+      'surface_reseaux_routiers',
+      'places_stationnement_velo_1000',
+      'voitures_menage',
+      'bornes_recharge',
+      'offre_tc',
     ])
   })
 
-  it('renders the compact figure as the metadata’s scalar family — L’offre cyclable leads the grid', async () => {
+  it('renders the app-owned compact figure in the public-space subgroup', async () => {
     const wrapper = await monter('22001')
 
-    const compacte = wrapper.find('.figure-compacte')
+    const compacte = wrapper.find('.sous-groupe[data-groupe="partage-de-lespace-public"] .figure-compacte')
     expect(compacte.exists()).toBe(true)
     expect(compacte.attributes('data-famille')).toBe('scalar')
     expect(compacte.find('.figure-indicateur').attributes('data-clef')).toBe('offre_cyclable')
@@ -167,8 +166,8 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
   })
 })
 
-describe('OngletTheme — the reading slot (the metadata template + the flagship figure)', () => {
-  it('renders the reading from the metadata template with the resolved div_loss', async () => {
+describe('OngletTheme — the reading slot (the app template + the flagship figure)', () => {
+  it('renders the reading from the app template with the resolved div_loss', async () => {
     const wrapper = await monter('22001')
 
     const texte = wrapper.find('.lecture-texte')
@@ -215,7 +214,7 @@ describe('OngletTheme — the reading slot (the metadata template + the flagship
   it('shows the vélo salience territory’s own row and the shared distribution chart', async () => {
     const wrapper = await monter('22002')
 
-    // the same metadata template reads the row's own div_loss_t (the resolved
+    // the same app template reads the row's own div_loss_t (the resolved
     // vélo reading), while both mode marks use the same distribution figure.
     expect(wrapper.find('.lecture-texte').text()).toContain(
       'Sans voiture, 24 types de services disparaissent',

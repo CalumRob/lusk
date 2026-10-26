@@ -594,8 +594,10 @@ export interface Payload {
   /** Compact three-mode access-ramp quantiles; null means absent. */
   rampeAccesBatiments?: RampeAccesBatimentsRow[] | null
   /**
-   * The per-theme metadata files (theme_<theme>.json, issue #309, wired by
-   * #313) — keyed by theme, present themes only. Optional at the type level:
+   * The producer per-theme metadata files (theme_<theme>.json, issue #309,
+   * wired by #313) — keyed by theme, present themes only. These retain factual
+   * labels/page contracts and metadata consumed outside shared fiche subgroup
+   * presentation. Optional at the type level:
    * payloads assembled from merged documents (parsePayload) or pre-seam
    * fixtures carry none; the loader and the store always produce the section.
    */
@@ -763,7 +765,10 @@ export interface LectureSousGroupe {
   figure?: FigureSousGroupe
 }
 
-/** One subgroup of the fiche — a stable place with indicators, a figure and an optional reading. */
+/**
+ * Producer subgroup declaration retained in theme metadata for validation and
+ * non-shared-fiche consumers. Shared fiche presentation is app-owned.
+ */
 export interface SousGroupeMetadata {
   key: string
   label: string
@@ -775,7 +780,12 @@ export interface SousGroupeMetadata {
 }
 
 /**
- * The theme_<theme>.json contract. Validation rules (both sides):
+ * The producer theme_<theme>.json contract, retained for factual vocabularies,
+ * page contracts, validation and consumers outside the shared fiche subgroup
+ * presentation. The shared fiche's subgroup ordering, headings, framing,
+ * indicator order, figures and reading copy live in app-owned ficheGrammar.ts;
+ * these serialized subgroup fields are not that presentation's authority.
+ * Validation rules (both sides):
  * - `theme` ∈ THEMES_CANONIQUES (the six, Programmes et subventions included
  *   since #408);
  * - `indicator_keys` / `story_keys` are the theme's registries; each subgroup

@@ -1,7 +1,7 @@
-import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Payload } from '@/payload/types'
 
 import type { ThemeContent } from '@/fiche/content/themeContent'
+import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 
 /** One navigable entry in the Cahier's continuous spine. */
 export interface CahierPaginationEntry {
@@ -25,40 +25,31 @@ function anchorFor(key: string): string {
 /**
  * Resolve the Cahier page sequence for the rendered units. The sequence is
  * deliberately kept outside ThemeContent: it is a layout concern, not a
- * semantic claim. A missing metadata sequence still gets a usable one-page
- * presentation for the prototype. The default keeps the original isolated
- * first-unit presentation; callers rendering the whole Cahier opt in.
+ * semantic claim. Page order/count come from the shared app-owned fiche
+ * grammar for this theme, never from producer metadata. The default keeps the
+ * original isolated first-unit presentation; callers rendering all units of
+ * this theme opt in. It does not count unrelated themes as pages in this Cahier.
  */
 export function cahierPaginationFor(
-  payload: Payload,
+  _payload: Payload,
   content: ThemeContent,
   renderAllUnits = false,
 ): CahierPagination {
-  const metadata = payload.themeMetadata ?? {}
   const currentTheme = content.theme
   const currentUnits = renderAllUnits
     ? [...content.units]
     : content.units[0]
       ? [content.units[0]]
       : []
-  const currentSubgroups = metadata[currentTheme]?.subgroups ?? []
+  const currentSubgroups = sousGroupesFiche(currentTheme)
   const firstUnit = currentUnits[0]
   const currentIndex = firstUnit
     ? currentSubgroups.findIndex((subgroup) => subgroup.key === firstUnit.key)
     : -1
 
-  let offset = 0
-  for (const theme of THEMES_CANONIQUES) {
-    if (theme === currentTheme) break
-    offset += metadata[theme]?.subgroups.length ?? 0
-  }
-
-  const declaredTotal = Object.values(metadata).reduce(
-    (total, theme) => total + (theme?.subgroups.length ?? 0),
-    0,
-  )
+  const declaredTotal = renderAllUnits ? currentSubgroups.length : currentUnits.length
   const totalPages = Math.max(declaredTotal, currentUnits.length, 1)
-  const currentPage = Math.max(1, offset + Math.max(0, currentIndex) + 1)
+  const currentPage = Math.max(1, Math.max(0, currentIndex) + 1)
   const entries: CahierPaginationEntry[] = currentUnits.map((unit, index) => ({
     key: unit.key,
     label: unit.label,

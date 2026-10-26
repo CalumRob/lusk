@@ -4,6 +4,7 @@ import type { TerritoryComparisonContext } from '@/payload/territoryReadModel'
 import type { ThemeResponse } from '@/payload/themeAcquisition'
 import { semanticComparisonForTheme, themeFactsEnvelopeFromSemantic } from '@/payload/themeFactsAdapter'
 import { ACCESS_INDICATOR_KEYS, territoryFactsFor } from './territoryFacts'
+import { sousGroupesFiche } from './ficheGrammar'
 import type { FactProvenance, MobilityTrajectoryContract, NamedTrajectoryReference, NumericFact,
   SelectedTrajectoryComparison, TerritoryFacts } from './territoryFacts'
 import { clearBuildingApiPeers } from './buildingApiFacts'
@@ -332,7 +333,7 @@ export function mobilityFactsFromThemeApi(
     return { indicatorId: 'raccordement_courbe', id: reference.id as string, label: reference.label as string,
       role: reference.role as string, statistic: reference.statistic as string, unit: reference.unit as string, points }
   })
-  const subgroup = payload.themeMetadata?.mobilite?.subgroups.find((item) =>
+  const subgroup = sousGroupesFiche('mobilite').find((item) =>
     item.reading?.params.includes('div_loss_t'))
   const reading = (normalized.readings as Row[]).find((item) => item.groupe === subgroup?.key)
   const loss = reading ? { diversityWalkTransit: factFromReading('div_loss_t', reading.unit,

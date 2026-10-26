@@ -16,11 +16,11 @@ import type { Histoire, Payload } from '../payload/types'
 
 /**
  * OngletTheme — the Économie block through the SHARED subgroup anatomy
- * (issue #314): the metadata's TWO subgroups in order — « Santé et taille du
+ * (issue #314): the app grammar's TWO subgroups in order — « Santé et taille du
  * tissu productif » (the specialisation reading + the effectifs compact
  * figure + chômage) then « La structure verte » (the eco-activités figure).
  * The LQ is the Story, never a block indicator: the reading comes from the
- * metadata template resolved on the folded top-5 row; the région reads its
+ * app template resolved on the folded top-5 row; the région reads its
  * presence sentence in structure-verte. Consumes the payload selectors —
  * never raw JSON.
  */
@@ -49,8 +49,8 @@ async function monter(territoire: string, histoires: Histoire[] = histoiresEcono
   return wrapper
 }
 
-describe('OngletTheme — the two metadata subgroups (3 indicateurs)', () => {
-  it('renders the theme overline from the metadata label and the subgroups in metadata order', async () => {
+describe('OngletTheme — the two app-owned subgroups (3 indicateurs)', () => {
+  it('renders the theme overline from metadata and subgroups in app order', async () => {
     const wrapper = await monter('22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Économie/Emploi')
@@ -100,7 +100,7 @@ describe('OngletTheme — the two metadata subgroups (3 indicateurs)', () => {
 })
 
 describe('OngletTheme — the reading slot (la Story, jamais un indicateur)', () => {
-  it('renders the specialisation reading from the metadata template, resolved on the top-5 row', async () => {
+  it('renders the specialisation reading from the app template, resolved on the top-5 row', async () => {
     const wrapper = await monter('22001')
 
     const texte = wrapper.find('.sous-groupe[data-groupe="sante-et-taille"] .lecture-texte')
