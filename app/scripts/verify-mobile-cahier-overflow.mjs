@@ -6,8 +6,8 @@ import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
 
 // Real-browser, populated contract check for Cahier mobile overflow and the
-// shared y-axis rail regression in issue #841. The static territory read model
-// is checked-in production data; post-#627 and AEDAR semantic reads are
+// shared y-axis rail regression in issue #841 and W3 labels in issue #829.
+// The static territory read model is checked-in production data; post-#627 and AEDAR semantic reads are
 // intercepted with the same builders/contracts used by the app tests.
 // Run: npm run verify:mobile-cahier-overflow. If Playwright has no cached
 // browser, run `npx playwright-core install chromium`; alternatively set
@@ -17,6 +17,269 @@ const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
 const evidenceDir = resolve(process.env.CAHIER_EVIDENCE_DIR ?? join(tmpdir(), 'lusk-mobile-cahier-evidence'))
 const executablePath = process.env.PLAYWRIGHT_CHROMIUM_EXECUTABLE
+
+function rgbChannels(color) {
+  let channels = color.match(/[\d.]+/gu)?.slice(0, 3).map(Number)
+  assert(channels?.length === 3, `Expected a computed RGB color, got ${color}`)
+  if (/^color\(srgb /u.test(color)) channels = channels.map((channel) => channel * 255)
+  return channels
+}
+
+function relativeLuminance(color) {
+  return relativeLuminanceFromChannels(rgbChannels(color))
+}
+
+function relativeLuminanceFromChannels(channels) {
+  const [red, green, blue] = channels.map((channel) => {
+    const srgb = channel / 255
+    return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4
+  })
+  return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+}
+
+function contrastRatio(foreground, background) {
+  const ink = relativeLuminance(foreground)
+  const fill = relativeLuminance(background)
+  return (Math.max(ink, fill) + 0.05) / (Math.min(ink, fill) + 0.05)
+}
+
+function contrastRatioFromChannels(foreground, background) {
+  const ink = relativeLuminanceFromChannels(foreground)
+  const fill = relativeLuminanceFromChannels(background)
+  return (Math.max(ink, fill) + 0.05) / (Math.min(ink, fill) + 0.05)
+}
+
+function compositeChannels(color, backdrop, opacity) {
+  const foregroundChannels = rgbChannels(color)
+  const backdropChannels = rgbChannels(backdrop)
+  return foregroundChannels.map((channel, index) =>
+    channel * opacity + backdropChannels[index] * (1 - opacity))
+}
+
+async function verifyCartographicMapChipContrast(page) {
+  const readRenderedLabels = () => page.evaluate(() => {
+    const parseAlpha = (color) => {
+      const values = color.match(/[\d.]+/gu)?.map(Number) ?? []
+      if (color.startsWith('color(srgb')) return color.includes('/') ? values[3] ?? 1 : 1
+      return color.startsWith('rgba') ? values[3] ?? 1 : 1
+    }
+    const backdropFor = (panel) => {
+      for (let ancestor = panel.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        const background = getComputedStyle(ancestor).backgroundColor
+        if (parseAlpha(background) >= 0.999) return background
+      }
+      return 'rgb(255, 255, 255)'
+    }
+
+    return [...document.querySelectorAll('.map-breakout--c .map-panel')].map((panel) => {
+      const mode = ['car', 'walk', 'bike'].find((key) => panel.classList.contains(`map-panel--${key}`))
+      const label = panel.querySelector('.map-panel-label')
+      const viewport = panel.querySelector('.map-viewport')
+      if (!mode || !label || !viewport) throw new Error('Cartographic map panel is missing its mode, label, or viewport')
+      let effectiveOpacity = 1
+      const dimmedAncestors = []
+      for (let ancestor = label; ancestor; ancestor = ancestor.parentElement) {
+        const opacity = Number.parseFloat(getComputedStyle(ancestor).opacity)
+        effectiveOpacity *= opacity
+        if (opacity < 0.999) {
+          dimmedAncestors.push({
+            tagName: ancestor.tagName,
+            classes: typeof ancestor.className === 'string' ? ancestor.className : '',
+            opacity,
+          })
+        }
+      }
+      const style = getComputedStyle(label)
+      return {
+        mode,
+        active: panel.classList.contains('map-panel--active'),
+        panelDimmed: panel.classList.contains('map-panel--dimmed'),
+        viewportOpacity: Number.parseFloat(getComputedStyle(viewport).opacity),
+        foreground: style.color,
+        fill: style.backgroundColor,
+        backdrop: backdropFor(panel),
+        effectiveOpacity,
+        dimmedAncestors,
+      }
+    })
+  })
+
+  const measure = async (activatedBy, activeMode) => {
+    await page.waitForTimeout(200)
+    const rawLabels = await readRenderedLabels()
+    const labels = rawLabels.map((label) => {
+      const effectiveForeground = compositeChannels(label.foreground, label.backdrop, label.effectiveOpacity)
+      const effectiveFill = compositeChannels(label.fill, label.backdrop, label.effectiveOpacity)
+      return {
+        ...label,
+        effectiveForeground,
+        effectiveFill,
+        effectiveContrast: contrastRatioFromChannels(effectiveForeground, effectiveFill),
+      }
+    })
+    assert.deepEqual(labels.map(({ mode }) => mode).sort(), ['bike', 'car', 'walk'],
+      `${activatedBy} must measure all three cartographic map-title chips`)
+    assert.equal(labels.filter(({ active }) => active).length, 1,
+      `${activatedBy} must make exactly one cartographic map panel active`)
+    for (const label of labels) {
+      assert.equal(label.active, label.mode === activeMode,
+        `${activatedBy} must activate ${activeMode}, got ${JSON.stringify(label)}`)
+      assert(label.effectiveContrast >= 4.5,
+        `${activatedBy} must preserve effective 4.5:1 contrast for the ${label.mode} map chip after ancestor compositing: ${JSON.stringify(label)}`)
+      assert.equal(label.effectiveOpacity, 1,
+        `${activatedBy} must leave the ${label.mode} label fully opaque after ancestor compositing: ${JSON.stringify(label)}`)
+      assert.deepEqual(label.dimmedAncestors, [],
+        `${activatedBy} must not dim the ${label.mode} label through an opacity ancestor: ${JSON.stringify(label)}`)
+      if (label.mode === activeMode) {
+        assert.equal(label.panelDimmed, false, `${activatedBy} active ${label.mode} panel must not be marked dimmed`)
+        assert.equal(label.viewportOpacity, 1, `${activatedBy} active ${label.mode} map visual must remain fully opaque`)
+      } else {
+        assert.equal(label.panelDimmed, true, `${activatedBy} inactive ${label.mode} panel must remain de-emphasized`)
+        assert(Math.abs(label.viewportOpacity - 0.46) < 0.01,
+          `${activatedBy} inactive ${label.mode} map visual must retain its dimmed opacity: ${JSON.stringify(label)}`)
+      }
+    }
+    return { activeMode, labels }
+  }
+
+  await page.locator('.map-breakout--c .map-panel--car').hover()
+  await page.waitForFunction(() =>
+    document.querySelector('.map-breakout--c .map-panel--car')?.classList.contains('map-panel--active'))
+  const pointerHover = await measure('pointer hover', 'car')
+
+  const keyboardTarget = page.locator('.map-breakout--c .map-panel--walk .map-viewport')
+  await page.keyboard.press('Tab')
+  await keyboardTarget.focus()
+  assert.equal(await keyboardTarget.evaluate((button) =>
+    document.activeElement === button && button.matches(':focus-visible')), true,
+  'Keyboard navigation must visibly focus the walking map button')
+  const keyboardPanelState = await page.evaluate(() =>
+    [...document.querySelectorAll('.map-breakout--c .map-panel')].map((panel) => panel.className))
+  assert(keyboardPanelState.some((classes) => classes.includes('map-panel--walk') && classes.includes('map-panel--active')),
+    `Keyboard focus must activate the walking map panel: ${JSON.stringify(keyboardPanelState)}`)
+  const keyboardFocus = await measure('keyboard focus', 'walk')
+
+  return { pointerHover, keyboardFocus }
+}
+
+async function verifyWaffleLegendInteraction(page) {
+  const action = page.locator('.cahier-figure-legend-action--chip').first()
+  const readActionState = () => action.evaluate((button) => {
+    const style = getComputedStyle(button)
+    const icon = button.querySelector('svg')
+    return {
+      foreground: style.color,
+      fill: style.backgroundColor,
+      icon: icon ? getComputedStyle(icon).color : null,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      outlineColor: style.outlineColor,
+      outlineOffset: style.outlineOffset,
+      borderStyle: style.borderStyle,
+      borderWidth: style.borderWidth,
+      borderColor: style.borderColor,
+      transform: style.transform,
+      focusVisible: button.matches(':focus-visible'),
+    }
+  })
+  const expectContrast = (state, name) => {
+    assert(contrastRatio(state.foreground, state.fill) >= 4.5,
+      `Waffle ${name} foreground must retain 4.5:1 contrast: ${JSON.stringify(state)}`)
+    if (state.icon) assert(contrastRatio(state.icon, state.fill) >= 4.5,
+      `Waffle ${name} icon must retain 4.5:1 contrast: ${JSON.stringify(state)}`)
+  }
+
+  const normal = await readActionState()
+  expectContrast(normal, 'resting')
+  await action.hover()
+  const hover = await readActionState()
+  assert.equal(hover.fill, normal.fill, 'Waffle hover must preserve the contrast-safe chip fill')
+  assert.equal(hover.foreground, normal.foreground, 'Waffle hover must preserve the contrast-safe chip ink')
+  assert.equal(hover.outlineStyle, 'solid', 'Waffle chip hover must add a visible outline')
+  assert.equal(hover.outlineWidth, '2px', 'Waffle chip hover must use the visible 2px affordance')
+  assert.equal(hover.outlineColor, hover.foreground, 'Waffle chip hover outline must use its contrast-safe ink')
+  assert.notDeepEqual(
+    [hover.outlineStyle, hover.outlineWidth, hover.outlineColor],
+    [normal.outlineStyle, normal.outlineWidth, normal.outlineColor],
+    'Waffle chip hover must look visibly different from its resting state',
+  )
+  expectContrast(hover, 'hover')
+
+  const actionBox = await action.boundingBox()
+  assert(actionBox, 'Waffle legend action must have a hit target for its active-state check')
+  await page.mouse.move(actionBox.x + actionBox.width / 2, actionBox.y + actionBox.height / 2)
+  await page.mouse.down()
+  const active = await readActionState()
+  assert.equal(active.fill, normal.fill, 'Waffle active state must preserve the contrast-safe chip fill')
+  assert.equal(active.foreground, normal.foreground, 'Waffle active state must preserve the contrast-safe chip ink')
+  assert.equal(active.borderColor, active.foreground, 'Waffle active state must add a contrast-safe border')
+  assert.notEqual(active.transform, 'none', 'Waffle chip active state must visibly compress the chip')
+  expectContrast(active, 'active')
+  await page.mouse.up()
+
+  const openedDialog = page.locator('dialog[open]')
+  await openedDialog.waitFor({ state: 'visible' })
+  assert.equal(await openedDialog.getAttribute('aria-modal'), 'true',
+    'Activating a Waffle legend chip must preserve modal dialog semantics')
+  await page.keyboard.press('Escape')
+  await openedDialog.waitFor({ state: 'hidden' })
+
+  await page.locator('.aedar-waffle-tile').last().focus()
+  await page.keyboard.press('Tab')
+  assert.equal(await action.evaluate((button) => button.matches(':focus-visible')), true,
+    'Keyboard navigation must give the Waffle legend chip visible focus')
+  const focused = await readActionState()
+  assert.equal(focused.outlineStyle, 'solid', 'Waffle chip focus must retain a visible outline')
+  assert.equal(focused.outlineWidth, '2px', 'Waffle chip focus ring must remain 2px wide')
+  assert.notEqual(focused.outlineColor, 'rgba(0, 0, 0, 0)',
+    'Waffle chip focus ring must use a visible color')
+  expectContrast(focused, 'focused')
+
+  const keyboardTile = page.locator('.aedar-waffle-tile').last()
+  await page.keyboard.press('Shift+Tab')
+  const focusedTile = await keyboardTile.evaluate((button) => {
+    const style = getComputedStyle(button)
+    const { width, height } = button.getBoundingClientRect()
+    return {
+      active: document.activeElement === button,
+      focusVisible: button.matches(':focus-visible'),
+      width,
+      height,
+      outlineStyle: style.outlineStyle,
+      outlineWidth: style.outlineWidth,
+      outlineColor: style.outlineColor,
+      name: button.getAttribute('aria-label')?.trim() ?? '',
+    }
+  })
+  assert.equal(focusedTile.active, true, 'Keyboard reverse navigation must return focus to the Waffle tile')
+  assert.equal(focusedTile.focusVisible, true, 'The focused Waffle tile must expose keyboard-visible focus')
+  assert.equal(focusedTile.outlineStyle, 'solid', 'Waffle tile focus must retain a visible outline')
+  assert.equal(focusedTile.outlineWidth, '2px', 'Waffle tile focus outline must remain 2px wide')
+  assert.notEqual(focusedTile.outlineColor, 'rgba(0, 0, 0, 0)',
+    'Waffle tile focus outline must use a visible color')
+  assert.equal(focusedTile.width, 14, 'The focused mobile Waffle tile hit box must stay exactly 14px wide')
+  assert.equal(focusedTile.height, 14, 'The focused mobile Waffle tile hit box must stay exactly 14px high')
+  assert(focusedTile.name.length > 0, 'The focused Waffle tile must retain its accessible name')
+  await page.keyboard.press('Enter')
+  const tileDialog = page.locator('dialog[open]')
+  await tileDialog.waitFor({ state: 'visible' })
+  assert.equal(await tileDialog.getAttribute('aria-modal'), 'true',
+    'Keyboard activation of a Waffle tile must open the accessible modal detail')
+  await page.keyboard.press('Escape')
+  await tileDialog.waitFor({ state: 'hidden' })
+
+  return {
+    normal,
+    hover,
+    active,
+    focused,
+    focusedTile,
+    dialogOpened: true,
+    dialogDismissedWithEscape: true,
+    tileKeyboardActivation: true,
+  }
+}
+
 const server = await createServer({
   configFile: resolve(appRoot, 'vite.config.ts'),
   // Let Vite select an available ephemeral port; the owner's live server may
@@ -158,6 +421,427 @@ try {
       throw error
     }
     await page.locator('#section-aedar-equipment-explorer').waitFor({ state: 'visible' })
+
+    const w3Visual = await page.evaluate(() => {
+      const waffle = document.querySelector('.aedar-waffle')
+      const grid = waffle?.querySelector('.aedar-waffle-grid')
+      const tiles = [...(grid?.querySelectorAll('.aedar-waffle-tile') ?? [])]
+      const legend = [...(waffle?.querySelectorAll('.cahier-figure-legend-action') ?? [])]
+      const box = (element) => {
+        const { x, y, right, bottom, width, height } = element.getBoundingClientRect()
+        return { x, y, right, bottom, width, height, center: x + width / 2 }
+      }
+      const gridBox = grid ? box(grid) : null
+      const waffleBox = waffle ? box(waffle) : null
+      const tileBoxes = tiles.map(box)
+      const tileSemantics = tiles.map((tile) => ({
+        tagName: tile.tagName,
+        name: tile.getAttribute('aria-label')?.trim() ?? '',
+      }))
+      const tileVisuals = tiles.map((tile) => {
+        const style = getComputedStyle(tile)
+        const paint = getComputedStyle(tile, '::before')
+        const target = box(tile)
+        return {
+          width: target.width,
+          height: target.height,
+          fill: style.backgroundColor,
+          pseudoContent: paint.content,
+        }
+      })
+      const gridStyle = grid ? getComputedStyle(grid) : null
+      const labelSurfaces = [
+        ['CahierBlankMapSlots', '.blank-map-slots .map-panel-label'],
+        ['AedarDiversityLossMapsCahier', '.aedar-diversity-loss-map-label'],
+        ['CartographicBreakoutPrototype', '.map-breakout .map-panel-label'],
+      ].map(([surface, selector]) => {
+        const labels = [...document.querySelectorAll(selector)]
+        return {
+          surface,
+          count: labels.length,
+          labels: labels.map((label) => {
+            const parent = label.parentElement
+            if (!parent) throw new Error(`${surface} label must have its map panel parent`)
+            const panelBounds = box(parent)
+            const icon = label.querySelector('svg')
+            const text = label.querySelector('span')
+            const iconBounds = icon ? box(icon) : null
+            const textBounds = text ? box(text) : null
+            const probe = document.createElement('span')
+            probe.style.color = 'var(--mode-ring)'
+            probe.style.font = 'var(--text-overline)'
+            probe.style.letterSpacing = 'var(--text-overline-tracking)'
+            probe.style.textTransform = 'uppercase'
+            probe.style.background = 'transparent'
+            probe.style.padding = '0'
+            probe.style.margin = '0 0 6px'
+            probe.style.minHeight = '28px'
+            probe.style.gap = '6px'
+            probe.style.borderRadius = '0'
+            parent.append(probe)
+            const modeFill = getComputedStyle(probe).color
+            const reference = getComputedStyle(probe)
+            const originalMapTitle = {
+              fontFamily: reference.fontFamily,
+              fontSize: reference.fontSize,
+              fontWeight: reference.fontWeight,
+              lineHeight: reference.lineHeight,
+              letterSpacing: reference.letterSpacing,
+              textTransform: reference.textTransform,
+              backgroundColor: reference.backgroundColor,
+              backgroundImage: reference.backgroundImage,
+              padding: [reference.paddingTop, reference.paddingRight, reference.paddingBottom, reference.paddingLeft],
+              margin: [reference.marginTop, reference.marginRight, reference.marginBottom, reference.marginLeft],
+              minHeight: reference.minHeight,
+              gap: reference.gap,
+              borderRadius: reference.borderRadius,
+            }
+            probe.remove()
+            const style = getComputedStyle(label)
+            const { x, right, width, height } = label.getBoundingClientRect()
+            return {
+              text: label.textContent.trim(),
+              fill: style.backgroundColor,
+              foreground: style.color,
+              justifyContent: style.justifyContent,
+              textAlign: style.textAlign,
+              center: x + width / 2,
+              panelCenter: panelBounds.center,
+              contentCenter: iconBounds && textBounds
+                ? (Math.min(iconBounds.x, textBounds.x) + Math.max(iconBounds.right, textBounds.right)) / 2
+                : null,
+              modeFill,
+              textTransform: style.textTransform,
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight,
+              fontFamily: style.fontFamily,
+              letterSpacing: style.letterSpacing,
+              lineHeight: style.lineHeight,
+              originalMapTitle,
+              padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+              minHeight: style.minHeight,
+              margin: [style.marginTop, style.marginRight, style.marginBottom, style.marginLeft],
+              gap: style.gap,
+              backgroundImage: style.backgroundImage,
+              borderRadius: style.borderRadius,
+              iconColor: label.querySelector('svg') ? getComputedStyle(label.querySelector('svg')).color : null,
+              width,
+              height,
+              x,
+              right,
+              iconCount: label.querySelectorAll('svg').length,
+            }
+          }),
+        }
+      })
+      return {
+        viewport: innerWidth,
+        waffle: {
+          tileCount: tiles.length,
+          gridWidth: gridBox?.width ?? 0,
+          gridHeight: gridBox?.height ?? 0,
+          gridCenter: gridBox?.center ?? 0,
+          waffleWidth: waffleBox?.width ?? 0,
+          waffleCenter: waffleBox?.center ?? 0,
+          gridClientWidth: grid?.clientWidth ?? 0,
+          gridScrollWidth: grid?.scrollWidth ?? 0,
+          gridTemplateRows: gridStyle?.gridTemplateRows ?? '',
+          gridTemplateColumns: gridStyle?.gridTemplateColumns ?? '',
+          gridAutoFlow: gridStyle?.gridAutoFlow ?? '',
+          gridGap: gridStyle?.gap ?? '',
+          classes: grid?.className ?? '',
+          tileBoxes,
+          tileSemantics,
+          tileVisuals,
+          tileBucketOrder: tiles.map((tile) => tile.getAttribute('data-bucket')),
+          tileFillsByBucket: Object.fromEntries(tiles.map((tile) => [
+            tile.getAttribute('data-bucket'), getComputedStyle(tile).backgroundColor,
+          ])),
+          legend: legend.map((button) => {
+            const style = getComputedStyle(button)
+            let desktopBaseline = null
+            if (innerWidth > 760 && button.parentElement) {
+              const probe = button.cloneNode(true)
+              probe.classList.remove('cahier-figure-legend-action--chip')
+              probe.removeAttribute('style')
+              probe.style.cssText = 'position:fixed;left:-10000px;top:0;visibility:hidden'
+              button.parentElement.append(probe)
+              const reference = getComputedStyle(probe)
+              desktopBaseline = {
+                style: {
+                  backgroundColor: reference.backgroundColor,
+                  color: reference.color,
+                  fontFamily: reference.fontFamily,
+                  fontSize: reference.fontSize,
+                  fontWeight: reference.fontWeight,
+                  lineHeight: reference.lineHeight,
+                  letterSpacing: reference.letterSpacing,
+                  textTransform: reference.textTransform,
+                  borderColor: reference.borderColor,
+                  borderWidth: reference.borderWidth,
+                  borderStyle: reference.borderStyle,
+                  borderRadius: reference.borderRadius,
+                  padding: [reference.paddingTop, reference.paddingRight, reference.paddingBottom, reference.paddingLeft],
+                  minHeight: reference.minHeight,
+                },
+                iconColor: probe.querySelector('svg') ? getComputedStyle(probe.querySelector('svg')).color : null,
+              }
+              probe.remove()
+            }
+            return {
+              key: button.getAttribute('data-legend-key'),
+              label: button.querySelector('.cahier-figure-legend-label')?.textContent.trim() ?? '',
+              fill: style.backgroundColor,
+              foreground: style.color,
+              fontFamily: style.fontFamily,
+              fontSize: style.fontSize,
+              fontWeight: style.fontWeight,
+              lineHeight: style.lineHeight,
+              letterSpacing: style.letterSpacing,
+              textTransform: style.textTransform,
+              borderColor: style.borderColor,
+              borderWidth: style.borderWidth,
+              borderStyle: style.borderStyle,
+              borderRadius: style.borderRadius,
+              padding: [style.paddingTop, style.paddingRight, style.paddingBottom, style.paddingLeft],
+              minHeight: style.minHeight,
+              desktopBaseline,
+              iconColor: button.querySelector('svg') ? getComputedStyle(button.querySelector('svg')).color : null,
+              iconCount: button.querySelectorAll('svg').length,
+              height: box(button).height,
+            }
+          }),
+          note: waffle.querySelector('.aedar-waffle-legend-note')?.textContent.trim() ?? null,
+          text: waffle.innerText,
+        },
+        labelSurfaces,
+      }
+    })
+    assert.equal(w3Visual.waffle.tileCount, 235,
+      `W3 must exercise the full production AEDAR category universe at ${width}px`)
+    assert(w3Visual.waffle.tileSemantics.every(({ tagName, name }) =>
+      tagName === 'BUTTON' && name.length > 0),
+    `All real AEDAR category tiles must remain native buttons with accessible names at ${width}px`)
+    assert.deepEqual(w3Visual.labelSurfaces.map(({ surface, count }) => ({ surface, count: count > 0 })), [
+      { surface: 'CahierBlankMapSlots', count: true },
+      { surface: 'AedarDiversityLossMapsCahier', count: true },
+      { surface: 'CartographicBreakoutPrototype', count: true },
+    ], `W3 browser fixture must render each real map-title surface at ${width}px: ${JSON.stringify(w3Visual.labelSurfaces)}`)
+    assert.equal(w3Visual.waffle.gridScrollWidth, w3Visual.waffle.gridClientWidth,
+      `Waffle layout must not create an internal horizontal scroller at ${width}px`)
+    assert.equal(w3Visual.waffle.legend.length, 6,
+      `All six AEDAR buckets must retain a Waffle legend action at ${width}px`)
+    const legendKeys = w3Visual.waffle.legend.map(({ key }) => key)
+    assert(legendKeys.every((key) => typeof key === 'string') && new Set(legendKeys).size === 6,
+      `Waffle legend actions must keep a distinct key for every AEDAR bucket at ${width}px`)
+    assert.equal(w3Visual.waffle.legend.every(({ iconCount }) => iconCount === 1), true,
+      `All Waffle bucket actions must keep their existing icon at ${width}px`)
+    if (width <= 760) {
+      assert(w3Visual.waffle.tileBoxes.every(({ width: tileWidth, height: tileHeight }) =>
+        Math.abs(tileWidth - 14) < 0.1 && Math.abs(tileHeight - 14) < 0.1),
+      `Every mobile Waffle button hit box must be exactly 14×14 CSS px at ${width}px: ${JSON.stringify(w3Visual.waffle.tileBoxes.slice(0, 4))}`)
+      assert(w3Visual.waffle.tileVisuals.every(({ width: tileWidth, height: tileHeight, fill, pseudoContent }) =>
+        Math.abs(tileWidth - 14) < 0.1 && Math.abs(tileHeight - 14) < 0.1 && pseudoContent === 'none' &&
+        fill !== 'rgba(0, 0, 0, 0)'),
+      `Mobile Waffle buttons themselves must paint at 14×14px without a larger hit-area wrapper at ${width}px: ${JSON.stringify(w3Visual.waffle.tileVisuals.slice(0, 4))}`)
+      const columns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
+      const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
+      const rowCounts = new Map()
+      const columnCounts = new Map()
+      for (const { x, y } of w3Visual.waffle.tileBoxes) {
+        const row = Math.round(y * 10) / 10
+        const column = Math.round(x * 10) / 10
+        rowCounts.set(row, (rowCounts.get(row) ?? 0) + 1)
+        columnCounts.set(column, (columnCounts.get(column) ?? 0) + 1)
+      }
+      assert.equal(columns, 11,
+        `Mobile Waffle must use eleven columns without horizontal overflow at ${width}px, got ${columns}`)
+      assert.equal(rows, 22,
+        `Mobile Waffle must use 22 rows at ${width}px, got ${rows}`)
+      assert([...rowCounts.values()].slice(0, -1).every((count) => count === 11),
+        `The first 21 mobile rows must contain eleven actual category buttons at ${width}px`)
+      assert.equal([...rowCounts.values()].at(-1), 4,
+        `The final mobile row must contain the four remaining real category buttons at ${width}px`)
+      const columnsWithTwentyTwoTiles = [...columnCounts.values()].filter((count) => count === 22).length
+      const columnsWithTwentyOneTiles = [...columnCounts.values()].filter((count) => count === 21).length
+      assert.equal(columnsWithTwentyTwoTiles, 4,
+        `Four mobile columns must contain 22 actual category buttons at ${width}px`)
+      assert.equal(columnsWithTwentyOneTiles, 7,
+        `Seven mobile columns must contain 21 actual category buttons at ${width}px`)
+      assert(Math.abs(w3Visual.waffle.gridCenter - w3Visual.waffle.waffleCenter) <= 1,
+        `Mobile Waffle grid must be centered in the available figure width at ${width}px`)
+      assert(w3Visual.waffle.gridWidth <= w3Visual.waffle.waffleWidth,
+        `Mobile Waffle grid must fit inside its figure at ${width}px`)
+      assert(Math.abs(w3Visual.waffle.gridWidth - 174) < 0.1,
+        `Eleven 14px columns and ten 2px gaps must form a 174px mobile grid at ${width}px, got ${w3Visual.waffle.gridWidth}`)
+      assert(Math.abs(w3Visual.waffle.gridHeight - 350) < 0.1,
+        `Twenty-two 14px rows and twenty-one 2px gaps must form a 350px mobile grid at ${width}px, got ${w3Visual.waffle.gridHeight}`)
+      for (let index = 1; index < w3Visual.waffle.tileBoxes.length; index += 1) {
+        const previous = w3Visual.waffle.tileBoxes[index - 1]
+        const current = w3Visual.waffle.tileBoxes[index]
+        assert(current.y > previous.y || (current.y === previous.y && current.x > previous.x),
+          `Mobile category buttons must preserve row-major category order at ${width}px`)
+      }
+      for (const chip of w3Visual.waffle.legend) {
+        const tileFill = w3Visual.waffle.tileFillsByBucket[chip.key]
+        if (tileFill) assert.equal(chip.fill, tileFill,
+          `Mobile Waffle ${chip.key} chip must match its unchanged bucket tile fill at ${width}px`)
+        assert.notEqual(chip.fill, 'rgba(0, 0, 0, 0)',
+          `Mobile Waffle bucket ${chip.label} must render as a filled chip at ${width}px`)
+        assert(contrastRatio(chip.foreground, chip.fill) >= 4.5,
+          `Mobile Waffle bucket ${chip.label} must have 4.5:1 computed contrast at ${width}px: ${JSON.stringify(chip)}`)
+        assert(contrastRatio(chip.iconColor, chip.fill) >= 4.5,
+          `Mobile Waffle bucket ${chip.label} icon must have 4.5:1 contrast at ${width}px: ${JSON.stringify(chip)}`)
+        assert(chip.height >= 36 - 0.5,
+          `Mobile Waffle legend action ${chip.label} must retain its 36px target at ${width}px`)
+      }
+    } else {
+      assert(w3Visual.waffle.classes.includes('aedar-waffle-grid--five-rows'),
+        `Desktop Waffle must retain the original five-row layout class at ${width}px`)
+      const columns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
+      const rows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
+      assert.equal(rows, 5, `Desktop Waffle must retain its original five rows at ${width}px`)
+      assert.equal(columns, 47, `Desktop Waffle must retain its original 47 columns at ${width}px`)
+      assert.equal(w3Visual.waffle.gridAutoFlow, 'column',
+        `Desktop Waffle must retain the original column-major order at ${width}px`)
+      assert.equal(w3Visual.waffle.gridGap, '2px',
+        `Desktop Waffle must retain the original 2px tile gap at ${width}px`)
+      assert(Math.abs(w3Visual.waffle.gridWidth - Math.min(w3Visual.waffle.waffleWidth, 1000)) < 1,
+        `Desktop Waffle must retain its original 1000px width cap at ${width}px: ${JSON.stringify(w3Visual.waffle)}`)
+      for (const chip of w3Visual.waffle.legend) {
+        const style = {
+          backgroundColor: chip.fill,
+          color: chip.foreground,
+          fontFamily: chip.fontFamily,
+          fontSize: chip.fontSize,
+          fontWeight: chip.fontWeight,
+          lineHeight: chip.lineHeight,
+          letterSpacing: chip.letterSpacing,
+          textTransform: chip.textTransform,
+          borderColor: chip.borderColor,
+          borderWidth: chip.borderWidth,
+          borderStyle: chip.borderStyle,
+          borderRadius: chip.borderRadius,
+          padding: chip.padding,
+          minHeight: chip.minHeight,
+        }
+        assert.deepEqual(style, chip.desktopBaseline.style,
+          `Desktop Waffle ${chip.label} legend label must match the original unfilled action at ${width}px`)
+        assert.equal(chip.iconColor, chip.desktopBaseline.iconColor,
+          `Desktop Waffle ${chip.label} icon must retain its original bucket color at ${width}px`)
+        assert.equal(chip.fill, 'rgba(0, 0, 0, 0)',
+          `Desktop Waffle ${chip.label} label must not be a filled chip at ${width}px`)
+      }
+    }
+    assert.equal(w3Visual.waffle.note, null,
+      `Waffle color-limitation note must be absent at ${width}px`)
+    assert(!w3Visual.waffle.text.includes('Les teintes proches ne distinguent pas toutes les catégories.'),
+      `Waffle must not replace the removed note with its limitation copy at ${width}px`)
+    assert(w3Visual.waffle.tileBucketOrder.every((bucket, index, buckets) =>
+      index === 0 || bucket === buckets[index - 1] || !buckets.slice(0, index).includes(bucket)),
+    `Waffle tiles must remain grouped in their existing bucket order at ${width}px`)
+    for (const { surface, labels } of w3Visual.labelSurfaces) {
+      for (const label of labels) {
+        assert.equal(label.iconCount, 1, `${surface} must preserve each map mode icon at ${width}px`)
+        assert.equal(label.iconColor, label.foreground,
+          `${surface} map mode icon must use its label's computed foreground at ${width}px`)
+        assert(label.x >= -0.5 && label.right <= width + 0.5,
+          `${surface} chip must stay inside the viewport at ${width}px: ${JSON.stringify(label)}`)
+        if (width <= 760) {
+          assert(Math.abs(label.center - label.panelCenter) <= 1,
+            `${surface} mobile map chip must be centered in its panel at ${width}px: ${JSON.stringify(label)}`)
+          assert.equal(label.justifyContent, 'center',
+            `${surface} mobile map label content must be centered inside the chip at ${width}px`)
+          assert.equal(label.textAlign, 'center',
+            `${surface} mobile map label text must be centered at ${width}px`)
+          assert(Math.abs(label.contentCenter - label.center) <= 2,
+            `${surface} mobile map icon/text group must be centered in the chip at ${width}px: ${JSON.stringify(label)}`)
+          assert(Number.parseFloat(label.fontSize) >= 12,
+            `${surface} mobile map title must use a semantic type role at or above 12px at ${width}px: ${JSON.stringify(label)}`)
+          assert.equal(label.fill, label.modeFill,
+            `${surface} mobile chip must use its existing mode color at ${width}px: ${JSON.stringify(label)}`)
+          assert.equal(label.textTransform, 'none',
+            `${surface} mobile map labels must use natural case at ${width}px`)
+          assert(contrastRatio(label.foreground, label.fill) >= 4.5,
+            `${surface} map label must have 4.5:1 computed contrast at ${width}px: ${JSON.stringify(label)}`)
+          assert(contrastRatio(label.iconColor, label.fill) >= 4.5,
+            `${surface} map icon must have 4.5:1 computed contrast at ${width}px: ${JSON.stringify(label)}`)
+        } else {
+          assert.equal(label.foreground, label.modeFill,
+            `${surface} desktop map title must retain its original mode color at ${width}px`)
+          assert.equal(label.fill, 'rgba(0, 0, 0, 0)',
+            `${surface} desktop map title must remain unfilled at ${width}px`)
+          assert.equal(label.textTransform, 'uppercase',
+            `${surface} desktop map title must retain uppercase styling at ${width}px`)
+          for (const property of [
+            'fontFamily', 'fontSize', 'fontWeight', 'lineHeight', 'letterSpacing', 'textTransform',
+            'fill', 'backgroundImage', 'padding', 'margin', 'minHeight', 'gap', 'borderRadius',
+          ]) {
+            const actual = property === 'fill' ? label.fill : label[property]
+            const expected = property === 'fill' ? label.originalMapTitle.backgroundColor : label.originalMapTitle[property]
+            assert.deepEqual(actual, expected,
+              `${surface} desktop map title ${property} must match the original --text-overline probe at ${width}px: ${JSON.stringify(label)}`)
+          }
+        }
+      }
+    }
+    if (width === 320) {
+      const mapLabelSelectors = [
+        ['CahierBlankMapSlots', '.blank-map-slots .map-panel-label'],
+        ['AedarDiversityLossMapsCahier', '.aedar-diversity-loss-map-label'],
+        ['CartographicBreakoutPrototype', '.map-breakout .map-panel-label'],
+      ]
+      for (const [surface, selector] of mapLabelSelectors) {
+        await page.locator(selector).first().scrollIntoViewIfNeeded()
+        await page.screenshot({ path: resolve(evidenceDir, `issue829-map-chip-${surface}-320.png`), fullPage: false })
+      }
+      await page.locator('.aedar-waffle-grid').screenshot({
+        path: resolve(evidenceDir, 'issue829-waffle-mobile-grid-320.png'),
+      })
+    }
+    const cartographicMapChipInteraction = width === 320
+      ? await verifyCartographicMapChipContrast(page)
+      : null
+    const waffleLegendInteraction = width === 320 ? await verifyWaffleLegendInteraction(page) : null
+    const tileColumns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
+    const tileRows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
+    const finalRowY = Math.max(...w3Visual.waffle.tileBoxes.map(({ y }) => y))
+    const w3Summary = {
+      waffle: {
+        tileCount: w3Visual.waffle.tileCount,
+        gridWidth: w3Visual.waffle.gridWidth,
+        gridHeight: w3Visual.waffle.gridHeight,
+        columns: tileColumns,
+        rows: tileRows,
+        finalRowTileCount: w3Visual.waffle.tileBoxes.filter(({ y }) => Math.abs(y - finalRowY) < 0.5).length,
+        minimumHitTarget: {
+          width: Math.min(...w3Visual.waffle.tileBoxes.map(({ width: tileWidth }) => tileWidth)),
+          height: Math.min(...w3Visual.waffle.tileBoxes.map(({ height: tileHeight }) => tileHeight)),
+        },
+        minimumVisualTile: {
+          width: Math.min(...w3Visual.waffle.tileVisuals.map(({ width: tileWidth }) => tileWidth)),
+          height: Math.min(...w3Visual.waffle.tileVisuals.map(({ height: tileHeight }) => tileHeight)),
+        },
+        legend: w3Visual.waffle.legend.map((chip) => ({
+          key: chip.key,
+          label: chip.label,
+          fill: chip.fill,
+          foreground: chip.foreground,
+          contrast: width <= 760 ? Number(contrastRatio(chip.foreground, chip.fill).toFixed(2)) : null,
+        })),
+      },
+      mapLabels: w3Visual.labelSurfaces.map(({ surface, labels }) => ({
+        surface,
+        labels: labels.map((label) => ({
+          text: label.text,
+          centeredInPanel: width <= 760 ? Math.abs(label.center - label.panelCenter) <= 1 : null,
+          fill: width <= 760 ? label.fill : null,
+          foreground: width <= 760 ? label.foreground : null,
+          contrast: width <= 760 ? Number(contrastRatio(label.foreground, label.fill).toFixed(2)) : null,
+          iconCount: label.iconCount,
+        })),
+      })),
+    }
 
     const longYAxisFigure = await page.evaluate(async ({ baseUrl, railContract }) => {
       const root = document.createElement('div')
@@ -857,6 +1541,9 @@ try {
     reports.push({
       width,
       ...metrics,
+      w3: w3Summary,
+      cartographicMapChipInteraction,
+      waffleLegendInteraction,
       mobileIndexInteraction,
       longYAxisFigure,
       accessRampLongYAxisFigure,

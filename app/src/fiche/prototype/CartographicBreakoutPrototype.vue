@@ -393,6 +393,8 @@ async function inspect(mode: ModeKey): Promise<void> {
 
 </template>
 
+<style src="./cahierMapPanelLabel.css"></style>
+
 <style scoped>
 .map-breakout {
   --cahier-cycle-protected: var(--cahier-mode-bike);
@@ -441,15 +443,7 @@ async function inspect(mode: ModeKey): Promise<void> {
 .map-panel--active { opacity: 1; }
 
 .map-panel-label {
-  display: flex;
-  gap: 6px;
-  align-items: center;
-  min-height: 28px;
   margin-bottom: 6px;
-  color: var(--mode-ring);
-  font: var(--text-overline);
-  letter-spacing: var(--text-overline-tracking);
-  text-transform: uppercase;
 }
 
 .map-breakout--c .map-panel-label { justify-content: center; }
@@ -460,10 +454,6 @@ async function inspect(mode: ModeKey): Promise<void> {
 }
 
 .map-breakout--a .plate > .cahier-figure-title { grid-column: 1 / -1; }
-
-.map-panel--car { --mode-ring: var(--cahier-mode-car); }
-.map-panel--walk { --mode-ring: var(--cahier-mode-foot); }
-.map-panel--bike { --mode-ring: var(--cahier-mode-bike); }
 
 .map-breakout--c .plate {
   grid-template-columns: var(--cahier-map-columns);
@@ -688,6 +678,10 @@ async function inspect(mode: ModeKey): Promise<void> {
   .map-breakout--c .plate { grid-template-areas: 'header' 'title' 'car' 'walk' 'bike' 'keys' 'apparatus'; }
   .plate-apparatus { padding-inline: 0; }
   .map-breakout--c .map-panel { max-width: 520px; margin-inline: auto; }
+  .map-breakout .map-panel-label { justify-content: center; margin-inline: auto; text-align: center; }
+  .map-breakout .map-panel--dimmed { opacity: 1; }
+  .map-breakout .map-panel :deep(.map-viewport) { transition: opacity 150ms ease-out; }
+  .map-breakout .map-panel--dimmed :deep(.map-viewport) { opacity: .46; }
   .map-breakout--c .plate-keys { grid-template-columns: 1fr; }
   .plate-switcher { right: 50%; transform: translateX(50%); }
 }
