@@ -26,10 +26,12 @@ import {
 import type { Histoire, Indicateur, Payload, Theme } from '../payload/types'
 import {
   chargerModeleTerritoire,
+  chargerMetadonneesTheme,
+  THEME_METADATA_CHARGER_KEY,
   TERRITORY_READ_MODEL_CHARGER_KEY,
   validerModeleTerritoire,
 } from '../payload/territoryReadModel'
-import type { ChargerModeleTerritoire } from '../payload/territoryReadModel'
+import type { ChargerMetadonneesTheme, ChargerModeleTerritoire } from '../payload/territoryReadModel'
 import { acquireThemeFacts } from '../payload/themeAcquisition'
 import {
   semanticComparisonForTheme,
@@ -176,6 +178,10 @@ function modelFor(territoire: string) {
 async function monter(
   chemin: string,
   charger: ChargerModeleTerritoire = vi.fn(async (_type, territoire) => modelFor(territoire)),
+  chargerMetadata: ChargerMetadonneesTheme = async (theme) => validerThemeMetadata(
+    JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/theme_${theme}.json`), 'utf8')),
+    `theme_${theme}.json`,
+  ),
 ) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(chemin)
@@ -183,7 +189,10 @@ async function monter(
   const wrapper = mount(TerritoireView, {
     global: {
       plugins: [router],
-      provide: { [TERRITORY_READ_MODEL_CHARGER_KEY]: charger },
+      provide: {
+        [TERRITORY_READ_MODEL_CHARGER_KEY]: charger,
+        [THEME_METADATA_CHARGER_KEY]: chargerMetadata,
+      },
     },
   })
   await flushPromises()
@@ -208,6 +217,190 @@ async function monterNoteComparaison(mode: 'densite' | 'epci' | 'bretagne') {
 }
 
 describe('TerritoireView — modèle atomique par territoire', () => {
+  it('renders native Programmes facts while the selected legacy catalogue is still held', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    let notifyMetadataStarted!: () => void
+    const metadataStarted = new Promise<void>((resolve) => { notifyMetadataStarted = resolve })
+    let releaseMetadata!: (response: Response) => void
+    const heldMetadata = new Promise<Response>((resolve) => { releaseMetadata = resolve })
+    const focalRequests: Array<Array<Record<string, any>>> = []
+    let metadataCalls = 0
+    const modelWithBadInactiveMetadata = structuredClone(modelePublie22001)
+    modelWithBadInactiveMetadata.themes.habitat.theme_metadata = null
+    const programmeResources = nativeResources('programmes')
+    const annual = programmeResources.find((resource) => resource.resource_id === 'subventions_annuelles')!
+    const fetchAll = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/modeles-lecture/territoires/commune/22001.json') {
+        return new Response(JSON.stringify(modelWithBadInactiveMetadata), { status: 200 })
+      }
+      if (url.startsWith('/data/theme_')) {
+        metadataCalls += 1
+        if (metadataCalls === 1) {
+          notifyMetadataStarted()
+          return heldMetadata
+        }
+        const metadata = readFileSync(resolve(process.cwd(), '../public/data/theme_programmes.json'), 'utf8')
+        return new Response(metadata, { status: 200 })
+      }
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        focalRequests.push(items)
+        return nativeBatchResponse(items, (item, resource) => {
+          const data = nativeReadFixture(item, resource)
+          if (item.intent.kind !== 'facts') return data
+          if (resource.resource_id === annual.resource_id && Array.isArray(data.points)) {
+            return { ...data, points: data.points.map((point: Record<string, any>) => ({
+              ...point, value: 8_765_432,
+            })) }
+          }
+          if (resource.resource_kind === 'collection') {
+            return { ...data, entries: data.entries.map((entry: Record<string, any>) => ({ ...entry, value: 9_876 })) }
+          }
+          return data
+        })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchAll)
+    let wrapper: ReturnType<typeof mount> | null = null
+
+    try {
+      const mounted = await monter('/territoire/commune/22001', chargerModeleTerritoire, chargerMetadonneesTheme)
+      wrapper = mounted.wrapper
+      await metadataStarted
+      await flushPromises()
+
+      expect(focalRequests.length).toBeGreaterThan(0)
+      expect(wrapper.find('.subvention-total').text()).toContain('8,77 M€')
+      expect(wrapper.find('.subvention-total').text()).not.toContain('10,00 M€')
+      expect(wrapper.get('[data-groupe="subventions"]').text()).toContain(
+        'Explication des conditions d’éligibilité en cours de chargement.',
+      )
+
+      const focalFactReads = () => focalRequests.flat().filter((item) =>
+        item.resource === annual.resource_id && item.intent.kind === 'facts').length
+      const factReadsBeforeMetadataRetry = focalFactReads()
+      releaseMetadata(new Response('legacy catalogue unavailable', { status: 503 }))
+      await flushPromises()
+      expect(wrapper.get('[data-groupe="subventions"]').text()).toContain(
+        'L’explication des conditions d’éligibilité n’est pas disponible.',
+      )
+      const retry = wrapper.findAll('[data-groupe="subventions"] button')
+        .find((button) => button.text() === 'Réessayer l’explication')
+      expect(retry).toBeDefined()
+      await retry!.trigger('click')
+      await flushPromises()
+      expect(metadataCalls).toBe(2)
+      expect(focalFactReads()).toBe(factReadsBeforeMetadataRetry)
+      expect(wrapper.find('.subvention-total').text()).toContain('8,77 M€')
+      expect(wrapper.get('[data-groupe="subventions"]').text()).not.toContain(
+        'L’explication des conditions d’éligibilité n’est pas disponible.',
+      )
+    } finally {
+      releaseMetadata(new Response('legacy catalogue unavailable', { status: 503 }))
+      await flushPromises()
+      wrapper?.unmount()
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  }, 20000)
+
+  it('ignores a late catalogue response after the fiche route changes', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    let resolveFirstMetadata!: (metadata: Awaited<ReturnType<ChargerMetadonneesTheme>>) => void
+    const firstMetadata = new Promise<Awaited<ReturnType<ChargerMetadonneesTheme>>>((resolve) => {
+      resolveFirstMetadata = resolve
+    })
+    let notifySecondRequest!: () => void
+    const secondRequest = new Promise<void>((resolve) => { notifySecondRequest = resolve })
+    const canonical = validerThemeMetadata(JSON.parse(readFileSync(
+      resolve(process.cwd(), '../public/data/theme_programmes.json'), 'utf8')),
+    'theme_programmes.json')
+    const lateMetadata = structuredClone(canonical)
+    lateMetadata.subgroups.find((item) => item.key === 'subventions')!.framing = 'Une explication périmée arrivée trop tard.'
+    let metadataCalls = 0
+    const loadMetadata: ChargerMetadonneesTheme = vi.fn(async () => {
+      metadataCalls += 1
+      if (metadataCalls === 1) return firstMetadata
+      notifySecondRequest()
+      return canonical
+    })
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
+
+    const { router, wrapper } = await monter('/territoire/commune/22001',
+      vi.fn(async (_type, id) => modelFor(id)), loadMetadata)
+    try {
+      expect(metadataCalls).toBe(1)
+      await router.push('/territoire/commune/22002?theme=programmes')
+      await secondRequest
+      await flushPromises()
+      const focalProgrammesReadCount = () => requests.flat().filter((item) =>
+        item.resource === 'subventions_annuelles' && item.intent.kind === 'facts').length
+      const readsBeforeLateResponse = focalProgrammesReadCount()
+      expect(wrapper.find('h1').text()).toBe(modelFor('22002').territory.nom)
+
+      resolveFirstMetadata(lateMetadata)
+      await flushPromises()
+
+      expect(wrapper.find('h1').text()).toBe(modelFor('22002').territory.nom)
+      expect(wrapper.get('[data-groupe="subventions"]').text()).not.toContain('Une explication périmée arrivée trop tard.')
+      expect(focalProgrammesReadCount()).toBe(readsBeforeLateResponse)
+    } finally {
+      resolveFirstMetadata(lateMetadata)
+      wrapper.unmount()
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  }, 20000)
+
+  it('keeps a producer-typed non-scalar reading visible when its optional catalogue returns 404', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    const requests: Array<Array<Record<string, any>>> = []
+    const readingResource = nativeResources('economie').find((resource) =>
+      resource.resource_id === 'economie_selected_reading')!
+    const fetchAll = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/data/modeles-lecture/territoires/commune/22001.json') {
+        return new Response(JSON.stringify(modelePublie22001), { status: 200 })
+      }
+      if (url === '/data/theme_economie.json') return new Response('not found', { status: 404 })
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        return nativeBatchResponse(items, (item, resource) => {
+          const data = nativeReadFixture(item, resource)
+          if (item.intent.kind !== 'facts' || resource.resource_id !== readingResource.resource_id) return data
+          return { ...data, ranked_activities: data.ranked_activities.map((activity: Record<string, any>, index: number) =>
+            index === 0 ? { ...activity, activity_label: 'Sentinelle API — activité' } : activity) }
+        })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubGlobal('fetch', fetchAll)
+
+    const { wrapper } = await monter('/territoire/commune/22001?theme=economie',
+      chargerModeleTerritoire, chargerMetadonneesTheme)
+    try {
+      await flushPromises()
+      expect(wrapper.get('[role="tabpanel"]').text()).toContain('Sentinelle API — activité')
+      expect(requests.flat().some((item) => item.resource === readingResource.resource_id &&
+        item.intent.kind === 'facts')).toBe(true)
+      expect(fetchAll.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith('/data/theme_')))
+        .toEqual(['/data/theme_economie.json'])
+    } finally {
+      wrapper.unmount()
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  }, 20000)
+
   it('ouvre la fiche Programmes par défaut depuis les ressources sémantiques natives, sans route thème ni repli statique', async () => {
     const model = modeleAvecContextesComparaison()
     const requests: Array<Array<Record<string, any>>> = []

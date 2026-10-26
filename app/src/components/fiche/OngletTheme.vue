@@ -40,6 +40,8 @@ const props = defineProps<{
   theme: Theme
   payload: Payload
   territoire: string
+  metadataStatus?: 'loading' | 'ready' | 'error'
+  retryMetadata?: () => void
 }>()
 
 /** One subgroup plus its reading's figure and source — precomputed for the template. */
@@ -66,7 +68,8 @@ const metadata = computed(() => props.payload.themeMetadata?.[props.theme] ?? nu
 const refTerritoire = computed(() => trouverTerritoire(props.payload, props.territoire))
 
 const sousGroupes = computed<SousGroupeRenduComplet[]>(() =>
-  sousGroupesPourTerritoire(props.payload, props.theme, props.territoire).map((groupe) => ({
+  sousGroupesPourTerritoire(props.payload, props.theme, props.territoire,
+    { metadataVerified: props.metadataStatus === undefined || props.metadataStatus === 'ready' }).map((groupe) => ({
     ...groupe,
     figureLecture: groupe.lecture
       ? figureLecturePour(props.payload, props.territoire, groupe.lecture)
@@ -197,12 +200,16 @@ const lignesReseaux = computed(
          absent-data state — never an empty shell). -->
     <template v-for="groupe in sousGroupes" :key="groupe.key">
       <section
-        v-if="groupe.figures.length > 0 || groupe.lecture || groupe.lectureIndisponible"
+        v-if="groupe.figures.length > 0 || groupe.lecture || groupe.lectureIndisponible || groupe.metadataExplanationPending"
         class="sous-groupe"
         :data-groupe="groupe.key"
       >
         <h3 class="sous-groupe-titre">{{ groupe.label }}</h3>
         <p v-if="groupe.framing" class="sous-groupe-cadrage">{{ groupe.framing }}</p>
+        <p v-if="groupe.metadataExplanationPending" class="lecture-absent" role="status">
+          {{ metadataStatus === 'error' ? 'Cette explication n’est pas disponible.' : 'Explication en cours de chargement.' }}
+          <button v-if="metadataStatus === 'error'" type="button" @click="retryMetadata?.()">Réessayer l’explication</button>
+        </p>
 
         <!-- The reading slot — the app-owned template rendered with the
              resolved row's values, the reading's compact figure and its

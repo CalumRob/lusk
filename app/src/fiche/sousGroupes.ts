@@ -85,6 +85,7 @@ export interface SousGroupeRendu {
   key: string
   label: string
   framing: string | null
+  metadataExplanationPending: boolean
   /** The subgroup's indicators in app-owned presentation order, when rows exist. */
   figures: GroupeIndicateur[]
   /** The subgroup's compact figure (app-owned family + producer resource key). */
@@ -251,7 +252,7 @@ function lecturePour(
   territoire: string,
   groupe: string,
   reading: FicheReadingGrammar,
-  metadata: ThemeMetadata,
+  metadata?: ThemeMetadata,
 ): { lecture: LectureSousGroupe | null; indisponible: boolean } {
   const histoire = payload.histoires.find(
     (h) => h.theme === theme && h.territoire === territoire && h.groupe === groupe,
@@ -291,8 +292,10 @@ export function sousGroupesPourTerritoire(
   payload: Payload,
   theme: Theme,
   territoire: string,
+  options: { metadataVerified?: boolean } = {},
 ): SousGroupeRendu[] {
   const metadata = payload.themeMetadata?.[theme]
+  const metadataVerified = options.metadataVerified ?? true
   if (!metadata) return []
 
   const groupesParCle = new Map<string, Indicateur[]>()
@@ -318,14 +321,24 @@ export function sousGroupesPourTerritoire(
 
     // A subgroup may deliberately have no reading (the silent, indicator-only
     // state). Do not turn that absence into copy or a fake Story.
+    const hasReading = sousGroupe.reading !== undefined && payload.histoires.some((row) =>
+      row.theme === theme && row.territoire === territoire && row.groupe === sousGroupe.key)
+    const readingNeedsMetadata = Boolean(sousGroupe.reading?.params.includes('classification'))
+    const explanationPending = !metadataVerified &&
+      (sousGroupe.framingSource === 'theme-metadata' || (hasReading && readingNeedsMetadata))
     const { lecture, indisponible } = sousGroupe.reading
-      ? lecturePour(payload, theme, territoire, sousGroupe.key, sousGroupe.reading, metadata)
+      ? explanationPending && hasReading
+        ? { lecture: null, indisponible: false }
+        : lecturePour(payload, theme, territoire, sousGroupe.key, sousGroupe.reading, metadataVerified ? metadata : undefined)
       : { lecture: null, indisponible: false }
 
     return {
       key: sousGroupe.key,
       label: sousGroupe.label,
-      framing: cadrageSousGroupeFiche(sousGroupe, metadata),
+      framing: metadataVerified || sousGroupe.framingSource !== 'theme-metadata'
+        ? cadrageSousGroupeFiche(sousGroupe, metadata)
+        : null,
+      metadataExplanationPending: explanationPending,
       figures,
       figureCompacte,
       lecture,

@@ -45,6 +45,8 @@ import type { Payload } from '@/payload/types'
 const props = defineProps<{
   payload: Payload
   territoire: string
+  metadataStatus?: 'loading' | 'ready' | 'error'
+  retryMetadata?: () => void
 }>()
 
 // The theme label and remaining factual/page contracts still use metadata;
@@ -55,7 +57,9 @@ const metadata = computed(() => props.payload.themeMetadata?.programmes ?? null)
 function groupe(key: string): { label: string; framing: string | null } {
   const g = sousGroupeFiche('programmes', key)
   if (!g) throw new Error(`Sous-groupe « ${key} » absent de la grammaire fiche « programmes »`)
-  return { label: g.label, framing: cadrageSousGroupeFiche(g, metadata.value ?? undefined) }
+  const metadataVerified = props.metadataStatus === undefined || props.metadataStatus === 'ready'
+  return { label: g.label, framing: metadataVerified || g.framingSource !== 'theme-metadata'
+    ? cadrageSousGroupeFiche(g, metadata.value ?? undefined) : null }
 }
 
 const element = computed(() => programmesPourTerritoire(props.payload, props.territoire))
@@ -170,6 +174,10 @@ const lienProvenance = computed(() => {
       >
         <h3 class="sous-groupe-titre">{{ groupe('subventions').label }}</h3>
         <p v-if="groupe('subventions').framing" class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
+        <p v-if="metadataStatus === 'loading' || metadataStatus === 'error'" class="subvention-vintage" role="status">
+          {{ metadataStatus === 'error' ? 'L’explication des conditions d’éligibilité n’est pas disponible.' : 'Explication des conditions d’éligibilité en cours de chargement.' }}
+          <button v-if="metadataStatus === 'error'" type="button" @click="retryMetadata?.()">Réessayer l’explication</button>
+        </p>
 
         <div class="programme-subventions">
           <p class="subvention-total">
