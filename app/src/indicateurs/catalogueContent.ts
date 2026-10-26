@@ -22,10 +22,10 @@ export interface ThemeCatalogueContent {
 /** Stable fiche subgroup labels; structural keys bind this content to theme facts. */
 export const CONTENU_SOUS_GROUPES_FICHE = {
   mobilite: {
-    'acces-aux-services': 'Accès aux services',
-    'partage-de-lespace-public': 'Partage de l’espace public',
-    motorisation: 'Motorisation',
-    'offre-transports-commun': 'Offre de transports en commun',
+    'acces-aux-services': 'L’accès aux services',
+    'partage-de-lespace-public': 'Le partage de l’espace public',
+    motorisation: 'La motorisation',
+    'offre-transports-commun': 'L’offre de transports en commun',
   },
 } as const satisfies Partial<Record<Theme, Readonly<Record<string, string>>>>
 

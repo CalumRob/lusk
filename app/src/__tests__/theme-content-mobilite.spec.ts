@@ -126,7 +126,7 @@ describe('Mobilité page rundown', () => {
     const content = resolveMobiliteThemeContent(completeFacts, staleEditorialMetadata)
 
     expect(content.units.map(({ label }) => label)).toEqual([
-      'Accès aux services', 'Partage de l’espace public', 'Motorisation', 'Offre de transports en commun',
+      'L’accès aux services', 'Le partage de l’espace public', 'La motorisation', 'L’offre de transports en commun',
     ])
     expect(JSON.stringify(content.units[0]?.sections[0]?.evidence)).toContain('30')
   })
@@ -636,7 +636,7 @@ describe('resolveMobiliteThemeContent', () => {
       'offre-transports-commun',
     ])
     expect(sharing).toBeDefined()
-    expect(sharing?.label).toBe('Partage de l’espace public')
+    expect(sharing?.label).toBe('Le partage de l’espace public')
     expect(sharing?.sections.map((section) => [section.key, section.label])).toEqual([
       ['reseaux', 'Réseaux'],
       ['offre-cyclable', 'Offre cyclable'],
@@ -729,7 +729,7 @@ describe('resolveMobiliteThemeContent', () => {
       referenceDate: '2026-02-28',
       publicationDate: '2026-08-06',
     })
-    expect(unit.label).toBe('Accès aux services')
+    expect(unit.label).toBe('L’accès aux services')
     expect(unit.sections.map((section) => section.label)).toEqual([
       'Résumé',
       'Profils d’accès par mode',

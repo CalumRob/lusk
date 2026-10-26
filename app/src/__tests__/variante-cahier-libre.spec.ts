@@ -395,10 +395,10 @@ describe('figures des unités Mobilité ajoutées', () => {
     expect(absentEvidence.composition.some(part => part.fact.detail === 'sans_voiture')).toBe(false)
     expect(absentEvidence.charging).toHaveLength(0)
     expect(absentContent.units.map(unit => unit.label)).toEqual([
-      'Accès aux services', 'Partage de l’espace public', 'Motorisation', 'Offre de transports en commun',
+      'L’accès aux services', 'Le partage de l’espace public', 'La motorisation', 'L’offre de transports en commun',
     ])
-    expect(absentContent.units[2]!.label).toBe('Motorisation')
-    expect(absentContent.units[3]!.label).toBe('Offre de transports en commun')
+    expect(absentContent.units[2]!.label).toBe('La motorisation')
+    expect(absentContent.units[3]!.label).toBe('L’offre de transports en commun')
 
     const baseFact = original.mobility.indicators.find(fact => fact.key === 'bornes_recharge')!
     const rider = { ...baseFact, key: 'bornes_ev_par_station_service', value: null, reason: 'Aucune station-service sur le territoire' }
@@ -435,7 +435,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     const wrapper = await render(content)
 
     expect(wrapper.find('.cahier-cover').exists()).toBe(false)
-    expect(wrapper.find('.cahier-page').text()).toContain('Accès aux services')
+    expect(wrapper.find('.cahier-page').text()).toContain('L’accès aux services')
     expect(wrapper.findAll('.concept-group h3').map((heading) => heading.text())).toEqual([
       'Résumé',
       'Profils d’accès par mode',
@@ -1128,10 +1128,10 @@ describe('Variante E — partage de l’espace public', () => {
 
     expect(wrapper.find('.cahier').classes()).toContain('cahier--sans-grille')
     expect(wrapper.findAll('.cahier-page h2').map((heading) => heading.text())).toEqual([
-      'Accès aux services',
-      'Partage de l’espace public',
-      'Motorisation',
-      'Offre de transports en commun',
+      'L’accès aux services',
+      'Le partage de l’espace public',
+      'La motorisation',
+      'L’offre de transports en commun',
     ])
     expect(wrapper.findAll('.cahier-page .page-number').map((number) => number.text())).toEqual([
       'page 01/04',

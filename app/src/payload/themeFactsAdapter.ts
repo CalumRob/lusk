@@ -581,7 +581,9 @@ function boundLegacySourceLabel(read: SemanticThemeRead, themeMetadata: ThemeSou
   const label = DESCRIPTIONS_SOURCES[sourceId]
   if (label) return label
   const record = themeMetadata?.source_records?.[sourceId]
-  const legacyLabel = isRecord(record) ? record.dataset : undefined
+  const legacyLabel = isRecord(record)
+    ? (texteNonVide(record.publisher) ? record.publisher : record.dataset)
+    : undefined
   if (!texteNonVide(legacyLabel)) throw new Error(`Description éditoriale absente pour la source ${sourceId}`)
   return legacyLabel
 }

@@ -68,7 +68,7 @@ export function datasetDeSource(id: string): string {
 
 /** Stable editorial source descriptions keyed by producer/API source identity. */
 export const DESCRIPTIONS_SOURCES: Readonly<Record<string, string>> = {
-  subventions_scdl: 'Subventions régionales attribuées',
+  subventions_scdl: 'Région Bretagne',
 }
 
 /**
