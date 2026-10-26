@@ -26,7 +26,11 @@ function rgbChannels(color) {
 }
 
 function relativeLuminance(color) {
-  const [red, green, blue] = rgbChannels(color).map((channel) => {
+  return relativeLuminanceFromChannels(rgbChannels(color))
+}
+
+function relativeLuminanceFromChannels(channels) {
+  const [red, green, blue] = channels.map((channel) => {
     const srgb = channel / 255
     return srgb <= 0.04045 ? srgb / 12.92 : ((srgb + 0.055) / 1.055) ** 2.4
   })
@@ -37,6 +41,125 @@ function contrastRatio(foreground, background) {
   const ink = relativeLuminance(foreground)
   const fill = relativeLuminance(background)
   return (Math.max(ink, fill) + 0.05) / (Math.min(ink, fill) + 0.05)
+}
+
+function contrastRatioFromChannels(foreground, background) {
+  const ink = relativeLuminanceFromChannels(foreground)
+  const fill = relativeLuminanceFromChannels(background)
+  return (Math.max(ink, fill) + 0.05) / (Math.min(ink, fill) + 0.05)
+}
+
+function compositeChannels(color, backdrop, opacity) {
+  const foregroundChannels = rgbChannels(color)
+  const backdropChannels = rgbChannels(backdrop)
+  return foregroundChannels.map((channel, index) =>
+    channel * opacity + backdropChannels[index] * (1 - opacity))
+}
+
+async function verifyCartographicMapChipContrast(page) {
+  const readRenderedLabels = () => page.evaluate(() => {
+    const parseAlpha = (color) => {
+      const values = color.match(/[\d.]+/gu)?.map(Number) ?? []
+      if (color.startsWith('color(srgb')) return color.includes('/') ? values[3] ?? 1 : 1
+      return color.startsWith('rgba') ? values[3] ?? 1 : 1
+    }
+    const backdropFor = (panel) => {
+      for (let ancestor = panel.parentElement; ancestor; ancestor = ancestor.parentElement) {
+        const background = getComputedStyle(ancestor).backgroundColor
+        if (parseAlpha(background) >= 0.999) return background
+      }
+      return 'rgb(255, 255, 255)'
+    }
+
+    return [...document.querySelectorAll('.map-breakout--c .map-panel')].map((panel) => {
+      const mode = ['car', 'walk', 'bike'].find((key) => panel.classList.contains(`map-panel--${key}`))
+      const label = panel.querySelector('.map-panel-label')
+      const viewport = panel.querySelector('.map-viewport')
+      if (!mode || !label || !viewport) throw new Error('Cartographic map panel is missing its mode, label, or viewport')
+      let effectiveOpacity = 1
+      const dimmedAncestors = []
+      for (let ancestor = label; ancestor; ancestor = ancestor.parentElement) {
+        const opacity = Number.parseFloat(getComputedStyle(ancestor).opacity)
+        effectiveOpacity *= opacity
+        if (opacity < 0.999) {
+          dimmedAncestors.push({
+            tagName: ancestor.tagName,
+            classes: typeof ancestor.className === 'string' ? ancestor.className : '',
+            opacity,
+          })
+        }
+      }
+      const style = getComputedStyle(label)
+      return {
+        mode,
+        active: panel.classList.contains('map-panel--active'),
+        panelDimmed: panel.classList.contains('map-panel--dimmed'),
+        viewportOpacity: Number.parseFloat(getComputedStyle(viewport).opacity),
+        foreground: style.color,
+        fill: style.backgroundColor,
+        backdrop: backdropFor(panel),
+        effectiveOpacity,
+        dimmedAncestors,
+      }
+    })
+  })
+
+  const measure = async (activatedBy, activeMode) => {
+    await page.waitForTimeout(200)
+    const rawLabels = await readRenderedLabels()
+    const labels = rawLabels.map((label) => {
+      const effectiveForeground = compositeChannels(label.foreground, label.backdrop, label.effectiveOpacity)
+      const effectiveFill = compositeChannels(label.fill, label.backdrop, label.effectiveOpacity)
+      return {
+        ...label,
+        effectiveForeground,
+        effectiveFill,
+        effectiveContrast: contrastRatioFromChannels(effectiveForeground, effectiveFill),
+      }
+    })
+    assert.deepEqual(labels.map(({ mode }) => mode).sort(), ['bike', 'car', 'walk'],
+      `${activatedBy} must measure all three cartographic map-title chips`)
+    assert.equal(labels.filter(({ active }) => active).length, 1,
+      `${activatedBy} must make exactly one cartographic map panel active`)
+    for (const label of labels) {
+      assert.equal(label.active, label.mode === activeMode,
+        `${activatedBy} must activate ${activeMode}, got ${JSON.stringify(label)}`)
+      assert(label.effectiveContrast >= 4.5,
+        `${activatedBy} must preserve effective 4.5:1 contrast for the ${label.mode} map chip after ancestor compositing: ${JSON.stringify(label)}`)
+      assert.equal(label.effectiveOpacity, 1,
+        `${activatedBy} must leave the ${label.mode} label fully opaque after ancestor compositing: ${JSON.stringify(label)}`)
+      assert.deepEqual(label.dimmedAncestors, [],
+        `${activatedBy} must not dim the ${label.mode} label through an opacity ancestor: ${JSON.stringify(label)}`)
+      if (label.mode === activeMode) {
+        assert.equal(label.panelDimmed, false, `${activatedBy} active ${label.mode} panel must not be marked dimmed`)
+        assert.equal(label.viewportOpacity, 1, `${activatedBy} active ${label.mode} map visual must remain fully opaque`)
+      } else {
+        assert.equal(label.panelDimmed, true, `${activatedBy} inactive ${label.mode} panel must remain de-emphasized`)
+        assert(Math.abs(label.viewportOpacity - 0.46) < 0.01,
+          `${activatedBy} inactive ${label.mode} map visual must retain its dimmed opacity: ${JSON.stringify(label)}`)
+      }
+    }
+    return { activeMode, labels }
+  }
+
+  await page.locator('.map-breakout--c .map-panel--car').hover()
+  await page.waitForFunction(() =>
+    document.querySelector('.map-breakout--c .map-panel--car')?.classList.contains('map-panel--active'))
+  const pointerHover = await measure('pointer hover', 'car')
+
+  const keyboardTarget = page.locator('.map-breakout--c .map-panel--walk .map-viewport')
+  await page.keyboard.press('Tab')
+  await keyboardTarget.focus()
+  assert.equal(await keyboardTarget.evaluate((button) =>
+    document.activeElement === button && button.matches(':focus-visible')), true,
+  'Keyboard navigation must visibly focus the walking map button')
+  const keyboardPanelState = await page.evaluate(() =>
+    [...document.querySelectorAll('.map-breakout--c .map-panel')].map((panel) => panel.className))
+  assert(keyboardPanelState.some((classes) => classes.includes('map-panel--walk') && classes.includes('map-panel--active')),
+    `Keyboard focus must activate the walking map panel: ${JSON.stringify(keyboardPanelState)}`)
+  const keyboardFocus = await measure('keyboard focus', 'walk')
+
+  return { pointerHover, keyboardFocus }
 }
 
 async function verifyWaffleLegendInteraction(page) {
@@ -676,6 +799,9 @@ try {
         path: resolve(evidenceDir, 'issue829-waffle-mobile-grid-320.png'),
       })
     }
+    const cartographicMapChipInteraction = width === 320
+      ? await verifyCartographicMapChipContrast(page)
+      : null
     const waffleLegendInteraction = width === 320 ? await verifyWaffleLegendInteraction(page) : null
     const tileColumns = new Set(w3Visual.waffle.tileBoxes.map(({ x }) => Math.round(x * 10) / 10)).size
     const tileRows = new Set(w3Visual.waffle.tileBoxes.map(({ y }) => Math.round(y * 10) / 10)).size
@@ -1416,6 +1542,7 @@ try {
       width,
       ...metrics,
       w3: w3Summary,
+      cartographicMapChipInteraction,
       waffleLegendInteraction,
       mobileIndexInteraction,
       longYAxisFigure,

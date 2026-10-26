@@ -679,6 +679,9 @@ async function inspect(mode: ModeKey): Promise<void> {
   .plate-apparatus { padding-inline: 0; }
   .map-breakout--c .map-panel { max-width: 520px; margin-inline: auto; }
   .map-breakout .map-panel-label { justify-content: center; margin-inline: auto; text-align: center; }
+  .map-breakout .map-panel--dimmed { opacity: 1; }
+  .map-breakout .map-panel :deep(.map-viewport) { transition: opacity 150ms ease-out; }
+  .map-breakout .map-panel--dimmed :deep(.map-viewport) { opacity: .46; }
   .map-breakout--c .plate-keys { grid-template-columns: 1fr; }
   .plate-switcher { right: 50%; transform: translateX(50%); }
 }
