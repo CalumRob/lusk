@@ -41,19 +41,17 @@ import {
 } from '@/fiche/comparisonContext'
 import { resolveMobiliteThemeContent } from '@/fiche/content/themeContent'
 import { applyThemeComparisonApiFacts, clearThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '@/fiche/content/mobilityThemeApiFacts'
-import { applyAccessApiFacts } from '@/fiche/content/accessApiFacts'
-import { applyInitialBuildingApiFacts } from '@/fiche/content/initialBuildingApiFacts'
-import { applyComparisonOnlyBuildingFacts } from '@/fiche/content/buildingApiFacts'
 import { territoryFactsFor } from '@/fiche/content/territoryFacts'
 import { chargerCohortesScalairesAvecComparaisons, chargerComparaisonsScalaires,
   indicateursScalairesPourNiveau, pagesScalairesEnregistrees, remplacerFaitsScalaires, scalarCohortEnabled } from '@/payload/scalarCohort'
 import type { ScalarComparisonRank, ScalarComparisonRequest } from '@/payload/scalarCohort'
 import { PayloadError } from '@/payload/validate'
 import { acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison, themeAcquisitionEnabled, ThemeAcquisitionCache, THEMES_ACQUISITION_API } from '@/payload/themeAcquisition'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
+import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
+  themeFactsRowsFromSemantic, validerReponseComparaisonTheme } from '@/payload/themeFactsAdapter'
 import type { ThemeSelectionMember } from '@/payload/themeAcquisition'
 import type { ThemeContent } from '@/fiche/content/themeContent'
-import type { ComparisonScopeKind, SelectedTrajectoryComparison, TerritoryFacts } from '@/fiche/content/territoryFacts'
+import type { SelectedTrajectoryComparison, TerritoryFacts } from '@/fiche/content/territoryFacts'
 import { echelleContexte } from '@/fiche/echelleContexte'
 import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
@@ -62,6 +60,7 @@ import { THEMES_CANONIQUES } from '@/payload/types'
 import type { Histoire, Indicateur, Payload, Territoire, Theme } from '@/payload/types'
 import { useTerritoryReadModel } from '@/payload/useTerritoryReadModel'
 import { payloadDepuisModeleTerritoire } from '@/payload/territoryReadModel'
+import type { TerritoryReadModel } from '@/payload/territoryReadModel'
 
 const route = useRoute()
 const router = useRouter()
@@ -141,11 +140,13 @@ const cacheAcquisition = new ThemeAcquisitionCache(
 )
 const faitsThemeRows = ref<Indicateur[] | null>(null)
 const histoiresThemeRows = ref<Histoire[] | null>(null)
+const preuvesThemeIndisponibles = ref(false)
 const histoiresNuageDemographie = ref<Histoire[]>([])
 const histoiresNuageMilieux = ref<Histoire[]>([])
 const statutAcquisition = ref<'loading' | 'ready' | 'error'>('loading')
 const statutComparaison = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
 const retryAcquisition = ref(0)
+const retryThemeComparaison = ref(0)
 let sequenceAcquisition = 0
 let sequenceComparaison = 0
 let cleFaitsPrets: string | null = null
@@ -213,6 +214,51 @@ const resolutionComparaison = computed(() => {
     contextes: modeleTerritoire.model.value.themes.mobilite?.comparisons ?? {},
   })
 })
+
+function libellePorteeSemantic(comparison: unknown, model: TerritoryReadModel, target: Territoire): string | null {
+  if (typeof comparison !== 'object' || comparison === null || Array.isArray(comparison)) return null
+  const data = comparison as Record<string, unknown>
+  if (typeof data.scope !== 'object' || data.scope === null || Array.isArray(data.scope)) return null
+  const scope = data.scope as Record<string, unknown>
+  const contexts = model.themes.mobilite?.comparisons
+  if (scope.kind === 'density_class' && scope.territory_type === target.type &&
+      scope.density_class_code === target.classe_densite_code) {
+    return contexts?.densite?.scope.label ?? null
+  }
+  if (scope.kind === 'same_level' && scope.territory_type === target.type) {
+    return contexts?.bretagne?.scope.label ?? null
+  }
+  if (scope.kind !== 'explicit_selection' || !Array.isArray(data.selection)) return null
+  const selected = data.selection as unknown[]
+  if (target.type === 'commune' && selected.length === 1) {
+    const identity = selected[0]
+    if (typeof identity === 'object' && identity !== null && !Array.isArray(identity)) {
+      const actual = identity as Record<string, unknown>
+      for (const mode of ['epci', 'bretagne'] as const) {
+        const reference = territoireReferencePourComparaison({ territoire: target, mode, territoires: model.territories })
+        if (reference && actual.territory_type === reference.type && actual.territory_id === reference.id) {
+          return model.themes.mobilite?.comparisons[mode]?.scope.label ?? null
+        }
+      }
+    }
+  }
+  const territories = model.cohortTerritories ?? model.territories
+  const candidates = [
+    ['epci', target.type === 'commune' && target.epci
+      ? territories.filter((item) => item.type === 'commune' && item.epci === target.epci) : []],
+    ['bretagne', territories.filter((item) => item.type === target.type)],
+  ] as const
+  for (const [mode, members] of candidates) {
+    const expected = members.map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
+    if (expected.length === selected.length && expected.every((member, index) => {
+      const actual = selected[index]
+      return typeof actual === 'object' && actual !== null && !Array.isArray(actual) &&
+        (actual as Record<string, unknown>).territory_type === member.territory_type &&
+        (actual as Record<string, unknown>).territory_id === member.territory_id
+    })) return contexts?.[mode]?.scope.label ?? null
+  }
+  return null
+}
 
 const optionsComparaison = computed(() => optionsContexteComparaison({
   territoire: territoire.value,
@@ -287,7 +333,8 @@ function rangsScalairesPourFocal(facts: Indicateur[], territoryId: string,
   ranks: Record<string, ScalarComparisonRank | null>): Indicateur[] {
   return facts.map((fact) => {
     const rank = fact.territoire === territoryId ? ranks[fact.key] : null
-    return { ...fact, ...(rank ? { comparaisonApi: { rang: rank.rank, taille: rank.rankSize, portee: rank.scope } } : { comparaisonApi: undefined }) }
+    return { ...fact, ...(rank ? { comparaisonApi: { rang: rank.rank, taille: rank.rankSize,
+      portee: rank.scope, direction: rank.direction } } : { comparaisonApi: undefined }) }
   })
 }
 
@@ -451,6 +498,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     if (!themeMigre(theme) || !model || !typeValide.value) {
       faitsThemeRows.value = null
       histoiresThemeRows.value = null
+      preuvesThemeIndisponibles.value = false
       histoiresNuageDemographie.value = []
       histoiresNuageMilieux.value = []
       statutAcquisition.value = 'loading'
@@ -481,6 +529,7 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     onCleanup(() => { cancelled = true })
     faitsThemeRows.value = null
     histoiresThemeRows.value = null
+    preuvesThemeIndisponibles.value = false
     histoiresNuageDemographie.value = []
     histoiresNuageMilieux.value = []
     statutAcquisition.value = 'loading'
@@ -490,17 +539,25 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
       if (cancelled || request !== sequenceAcquisition) return
       const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
       if (!target || target.type !== typeRoute.value) throw new Error('Territoire focal absent')
-      const rows = themeFactsRowsFromApi(themeActif, acquired.focal, { territoire: code, type: target.type }, {
+      const rows = themeFactsRowsFromSemantic(themeActif, acquired.focal, { territoire: code, type: target.type }, {
         epci: target.epci, region: payloadModele.value?.territoires.find((item) => item.type === 'region')?.territoire ?? null,
-      })
-       faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs, acquired.focal.comparison,
-         resolutionComparaison.value?.contexte?.scope.label ?? null)
+      }, payloadModele.value?.themeMetadata?.[themeActif])
+       const comparison = semanticComparisonForTheme(acquired.comparisons.get('omitted'), {
+         target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
+         territories: model.cohortTerritories,
+        }, acquired.focal.resource_reads)
+        const comparisonScopeLabel = libellePorteeSemantic(comparison, model, target)
+        faitsThemeRows.value = lignesAvecComparaisonApi(rows.indicateurs,
+          comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
       histoiresThemeRows.value = rows.histoires
-      histoiresNuageDemographie.value = themeActif === 'demographie' && isRecord(acquired.focal.comparison)
-        ? histoiresDemographieNuage(acquired.focal.comparison) : []
-      histoiresNuageMilieux.value = themeActif === 'milieux' && isRecord(acquired.focal.comparison)
-        ? histoiresMilieuxDuNuage(acquired.focal.comparison) : []
-      statutAcquisition.value = 'ready'
+      preuvesThemeIndisponibles.value = Boolean(rows.unavailableReadings?.length || acquired.focal.named_reference_error)
+       histoiresNuageDemographie.value = themeActif === 'demographie'
+         ? histoiresDemographieNuage(comparison) : []
+       histoiresNuageMilieux.value = themeActif === 'milieux'
+         ? histoiresMilieuxDuNuage(comparison) : []
+       statutAcquisition.value = 'ready'
+       statutComparaison.value = acquired.focal.comparison_error || acquired.focal.cohort_error || comparison?.reading_cloud_error
+         ? 'error' : 'ready'
       cleFaitsPrets = `${typeRoute.value}/${code}/${themeActif}`
     } catch {
       if (!cancelled && request === sequenceAcquisition) {
@@ -526,14 +583,10 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value, retry
     }
   }, { immediate: true })
 
-/** Une seule requête comparison-only par changement de sélection : le défaut
- * déclaré (classe de densité d'une commune, pairs de même niveau ailleurs)
- * est déjà servi par la comparaison imbriquée de la réponse de faits ; une
- * sélection explicite (EPCI, Bretagne) acquiert UNE réponse de comparaison et
- * garde les faits focaux. Les tokens incompatibles échouent fermé (le cache
- * rejette la fusion) et restent réessayables. */
+/** Comparison-only reads retain focal facts. The producer's fixed default is
+ * cached with the paired focal read; explicit scopes acquire only comparisons. */
 watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
-  () => resolutionComparaison.value?.mode, statutAcquisition, retryAcquisition],
+  () => resolutionComparaison.value?.mode, statutAcquisition, retryThemeComparaison],
   async ([model, theme, code, mode], _old, onCleanup) => {
     if (!themeMigre(theme) || theme === 'mobilite' || statutAcquisition.value !== 'ready' || !model || !typeValide.value) {
       statutComparaison.value = 'idle'
@@ -541,45 +594,51 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
     }
     const target = payloadModele.value?.territoires.find((item) => item.territoire === code)
     if (!target || target.type !== typeRoute.value) { statutComparaison.value = 'idle'; return }
-    // Le mode densité (défaut d'une commune) et les niveaux non communaux
-    // gardent la comparaison déclarée déjà acquise avec les faits.
-    if (target.type !== 'commune' || mode === 'densite' || mode === null || mode === undefined) {
-      statutComparaison.value = 'ready'
-      return
-    }
-    const cohort = model.cohortTerritories
-    if (!cohort) { statutComparaison.value = 'error'; return }
     const themeActif = theme as Theme
-    const selectionMembres: ThemeSelectionMember[] = mode === 'bretagne'
-      ? cohort.filter((item) => item.type === 'commune')
-        .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
-      : mode === 'epci' && target.epci
-        ? cohort.filter((item) => item.type === 'commune' && item.epci === target.epci)
-          .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
-        : []
+    const selectionMembres: readonly ThemeSelectionMember[] | null | undefined = target.type !== 'commune' ||
+      mode === 'densite' || mode === null || mode === undefined
+      ? undefined
+      : mode === 'epci' || mode === 'bretagne'
+        ? (() => {
+          const reference = territoireReferencePourComparaison({ territoire: target, mode,
+            territoires: model.territories })
+          return reference ? [{ territory_type: reference.type, territory_id: reference.id }] : null
+        })()
+        : null
     const request = ++sequenceComparaison
     let cancelled = false
     onCleanup(() => { cancelled = true })
     statutComparaison.value = 'loading'
+    faitsThemeRows.value = faitsThemeRows.value
+      ? lignesAvecComparaisonApi(faitsThemeRows.value, null, null) : null
     // Pendant le chargement de la nouvelle sélection, le nuage de l'ancienne
     // ne rend pas (le flux E Mobilité nettoie de même avant la requête).
     if (themeActif === 'milieux') histoiresNuageMilieux.value = []
     if (themeActif === 'demographie') histoiresNuageDemographie.value = []
+    if (selectionMembres === null) {
+      // Un périmètre nommé sans identité parente résolue est indisponible,
+      // jamais une sélection vide ni le contexte fixe par défaut.
+      statutComparaison.value = 'error'
+      return
+    }
     try {
       const acquired = await cacheAcquisition.select(typeRoute.value, code, themeActif, selectionMembres)
       if (cancelled || request !== sequenceComparaison) return
-      validerReponseComparaisonTheme(themeActif,
-        acquired.comparisons.get(cleSelectionComparaison(selectionMembres)), selectionMembres)
+      const nativeComparison = acquired.comparisons.get(cleSelectionComparaison(selectionMembres))
+      validerReponseComparaisonTheme(themeActif, nativeComparison, selectionMembres,
+        { type: target.type, id: target.territoire })
+      const comparison = semanticComparisonForTheme(nativeComparison, {
+        target: { territoire: code, type: target.type, classe_densite_code: target.classe_densite_code },
+        territories: model.cohortTerritories ?? model.territories,
+      }, acquired.focal.resource_reads)
       if (themeActif === 'demographie') {
-        histoiresNuageDemographie.value = histoiresDemographieNuage(
-          acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
+        histoiresNuageDemographie.value = histoiresDemographieNuage(comparison)
       }
-       if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(
-         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)))
-       faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
-         acquired.comparisons.get(cleSelectionComparaison(selectionMembres)),
-         resolutionComparaison.value?.contexte?.scope.label ?? null)
-       statutComparaison.value = 'ready'
+        if (themeActif === 'milieux') histoiresNuageMilieux.value = histoiresMilieuxDuNuage(comparison)
+        const comparisonScopeLabel = libellePorteeSemantic(comparison, model, target)
+        faitsThemeRows.value = lignesAvecComparaisonApi(faitsThemeRows.value ?? [],
+          comparisonScopeLabel === null ? null : comparison, comparisonScopeLabel)
+       statutComparaison.value = nativeComparison?.cohort_error || comparison?.reading_cloud_error ? 'error' : 'ready'
     } catch {
        if (!cancelled && request === sequenceComparaison) {
          faitsThemeRows.value = faitsThemeRows.value?.map(({ comparaisonApi: _rank, ...row }) => row) ?? null
@@ -588,7 +647,12 @@ watch([() => modeleTerritoire.model.value, selection, () => idRoute.value,
     }
   }, { immediate: true })
 
-function retryAcquisitionTheme(): void { retryAcquisition.value++ }
+function retryAcquisitionTheme(): void {
+  if (selection.value) cacheAcquisition.invalidate(typeRoute.value, idRoute.value, selection.value)
+  cleFaitsPrets = null
+  retryAcquisition.value++
+}
+function retryThemeComparison(): void { retryThemeComparaison.value++ }
 
 
 const echelons = computed(() =>
@@ -657,7 +721,8 @@ watch([productionMobilite, typeRoute, idRoute,
     if (!settled) { lastFocalKey = null; lastFocalModel = null }
   })
   const code = idRoute.value
-  void cacheAcquisition.get(typeRoute.value, code, 'mobilite').then(({ focal: data }) => {
+  void cacheAcquisition.get(typeRoute.value, code, 'mobilite').then((acquired) => {
+    const data = acquired.focal
     if (request !== focalRequestSequence || !payloadPourRendu.value || !isRecord(data)) return
     const presentation = toRaw(payloadPourRendu.value)
     const target = presentation.territoires.find((territory) => territory.territoire === code)
@@ -665,22 +730,14 @@ watch([productionMobilite, typeRoute, idRoute,
       ? modeleTerritoire.model.value?.themes.mobilite?.comparisons.densite
       : resolutionComparaison.value?.contexte ?? undefined
     let combined = mobilityFactsFromThemeApi(presentation, code, data)
-    combined = applyThemeComparisonApiFacts(combined, data.comparison ?? data.default_comparison, initialContext)
-    const serviceScope = isRecord(data.essential_service_access) && isRecord(data.essential_service_access.scope)
-      ? data.essential_service_access.scope : null
-    combined = applyAccessApiFacts(combined, data.essential_service_access,
-      typeof serviceScope?.kind === 'string' ? serviceScope.kind as ComparisonScopeKind : null,
-      typeof serviceScope?.label === 'string' ? serviceScope.label : null)
-    const buildingScope = isRecord(data.building_access) && isRecord(data.building_access.scope)
-      ? data.building_access.scope : null
-    combined = applyInitialBuildingApiFacts(combined, data.building_access,
-      typeof buildingScope?.comparison_mode === 'string' ? buildingScope.comparison_mode : null,
-      typeof buildingScope?.kind === 'string' ? buildingScope.kind : null,
-      initialContext?.scope.label ?? null)
+    const initialComparison = acquired.comparisons.get('omitted')
+    combined = initialComparison
+      ? applyThemeComparisonApiFacts(combined, initialComparison, initialContext)
+      : clearThemeComparisonApiFacts(combined)
     mobilityFocal.value = combined
     mobilityComparisonFacts.value = combined
     mobilityCurveComparison.value = combined.mobility.selectedTrajectoryComparison ?? null
-    mobilityComparisonStatus.value = 'ready'
+    mobilityComparisonStatus.value = data.comparison_error ? 'error' : 'ready'
     statutAccesApi.value = 'ready'
     buildingStatus.value = 'ready'
     settled = true
@@ -695,11 +752,11 @@ watch([productionMobilite, typeRoute, idRoute,
 }, { immediate: true })
 
 watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value?.mode,
-  mobilityFocal, () => modeleTerritoire.model.value],
+  mobilityFocal, () => modeleTerritoire.model.value, retryThemeComparaison],
   (_values, _oldValues, onCleanup) => {
     if (!productionMobilite.value || !mobilityFocal.value || !payloadPourRendu.value) return
     const model = modeleTerritoire.model.value
-    const requestKey = `${typeRoute.value}/${idRoute.value}/${resolutionComparaison.value?.mode ?? ''}`
+    const requestKey = `${typeRoute.value}/${idRoute.value}/${resolutionComparaison.value?.mode ?? ''}/${retryThemeComparaison.value}`
     if (lastComparisonKey === requestKey && lastComparisonModel === model) return
     const request = ++comparisonRequestSequence
     const controller = new AbortController()
@@ -711,16 +768,8 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
     const target = payloadPourRendu.value.territoires.find((territory) => territory.territoire === idRoute.value)
     const mode = resolutionComparaison.value?.mode
     const context = resolutionComparaison.value?.contexte ?? undefined
-    if (target?.type !== 'commune') {
-      lastComparisonKey = requestKey
-      lastComparisonModel = model
-      mobilityComparisonFacts.value = mobilityFocal.value
-      mobilityCurveComparison.value = null
-      mobilityComparisonStatus.value = 'ready'
-      return
-    }
     const cohort = modeleTerritoire.model.value?.cohortTerritories
-    if (!cohort) {
+    if (!target || (target.type === 'commune' && mode !== 'densite' && !cohort)) {
       mobilityComparisonStatus.value = 'error'
       mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
       mobilityCurveComparison.value = null
@@ -728,79 +777,42 @@ watch([productionMobilite, typeRoute, idRoute, () => resolutionComparaison.value
       lastComparisonModel = model
       return
     }
-    const selection = mode === 'densite' ? undefined : mode === 'bretagne'
-      ? cohort.filter((item) => item.type === 'commune')
+    const selection = target.type !== 'commune' || mode === 'densite' || mode == null ? undefined : mode === 'bretagne'
+      ? (cohort ?? []).filter((item) => item.type === 'commune')
         .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
       : mode === 'epci' && target?.epci
-        ? cohort.filter((item) => item.type === 'commune' && item.epci === target.epci)
+        ? (cohort ?? []).filter((item) => item.type === 'commune' && item.epci === target.epci)
           .map((item) => ({ territory_type: item.type, territory_id: item.territoire }))
         : []
     const explicitSelection = selection
-    const body = { theme_id: 'mobilite', ...(explicitSelection === undefined ? {} : { selection: explicitSelection }) }
     lastComparisonKey = requestKey
     lastComparisonModel = model
-    mobilityComparisonFacts.value = mode === 'densite'
-      ? mobilityFocal.value
-      : clearThemeComparisonApiFacts(mobilityFocal.value)
+    mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value)
     mobilityCurveComparison.value = null
     mobilityComparisonStatus.value = 'loading'
-    const targetPath = `/api/territories/${encodeURIComponent(typeRoute.value)}/${encodeURIComponent(idRoute.value)}`
-    const curveUrl = `${targetPath}/indicators/raccordement_courbe/comparison`
-    void fetch(curveUrl, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(explicitSelection === undefined ? {} : { selection: explicitSelection }),
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      return response.json() as Promise<unknown>
-    }).then((data) => {
-      if (request !== comparisonRequestSequence || !isRecord(data) || !mobilityFocal.value) return
-      const parsedCurve = applyThemeComparisonApiFacts(mobilityFocal.value, data, context, explicitSelection)
-        .mobility.selectedTrajectoryComparison
-      if (!parsedCurve) throw new Error('Courbe moyenne raccordement indisponible pour cette portée')
-      mobilityCurveComparison.value = parsedCurve
-      mobilityComparisonStatus.value = 'ready'
-      settled = true
-    }).catch(() => {
-      if (request === comparisonRequestSequence) {
-        mobilityCurveComparison.value = null
-        mobilityComparisonStatus.value = 'error'
-      }
-    })
-
-    if (mode === 'densite') return
-    void fetch(`${targetPath}/themes/mobilite/comparison`, {
-      method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-      signal: controller.signal,
-    }).then(async (response) => {
-      if (!response.ok) throw new Error(`HTTP ${response.status}`)
-      return response.json() as Promise<unknown>
-    }).then((data) => {
-      if (request !== comparisonRequestSequence || !isRecord(data)) return
-      const expectedSelection = new Set((explicitSelection ?? []).map((item) => `${item.territory_type}/${item.territory_id}`))
-      const returnedSelection = Array.isArray(data.selection) ? data.selection : []
-      if (data.contract !== 'theme-comparison-v1' || data.theme_id !== 'mobilite' ||
-          returnedSelection.length !== expectedSelection.size ||
-          returnedSelection.some((item) => !isRecord(item) ||
-            !expectedSelection.has(`${String(item.territory_type)}/${String(item.territory_id)}`))) {
-        throw new Error('Réponse de comparaison Mobilité incohérente avec la sélection')
-      }
-       let updated = applyThemeComparisonApiFacts(mobilityFocal.value!, data, context, selection)
-      updated = applyComparisonOnlyBuildingFacts(updated, data.building_access, context?.scope.label ?? null)
-      mobilityComparisonFacts.value = updated
+    void cacheAcquisition.select(typeRoute.value, idRoute.value, 'mobilite', explicitSelection).then((acquired) => {
+      if (request !== comparisonRequestSequence || controller.signal.aborted || !mobilityFocal.value) return
+      const data = acquired.comparisons.get(cleSelectionComparaison(explicitSelection))
+      validerReponseComparaisonTheme('mobilite', data, explicitSelection,
+        { type: target.type, id: target.territoire })
+      const updated = applyThemeComparisonApiFacts(mobilityFocal.value, data, context, explicitSelection)
+       mobilityComparisonFacts.value = updated
+       mobilityCurveComparison.value = updated.mobility.selectedTrajectoryComparison ?? null
       mobilityComparisonStatus.value = 'ready'
       settled = true
     }).catch(() => {
       settled = true
-      if (request === comparisonRequestSequence) {
-        lastComparisonKey = null
-        mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value!)
+       if (request === comparisonRequestSequence && !controller.signal.aborted) {
+         lastComparisonKey = null
+         mobilityComparisonFacts.value = clearThemeComparisonApiFacts(mobilityFocal.value!)
+         mobilityCurveComparison.value = null
         mobilityComparisonStatus.value = 'error'
       }
     })
   }, { immediate: true })
 
 function rechargerMobilityFacts(): void {
+  cacheAcquisition.invalidate(typeRoute.value, idRoute.value, 'mobilite')
   retryMobilityFacts.value += 1
   // Mobilité facts are consumed by both the shared theme acquisition state
   // and the production cahier; retry both consumers through the same cache.
@@ -957,11 +969,17 @@ watch(
         <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
       </div>
       <div
-        v-else-if="themeMigre(selection) && statutComparaison === 'error'"
+        v-else-if="(themeMigre(selection) && statutComparaison === 'error') ||
+          (productionMobilite && mobilityFocal && mobilityComparisonStatus === 'error')"
         class="etat-erreur"
         role="alert"
       >
         <p>Les comparaisons de ce thème ne sont pas disponibles.</p>
+        <button type="button" @click="retryThemeComparison">Réessayer</button>
+      </div>
+      <div v-if="themeMigre(selection) && selection !== 'mobilite' && statutAcquisition === 'ready' && preuvesThemeIndisponibles"
+        class="etat-erreur" role="alert">
+        <p>Les lectures de ce thème ne sont pas disponibles.</p>
         <button type="button" @click="retryAcquisitionTheme">Réessayer</button>
       </div>
       <div v-if="scalarCohortActif && ficheScalairesStatus === 'ready' && ficheComparaisonsScalairesStatus === 'error'"

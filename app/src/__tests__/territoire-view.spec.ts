@@ -4,13 +4,16 @@ import { resolve } from 'node:path'
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { computed } from 'vue'
 
 import TerritoireView from '../views/TerritoireView.vue'
+import BlocProgrammes from '../components/fiche/BlocProgrammes.vue'
 import GraphiqueQuadrantMilieux from '../components/fiche/GraphiqueQuadrantMilieux.vue'
-import FigureTrajectoire from '../components/fiche/FigureTrajectoire.vue'
-import PuceRang from '../components/fiche/PuceRang.vue'
+import GraphiqueSoldes from '../components/fiche/GraphiqueSoldes.vue'
+import OngletTheme from '../components/fiche/OngletTheme.vue'
+import CahierComparisonNote from '../fiche/prototype/CahierComparisonNote.vue'
+import { OPTIONS_COMPARAISON_KEY, optionsContexteComparaison } from '../fiche/comparisonContext'
 import { varianteDeUrl } from '../fiche/prototype/variantes'
-import { histoiresDemographieNuage } from '../payload/themeFactsAdapter'
 import {
   histoiresDemographieFixture,
   histoiresHabitatFixture,
@@ -20,23 +23,27 @@ import {
   metadonneesThemesFixtures,
   territoiresFixture,
 } from '../payload/fixtures'
-import type { Histoire, Indicateur, Theme } from '../payload/types'
+import type { Histoire, Indicateur, Payload, Theme } from '../payload/types'
 import {
   chargerModeleTerritoire,
   TERRITORY_READ_MODEL_CHARGER_KEY,
   validerModeleTerritoire,
 } from '../payload/territoryReadModel'
 import type { ChargerModeleTerritoire } from '../payload/territoryReadModel'
+import { acquireThemeFacts } from '../payload/themeAcquisition'
+import {
+  semanticComparisonForTheme,
+  themeFactsRowsFromSemantic,
+  validerReponseComparaisonTheme,
+} from '../payload/themeFactsAdapter'
 import { PayloadError, validerThemeMetadata } from '../payload/validate'
-import { payloadDepuisModeleTerritoire } from '../payload/territoryReadModel'
-import { territoryFactsFor } from '../fiche/content/territoryFacts'
-import { AEDAR_TYPEQU_REGISTRY } from '../fiche/content/aedarTypequRegistry'
-import { applyThemeComparisonApiFacts, mobilityFactsFromThemeApi } from '../fiche/content/mobilityThemeApiFacts'
-import { applyAccessApiFacts } from '../fiche/content/accessApiFacts'
-import { applyInitialBuildingApiFacts } from '../fiche/content/initialBuildingApiFacts'
-import { reponseThemeMobiliteApi } from './helpers/mobiliteThemeApiStub'
-import { directionIndicateur } from '../fiche/figureGrammaire'
 import { routes } from '../router'
+import {
+  nativeBatchResponse,
+  nativeCatalogueResponse,
+  nativeReadFixture,
+  nativeResources,
+} from './helpers/semanticApiFixtures'
 
 const indicateurs: Indicateur[] = [
   ...indicateursProgrammesFixture,
@@ -45,23 +52,14 @@ const indicateurs: Indicateur[] = [
 ]
 const histoires: Histoire[] = [...histoiresDemographieFixture, ...histoiresHabitatFixture]
 
+const fetchBloque = vi.fn(async (input: RequestInfo | URL) => {
+  throw new Error(`Accès réseau réel interdit dans ce test : ${String(input)}`)
+})
+
 const modelePublie22001 = JSON.parse(readFileSync(
   resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'),
   'utf8',
 )) as Record<string, any>
-
-function semanticScalarResources(theme: string, metadata: any) {
-  return Object.keys(metadata.scalar_contracts).map((indicator) => {
-    const page = metadata.indicator_pages[indicator]
-    const contract = metadata.scalar_contracts[indicator]
-    return { resource_id: indicator, theme_id: theme, indicator_id: indicator,
-      label: page.label, unit: page.unit, direction: page.comparison?.direction ?? page.direction,
-      allowed_levels: contract.allowed_levels ?? page.levels, sources: page.sources,
-      shapes: ['scalar'], target_kinds: ['territory', 'territory_cohort'],
-      fields: ['value', 'support_count', 'denominator_count'],
-      intents: ['facts', 'fixed_comparison', 'selected_comparison'] }
-  })
-}
 
 function semanticScalarBatch(theme: string, metadata: any, items: Array<Record<string, any>>,
   focalId: string, valueFor: (indicator: string) => number) {
@@ -131,219 +129,23 @@ function modeleAvecContextesComparaison() {
     model,
     'territoires/commune/22001.json',
     { type: 'commune', territoire: '22001' },
+    { requireAllThemes: true },
   )
   validated.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
   return validated
 }
 
-
-
-
-
-
-/** Projette le thème Habitat publié dans le contrat réel theme-facts-v1 servi par
- * le POST sélectionné (#627) — scalaires, cellules de profil et points de série
- * possédée en lignes d'indicateurs dimensionnées — en remplaçant trois valeurs
- * par des valeurs distinctes du modèle statique pour prouver la consommation. */
-export function reponseThemeHabitatApi(model: any, type = 'commune', code = '35238') {
-  const theme = model.themes.habitat
-  const payload = payloadDepuisModeleTerritoire(model)
-  const target = payload.territoires.find((item: any) => item.territoire === code)
-  const rows: any[] = theme.indicators.filter((row: any) => row.territoire === code)
-  const sources = () => [{
-    source_id: 'habitat_api', name: 'Source API habitat', vintage_id: 'api-v1', version: 'api-v1',
-    reference_date: null, publication_date: null,
-  }]
-  const indicatorSql = (row: any) => ({
-    indicator_id: row.key, label: row.key, unit: row.unit,
-    value: row.key === 'part_passoires' ? 0.42
-      : row.key === 'prix_m2' && row.detail === '2025' ? 4242 : row.value,
-    // Les millésimes supprimés (ventes < 10) restent déclarés et manquants.
-    status: row.key === 'part_passoires' || (row.key === 'prix_m2' && row.detail === '2025')
-      ? 'measured'
-      : row.value === null ? 'suppressed' : 'measured',
-    dimensions: row.key === 'prix_m2' && row.detail
-      ? { axis: row.detail }
-      : row.detail ? { detail: row.detail } : {},
-    sources: sources(),
-  })
-  const prixFaits = rows.filter((row) => row.key === 'prix_m2' && row.detail)
-  // La serie annuelle prix_m2 est servie comme owned_series (le contrat reel :
-  // cf. test_theme_facts_habitat_http.py) - les lignes annuelles ne figurent
-  // PAS dans indicators, seule la valeur poolee y reste.
-  const seriePrix = {
-    indicator_id: 'prix_m2', theme_id: 'habitat', unit: '€/m²',
-    axis_kind: 'year', axis_values: prixFaits.map((row) => row.detail),
-    points: prixFaits.map((row) => ({
-      axis: row.detail, observation_period: row.detail,
-      value: row.detail === '2025' ? 4242 : row.value === null ? null : row.value,
-      status: row.detail === '2025' ? 'measured' : row.value === null ? 'not_available' : 'measured',
-      missing_reason: row.value === null && row.detail !== '2025' ? 'ventes insuffisantes' : null,
-      provenance: [{ source_id: 'habitat_api', source_name: 'Source API habitat',
-        version: 'api-v1', reference_date: null, publication_date: null }],
-    })),
-  }
-  const histoire = theme.histories.find((row: any) => row.territoire === code)
-  return {
-    contract: 'theme-facts-v1', complete_theme: false, theme_id: 'habitat',
-    territory: { territory_id: code, name: target?.nom, territory_type: type },
-    content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
-    profile_content_version: 'habitat-profile-v1', reading_content_version: 'habitat-reading-v1',
-    reading_descriptor_version: 'habitat-reading-v1', reading_availability: 'available',
-    owned_series_content_versions: ['dvf_prix_m2@series-v1'],
-    indicator_metadata: ['mix_logements', 'statut', 'type', 'age_du_bati', 'distribution_dpe']
-      .map((key) => ({
-        indicator_id: key, kind: 'declared_dimensions', label: key, unit: '%',
-        descriptor_version: 'v1', allowed_levels: ['commune'],
-        axes: [...new Set(rows.filter((row) => row.key === key && row.detail).map((row) => row.detail))]
-          .map((detail) => ({ name: 'detail', key: detail })),
-        comparison_point: null, comparison_scalar: null,
-      })),
-    named_reference_evidence: [], bpe_profile_evidence: null, collections: [],
-    indicators: rows.filter((row) => !(row.key === 'prix_m2' && row.detail)).map(indicatorSql),
-    owned_series: [seriePrix],
-    readings: [{
-      groupe: histoire.groupe, story_key: histoire.story_key, salience_reason: histoire.salience_reason,
-      classification: 'parc-performant', part_passoires: 0.42, part_abc: 0.62, n_dpe: histoire.n_dpe,
-      status: 'measured', source_id: 'habitat_api', vintage_id: 'api-v1',
-      provenance: { source_id: 'habitat_api', source_name: 'Source API habitat', vintage_id: 'api-v1',
-        source_version: 'api-v1', source_reference_date: null, source_publication_date: null },
-    }],
-    comparison: {
-      contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
-      content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
-      selection: null, scope: { kind: 'density_class', density_class_code: 'C', territory_type: 'commune', member_count: 14 },
-      results: [{ indicator_id: 'part_passoires', label: 'part_passoires', unit: '%', direction: 'low',
-        statistic: 'median', status: 'available', reason: null, selected_member_count: 14,
-        eligible_count: 14, missing_count: 0, median: 0.21, rank: 3, rank_size: 14, comparison_sources: [] }],
-      profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
-    },
-  }
-}
-
-export function reponseThemeProgrammesApi(type = 'commune', code = '22001') {
-  const source = [{ source_id: 'programme-api', name: 'Source API programmes', vintage_id: 'programme-v1',
-    version: 'programme-v1', reference_date: '2026-01-01', publication_date: '2026-02-01' }]
-  return {
-    contract: 'theme-facts-v1', complete_theme: false, theme_id: 'programmes',
-    territory: { territory_id: code, territory_type: type, name: 'Territoire API' },
-    content_version: 'programmes-v1', reference_content_version: 'territories-v1',
-    indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [],
-    collections: [
-      { indicator_id: 'programme_membership', theme_id: 'programmes', kind: 'anchored_membership',
-        completeness: 'observed_sparse', availability: 'observed',
-        entries: [{ detail: 'ACV', label: 'Action Cœur de Ville', rider: 'Aid rider', sources: source }],
-        relationships: [{ detail: 'CRTE', label: 'Contrat', rider: null, sources: source,
-          anchor: { id: '222222222', type: 'epci', name: 'EPCI API' }, relation: 'covering_parent' }], summaries: [] },
-      { indicator_id: 'subventions_par_domaine', theme_id: 'programmes', kind: 'period_detail',
-        unit: '€', availability: 'observed', entries: [{ detail: 'mobilite', label: 'Mobilité API',
-          observation_period: '2025', value: 9876, status: 'measured', sources: source }], relationships: [] },
-    ],
-    owned_series: [{ indicator_id: 'subventions_annuelles', theme_id: 'programmes', unit: '€',
-      points: [{ axis: '2025', observation_period: '2025', value: 45678, status: 'measured',
-        provenance: source.map(({ name, ...item }) => ({ ...item, source_name: name })) }] }],
-    comparison: { contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'programmes',
-      content_version: 'programmes-v1', reference_content_version: 'territories-v1', selection: null,
-      scope: null, results: [], profile_comparisons: [],
-      collection_content_versions: { programme_membership: 'membership-v1' } },
-  }
-}
-function reponseThemeDemographieApi(model: any, type = 'commune', code = '22001', rates = [1.25, -0.75]) {
-  const theme = model.themes.demographie
-  const indicators = theme.indicators.filter((row: any) => row.territoire === code)
-  const reading = theme.histories.find((row: any) => row.territoire === code)
-  const source = { source_id: 'demo_api', name: 'Source API démographie', version: '2026', reference_date: null, publication_date: null }
-  const comparison = { contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'demographie',
-    content_version: 'demo-v1', reference_content_version: 'territories-v1', selection: null,
-    scope: { kind: 'density_class', member_count: 1 }, results: [], profile_comparisons: [],
-    reading_content_version: 'demo-v1', reading_cloud: { status: 'available', reason: null,
-      groupe: reading.groupe, story_key: 'trajectoire-demographique', scope: { kind: 'density_class' }, rate_unit: '‰',
-      source, content_version: 'demo-v1', points: [{ territory: { territory_id: '22002', territory_type: 'commune', name: 'Peer Demo' },
-        periode: '2020', taux_solde_naturel: rates[0], taux_solde_migratoire: rates[1] }] } }
-  return { contract: 'theme-facts-v1', complete_theme: false, theme_id: 'demographie',
-    content_version: 'demo-v1', reference_content_version: 'territories-v1', reading_content_version: 'demo-v1',
-    territory: { territory_id: code, territory_type: type }, indicator_metadata: [...new Set(indicators.map((row: any) => row.key))].map((key) => ({
-      indicator_id: key, axes: key === 'structure_age' ? [
-        ...[...new Set(indicators.filter((row: any) => row.key === key).map((row: any) => row.detail))].map((value) => ({ name: 'detail', key: value })),
-        ...[...new Set(indicators.filter((row: any) => row.key === key).map((row: any) => row.sex))].map((value) => ({ name: 'sex', key: value })),
-      ] : [],
-    })), named_reference_evidence: [],
-    indicators: indicators.map((row: any) => ({ indicator_id: row.key, label: row.key, unit: row.unit,
-      value: row.key === 'densite' ? 4321 : row.value, status: row.value === null ? 'suppressed' : 'measured',
-      dimensions: row.detail ? { detail: row.detail, ...(row.sex ? { sex: row.sex } : {}) } : {}, sources: [source] })),
-    readings: [{ groupe: reading.groupe, story_key: 'trajectoire-demographique', salience_reason: 'defaut',
-      periode: '2020', solde_naturel: reading.solde_naturel, solde_migratoire: reading.solde_migratoire,
-      taux_solde_naturel: 0.5, taux_solde_migratoire: -0.25, classification: reading.classification,
-      status: 'measured', rate_unit: '‰', provenance: { source_id: 'demo_api', source_name: source.name,
-        source_version: source.version, source_reference_date: null, source_publication_date: null } }], comparison }
-}
-
-/** Sert les POST faits/comparaison Mobilité comme la fiche montée les consomme :
- * faits complets sur /facts, comparaison sélectionnée répercutée sur /comparison. */
-export function stubApiThemeMobilite(model: any, type = 'commune', code = '22001') {
-  const contexts = model.themes.mobilite!.comparisons
-  return vi.fn(async (url: string, options?: RequestInit) => {
-    if (url.endsWith('/facts')) {
-      return { ok: true, json: async () =>
-        reponseThemeMobiliteApi(model, type, code, contexts.densite!.scope.kind, contexts.densite!.scope.label) }
+function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = []) {
+  return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url === '/api/resources') return nativeCatalogueResponse()
+    if (url === '/api/resources/read-batch') {
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(items)
+      return nativeBatchResponse(items, nativeReadFixture)
     }
-    if (url.endsWith('/comparison')) {
-      const selection = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
-      return { ok: true, json: async () => ({
-        contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite',
-        selection,
-        scope: { kind: 'explicit_selection', member_count: selection.length },
-        results: ['admin', 'food', 'health', 'bank', 'school'].flatMap((service) =>
-          ['c', 'b', 't'].map((mode) => ({ indicator_id: `share_${service}_${mode}`,
-            status: 'available', direction: 'high', median: 0.3, rank: 19, rank_size: 38 }))),
-        profile_comparisons: [], building_access: null,
-      }) }
-    }
-    throw new Error(`Requête inattendue : ${url}`)
+    throw new Error(`Unexpected request: ${url}`)
   })
-}
-
-function reponseThemeMilieuxApi(model: any, type = 'commune', code = '22001', peerId?: string) {
-  const theme = model.themes.milieux
-  const history = theme.histories.find((row: any) => row.territoire === code)
-  const indicators = theme.indicators.filter((row: any) => row.territoire === code)
-  const peer = peerId ?? model.cohortTerritories?.find((item: any) => item.type === 'commune' &&
-    item.epci === model.territory.epci && item.territoire !== code)?.territoire ?? '22002'
-  const source = { source_id: 'milieux_api', name: 'Source API milieux', version: '2026', reference_date: null, publication_date: null }
-  const comparison = { contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'milieux',
-    content_version: 'milieux-v1', reference_content_version: 'territories-v1', reading_content_version: 'milieux-v1',
-    selection: null, scope: { kind: 'density_class', member_count: 1 }, results: [], profile_comparisons: [],
-    reading_cloud: { status: 'available', reason: null, groupe: history.groupe,
-      scope: { kind: 'density_class' }, selected_member_count: 1, plotted_member_count: 1,
-      points: [{ territory: { territory_id: peer, territory_type: 'commune', name: 'Peer Milieux' },
-        periode_pop: '2017-2023', periode_artif: '2021-2025', taux_variation_population: 2.75,
-        artif_m2_par_habitant: 100, artif_m3_par_habitant: 125 }] } }
-  return { contract: 'theme-facts-v1', complete_theme: false, theme_id: 'milieux',
-    content_version: 'milieux-v1', reference_content_version: 'territories-v1', reading_content_version: 'milieux-v1',
-    territory: { territory_id: code, territory_type: type }, indicator_metadata: [], named_reference_evidence: [],
-    indicators: indicators.map((row: any) => ({ indicator_id: row.key, label: row.key, unit: row.unit,
-      value: row.key === 'artif_par_habitant' && row.detail === 'M3' ? 777 : row.value,
-      status: row.value === null ? 'unavailable' : 'measured', dimensions: row.detail ? { axis: row.detail } : {}, sources: [source] })),
-    readings: [{ groupe: history.groupe, story_key: history.story_key, salience_reason: history.salience_reason,
-      periode_pop: history.periode_pop, periode_artif: history.periode_artif,
-      delta_population: history.delta_population, taux_variation_population: 2.75,
-      artif_m2_par_habitant: history.artif_m2_par_habitant, artif_m3_par_habitant: history.artif_m3_par_habitant,
-      trajectoire_artif_par_habitant: history.trajectoire_artif_par_habitant, classification: 'grandir-en-se-densifiant',
-      status: 'measured', provenance: { source_id: source.source_id, source_name: source.name,
-        source_version: source.version, source_reference_date: null, source_publication_date: null } }], comparison }
-}
-
-function modeleMilieux() {
-  const model = modeleAvecContextesComparaison()
-  model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-  return model
-}
-
-export function reponseThemeEconomieApi(model: any, type = 'commune', code = '22001') {
-  const theme = model.themes.economie; const h = theme.histories.find((x: any) => x.territoire === code)
-  const source = { source_id: 'economy_api', name: 'Source API économie', version: 'api-v1', reference_date: null, publication_date: null }
-  const activities = [1].flatMap(rank => h?.[`top${rank}_activity_label`] ? [{rank,activity_code:h[`top${rank}_activity_code`],activity_label:'Activité API distinctive',lq:99.25,n:h[`top${rank}_n`],part_parc:h[`top${rank}_part_parc`]}] : [])
-  return { contract:'theme-facts-v1', complete_theme:false, theme_id:'economie', content_version:'economie-api-v1', reference_content_version:'territories-v1', reading_content_version:'economie-api-v1', territory:{territory_id:code,territory_type:type}, indicator_metadata:[], named_reference_evidence:[], indicators:theme.indicators.filter((x:any)=>x.territoire===code&&['chomage','effectifs_salaries','eco_activites'].includes(x.key)).map((x:any)=>({indicator_id:x.key,label:x.label,unit:x.unit,value:x.key==='chomage'?0.2345:x.value,status:'measured',dimensions:{},sources:[source]})), readings:h?[{groupe:h.groupe,story_key:h.story_key,salience_reason:h.salience_reason,status:'measured',activities,provenance:{source_id:source.source_id,source_name:source.name,source_version:source.version,source_reference_date:null,source_publication_date:null}}]:[], comparison:{contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:'territories-v1',reading_content_version:'economie-api-v1',selection:null,scope:{kind:'density_class'},results:[],profile_comparisons:[]} }
 }
 
 function modelFor(territoire: string) {
@@ -388,434 +190,847 @@ async function monter(
   return { router, wrapper, charger }
 }
 
-const aedarMeasureKeys = [5, 10, 15, 20].flatMap((duration) =>
-  ['walk', 'transit', 'transit_gain', 'bike_lts2', 'bike_lts4', 'car'].flatMap((mode) =>
-    ['share', 'min', 'max', ...Array.from({ length: 9 }, (_, index) => `decile${index + 1}`), 'mean']
-      .map((statistic) => `count_${duration}_${mode}_${statistic}`),
-  ),
-)
-
-function reponsePageAedar(type: string, id: string, typequ: readonly string[], fields?: readonly string[]) {
-  const selectedKeys = fields?.map((field) => field.replace(/^measures\./, '')) ?? aedarMeasureKeys
-  const measures = Object.fromEntries(selectedKeys.map((key) => [
-    key,
-    key.endsWith('_share') ? 0.5 : key.endsWith('_mean') ? 1 : 0,
-  ]))
-  return {
-    territory: { territory_type: type, territory_id: id },
-    content_version: 'aedar-v1',
-    reference_content_version: 'aedar-v1',
-    limit: 100,
-    offset: 0,
-    facts: typequ.map((code) => {
-      const { label } = AEDAR_TYPEQU_REGISTRY.find((entry) => entry.code === code)!
-      return {
-      territory_id: id,
-      territory_type: type,
-      typequ: code,
-      typequ_label: label,
-      identity: {},
-      n_addresses: 100,
-      n_observed: 100,
-      coverage_status: 'covered',
-      measures,
-      source_id: 'aedar-test',
-      vintage_id: '2026-v1',
-      source_url: 'https://example.test/aedar',
-      licence: 'Licence Ouverte',
-      attribution: 'AEDAR',
-      reference_date: '2026-01-01',
-      publication_date: '2026-09-30',
-      }
-    }),
-  }
+async function monterNoteComparaison(mode: 'densite' | 'epci' | 'bretagne') {
+  const model = modeleAvecContextesComparaison()
+  const contexts = model.themes.mobilite!.comparisons
+  const options = optionsContexteComparaison({ territoire: model.territory, contextes: contexts })
+  const router = createRouter({ history: createMemoryHistory(), routes })
+  await router.push(`/territoire/commune/22001?theme=mobilite&comparaison=${mode}`)
+  await router.isReady()
+  const wrapper = mount(CahierComparisonNote, {
+    props: { label: contexts[mode]!.scope.label },
+    global: {
+      plugins: [router],
+      provide: { [OPTIONS_COMPARAISON_KEY]: computed(() => options) },
+    },
+  })
+  return { model, router, wrapper }
 }
 
 describe('TerritoireView — modèle atomique par territoire', () => {
-  beforeEach(() => vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('API not configured in tests'))))
-  afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
-  it.skipIf(!process.env.LUSK_MOUNTED_E_HTTP_FIXTURE)('consumes real PostgreSQL HTTP responses in mounted E', async () => {
-    const evidence = JSON.parse(readFileSync(process.env.LUSK_MOUNTED_E_HTTP_FIXTURE!, 'utf8'))
-    const model = validerModeleTerritoire(evidence.model, 'gate/22001.json', { type: 'commune', territoire: '22001' })
-    model.cohortTerritories = evidence.cohort
-    // The companion Python test executes the real HTTP reads while its SQL schema is live.
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
-      if (url.endsWith('/facts')) return { ok: true, json: async () => evidence.focal }
-      if (url.endsWith('/themes/mobilite/comparison')) {
-        expect(JSON.parse(String(options?.body)).selection).toEqual(evidence.comparison.selection)
-        return { ok: true, json: async () => evidence.comparison }
+  it('ouvre la fiche Programmes par défaut depuis les ressources sémantiques natives, sans route thème ni repli statique', async () => {
+    const model = modeleAvecContextesComparaison()
+    const requests: Array<Array<Record<string, any>>> = []
+    const programmeResources = nativeResources('programmes')
+    const series = programmeResources.find((resource) => resource.shapes.includes('ordered_series'))!
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        return nativeBatchResponse(items, (item, resource) => {
+          const data = nativeReadFixture(item, resource)
+          if (item.intent.kind !== 'facts') return data
+          const facts = model.themes.programmes!.indicators.filter((fact) =>
+            fact.key === resource.resource_id && fact.dimension !== null && fact.dimension !== undefined)
+          if (!facts.length) return data
+          const sourceId = resource.sources[0]!
+          const provenance = (fact: Indicateur) => ({ source_id: sourceId,
+            source_name: fact.vintage_source, vintage_id: `${sourceId}-${fact.vintage_version}`,
+            version: fact.vintage_version, reference_date: fact.vintage_date_reference,
+            publication_date: fact.vintage_date_publication, revision_id: 'fixture-revision',
+            dataset_name: resource.resource_id, revision_hash: 'fixture-revision-hash' })
+          if (resource.resource_id === series.resource_id) {
+            const periods = facts.map((fact) => String(fact.dimension))
+            return { ...data, axis_values: periods, axis_numeric_values: periods.map(Number),
+              points: facts.map((fact) => ({ axis: String(fact.dimension), observation_period: String(fact.dimension),
+                // A distinct sentinel proves the native response, not the static row, drives the displayed value.
+                value: 9_999_999, status: 'measured', missing_reason: null,
+                provenance: [provenance(fact)] })) }
+          }
+          // This distinct amount is a test sentinel on a producer-backed
+          // period/detail observation, not a claim about its published value.
+          return { ...data, unit: resource.unit, entries: facts.map((fact) => ({
+            detail: fact.detail, label: fact.detail, observation_period: String(fact.dimension),
+            value: 9_876, status: 'measured', sources: [{ source_id: sourceId,
+              name: fact.vintage_source, version: fact.vintage_version,
+              reference_date: fact.vintage_date_reference, publication_date: fact.vintage_date_publication }],
+          })) }
+        })
       }
-      throw new Error(`Not a product-data request: ${url}`)
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    await flushPromises()
+    expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources')).toBe(true)
+    expect(fetchApi.mock.calls.some(([url]) => String(url) === '/api/resources/read-batch'),
+      `fetch calls: ${JSON.stringify(fetchApi.mock.calls.map(([url]) => String(url)))}`).toBe(true)
+    const expectedReads = programmeResources.flatMap((resource) => resource.target_kinds.includes('territory') &&
+      resource.intents.includes('facts')
+      ? [[resource.resource_id, 'facts'], ...(resource.intents.includes('fixed_comparison')
+        ? [[resource.resource_id, 'fixed_comparison']] : [])]
+      : [])
+    expect(requests[0]?.map((item) => [item.resource, item.intent.kind])).toEqual(expectedReads)
+    expect(requests[0]?.every((item) => item.target.kind === 'territory' && item.target.id === model.territory.territoire)).toBe(true)
+    const text = wrapper.get('[role="tabpanel"]').text()
+    const alert = wrapper.find('[role="alert"]')
+    expect(alert.exists()).toBe(false)
+    expect(text).toContain('10,00 M€')
+    expect(text).toContain('Subventions attribuées')
+    expect(text).toContain(model.themes.programmes!.indicators
+      .find((fact) => fact.key === series.resource_id)!.vintage_source)
+    expect(text).toContain('9 876 €')
+    expect(text).not.toContain('1 600 €')
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
+    expect(fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch').length).toBeGreaterThan(0)
+    wrapper.unmount()
+  }, 20000)
+
+  it('keeps the measured Programmes year visible when a legacy no-record axis follows it', async () => {
+    const model = modeleAvecContextesComparaison()
+    const legacy = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const producerMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/theme_programmes.json'), 'utf8'))
+    // The real territory loader reconciles this canonical catalogue over the
+    // snapshot's older per-territory metadata before semantic acquisition.
+    model.themes.programmes!.metadata.indicator_pages =
+      validerThemeMetadata(producerMetadata, 'theme_programmes.json').indicator_pages
+    const sourceId = legacy.sources[0]!
+    const descriptorVintageId = producerMetadata.source_records[sourceId].vintages[0].id
+    const requests: Array<Array<Record<string, any>>> = []
+    const focalReads: Array<Record<string, any>> = []
+    let successfulComparison: Record<string, any> | undefined
+    let comparisonAttempts = 0
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return new Response(JSON.stringify({
+        contract: 'semantic-resource-catalogue-v1', resources: [legacy],
+      }))
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        if (items.some((item) => item.intent.kind === 'facts') &&
+            items.some((item) => item.intent.kind === 'fixed_comparison')) {
+          return new Response('paired legacy snapshot unavailable', { status: 503 })
+        }
+        if (items.every((item) => item.intent.kind === 'facts')) {
+          return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
+            const data = { resource: legacy.resource_id, target: item.target,
+              publication_id: 'legacy-series-v1',
+              territory: { id: item.target.id, type: item.target.type, name: model.territory.nom },
+              indicator_id: legacy.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+              label: legacy.label, unit: legacy.unit, direction: legacy.direction,
+              descriptor_version: 'legacy-series-descriptor-v1', comparison_point: null,
+              points: [
+                { axis: '2024', status: 'measured', observation_period: '2024', value: 230,
+                  source_id: sourceId, vintage_id: 'api-vintage-2027', source_version: 'api-v7-updated',
+                  source_reference_date: null, source_publication_date: '2027-09-01' },
+                { axis: '2025', status: 'missing', observation_period: null, value: null,
+                  source_id: sourceId, vintage_id: descriptorVintageId, source_version: null,
+                  source_reference_date: null, source_publication_date: null },
+              ], availability: 'incomplete' }
+            focalReads.push(data)
+            return { id: item.id, resource: item.resource, data }
+          }) }))
+        }
+        if (comparisonAttempts++ === 0) return new Response('comparison retry offline', { status: 503 })
+        return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: items.map((item) => {
+          const data = { resource: legacy.resource_id, target: item.target,
+            contract: 'indicator-comparison-v1', complete_theme: false,
+            indicator_id: legacy.indicator_id, shape: 'series', content_version: 'legacy-series-v1',
+            reference_content_version: 'legacy-reference-v1', selection: null,
+            scope: { kind: 'density_class', territory_type: 'commune',
+              density_class_code: model.territory.classe_densite_code, member_count: 2 },
+            result: { indicator_id: legacy.indicator_id, label: legacy.label, facet: null,
+              source_facet: null, unit: legacy.unit, direction: legacy.direction,
+              descriptor_version: 'legacy-series-descriptor-v1', status: 'unavailable',
+              reason: 'unsupported_comparison_contract', selected_member_count: 2,
+              eligible_count: 0, missing_count: 2, median: null, rank: null, comparison_sources: [] } }
+          successfulComparison = data
+          return { id: item.id, resource: item.resource, data }
+        }) }))
+      }
+      if (url.startsWith('/data/')) {
+        return new Response(readFileSync(resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'))
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    await flushPromises()
+
+    expect(focalReads[0]).not.toHaveProperty('dataset_id')
+    expect(focalReads[0]).not.toHaveProperty('reference_content_version')
+    expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
+    expect(wrapper.find('.subvention-total').text()).toContain('230 €')
+    expect(wrapper.find('.subvention-total').text()).toContain('en 2024')
+    expect(wrapper.find('.subvention-total').text()).not.toMatch(/(^|\s)0\s*€/)
+    expect(wrapper.find('.subvention-vintage').text()).toContain('Région Bretagne')
+    const renderedPayload = wrapper.findComponent(BlocProgrammes).props('payload') as Payload
+    const renderedAnnual = renderedPayload.indicateurs.filter((row) => row.territoire === '22001' &&
+      row.theme === 'programmes' && row.key === 'subventions_annuelles')
+    expect(renderedAnnual.map((row) => [row.dimension, row.value, row.observation_status])).toEqual([
+      ['2024', 230, 'measured'], ['2025', null, 'missing'],
+    ])
+    expect(renderedAnnual[1]).toMatchObject({ source_id: sourceId, vintage_id: descriptorVintageId,
+      source_version: null, source_reference_date: null, source_publication_date: null,
+      vintage_version: null, vintage_date_reference: null, vintage_date_publication: null })
+    expect(renderedAnnual[1]).not.toHaveProperty('fact_sources')
+    expect(requests.map((items) => items.map((item) => item.intent.kind))).toEqual([
+      ['facts', 'fixed_comparison'], ['facts'], ['fixed_comparison'],
+    ])
+
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+
+    expect(requests).toHaveLength(4)
+    expect(requests[3]!.map((item) => item.intent.kind)).toEqual(['fixed_comparison'])
+    const comparison = { theme_id: 'programmes' as const, comparison_reads: [{
+      resource: legacy.resource_id, shapes: legacy.shapes, declaration: legacy, data: successfulComparison!,
+    }] }
+    expect(() => validerReponseComparaisonTheme('programmes', comparison, undefined,
+      { type: 'commune', id: '22001' })).not.toThrow()
+    expect(() => semanticComparisonForTheme(comparison, {
+      target: { territoire: '22001', type: 'commune', classe_densite_code: model.territory.classe_densite_code },
+      territories: model.cohortTerritories,
+    }, [{ resource: legacy.resource_id, shapes: legacy.shapes, declaration: legacy, data: focalReads[0]! }],
+    { type: 'commune', id: '22001' })).not.toThrow()
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Programmes et subventions')
+    expect(focalReads).toHaveLength(1)
+    wrapper.unmount()
+  })
+
+  it('selects a commune EPCI perimeter by its typed parent identity without loading scalar cohorts', async () => {
+    Reflect.deleteProperty(import.meta.env, 'VITE_THEME_ACQUISITION_API')
+    Reflect.deleteProperty(import.meta.env, 'VITE_SCALAR_COHORT_API')
+    Reflect.deleteProperty(process.env, 'VITE_THEME_ACQUISITION_API')
+    Reflect.deleteProperty(process.env, 'VITE_SCALAR_COHORT_API')
+    expect(import.meta.env.VITE_THEME_ACQUISITION_API).toBeUndefined()
+    expect(import.meta.env.VITE_SCALAR_COHORT_API).toBeUndefined()
+
+    const territoryId = '22285'
+    const file = `territoires/commune/${territoryId}.json`
+    const published = JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/modeles-lecture/${file}`), 'utf8'))
+    const model = validerModeleTerritoire(published, file, { type: 'commune', territoire: territoryId },
+      { requireAllThemes: true })
+    expect(model.cohortTerritories).toBeUndefined()
+    const parent = model.territories.find((candidate) => candidate.type === 'epci' &&
+      candidate.territoire === model.territory.epci)!
+    const region = model.territories.find((candidate) => candidate.type === 'region')!
+    const reference = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
+    const resolvedMembers = reference.filter((candidate: any) => candidate.type === 'commune' &&
+      candidate.epci === parent.territoire)
+    const resolvedBretagne = reference.filter((candidate: any) => candidate.type === 'commune')
+    expect(resolvedMembers.length).toBeGreaterThan(1)
+
+    const legacy = nativeResources('programmes').find((resource) =>
+      resource.resource_id === 'subventions_annuelles')!
+    const sourceId = legacy.sources[0]!
+    const vintageId = model.themes.programmes!.metadata.source_records?.[sourceId]?.vintages?.[0]?.id
+    expect(vintageId).toBeTruthy()
+    const descriptorVersion = 'programmes-series-descriptor-v1'
+    const publicationVersion = 'programmes-api-facts-sentinel-v1'
+    const factValue = 987654
+    const requests: Array<Array<Record<string, any>>> = []
+    const selectedReads: Array<Record<string, any>> = []
+
+    const comparisonData = (item: Record<string, any>) => {
+      const isSelected = item.intent.kind === 'selected_comparison'
+      const selection = isSelected ? item.intent.members.map((member: { type: string; id: string }) => ({
+        territory_type: member.type, territory_id: member.id,
+      })) : null
+      // Model the API resolver: one typed EPCI identity expands against the
+      // canonical reference to the actual commune perimeter used for rank.
+      const selectedIdentity = selection?.[0]
+      const resolvedSelection = selection?.length === 0 ? [] : selectedIdentity?.territory_type === 'epci'
+        ? resolvedMembers : selectedIdentity?.territory_type === 'region' ? resolvedBretagne : []
+      const memberCount = isSelected ? resolvedSelection.length : reference.filter((candidate: any) =>
+        candidate.type === 'commune' && candidate.classe_densite_code === model.territory.classe_densite_code).length
+      const data = { resource: legacy.resource_id, target: item.target,
+        contract: 'indicator-comparison-v1', complete_theme: false,
+        indicator_id: legacy.indicator_id, shape: 'series', content_version: publicationVersion,
+        reference_content_version: 'programmes-reference-v1', selection,
+        scope: isSelected ? { kind: 'explicit_selection', member_count: memberCount }
+          : { kind: 'density_class', territory_type: 'commune',
+            density_class_code: model.territory.classe_densite_code, member_count: memberCount },
+        result: { indicator_id: legacy.indicator_id, source_facet: '2024', unit: legacy.unit,
+          direction: legacy.direction, descriptor_version: descriptorVersion, status: 'available',
+          selected_member_count: memberCount, eligible_count: memberCount, missing_count: 0,
+          median: factValue, rank: 1, rank_size: memberCount } }
+      if (isSelected) selectedReads.push(data)
+      return data
+    }
+
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') {
+        return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: [legacy] }))
+      }
+      if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(items)
+      return nativeBatchResponse(items, (item) => {
+        if (item.intent.kind !== 'facts') return comparisonData(item)
+        return { resource: legacy.resource_id, target: item.target,
+          publication_id: publicationVersion,
+          territory: { id: territoryId, type: 'commune', name: model.territory.nom },
+          indicator_id: legacy.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+          label: legacy.label, unit: legacy.unit, direction: legacy.direction,
+          descriptor_version: descriptorVersion, comparison_point: '2024',
+          points: [{ axis: '2024', status: 'measured', observation_period: '2024', value: factValue,
+            source_id: sourceId, vintage_id: vintageId, source_version: 'api-facts-clock-v1',
+            source_reference_date: null, source_publication_date: '2026-08-05' }],
+          availability: 'observed' }
+      })
     })
     vi.stubGlobal('fetch', fetchApi)
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
-    const rendered = () => wrapper.findComponent({ name: 'VarianteCahierLibre' }).props('content') as any
-    const section = (key: string) => rendered().units.flatMap((unit: any) => unit.sections).find((item: any) => item.key === key)
-    expect(wrapper.find('[data-section="distribution-acces-par-batiment"] .bivariate-evidence').exists()).toBe(true)
-    expect(wrapper.text()).toContain('SQL gate breadth')
-    expect(JSON.stringify(section('reseaux'))).toContain('456')
-    expect(JSON.stringify(section('offre-cyclable'))).toContain('456')
-    expect(JSON.stringify(section('stationnement'))).toContain('123')
-    expect(section('stationnement').evidence.carSpaces.fact.value).toBeNull()
-    expect(section('stationnement').evidence.carSpaces.fact.availability).toBe('incomplete')
-    expect(JSON.stringify(section('profils-acces-par-mode'))).toContain('SQL vélo class')
-    expect(section('services-essentiels').evidence.totalBuildings.fact.value).toBe(120)
-    expect(section('services-essentiels').evidence.totalBrittanyBuildings.fact.value).toBe(9876)
-    expect(section('resume').evidence.losses.diversity.walkTransit.fact.value).toBe(8)
-    expect(section('resume').evidence.losses.diversity.bike.fact.value).toBe(7)
-    expect(rendered().sourceRegister.some((source: any) => JSON.stringify(source).includes('SQL gate source'))).toBe(true)
-    expect(rendered().sourceRegister.filter((source: any) => source.source === 'SQL gate source')
-      .every((source: any) => source.referenceDate === null && source.publicationDate === null)).toBe(true)
-    const focalFigures = wrapper.findAll('.access-foot-summary').map((figure) => figure.text())
-    expect(focalFigures).toHaveLength(5)
-    expect(focalFigures.every((text) => text.includes('42'))).toBe(true)
-    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/facts'))).toHaveLength(1)
-    await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'epci' } })
+    const { router, wrapper } = await monter(`/territoire/commune/${territoryId}?theme=programmes`,
+      vi.fn(async () => model))
     await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/facts'))).toHaveLength(1)
-    expect(wrapper.findAll('.access-foot-summary').map((figure) => figure.text())).toEqual(focalFigures)
-    await router.replace({ query: { theme: 'habitat', variant: 'E', comparaison: 'epci' } })
+
+    expect(wrapper.find('.subvention-total').text()).toContain('987')
+    expect(requests).toHaveLength(1)
+    expect(requests[0]!.map((item) => item.intent.kind)).toEqual(['facts', 'fixed_comparison'])
+
+    await router.replace({ query: { theme: 'programmes', comparaison: 'epci' } })
     await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => url.includes('/api/'))).toHaveLength(2)
+
+    const selectedBatch = requests.at(-1)!
+    const selectedItem = selectedBatch.find((item) => item.intent.kind === 'selected_comparison')!
+    expect(selectedItem.intent.members).toEqual([{ type: 'epci', id: parent.territoire }])
+    expect(selectedBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    expect(requests.flat().filter((item) => item.intent.kind === 'facts')).toHaveLength(1)
+    expect(wrapper.find('.subvention-total').text()).toContain('987')
+    expect(selectedReads.at(-1)?.selection).toEqual([{ territory_type: 'epci', territory_id: parent.territoire }])
+    expect(selectedReads.at(-1)?.scope.member_count).toBe(resolvedMembers.length)
+    expect(selectedReads.at(-1)?.result.selected_member_count).toBe(resolvedMembers.length)
+    expect(selectedReads.at(-1)?.result.rank_size).toBe(resolvedMembers.length)
+    const renderedPayload = wrapper.findComponent(BlocProgrammes).props('payload') as Payload
+    const annual = renderedPayload.indicateurs.find((row) => row.territoire === territoryId &&
+      row.theme === 'programmes' && row.key === 'subventions_annuelles')
+    expect(annual?.comparaisonApi).toMatchObject({ rang: 1, taille: resolvedMembers.length,
+      portee: model.themes.mobilite!.comparisons.epci!.scope.label, direction: 'high' })
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
+
+    const epciRead = selectedReads.at(-1)
+    await router.replace({ query: { theme: 'programmes', comparaison: 'bretagne' } })
+    await flushPromises()
+    const bretagneBatch = requests.at(-1)!
+    const bretagneItem = bretagneBatch.find((item) => item.intent.kind === 'selected_comparison')!
+    expect(bretagneItem.intent.members).toEqual([{ type: 'region', id: region.territoire }])
+    expect(bretagneBatch.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    expect(requests.flat().filter((item) => item.intent.kind === 'facts')).toHaveLength(1)
+    expect(selectedReads.at(-1)?.selection).toEqual([{ territory_type: 'region', territory_id: region.territoire }])
+    expect(selectedReads.at(-1)?.scope.member_count).toBe(resolvedBretagne.length)
+    expect(selectedReads.at(-1)?.result.selected_member_count).toBe(resolvedBretagne.length)
+    expect(selectedReads.at(-1)?.result.rank_size).toBe(resolvedBretagne.length)
+    expect(epciRead?.result.selected_member_count).toBe(resolvedMembers.length)
+    const bretagnePayload = wrapper.findComponent(BlocProgrammes).props('payload') as Payload
+    const bretagneAnnual = bretagnePayload.indicateurs.find((row) => row.territoire === territoryId &&
+      row.theme === 'programmes' && row.key === 'subventions_annuelles')
+    expect(bretagneAnnual?.comparaisonApi).toMatchObject({ rang: 1, taille: resolvedBretagne.length,
+      portee: model.themes.mobilite!.comparisons.bretagne!.scope.label, direction: 'high' })
+    expect(wrapper.findAll('[role="alert"]').map((alert) => alert.text())).toEqual([])
+
+    // If a named scope's canonical identity is missing, fail closed rather
+    // than send [] or silently request the density/default comparison.
+    model.territories = model.territories.filter((candidate) => candidate.type !== 'epci')
+    const requestCountBeforeMissingParent = requests.length
+    await router.replace({ query: { theme: 'programmes', comparaison: 'epci' } })
+    await flushPromises()
+    expect(requests).toHaveLength(requestCountBeforeMissingParent)
+    expect(wrapper.find('[role="alert"]').text()).toContain('Réessayer')
     wrapper.unmount()
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: false, status: evidence.unavailable_status,
-      json: async () => evidence.unavailable })))
-    const { wrapper: failed } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
-    expect(failed.find('[data-section="distribution-acces-par-batiment"] .bivariate-evidence').exists()).toBe(false)
-    expect(failed.findAll('.access-figure')).toHaveLength(0)
-    expect(failed.find('[role="alert"]').exists()).toBe(true)
-    failed.unmount()
   })
+
+  it('ne rend pas la section subventions quand les lectures natives déclarent leur absence', async () => {
+    const model = modeleAvecContextesComparaison()
+    expect(model.themes.programmes!.indicators.some((fact) => fact.key === 'subventions_annuelles')).toBe(true)
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        return nativeBatchResponse(items, (item, resource) => {
+          const data = nativeReadFixture(item, resource)
+          if (item.intent.kind !== 'facts') return data
+          if (resource.shapes.includes('anchored_membership')) {
+            return { ...data, availability: 'no_record', entries: [], relationships: [], summaries: [] }
+          }
+          if (resource.shapes.includes('ordered_series')) {
+            return { ...data, axis_values: [], axis_numeric_values: [], points: [], availability: 'no_record' }
+          }
+          if (resource.shapes.includes('period_detail')) {
+            return { ...data, entries: [], availability: 'no_record' }
+          }
+          return data
+        })
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Aucun programme référencé.')
+    expect(wrapper.find('.programme-subventions').exists()).toBe(false)
+    expect(wrapper.find('.subvention-total').exists()).toBe(false)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('acquiert et réchauffe les faits natifs des thèmes, puis réutilise le cache pendant la navigation', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    const fetchApi = nativeSemanticFetch(requests)
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', nativeSemanticFetch())
+    const model = modeleAvecContextesComparaison()
+    const activityLabel = (model.themes.economie!.histories[0] as any).top1_activity_label as string
+    const acquired = await acquireThemeFacts('commune', '22001', 'programmes')
+    expect(() => themeFactsRowsFromSemantic('programmes', acquired, {
+      territoire: '22001', type: 'commune' })).not.toThrow()
+    const acquiredHabitat = await acquireThemeFacts('commune', '22001', 'habitat')
+    expect(() => themeFactsRowsFromSemantic('habitat', acquiredHabitat, {
+      territoire: '22001', type: 'commune' })).not.toThrow()
+    vi.stubGlobal('fetch', fetchApi)
+    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Programmes et subventions')
+    await flushPromises()
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    const themeByResource = new Map(nativeResources().map((resource) => [resource.resource_id, resource.theme_id]))
+    const requestsByTheme = () => Object.fromEntries(
+      ['programmes', 'habitat', 'demographie', 'milieux', 'economie', 'mobilite'].map((theme) => [theme,
+        requests.filter((items) => items.some((item) => themeByResource.get(item.resource) === theme)).length]),
+    )
+    const warmedCounts = requestsByTheme()
+    const themeRequests = requests.filter((items) => items.some((item) => themeByResource.has(item.resource)))
+
+    expect(themeRequests[0]?.every((item) => themeByResource.get(item.resource) === 'programmes')).toBe(true)
+    expect(Object.values(warmedCounts).every((count) => count > 0)).toBe(true)
+    expect(requests.every((items) => items.length >= 1 && items.length <= 12)).toBe(true)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
+
+    for (const [theme, heading] of [
+      ['habitat', 'Part de passoires thermiques'],
+      ['demographie', 'Densité de population'],
+      ['milieux', 'Consommation d’ENAF'],
+      ['economie', 'Chômage'],
+      ['mobilite', 'Mobilité'],
+    ] as const) {
+      await router.replace({ query: { theme } })
+      await flushPromises()
+      expect(wrapper.get('[role="tabpanel"]').text(),
+        `${theme}; alert=${wrapper.find('[role="alert"]').exists() ? wrapper.find('[role="alert"]').text() : 'none'}; calls=${JSON.stringify(fetchApi.mock.calls.map(([url]) => String(url)))}`)
+        .toContain(heading)
+      if (theme === 'demographie') {
+        // The native typed-reading descriptor publishes rate_unit and cohort facts.
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+        expect(wrapper.get('[data-clef="densite"] .valeur-numerique').text()).toBe('24,45')
+      } else if (theme === 'habitat') {
+        const passoires = nativeResources(theme).find((resource) => resource.resource_id === 'part_passoires')!
+        expect(wrapper.get(`[data-clef="${passoires.resource_id}"] .valeur-numerique`).text()).toBe('13')
+      } else if (theme === 'milieux') {
+        const publishedReading = model.themes.milieux!.histories[0]!
+        const period = (publishedReading as any).periode_pop as string
+        const visibleResource = nativeResources(theme).find((resource) =>
+          resource.shapes.includes('ordered_series') && resource.target_kinds.includes('territory'))!
+        expect(wrapper.get('[role="tabpanel"]').text()).toContain(period)
+        expect(wrapper.get('[role="tabpanel"]').text()).toContain(model.themes.milieux!.indicators
+          .find((fact) => fact.key === visibleResource.resource_id)!.vintage_source)
+      } else if (theme === 'economie') {
+        expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+      } else {
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      }
+    }
+
+    const namedResource = nativeResources('mobilite').find((resource) => resource.shapes.includes('named_reference'))!
+    const curveResource = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
+    const mobilityReads = requests.flat()
+    expect(mobilityReads.some((item) => item.resource === namedResource.resource_id &&
+      item.target.kind === 'named_reference' && namedResource.target_ids.includes(item.target.id))).toBe(true)
+    expect(mobilityReads.some((item) => item.resource === curveResource.resource_id && item.intent.kind === 'facts')).toBe(true)
+
+    expect(requestsByTheme()).toEqual(warmedCounts)
+    wrapper.unmount()
+  })
+
+  it('ne laisse pas un échec de réchauffage natif entacher le thème actif et le réessaie à la visite', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let failedEconomyWarmup = false
+    const economyResources = new Set(nativeResources('economie').map((resource) => resource.resource_id))
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        if (!failedEconomyWarmup && items.some((item) => economyResources.has(item.resource) &&
+            item.target.kind === 'territory' && item.intent.kind === 'facts')) {
+          failedEconomyWarmup = true
+          return new Response('background fixture unavailable', { status: 503 })
+        }
+        return nativeBatchResponse(items, nativeReadFixture)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const model = modeleAvecContextesComparaison()
+    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
+    await flushPromises()
+
+    expect(failedEconomyWarmup).toBe(true)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Programmes et subventions')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    const beforeVisit = requests.filter((items) => items.some((item) => economyResources.has(item.resource))).length
+
+    await router.replace({ query: { theme: 'economie' } })
+    await flushPromises()
+
+    expect(requests.filter((items) => items.some((item) => economyResources.has(item.resource))).length)
+      .toBeGreaterThan(beforeVisit)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Chômage')
+    wrapper.unmount()
+  })
+
+  it('ignore les faits natifs tardifs d’un thème quitté sans remplacer le thème courant', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    const habitatResources = new Set(nativeResources('habitat').map((resource) => resource.resource_id))
+    let resolveHabitat: (() => void) | undefined
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        if (!resolveHabitat && items.some((item) => habitatResources.has(item.resource) &&
+            item.target.kind === 'territory' && item.intent.kind === 'facts')) {
+          return new Promise<Response>((resolve) => {
+            resolveHabitat = () => resolve(nativeBatchResponse(items, nativeReadFixture))
+          })
+        }
+        return nativeBatchResponse(items, nativeReadFixture)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const model = modeleAvecContextesComparaison()
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
+    expect(resolveHabitat).toBeTypeOf('function')
+
+    await router.replace({ query: { theme: 'economie' } })
+    await flushPromises()
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Chômage')
+    expect(requests.flat().some((item) => item.resource === 'economie_selected_reading')).toBe(true)
+
+    resolveHabitat!()
+    await flushPromises()
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Chômage')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('réessaie une acquisition native du thème après échec, sans repli sur les faits statiques', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    const habitatResources = new Set(nativeResources('habitat').map((resource) => resource.resource_id))
+    let failedPairedRead = false
+    let failedFactsRecovery = false
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        const habitatFocalReads = items.filter((item) =>
+          habitatResources.has(item.resource) && item.target.kind === 'territory')
+        if (!failedPairedRead && habitatFocalReads.some((item) => item.intent.kind === 'fixed_comparison')) {
+          failedPairedRead = true
+          return new Response('fixture unavailable', { status: 503 })
+        }
+        if (failedPairedRead && !failedFactsRecovery && habitatFocalReads.length > 0 &&
+            habitatFocalReads.every((item) => item.intent.kind === 'facts')) {
+          failedFactsRecovery = true
+          return new Response('fixture unavailable', { status: 503 })
+        }
+        return nativeBatchResponse(items, nativeReadFixture)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat',
+      vi.fn(async () => modeleAvecContextesComparaison()))
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('indicateurs de ce thème')
+    expect(failedPairedRead).toBe(true)
+    expect(failedFactsRecovery).toBe(true)
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+
+    expect(failedPairedRead).toBe(true)
+    expect(failedFactsRecovery).toBe(true)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    const passoires = nativeResources('habitat').find((resource) => resource.resource_id === 'part_passoires')!
+    expect(wrapper.get(`[data-clef="${passoires.resource_id}"] .valeur-numerique`).text()).toBe('13')
+    expect(requests.every((items) => items.length >= 1 && items.length <= 12)).toBe(true)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('masque les faits Habitat statiques pendant la lecture native en attente', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let resolveFirstRead: (() => void) | undefined
+    let shouldDefer = true
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        if (shouldDefer && items.some((item) => item.target.kind === 'territory')) {
+          shouldDefer = false
+          return new Promise<Response>((resolve) => {
+            resolveFirstRead = () => resolve(nativeBatchResponse(items, nativeReadFixture))
+          })
+        }
+        return nativeBatchResponse(items, nativeReadFixture)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const model = modeleAvecContextesComparaison()
+    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat',
+      vi.fn(async () => model))
+    const passoires = nativeResources('habitat').find((resource) => resource.resource_id === 'part_passoires')!
+    const sourceLabel = model.themes.habitat!.indicators.find((fact) =>
+      fact.key === passoires.resource_id)!.vintage_source
+
+    expect(requests.length).toBeGreaterThan(0)
+    expect(resolveFirstRead).toBeTypeOf('function')
+    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain(sourceLabel)
+    resolveFirstRead!()
+    await flushPromises()
+
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain(sourceLabel)
+    expect(wrapper.get(`[data-clef="${passoires.resource_id}"] .valeur-numerique`).text()).toBe('13')
+    wrapper.unmount()
+  })
+
+  it('ne remplace pas les faits focaux lorsqu’une comparaison native échoue puis est réessayée', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let selectedFailures = 1
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        if (items.some((item) => item.intent.kind === 'selected_comparison') && selectedFailures > 0) {
+          selectedFailures--
+          return new Response('comparison unavailable', { status: 503 })
+        }
+        return nativeBatchResponse(items, nativeReadFixture)
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const model = modeleAvecContextesComparaison()
+    const activityLabel = (model.themes.economie!.histories[0] as any).top1_activity_label as string
+    const { wrapper } = await monter('/territoire/commune/22001?theme=economie&comparaison=epci',
+      vi.fn(async () => model))
+    await flushPromises()
+
+    expect(wrapper.get('[role="alert"]').text()).toContain('comparaisons de ce thème')
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+    await wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+
+    const selectedReads = requests.filter((items) => items.some((item) => item.intent.kind === 'selected_comparison'))
+    expect(selectedReads).toHaveLength(2)
+    expect(selectedReads[1]!.every((item) => item.intent.kind === 'selected_comparison')).toBe(true)
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('ignore une réponse de comparaison native périmée après un changement de portée', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    let resolveOldComparison: (() => void) | undefined
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      const url = String(input)
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        const response = nativeBatchResponse(items, nativeReadFixture)
+        if (!resolveOldComparison && items.some((item) => item.intent.kind === 'selected_comparison')) {
+          return new Promise<Response>((resolve) => {
+            resolveOldComparison = () => resolve(response)
+          })
+        }
+        return response
+      }
+      throw new Error(`Unexpected request: ${url}`)
+    })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', fetchApi)
+    const model = modeleAvecContextesComparaison()
+    const activityLabel = (model.themes.economie!.histories[0] as any).top1_activity_label as string
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=economie&comparaison=epci',
+      vi.fn(async () => model),
+    )
+    expect(resolveOldComparison).toBeTypeOf('function')
+
+    await router.replace({ query: { theme: 'economie', comparaison: 'bretagne' } })
+    await flushPromises()
+    const bretagne = model.territories.find((territory) => territory.type === 'region')!
+    const selectedReads = requests.filter((items) =>
+      items.some((item) => item.intent.kind === 'selected_comparison'))
+    expect(selectedReads.at(-1)?.[0]?.intent.members).toEqual([{ type: bretagne.type, id: bretagne.territoire }])
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+
+    resolveOldComparison!()
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBe('bretagne')
+    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+    expect(wrapper.get('[role="tabpanel"]').text()).toContain(activityLabel)
+    wrapper.unmount()
+  })
+
+  beforeEach(() => {
+    // Tests which intentionally exercise the incumbent presentation path opt
+    // out explicitly; acquisition-contract tests below turn the default API
+    // path back on and provide native /api/resources fixtures.
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new Error('API not configured in tests')))
+  })
+  afterEach(() => {
+    vi.unstubAllGlobals()
+    vi.unstubAllEnvs()
+    // Late Vue watchers/retries must never reach Happy DOM's real base URL.
+    vi.stubGlobal('fetch', fetchBloque)
+  })
+
   it('keeps the building figures without exposing an interactive peer selector', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', nativeSemanticFetch())
+    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
       vi.fn(async () => modeleAvecContextesComparaison()))
     await flushPromises()
     expect(wrapper.find('#building-peer-search').exists()).toBe(false)
     expect(wrapper.text()).not.toContain('Choisir les territoires du groupe comparé')
     wrapper.unmount()
   })
-  it('requests the assembled Mobility product once and never displays static JSON figures when the API fails', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const fetchApi = vi.fn().mockRejectedValue(new Error('API indisponible'))
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
-      vi.fn(async () => modeleAvecContextesComparaison()))
-    await flushPromises()
-    expect(fetchApi.mock.calls.some(([url]) => String(url) ===
-      '/api/territories/commune/22001/themes/mobilite/facts')).toBe(true)
-    const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
-    expect(section.find('.access-ramp-evidence').exists()).toBe(false)
-    expect(section.find('.bivariate-evidence').exists()).toBe(false)
-    expect(section.get('[role="alert"]').text()).toContain('Impossible de charger')
-    await section.get('button').trigger('click')
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/themes/mobilite/facts'))).toHaveLength(2)
-    wrapper.unmount()
-  })
-  it('refreshes the measured selected mean on the mounted Combourg fiche and drops stale scopes during races/errors', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const fixtures = resolve(process.cwd(), 'src/__tests__/fixtures')
-    const focal = JSON.parse(readFileSync(resolve(fixtures, 'raccordement-combourg-theme-facts-guarded.json'), 'utf8'))
-    const density = JSON.parse(readFileSync(resolve(fixtures, 'raccordement-combourg-density-curve-comparison-guarded.json'), 'utf8'))
-    const epci = JSON.parse(readFileSync(resolve(fixtures, 'raccordement-combourg-epci-curve-comparison-guarded.json'), 'utf8'))
-    const epciSelection = JSON.parse(readFileSync(resolve(fixtures, 'raccordement-combourg-epci-selection-guarded.json'), 'utf8'))
-    const published = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/35085.json'), 'utf8'))
-    const model = validerModeleTerritoire(published, 'territoires/commune/35085.json',
-      { type: 'commune', territoire: '35085' })
-    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    const targetPayload = payloadDepuisModeleTerritoire(model)
-    const densityContext = model.themes.mobilite!.comparisons.densite!
-    // The current isolated read schema has the genuine candidate curve and
-    // comparison, but not the full Mobility access corpus. Reuse the established
-    // mounted-theme fixture for those unrelated families, replacing every
-    // raccordement datum/descriptor/reference/comparison with the real 8766
-    // response. This synthetic fixture never supplies candidate numeric data.
-    const fullFocal = reponseThemeMobiliteApi(model, 'commune', '35085',
-      densityContext.scope.kind, densityContext.scope.label) as any
-    const candidateKeys = new Set(['raccordement_courbe', 'raccordement_reference', 'raccordement_tc'])
-    fullFocal.indicators = fullFocal.indicators.filter((row: any) => !candidateKeys.has(row.indicator_id))
-      .concat(focal.indicators.filter((row: any) => candidateKeys.has(row.indicator_id)))
-    fullFocal.indicator_metadata = focal.indicator_metadata.filter((row: any) => row.indicator_id === 'raccordement_courbe')
-    fullFocal.named_reference_evidence = focal.named_reference_evidence
-    const actualCurveResult = focal.comparison.results.find((row: any) => row.indicator_id === 'raccordement_courbe')
-    fullFocal.comparison = { ...fullFocal.comparison, ...focal.comparison,
-      results: [...fullFocal.comparison.results.filter((row: any) => row.indicator_id !== 'raccordement_courbe'), actualCurveResult] }
-    fullFocal.fixture_lineage = 'Synthetic mounted test fixture for unrelated Mobility access/readings; raccordement facts remain actual guarded API response.'
-    const initialFacts = mobilityFactsFromThemeApi(targetPayload, '35085', fullFocal)
-    let mountedFacts = applyThemeComparisonApiFacts(initialFacts, fullFocal.comparison, densityContext)
-    expect(mountedFacts.mobility.selectedTrajectoryComparison?.points).toHaveLength(73)
-    const initialServiceScope = fullFocal.essential_service_access.scope
-    mountedFacts = applyAccessApiFacts(mountedFacts, fullFocal.essential_service_access,
-      initialServiceScope.kind, initialServiceScope.label)
-    const initialBuildingScope = fullFocal.building_access?.scope
-    mountedFacts = applyInitialBuildingApiFacts(mountedFacts, fullFocal.building_access,
-      initialBuildingScope?.comparison_mode ?? null, initialBuildingScope?.kind ?? null,
-      densityContext.scope.label)
-    let resolveObsoleteEPCI!: (response: unknown) => void
-    let resolveFreshDensity!: (response: unknown) => void
-    let deferDensity = false
-    let failDensity = false
-    let explicitCalls = 0
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
-      if (url.endsWith('/themes/mobilite/facts')) return { ok: true, json: async () => fullFocal }
-      if (url.endsWith('/indicators/raccordement_courbe/comparison')) {
-        const body = JSON.parse(String(options?.body)) as { selection?: unknown[] }
-        if (body.selection) {
-          expect(body.selection).toEqual(epciSelection)
-          explicitCalls++
-          if (explicitCalls === 1) return new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolveResponse) => {
-            resolveObsoleteEPCI = (response) => resolveResponse({ ok: true, json: async () => response })
-          })
-          return { ok: true, json: async () => epci }
-        }
-        if (deferDensity) return new Promise<{ ok: boolean; json: () => Promise<unknown> }>((resolveResponse) => {
-          resolveFreshDensity = (response) => resolveResponse({ ok: true, json: async () => response })
-        })
-        if (failDensity) return { ok: false, status: 503, json: async () => ({}) }
-        return { ok: true, json: async () => density }
+
+  it.each(['demographie', 'milieux'] as const)(
+    'renders API-resolved named-scope reading clouds for %s with the default API flags and no full cohort reference',
+    async (theme) => {
+      for (const name of ['VITE_THEME_ACQUISITION_API', 'VITE_SCALAR_COHORT_API']) {
+        Reflect.deleteProperty(import.meta.env, name)
+        Reflect.deleteProperty(process.env, name)
+        expect(import.meta.env[name]).toBeUndefined()
       }
-      if (url.endsWith('/themes/mobilite/comparison')) return { ok: false, status: 503, json: async () => ({}) }
-      throw new Error(`Unexpected product API request: ${url}`)
-    })
-    vi.stubGlobal('fetch', fetchApi)
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const { router, wrapper } = await monter('/territoire/commune/35085?theme=mobilite&variant=E', vi.fn(async () => model))
-    const figure = () => wrapper.find('#figure-offre-transports-commun')
-    const meanPoints = () => figure().findAll('.transit-point--comparison')
-    const focalPoints = () => figure().findAll('.transit-point--territory')
-    const meanValues = () => meanPoints().map((point) => Number(point.attributes('data-value')))
-    try {
-      await flushPromises()
-      expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/35085/themes/mobilite/facts', expect.anything())
-      expect(meanPoints(), `${JSON.stringify(fetchApi.mock.calls.map(([url, options]) => [url, options?.method, options?.body]))}\n${wrapper.text()}`).toHaveLength(73)
-      expect(focalPoints()).toHaveLength(73)
-      expect(meanValues()).toEqual(density.result.mean_curve.points.map((point: { value: number }) => point.value))
-      expect(figure().find('.transit-legend-comparison').text()).toContain(String(density.result.selected_member_count))
-      expect(fullFocal.indicators.find((row: any) => row.indicator_id === 'raccordement_courbe')
-        .sources.some((source: any) => source.source_id === 'raccordement_gtfs_national')).toBe(true)
 
-      // Choosing EPCI starts a real 25-commune API read; the density mean must
-      // disappear immediately while the new response is still pending.
-      await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'epci' } })
-      await flushPromises()
-      expect(meanPoints()).toHaveLength(0)
-      expect(focalPoints()).toHaveLength(73)
-      expect(fetchApi.mock.calls.some(([url]) => String(url).endsWith('/indicators/raccordement_courbe/comparison'))).toBe(true)
+      const model = validerModeleTerritoire(structuredClone(modelePublie22001),
+        'territoires/commune/22001.json', { type: 'commune', territoire: '22001' },
+        { requireAllThemes: true })
+      expect(model.cohortTerritories).toBeUndefined()
+      const parent = model.territories.find((territory) => territory.type === 'epci' &&
+        territory.territoire === model.territory.epci)!
+      const region = model.territories.find((territory) => territory.type === 'region')!
+      const apiReference = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')) as any[]
+      const epciMembers = apiReference.filter((territory) => territory.type === 'commune' && territory.epci === parent.territoire)
+      const bretagneMembers = apiReference.filter((territory) => territory.type === 'commune')
+      const resources = nativeResources(theme)
+      const readingResource = resources.find((resource) => resource.shapes.includes('typed_reading') &&
+        resource.target_kinds.includes('territory_cohort'))!
+      const rankResource = resources.find((resource) => resource.shapes.includes('scalar') &&
+        resource.intents.includes('selected_comparison')) ?? resources.find((resource) =>
+        resource.shapes.includes('ordered_series') && resource.intents.includes('selected_comparison'))!
+      const selectedRanks: Array<{ scopeCount: number; rankSize: number | null }> = []
+      const focalReads = new Map<string, Record<string, any>>()
+      const requests: Array<Array<Record<string, any>>> = []
+      const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+        const url = String(input)
+        if (url === '/api/resources') {
+          return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1',
+            resources: [rankResource, readingResource] }))
+        }
+        if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        return nativeBatchResponse(items, (item, resource) => {
+          let data = nativeReadFixture(item, resource)
+          if (item.intent.kind === 'facts' && item.target.kind === 'territory' &&
+              resource.resource_id === rankResource.resource_id && resource.shapes.includes('ordered_series')) {
+            const comparisonPoint = model.themes[theme]?.metadata?.indicator_pages?.[resource.indicator_id]?.comparison?.detail
+            if (!comparisonPoint) throw new Error(`No producer comparison facet for ${resource.resource_id}`)
+            data = { ...data, comparison_point: comparisonPoint }
+          }
+          if (item.intent.kind === 'facts' && item.target.kind === 'territory') {
+            focalReads.set(resource.resource_id, data)
+          }
+          if (item.intent.kind !== 'selected_comparison') return data
+          const selected = item.intent.members[0]!
+          const selectedMembers = selected.type === 'epci' ? epciMembers : bretagneMembers
+          const scopeCount = selectedMembers.length
+          const focal = focalReads.get(resource.resource_id)
+          const comparisonFacet = resource.shapes.includes('ordered_series')
+            ? focal?.comparison_point : resource.indicator_id
+          const result = { ...data.result, status: 'available', direction: resource.direction,
+            source_facet: comparisonFacet, selected_member_count: scopeCount, eligible_count: scopeCount,
+            missing_count: 0, rank: 1, rank_size: scopeCount }
+          selectedRanks.push({ scopeCount, rankSize: result.rank_size })
+          return { ...data, selection: item.intent.members.map((member: { type: string; id: string }) =>
+            ({ territory_type: member.type, territory_id: member.id })),
+          scope: { kind: 'explicit_selection', member_count: scopeCount }, result }
+        })
+      })
+      vi.stubGlobal('fetch', fetchApi)
+      const { router, wrapper } = await monter(
+        `/territoire/commune/22001?theme=${theme}&comparaison=epci`, vi.fn(async () => model))
 
-      // Change back to density before the EPCI reply; completing that obsolete
-      // response cannot restore its mean or relabel it as the new density scope.
-      deferDensity = true
-      await router.replace({ query: { theme: 'mobilite', variant: 'E' } })
-      await flushPromises()
-      expect(meanPoints()).toHaveLength(0)
-      resolveObsoleteEPCI(epci)
-      await flushPromises()
-      expect(meanPoints()).toHaveLength(0)
-      resolveFreshDensity(density)
-      await flushPromises()
-      expect(meanPoints()).toHaveLength(73)
-      expect(meanValues()).toEqual(density.result.mean_curve.points.map((point: { value: number }) => point.value))
+      const graph = () => theme === 'demographie'
+        ? wrapper.findComponent(GraphiqueSoldes) : wrapper.findComponent(GraphiqueQuadrantMilieux)
+      const cloudPoints = () => theme === 'demographie'
+        ? wrapper.findComponent(GraphiqueSoldes).props().nuage
+        : wrapper.findComponent(GraphiqueQuadrantMilieux).props().nuage
+      const themePayload = () => wrapper.findComponent(OngletTheme).props('payload') as Payload
+      const verifyCloudAndRank = (count: number, label: string, memberIds: string[]) => {
+        expect(graph().exists()).toBe(true)
+        const cloud = cloudPoints()
+        expect(cloud.length).toBeGreaterThan(0)
+        expect(cloud.every((point) => memberIds.includes(point.territoire))).toBe(true)
+        const rows = themePayload().indicateurs.filter((row) => row.theme === theme &&
+          row.key === rankResource.indicator_id)
+        expect(rows.some((row) => row.comparaisonApi?.taille === count && row.comparaisonApi.portee === label)).toBe(true)
+        expect(wrapper.find('[role="alert"]').exists()).toBe(false)
+      }
 
-      // The next EPCI request is a complete, actual HTTP response. It replaces
-      // the density line point-for-point and retains the focal line/source.
-      deferDensity = false
-      await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'epci' } })
       await flushPromises()
-      expect(meanPoints()).toHaveLength(73)
-      expect(meanValues()).toEqual(epci.result.mean_curve.points.map((point: { value: number }) => point.value))
-      expect(figure().find('.transit-legend-comparison').text()).toContain(String(epci.result.selected_member_count))
-      expect(figure().findAll('.transit-point--territory')).toHaveLength(73)
-      expect(fullFocal.indicators.find((row: any) => row.indicator_id === 'raccordement_courbe')
-        .sources.some((source: any) => source.source_id === 'raccordement_gtfs_national')).toBe(true)
+      const epciLabel = model.themes.mobilite!.comparisons.epci!.scope.label
+      verifyCloudAndRank(epciMembers.length, epciLabel, epciMembers.map((member) => member.territoire))
+      expect(requests.flat().some((item) => item.target.kind === 'territory_cohort' &&
+        item.target.epci_id === parent.territoire && item.resource === readingResource.resource_id)).toBe(true)
+      expect(selectedRanks.at(-1)).toEqual({ scopeCount: epciMembers.length, rankSize: epciMembers.length })
 
-      // Failed density refresh clears the EPCI mean; it never falls back to
-      // the embedded initial density curve or draws zeros for unavailable data.
-      failDensity = true
-      await router.replace({ query: { theme: 'mobilite', variant: 'E' } })
+      const requestCountBeforeRegion = requests.length
+      await router.replace({ query: { theme, comparaison: 'bretagne' } })
       await flushPromises()
-      expect(meanPoints()).toHaveLength(0)
-      expect(focalPoints()).toHaveLength(73)
-      expect(meanValues()).not.toContain(0)
-    } finally {
+      const bretagneLabel = model.themes.mobilite!.comparisons.bretagne!.scope.label
+      verifyCloudAndRank(bretagneMembers.length, bretagneLabel, bretagneMembers.map((member) => member.territoire))
+      expect(requests.slice(requestCountBeforeRegion).flat().some((item) => item.target.kind === 'territory_cohort' &&
+        item.resource === readingResource.resource_id && item.target.type === 'commune' && !item.target.epci_id &&
+        !item.target.department_id)).toBe(true)
+      expect(selectedRanks.at(-1)).toEqual({ scopeCount: bretagneMembers.length, rankSize: bretagneMembers.length })
+      expect(region.type).toBe('region')
       wrapper.unmount()
-    }
-  })
-  it('renders both initial building figures from the API with the default mean label', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const model = modeleAvecContextesComparaison()
-    const context = model.themes.mobilite!.comparisons.densite!
-    const initial = territoryFactsFor(payloadDepuisModeleTerritoire(model), '22001', context)!
-    const ramp = initial.mobility.accessRamp!
-    const grid = initial.mobility.buildingDistribution!
-    const displayModes = { c: 'car', b: 'bike', t: 'walkTransit' } as const
-    const figure = {
-      publication_id: 'building-v1', availability: 'complete', territory: { id: '22001', type: 'commune' },
-      scope: { comparison_mode: 'densite', kind: context.scope.kind, label: context.scope.label },
-      ramp: (['c', 'b', 't'] as const).flatMap((mode) =>
-        ramp.curves[displayModes[mode]].points.map((p, quantile_index) => ({
-          mode, quantile_index, quantile: quantile_index / 10, accessible_types: p.accessibleTypes + 1,
-          total_buildings: ramp.totalBuildings,
-        }))),
-      peer_ramp: { statistic: 'mean', member_count: 2, total_buildings: grid.totalBuildings,
-        points: (['c', 'b', 't'] as const).flatMap((mode) =>
-          ramp.curves[displayModes[mode]].points.map((p, index) => ({
-            mode, quantile: index / 10, accessible_types: p.accessibleTypes + 2,
-          }))) },
-      distribution: grid.cells.map((cell) => ({ breadth_bucket: cell.breadthBucket,
-        depth_bucket: cell.depthBucket, building_count: cell.buildingCount, share: cell.share,
-        total_buildings: grid.totalBuildings })),
-      peer_distribution: { statistic: 'mean', member_count: 2, total_buildings: grid.totalBuildings,
-        cells: grid.cells.map((cell) => ({ breadth_bucket: cell.breadthBucket,
-          depth_bucket: cell.depthBucket, building_count: cell.buildingCount,
-          share: cell.buildingCount / grid.totalBuildings })) },
-    }
-    const assembled = reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label)
-    assembled.building_access = { ...assembled.building_access, ...figure }
-    assembled.building_access.presentation.building_grid.breadth_axis_label = 'Axe fourni par le producteur'
-    const fetchApi = vi.fn(async () => ({ ok: true, json: async () => assembled }))
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
-    await flushPromises()
-    const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
-    expect(section.find('.access-ramp-evidence').exists()).toBe(true)
-    expect(section.find('.bivariate-evidence').exists()).toBe(true)
-    expect(section.text()).toContain('Axe fourni par le producteur')
-    expect(section.text()).toContain('moyenne des')
-    expect(section.text()).not.toContain('territoires sélectionnés')
-    wrapper.unmount()
-  })
-  it.each([
-    ['epci', '242200715'], ['departement', '22'], ['region', '53'],
-  ] as const)('requests initial %s Mobility facts without a static fallback', async (type, code) => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const published = JSON.parse(readFileSync(resolve(process.cwd(),
-      `../public/data/modeles-lecture/territoires/${type}/${code}.json`), 'utf8'))
-    const model = validerModeleTerritoire(published, `${type}/${code}.json`, { type, territoire: code })
-    const fetchApi = vi.fn().mockRejectedValue(new Error('API indisponible'))
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
-    expect(fetchApi.mock.calls.some(([url]) => String(url) ===
-      `/api/territories/${type}/${code}/themes/mobilite/facts`)).toBe(true)
-    const section = wrapper.get('[data-section="distribution-acces-par-batiment"]')
-    expect(section.find('.access-ramp-evidence').exists()).toBe(false)
-    expect(section.find('.bivariate-evidence').exists()).toBe(false)
-    expect(section.get('[role="alert"]').text()).toContain('Impossible de charger')
-    wrapper.unmount()
-  })
-  it('alimente les anneaux Variant E depuis l’API sans changer les autres sections', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const scope = modeleAvecContextesComparaison().themes.mobilite!.comparisons.densite!.scope
-    const model = modeleAvecContextesComparaison()
-    const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () =>
-      reponseThemeMobiliteApi(model, 'commune', '22001', scope.kind, scope.label) }))
-    vi.stubGlobal('fetch', fetchApi)
-    try {
-      const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
-        vi.fn(async () => modeleAvecContextesComparaison()))
-      await flushPromises()
-      expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/themes/mobilite/facts'))).toHaveLength(1)
-      expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/22001/themes/mobilite/facts', expect.anything())
-      expect(wrapper.findAll('[data-section="services-essentiels"] .access-foot-summary')[0]?.text()).toContain('42')
-      expect(wrapper.get('[data-section="services-essentiels"] .cahier-comparison-note').text()).toContain(scope.label)
-      expect(wrapper.get('#figure-offre-transports-commun .transit-plot svg').attributes('role')).toBe('img')
-      expect(wrapper.find('#figure-offre-transports-commun .transit-series--territory').exists()).toBe(true)
-      expect(wrapper.text()).toContain('Source API · api-v1')
-      expect(wrapper.find('[data-section="resume"]').exists()).toBe(true)
-      wrapper.unmount()
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it.each([
-    ['epci', '242200715', 'epcis-bretagne'],
-    ['departement', '22', 'departements-bretagne'],
-    ['region', '53', null],
-  ] as const)('renders mobility access, building access, and raccordement for %s %s', async (type, code, kind) => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const published = JSON.parse(readFileSync(resolve(process.cwd(),
-      `../public/data/modeles-lecture/territoires/${type}/${code}.json`), 'utf8'))
-    const model = validerModeleTerritoire(published, `${type}/${code}.json`, { type, territoire: code })
-    const label = model.themes.mobilite?.comparisons.bretagne?.scope.label
-    const fetchApi = vi.fn(async () => ({ ok: true, json: async () =>
-      reponseThemeMobiliteApi(model, type, code, kind, label) }))
-    vi.stubGlobal('fetch', fetchApi)
-    try {
-      const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
-      await flushPromises()
-      expect(wrapper.findAll('[data-section="services-essentiels"] .access-figure')).toHaveLength(5)
-      const building = wrapper.get('[data-section="distribution-acces-par-batiment"]')
-      expect(building.find('.access-ramp-evidence').exists()).toBe(true)
-      expect(building.find('.bivariate-evidence').exists()).toBe(true)
-      const plot = wrapper.get('#figure-offre-transports-commun .transit-plot svg')
-      expect(plot.attributes('role')).toBe('img')
-      expect(wrapper.find('#figure-offre-transports-commun .transit-series--territory').exists()).toBe(true)
-      expect(wrapper.find('#figure-offre-transports-commun .transit-unavailable').exists()).toBe(false)
-      wrapper.unmount()
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
-
-  it('ne déclenche pas le fan-out scalaire avec un registre Mobilité actif sur la variante E', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const catalogue = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8'))
-    const model = modeleAvecContextesComparaison()
-    model.themes.mobilite!.metadata.scalar_contracts = catalogue.scalar_contracts
-    model.themes.mobilite!.metadata.indicator_pages = catalogue.indicator_pages
-    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    const baseFetch = stubApiThemeMobilite(model)
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
-      if (url.includes('/indicator-cohorts/')) throw new Error('cohort fan-out must not fire on the E path')
-      return baseFetch(url, options)
-    })
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/themes/mobilite/facts'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(0)
-    await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'epci' } })
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/themes/mobilite/facts'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.some(([url]) => url.includes('/indicator-cohorts/'))).toBe(false)
-    expect(wrapper.findAll('[data-section="services-essentiels"] .access-foot-summary')).toHaveLength(5)
-    wrapper.unmount()
-  })
-
-  it('n’affiche jamais les anneaux statiques si l’API échoue, et réessaie', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const scope = modeleAvecContextesComparaison().themes.mobilite!.comparisons.epci!.scope
-    let accessCalls = 0
-    const model = modeleAvecContextesComparaison()
-    const fetchApi = vi.fn((url: string) => {
-      if (url.startsWith('/api/aedar/')) return Promise.resolve({ ok: false, status: 503, json: async () => ({}) })
-      if (url.endsWith('/themes/mobilite/facts')) return ++accessCalls === 1
-        ? Promise.reject(new Error('API indisponible'))
-        : Promise.resolve({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', scope.kind, scope.label) })
-      return Promise.resolve({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', scope.kind, scope.label) })
-    })
-    vi.stubGlobal('fetch', fetchApi)
-    try {
-      const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci',
-        vi.fn(async () => modeleAvecContextesComparaison()))
-      await flushPromises()
-      const section = wrapper.get('[data-section="services-essentiels"]')
-      expect(section.findAll('.access-figure')).toHaveLength(0)
-      expect(section.get('[role="alert"]').text()).toContain('Impossible de charger')
-      await section.get('button').trigger('click')
-      await flushPromises()
-      expect(section.findAll('.access-figure')).toHaveLength(5)
-      expect(fetchApi.mock.calls.filter(([url]) => String(url).includes('/themes/mobilite/facts'))).toHaveLength(2)
-      wrapper.unmount()
-    } finally {
-      vi.unstubAllGlobals()
-    }
-  })
+    },
+  )
 
   it('renders registered scalar API values in the mounted fiche instead of the static model value', async () => {
     // La famille overlay vit sur un thème NON-mobilité : le cahier plié
@@ -828,13 +1043,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(published.themes.demographie.theme_metadata.scalar_contracts).toBeUndefined()
     const pending: Array<() => void> = []
     const requestedIndicators: string[] = []
-    const resources = semanticScalarResources('demographie', metadata)
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url.startsWith('/data/')) {
         return new Response(readFileSync(resolve(process.cwd(), `../public/data/${url.slice('/data/'.length)}`), 'utf8'), { status: 200 })
       }
-      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') {
         const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
         requestedIndicators.push(...request.items.map((item) => item.resource))
@@ -877,7 +1091,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('renders the default scalar rank and changes only comparison reads across fiche scopes, ignoring a late old scope', async () => {
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     const references = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8')) as any[]
-    const resources = semanticScalarResources('demographie', metadata)
     const model = modeleAvecContextesComparaison()
     model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
     const contextLabels = model.themes.mobilite!.comparisons
@@ -922,7 +1135,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') {
         const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
         requests.push(request)
@@ -997,7 +1210,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('recovers focal scalar facts after an initial paired comparison failure and retries ranks only', async () => {
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     metadata.scalar_contracts = { densite: metadata.scalar_contracts.densite }
-    const resources = semanticScalarResources('demographie', metadata)
     const model = modeleAvecContextesComparaison()
     model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
     const requests: Array<{ items: Array<Record<string, any>> }> = []
@@ -1005,7 +1217,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') {
         const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
         requests.push(request)
@@ -1064,14 +1276,13 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('keeps scalar facts unavailable when both the paired read and facts-only recovery fail', async () => {
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     metadata.scalar_contracts = { densite: metadata.scalar_contracts.densite }
-    const resources = semanticScalarResources('demographie', metadata)
     const model = modeleAvecContextesComparaison()
     model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
     const requests: Array<{ items: Array<Record<string, any>> }> = []
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') {
         requests.push(JSON.parse(init?.body as string))
         return new Response('semantic reads unavailable', { status: 503 })
@@ -1096,7 +1307,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
   it('does not start facts-only recovery after the paired read belongs to a cancelled fiche navigation', async () => {
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_demographie.json'), 'utf8'))
     metadata.scalar_contracts = { densite: metadata.scalar_contracts.densite }
-    const resources = semanticScalarResources('demographie', metadata)
     const model = modeleAvecContextesComparaison()
     model.themes.demographie!.metadata = validerThemeMetadata(metadata, 'theme_demographie.json')
     const requests: Array<{ items: Array<Record<string, any>> }> = []
@@ -1104,7 +1314,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/data/theme_demographie.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') {
         const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
         requests.push(request)
@@ -1148,11 +1358,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_habitat.json'), 'utf8'))
     const published = JSON.parse(readFileSync(resolve(process.cwd(),
       '../public/data/modeles-lecture/territoires/commune/35238.json'), 'utf8'))
-    const resources = semanticScalarResources('habitat', metadata)
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/data/theme_habitat.json') return new Response(JSON.stringify(metadata), { status: 200 })
-      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') {
         const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
         return new Response(JSON.stringify(semanticScalarBatch('habitat', metadata,
@@ -1183,485 +1392,125 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('acquiert Habitat par la seule requête de faits du thème actif quand l’API d’acquisition est activée', async () => {
-    const published = JSON.parse(readFileSync(resolve(process.cwd(),
-      '../public/data/modeles-lecture/territoires/commune/35238.json'), 'utf8'))
-    const model = validerModeleTerritoire(published, 'territoires/commune/35238.json',
-      { type: 'commune', territoire: '35238' })
-    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, _options?: RequestInit) => {
+  it('renders the pooled DVF scalar/rank beside annual points without borrowing the annual rank', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url === '/api/territories/commune/35238/themes/habitat/facts') {
-        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '35238') }
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        requests.push(items)
+        return nativeBatchResponse(items, (item, resource) => {
+          const data = nativeReadFixture(item, resource)
+          if (resource.resource_id !== 'prix_m2') return data
+          if (item.intent.kind === 'facts') {
+            data.points = (data.points as Array<Record<string, any>>).map((point) => point.axis === '2025'
+              ? { ...point, value: 230, status: 'measured', missing_reason: null }
+              : point.axis === '2024' ? { ...point, value: 211, status: 'measured', missing_reason: null } : point)
+            data.scalar_facet.observation = { ...data.scalar_facet.observation,
+              status: 'measured', value: 700, support_count: 12, denominator_count: 20 }
+          } else {
+            data.result = { ...data.result, source_facet: '2025', status: 'available',
+              direction: 'low', rank: 2, rank_size: 2 }
+            data.scalar_facet.result = { ...data.scalar_facet.result, source_facet: 'prix_m2',
+              status: 'available', direction: 'low', rank: 1, rank_size: 2 }
+          }
+          return data
+        })
       }
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/35238?theme=habitat', vi.fn(async () => model))
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
-    expect(JSON.parse(String(fetchApi.mock.calls[0]![1]!.body))).toEqual({ theme_id: 'habitat' })
-    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
-    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(true)
-    const text = wrapper.get('[role="tabpanel"]').text()
-    expect(text).toContain('42%Part de passoires thermiques')
-    expect(text).toContain('Source API habitat')
-    expect(text).toContain('performant')
-    expect(text).toContain('4 242')
-    expect(text).not.toContain('3 777,78')
-    expect(text).not.toContain('intermédiaire')
-    // La trajectoire prix_m2 rend depuis la SERIE servie (owned_series), pas
-    // depuis des lignes annuelles d'indicators : le contrat réel épinglé par
-    // test_theme_facts_habitat_http.py.
-    const trajectoire = wrapper.findAllComponents(FigureTrajectoire)
-      .find((figure) => figure.props('clef') === 'prix_m2')
-    expect(trajectoire, 'la figure trajectoire prix_m2 rend depuis la série servie').toBeDefined()
-    const lignesPrix = trajectoire!.props('lignes') as Indicateur[]
-    expect(lignesPrix.some((ligne) => ligne.detail === '2025' && ligne.value === 4242)).toBe(true)
-    expect(lignesPrix.filter((ligne) => ligne.detail !== null).length).toBeGreaterThanOrEqual(2)
-    wrapper.unmount()
-  })
-
-  it('réchauffe les autres thèmes après Programmes et revisite Habitat sans nouvelle requête', async () => {
-    const model = modelFor('22001')
-    const programmes = reponseThemeProgrammesApi()
-    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url.endsWith('/themes/programmes/facts')) return { ok: true, json: async () => programmes }
-      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
-        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
-      }
-      if (url === '/api/territories/commune/22001/themes/demographie/facts') {
-        return { ok: true, json: async () => reponseThemeDemographieApi(model, 'commune', '22001') }
-      }
-      const theme = url.match(/\/themes\/([^/]+)\/facts$/)?.[1]
-      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
-        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
-          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    await flushPromises()
-    // Le POST actif est prioritaire puis le registre complet est réchauffé.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
-    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
-    await router.replace({ query: { theme: 'habitat' } })
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
-    // Démographie acquiert désormais ses faits à la sélection explicite.
-    await router.replace({ query: { theme: 'demographie' } })
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/demographie/facts'))).toHaveLength(1)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Densité de population')
-    // Revisite du thème acquis : le cache détient l'entrée, aucune nouvelle requête.
-    await router.replace({ query: { theme: 'habitat' } })
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
-    wrapper.unmount()
-  })
-
-  it('n’expose aucun numérique statique du thème migré pendant que les faits API pendent', async () => {
-    const model = modelFor('22001')
-    let resoudreFaits: ((value: unknown) => void) | undefined
-    const requeteFacts = new Promise((resolve) => { resoudreFaits = resolve })
-    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
-      const url = String(input)
-      if (url === '/api/territories/commune/22001/themes/habitat/facts') return requeteFacts
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
+    const model = modeleAvecContextesComparaison()
     const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
     await flushPromises()
-    const pendant = wrapper.get('[role="tabpanel"]').text()
-    expect(pendant).not.toContain('13%Part de passoires thermiques')
-    expect(pendant).not.toContain('2 450')
-    resoudreFaits?.({ ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') })
-    await flushPromises()
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
-    wrapper.unmount()
-  })
 
-  it('échoue fermé sans repli statique, puis réessaie la requête de faits', async () => {
-    const model = modelFor('22001')
-    let echecs = 0
-    const fetchApi = vi.fn(async (input: RequestInfo | URL) => {
+    const figure = wrapper.get('.figure-trajectoire[data-clef="prix_m2"]')
+    expect(figure.get('.trajectoire-repere__valeur').text()).toContain('700')
+    expect(figure.get('.trajectoire-repere__valeur').text()).toContain('€/m²')
+    expect(figure.get('.trajectoire-repere .puce-rang-texte').text()).toContain('1er/2')
+    expect(figure.get('.trajectoire-repere [role="img"]').attributes('aria-label'))
+      .toContain(model.themes.mobilite!.comparisons.densite!.scope.label)
+    expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('2025')
+    expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('230')
+    expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'facts')).toBe(true)
+    expect(requests.flat().some((item) => item.resource === 'prix_m2' && item.intent.kind === 'fixed_comparison')).toBe(true)
+    wrapper.unmount()
+  }, 20_000)
+
+  it('does not attach the initial fixed-group price rank to a scope selected while facts are pending', async () => {
+    const initialPending: Array<{ release: () => void; released: boolean }> = []
+    const selectedPending: Array<{ release: () => void; released: boolean }> = []
+    const habitatResources = new Set(nativeResources('habitat').map((resource) => resource.resource_id))
+    const makeResponse = (items: Array<Record<string, any>>) => nativeBatchResponse(items, (item, resource) => {
+      const data = nativeReadFixture(item, resource)
+      if (resource.resource_id !== 'prix_m2') return data
+      if (item.intent.kind === 'facts') {
+        data.points = (data.points as Array<Record<string, any>>).map((point) => point.axis === '2025'
+          ? { ...point, value: 230, status: 'measured', missing_reason: null }
+          : point.axis === '2024' ? { ...point, value: 211, status: 'measured', missing_reason: null } : point)
+        data.scalar_facet.observation = { ...data.scalar_facet.observation,
+          status: 'measured', value: 700, support_count: 12, denominator_count: 20 }
+      } else {
+        data.result = { ...data.result, source_facet: '2025', status: 'available',
+          direction: 'low', rank: 2, rank_size: 2 }
+        data.scalar_facet.result = { ...data.scalar_facet.result, source_facet: 'prix_m2',
+          status: 'available', direction: 'low', rank: 1, rank_size: 2 }
+      }
+      return data
+    })
+    const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
-        if (++echecs === 1) throw new Error('API indisponible')
-        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
+      if (url === '/api/resources') return nativeCatalogueResponse()
+      if (url === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+        const targetThemeReads = items.some((item) => habitatResources.has(item.resource) && item.target.kind === 'territory')
+        if (targetThemeReads) {
+          const selected = items.some((item) => habitatResources.has(item.resource) && item.intent.kind === 'selected_comparison')
+          const queue = selected ? selectedPending : initialPending
+          return new Promise<Response>((resolve) => {
+            const pending = { released: false, release: () => {
+              pending.released = true
+              resolve(makeResponse(items))
+            } }
+            queue.push(pending)
+          })
+        }
+        return makeResponse(items)
       }
       throw new Error(`Unexpected request: ${url}`)
     })
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
-    await flushPromises()
-    const alerte = wrapper.get('[role="alert"]')
-    expect(alerte.text()).toContain('Les indicateurs de ce thème ne sont pas disponibles.')
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('13%Part de passoires thermiques')
-    await alerte.get('button').trigger('click')
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(2)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
-    wrapper.unmount()
-  })
-
-  it('acquiert une seule comparaison par changement de sélection et garde les faits focaux', async () => {
     const model = modeleAvecContextesComparaison()
-    const epciAttendu = model.cohortTerritories!.filter((item: any) =>
-      item.type === 'commune' && item.epci === model.territory.epci)
-      .map((item: any) => ({ territory_type: item.type, territory_id: item.territoire }))
-    const bretagneAttendue = model.cohortTerritories!.filter((item: any) => item.type === 'commune')
-      .map((item: any) => ({ territory_type: item.type, territory_id: item.territoire }))
-    expect(epciAttendu.length).toBeGreaterThan(0)
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
-      const url = String(input)
-      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
-        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
-      }
-      if (url === '/api/territories/commune/22001/themes/habitat/comparison') {
-        const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
-        return { ok: true, json: async () => ({
-          contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
-          content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
-          selection: demandee, scope: { kind: 'explicit_selection', member_count: demandee.length },
-          results: [], profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
-        }) }
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
-    await flushPromises()
-    // Le défaut déclaré (densité) est servi par la comparaison imbriquée des faits.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/comparison'))).toHaveLength(0)
-    await router.replace({ query: { theme: 'habitat', comparaison: 'epci' } })
-    await flushPromises()
-    const comparaisons = fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/comparison'))
-    expect(comparaisons).toHaveLength(1)
-    expect(JSON.parse(String(comparaisons[0]![1]!.body))).toEqual({ theme_id: 'habitat', selection: epciAttendu })
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    const { router, wrapper } = await monter(
+      '/territoire/commune/22001?theme=habitat&comparaison=epci', vi.fn(async () => model))
+    await vi.waitFor(() => expect(initialPending.some((entry) => !entry.released)).toBe(true))
     await router.replace({ query: { theme: 'habitat', comparaison: 'bretagne' } })
     await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/comparison'))).toHaveLength(2)
-    expect(JSON.parse(String(fetchApi.mock.calls.at(-1)![1]!.body))).toEqual({ theme_id: 'habitat', selection: bretagneAttendue })
-    // Revisite de la comparaison déjà acquise : aucune nouvelle requête.
-    await router.replace({ query: { theme: 'habitat', comparaison: 'epci' } })
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/comparison'))).toHaveLength(2)
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/facts'))).toHaveLength(1)
-    wrapper.unmount()
-  })
 
-  it('échoue fermé sur des tokens de comparaison incompatibles, puis réessaie', async () => {
-    const model = modeleAvecContextesComparaison()
-    let comparaisons = 0
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
-      const url = String(input)
-      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
-        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
-      }
-      if (url === '/api/territories/commune/22001/themes/habitat/comparison') {
-        comparaisons += 1
-        const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
-        return { ok: true, json: async () => ({
-          contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
-          content_version: 'habitat-scalar-v1',
-          reference_content_version: comparaisons === 1 ? 'jetons-périmés' : 'territories-v1',
-          selection: demandee, scope: { kind: 'explicit_selection', member_count: demandee.length },
-          results: [], profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
-        }) }
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat&comparaison=bretagne',
-      vi.fn(async () => model))
-    await flushPromises()
-    const alerte = wrapper.get('[role="alert"]')
-    expect(alerte.text()).toContain('Les comparaisons de ce thème ne sont pas disponibles.')
-    // Échec fermé : les faits focaux restent rendus, aucun état partiel.
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
-    await alerte.get('button').trigger('click')
-    await flushPromises()
-    expect(comparaisons).toBe(2)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
-    wrapper.unmount()
-  })
+    for (let attempt = 0; attempt < 12 && !selectedPending.some((entry) => !entry.released); attempt++) {
+      await vi.waitFor(() => expect(initialPending.some((entry) => !entry.released)).toBe(true))
+      initialPending.find((entry) => !entry.released)!.release()
+      await flushPromises()
+    }
+    expect(selectedPending.some((entry) => !entry.released)).toBe(true)
+    const figure = wrapper.get('.figure-trajectoire[data-clef="prix_m2"]')
+    expect(figure.get('.trajectoire-repere__valeur').text()).toContain('700')
+    expect(figure.find('.trajectoire-repere .puce-rang').exists()).toBe(false)
 
-  it('ignore une réponse de comparaison périmée après un changement de sélection', async () => {
-    const model = modeleAvecContextesComparaison()
-    let resoudreEpici: ((value: unknown) => void) | undefined
-    const requeteEpici = new Promise((resolve) => { resoudreEpici = resolve })
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
-      const url = String(input)
-      if (url === '/api/territories/commune/22001/themes/habitat/facts') {
-        return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
-      }
-      if (url === '/api/territories/commune/22001/themes/habitat/comparison') {
-        const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
-        if (demandee.length > 100) return requeteEpici
-        return { ok: true, json: async () => ({
-          contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
-          content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
-          selection: demandee, scope: { kind: 'explicit_selection', member_count: demandee.length },
-          results: [], profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
-        }) }
-      }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
-    await router.replace({ query: { theme: 'habitat', comparaison: 'bretagne' } })
+    selectedPending.find((entry) => !entry.released)!.release()
     await flushPromises()
-    await router.replace({ query: { theme: 'habitat', comparaison: 'epci' } })
-    await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
-    // La réponse bretagne périmée arrive TARD avec un écho incohérent : rejetée,
-    // aucun état ni bandeau corrompu.
-    resoudreEpici?.({ ok: true, json: async () => ({
-      contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'habitat',
-      content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
-      selection: [], scope: { kind: 'explicit_selection', member_count: 0 },
-      results: [], profile_comparisons: [], reading_content_version: 'habitat-reading-v1', reading_cloud: null,
-    }) })
-    await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/habitat/comparison'))).toHaveLength(2)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42%Part de passoires thermiques')
+    expect(figure.get('.trajectoire-repere .puce-rang-texte').text()).toContain('1er/2')
+    expect(figure.get('.trajectoire-repere .puce-rang[aria-label]').attributes('aria-label'))
+      .toContain(model.themes.mobilite!.comparisons.bretagne!.scope.label)
+    expect(figure.get('svg[role="img"]').attributes('aria-label')).toContain('230')
     wrapper.unmount()
-  })
+  }, 30_000)
 
-  it('acquiert Programmes sur l’atterrissage par défaut, consomme les collections et réutilise le cache', async () => {
-    const model = modeleAvecContextesComparaison()
-    const programmes = reponseThemeProgrammesApi()
-    const target = model.territories.find((item: any) => item.territoire === '22001')!
-    const parent = model.territories.find((item: any) => item.territoire === target.epci)!
-    programmes.owned_series[0]!.points[0]!.value = 71395030.98
-    programmes.indicator_metadata = [{ indicator_id: 'subventions_annuelles', unit: '€', context: {
-      parent: { id: target.epci, type: 'epci', name: parent.nom },
-      points: [{ axis: '2025', observation_period: '2025', value: 91260697.91, status: 'measured', provenance: [
-        { source_id: 'programme-api', source_name: 'Source API programmes', version: 'programme-v1', reference_date: '2026-01-01', publication_date: '2026-02-01' },
-      ] }],
-    } }] as any
-    programmes.collections[0]!.relationships[0]!.anchor.id = target.epci!
-    programmes.collections[0]!.relationships[0]!.anchor.name = parent.nom
-    const fetchApi = vi.fn(async (input: RequestInfo | URL, options?: RequestInit) => {
-      void options
-      const url = String(input)
-      if (url.endsWith('/themes/programmes/facts')) return { ok: true, json: async () => programmes }
-      if (url.endsWith('/themes/habitat/facts')) return { ok: true, json: async () => reponseThemeHabitatApi(model, 'commune', '22001') }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
-    expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'programmes' })
-    const rendered = wrapper.get('[role="tabpanel"]').text()
-    expect(rendered).toContain('ACV')
-    expect(rendered).toContain('lauréate')
-    expect(rendered).toContain('CRTE')
-    expect(rendered).toContain('Territoire couvert par le contrat')
-    expect(rendered).toContain('convention valant ORT')
-    expect(rendered).toContain('Source API programmes')
-    expect(rendered).toContain('71,40 M€')
-    expect(rendered).toContain('Mobilité API')
-    expect(rendered).toContain('78,23 % du total de l\'EPCI')
-    await router.replace({ query: { theme: 'habitat' } })
-    await flushPromises()
-    await router.replace({ query: {} })
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
-    wrapper.unmount()
-  })
-
-  it('rend une absence de subventions sans section ni total nul', async () => {
-    const model = modeleAvecContextesComparaison()
-    const response = reponseThemeProgrammesApi()
-    response.collections = response.collections.filter((collection: any) => collection.kind === 'anchored_membership')
-    response.owned_series = []
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () => response })))
-    const { wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    expect(wrapper.text()).not.toContain('0 €')
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('Subventions attribuées')
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('du total de l’EPCI')
-    wrapper.unmount()
-  })
-
-  it('acquiert Démographie à la demande et alimente le soldes cloud depuis les faits', async () => {
-    const published = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
-    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    const api = reponseThemeDemographieApi(model)
-    expect(histoiresDemographieNuage(api.comparison)).toHaveLength(1)
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => {
-      if (url.endsWith('/facts')) return api
-      const selection = JSON.parse(String(options?.body)).selection
-      return { ...api.comparison, selection, reading_cloud: { ...api.comparison.reading_cloud,
-        points: [{ ...api.comparison.reading_cloud.points[0], taux_solde_naturel: 8.5, taux_solde_migratoire: -9.5 }] } }
-    } }))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=demographie', vi.fn(async () => model))
-    await flushPromises()
-    expect(fetchApi).toHaveBeenCalledWith('/api/territories/commune/22001/themes/demographie/facts', expect.objectContaining({ method: 'POST', body: JSON.stringify({ theme_id: 'demographie' }) }))
-    const chart = wrapper.findComponent({ name: 'GraphiqueSoldes' })
-    expect(chart.exists()).toBe(true)
-    expect(chart.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22002', tauxNaturel: 1.25, tauxMigratoire: -0.75 }))
-    expect(chart.props('tauxNaturel')).toBe(0.5)
-    await router.replace({ query: { theme: 'demographie', comparaison: 'epci' } })
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(1)
-    expect(chart.props('tauxNaturel')).toBe(0.5)
-    expect(chart.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22002', tauxNaturel: 8.5, tauxMigratoire: -9.5 }))
-    wrapper.unmount()
-  })
-
-  const economieModel = () => {
-    const published = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
-    const model = validerModeleTerritoire(published, 'territoires/commune/22001.json', { type: 'commune', territoire: '22001' })
-    model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
-    return model
-  }
-  it('Economie mounted: landing consumes API scalar and activity reading, while absent list ranks stay absent', async () => {
-    const model = economieModel(); const api = reponseThemeEconomieApi(model)
-    const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () => api }))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model))
-    await flushPromises()
-    const text = wrapper.get('[role="tabpanel"]').text()
-    // Le POST actif part en premier, puis tout le registre se réchauffe.
-    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/economie/facts')
-    expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'economie' })
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
-    const ecoActivites = model.themes.economie!.indicators.find((row: any) => row.territoire === '22001' && row.key === 'eco_activites')!
-    expect(api.indicators).toContainEqual(expect.objectContaining({ indicator_id: 'eco_activites', value: ecoActivites.value }))
-    expect(text).toContain(`${new Intl.NumberFormat('fr-FR', { maximumFractionDigits: 0 }).format(Number(ecoActivites.value) * 100)}%`)
-    expect(text).toContain('23%'); expect(text).toContain('Activit\u00e9 API distinctive'); expect(text).toContain('99,3')
-    expect(text).not.toContain('7,1%'); expect(text).not.toContain('Agriculture, sylviculture et p?che')
-    expect(text).not.toContain('LQ 0'); wrapper.unmount()
-  })
-  it('Economie mounted: le registre se réchauffe après Programmes et une bascule réchauffée n’acquiert rien', async () => {
-    const model = economieModel()
-    const fetchApi = vi.fn(async (url: string) => {
-      if (String(url).endsWith('/themes/programmes/facts')) return { ok: true, json: async () => reponseThemeProgrammesApi() }
-      if (String(url).endsWith('/themes/economie/facts')) return { ok: true, json: async () => reponseThemeEconomieApi(model) }
-      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
-      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
-        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
-          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    await flushPromises()
-    // L'atterrissage acquiert Programmes en priorité puis réchauffe le registre
-    // entier — Économie comprise — en arrière-plan.
-    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
-    await router.replace({ query: { theme: 'economie' } }); await flushPromises()
-    // La bascule vers un thème réchauffé n'acquiert rien : le cache détient l'entrée.
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activité API distinctive')
-    await router.replace({ query: { theme: 'habitat' } }); await flushPromises(); await router.replace({ query: { theme: 'economie' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter((x:any[])=>String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(1)
-    wrapper.unmount()
-  })
-  it('Economie mounted: pending facts never expose incumbent numeric values', async () => {
-    const model = economieModel(); let resolve!: (v: any) => void; const pending = new Promise(r => { resolve = r })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', vi.fn(() => pending))
-    const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model))
-    const text = wrapper.get('[role="tabpanel"]').text(); expect(text).not.toContain('7,1%'); expect(text).not.toContain('Agriculture, sylviculture et p?che')
-    resolve({ ok: true, json: async () => reponseThemeEconomieApi(model) }); await flushPromises(); expect(wrapper.get('[role="tabpanel"]').text()).toContain('23%'); wrapper.unmount()
-  })
-  it('Economie mounted: failed facts show retry and recover', async () => {
-    const model = economieModel(); let n = 0
-    const fetchApi = vi.fn(async (url: string) => {
-      if (String(url).endsWith('/themes/economie/facts')) {
-        if (++n === 1) throw new Error('offline')
-        return { ok: true, json: async () => reponseThemeEconomieApi(model) }
-      }
-      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
-      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
-        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
-          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model)); expect(wrapper.get('[role="alert"]').text()).toContain('Les indicateurs')
-    await flushPromises()
-    // L'échec du thème actif ne suspend pas le réchauffage d'arrière-plan.
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/facts'))).toHaveLength(6)
-    await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises()
-    expect(fetchApi.mock.calls.filter((x: any[]) => String(x[0]).endsWith('/themes/economie/facts'))).toHaveLength(2)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive'); wrapper.unmount()
-  })
-  it('Economie mounted: un échec de réchauffage d’arrière-plan n’entache pas le thème actif et devient réessayable à sa visite', async () => {
-    const model = economieModel(); let milieuxDown = true
-    const fetchApi = vi.fn(async (url: string) => {
-      if (String(url).endsWith('/themes/economie/facts')) return { ok: true, json: async () => reponseThemeEconomieApi(model) }
-      if (String(url).endsWith('/themes/milieux/facts')) {
-        if (milieuxDown) throw new Error('milieux down')
-        return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: 'milieux', territory: { territory_id: '22001', territory_type: 'commune', name: '22001' },
-          indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: 'milieux',
-            content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
-      }
-      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
-      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
-        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
-          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=economie', vi.fn(async () => model))
-    await flushPromises()
-    // Le thème actif rend normalement ; l'échec d'arrière-plan ne s'affiche pas.
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('23%')
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
-    // La visite du thème défaillant expose SA propre erreur réessayable.
-    expect(wrapper.get('[role="alert"]').text()).toContain('ne sont pas disponibles')
-    milieuxDown = false
-    await wrapper.get('[role="alert"] button').trigger('click'); await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    wrapper.unmount()
-  })
-  it('Economie mounted: selected comparisons POST exact members, cache revisits, and retain focal facts', async () => {
-    const model = economieModel(); const expected = model.cohortTerritories!.filter((x: any) => x.type === 'commune' && x.epci === model.territory.epci).map((x: any) => ({ territory_type: x.type, territory_id: x.territoire }))
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => url.endsWith('/facts') ? ({ ok: true, json: async () => reponseThemeEconomieApi(model) }) : ({ ok: true, json: async () => ({ contract:'theme-comparison-v1', theme_id:'economie', content_version:'economie-api-v1', reference_content_version:'territories-v1', reading_content_version:'economie-api-v1', selection:JSON.parse(String(options?.body)).selection, results:[], profile_comparisons:[] }) }))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API','1'); vi.stubGlobal('fetch',fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=economie',vi.fn(async()=>model)); expect(fetchApi.mock.calls.filter(x=>String(x[0]).endsWith('/comparison'))).toHaveLength(0)
-    await router.replace({query:{theme:'economie',comparaison:'epci'}}); await flushPromises(); const compCall=fetchApi.mock.calls.find((x:any[])=>String(x[0]).endsWith('/comparison'))!; expect(JSON.parse(String(compCall[1]?.body))).toEqual({theme_id:'economie',selection:expected})
-    await router.replace({query:{theme:'economie',comparaison:'bretagne'}}); await flushPromises(); await router.replace({query:{theme:'economie',comparaison:'epci'}}); await flushPromises()
-    expect(fetchApi.mock.calls.filter(x=>String(x[0]).endsWith('/comparison'))).toHaveLength(2); expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive'); wrapper.unmount()
-  })
-  it('Economie mounted: incompatible comparison tokens fail closed and retry without losing focal reading', async () => {
-    const model=economieModel(); let count=0; const fetchApi=vi.fn(async(url:string,options?:RequestInit)=>url.endsWith('/facts')?({ok:true,json:async()=>reponseThemeEconomieApi(model)}):({ok:true,json:async()=>({contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:++count===1?'stale':'territories-v1',reading_content_version:'economie-api-v1',selection:JSON.parse(String(options?.body)).selection,results:[],profile_comparisons:[]})}))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API','1');vi.stubGlobal('fetch',fetchApi);const {wrapper}=await monter('/territoire/commune/22001?theme=economie&comparaison=bretagne',vi.fn(async()=>model));await flushPromises()
-    expect(wrapper.get('[role="alert"]').text()).toContain('Les comparaisons');expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive');await wrapper.get('[role="alert"] button').trigger('click');await flushPromises();expect(count).toBe(2);expect(wrapper.find('[role="alert"]').exists()).toBe(false);wrapper.unmount()
-  })
-  it('Economie mounted: ignores late stale comparison response after selection changes', async () => {
-    const model=economieModel();let resolve!: (v:any)=>void;const pending=new Promise(r=>resolve=r);const fetchApi=vi.fn(async(url:string,options?:RequestInit)=>url.endsWith('/facts')?({ok:true,json:async()=>reponseThemeEconomieApi(model)}):JSON.parse(String(options?.body)).selection.length>100?pending:({ok:true,json:async()=>({contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:'territories-v1',reading_content_version:'economie-api-v1',selection:JSON.parse(String(options?.body)).selection,results:[],profile_comparisons:[]})}))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API','1');vi.stubGlobal('fetch',fetchApi);const {router,wrapper}=await monter('/territoire/commune/22001?theme=economie',vi.fn(async()=>model));await router.replace({query:{theme:'economie',comparaison:'bretagne'}});await flushPromises();await router.replace({query:{theme:'economie',comparaison:'epci'}});await flushPromises();resolve({contract:'theme-comparison-v1',theme_id:'economie',content_version:'economie-api-v1',reference_content_version:'territories-v1',reading_content_version:'economie-api-v1',selection:[],results:[],profile_comparisons:[]});await flushPromises();expect(wrapper.find('[role="alert"]').exists()).toBe(false);expect(wrapper.get('[role="tabpanel"]').text()).toContain('Activit\u00e9 API distinctive');wrapper.unmount()
-  })
-
-  it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
+  it('keeps the incumbent fiche path when registration is absent or the cutover flag is off', async () => {
+    await (varianteDeUrl('A')?.composant as any).__asyncLoader?.()
     const requests = vi.fn().mockRejectedValue(new Error('scalar API must stay off'))
     vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     vi.stubGlobal('fetch', requests)
@@ -1714,15 +1563,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const modelPages = model.themes.demographie!.metadata.indicator_pages
     const scalarMetadata = { scalar_contracts: model.themes.demographie!.metadata.scalar_contracts,
       indicator_pages: modelPages }
-    const resources = semanticScalarResources('demographie', scalarMetadata)
     const requests: Array<{ items: Array<Record<string, any>> }> = []
     const bretagneMemberCount = model.cohortTerritories!.filter((member: any) => member.type === 'commune').length
     let resolveLateBretagne: (() => void) | undefined
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url === '/api/resources') return Promise.resolve(new Response(JSON.stringify({
-        contract: 'semantic-resource-catalogue-v1', resources,
-      })))
+      if (url === '/api/resources') return nativeCatalogueResponse()
       if (url !== '/api/resources/read-batch') throw new Error(`Unexpected request: ${url}`)
       const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
       const response = new Response(JSON.stringify(semanticScalarBatch('demographie', scalarMetadata,
@@ -1779,10 +1625,9 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     model.cohortTerritories = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/territoires.json'), 'utf8'))
     const modelPages = model.themes.demographie!.metadata.indicator_pages
     const scalarMetadata = { scalar_contracts: metadata.scalar_contracts, indicator_pages: modelPages }
-    const resources = semanticScalarResources('demographie', scalarMetadata)
     const fetchApi = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
-      if (url === '/api/resources') return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }))
+      if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') {
         const request = JSON.parse(init?.body as string) as { items: Array<Record<string, any>> }
         return new Response(JSON.stringify(semanticScalarBatch('demographie', scalarMetadata,
@@ -1808,68 +1653,6 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it.each([
-    ['epci', '242200715', 'epcis-bretagne'],
-    ['departement', '22', 'departements-bretagne'],
-    ['region', '53', null],
-  ] as const)('branche les parts API de %s sans nouveau sélecteur', async (type, code, kind) => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const published = JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/modeles-lecture/territoires/${type}/${code}.json`), 'utf8'))
-    const model = validerModeleTerritoire(published, `${type}/${code}.json`, { type, territoire: code })
-    const label = model.themes.mobilite?.comparisons.bretagne?.scope.label
-    const fetchApi = vi.fn(async (_url: string) => ({ ok: true, json: async () =>
-      reponseThemeMobiliteApi(model, type, code, kind, label) }))
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter(`/territoire/${type}/${code}?theme=mobilite&variant=E`, vi.fn(async () => model))
-    await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).includes(`/api/territories/${type}/${code}/themes/mobilite/facts`))).toHaveLength(1)
-    expect(wrapper.findAll('[data-section="services-essentiels"] .access-figure')).toHaveLength(5)
-    expect(wrapper.findAll('[data-section="services-essentiels"] .access-foot-summary')[0]?.text()).toContain('42')
-    wrapper.unmount()
-  })
-
-  it('ignore une réponse API périmée après changement du contexte de comparaison', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const contexts = modeleAvecContextesComparaison().themes.mobilite!.comparisons
-    const model = modeleAvecContextesComparaison()
-    let resolveOld: ((value: unknown) => void) | undefined
-    const oldRequest = new Promise((resolve) => { resolveOld = resolve })
-    const fetchApi = vi.fn((url: string, options?: RequestInit) => {
-      if (url.endsWith('/facts')) return Promise.resolve({ ok: true, json: async () =>
-        reponseThemeMobiliteApi(model, 'commune', '22001', contexts.densite!.scope.kind, contexts.densite!.scope.label) })
-      if (url.includes('/indicators/raccordement_courbe/comparison')) return oldRequest
-      if (url.endsWith('/themes/mobilite/comparison')) {
-        const selected = JSON.parse(String(options?.body)).selection
-        if (selected.length > 100) return oldRequest
-        return Promise.resolve({ ok: true, json: async () => ({
-          contract: 'theme-comparison-v1', theme_id: 'mobilite', selection: selected,
-          results: ['admin', 'food', 'health', 'bank', 'school'].flatMap((service) =>
-            ['c', 'b', 't'].map((mode) => ({ indicator_id: `share_${service}_${mode}`,
-              status: 'available', direction: 'high', median: 0.3, rank: 19, rank_size: 38 }))),
-          profile_comparisons: [], building_access: null,
-        }) })
-      }
-      return Promise.reject(new Error('Not part of access API'))
-    })
-    vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E',
-      vi.fn(async () => modeleAvecContextesComparaison()))
-    await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'bretagne' } })
-    await flushPromises()
-    await router.replace({ query: { theme: 'mobilite', variant: 'E', comparaison: 'epci' } })
-    await flushPromises()
-    const section = wrapper.get('[data-section="services-essentiels"]')
-    expect(section.findAll('.access-figure')).toHaveLength(5)
-    expect(section.findAll('.access-foot-summary')[0]?.text()).toContain('42')
-    expect(section.get('.cahier-comparison-note').text()).toContain(contexts.epci!.scope.label)
-    resolveOld?.({ ok: true, json: async () => ({ contract: 'theme-comparison-v1', theme_id: 'mobilite',
-      selection: [], results: [], profile_comparisons: [] }) })
-    await flushPromises()
-    expect(section.findAll('.access-foot-summary')[0]?.text()).toContain('42')
-    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/facts'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(2)
-    wrapper.unmount()
-  })
   it('affiche les six onglets pendant que l’unique modèle charge', async () => {
     const charger = vi.fn(() => new Promise<never>(() => {}))
     const { wrapper, router } = await monter('/territoire/commune/29002', charger)
@@ -1958,126 +1741,122 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(router.currentRoute.value.query).toEqual({ theme: 'mobilite' })
   })
 
-  it.each(['densite', 'epci', 'bretagne'] as const)(
-    'applique le contexte %s à la fiche rendue', async (mode) => {
-    const label = modeleAvecContextesComparaison().themes.mobilite?.comparisons[mode]?.scope.label
-    const varianteE = varianteDeUrl('E')
-    expect(varianteE?.clef).toBe('E')
-    await (varianteE?.composant as any).__asyncLoader?.()
+  it('renders the producer-declared Mobility curve and scopes explicit comparisons through native reads', async () => {
+    const requests: Array<Array<Record<string, any>>> = []
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubGlobal('fetch', nativeSemanticFetch(requests))
     const model = modeleAvecContextesComparaison()
-    vi.stubGlobal('fetch', stubApiThemeMobilite(model))
-    const charger = vi.fn(async () => model)
-    const { router, wrapper } = await monter(
-      `/territoire/commune/22001?theme=mobilite&variant=E&comparaison=${mode}`,
-      charger,
-    )
+    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite',
+      vi.fn(async () => model))
+    const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
+    const reference = nativeResources('mobilite').find((resource) => resource.shapes.includes('named_reference'))!
+    const fixtureCurve = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '22001' },
+      intent: { kind: 'facts' } }, curve)
+    const declaredAxisCount = curve.axis_values?.[0]?.[1].length ?? 0
+    const fixturePoint = (fixtureCurve.points as Array<Record<string, any>>)[0]!
+    const reads = () => requests.flat()
 
-    expect(router.currentRoute.value.query.comparaison).toBe(mode)
+    expect(wrapper.find('.transit-series--territory').exists()).toBe(true)
+    const territoryPoints = wrapper.findAll('.transit-point--territory')
+    expect(declaredAxisCount).toBe(73)
+    expect(territoryPoints).toHaveLength(declaredAxisCount)
+    expect(territoryPoints[0]?.attributes('data-value')).toBe('0')
+    expect(territoryPoints.at(-1)?.attributes('data-value')).toBe('0.5')
+    expect(wrapper.text()).toContain(fixturePoint.provenance[0].source_name)
+    expect(reads().some((item) => item.resource === curve.resource_id && item.intent.kind === 'facts')).toBe(true)
+    expect(reads().some((item) => item.resource === reference.resource_id &&
+      item.target.kind === 'named_reference' && reference.target_ids.includes(item.target.id))).toBe(true)
+
+    const cohort = model.cohortTerritories!
+    const epciMembers = cohort.filter((territory: any) =>
+      territory.type === 'commune' && territory.epci === model.territory.epci)
+      .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
+      .sort((left: any, right: any) => left.id.localeCompare(right.id))
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
     await flushPromises()
-    expect(wrapper.find('.cahier-comparison-note').text()).toContain(label)
+    expect(router.currentRoute.value.query.comparaison).toBe('epci')
+    const epciRead = reads().find((item) => item.resource === curve.resource_id &&
+      item.intent.kind === 'selected_comparison')
+    expect(epciRead?.intent.members).toEqual(epciMembers)
+    expect(wrapper.findAll('.transit-point--territory')).toHaveLength(declaredAxisCount)
+
+    const bretagneMembers = cohort.filter((territory: any) => territory.type === 'commune')
+      .map((territory: any) => ({ type: territory.type, id: territory.territoire }))
+      .sort((left: any, right: any) => left.id.localeCompare(right.id))
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' } })
+    await flushPromises()
+    expect(router.currentRoute.value.query.comparaison).toBe('bretagne')
+    const bretagneReads = reads().filter((item) => item.resource === curve.resource_id &&
+      item.intent.kind === 'selected_comparison')
+    expect(bretagneReads.at(-1)?.intent.members).toEqual(bretagneMembers)
+
+    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } })
+    await flushPromises()
+    expect(reads().filter((item) => item.resource === curve.resource_id &&
+      item.intent.kind === 'selected_comparison' &&
+      JSON.stringify(item.intent.members) === JSON.stringify(epciMembers))).toHaveLength(1)
+    expect(reads().filter((item) => item.resource === curve.resource_id && item.intent.kind === 'facts')).toHaveLength(1)
+    expect(fetchBloque).not.toHaveBeenCalled()
     wrapper.unmount()
-  })
+  }, 20_000)
 
-  it('expose le contexte sélectionné comme une divulgation synchronisable', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const model = modeleAvecContextesComparaison()
-    vi.stubGlobal('fetch', stubApiThemeMobilite(model))
-    const charger = vi.fn(async () => model)
-    const { router, wrapper } = await monter(
-      '/territoire/commune/22001?theme=mobilite&variant=E&comparaison=densite',
-      charger,
-    )
+  it.each(['densite', 'epci', 'bretagne'] as const)(
+    'affiche la portée publiée %s dans la note de comparaison', async (mode) => {
+      const { model, wrapper } = await monterNoteComparaison(mode)
+      const label = model.themes.mobilite!.comparisons[mode]!.scope.label
+      const trigger = wrapper.get('button[aria-haspopup="listbox"]')
 
-    const selector = wrapper.get('.cahier-comparison-note')
-    const trigger = selector.get('button[aria-haspopup="listbox"]')
+      expect(trigger.attributes('aria-current')).toBe('true')
+      expect(trigger.text()).toContain(label)
+      expect(wrapper.get('.cahier-comparison-note__scope').text()).toBe(label)
+      wrapper.unmount()
+    },
+  )
+
+  it('permet de divulguer et synchroniser la portée publiée depuis le cahier', async () => {
+    const { model, router, wrapper } = await monterNoteComparaison('densite')
+    const trigger = wrapper.get('button[aria-haspopup="listbox"]')
+    const contexts = model.themes.mobilite!.comparisons
 
     expect(trigger.attributes('aria-expanded')).toBe('false')
     expect(trigger.attributes('aria-current')).toBe('true')
-    const contexts = modeleAvecContextesComparaison().themes.mobilite!.comparisons
     expect(trigger.text()).toContain(contexts.densite!.scope.label)
-    expect(selector.get('.cahier-comparison-note__scope').text()).toBe(contexts.densite!.scope.label)
-    expect(selector.get('.cahier-comparison-note__arrow').text()).toBe('←')
-    expect(selector.get('.cahier-comparison-note__arrow').classes()).not.toContain('is-open')
-
+    expect(wrapper.get('.cahier-comparison-note__scope').text()).toBe(contexts.densite!.scope.label)
     await trigger.trigger('click')
-
-    expect(trigger.attributes('aria-expanded')).toBe('true')
-    expect(selector.get('.cahier-comparison-note__arrow').classes()).toContain('is-open')
-    const options = selector.findAll('[role="option"][aria-selected="false"]')
+    const options = wrapper.findAll('[role="option"][aria-selected="false"]')
     expect(options.map((option) => option.text())).toEqual([
       contexts.epci!.scope.label,
       contexts.bretagne!.scope.label,
     ])
-    expect(options[0]!.attributes('title')).toBeUndefined()
-
-    await selector
-      .get('[role="option"][aria-selected="false"]')
-      .trigger('click')
+    await options[0]!.trigger('click')
     await flushPromises()
-
     expect(router.currentRoute.value.query.comparaison).toBe('epci')
-    expect(wrapper.get('.cahier-comparison-note button').text()).toContain(
-      contexts.epci!.scope.label,
-    )
-    const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
-    // La réponse de faits sert les deux figures bâtiments : leurs notes
-    // viennent de l'API (puis effacées par la comparaison epci), pas du JSON
-    // statique ; la note des services porte le contexte sélectionné.
-    expect(comparisonNotes).toHaveLength(3)
-    expect(comparisonNotes.every((note) => note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
+    await wrapper.setProps({ label: contexts.epci!.scope.label })
+    expect(wrapper.get('.cahier-comparison-note__scope').text()).toBe(contexts.epci!.scope.label)
     wrapper.unmount()
   })
 
-  it('garde le sélecteur de comparaison disponible sur le cahier plié', async () => {
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', stubApiThemeMobilite(modeleAvecContextesComparaison()))
-    const varianteD = varianteDeUrl('D')
-    expect(varianteD?.clef).toBe('D')
-    await (varianteD?.composant as any).__asyncLoader?.()
-    const charger = vi.fn(async () => modeleAvecContextesComparaison())
-    const { wrapper } = await monter(
-      '/territoire/commune/22001?theme=mobilite&variant=D&comparaison=epci',
-      charger,
-    )
-
-    await flushPromises()
-    const comparisonNotes = wrapper.findAll('.cahier-comparison-note')
-    expect(comparisonNotes.length).toBeGreaterThan(0)
-    expect(comparisonNotes.some((note) => note.find('button[aria-haspopup="listbox"]').exists())).toBe(true)
-    wrapper.unmount()
-  })
-
-  it('permet de changer de contexte au clavier et expose l’aide de la densité', async () => {
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    const model = modeleAvecContextesComparaison()
-    vi.stubGlobal('fetch', stubApiThemeMobilite(model))
-    const charger = vi.fn(async () => model)
-    const { router, wrapper } = await monter(
-      '/territoire/commune/22001?theme=mobilite&variant=E&comparaison=epci',
-      charger,
-    )
-
-    const selector = wrapper.get('.cahier-comparison-note')
-    const trigger = selector.get('button[aria-haspopup="listbox"]')
+  it('change la portée au clavier et expose l’explication de la densité', async () => {
+    const { model, router, wrapper } = await monterNoteComparaison('epci')
+    const trigger = wrapper.get('button[aria-haspopup="listbox"]')
     await trigger.trigger('keydown', { key: 'Enter' })
 
+    const densityLabel = model.themes.mobilite!.comparisons.densite!.scope.label
+    const density = wrapper.findAll('[role="option"][aria-selected="false"]')
+      .find((option) => option.find('.cahier-comparison-note__option-label').text() === densityLabel)
     expect(trigger.attributes('aria-expanded')).toBe('true')
-    const densityLabel = modeleAvecContextesComparaison().themes.mobilite!.comparisons.densite!.scope.label
-    const density = selector.findAll('[role="option"][aria-selected="false"]').find((option) => option.find('.cahier-comparison-note__option-label').text() === densityLabel)
     expect(density).toBeDefined()
     expect(density!.attributes('title')).toBe(
       'Classe définie par l’Insee selon le nombre d’habitants et leur concentration sur le territoire communal.',
     )
     const descriptionId = density!.attributes('aria-describedby')
-    expect(descriptionId).toBeTruthy()
-    expect(selector.get(`#${descriptionId}`).text()).toContain('Classe définie par l’Insee')
-
+    expect(wrapper.get(`#${descriptionId}`).text()).toContain('Classe définie par l’Insee')
     await density!.trigger('focus')
     await density!.trigger('keydown', { key: 'Escape' })
     expect(trigger.attributes('aria-expanded')).toBe('false')
-
     await trigger.trigger('keydown', { key: 'Enter' })
-    const reopenedDensity = selector.findAll('[role="option"][aria-selected="false"]').find((option) => option.find('.cahier-comparison-note__option-label').text() === densityLabel)
+    const reopenedDensity = wrapper.findAll('[role="option"][aria-selected="false"]')
+      .find((option) => option.find('.cahier-comparison-note__option-label').text() === densityLabel)
     expect(reopenedDensity).toBeDefined()
     await reopenedDensity!.trigger('focus')
     await reopenedDensity!.trigger('keydown', { key: 'Enter' })
@@ -2104,253 +1883,12 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('.fiche-titre h1').text()).toBe('Commune C')
     expect(charger).toHaveBeenCalledTimes(2)
   })
-  it('acquiert Milieux paresseusement, consomme la lecture API et rend son nuage imbriqué', async () => {
-    const model = modeleMilieux()
-    const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () => reponseThemeMilieuxApi(model) }))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(1)
-    expect(JSON.parse(String(fetchApi.mock.calls[0]![1]?.body))).toEqual({ theme_id: 'milieux' })
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Source API milieux')
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('se vide, et consomme quand même')
-    const graph = wrapper.findComponent(GraphiqueQuadrantMilieux)
-    expect(graph.exists()).toBe(true)
-    expect(graph.props('tauxVariationPopulation')).toBe(2.75)
-    expect(graph.props('classification')).toContain('grandit')
-    expect(graph.props('nuage')).toContainEqual(expect.objectContaining({ territoire: '22033', tauxVariationPopulation: 2.75, deltaM2ParHabitant: 25 }))
-    wrapper.unmount()
-  })
-
-  it('réchauffe le registre après Programmes et garde l’acquisition Milieux en cache à la revisite', async () => {
-    const model = modeleMilieux()
-    const fetchApi = vi.fn(async (url: string, _options?: RequestInit) => {
-      if (String(url).endsWith('/themes/programmes/facts')) {
-        return { ok: true, json: async () => reponseThemeProgrammesApi() }
-      }
-      if (String(url).endsWith('/themes/milieux/facts')) {
-        return { ok: true, json: async () => reponseThemeMilieuxApi(model) }
-      }
-      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
-      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
-        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
-          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    await flushPromises()
-    // Programmes part en priorité ; Milieux se réchauffe en arrière-plan.
-    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/programmes/facts'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(1)
-    await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
-    await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
-    await router.replace({ query: { theme: 'milieux' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(1)
-    wrapper.unmount()
-  })
-
-  it('masque les valeurs statiques pendant l’acquisition Milieux en attente', async () => {
-    const model = modeleMilieux()
-    let resolveFacts!: (value: unknown) => void
-    const pending = new Promise((resolve) => { resolveFacts = resolve })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', vi.fn(() => pending))
-    const { wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('Source API milieux')
-    resolveFacts({ ok: true, json: async () => reponseThemeMilieuxApi(model) }); await flushPromises()
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Source API milieux')
-    wrapper.unmount()
-  })
-
-  it('échoue fermé sur les faits Milieux puis réessaie', async () => {
-    const model = modeleMilieux()
-    let calls = 0
-    const fetchApi = vi.fn(async (url: string) => {
-      if (String(url).endsWith('/themes/milieux/facts')) {
-        if (++calls === 1) throw new Error('offline')
-        return { ok: true, json: async () => reponseThemeMilieuxApi(model) }
-      }
-      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
-      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
-        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
-          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
-    const alert = wrapper.get('[role="alert"]')
-    expect(alert.text()).toContain('indicateurs de ce thème ne sont pas disponibles')
-    await flushPromises()
-    // Le réchauffage d'arrière-plan part malgré l'échec du thème actif.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
-    await alert.get('button').trigger('click'); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/milieux/facts'))).toHaveLength(2)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('Source API milieux')
-    wrapper.unmount()
-  })
-
-  it('n’écrase pas la lecture focale lors des comparaisons et réutilise le cache de sélection', async () => {
-    const model = modeleMilieux()
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => url.endsWith('/facts')
-      ? reponseThemeMilieuxApi(model) : { contract: 'theme-comparison-v1', theme_id: 'milieux', selection: JSON.parse(String(options?.body)).selection,
-        reference_content_version: 'territories-v1', content_version: 'milieux-v1', reading_content_version: 'milieux-v1',
-        results: [], profile_comparisons: [], reading_cloud: reponseThemeMilieuxApi(model).comparison.reading_cloud } }))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
-    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(0)
-    await router.replace({ query: { theme: 'milieux', comparaison: 'epci' } }); await flushPromises()
-    const call = fetchApi.mock.calls.find(([url]) => url.endsWith('/comparison'))!
-    const expected = model.cohortTerritories!.filter((t: any) => t.type === 'commune' && t.epci === model.territory.epci)
-      .map((t: any) => ({ territory_type: t.type, territory_id: t.territoire }))
-    expect(JSON.parse(String(call[1]?.body))).toEqual({ theme_id: 'milieux', selection: expected })
-    expect(wrapper.findComponent(GraphiqueQuadrantMilieux).props('tauxVariationPopulation')).toBe(2.75)
-    await router.replace({ query: { theme: 'milieux', comparaison: 'bretagne' } }); await flushPromises()
-    const allCommunes = model.cohortTerritories!.filter((t: any) => t.type === 'commune')
-      .map((t: any) => ({ territory_type: t.type, territory_id: t.territoire }))
-    const comparisons = fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))
-    expect(comparisons).toHaveLength(2)
-    expect(JSON.parse(String(comparisons[1]![1]?.body))).toEqual({ theme_id: 'milieux', selection: allCommunes })
-    await router.replace({ query: { theme: 'milieux', comparaison: 'epci' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => url.endsWith('/comparison'))).toHaveLength(2)
-    wrapper.unmount()
-  })
-
-  it('refuse les jetons de comparaison incompatibles et réessaie la comparaison', async () => {
-    const model = modeleMilieux()
-    let comparison = 0
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => url.endsWith('/facts')
-      ? reponseThemeMilieuxApi(model) : { contract: 'theme-comparison-v1', theme_id: 'milieux', selection: JSON.parse(String(options?.body)).selection,
-        reference_content_version: ++comparison === 1 ? 'bad' : 'territories-v1', content_version: 'milieux-v1',
-        reading_content_version: 'milieux-v1', results: [], profile_comparisons: [], reading_cloud: null } }))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=milieux&comparaison=bretagne', vi.fn(async () => model))
-    const alert = wrapper.get('[role="alert"]')
-    expect(alert.text()).toContain('comparaisons de ce thème ne sont pas disponibles')
-    await alert.get('button').trigger('click'); await flushPromises()
-    expect(comparison).toBe(2)
-    wrapper.unmount()
-  })
-
-  it('ignore une réponse de faits Milieux tardive après avoir quitté le thème', async () => {
-    const model = modeleMilieux()
-    let resolveFacts!: (value: unknown) => void
-    const pending = new Promise((resolve) => { resolveFacts = resolve })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', vi.fn(() => pending))
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=milieux', vi.fn(async () => model))
-    await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
-    resolveFacts({ ok: true, json: async () => reponseThemeMilieuxApi(model) }); await flushPromises()
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('Source API milieux')
-    wrapper.unmount()
-  })
-
-  it('rend le rang de comparaison API sur la fiche Habitat puis actualise la portée sélectionnée', async () => {
-    expect(directionIndicateur('habitat', 'part_passoires')).toBe('moins-est-mieux')
-    const model = modeleAvecContextesComparaison()
-    const densite = model.themes.mobilite!.comparisons.densite!.scope.label
-    const epci = model.themes.mobilite!.comparisons.epci!.scope.label
-    let selectedRank = 8
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => {
-      if (url.endsWith('/facts')) return reponseThemeHabitatApi(model, 'commune', '22001')
-      const selection = JSON.parse(String(options?.body)).selection
-      return { contract: 'theme-comparison-v1', theme_id: 'habitat', selection,
-        content_version: 'habitat-scalar-v1', reference_content_version: 'territories-v1',
-        scope: { kind: 'explicit_selection' }, results: [{ indicator_id: 'part_passoires', status: 'available',
-          direction: 'low', rank: selectedRank, rank_size: 20 }], profile_comparisons: [] }
-    } }))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
-    const chip = () => wrapper.findComponent(PuceRang)
-    expect(chip().exists()).toBe(true)
-    expect(chip().props('puce').rang).toContain('3e/14')
-    expect(chip().props('puce').rang).toContain(densite)
-    expect(directionIndicateur('habitat', 'part_passoires')).toBeTruthy()
-    selectedRank = 8
-    await router.replace({ query: { theme: 'habitat', comparaison: 'epci' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/comparison'))).toHaveLength(1)
-    expect(chip().props('puce').rang).toContain('8e/20')
-    expect(chip().props('puce').rang).toContain(epci)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('42')
-    wrapper.unmount()
-  })
-
-  it('retire le chip si le résultat est indisponible et efface le chip après échec de comparaison', async () => {
-    const model = modeleAvecContextesComparaison()
-    let invalid = false
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => ({ ok: true, json: async () => {
-      if (url.endsWith('/facts')) {
-        const facts = reponseThemeHabitatApi(model, 'commune', '22001')
-        if (invalid) facts.comparison.results[0].status = 'unavailable'
-        return facts
-      }
-      const selection = JSON.parse(String(options?.body)).selection
-      return { contract: 'theme-comparison-v1', theme_id: 'habitat', selection,
-        content_version: 'habitat-scalar-v1', reference_content_version: 'wrong-token',
-        results: [], profile_comparisons: [] }
-    } }))
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    invalid = true
-    const { wrapper } = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
-    expect(wrapper.findComponent(PuceRang).exists()).toBe(false)
-    wrapper.unmount()
-    invalid = false
-    const mounted = await monter('/territoire/commune/22001?theme=habitat', vi.fn(async () => model))
-    expect(mounted.wrapper.findComponent(PuceRang).exists()).toBe(true)
-    await mounted.router.replace({ query: { theme: 'habitat', comparaison: 'epci' } }); await flushPromises()
-    expect(mounted.wrapper.findComponent(PuceRang).exists()).toBe(false)
-    expect(mounted.wrapper.get('[role="alert"]').text()).toContain('Les comparaisons de ce thème ne sont pas disponibles')
-    expect(mounted.wrapper.get('[role="tabpanel"]').text()).toContain('42')
-    mounted.wrapper.unmount()
-  })
-
-  it('laisse à la variante E la propriété de son unique POST Mobilité, sans acquisition en doublon', async () => {
-    const model = modeleAvecContextesComparaison()
-    await (varianteDeUrl('E')?.composant as any).__asyncLoader?.()
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }))
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite&variant=E', vi.fn(async () => model))
-    const facts = fetchApi.mock.calls.filter(([url]) => String(url).includes('/themes/mobilite/facts'))
-    expect(facts).toHaveLength(1)
-    expect(String(facts[0]![0])).toBe('/api/territories/commune/22001/themes/mobilite/facts')
-    wrapper.unmount()
-  })
-
-  it('acquiert Mobilité pour l’onglet normal sans variante', async () => {
-    const model = modeleAvecContextesComparaison()
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const response = reponseThemeMobiliteApi(model, 'commune', '22001', null)
-    const fetchApi = vi.fn(async (_url: string, _options?: RequestInit) => ({ ok: true, json: async () => response }))
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
-    const facts = fetchApi.mock.calls.filter(([url]) => String(url).includes('/themes/mobilite/facts'))
-    expect(facts).toHaveLength(1)
-    expect(JSON.parse(String(facts[0]![1]?.body))).toEqual({ theme_id: 'mobilite' })
-    wrapper.unmount()
-  })
 
   it('renders the approved AEDAR cahier from the normal Mobility route', async () => {
     const model = modeleAvecContextesComparaison()
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
-      if (url === '/api/resources/read-batch') {
-        const { items } = JSON.parse(String(options?.body))
-        return { ok: true, status: 200, json: async () => ({
-          contract: 'semantic-read-batch-v1',
-            results: items.map((item: { id: string; resource: string; target: { type: string; id: string }; coordinates: { typequ: string[] }; fields?: string[] }) => ({
-            id: item.id,
-            data: {
-              resource: item.resource,
-              target: { kind: 'territory', ...item.target },
-              ...reponsePageAedar(item.target.type, item.target.id, item.coordinates.typequ, item.fields),
-            },
-          })),
-        }) }
-      }
-      if (String(url).includes('/themes/mobilite/')) {
-        return { ok: true, status: 200, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', null) }
-      }
-      return { ok: false, status: 404, json: async () => ({}) }
-    })
+    const requests: Array<Array<Record<string, any>>> = []
+    const fetchApi = nativeSemanticFetch(requests)
     vi.stubGlobal('fetch', fetchApi)
 
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
@@ -2364,18 +1902,23 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     const semanticReads = fetchApi.mock.calls.filter(([url]) => String(url) === '/api/resources/read-batch')
     expect(semanticReads.length).toBeGreaterThanOrEqual(6)
     const projectedBodies = semanticReads.map(([, init]) => JSON.parse(String(init?.body)))
-    expect(projectedBodies.every((body) => body.items.every((item: { fields: string[] }) => item.fields.length <= 32))).toBe(true)
-    expect(projectedBodies.some((body) => body.items.some((item: { coordinates: { typequ: string[] } }) => item.coordinates.typequ.length === 100))).toBe(true)
+    const aedarItems = projectedBodies.flatMap((body) => body.items)
+      .filter((item: Record<string, any>) => Array.isArray(item.coordinates?.typequ))
+    expect(aedarItems.every((item: Record<string, any>) => item.fields.length <= 32)).toBe(true)
+    expect(aedarItems.some((item: Record<string, any>) => item.coordinates.typequ.length === 100)).toBe(true)
     expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/api/aedar/territories/'))).toBe(false)
+    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/themes/'))).toBe(false)
     wrapper.unmount()
   })
 
   it('shows loading, not unavailable copy, while the production AEDAR read is pending', async () => {
     const model = modeleAvecContextesComparaison()
     const fetchApi = vi.fn(async (url: string) => {
+      if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') return await new Promise<Response>(() => {})
       return { ok: false, status: 404, json: async () => ({}) } as Response
     })
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubGlobal('fetch', fetchApi)
 
     const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
@@ -2390,266 +1933,4 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     wrapper.unmount()
   })
 
-  it('rend Mobilité et sa figure depuis les bins servis, mais garde la figure absente sans bins', async () => {
-    const model = modeleAvecContextesComparaison()
-    const context = model.themes.mobilite!.comparisons.densite!
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () =>
-      reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label, true) })))
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
-    await flushPromises()
-    const texte = wrapper.get('[role="tabpanel"]').text()
-    // La valeur API (0,87 → 87) rend ; la valeur statique (1 → 100) est absente.
-    expect(texte).toContain('87')
-    expect(texte).not.toContain('100%Alimentation')
-    // La lecture rend ses paramètres servis (le texte porte 38)…
-    const lecture = wrapper.get('.cahier-figure-lecture')
-    expect(lecture.text()).toContain('38')
-    wrapper.unmount()
-    vi.stubGlobal('fetch', vi.fn(async () => ({ ok: true, json: async () =>
-      reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) })))
-    const absent = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
-    await flushPromises()
-    absent.wrapper.unmount()
-  })
-
-  it('preserves representative #683 content, riders and honest missing state through ProductionMobilite', async () => {
-    const model = modeleAvecContextesComparaison()
-    const context = model.themes.mobilite!.comparisons.densite!
-    const fetchApi = vi.fn(async (url: string) => {
-      expect(url).toContain('/themes/mobilite/facts')
-      return { ok: true, json: async () =>
-        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
-    await flushPromises()
-    const text = wrapper.get('.cahier').text()
-    expect(fetchApi.mock.calls.some(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toBe(true)
-    expect(text).toContain('À pied + TC')
-    expect(text).toContain('À vélo + TC')
-    expect(text).toContain('Source API')
-    expect(text).toContain('Exemple :')
-    expect(text).toContain('Indisponible')
-    wrapper.unmount()
-  })
-
-  it('Mobilité : le réchauffage partagé fournit les faits au cahier sans POST doublon', async () => {
-    const model = modeleAvecContextesComparaison()
-    const context = model.themes.mobilite!.comparisons.densite!
-    const fetchApi = vi.fn(async (url: string) => {
-      if (String(url).endsWith('/themes/programmes/facts')) return { ok: true, json: async () => reponseThemeProgrammesApi() }
-      if (String(url).endsWith('/themes/mobilite/facts')) return { ok: true, json: async () =>
-        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
-      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
-      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
-        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
-          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    await flushPromises()
-    // Programmes prioritaire ; le registre réchauffe aussi Mobilité.
-    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(6)
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
-    // La visite réutilise le POST chaud ; la revisite n'en déclenche aucun.
-    await router.replace({ query: { theme: 'mobilite' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
-    await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
-    await router.replace({ query: { theme: 'mobilite' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
-  })
-
-  it('un changement de territoire réchauffe pour le nouveau et une réponse tardive de l’ancien ne se fond jamais', async () => {
-    // Programmes actif sur 22001 ; le réchauffage Habitat de 22001 pends.
-    let resolveHabitat22001!: (value: unknown) => void
-    const pending = new Promise((resolve) => { resolveHabitat22001 = resolve })
-    const generique = (type: string, code: string, theme: string) => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
-      territory: { territory_id: code, territory_type: type, name: code },
-      indicators: [], readings: [],
-      comparison: { contract: 'theme-comparison-v1', theme_id: theme, content_version: 'v1',
-        reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } })
-    const fetchApi = vi.fn(async (url: string) => {
-      const m = String(url).match(/^\/api\/territories\/(commune|epci|departement|region)\/([^/]+)\/themes\/([^/]+)\/facts$/)
-      if (!m) throw new Error(`Unexpected request: ${url}`)
-      if (m[2] === '22001' && m[3] === 'habitat') return pending
-      return { ok: true, json: async () => generique(m[1]!, m[2]!, m[3]!) }
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async (_type, territoire) => modelFor(territoire)))
-    await flushPromises()
-    expect(String(fetchApi.mock.calls[0]![0])).toContain('/themes/programmes/facts')
-    // 22001 : Programmes résolu + quatre réchauffages résolus + Habitat pendants.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22001/themes/'))).toHaveLength(6)
-    // Navigation vers 22002 pendant que le réchauffage 22001/Habitat pends.
-    await router.push('/territoire/commune/22002'); await flushPromises()
-    // Le nouveau territoire acquiert son actif puis réchauffe SON registre.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).startsWith('/api/territories/commune/22002/themes/'))).toHaveLength(6)
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    // La réponse tardive de 22001/Habitat arrive APRÈS la navigation : elle ne
-    // peut peupler que sa propre clé de cache.
-    resolveHabitat22001({ ok: true, json: async () => generique('commune', '22001', 'habitat') })
-    await flushPromises()
-    expect(wrapper.find('[role="alert"]').exists()).toBe(false)
-    // Retour sur 22001 : tout est en cache — aucune nouvelle requête de faits.
-    await router.push('/territoire/commune/22001'); await flushPromises()
-    await router.replace({ query: { theme: 'habitat' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/facts'))).toHaveLength(12)
-    wrapper.unmount()
-  })
-
-  it('Mobilité : une sélection pendant le réchauffage partage le POST en attente', async () => {
-    const model = modeleAvecContextesComparaison()
-    const context = model.themes.mobilite!.comparisons.densite!
-    let resolveMobility!: (response: unknown) => void
-    const pendingMobility = new Promise((resolve) => { resolveMobility = resolve })
-    const fetchApi = vi.fn(async (url: string) => {
-      if (String(url).endsWith('/themes/mobilite/facts')) return pendingMobility
-      const theme = String(url).match(/\/themes\/([^/]+)\/facts$/)?.[1]
-      if (theme) return { ok: true, json: async () => ({ ...reponseThemeProgrammesApi(), theme_id: theme,
-        indicators: [], readings: [], comparison: { contract: 'theme-comparison-v1', theme_id: theme,
-          content_version: 'v1', reference_content_version: 'v1', selection: null, results: [], profile_comparisons: [] } }) }
-      throw new Error(`Unexpected request: ${url}`)
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001', vi.fn(async () => model))
-    await flushPromises()
-    const mobilityRequests = () => fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))
-    expect(mobilityRequests()).toHaveLength(1)
-    await router.replace({ query: { theme: 'mobilite' } })
-    await flushPromises()
-    expect(mobilityRequests()).toHaveLength(1)
-    resolveMobility({ ok: true, json: async () =>
-      reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) })
-    await flushPromises()
-    expect(mobilityRequests()).toHaveLength(1)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
-    wrapper.unmount()
-  })
-
-  it('Mobilité : les faits en attente n’exposent aucune valeur statique, puis rendent', async () => {
-    const model = modeleAvecContextesComparaison()
-    const context = model.themes.mobilite!.comparisons.densite!
-    let resolveFacts!: (value: unknown) => void
-    const pending = new Promise((resolve) => { resolveFacts = resolve })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', vi.fn(() => pending))
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('100%Alimentation')
-    resolveFacts({ ok: true, json: async () =>
-      reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) })
-    await flushPromises()
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
-    wrapper.unmount()
-  })
-
-  it('Mobilité : échec fermé sans repli statique, puis réessai', async () => {
-    const model = modeleAvecContextesComparaison()
-    const context = model.themes.mobilite!.comparisons.densite!
-    let echecs = 0
-    const fetchApi = vi.fn(async (url: string) => {
-      if (url.startsWith('/api/aedar/')) return { ok: false, status: 503, json: async () => ({}) }
-      if (!url.endsWith('/themes/mobilite/facts')) return { ok: true, json: async () => reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
-      if (++echecs === 1) throw new Error('API indisponible')
-      return { ok: true, json: async () =>
-        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
-    await flushPromises()
-    // Le cahier plié rend ses états honnêtes par section — aucun numérique statique.
-    expect(wrapper.get('[role="tabpanel"]').text()).not.toContain('100%Alimentation')
-    const accessSection = wrapper.get('[data-section="services-essentiels"]')
-    expect(accessSection.text()).toContain('Impossible de charger les données')
-    await accessSection.get('[role="alert"] button').trigger('click')
-    await flushPromises()
-    expect(accessSection.find('[role="alert"]').exists()).toBe(false)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
-    wrapper.unmount()
-  })
-
-  it('Mobilité : une seule comparaison par changement de sélection, écho exact, faits focaux gardés', async () => {
-    const model = modeleAvecContextesComparaison()
-    const context = model.themes.mobilite!.comparisons.densite!
-    const epciAttendu = model.cohortTerritories!.filter((item: any) =>
-      item.type === 'commune' && item.epci === model.territory.epci)
-      .map((item: any) => ({ territory_type: item.type, territory_id: item.territoire }))
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
-      if (String(url).startsWith('/api/aedar/')) return { ok: false, status: 503, json: async () => ({}) }
-      if (String(url).endsWith('/facts')) return { ok: true, json: async () =>
-        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
-      const demandee = JSON.parse(String(options?.body)).selection as { territory_type: string; territory_id: string }[]
-      return { ok: true, json: async () => ({ contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite',
-        content_version: 'mobilite-v1', reference_content_version: 'territories-v1',
-        selection: demandee, scope: { kind: 'explicit_selection', member_count: demandee.length },
-        results: [], profile_comparisons: [], reading_content_version: 'mobilite-v1', reading_cloud: null }) }
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubEnv('VITE_SCALAR_COHORT_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite', vi.fn(async () => model))
-    await flushPromises()
-    // Le défaut déclaré est servi par la comparaison imbriquée : aucun POST de comparaison.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(0)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } }); await flushPromises()
-    const comparaisons = fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))
-    expect(comparaisons).toHaveLength(1)
-    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
-    expect(JSON.parse(String(comparaisons[0]![1]!.body))).toEqual({ theme_id: 'mobilite', selection: epciAttendu })
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
-    // Revisite de la comparaison acquise : aucune nouvelle requête, faits inchangés.
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' } }); await flushPromises()
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } }); await flushPromises()
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(3)
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
-    expect(fetchApi.mock.calls.some(([url]) => String(url).includes('/indicator-cohorts/'))).toBe(false)
-    wrapper.unmount()
-  })
-
-  it('Mobilité : tokens de comparaison incompatibles → échec fermé réessayable, puis réponse périmée ignorée', async () => {
-    const model = modeleAvecContextesComparaison()
-    const context = model.themes.mobilite!.comparisons.densite!
-    let comparaisons = 0
-    let resolveBretagne: ((value: unknown) => void) | undefined
-    const bretagne = new Promise((resolve) => { resolveBretagne = resolve })
-    const reponseComparaison = (selection: unknown, tokens = 'territories-v1') => ({
-      contract: 'theme-comparison-v1', complete_theme: false, theme_id: 'mobilite',
-      content_version: 'mobilite-v1', reference_content_version: tokens,
-      selection, scope: { kind: 'explicit_selection', member_count: (Array.isArray(selection) ? selection.length : 0) },
-      results: [], profile_comparisons: [], reading_content_version: 'mobilite-v1', reading_cloud: null })
-    const fetchApi = vi.fn(async (url: string, options?: RequestInit) => {
-      if (String(url).startsWith('/api/aedar/')) return { ok: false, status: 503, json: async () => ({}) }
-      if (String(url).endsWith('/facts')) return { ok: true, json: async () =>
-        reponseThemeMobiliteApi(model, 'commune', '22001', context.scope.kind, context.scope.label) }
-      const demandee = JSON.parse(String(options?.body)).selection
-      comparaisons += 1
-      if (demandee.length > 100) return bretagne
-      return { ok: true, json: async () => reponseComparaison(demandee, comparaisons === 1 ? 'jetons-périmés' : 'territories-v1') }
-    })
-    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1'); vi.stubGlobal('fetch', fetchApi)
-    const { router, wrapper } = await monter('/territoire/commune/22001?theme=mobilite&comparaison=epci', vi.fn(async () => model))
-    await flushPromises()
-    // La comparaison incompatible ne retire pas les faits focaux, et le
-    // sélecteur de portée reste utilisable indépendamment de l’état AEDAR.
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
-    await wrapper.get('.cahier-comparison-note__trigger').trigger('click')
-    expect(wrapper.get('.cahier-comparison-note__trigger').attributes('aria-expanded')).toBe('true')
-    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
-    // La sélection bretagne lance une requête qui traîne ; on REPART vers epci
-    // (la comparaison acquise en cache, aucune nouvelle requête) — puis la
-    // réponse bretagne arrive TARD avec un écho vide : requête périmée, rejetée
-    // sans corrompre l'état ni lever de bandeau.
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'bretagne' } }); await flushPromises()
-    await router.replace({ query: { theme: 'mobilite', comparaison: 'epci' } }); await flushPromises()
-    // Trois POST de comparaison ont eu lieu : épci (jetons périmés), son réessai, bretagne —
-    // le retour à épci est servi par le cache, aucune nouvelle requête.
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/comparison'))).toHaveLength(3)
-    resolveBretagne?.(reponseComparaison([]))
-    await flushPromises()
-    expect(wrapper.find('.etat-erreur').exists()).toBe(false)
-    expect(wrapper.get('[role="tabpanel"]').text()).toContain('87')
-    expect(fetchApi.mock.calls.filter(([url]) => String(url).endsWith('/themes/mobilite/facts'))).toHaveLength(1)
-    wrapper.unmount()
-  })
 })

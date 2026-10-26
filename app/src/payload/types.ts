@@ -66,8 +66,9 @@ export interface Territoire {
 /**
  * The four vintage columns every dated row of the payload carries (indicateurs
  * AND the Économie Stories — issue #120): source · version · the two ISO dates
- * (the reference null for a rolling base, ADR-0009). The stamp pattern the
- * fiche's freshness promise reads (formaterVintage, selectors.ts).
+ * (the reference null for a rolling base, ADR-0009). A no-record ordered-series
+ * axis keeps descriptor identity but has no observation clock. The stamp
+ * pattern the fiche's freshness promise reads (formaterVintage, selectors.ts).
  */
 export interface VintageStamp {
   vintage_source: string
@@ -75,7 +76,7 @@ export interface VintageStamp {
   /**
    * The reference date — null for a rolling base (DPE: ADR-0009, spec #12).
    * #408: publication can be null too (the ORT rows' continuous-follow
-   * contract #175) — one of the two clocks is always present, never both null.
+   * contract #175); both are null only when an ordered-series axis has no row.
    */
   vintage_date_reference: string | null
   /** The publication date — null for a continuous-follow source (ORT, #175). */
@@ -86,7 +87,9 @@ export interface VintageStamp {
 }
 
 /** One facts row per (territoire × key × detail × sex × dimension). */
-export interface Indicateur extends VintageStamp {
+export interface Indicateur extends Omit<VintageStamp, 'vintage_version'> {
+  /** Null only for a legacy ordered-series axis with no observation row. */
+  vintage_version: string | null
   territoire: string
   type: TerritoireType
   theme: Theme
@@ -103,13 +106,17 @@ export interface Indicateur extends VintageStamp {
   /** Optional typed lineage carried by the ordered-series API adapter. */
   observation_status?: 'measured' | 'missing'
   /** Producer-owned availability state for semantic scalar observations. */
-  fact_status?: 'measured' | 'suppressed' | 'unsupported' | 'not_available' | 'not_published'
+  fact_status?: 'measured' | 'suppressed' | 'unsupported' | 'not_available' | 'not_published' | 'unavailable'
   /** Producer-owned evidence counts for scalar facts; null means not declared. */
   support_count?: number | null
   denominator_count?: number | null
   observation_period?: string | null
   source_id?: string | null
   vintage_id?: string | null
+  /** Raw flattened clocks for a legacy ordered-series point, including no-record axes. */
+  source_version?: string | null
+  source_reference_date?: string | null
+  source_publication_date?: string | null
   /** Observation-specific immutable provenance components from the owned series API. */
   provenance_revisions?: Array<{ revision_id: string; source_id: string; vintage_id: string;
     source_name: string; dataset_name: string; version: string; reference_date: string;
@@ -128,7 +135,7 @@ export interface Indicateur extends VintageStamp {
   rang_dep_n: number | null
   rang_reg_n: number | null
   /** Rank returned by the acquired comparison API. Never copied from retired legacy rang_* columns. */
-  comparaisonApi?: { rang: number; taille: number | null; portee: string | null }
+  comparaisonApi?: { rang: number; taille: number | null; portee: string | null; direction?: 'high' | 'low' }
 }
 
 /**
@@ -922,6 +929,9 @@ export interface SourceClock {
  * optional alias). */
 export interface IndicatorPageMetadataBase {
   indicator: string
+  /** Producer-owned absence contract for a published ordered series. */
+  completeness?: string
+  absence_semantics?: 'no_record'
   /** Stable identity and compatibility path for an ordered-series publication. */
   series_dataset_id?: string
   series_publication?: 'legacy' | 'owned'

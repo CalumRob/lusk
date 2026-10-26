@@ -24,8 +24,15 @@ describe('métadonnées de thème — autorité canonique et snapshot public', (
     // Mobilité raccordement: the incumbent public bundle intentionally remains
     // paired with its historical metadata until publication. Candidate 73-axis
     // metadata is validated separately against the active API descriptor.
+    // Producer-side semantic_resources are discovered from /api/resources;
+    // they are not app presentation metadata and must not be copied into the
+    // public static theme bundle.
     for (const theme of themes.filter((item) => item !== 'mobilite')) {
-      expect(lire(publicDir, theme), theme).toEqual(lire(canonicalDir, theme))
+      const canonical = lire(canonicalDir, theme) as Record<string, unknown>
+      const snapshot = lire(publicDir, theme) as Record<string, unknown>
+      const { semantic_resources: _producerResources, ...presentation } = canonical
+      expect(snapshot, `${theme} snapshot excludes producer discovery`).not.toHaveProperty('semantic_resources')
+      expect(snapshot, theme).toEqual(presentation)
     }
   })
 

@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { describe, expect, it } from 'vitest'
 
 import { metadonneesThemesFixtures } from '../payload/fixtures'
@@ -175,6 +177,25 @@ describe('validerThemeMetadata — rejette la dérive, fort', () => {
     for (const groupe of meta.subgroups) {
       expect(groupe.reading, `« ${groupe.key} » : aucun sous-groupe ne déclare de lecture`).toBeUndefined()
     }
+  })
+
+  it('preserves the producer-declared no-record contract when validating canonical Programmes metadata', () => {
+    const published = JSON.parse(readFileSync('../public/data/theme_programmes.json', 'utf8'))
+    const metadata = validerThemeMetadata(published, 'theme_programmes.json')
+
+    expect(metadata.indicator_pages?.subventions_annuelles).toMatchObject({
+      completeness: 'may_be_missing', absence_semantics: 'no_record',
+    })
+
+    const unknownAbsence = structuredClone(published)
+    unknownAbsence.indicator_pages.subventions_annuelles.absence_semantics = 'unavailable'
+    expect(() => validerThemeMetadata(unknownAbsence, 'theme_programmes.json'))
+      .toThrow(/absence_semantics.*invalide/)
+
+    const completeButNoRecord = structuredClone(published)
+    completeButNoRecord.indicator_pages.subventions_annuelles.completeness = 'dense_complete'
+    expect(() => validerThemeMetadata(completeButNoRecord, 'theme_programmes.json'))
+      .toThrow(/absence_semantics.*requiert may_be_missing/)
   })
 
   it('accepte une liste story_keys vide mais refuse une story déclarée hors du registre du thème (#408)', () => {

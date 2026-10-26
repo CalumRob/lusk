@@ -23,12 +23,14 @@ import NoteContexteIndicateur from '@/components/indicateurs/NoteContexteIndicat
 import { dispatchIndicatorFamily } from '@/indicateurs/familySeam'
 import { fusionnerFacette, queryCanonique, resoudreEtatUrl, resoudreNiveau } from '@/indicateurs/etatUrl'
 import { PayloadError, validerThemeMetadata } from '@/payload/validate'
+import { semanticComparisonScopeLabel } from '@/fiche/content/comparisonScopeLabel'
 import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, orderedSeriesReaderEnabled, type OrderedSeriesRead } from '@/payload/orderedSeriesAdapter'
 import { chargerMetadataStructureAge, chargerStructureAgeProfile, remplacerStructureAgeStatique, structureAgeProfileEnabled } from '@/payload/structureAgeProfile'
 import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
-import type { Indicateur, IndicatorPageMetadata, Payload, ThemeMetadata } from '@/payload/types'
-import { validateRaccordementIndicatorRead } from '@/payload/raccordementIndicatorApi'
-import type { RaccordementIndicatorComparison, RaccordementIndicatorRead } from '@/payload/raccordementIndicatorApi'
+import type { Indicateur, IndicatorPageMetadata, Payload, TerritoireType, ThemeMetadata } from '@/payload/types'
+import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison } from '@/payload/themeAcquisition'
+import { projectRaccordementSemanticComparison, projectRaccordementSemanticFocal } from '@/payload/raccordementSemanticProjection'
+import type { RaccordementSemanticProjection } from '@/payload/raccordementSemanticProjection'
 
 const JOURS_FR = ['dimanche', 'lundi', 'mardi', 'mercredi', 'jeudi', 'vendredi', 'samedi']
 const MOIS_FR = ['janvier', 'février', 'mars', 'avril', 'mai', 'juin', 'juillet', 'août', 'septembre', 'octobre', 'novembre', 'décembre']
@@ -270,8 +272,19 @@ watch(
 )
 
 const serieLecture = ref<OrderedSeriesRead | null>(null)
-const raccordementApiLecture = ref<{ metadata: RaccordementIndicatorRead; comparison: RaccordementIndicatorComparison; facts: Indicateur[]; referenceFacts: Indicateur[] } | null>(null)
-const raccordementApiErreur = ref(false)
+const raccordementApiLecture = ref<RaccordementSemanticProjection | null>(null)
+const raccordementComparaisonChargement = ref(false)
+const raccordementComparaisonErreur = ref(false)
+const raccordementThemeCache = new ThemeAcquisitionCache(
+  (selectedTheme, key) => {
+    if (!key) throw new Error('Cible requise pour l’acquisition sémantique Mobilité')
+    return acquireThemeFacts(key.type, key.id, selectedTheme)
+  },
+  (selection, selectedTheme, key) => {
+    if (!key) throw new Error('Cible requise pour la comparaison sémantique Mobilité')
+    return acquireThemeComparison(key.type, key.id, selectedTheme, selection)
+  },
+)
 const raccordementSource = computed(() => {
   const point = raccordementApiLecture.value?.metadata.points[0]
   if (!point || typeof point !== 'object') return null
@@ -283,8 +296,18 @@ const serieErreur = ref(false)
 const serieChargement = ref(false)
 let serieRequete = 0
 let serieRequestKey: string | null = null
-const niveauSerie = computed(() => resoudreNiveau(porte.value.niveau, niveauMemorise.value,
-  payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]?.indicator_pages?.[indicator.value]?.levels ?? ['commune']))
+let raccordementFocalKey: string | null = null
+const niveauSerie = computed<TerritoireType>(() => {
+  const levels = payloadLegacy.value.themeMetadata?.[theme.value as keyof typeof payloadLegacy.value.themeMetadata]
+    ?.indicator_pages?.[indicator.value]?.levels ?? ['commune']
+  const selected = payloadLegacy.value.territoires.find((territory) => territory.territoire === porte.value.territoire)
+  // The handoff contract intentionally carries a region without `niveau`.
+  // Preserve that owner-declared focal level for this native trajectory only;
+  // region remains outside the shared data-first comparison-level selector.
+  if (orderedSeriesAdapter.value?.indicator === 'raccordement_courbe' && selected?.type === 'region' &&
+      levels.includes('region')) return 'region'
+  return resoudreNiveau(porte.value.niveau, niveauMemorise.value, levels)
+})
 async function chargerSerie(force = false) {
   const adapter = orderedSeriesAdapter.value
   if (!adapter || !payloadLegacy.value.territoires.length) return
@@ -304,35 +327,63 @@ async function chargerSerie(force = false) {
   const url = adapter.publicationMode === 'owned'
     ? `/api/series-datasets/${encodeURIComponent(adapter.datasetId ?? '')}/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/${encodeURIComponent(adapter.pathIndicator)}?${query}`
     : `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/series/${encodeURIComponent(adapter.pathIndicator)}?${query}`
-  if (!force && url === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value)) return
+  const selectedIds = adapter.indicator === 'raccordement_courbe' && niveauSerie.value === 'commune' && (department || epci)
+    ? scopeTerritories.filter((territory) => territory.type === 'commune')
+      .map((territory) => ({ territory_type: 'commune' as const, territory_id: territory.territoire }))
+    : undefined
+  const raccordement = adapter.indicator === 'raccordement_courbe'
+  const requestKey = raccordement
+    ? JSON.stringify([focal.type, focal.territoire, cleSelectionComparaison(selectedIds)]) : url
+  if (!force && requestKey === serieRequestKey && (serieChargement.value || serieErreur.value || serieLecture.value ||
+      raccordementApiLecture.value?.comparison || raccordementComparaisonChargement.value || raccordementComparaisonErreur.value)) return
   const request = ++serieRequete
-  serieRequestKey = url
-  serieChargement.value = true
+  serieRequestKey = requestKey
+  const focalKey = JSON.stringify([focal.type, focal.territoire])
+  const retainedFocal = raccordement && raccordementFocalKey === focalKey && raccordementApiLecture.value !== null
+  if (raccordement && force) {
+    if (retainedFocal) raccordementThemeCache.invalidateComparison(focal.type, focal.territoire, 'mobilite', selectedIds)
+    else raccordementThemeCache.invalidate(focal.type, focal.territoire, 'mobilite')
+  }
+  if (raccordement && !retainedFocal) {
+    raccordementFocalKey = focalKey
+    raccordementApiLecture.value = null
+  } else if (raccordement && raccordementApiLecture.value) {
+    // A changed selection invalidates only the prior aggregate/rank. The focal
+    // curve and its independently owned named reference remain current.
+    raccordementApiLecture.value = { ...raccordementApiLecture.value, comparison: null }
+  }
+  serieChargement.value = !retainedFocal
   serieErreur.value = false
-  raccordementApiErreur.value = false
+  if (raccordement) {
+    raccordementComparaisonChargement.value = true
+    raccordementComparaisonErreur.value = false
+  }
   serieLecture.value = null
-  raccordementApiLecture.value = null
+  if (!raccordement) raccordementApiLecture.value = null
   try {
-    if (adapter.indicator === 'raccordement_courbe') {
-      const readUrl = `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/indicators/raccordement_courbe`
-      const compareUrl = `/api/territories/${encodeURIComponent(focal.type)}/${encodeURIComponent(focal.territoire)}/indicators/raccordement_courbe/comparison`
-      const selectedIds = niveauSerie.value === 'commune' && (department || epci)
-        ? scopeTerritories.filter((territory) => territory.type === 'commune')
-          .map((territory) => ({ territory_type: 'commune', territory_id: territory.territoire }))
-        : undefined
-      const [readResponse, comparisonResponse] = await Promise.all([
-        fetch(readUrl),
-        fetch(compareUrl, { method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(selectedIds === undefined ? {} : { selection: selectedIds }) }),
-      ])
-      if (!readResponse.ok || !comparisonResponse.ok) throw new Error('Raccordement API unavailable')
-      const [read, comparison] = await Promise.all([readResponse.json(), comparisonResponse.json()])
+    if (raccordement) {
+      const acquired = await raccordementThemeCache.get(focal.type, focal.territoire, 'mobilite')
       if (request !== serieRequete) return
-      const canonicalScopeLabel = selectedIds === undefined
-        ? focal.classe_densite_libelle_public ?? undefined
-        : typeof model.value?.scopeLabel === 'string' ? model.value.scopeLabel : undefined
-      const adapted = validateRaccordementIndicatorRead(read, comparison, focal, selectedIds, canonicalScopeLabel)
-      raccordementApiLecture.value = adapted
+      const projectedFocal = projectRaccordementSemanticFocal(acquired.focal, focal)
+      const selectionKey = cleSelectionComparaison(selectedIds)
+      raccordementApiLecture.value = { ...projectedFocal, comparison: null }
+      serieChargement.value = false
+
+      const cachedComparison = acquired.comparisons.get(selectionKey)
+      if (cachedComparison && !cachedComparison.cohort_error) {
+        const comparison = projectRaccordementSemanticComparison(acquired.focal, cachedComparison,
+          focal, selectedIds)
+        if (request === serieRequete) raccordementApiLecture.value = { ...projectedFocal, comparison }
+        return
+      }
+
+      const compared = await raccordementThemeCache.select(focal.type, focal.territoire, 'mobilite', selectedIds)
+      if (request !== serieRequete) return
+      const comparisonResponse = compared.comparisons.get(selectionKey)
+      if (!comparisonResponse || comparisonResponse.cohort_error) throw new Error('Comparaison native du raccordement absente')
+      const comparison = projectRaccordementSemanticComparison(compared.focal, comparisonResponse,
+        focal, selectedIds)
+      raccordementApiLecture.value = { ...projectedFocal, comparison }
       return
     }
     const response = await fetch(url)
@@ -344,13 +395,16 @@ async function chargerSerie(force = false) {
     if (request === serieRequete) serieLecture.value = result
   } catch {
     if (request === serieRequete) {
-      serieErreur.value = true
-      if (adapter.indicator === 'raccordement_courbe') raccordementApiErreur.value = true
+      if (raccordement && raccordementApiLecture.value && raccordementFocalKey === focalKey) {
+        raccordementComparaisonErreur.value = true
+      } else {
+        serieErreur.value = true
+      }
     }
   } finally {
     if (request === serieRequete) {
       serieChargement.value = false
-      if (adapter.indicator === 'raccordement_courbe' && !serieErreur.value) raccordementApiErreur.value = false
+      if (raccordement) raccordementComparaisonChargement.value = false
     }
   }
 }
@@ -394,7 +448,7 @@ const payload = computed<Payload>(() => {
       fact.key !== 'raccordement_reference' && fact.key !== 'raccordement_tc')
     return { ...base, themeMetadata: themeMetadata ? { ...base.themeMetadata, mobilite: {
       ...themeMetadata, indicator_pages: { ...themeMetadata.indicator_pages, raccordement_courbe: updatedPage },
-    } } : base.themeMetadata, indicateurs: [...indicators, ...read.facts, ...read.referenceFacts] } as Payload
+    } } : base.themeMetadata, indicateurs: [...indicators, ...read.facts] } as Payload
   }
   const page = base.themeMetadata?.[adapter.theme]?.indicator_pages?.[adapter.indicator]
   const apiFacts = serieLecture.value && page
@@ -457,6 +511,20 @@ watch(() => [orderedSeriesAdapter.value?.indicator, porte.value.territoire, port
 const niveauRoute = computed(() => porte.value.niveau)
 const requested = computed(() => ({ niveau: niveauRoute.value, ...(etatUrl.value.scopeValide ?? {}), territoire: porte.value.territoire, recherche: recherche.value, tri: ['nom', 'valeur', 'rang'].includes(String(route.query.tri)) ? route.query.tri as TriExploration : undefined, ordre: route.query.ordre === 'desc' ? 'desc' as OrdreExploration : 'asc' as OrdreExploration }))
 const model = computed(() => familyDispatch.value ? modeleExploration(facts.value, familyDispatch.value.facet, payload.value.territoires, requested.value, niveauMemorise.value) : null)
+const raccordementComparisonScopeLabel = computed(() => {
+  const comparison = raccordementApiLecture.value?.comparison
+  if (!comparison?.scope) return null
+  const target = payload.value.territoires.find((territory) =>
+    territory.territoire === raccordementApiLecture.value?.metadata.territory.id &&
+    territory.type === raccordementApiLecture.value?.metadata.territory.type)
+  if (!target) return null
+  if (comparison.scope.kind === 'explicit_selection') return model.value?.scopeLabel ?? 'Sélection de territoires'
+  if (comparison.scope.kind === 'density_class') {
+    return comparison.scope.density_class_code === target.classe_densite_code
+      ? target.classe_densite_libelle_public ?? null : null
+  }
+  return semanticComparisonScopeLabel(comparison.scope, target.type)
+})
 // Le chemin complet de la trajectoire (#438), dans le MÊME périmètre résolu
 // que le modèle par détail — le détail (actif) pilote carte/extrêmes/tableau
 // sans replier la trajectoire.
@@ -464,25 +532,35 @@ const trajectoire = computed(() => {
   const dispatch = familyDispatch.value
   if (!dispatch || dispatch.family !== 'trajectory' || !model.value) return null
   const { niveau, departement, epci, territoire } = model.value.state
+  const niveauTrajectoire: TerritoireType = indicator.value === 'raccordement_courbe' &&
+    raccordementApiLecture.value?.metadata.territory.type === 'region' ? 'region' : niveau
+  const territoireTrajectoire = niveauTrajectoire === 'region'
+    ? raccordementApiLecture.value?.metadata.territory.id ?? territoire : territoire
+  const referenceFacts = indicator.value === 'raccordement_courbe' && raccordementApiLecture.value
+    ? raccordementApiLecture.value.referenceFacts
+    : dispatch.representation.reference
   const trajectoryModel = modeleTrajectoire(
     facts.value,
     dispatch.facet,
     dispatch.representation.endpoints,
     payload.value.territoires,
-    { niveau, departement, epci, territoire },
-    dispatch.representation.reference,
+    { niveau: niveauTrajectoire, departement, epci, territoire: territoireTrajectoire },
+    referenceFacts,
     dispatch.representation.extension.reference?.label ?? null,
     { axis: dispatch.representation.extension.axis, labelsDetail: dispatch.representation.labelsDetail },
   )
   if (indicator.value !== 'raccordement_courbe' || !raccordementApiLecture.value) return trajectoryModel
   const comparison = raccordementApiLecture.value.comparison
+  if (!comparison || comparison.status !== 'available') return { ...trajectoryModel,
+    hideCohortDistribution: true, serieComparaison: [], comparaisonScopeLabel: null,
+    comparaisonStatistic: null, comparaisonMemberCount: null }
   const byDetail = new Map(trajectoryModel.etapes.map((step) => [step.detail, step] as const))
   return { ...trajectoryModel,
     hideCohortDistribution: true,
     serieComparaison: comparison.points.map((point) => ({ detail: point.detail,
       label: byDetail.get(point.detail)?.label ?? point.detail,
       x: byDetail.get(point.detail)?.x ?? 0, value: point.value })),
-    comparaisonScopeLabel: comparison.scopeLabel,
+    comparaisonScopeLabel: raccordementComparisonScopeLabel.value,
     comparaisonStatistic: comparison.statistic,
     comparaisonMemberCount: comparison.selectedMemberCount,
   }
@@ -585,7 +663,16 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
       <nav class="vues" aria-label="Vues de l’indicateur"><button :class="{ active: vue === 'reperes' }" @click="setVue('reperes')">Repères</button><button :class="{ active: vue === 'carte' }" @click="setVue('carte')">Carte</button><button :class="{ active: vue === 'indicateur' }" @click="setVue('indicateur')">L’indicateur</button></nav>
         <main v-if="vue === 'reperes'"><RepereFamilyOutlet v-if="familyDispatch" :dispatch="familyDispatch" :modele="trajectoire" :signature="distribution" :profil="profil" :relation="relation" :composition="composition" :ensemble="ensemble">
          <template #default>
-           <section v-if="raccordementApiLecture" class="raccordement-comparison-summary" data-testid="raccordement-selected-mean"><h2>Moyenne — {{ raccordementApiLecture.comparison.scopeLabel }}</h2><p>{{ raccordementApiLecture.comparison.selectedMemberCount }} membres · moyenne à {{ raccordementApiLecture.metadata.comparison_point }}</p><strong>{{ formaterValeur({ value: raccordementApiLecture.comparison.valueAtComparisonPoint, unit: page.unit }) }} {{ page.unit }}</strong><p v-if="raccordementApiLecture.comparison.rank !== null">Rang à {{ raccordementApiLecture.metadata.comparison_point }} : {{ formaterRang(raccordementApiLecture.comparison.rank, raccordementApiLecture.comparison.rankSize) }}</p><p v-else>Rang indisponible à {{ raccordementApiLecture.metadata.comparison_point }}.</p><p v-if="raccordementApiLecture.facts.find((fact) => fact.detail === raccordementApiLecture?.metadata.comparison_point)">Territoire à {{ raccordementApiLecture.metadata.comparison_point }} : {{ formaterValeur({ value: raccordementApiLecture.facts.find((fact) => fact.detail === raccordementApiLecture?.metadata.comparison_point)?.value ?? null, unit: page.unit }) }} {{ page.unit }}</p><p v-if="raccordementSource">Source : {{ raccordementSource.source_name }} · version {{ raccordementSource.version }} · référence {{ raccordementSource.reference_date }} · publication {{ raccordementSource.publication_date }}</p></section>
+            <section v-if="raccordementApiLecture" class="raccordement-comparison-summary" data-testid="raccordement-comparison-summary">
+              <template v-if="raccordementApiLecture.comparison?.status === 'available'">
+                <div data-testid="raccordement-selected-mean"><h2>Moyenne — {{ raccordementComparisonScopeLabel }}</h2><p>{{ raccordementApiLecture.comparison.selectedMemberCount }} membres · moyenne à {{ raccordementApiLecture.metadata.comparison_point }}</p><strong>{{ formaterValeur({ value: raccordementApiLecture.comparison.valueAtComparisonPoint, unit: page.unit }) }} {{ page.unit }}</strong><p v-if="raccordementApiLecture.comparison.rank !== null">Rang à {{ raccordementApiLecture.metadata.comparison_point }} : {{ formaterRang(raccordementApiLecture.comparison.rank, raccordementApiLecture.comparison.rankSize) }}</p><p v-else>Rang indisponible à {{ raccordementApiLecture.metadata.comparison_point }}.</p></div>
+              </template>
+              <p v-else-if="raccordementApiLecture.comparison?.status === 'unavailable'" data-testid="raccordement-comparison-unavailable">La comparaison est indisponible pour ce périmètre selon les données publiées. La courbe du territoire et la référence nommée restent affichées.</p>
+              <p v-else-if="raccordementComparaisonChargement" role="status" data-testid="raccordement-comparison-pending">Chargement de la comparaison… La courbe du territoire et la référence nommée restent affichées.</p>
+              <div v-else-if="raccordementComparaisonErreur" role="alert" data-testid="raccordement-comparison-error">La comparaison est momentanément indisponible. La courbe du territoire et la référence nommée restent affichées.<button type="button" data-testid="raccordement-comparison-retry" @click="chargerSerie(true)">Réessayer la comparaison</button></div>
+              <p v-if="raccordementApiLecture.facts.find((fact) => fact.detail === raccordementApiLecture?.metadata.comparison_point)">Territoire à {{ raccordementApiLecture.metadata.comparison_point }} : {{ formaterValeur({ value: raccordementApiLecture.facts.find((fact) => fact.detail === raccordementApiLecture?.metadata.comparison_point)?.value ?? null, unit: page.unit }) }} {{ page.unit }}</p>
+              <p v-if="raccordementSource">Source : {{ raccordementSource.source_name }} · version {{ raccordementSource.version }} · référence {{ raccordementSource.reference_date }} · publication {{ raccordementSource.publication_date }}</p>
+            </section>
            <div v-if="familyDispatch.family !== 'distribution' && !raccordementApiLecture" class="hero"><article class="median"><span>Médiane</span><strong>{{ model!.median === null ? '—' : formaterValeur({ value: model!.median, unit: familyDispatch.facet.unit }) }} <small>{{ familyDispatch.facet.unit }}</small></strong><p>{{ model!.scopeLabel }}</p></article><article class="distribution"><h2>Distribution</h2><svg class="density" viewBox="0 0 600 180" role="img" aria-label="Densité des valeurs"><title>Densité des valeurs</title><desc v-if="markerDescription">{{ markerDescription }}</desc><path :d="`M ${model!.density.map((point, index) => `${index * (600 / Math.max(model!.density.length - 1, 1))},${20 + point.y * 1.5}`).join(' L ')}`" /><circle v-if="model!.markerX !== null && model!.markerY !== null" :cx="model!.markerX! * 6" :cy="20 + model!.markerY! * 1.5" r="7" class="point-highlight" :aria-label="markerDescription" /></svg><span v-if="markerDescription" class="visually-hidden">{{ markerDescription }}</span></article></div>
            <div v-if="!raccordementApiLecture" class="extremes"><article><h2>Valeurs les plus hautes</h2><span v-if="model!.high.count > 1">{{ model!.high.count }} territoires à égalité</span><RouterLink v-for="row in model!.high.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article><article><h2>Valeurs les plus basses</h2><span v-if="model!.low.count > 1">{{ model!.low.count }} territoires à égalité</span><RouterLink v-for="row in model!.low.rows" :key="row.territoire.territoire" :to="row.fiche">{{ row.territoire.nom }} · {{ formaterValeur({ value: row.value, unit: familyDispatch.facet.unit }) }} {{ familyDispatch.facet.unit }}</RouterLink></article></div>
            <div class="controls"><label>Niveau <select :value="model!.state.niveau" @change="setQuery(PARAM_NIVEAU, ($event.target as HTMLSelectElement).value)"><option v-for="niveau in page.levels" :key="niveau" :value="niveau">{{ niveau === 'commune' ? 'Communes' : niveau === 'epci' ? 'EPCI' : 'Départements' }}</option></select></label><label v-if="model!.state.niveau === 'commune'">Département <input :value="route.query.departement ?? ''" @input="setQuery('departement', ($event.target as HTMLInputElement).value)" /></label><label v-if="model!.state.niveau === 'commune'">EPCI <input :value="route.query.epci ?? ''" @input="setQuery('epci', ($event.target as HTMLInputElement).value)" /></label><label>Rechercher <input v-model="recherche" @input="setQuery('recherche', recherche)" /></label><label v-if="familyDispatch.family === 'trajectory'">Détail (actif) <select aria-label="Détail (actif)" :value="familyDispatch.facet.detail ?? ''" @change="setQuery('detail', ($event.target as HTMLSelectElement).value)"><option v-for="detail in familyDispatch.facet.details" :key="detail" :value="detail">{{ libelleDetail(detail) }}</option></select></label><label v-if="familyDispatch.family === 'list'">Catégorie comparée <select aria-label="Catégorie comparée" :value="familyDispatch.facet.detail ?? ''" @change="setQuery('detail', ($event.target as HTMLSelectElement).value)"><option v-for="detail in familyDispatch.facet.details" :key="detail" :value="detail">{{ familyDispatch.facet.labels[detail] ?? detail }}</option></select></label></div>

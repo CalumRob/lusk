@@ -25,6 +25,7 @@ export interface ScalarComparisonRank {
   rank: number
   rankSize: number
   scope: string
+  direction: 'high' | 'low'
 }
 
 export type ScalarComparisonRequest =
@@ -200,7 +201,8 @@ function adapterComparaisonScalaire(data: Row, indicator: string, page: Indicato
   const eligible = result?.eligible_count
   const selectedCount = result?.selected_member_count
   const missing = result?.missing_count
-  const direction = page.comparison?.direction ?? page.direction
+  const expectedDirection = page.comparison?.direction ?? page.direction
+  const direction = result?.direction
   const facet = page.comparison?.indicator ?? indicator
   const scopeIdentityValid = isRecord(scope) && scope.kind === request.scope.kind &&
     scope.member_count === request.scope.memberCount &&
@@ -223,13 +225,15 @@ function adapterComparaisonScalaire(data: Row, indicator: string, page: Indicato
       !isRecord(data.target) || data.target.kind !== 'territory' || data.target.type !== focal.type || data.target.id !== focal.territoire ||
       JSON.stringify(actualSelection) !== JSON.stringify(expectedSelectionIdentity) || !scopeIdentityValid ||
       !result || result.indicator_id !== indicator || !['available', 'unavailable'].includes(String(result.status)) ||
-      result.unit !== page.unit || result.direction !== direction || result.source_facet !== facet ||
+      result.unit !== page.unit || direction !== expectedDirection ||
+      (direction !== 'high' && direction !== 'low') || result.source_facet !== facet ||
       !isNonEmptyText(result.descriptor_version) || !countsValid ||
       (result.status === 'unavailable' && (rank !== null || rankSize !== null)) || !rankValid ||
       (rank !== null && !isNonEmptyText(request.scope.label))) {
     throw new PayloadError('validation', path, 'La comparaison scalaire ne reflète pas la ressource, le territoire ou le groupe demandé.')
   }
-  return rank === null ? null : { rank: rank as number, rankSize: rankSize as number, scope: request.scope.label! }
+  return rank === null ? null : { rank: rank as number, rankSize: rankSize as number,
+    scope: request.scope.label!, direction }
 }
 
 /** Acquire focal comparison ranks as one bounded semantic batch. */

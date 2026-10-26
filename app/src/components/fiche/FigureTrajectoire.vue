@@ -6,8 +6,10 @@
  */
 import { computed } from 'vue'
 
-import { formaterNombreFR, formaterValeur, formaterVintage } from '@/payload/selectors'
+import { detailsRangEnContexte, formaterNombreFR, formaterValeur, formaterVintage } from '@/payload/selectors'
 import type { Indicateur, Theme, TrajectoryMetadata } from '@/payload/types'
+import PuceRang from './PuceRang.vue'
+import { directionIndicateur, puceRangDirection } from '@/fiche/figureGrammaire'
 
 const props = defineProps<{
   clef: string
@@ -71,6 +73,22 @@ function pointsDepuis(lignes: Indicateur[]): Point[] {
 const points = computed(() => pointsDepuis(props.lignes))
 const pointsReference = computed(() => pointsDepuis(props.reference ?? []))
 const premiere = computed(() => props.lignes[0] ?? props.reference?.[0] ?? null)
+const repereScalaire = computed(() => props.lignes.find((ligne) => ligne.detail == null) ?? null)
+const rangRepereScalaire = computed(() => repereScalaire.value ? detailsRangEnContexte(repereScalaire.value) : null)
+const directionRepereScalaire = computed(() => {
+  const comparaison = repereScalaire.value?.comparaisonApi
+  if (comparaison) {
+    if (comparaison.direction === 'high') return 'plus-est-mieux'
+    if (comparaison.direction === 'low') return 'moins-est-mieux'
+    return null
+  }
+  return repereScalaire.value ? directionIndicateur(props.theme, props.clef) : null
+})
+const puceRepereScalaire = computed(() => {
+  const direction = directionRepereScalaire.value
+  return rangRepereScalaire.value && direction
+    ? puceRangDirection(rangRepereScalaire.value.libelle, direction) : null
+})
 const numerique = computed(() => props.trajectory?.axis === 'numeric')
 const estPourcentage = computed(() => premiere.value?.unit === '%')
 const nomAffiche = computed(() => props.nom ?? 'le territoire sélectionné')
@@ -214,6 +232,12 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 
 <template>
   <figure class="figure-indicateur figure-trajectoire carte-figure" :data-clef="clef">
+    <div v-if="repereScalaire" class="trajectoire-repere" role="group" :aria-label="`${libelle} : ${formaterValeur(repereScalaire) ?? '—'} ${repereScalaire.unit}`">
+      <span class="trajectoire-repere__valeur">{{ formaterValeur(repereScalaire) ?? '—' }} <span>{{ repereScalaire.unit }}</span></span>
+      <PuceRang v-if="puceRepereScalaire" :puce="puceRepereScalaire" />
+      <span v-if="formaterVintage(repereScalaire)" class="estampille-vintage">{{ formaterVintage(repereScalaire) }}</span>
+    </div>
+
     <div v-if="disponible" class="trajectoire-legende" aria-label="Légende de la trajectoire">
       <span class="trajectoire-legende-item">
         <span class="trajectoire-legende-trait trajectoire-legende-trait--courant" aria-hidden="true" />
@@ -279,6 +303,24 @@ const vintage = computed(() => (premiere.value ? formaterVintage(premiere.value)
 </template>
 
 <style scoped>
+.trajectoire-repere {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--space-2);
+}
+
+.trajectoire-repere__valeur {
+  font: var(--type-figure-value);
+  color: var(--text-primary);
+}
+
+.trajectoire-repere__valeur span {
+  font: var(--type-figure-label);
+  font-family: var(--font-figure-label);
+  color: var(--text-secondary);
+}
+
 .trajectoire-ligne {
   display: block;
   width: 100%;

@@ -1,6 +1,19 @@
 import { describe, expect, it } from 'vitest'
-import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, themeFactsRowsFromApi, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
+import { mount } from '@vue/test-utils'
+import FigureTrajectoire from '../components/fiche/FigureTrajectoire.vue'
+import { THEMES_METHODES } from '../methodes/indicateurs'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
+import { histoiresDemographieNuage, histoiresMilieuxDuNuage, lignesAvecComparaisonApi, semanticComparisonForTheme,
+  themeFactsEnvelopeFromSemantic, themeFactsRowsFromApi, themeFactsRowsFromSemantic, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
+import { projectRaccordementSemanticReads } from '../payload/raccordementSemanticProjection'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
+import { semanticPublicationsCompatible } from '../payload/themeAcquisition'
+import { programmesPourTerritoire } from '../payload/selectors'
+import { nativeBatchResponse, nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
+import type { SemanticResourceDeclaration } from '../payload/semanticResourceClient'
+import { territoiresFixture } from '../payload/fixtures'
+import type { Payload } from '../payload/types'
 
 const cible = { territoire: '35238', type: 'commune' as const }
 
@@ -32,9 +45,687 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       value: 0.2, unit: '%', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }
     const result = lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires', status: 'available', direction: 'low', rank: 3, rank_size: 14 }], profile_comparisons: [] }, 'Densité')
     expect(result[0]).toMatchObject({ value: 0.2, rang_epci: null, comparaisonApi: { rang: 3, taille: 14, portee: 'Densité' } })
-    expect(lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires', status: 'unavailable', direction: 'low', rank: 3, rank_size: 14 }], profile_comparisons: [] }, null)[0]?.comparaisonApi).toBeUndefined()
+    expect(lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires', status: 'unavailable', direction: 'low', rank: null, rank_size: null }], profile_comparisons: [] }, null)[0]?.comparaisonApi).toBeUndefined()
     expect(lignesAvecComparaisonApi([row], null, null)[0]?.comparaisonApi).toBeUndefined()
     expect(() => lignesAvecComparaisonApi([row], { results: {}, profile_comparisons: [] }, null)).toThrow()
+    expect(() => lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires',
+      status: 'available', direction: 'up', rank: 1, rank_size: 2 }], profile_comparisons: [] }, null)).toThrow(/direction/i)
+    expect(() => lignesAvecComparaisonApi([row], { results: [{ indicator_id: 'part_passoires',
+      status: 'pending', direction: 'low', rank: 1, rank_size: 2 }], profile_comparisons: [] }, null)).toThrow(/statut/i)
+  })
+
+  it('attaches an ordered-series comparison only to its producer-declared comparison axis', () => {
+    const rows = ['2024', '2025'].map((axis) => ({ territoire: cible.territoire, type: 'commune' as const,
+      theme: 'programmes' as const, key: 'subventions_annuelles', detail: null, dimension: axis,
+      value: axis === '2024' ? 100 : 200, unit: '€', vintage_source: 'Source', vintage_version: 'v1',
+      vintage_date_reference: '2025-01-01', vintage_date_publication: null,
+      rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }))
+    const result = lignesAvecComparaisonApi(rows, { results: [{ indicator_id: 'subventions_annuelles',
+      source_facet: '2025', status: 'available', direction: 'high', rank: 2, rank_size: 14 }], profile_comparisons: [] }, 'Densité')
+    expect(result.find((row) => row.dimension === '2024')?.comparaisonApi).toBeUndefined()
+    expect(result.find((row) => row.dimension === '2025')?.comparaisonApi).toEqual({ rang: 2, taille: 14,
+      portee: 'Densité', direction: 'high' })
+  })
+
+  it('refuses comparison direction, status, facet, or scope that contradict the producer contract', () => {
+    const declaration = nativeResources('habitat').find((resource) => resource.resource_id === 'prix_m2')!
+    const response = (patch: Record<string, unknown> = {}) => ({ theme_id: 'habitat', comparison_reads: [{
+      resource: 'prix_m2', declaration, shapes: declaration.shapes, data: {
+        contract: 'indicator-comparison-v1', indicator_id: 'prix_m2', shape: 'scalar',
+        content_version: 'scalar-v1', reference_content_version: 'territories-v1',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire }, selection: null,
+        scope: { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 },
+        result: { indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'available',
+          direction: 'low', rank: 1, rank_size: 2 },
+        ...patch,
+      },
+    }] })
+    const targetAttendu = { type: cible.type, id: cible.territoire }
+
+    expect(() => validerReponseComparaisonTheme('habitat', response({ result: {
+      indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'available',
+      direction: 'high', rank: 1, rank_size: 2,
+    } }), undefined, targetAttendu)).toThrow(/direction/i)
+    expect(() => validerReponseComparaisonTheme('habitat', response({ result: {
+      indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'measured',
+      direction: 'low', rank: 1, rank_size: 2,
+    } }), undefined, targetAttendu)).toThrow(/statut|status/i)
+    expect(() => validerReponseComparaisonTheme('habitat', response({ result: {
+      indicator_id: 'prix_m2', source_facet: '2025', status: 'available',
+      direction: 'low', rank: 1, rank_size: 2,
+    } }), undefined, targetAttendu)).toThrow(/facette/i)
+    expect(() => validerReponseComparaisonTheme('habitat', response({
+      scope: { kind: 'invented_scope', member_count: 2 },
+    }), undefined, targetAttendu)).toThrow(/portée|scope/i)
+    expect(() => validerReponseComparaisonTheme('habitat', response({ scope: null }), undefined, targetAttendu))
+      .toThrow(/portée|scope/i)
+    const requestedMixed = [
+      { territory_type: 'epci' as const, territory_id: 'synthetic-epci-1' },
+      { territory_type: 'commune' as const, territory_id: 'synthetic-commune-1' },
+    ]
+    const explicitResponse = (selected: typeof requestedMixed, resolvedCount: number, scopeCount = resolvedCount) => {
+      const available = resolvedCount >= 2
+      const eligibleCount = available ? resolvedCount - 1 : resolvedCount
+      const body = response({ selection: selected.map(({ territory_type, territory_id }) =>
+        ({ territory_type, territory_id })),
+      scope: { kind: 'explicit_selection', member_count: scopeCount },
+      result: { indicator_id: 'prix_m2', source_facet: 'prix_m2', status: available ? 'available' : 'unavailable',
+        reason: available ? null : resolvedCount === 0 ? 'no_selected_comparable_values' : 'fewer_than_two_comparable_values',
+        direction: 'low', selected_member_count: resolvedCount, eligible_count: eligibleCount,
+        missing_count: resolvedCount - eligibleCount, rank: available ? 2 : null,
+        rank_size: available ? eligibleCount : null } }) as Record<string, any>
+      body.selection = selected.map((member) => ({ ...member }))
+      return body
+    }
+    const resolvedMixed = explicitResponse(requestedMixed, 3)
+    expect(() => validerReponseComparaisonTheme('habitat', resolvedMixed, requestedMixed, targetAttendu)).not.toThrow()
+    expect(semanticComparisonForTheme(resolvedMixed, { target: { territoire: cible.territoire, type: cible.type } }))
+      .toMatchObject({ scope: { kind: 'explicit_selection', member_count: 3 },
+        results: [{ selected_member_count: 3, rank_size: 2 }] })
+    for (const malformedScope of [-1, 1.5, 2]) {
+      expect(() => validerReponseComparaisonTheme('habitat', explicitResponse(requestedMixed, 3, malformedScope),
+        requestedMixed, targetAttendu)).toThrow(/portée|scope/i)
+    }
+    const duplicateMixed = [requestedMixed[0]!, requestedMixed[0]!]
+    expect(() => validerReponseComparaisonTheme('habitat', explicitResponse(duplicateMixed, 3), duplicateMixed,
+      targetAttendu)).toThrow(/portée|scope/i)
+    const wrongEcho = explicitResponse(requestedMixed, 3)
+    wrongEcho.selection[1]!.territory_id = 'another-commune'
+    expect(() => validerReponseComparaisonTheme('habitat', wrongEcho, requestedMixed, targetAttendu))
+      .toThrow(/sélection/i)
+    const wrongDataEcho = explicitResponse(requestedMixed, 3)
+    wrongDataEcho.comparison_reads[0]!.data.selection[1]!.territory_id = 'another-commune'
+    expect(() => validerReponseComparaisonTheme('habitat', wrongDataEcho, requestedMixed, targetAttendu))
+      .toThrow(/sélection/i)
+    const invalidResolvedCount = explicitResponse(requestedMixed, 3)
+    invalidResolvedCount.comparison_reads[0]!.data.result.selected_member_count = -1
+    expect(() => validerReponseComparaisonTheme('habitat', invalidResolvedCount, requestedMixed, targetAttendu))
+      .toThrow(/portée|scope/i)
+    const singleton = [{ territory_type: 'commune' as const, territory_id: 'synthetic-commune-1' }]
+    expect(() => validerReponseComparaisonTheme('habitat', explicitResponse(singleton, 1), singleton,
+      targetAttendu)).not.toThrow()
+    expect(() => validerReponseComparaisonTheme('habitat', explicitResponse(singleton, 0), singleton,
+      targetAttendu)).toThrow(/portée|scope/i)
+    expect(() => validerReponseComparaisonTheme('habitat', explicitResponse([], 0), [], targetAttendu)).not.toThrow()
+    const resolvedWithoutMeasuredComparables = explicitResponse(requestedMixed, 2)
+    Object.assign(resolvedWithoutMeasuredComparables.comparison_reads[0]!.data.result, {
+      status: 'unavailable', reason: 'no_selected_comparable_values', eligible_count: 0,
+      missing_count: 2, rank: null, rank_size: null,
+    })
+    expect(() => validerReponseComparaisonTheme('habitat', resolvedWithoutMeasuredComparables,
+      requestedMixed, targetAttendu)).not.toThrow()
+    expect(() => semanticComparisonForTheme(response({
+      selection: [{ territory_type: 'commune', territory_id: '1' },
+        { territory_type: 'commune', territory_id: '2' }],
+      scope: { kind: 'explicit_selection', member_count: 1 },
+    }), { target: { territoire: cible.territoire, type: cible.type } })).toThrow(/portée|scope/i)
+    const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
+    const regionTarget = { type: 'region' as const, id: '53' }
+    const focalCurve = nativeReadFixture({ target: { kind: 'territory', ...regionTarget },
+      intent: { kind: 'facts' } }, curve)
+    const focalCurveRead = { resource: curve.resource_id, declaration: curve, shapes: curve.shapes, data: focalCurve }
+    const regionComparison = (resultPatch: Record<string, unknown> = {}, targetId = regionTarget.id) => ({ theme_id: 'mobilite',
+      comparison_reads: [{ resource: curve.resource_id, declaration: curve, shapes: curve.shapes, data: {
+        contract: 'indicator-comparison-v1', indicator_id: curve.indicator_id, shape: 'series',
+        content_version: focalCurve.content_version, reference_content_version: focalCurve.reference_content_version,
+        target: { kind: 'territory', type: regionTarget.type, id: targetId }, selection: null, scope: null,
+        result: { indicator_id: curve.indicator_id, source_facet: focalCurve.comparison_point, status: 'unavailable',
+          reason: 'unsupported_comparison_contract', direction: curve.direction, selected_member_count: 0,
+          eligible_count: 0, missing_count: 0, mean: null, mean_curve: null, comparison_sources: [],
+          rank: null, rank_size: null, owned_content_version: focalCurve.content_version, ...resultPatch },
+      } }] })
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison(), undefined, regionTarget)).not.toThrow()
+    expect(semanticComparisonForTheme(regionComparison(), undefined, [focalCurveRead], regionTarget))
+      .toMatchObject({ results: [{ indicator_id: curve.resource_id, status: 'unavailable', mean: null }],
+        scope: null })
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({ status: 'available' }), undefined, regionTarget))
+      .toThrow(/portée|scope/i)
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({}, '54'), undefined, regionTarget))
+      .toThrow(/cible|territoire|incompatible/i)
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({ owned_content_version: 'stale-series-v0' }),
+      undefined, regionTarget)).toThrow(/publication|version|propriét|série/i)
+    expect(() => validerReponseComparaisonTheme('mobilite', regionComparison({ indicator_id: 'other-series' }),
+      undefined, regionTarget)).toThrow(/identité|indicateur|ressource|facette/i)
+    expect(() => semanticComparisonForTheme(regionComparison({}, '54'), undefined,
+      [focalCurveRead], regionTarget)).toThrow(/cible|territoire|incompatible/i)
+    expect(() => semanticComparisonForTheme(regionComparison({ owned_content_version: 'stale-series-v0' }),
+      undefined, [focalCurveRead], regionTarget)).toThrow(/publication|version|propriét|série/i)
+    expect(() => semanticComparisonForTheme(regionComparison({ indicator_id: 'other-series' }), undefined,
+      [focalCurveRead], regionTarget)).toThrow(/identité|indicateur|ressource|facette/i)
+  })
+
+  it('projects native semantic comparison results onto the fiche rank seam without replacing focal values', () => {
+    const response = { theme_id: 'habitat', comparison_reads: [{
+      resource: 'part_passoires', shapes: ['scalar'], data: {
+        resource: 'part_passoires', target: { kind: 'territory', type: 'commune', id: cible.territoire },
+        contract: 'indicator-comparison-v1', indicator_id: 'part_passoires', shape: 'scalar',
+        content_version: 'scalar-v1', reference_content_version: 'territories-v1', selection: null,
+        scope: { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 14 },
+        result: { indicator_id: 'part_passoires', source_facet: 'part_passoires',
+          status: 'available', direction: 'low', rank: 3, rank_size: 14 },
+      },
+    }] }
+    const target = { type: cible.type, id: cible.territoire }
+    validerReponseComparaisonTheme('habitat', response, undefined, target)
+    const comparison = semanticComparisonForTheme(response, { target: { territoire: target.id, type: target.type } })
+    const row = { territoire: cible.territoire, type: 'commune' as const, theme: 'habitat' as const,
+      key: 'part_passoires', detail: null, value: 0.2, unit: '%', vintage_source: '', vintage_version: '',
+      vintage_date_reference: null, vintage_date_publication: null, rang_epci: null, rang_epci_n: null,
+      rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }
+    expect(lignesAvecComparaisonApi([row], comparison, 'Même classe de densité')[0]).toMatchObject({
+      value: 0.2, rang_epci: null, comparaisonApi: { rang: 3, taille: 14, portee: 'Même classe de densité' },
+    })
+  })
+
+  it('aggregates native comparison scopes and typed selections by JSON values, not object key order', async () => {
+    const resourceIds = ['densite', 'taille_menages']
+    const declarations = nativeResources('demographie')
+    const target = { kind: 'territory', type: cible.type, id: cible.territoire }
+    const readsFor = async (intent: Record<string, unknown>) => {
+      const batch = await nativeBatchResponse(resourceIds.map((resource) => ({ id: resource, resource, target, intent })),
+        nativeReadFixture).json() as { results: Array<{ resource: string; data: Record<string, any> }> }
+      return batch.results.map(({ resource, data }) => {
+        const declaration = declarations.find((candidate) => candidate.resource_id === resource)!
+        return { resource, declaration, shapes: declaration.shapes, data }
+      })
+    }
+    const aggregate = (comparisonReads: unknown) => semanticComparisonForTheme({ theme_id: 'demographie',
+      comparison_reads: comparisonReads }, undefined, undefined, { type: cible.type, id: cible.territoire })
+
+    const defaultReads = await readsFor({ kind: 'fixed_comparison', context: 'default' })
+    const byResource = (reads: typeof defaultReads, resource: string) => reads.find((read) => read.resource === resource)!
+    const density = byResource(defaultReads, 'densite')
+    const household = byResource(defaultReads, 'taille_menages')
+    const scope = household.data.scope as Record<string, unknown>
+    household.data.scope = { kind: scope.kind, density_class_code: scope.density_class_code,
+      territory_type: scope.territory_type, member_count: scope.member_count }
+
+    expect(density.data.scope).toEqual(household.data.scope)
+    expect(JSON.stringify(density.data.scope)).not.toBe(JSON.stringify(household.data.scope))
+    expect(density.data.reference_content_version).toBe(household.data.reference_content_version)
+    expect(density.data.selection).toBeNull()
+    expect(household.data.selection).toBeNull()
+    expect(aggregate(defaultReads)?.results).toHaveLength(2)
+
+    const focalReads = await readsFor({ kind: 'facts' })
+    const facts = { resource_reads: focalReads }
+    const comparison = { comparison_reads: defaultReads }
+    expect(semanticPublicationsCompatible(facts as any, comparison as any,
+      { type: cible.type, id: cible.territoire })).toBe(true)
+    const wrongReference = structuredClone(comparison)
+    wrongReference.comparison_reads.find((read) => read.resource === 'taille_menages')!.data.reference_content_version =
+      'different-territory-reference'
+    expect(semanticPublicationsCompatible(facts as any, wrongReference as any,
+      { type: cible.type, id: cible.territoire })).toBe(false)
+
+    const expectAggregateMismatch = (mutate: (data: Record<string, any>) => void) => {
+      const changed = structuredClone(defaultReads)
+      mutate(changed.find((read) => read.resource === 'taille_menages')!.data)
+      expect(() => aggregate(changed)).toThrow()
+    }
+    expectAggregateMismatch((data) => { data.scope = { kind: 'same_level', territory_type: 'commune',
+      member_count: data.scope.member_count } })
+    expectAggregateMismatch((data) => { data.scope.density_class_code = data.scope.density_class_code === '1' ? '2' : '1' })
+    expectAggregateMismatch((data) => { data.scope.member_count += 1 })
+    expectAggregateMismatch((data) => { data.target.id = '22001' })
+
+    const selectedMembers = [{ type: 'commune', id: '22001' }, { type: 'commune', id: '22002' }]
+    const selectedReads = await readsFor({ kind: 'selected_comparison', members: selectedMembers })
+    const selectedPeer = byResource(selectedReads, 'taille_menages')
+    selectedPeer.data.selection = (selectedPeer.data.selection as Array<Record<string, string>>).map((member) => ({
+      territory_id: member.territory_id!, territory_type: member.territory_type!,
+    }))
+    const selectedReference = byResource(selectedReads, 'densite')
+    expect(selectedReference.data.selection).toEqual(selectedPeer.data.selection)
+    expect(JSON.stringify(selectedReference.data.selection)).not.toBe(JSON.stringify(selectedPeer.data.selection))
+    expect(aggregate(selectedReads)?.selection).toEqual(selectedMembers.map(({ type, id }) => ({
+      territory_type: type, territory_id: id,
+    })))
+
+    const changedMember = structuredClone(selectedReads)
+    changedMember.find((read) => read.resource === 'taille_menages')!.data.selection[1]!.territory_id = '29001'
+    expect(() => aggregate(changedMember)).toThrow(/portée|sélection/i)
+    const missingMemberId = structuredClone(selectedReads)
+    delete missingMemberId.find((read) => read.resource === 'taille_menages')!.data.selection[1]!.territory_id
+    expect(() => aggregate(missingMemberId)).toThrow(/portée|sélection/i)
+    const nullMemberId = structuredClone(selectedReads)
+    nullMemberId.find((read) => read.resource === 'taille_menages')!.data.selection[1]!.territory_id = null
+    expect(() => aggregate(nullMemberId)).toThrow(/portée|sélection/i)
+    const nonStringMemberId = structuredClone(selectedReads)
+    nonStringMemberId.find((read) => read.resource === 'taille_menages')!.data.selection[1]!.territory_id = 22002
+    expect(() => aggregate(nonStringMemberId)).toThrow(/portée|sélection/i)
+    const reorderedMembers = structuredClone(selectedReads)
+    reorderedMembers.find((read) => read.resource === 'taille_menages')!.data.selection.reverse()
+    expect(() => aggregate(reorderedMembers)).toThrow(/portée|sélection/i)
+
+    const emptyReads = await readsFor({ kind: 'selected_comparison', members: [] })
+    const emptyComparison = aggregate(emptyReads)
+    const defaultComparison = aggregate(await readsFor({ kind: 'fixed_comparison', context: 'default' }))
+    expect(emptyComparison).toMatchObject({ selection: [], scope: { kind: 'explicit_selection', member_count: 0 } })
+    expect(defaultComparison?.selection).toBeUndefined()
+    expect(defaultComparison?.scope).toMatchObject({ kind: 'density_class' })
+  })
+
+  it('retains valid Milieux cloud points alongside explicit source-absence evidence', () => {
+    const members = [{ id: '1', type: 'commune', name: 'Focal' }, { id: '2', type: 'commune', name: 'Absent peer' }]
+    const declaration = nativeResources('milieux').find((resource) => resource.resource_id === 'artif_par_habitant')!
+    const fact = { groupe: 'artificialisation', source_id: 'population', vintage_id: '2023', status: 'measured',
+      periode_pop: '2020', periode_artif: '2021', taux_variation_population: 0.02,
+      artif_m2_par_habitant: 10, artif_m3_par_habitant: 12 }
+    const absence = { territory_id: '2', territory_type: 'commune', reason: 'source_record_absent',
+      source_id: 'conso', vintage_id: '2025', source_snapshot_sha256: 'a'.repeat(64) }
+    const response = { theme_id: 'milieux', comparison_reads: [{ resource: 'artif_par_habitant',
+      declaration, shapes: declaration.shapes, data: {
+      contract: 'indicator-comparison-v1', indicator_id: 'artif_par_habitant', shape: 'series',
+      content_version: 'milieux-series-v1', reference_content_version: 'reference-v1',
+      target: { kind: 'territory', type: 'commune', id: '1' }, selection: members.map(({ id, type }) =>
+        ({ territory_id: id, territory_type: type })),
+      result: { indicator_id: 'artif_par_habitant', source_facet: null, status: 'unavailable',
+        reason: 'fewer_than_two_comparable_values', direction: declaration.direction,
+        selected_member_count: 2, eligible_count: 1, missing_count: 1, rank: null, rank_size: null },
+      scope: { kind: 'explicit_selection', member_count: 2 },
+    } }], cohort_reads: [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
+      content_version: 'reading-v1', reference_content_version: 'reference-v1',
+      cohort: { territory_type: 'commune', member_count: 2, reference_content_version: 'reference-v1', members },
+      territories: [{ territory: members[0], facts: [fact] }, { territory: members[1], facts: [], source_absences: [absence] }],
+    } }] }
+    const focalReads = [{ resource: 'milieux_selected_reading', shapes: ['typed_reading'], data: {
+      content_version: 'reading-v1', reference_content_version: 'reference-v1', facts: [fact],
+    } }]
+    const comparison = semanticComparisonForTheme(response, { target: { territoire: '1', type: 'commune' } }, focalReads)
+    expect(comparison?.reading_cloud).toMatchObject({ status: 'available',
+      points: [{ territory: { territory_id: '1' }, artif_m2_par_habitant: 10 }],
+      source_absences: [absence] })
+    const unexplainedMissing = structuredClone(response)
+    delete (unexplainedMissing.cohort_reads[0]!.data.territories[1] as Record<string, unknown>).source_absences
+    const unexplained = semanticComparisonForTheme(unexplainedMissing,
+      { target: { territoire: '1', type: 'commune' } }, focalReads)
+    expect(unexplained?.reading_cloud).toBeUndefined()
+    expect(unexplained?.reading_cloud_error).toBe(true)
+  })
+
+  it('builds a typed cloud from bounded producer facts only inside the API-resolved density scope', () => {
+    const focalReads = [
+      { resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
+        resource: 'demographie_selected_reading', target: { kind: 'territory', type: 'commune', id: '1' },
+        content_version: 'reading-v1', reference_content_version: 'reference-v1',
+        facts: [{ groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured' }],
+      } },
+      { resource: 'densite', shapes: ['scalar'], data: {
+        resource: 'densite', target: { kind: 'territory', type: 'commune', id: '1' }, value: 42,
+      } },
+    ]
+    const response = { theme_id: 'demographie', selection: undefined,
+      comparison_reads: [{ resource: 'densite', shapes: ['scalar'], data: {
+        resource: 'densite', target: { kind: 'territory', type: 'commune', id: '1' },
+        contract: 'indicator-comparison-v1', indicator_id: 'densite', shape: 'scalar',
+        content_version: 'scalar-v1', reference_content_version: 'reference-v1', selection: null,
+        scope: { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 },
+        result: { indicator_id: 'densite', source_facet: 'densite', status: 'available', direction: 'high', rank: 1, rank_size: 2 },
+      } }],
+      cohort_reads: [{ resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
+        resource: 'demographie_selected_reading',
+        target: { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: null },
+        content_version: 'reading-v1', reference_content_version: 'reference-v1',
+        cohort: { territory_type: 'commune', department_id: null, epci_id: null,
+          member_count: 3, reference_content_version: 'reference-v1', members: [
+            { id: '1', type: 'commune', name: 'Focal' }, { id: '2', type: 'commune', name: 'Peer' },
+            { id: '3', type: 'commune', name: 'Other density' },
+          ] },
+        territories: [
+          { territory: { id: '1', type: 'commune', name: 'Focal' }, facts: [{ groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured', periode: '2020', taux_solde_naturel: 1, taux_solde_migratoire: -1 }] },
+          { territory: { id: '2', type: 'commune', name: 'Peer' }, facts: [{ groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured', periode: '2020', taux_solde_naturel: 2, taux_solde_migratoire: -2 }] },
+          { territory: { id: '3', type: 'commune', name: 'Other density' }, facts: [{ groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured', periode: '2020', taux_solde_naturel: 99, taux_solde_migratoire: 99 }] },
+        ],
+      } }],
+    }
+    const comparison = semanticComparisonForTheme(response, { target: {
+      territoire: '1', type: 'commune', classe_densite_code: 'D1',
+    }, territories: [
+      { territoire: '1', type: 'commune', classe_densite_code: 'D1' },
+      { territoire: '2', type: 'commune', classe_densite_code: 'D1' },
+      { territoire: '3', type: 'commune', classe_densite_code: 'D2' },
+    ] }, focalReads)
+    expect(comparison?.scope).toMatchObject({ kind: 'density_class', density_class_code: 'D1', member_count: 2 })
+    expect(histoiresDemographieNuage(comparison).map(({ territoire, taux_solde_naturel }) => [territoire, taux_solde_naturel]))
+      .toEqual([['1', 1], ['2', 2]])
+
+    const withoutSourceIdentity: any = structuredClone(response)
+    delete withoutSourceIdentity.cohort_reads[0]!.data.territories[1]!.facts[0]!.source_id
+    const incomplete = semanticComparisonForTheme(withoutSourceIdentity, { target: {
+      territoire: '1', type: 'commune', classe_densite_code: 'D1',
+    }, territories: [
+      { territoire: '1', type: 'commune', classe_densite_code: 'D1' },
+      { territoire: '2', type: 'commune', classe_densite_code: 'D1' },
+      { territoire: '3', type: 'commune', classe_densite_code: 'D2' },
+    ] }, focalReads)
+    expect(incomplete?.reading_cloud).toBeUndefined()
+  })
+
+  it('uses API-resolved commune members for named EPCI and Bretagne reading clouds', () => {
+    const members = [
+      { id: 'commune-1', type: 'commune', name: 'Focal' },
+      { id: 'commune-2', type: 'commune', name: 'Peer' },
+    ]
+    const territories: Array<{ territoire: string; type: string; classe_densite_code: string | null; epci: string | null }> =
+      members.map((member) => ({ territoire: member.id, type: member.type,
+        classe_densite_code: 'D1', epci: 'epci-1' }))
+    territories.push({ territoire: 'epci-1', type: 'epci', classe_densite_code: null, epci: null })
+    territories.push({ territoire: 'region-1', type: 'region', classe_densite_code: null, epci: null })
+    const reference = { target: { territoire: 'commune-1', type: 'commune' as const,
+      classe_densite_code: 'D1' }, territories }
+    const focalFact = { groupe: 'producer-group', source_id: 'insee', vintage_id: '2023', status: 'measured',
+      periode: '2020', taux_solde_naturel: 1, taux_solde_migratoire: -1 }
+    const focalReads = [{ resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
+      content_version: 'reading-v1', reference_content_version: 'reference-v1', facts: [focalFact],
+    } }]
+
+    for (const selected of [
+      { territory_type: 'epci', territory_id: 'epci-1', epci_id: 'epci-1' },
+      { territory_type: 'region', territory_id: 'region-1', epci_id: null },
+    ]) {
+      const selection = [{ territory_type: selected.territory_type, territory_id: selected.territory_id }]
+      const response = { comparison_reads: [{ resource: 'densite', shapes: ['scalar'], data: {
+        resource: 'densite', indicator_id: 'densite', shape: 'scalar',
+        target: { kind: 'territory', type: 'commune', id: 'commune-1' },
+        selection, scope: { kind: 'explicit_selection', member_count: members.length },
+        result: { indicator_id: 'densite', status: 'available', direction: 'high', source_facet: 'densite',
+          selected_member_count: members.length, eligible_count: members.length, missing_count: 0,
+          rank: 1, rank_size: members.length },
+      } }], cohort_reads: [{ resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: {
+        resource: 'demographie_selected_reading',
+        target: { kind: 'territory_cohort', type: 'commune', department_id: null, epci_id: selected.epci_id },
+        content_version: 'reading-v1', reference_content_version: 'reference-v1',
+        cohort: { territory_type: 'commune', department_id: null, epci_id: selected.epci_id,
+          member_count: members.length, reference_content_version: 'reference-v1', members },
+        territories: members.map((member, index) => ({ territory: member, facts: [{ ...focalFact,
+          taux_solde_naturel: index + 1, taux_solde_migratoire: -(index + 1) }] })),
+      } }] }
+
+      const comparison = semanticComparisonForTheme(response, reference, focalReads)
+      expect(comparison?.reading_cloud).toMatchObject({ status: 'available',
+        points: members.map((member, index) => ({ territory: { territory_id: member.id },
+          taux_solde_naturel: index + 1 })) })
+      expect(histoiresDemographieNuage(comparison).map(({ territoire }) => territoire))
+        .toEqual(members.map(({ id }) => id))
+
+      const wrongCohortTarget = structuredClone(response)
+      wrongCohortTarget.cohort_reads[0]!.data.target.epci_id = 'epci-other'
+      const rejected = semanticComparisonForTheme(wrongCohortTarget, reference, focalReads)
+      expect(rejected?.reading_cloud).toBeUndefined()
+      expect(rejected?.reading_cloud_error).toBe(true)
+    }
+  })
+
+  it('consumes a native typed fact source and its published descriptor rate unit', () => {
+    const source = { source_id: 'insee', vintage_id: '2023', name: 'Published reading source', version: '2023',
+      reference_date: null, publication_date: '2026-01-02' }
+    const response = { theme_id: 'demographie', resource_reads: [{ resource: 'demographie_selected_reading',
+      shapes: ['typed_reading'], data: { resource: 'demographie_selected_reading',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire },
+        content_version: 'reading-v1', reference_content_version: 'reference-v1',
+        descriptor: { descriptor_version: 'reading-v1', rate_unit: '‰/an', source },
+        facts: [{ groupe: 'producer-group', story_key: 'trajectoire-demographique',
+          salience_reason: 'defaut', status: 'measured', periode: '2020', solde_naturel: 1,
+          solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2,
+          classification: 'balanced', source_id: 'insee', vintage_id: '2023', source }] } }] }
+    const adapted = themeFactsRowsFromSemantic('demographie', response, cible)
+    expect(adapted.unavailableReadings).toEqual([])
+    expect(adapted.histoires).toEqual([expect.objectContaining({
+      taux_solde_naturel: 0.3, vintage_source: 'Published reading source', vintage_version: '2023',
+      vintage_date_reference: null, vintage_date_publication: '2026-01-02',
+    })])
+    const inconsistentSource = structuredClone(response)
+    inconsistentSource.resource_reads[0]!.data.facts[0]!.source.source_id = 'unrelated-source'
+    expect(themeFactsRowsFromSemantic('demographie', inconsistentSource, cible).unavailableReadings)
+      .toEqual(['demographie_selected_reading'])
+  })
+
+  it('does not borrow a typed-reading source label from an unrelated resource', () => {
+    const response = { theme_id: 'demographie', resource_reads: [
+      { resource: 'densite', shapes: ['scalar'], data: { resource: 'densite',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire },
+        value: 20, status: 'measured', unit: 'hab/km²', sources: [{ source_id: 'insee', vintage_id: '2023',
+          name: 'Unrelated density provenance', version: '2023', reference_date: null, publication_date: null }] } },
+      { resource: 'demographie_selected_reading', shapes: ['typed_reading'], data: { resource: 'demographie_selected_reading',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire },
+        content_version: 'reading-v1', reference_content_version: 'reference-v1',
+        facts: [{ groupe: 'producer-group', story_key: 'trajectoire-demographique',
+          salience_reason: 'defaut', status: 'measured', periode: '2020', solde_naturel: 1,
+          solde_migratoire: 2, taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2,
+          classification: 'balanced', rate_unit: '‰/an', source_id: 'insee', vintage_id: '2023' }] } },
+    ] }
+    const adapted = themeFactsRowsFromSemantic('demographie', response, cible)
+    expect(adapted.histoires).toEqual([])
+    expect(adapted.unavailableReadings).toEqual(['demographie_selected_reading'])
+  })
+
+  it('marks a typed reading unavailable when its own resource has no source identity or evidence', () => {
+    const response = { theme_id: 'demographie', resource_reads: [{ resource: 'demographie_selected_reading',
+      shapes: ['typed_reading'], data: { resource: 'demographie_selected_reading',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire },
+        content_version: 'reading-v1', reference_content_version: 'reference-v1',
+        facts: [{ groupe: 'producer-group', story_key: 'trajectoire-demographique', salience_reason: 'defaut',
+          status: 'measured', periode: '2020', solde_naturel: 1, solde_migratoire: 2,
+          taux_solde_naturel: 0.3, taux_solde_migratoire: -0.2, classification: 'balanced', rate_unit: '‰/an' }] } }] }
+    const adapted = themeFactsRowsFromSemantic('demographie', response, cible)
+    expect(adapted.histoires).toEqual([])
+    expect(adapted.unavailableReadings).toEqual(['demographie_selected_reading'])
+  })
+
+  it('projects native scalar, declared-profile cells, and ordered-series points with their own axes and evidence', () => {
+    const source = [{ source_id: 'dpe', vintage_id: '2025', source_name: 'DPE source', version: '2025',
+      reference_date: '2025-01-01', publication_date: null }]
+    const adapted = themeFactsRowsFromSemantic('habitat', { resource_reads: [
+      { resource: 'part_passoires', shapes: ['scalar'], data: { resource: 'part_passoires',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire },
+        indicator_id: 'part_passoires', unit: '%', value: 0.42, status: 'measured', sources: source } },
+      { resource: 'distribution_dpe', shapes: ['declared_profile'], data: { resource: 'distribution_dpe',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire }, content_version: 'profile-v1',
+        descriptor: { indicator_id: 'distribution_dpe', unit: '%', axes: [{ name: 'detail', key: 'A' }] },
+        observations: [{ detail: 'A', value: 0.25, status: 'measured', unit: '%', sources: source }] } },
+      { resource: 'prix_m2', shapes: ['ordered_series'], data: { resource: 'prix_m2',
+        target: { kind: 'territory', type: 'commune', id: cible.territoire }, publication_id: 'series-v1',
+        reference_content_version: 'territories-v1', indicator_id: 'prix_m2', axis_kind: 'year',
+        axis_values: ['2024', '2025'], axis_numeric_values: [2024, 2025], unit: '€/m²',
+        points: [{ axis: '2024', observation_period: '2024', value: 3000, status: 'measured', provenance: source },
+          { axis: '2025', observation_period: '2025', value: null, status: 'missing', missing_reason: 'not_published', provenance: source }] } },
+    ] }, cible)
+    expect(adapted.indicateurs.map((row) => [row.key, row.detail, row.value, row.observation_status])).toEqual([
+      ['part_passoires', null, 0.42, 'measured'], ['distribution_dpe', 'A', 0.25, 'measured'],
+      ['prix_m2', '2024', 3000, 'measured'], ['prix_m2', '2025', null, 'missing'],
+    ])
+    expect(adapted.indicateurs.every((row) => row.fact_sources?.[0]?.source === 'DPE source')).toBe(true)
+  })
+
+  it('fails closed when a legacy ordered-series point source is not bound to the producer declaration', () => {
+    const target = { kind: 'territory' as const, type: 'commune' as const, id: 'cohort-c1' }
+    const resource = nativeResources('programmes').find((item) => item.resource_id === 'subventions_annuelles')!
+    const producerMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../pipeline/inst/extdata/theme-metadata/theme_programmes.json'), 'utf8'))
+    // These fields and clocks are seeded by the guarded synthetic SQL fixture
+    // in test_cohort_facts_http.py; the API reader projects them flat per point.
+    const sourceClock = { source_id: 'cohort-source', vintage_id: 'cohort-v1',
+      source_version: '2026', source_reference_date: '2026-01-01',
+      source_publication_date: '2026-01-02' }
+    const reads = [{ resource: resource.resource_id, shapes: resource.shapes, declaration: resource,
+      data: { resource: resource.resource_id, target, publication_id: 'cohort-legacy-series-v1',
+        territory: { id: target.id, type: target.type, name: 'Commune 1' },
+        indicator_id: resource.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+        label: 'Subventions annuelles', unit: '€', direction: 'none',
+        descriptor_version: 'cohort-legacy-series-desc-v1', comparison_point: null,
+        points: [
+          { axis: '2024', status: 'measured', observation_period: '2025', ...sourceClock, value: 230 },
+          { axis: '2025', status: 'missing', observation_period: '2025', ...sourceClock, value: null },
+        ], availability: 'incomplete' } }]
+
+    expect(resource.sources).not.toContain(sourceClock.source_id)
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: reads } as any,
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/source.*déclarée/i)
+  })
+
+  it('projects producer-bound legacy series provenance using only its API clocks and point status', () => {
+    const target = { kind: 'territory' as const, type: 'commune' as const, id: cible.territoire }
+    const resource = nativeResources('programmes').find((item) => item.resource_id === 'subventions_annuelles')!
+    const producerMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../pipeline/inst/extdata/theme-metadata/theme_programmes.json'), 'utf8'))
+    const sourceId = resource.sources[0]!
+    const sourceRecord = producerMetadata.source_records[sourceId]
+    const displayLabel = sourceRecord.publisher ?? sourceRecord.dataset
+    const point = (axis: string, status: 'measured' | 'missing', value: number | null,
+      provenance: { vintage_id: string; source_version: string; source_reference_date: string | null;
+        source_publication_date: string | null }) => ({ axis, status, observation_period: '2025', value,
+      source_id: sourceId, ...provenance })
+    const reads = [{ resource: resource.resource_id, shapes: resource.shapes, declaration: resource,
+      data: { resource: resource.resource_id, target, publication_id: 'legacy-series-api-v7',
+        territory: { id: target.id, type: target.type, name: 'Commune 35238' },
+        indicator_id: resource.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+        label: 'Subventions annuelles', unit: '€', direction: 'none',
+        descriptor_version: 'legacy-series-descriptor-v7', comparison_point: null,
+        points: [
+          point('2024', 'measured', 230, { vintage_id: 'api-vintage-2027', source_version: 'api-v7-updated',
+            source_reference_date: null, source_publication_date: '2027-09-01' }),
+          point('2025', 'missing', null, { vintage_id: 'api-vintage-2028', source_version: 'api-v8-updated',
+            source_reference_date: '2028-01-01', source_publication_date: null }),
+        ], availability: 'incomplete' } }]
+
+    const adapted = themeFactsRowsFromSemantic('programmes', { resource_reads: reads } as any,
+      { territoire: target.id, type: target.type }, {}, producerMetadata)
+    const annual = adapted.indicateurs.filter((row) => row.key === 'subventions_annuelles')
+    expect(annual.map((row) => [row.dimension, row.value, row.observation_status])).toEqual([
+      ['2024', 230, 'measured'], ['2025', null, 'missing'],
+    ])
+    expect(annual[0]).toMatchObject({ source_id: sourceId, vintage_id: 'api-vintage-2027',
+      vintage_source: displayLabel, vintage_version: 'api-v7-updated',
+      vintage_date_reference: null, vintage_date_publication: '2027-09-01',
+      fact_sources: [expect.objectContaining({ sourceId, source: displayLabel, version: 'api-v7-updated',
+        referenceDate: null, publicationDate: '2027-09-01', lineage: expect.objectContaining({
+          source_id: sourceId, vintage_id: 'api-vintage-2027', source_version: 'api-v7-updated',
+          source_reference_date: null, source_publication_date: '2027-09-01',
+        }) })] })
+    expect(annual[1]).toMatchObject({ source_id: sourceId, vintage_id: 'api-vintage-2028',
+      vintage_source: displayLabel, vintage_version: 'api-v8-updated',
+      vintage_date_reference: '2028-01-01', vintage_date_publication: null,
+      fact_sources: [expect.objectContaining({ lineage: expect.objectContaining({
+        vintage_id: 'api-vintage-2028', source_version: 'api-v8-updated',
+        source_reference_date: '2028-01-01', source_publication_date: null,
+      }) })] })
+
+    const apiNamedReads: any = structuredClone(reads)
+    apiNamedReads[0].data.points[0].provenance = [{ source_id: sourceId, vintage_id: 'api-vintage-2027',
+      source_name: sourceRecord.dataset, version: 'api-v7-updated', reference_date: null,
+      publication_date: '2027-09-01' }]
+    const apiNamedRows = themeFactsRowsFromSemantic('programmes', { resource_reads: apiNamedReads },
+      { territoire: target.id, type: target.type }, {}, producerMetadata).indicateurs
+    expect(apiNamedRows.find((row) => row.key === 'subventions_annuelles' && row.dimension === '2024')?.vintage_source)
+      .toBe(sourceRecord.dataset)
+  })
+
+  it('keeps a declared no-record series axis without inventing an observation clock', () => {
+    const target = { kind: 'territory' as const, type: 'commune' as const, id: cible.territoire }
+    const resource = nativeResources('programmes').find((item) => item.resource_id === 'subventions_annuelles')!
+    const producerMetadata = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../pipeline/inst/extdata/theme-metadata/theme_programmes.json'), 'utf8'))
+    const sourceId = resource.sources[0]!
+    const sourceRecord = producerMetadata.source_records[sourceId]
+    expect(producerMetadata.indicator_pages[resource.indicator_id]).toMatchObject({
+      completeness: 'may_be_missing', absence_semantics: 'no_record',
+    })
+    const descriptorVintageId = sourceRecord.vintages[0].id
+    const displayLabel = sourceRecord.publisher ?? sourceRecord.dataset
+    const reads: any = [{ resource: resource.resource_id, shapes: resource.shapes, declaration: resource,
+      data: { resource: resource.resource_id, target, publication_id: 'legacy-series-no-record-v1',
+        territory: { id: target.id, type: target.type, name: 'Commune 35238' },
+        indicator_id: resource.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+        label: 'Subventions annuelles', unit: '€', direction: 'none',
+        descriptor_version: 'legacy-series-no-record-desc-v1', comparison_point: null,
+        points: [
+          { axis: '2024', status: 'measured', observation_period: '2024', value: 230,
+            source_id: sourceId, vintage_id: 'api-observed-vintage-2024', source_version: 'api-v4',
+            source_reference_date: null, source_publication_date: '2025-01-10' },
+          { axis: '2025', status: 'missing', observation_period: null, value: null,
+            source_id: sourceId, vintage_id: descriptorVintageId, source_version: null,
+            source_reference_date: null, source_publication_date: null },
+        ], availability: 'incomplete' } }]
+
+    const annual = themeFactsRowsFromSemantic('programmes', { resource_reads: reads },
+      { territoire: target.id, type: target.type }, {}, producerMetadata).indicateurs
+      .filter((row) => row.key === 'subventions_annuelles')
+    expect(annual.map((row) => [row.dimension, row.value, row.observation_status])).toEqual([
+      ['2024', 230, 'measured'], ['2025', null, 'missing'],
+    ])
+    expect(annual[0]).toMatchObject({ vintage_source: displayLabel, vintage_version: 'api-v4',
+      vintage_date_reference: null, vintage_date_publication: '2025-01-10',
+      fact_sources: [expect.objectContaining({ version: 'api-v4' })] })
+    expect(annual[1]).toMatchObject({ dimension: '2025', source_id: sourceId,
+      vintage_id: descriptorVintageId, source_version: null, source_reference_date: null,
+      source_publication_date: null, vintage_source: displayLabel, vintage_version: null,
+      vintage_date_reference: null, vintage_date_publication: null })
+    expect(annual[1]).not.toHaveProperty('fact_sources')
+
+    const measuredWithoutVersion = structuredClone(reads)
+    measuredWithoutVersion[0].data.points[0].source_version = null
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: measuredWithoutVersion },
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Provenance de série legacy invalide/)
+
+    const malformedNoRecordClock = structuredClone(reads)
+    malformedNoRecordClock[0].data.points[1].source_publication_date = '2025-01-10'
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: malformedNoRecordClock },
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Provenance de série legacy invalide/)
+
+    const unboundNoRecordSource = structuredClone(reads)
+    unboundNoRecordSource[0].data.points[1].source_id = 'cohort-source'
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: unboundNoRecordSource },
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Source de série non déclarée/)
+
+    const unboundNoRecordVintage = structuredClone(reads)
+    unboundNoRecordVintage[0].data.points[1].vintage_id = 'unknown-descriptor-vintage'
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: unboundNoRecordVintage },
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Millésime de série non déclaré/)
+
+    const undeclaredAbsence = structuredClone(producerMetadata)
+    undeclaredAbsence.indicator_pages[resource.indicator_id].absence_semantics = 'unavailable'
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: reads },
+      { territoire: target.id, type: target.type }, {}, undeclaredAbsence)).toThrow(/Absence de série legacy non déclarée/)
+  })
+
+  it('does not downgrade an owned ordered series with missing nested provenance to the legacy contract', () => {
+    const resource = nativeResources('habitat').find((item) => item.resource_id === 'prix_m2')!
+    const data = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: cible.territoire },
+      intent: { kind: 'facts' } }, resource)
+    delete data.points[0]!.provenance
+    expect(data).toHaveProperty('content_version')
+    expect(() => themeFactsRowsFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration: resource, data }] } as any, cible))
+      .toThrow(/Provenance SQL du thème invalide/)
+  })
+
+  it('retains the named-reference target and joins its publication to the matching owner series', () => {
+    const source = [{ source_id: 'gtfs', vintage_id: '2026', source_name: 'GTFS source', version: '2026',
+      reference_date: null, publication_date: null }]
+    const response = { resource_reads: [{ resource: 'raccordement_courbe', shapes: ['ordered_series'], data: {
+      resource: 'raccordement_courbe', target: { kind: 'territory', type: 'commune', id: cible.territoire },
+      dataset_id: 'raccordement_courbe', publication_id: 'series-v1', reference_content_version: 'territories-v1',
+      indicator_id: 'raccordement_courbe', unit: '%', axis_kind: 'duration_minute', axis_values: ['0'],
+      axis_numeric_values: [0], completeness: 'dense_complete', descriptor_version: 'curve-v1',
+      comparison_point: '0', comparison_contract: { statistic: 'mean', scope: 'selected_group' },
+      points: [{ axis: '0', observation_period: '2026-01-01', value: 1, status: 'measured', provenance: source }],
+      named_references: [],
+    } }], named_reference_reads: [{ resource: 'raccordement_reference', shapes: ['named_reference'], data: {
+      resource: 'raccordement_reference', target: { kind: 'named_reference', id: 'bretagne-reference' },
+      dataset_id: 'raccordement_courbe', publication_id: 'series-v1', reference_content_version: 'territories-v1',
+      indicator_id: 'raccordement_reference', unit: '%', reference: { id: 'bretagne-reference', label: 'Bretagne',
+        role: 'analytical_reference', statistic: 'mean', required: true },
+      points: [{ axis: '0', observation_period: '2026-01-01', value: 2, status: 'measured', provenance: source }],
+    } }] }
+    const normalized = themeFactsEnvelopeFromSemantic('mobilite', response as any, cible)
+    expect(normalized.named_reference_evidence).toEqual([expect.objectContaining({
+      indicator_id: 'raccordement_courbe', id: 'bretagne-reference', role: 'analytical_reference',
+      points: [expect.objectContaining({ axis: '0', value: 2, provenance: [expect.objectContaining({ source_name: 'GTFS source' })] })],
+    })])
+    const invalid = structuredClone(response)
+    invalid.named_reference_reads[0]!.data.publication_id = 'stale-series-v0'
+    expect(() => themeFactsEnvelopeFromSemantic('mobilite', invalid as any, cible)).toThrow(/Dépendance.*incompatible/)
   })
 
   it('associe les comparaisons de profil à la même facette', () => {
@@ -51,9 +742,14 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const rows = themeFactsRowsFromApi('programmes', {
       contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
       indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [],
-      collections: [
-        { indicator_id: 'programme_membership', kind: 'anchored_membership', availability: 'observed',
-          entries: [{ detail: 'ACV', rider: 'Aid rider', sources: source }],
+        collections: [
+        { indicator_id: 'programme_membership', kind: 'anchored_membership', unit: 'adhésion', availability: 'observed',
+          entries: [
+            { detail: 'ACV', rider: 'Aid rider', sources: source },
+            { detail: 'PVD', rider: 'convention valant ORT', sources: source },
+            { detail: 'Label sans rider', rider: null, sources: source },
+            { detail: 'Rider vide', rider: '', sources: source },
+          ],
           relationships: [{ detail: 'CRTE', rider: null, sources: source, anchor: { id: '243500139', type: 'epci', name: 'EPCI' }, relation: 'covering_parent' }] },
         { indicator_id: 'grants', kind: 'period_detail', availability: 'observed', unit: '€', entries: [
           { observation_period: '2025', label: 'Mobilité', value: 1234, sources: source },
@@ -68,19 +764,53 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(rows.histoires).toEqual([])
     expect(rows.indicateurs.map((row) => [row.territoire, row.key, row.detail, row.dimension, row.value])).toEqual([
       ['35238', 'couverture_programmes', 'ACV', undefined, null],
+      ['35238', 'couverture_programmes', 'PVD', undefined, null],
+      ['35238', 'couverture_programmes', 'Label sans rider', undefined, null],
+      ['35238', 'couverture_programmes', 'Rider vide', undefined, null],
       ['243500139', 'couverture_programmes', 'CRTE', undefined, null],
       ['35238', 'subventions_par_domaine', 'Mobilité', '2025', 1234],
       ['35238', 'subventions_annuelles', null, '2025', 5678],
     ])
-    expect(rows.indicateurs[0]!.rider).toBe('convention valant ORT')
+    expect(rows.indicateurs.slice(0, 4).map((row) => row.rider))
+      .toEqual(['Aid rider', 'convention valant ORT', null, ''])
+    expect(rows.indicateurs.slice(0, 5).map((row) => row.unit)).toEqual(Array(5).fill('adhésion'))
+    expect(rows.indicateurs[0]!.rider).not.toBe('convention valant ORT')
     expect(rows.indicateurs[0]!.vintage_date_reference).toBe('2026-01-01')
     const absent = themeFactsRowsFromApi('programmes', {
       contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
       indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [],
-      collections: [{ indicator_id: 'programme_membership', kind: 'anchored_membership', availability: 'no_record', entries: [], relationships: [] }],
+      collections: [{ indicator_id: 'programme_membership', kind: 'anchored_membership', unit: 'adhésion', availability: 'no_record', entries: [], relationships: [] }],
       owned_series: [],
     }, cible)
     expect(absent.indicateurs).toEqual([])
+  })
+
+  it('recognizes only the API ORT rider and its explicit legacy spelling at the badge selector', () => {
+    const target = { territoire: '22001', type: 'commune' as const }
+    const source = [{ source_id: 'src', name: 'Source programmes', version: '2026',
+      reference_date: '2026-01-01', publication_date: null }]
+    const badgeFor = (sigle: string, rider: string | null) => {
+      const adapted = themeFactsRowsFromApi('programmes', {
+        contract: 'theme-facts-v1', theme_id: 'programmes',
+        territory: { territory_id: target.territoire, territory_type: target.type },
+        indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [], owned_series: [],
+        collections: [{ indicator_id: 'programme_membership', kind: 'anchored_membership', unit: 'adhésion',
+          availability: 'observed', entries: [{ detail: sigle, rider, sources: source }], relationships: [] }],
+      }, target).indicateurs
+      const payload: Payload = { territoires: territoiresFixture, indicateurs: adapted, histoires: [],
+        apercu: null, runReport: null, vintages: [], programmes: null }
+      return { rawRider: adapted[0]?.rider,
+        badge: programmesPourTerritoire(payload, target.territoire).badges.find((item) => item.sigle === sigle) }
+    }
+
+    expect(badgeFor('ACV', 'Convention valant ORT')).toMatchObject({ rawRider: 'Convention valant ORT',
+      badge: { conventionValantOrt: true } })
+    expect(badgeFor('PVD', 'convention valant ORT')).toMatchObject({ rawRider: 'convention valant ORT',
+      badge: { conventionValantOrt: true } })
+    for (const unrelated of ['Aid rider', null, '']) {
+      expect(badgeFor('ACV', unrelated)).toMatchObject({ rawRider: unrelated,
+        badge: { conventionValantOrt: false } })
+    }
   })
 
   it('projette le total parent de même année depuis le contexte servi (capture live programmes-facts.json)', () => {
@@ -103,10 +833,26 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(() => themeFactsRowsFromApi('programmes', {
       contract: 'theme-facts-v1', theme_id: 'programmes', territory: { territory_id: '35238', territory_type: 'commune' },
       indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [], owned_series: [],
-      collections: [{ indicator_id: 'membership', kind: 'anchored_membership', availability: 'observed', entries: [
+      collections: [{ indicator_id: 'membership', kind: 'anchored_membership', unit: 'adhésion', availability: 'observed', entries: [
         { detail: 'ACV', rider: null, sources: [{ source_id: 's', name: 'S', version: 'v', reference_date: null, publication_date: null }] },
       ], relationships: [] }],
     }, cible)).toThrow(/Date de référence/)
+  })
+
+  it('uses the declared membership unit and rejects a missing or malformed descriptor unit', () => {
+    const response = (unit: unknown) => ({
+      contract: 'theme-facts-v1', theme_id: 'programmes',
+      territory: { territory_id: cible.territoire, territory_type: cible.type },
+      indicators: [], indicator_metadata: [], named_reference_evidence: [], readings: [], owned_series: [],
+      collections: [{ indicator_id: 'programme_membership', kind: 'anchored_membership', unit,
+        availability: 'observed', entries: [{ detail: 'ACV', rider: null, sources: [{ source_id: 's', name: 'S',
+          version: 'v', reference_date: '2026-01-01', publication_date: null }] }], relationships: [] }],
+    })
+    expect(themeFactsRowsFromApi('programmes', response('count'), cible).indicateurs[0]?.unit).toBe('count')
+    for (const malformed of [undefined, null, '', '  ', 12]) {
+      expect(() => themeFactsRowsFromApi('programmes', response(malformed), cible))
+        .toThrow(/unité de collection.*absente ou invalide/i)
+    }
   })
 
   it('mappe la lecture démographique avec provenance et rejette story/salience/taux incohérents', () => {
@@ -162,23 +908,325 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       row.vintage_version === 'api-v1')).toBe(true)
   })
 
-  it('projette les prix DVF publiés en détails annuels et conserve le scalaire groupé', () => {
-    // Capture live : habitat-facts.json, commune de Rennes (35238). La réponse
-    // live observée ne portait que le scalaire; la série jointe est le contrat servi.
-    const rows = themeFactsRowsFromApi('habitat', faitsHabitat({
-      indicators: [{ indicator_id: 'prix_m2', label: 'Prix au m²', unit: '€/m²', value: 3819.44,
-        status: 'measured', dimensions: {}, sources: sources() }],
-      owned_series: [{ indicator_id: 'prix_m2', unit: '€/m²', points: [
-        { axis: '2024', value: 3700, status: 'measured', provenance: [{ source_id: 's', source_name: 'DVF', version: '2025', reference_date: null, publication_date: null }] },
-        { axis: '2025', value: 3819.44, status: 'measured', provenance: [{ source_id: 's', source_name: 'DVF', version: '2025', reference_date: null, publication_date: null }] },
-      ] }],
-    }), cible)
-    expect(rows.indicateurs.map((row) => [row.key, row.detail, row.value, row.unit])).toEqual([
-      ['prix_m2', null, 3819.44, '€/m²'], ['prix_m2', '2024', 3700, '€/m²'], ['prix_m2', '2025', 3819.44, '€/m²'],
+  it('projects the native DVF pooled scalar facet without promoting it to a top-level series value', () => {
+    const resource = nativeResources('habitat').find((item) => item.resource_id === 'prix_m2')!
+    const response = nativeReadFixture({ target: { kind: 'territory', type: 'commune', id: '35238' },
+      intent: { kind: 'facts' } }, resource)
+    expect(response.points).toContainEqual(expect.objectContaining({ axis: '2025' }))
+    expect(response).not.toHaveProperty('value')
+    expect(response.scalar_facet).toMatchObject({ shape: 'scalar', source_facet: 'prix_m2',
+      descriptor: { indicator_id: 'prix_m2', unit: '€/m²' }, observation: { territory_id: '35238' } })
+    expect(response.scalar_facet.content_version).not.toBe(response.content_version)
+
+    const declaration = resource as unknown as SemanticResourceDeclaration
+    const envelope = themeFactsEnvelopeFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: response }] }, cible)
+    expect(envelope.owned_series as unknown[]).toHaveLength(1)
+    expect((envelope.indicators as Array<Record<string, unknown>>)
+      .find((fact) => fact.indicator_id === 'prix_m2')).toMatchObject({
+      indicator_id: 'prix_m2', value: response.scalar_facet.observation.value,
+      unit: response.scalar_facet.descriptor.unit,
+    })
+    const rows = themeFactsRowsFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: response }] }, cible).indicateurs
+    expect(rows.find((fact) => fact.key === 'prix_m2' && fact.detail === null)?.value)
+      .toBe(response.scalar_facet.observation.value)
+    expect(rows.some((fact) => fact.key === 'prix_m2' && fact.detail === '2025' &&
+      (fact.observation_status === 'measured' || fact.observation_status === 'missing'))).toBe(true)
+
+    const noFacet = structuredClone(response)
+    delete noFacet.scalar_facet
+    const withoutFacet = themeFactsEnvelopeFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: noFacet }] }, cible)
+    expect((withoutFacet.indicators as Array<Record<string, unknown>>)
+      .some((fact) => fact.indicator_id === 'prix_m2')).toBe(false)
+    expect(withoutFacet.owned_series).toHaveLength(1)
+
+    const corruptedFacet = structuredClone(response)
+    corruptedFacet.scalar_facet.source_facet = '2025'
+    expect(() => themeFactsEnvelopeFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: corruptedFacet }] }, cible)).toThrow(/facette scalaire/i)
+
+    const unavailableFacet = structuredClone(response)
+    unavailableFacet.scalar_facet.observation = { ...unavailableFacet.scalar_facet.observation,
+      status: 'unavailable', value: null, support_count: null, denominator_count: null, sources: [] }
+    const unavailableRows = themeFactsRowsFromSemantic('habitat', { resource_reads: [{ resource: resource.resource_id,
+      shapes: resource.shapes, declaration, data: unavailableFacet }] }, cible).indicateurs
+    expect(unavailableRows.find((fact) => fact.key === 'prix_m2' && fact.detail === null))
+      .toMatchObject({ value: null, fact_status: 'unavailable' })
+  })
+
+  it('projects the native DVF pooled scalar and rank separately from its annual series facet', () => {
+    const nativeResource = nativeResources('habitat').find((resource) => resource.resource_id === 'prix_m2')!
+    const apiDirection = nativeResource.direction
+    const scalarSources = [{ source_id: 'dvf', name: 'DVF pooled fixture', vintage_id: 'dvf-2026',
+      version: '2026', reference_date: '2026-01-01', publication_date: '2026-01-02' }]
+    const seriesSources = scalarSources.map(({ name, ...item }) => ({ ...item, source_name: name }))
+    const scalarDescriptor = { indicator_id: 'prix_m2', unit: '€/m²', direction: apiDirection, completeness: 'sparse',
+      descriptor_version: 'scalar-descriptor-v1' }
+    const focal = { resource: 'prix_m2', shapes: ['scalar', 'ordered_series'], data: {
+      resource: 'prix_m2', target: { kind: 'territory', type: 'commune', id: cible.territoire },
+      dataset_id: 'dvf_prix_m2', theme_id: 'habitat', publication_id: 'series-publication-v1',
+      content_version: 'series-publication-v1', reference_content_version: 'reference-v1',
+      territory: { id: cible.territoire, type: 'commune' },
+      descriptor_version: 'series-descriptor-v1', indicator_id: 'prix_m2', unit: '€/m²',
+      label: nativeResource.label, direction: apiDirection,
+      axis_kind: 'year', axis_values: ['2024', '2025'], axis_numeric_values: [2024, 2025], comparison_point: '2025',
+      points: [
+        { axis: '2024', observation_period: '2024', value: 211, status: 'measured', provenance: seriesSources },
+        { axis: '2025', observation_period: '2025', value: 230, status: 'measured', provenance: seriesSources },
+      ],
+      scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-publication-v1',
+        reference_content_version: 'reference-v1', descriptor_version: 'scalar-descriptor-v1',
+        descriptor: scalarDescriptor,
+        observation: { territory_id: cible.territoire, territory_type: 'commune', status: 'measured',
+          value: 700, support_count: 12, denominator_count: 20, sources: scalarSources } },
+    } }
+    const densityScope = { kind: 'density_class', territory_type: 'commune', density_class_code: 'D1', member_count: 2 }
+    const comparison = { theme_id: 'habitat', comparison_reads: [{ resource: 'prix_m2', shapes: focal.shapes,
+      data: { resource: 'prix_m2', target: focal.data.target, contract: 'indicator-comparison-v1',
+        complete_theme: false, indicator_id: 'prix_m2', theme_id: 'habitat', shape: 'series',
+        content_version: 'series-publication-v1',
+        reference_content_version: 'reference-v1', selection: null,
+        scope: densityScope,
+        result: { indicator_id: 'prix_m2', source_facet: '2025', status: 'available', direction: apiDirection,
+          unit: '€/m²',
+          descriptor_version: 'series-descriptor-v1', rank: 2, rank_size: 2,
+          owned_content_version: 'series-publication-v1' },
+        scalar_facet: { shape: 'scalar', source_facet: 'prix_m2', content_version: 'scalar-publication-v1',
+          reference_content_version: 'reference-v1', descriptor_version: 'scalar-descriptor-v1',
+          comparison_content_version: 'scalar-comparison-publication-v1',
+          descriptor: scalarDescriptor, selection: null, scope: densityScope,
+          result: { indicator_id: 'prix_m2', source_facet: 'prix_m2', status: 'available', direction: apiDirection,
+            descriptor_version: 'scalar-descriptor-v1', rank: 1, rank_size: 2 } },
+      } }] }
+
+    const reads = [{ ...focal, declaration: nativeResources('habitat').find((item) => item.resource_id === 'prix_m2') }]
+    const projected = themeFactsRowsFromSemantic('habitat', { resource_reads: reads } as any, cible).indicateurs
+    const pooled = projected.find((row) => row.key === 'prix_m2' && row.detail === null)!
+    const annual = projected.find((row) => row.key === 'prix_m2' && row.detail === '2025')!
+    expect([pooled.value, pooled.fact_status, pooled.support_count, pooled.denominator_count]).toEqual([
+      700, 'measured', 12, 20,
     ])
-    expect(themeFactsRowsFromApi('habitat', faitsHabitat({ indicators: [{ indicator_id: 'prix_m2', label: 'Prix',
-      unit: '€/m²', value: 3819.44, status: 'measured', dimensions: {}, sources: sources() }] }), cible)
-      .indicateurs).toHaveLength(1)
+    expect(annual.value).toBe(230)
+    expect(focal.data).not.toHaveProperty('value')
+
+    const permutedFacetScope: any = structuredClone(comparison)
+    const annualScope = permutedFacetScope.comparison_reads[0].data.scope
+    permutedFacetScope.comparison_reads[0].data.scope = { kind: annualScope.kind,
+      density_class_code: annualScope.density_class_code, territory_type: annualScope.territory_type,
+      member_count: annualScope.member_count }
+    expect(permutedFacetScope.comparison_reads[0].data.scalar_facet.scope)
+      .toEqual(permutedFacetScope.comparison_reads[0].data.scope)
+    expect(JSON.stringify(permutedFacetScope.comparison_reads[0].data.scalar_facet.scope))
+      .not.toBe(JSON.stringify(permutedFacetScope.comparison_reads[0].data.scope))
+    expect(semanticComparisonForTheme(permutedFacetScope, undefined, reads)?.results).toHaveLength(2)
+
+    const semantic = semanticComparisonForTheme(comparison, undefined, reads)
+    const ranked = lignesAvecComparaisonApi(projected, semantic, 'Classe publiée')
+    expect(ranked.find((row) => row.key === 'prix_m2' && row.detail === null)?.comparaisonApi)
+      .toEqual({ rang: 1, taille: 2, portee: 'Classe publiée', direction: apiDirection })
+    expect(ranked.find((row) => row.key === 'prix_m2' && row.detail === '2025')?.comparaisonApi)
+      .toEqual({ rang: 2, taille: 2, portee: 'Classe publiée', direction: apiDirection })
+
+    const method = THEMES_METHODES.habitat.indicateurs.prix_m2!
+    const publishedDirection = method.direction
+    method.direction = apiDirection === 'high' ? 'moins-est-mieux' : 'plus-est-mieux'
+    try {
+      const figure = mount(FigureTrajectoire, { props: {
+        clef: 'prix_m2', theme: 'habitat', libelle: 'Prix médian au mètre carré', lignes: ranked,
+      } })
+      const chip = figure.find('.puce-rang')
+      expect(figure.find('.puce-rang-glyphe').text().trim()).toBe('▼')
+      expect(chip.attributes('aria-label')).toBe('1er/2 · Classe publiée — moins = mieux')
+    } finally {
+      method.direction = publishedDirection
+    }
+    const staticFigure = mount(FigureTrajectoire, { props: {
+      clef: 'prix_m2', theme: 'habitat', libelle: 'Prix médian au mètre carré',
+      lignes: [{ ...projected.find((row) => row.key === 'prix_m2' && row.detail === null)!, rang_epci: 1, rang_epci_n: 2 }],
+    } })
+    expect(staticFigure.find('.puce-rang-glyphe').text().trim()).toBe('▼')
+    expect(staticFigure.find('.puce-rang').attributes('aria-label')).toBe("1er/2 de l'EPCI — moins = mieux")
+    const corruptedComparison: any = structuredClone(comparison)
+    corruptedComparison.comparison_reads[0].data.scalar_facet.result.source_facet = '2025'
+    expect(() => semanticComparisonForTheme(corruptedComparison, undefined, reads))
+      .toThrow(/facette de comparaison scalaire/i)
+    const wrongScalarFacetIdentity: any = structuredClone(comparison)
+    wrongScalarFacetIdentity.comparison_reads[0].data.scalar_facet.result.indicator_id = 'other-indicator'
+    expect(() => semanticComparisonForTheme(wrongScalarFacetIdentity, undefined, reads))
+      .toThrow(/facette de comparaison scalaire/i)
+    const incorrectAnnualFacet: any = structuredClone(comparison)
+    incorrectAnnualFacet.comparison_reads[0].data.result.source_facet = '2024'
+    expect(() => semanticComparisonForTheme(incorrectAnnualFacet, undefined, reads)).toThrow(/facette/i)
+
+    const levelIds: Record<string, string> = { commune: cible.territoire, epci: '200067460', departement: '22', region: '53' }
+    for (const type of nativeResources('habitat').find((item) => item.resource_id === 'prix_m2')!.allowed_levels) {
+      const id = levelIds[type]!
+      const target = { kind: 'territory', type, id }
+      const focalAtLevel = structuredClone(focal)
+      focalAtLevel.data.target = target
+      focalAtLevel.data.territory = { ...focalAtLevel.data.territory, id, type }
+      focalAtLevel.data.scalar_facet.observation = { ...focalAtLevel.data.scalar_facet.observation,
+        territory_id: id, territory_type: type }
+      const comparisonAtLevel: any = structuredClone(comparison)
+      const scopeAtLevel = type === 'commune' ? densityScope : { kind: 'same_level', territory_type: type, member_count: 2 }
+      comparisonAtLevel.comparison_reads[0]!.data.target = target
+      comparisonAtLevel.comparison_reads[0]!.data.scope = scopeAtLevel
+      comparisonAtLevel.comparison_reads[0]!.data.scalar_facet.scope = scopeAtLevel
+      const readsAtLevel = [{ ...focalAtLevel, declaration: reads[0]!.declaration }]
+      expect(semanticPublicationsCompatible({ resource_reads: readsAtLevel } as any,
+        comparisonAtLevel as any), type).toBe(true)
+      const rowsAtLevel = themeFactsRowsFromSemantic('habitat', { resource_reads: readsAtLevel } as any,
+        { territoire: id, type: type as any }).indicateurs
+      expect(rowsAtLevel.find((row) => row.key === 'prix_m2' && row.detail === null)?.value).toBe(700)
+      expect(rowsAtLevel.find((row) => row.key === 'prix_m2' && row.detail === '2025')?.value).toBe(230)
+    }
+  })
+
+  it('builds an explicitly synthetic 73-axis Mobility curve, selected mean, rank, and named reference from the active producer contract', () => {
+    const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
+    const reference = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_reference')!
+    const target = { kind: 'territory', type: 'commune', id: '22001' }
+    const facts = nativeReadFixture({ target, intent: { kind: 'facts' } }, curve)
+    const axes = facts.axis_values as string[]
+    const numbers = facts.axis_numeric_values as number[]
+    const points = facts.points as Array<Record<string, any>>
+
+    expect(facts.synthetic_fixture).toMatchObject({ kind: 'synthetic_test_fixture', publication_parity: false })
+    expect(facts.completeness).toBe('dense_complete')
+    expect(facts.availability).toBe('complete')
+    expect(axes).toHaveLength(73)
+    expect(numbers).toEqual(Array.from({ length: 73 }, (_, index) => index * 5))
+    expect(points).toHaveLength(73)
+    expect(points[18]).toMatchObject({ axis: 't0090', observation_period: '2026-10-21', value: 0.125, status: 'measured' })
+    expect(points[18]!.provenance[0]).toMatchObject({
+      source_id: curve.sources[0], version: 'national-gtfs-outbound-v1',
+      vintage_id: 'national-gtfs-outbound-v1', reference_date: '2026-10-10', publication_date: '2026-10-10',
+    })
+
+    const comparison = nativeReadFixture({ target,
+      intent: { kind: 'selected_comparison', members: [
+        { type: 'commune', id: '22001' }, { type: 'commune', id: '35238' },
+      ] } }, curve)
+    const result = comparison.result as Record<string, any>
+    const meanCurve = result.mean_curve as Record<string, any>
+    expect(comparison.synthetic_fixture).toMatchObject({ kind: 'synthetic_test_fixture', publication_parity: false })
+    expect(comparison.selection).toEqual([
+      { territory_type: 'commune', territory_id: '22001' },
+      { territory_type: 'commune', territory_id: '35238' },
+    ])
+    expect(comparison.scope).toMatchObject({ kind: 'explicit_selection', member_count: 2 })
+    expect(result).toMatchObject({ status: 'available', statistic: 'mean', source_facet: 't0090',
+      descriptor_version: facts.descriptor_version, selected_member_count: 2, eligible_count: 2,
+      rank: 2, rank_size: 2, mean: 0.2 })
+    expect(meanCurve.scope).toEqual(comparison.scope)
+    expect(meanCurve.points).toHaveLength(73)
+    expect(meanCurve.points[18]).toEqual({ axis: 't0090', value: 0.2, status: 'measured' })
+    expect(result.comparison_sources[0]).toMatchObject({
+      source_id: curve.sources[0], version: 'national-gtfs-outbound-v1',
+      reference_date: '2026-10-10', publication_date: '2026-10-10',
+    })
+
+    const named = nativeReadFixture({ target: { kind: 'named_reference', id: reference.target_ids[0] },
+      intent: { kind: 'facts' } }, reference)
+    expect(named).toMatchObject({ target: { kind: 'named_reference', id: reference.target_ids[0] },
+      publication_id: facts.publication_id, content_version: facts.content_version,
+      reference_content_version: facts.reference_content_version,
+      reference: { id: 'bretagne_all_assessed_communes_mean', role: 'analytical_reference',
+        statistic: 'mean_all_assessed_communes', required: true },
+      availability: 'complete', synthetic_fixture: { publication_parity: false } })
+    expect(named).not.toHaveProperty('territory')
+    expect(named.points).toHaveLength(73)
+    expect(named.points[18]).toMatchObject({ axis: 't0090', value: 0.2, status: 'measured' })
+  })
+
+  it('projects only publication-coherent Mobility facts, selected means, and named-reference evidence', () => {
+    const curve = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_courbe')!
+    const reference = nativeResources('mobilite').find((resource) => resource.resource_id === 'raccordement_reference')!
+    const model = JSON.parse(readFileSync(resolve(process.cwd(),
+      '../public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+    const target = { ...territoiresFixture.find((territory) => territory.territoire === '22001')!,
+      classe_densite_code: model.territory.classe_densite_code,
+      classe_densite_libelle_public: model.territory.classe_densite_libelle_public }
+    const curveDeclaration = curve as unknown as SemanticResourceDeclaration
+    const referenceDeclaration = reference as unknown as SemanticResourceDeclaration
+    const facts = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'facts' } }, curve)
+    const named = nativeReadFixture({ target: { kind: 'named_reference', id: reference.target_ids[0] },
+      intent: { kind: 'facts' } }, reference)
+    const focal = { resource_reads: [{ resource: curve.resource_id, shapes: curve.shapes,
+      declaration: curveDeclaration, data: facts }], named_reference_reads: [{ resource: reference.resource_id,
+      shapes: reference.shapes, declaration: referenceDeclaration, data: named }] }
+    const response = (data: Record<string, any>, selection?: ThemeSelectionMember[]) => ({ theme_id: 'mobilite',
+      ...(selection === undefined ? {} : { selection }), comparison_reads: [{ resource: curve.resource_id,
+        shapes: curve.shapes, declaration: curveDeclaration, data }] })
+    const defaultData = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'fixed_comparison', context: 'default' } }, curve)
+    const projected = projectRaccordementSemanticReads(focal, response(defaultData), target, undefined)
+    const comparisonAxis = String(facts.comparison_point)
+    const comparisonAxisIndex = (facts.axis_values as string[]).indexOf(comparisonAxis)
+    expect(projected.facts).toHaveLength((facts.axis_values as string[]).length)
+    expect(projected.referenceFacts[comparisonAxisIndex]).toEqual({
+      detail: comparisonAxis, value: named.points[comparisonAxisIndex]!.value,
+    })
+    expect(projected.comparison).toMatchObject({ statistic: 'mean', selectedMemberCount: defaultData.result.selected_member_count,
+      valueAtComparisonPoint: defaultData.result.mean, scope: { kind: 'density_class',
+        territory_type: 'commune', density_class_code: target.classe_densite_code } })
+
+    const selection: ThemeSelectionMember[] = [
+      { territory_type: 'commune', territory_id: '22001' },
+      { territory_type: 'commune', territory_id: '35238' },
+    ]
+    const selectedData = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'selected_comparison', members: selection.map(({ territory_type, territory_id }) =>
+        ({ type: territory_type, id: territory_id })) } }, curve)
+    expect(projectRaccordementSemanticReads(focal, response(selectedData, selection), target, selection)
+      .comparison).toMatchObject({ selectedMemberCount: 2, valueAtComparisonPoint: selectedData.result.mean,
+        scope: { kind: 'explicit_selection', member_count: 2 } })
+
+    const mixedProvenance = structuredClone(facts)
+    mixedProvenance.points[1]!.provenance = [{ ...mixedProvenance.points[1]!.provenance[0],
+      revision_hash: 'f'.repeat(64) }]
+    const incoherentFocal = { ...focal, resource_reads: [{ resource: curve.resource_id, shapes: curve.shapes,
+      declaration: curveDeclaration, data: mixedProvenance }] }
+    expect(() => projectRaccordementSemanticReads(incoherentFocal, response(defaultData), target,
+      undefined)).toThrow(/provenances/)
+  })
+
+  it('projects unavailable native comparisons without discarding valid focal or named-reference facts', () => {
+    const curve = nativeResources('mobilite').find((item) => item.resource_id === 'raccordement_courbe')!
+    const reference = nativeResources('mobilite').find((item) => item.resource_id === 'raccordement_reference')!
+    const curveDeclaration = curve as unknown as SemanticResourceDeclaration
+    const referenceDeclaration = reference as unknown as SemanticResourceDeclaration
+    const target = { ...territoiresFixture.find((territory) => territory.territoire === '22001')! }
+    const facts = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'facts' } }, curve)
+    const named = nativeReadFixture({ target: { kind: 'named_reference', id: reference.target_ids[0] },
+      intent: { kind: 'facts' } }, reference)
+    const focal = { resource_reads: [{ resource: curve.resource_id, shapes: curve.shapes,
+      declaration: curveDeclaration, data: facts }], named_reference_reads: [{ resource: reference.resource_id,
+      shapes: reference.shapes, declaration: referenceDeclaration, data: named }] }
+    const response = (data: Record<string, any>, selection?: ThemeSelectionMember[]) => ({ theme_id: 'mobilite',
+      ...(selection === undefined ? {} : { selection }), comparison_reads: [{ resource: curve.resource_id,
+        shapes: curve.shapes, declaration: curveDeclaration, data }] })
+
+    const emptySelection: ThemeSelectionMember[] = []
+    const emptyData = nativeReadFixture({ target: { kind: 'territory', type: target.type, id: target.territoire },
+      intent: { kind: 'selected_comparison', members: [] } }, curve)
+    const empty = projectRaccordementSemanticReads(focal, response(emptyData, emptySelection), target,
+      emptySelection)
+    expect(emptyData.selection).toEqual([])
+    expect(empty.comparison).toMatchObject({ status: 'unavailable', reason: 'no_selected_comparable_values',
+      selectedMemberCount: 0, valueAtComparisonPoint: null, rank: null, rankSize: null, points: [],
+      scope: { kind: 'explicit_selection', member_count: 0 } })
+    expect(empty.facts).toHaveLength(73)
+    expect(empty.referenceFacts).toHaveLength(73)
+
+    const malformed = structuredClone(emptyData)
+    malformed.result.mean = 0.2
+    expect(() => projectRaccordementSemanticReads(focal, response(malformed, emptySelection), target,
+      emptySelection)).toThrow(/comparison|comparaison/i)
   })
 
   it('refuse une coordonnée de détail non déclarée par les métadonnées du contrat', () => {
@@ -305,7 +1353,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
   })
 
   it('projette uniquement les points du reading cloud dont toutes les coordonnées sont valides', () => {
-    const points = histoiresMilieuxDuNuage({ reading_cloud: { points: [
+    const points = histoiresMilieuxDuNuage({ reading_cloud: { status: 'available', groupe: 'land', points: [
       { territory: { territory_id: '35001', territory_type: 'commune' }, periode_pop: '2017-2023',
         periode_artif: '2020-2023', taux_variation_population: 0.8,
         artif_m2_par_habitant: 7, artif_m3_par_habitant: 8 },

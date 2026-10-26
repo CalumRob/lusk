@@ -458,6 +458,7 @@ function factOf(options: {
 }
 
 function provenanceFromRow(row: Indicateur, sourceId: string | null): FactProvenance {
+  if (row.vintage_version === null) throw new Error(`Horloge de provenance absente pour ${row.key}`)
   const source = row.fact_sources?.[0]
   return {
     sourceId: source?.sourceId ?? sourceId,

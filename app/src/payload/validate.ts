@@ -2724,6 +2724,9 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
       exiger(page['vintage'] === undefined, fichier, 0, `« indicator_pages.${key}.vintage » est interdit : la fraîcheur vient des source_records`)
       exiger(page['indicator'] === key, fichier, 0, `« indicator_pages.${key}.indicator » doit correspondre à sa clé`)
       exiger(page['read_model'] === undefined || typeof page['read_model'] === 'boolean', fichier, 0, `« indicator_pages.${key}.read_model » doit être booléen`)
+      exiger(page['completeness'] === undefined || estChaineNonVide(page['completeness']), fichier, 0, `« indicator_pages.${key}.completeness » doit être renseigné`)
+      exiger(page['absence_semantics'] === undefined || page['absence_semantics'] === 'no_record', fichier, 0, `« indicator_pages.${key}.absence_semantics » est invalide`)
+      exiger(page['absence_semantics'] === undefined || page['completeness'] === 'may_be_missing', fichier, 0, `« indicator_pages.${key}.absence_semantics » requiert may_be_missing`)
       exiger(page['series_publication'] === undefined || page['series_publication'] === 'legacy' || page['series_publication'] === 'owned', fichier, 0, `« indicator_pages.${key}.series_publication » est invalide`)
       exiger(page['series_dataset_id'] === undefined || (typeof page['series_dataset_id'] === 'string' && /^[a-z][a-z0-9_]{0,95}$/.test(page['series_dataset_id'])), fichier, 0, `« indicator_pages.${key}.series_dataset_id » est invalide`)
       exiger(page['series_publication'] !== 'owned' || page['series_dataset_id'] !== undefined, fichier, 0, `« indicator_pages.${key}.series_dataset_id » est requis pour une publication owned`)
@@ -2759,7 +2762,9 @@ export function validerThemeMetadata(brut: unknown, fichier: string): ThemeMetad
          if (comparison['labels'] !== undefined) exiger(estObjet(comparison['labels']) && Object.values(comparison['labels'] as LigneBrute).every((value) => estChaineNonVide(value)), fichier, 0, `« indicator_pages.${key}.comparison.labels » est invalide`)
        }
        const base: IndicatorPageMetadataBase = { indicator: key,
-         ...(page['series_dataset_id'] === undefined ? {} : { series_dataset_id: page['series_dataset_id'] as string }),
+          ...(page['completeness'] === undefined ? {} : { completeness: page['completeness'] as string }),
+          ...(page['absence_semantics'] === undefined ? {} : { absence_semantics: page['absence_semantics'] as 'no_record' }),
+          ...(page['series_dataset_id'] === undefined ? {} : { series_dataset_id: page['series_dataset_id'] as string }),
          ...(page['series_publication'] === undefined ? {} : { series_publication: page['series_publication'] as 'legacy' | 'owned' }),
          ...(page['read_model'] === undefined ? {} : { read_model: page['read_model'] as boolean }), detail: detail === undefined ? null : detail as string | null, label: page['label'] as string, definition: page['definition'] as string, unit: page['unit'] as string, calculation: page['calculation'] as string, direction: page['direction'] as 'high' | 'low', caveats: page['caveats'] as string, levels: page['levels'] as ('commune' | 'epci' | 'departement')[], sources: pageSources, ...(comparison === undefined ? {} : { comparison: comparison as IndicatorPageMetadataBase['comparison'] }) }
        const extensionKey = family

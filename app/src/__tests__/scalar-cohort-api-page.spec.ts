@@ -35,6 +35,7 @@ function declaration(theme: string, indicator: string): SemanticResourceDeclarat
 }
 
 function membersFor(target: SemanticReadItem['target']) {
+  if (target.kind === 'named_reference') return []
   return territoiresFixture.filter((territory) => territory.type === target.type &&
     (target.kind !== 'territory_cohort' || ((!target.department_id || territory.departement === target.department_id) &&
       (!target.epci_id || territory.epci === target.epci_id))))
@@ -51,6 +52,7 @@ function scalarData(theme: string, indicator: string, item: SemanticReadItem, op
   mutate?: (value: Record<string, unknown>) => void
 } = {}) {
   const page = pageFor(theme, indicator)
+  if (item.target.kind === 'named_reference') throw new Error('Unexpected named-reference scalar fixture')
   const members = membersFor(item.target)
   const target = item.target.kind === 'territory_cohort'
     ? { ...item.target, kind: 'territory_cohort' }
@@ -221,7 +223,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     expect(request.items).toHaveLength(1)
     expect(request.items[0]).toMatchObject({ target: { kind: 'territory', type: 'commune', id: '22001' },
       intent: { kind: 'selected_comparison', members: [{ type: 'commune', id: '22001' }, { type: 'commune', id: '22002' }] } })
-    expect(rank).toEqual({ rank: 2, rankSize: 2, scope: "dans l'EPCI" })
+    expect(rank).toEqual({ rank: 2, rankSize: 2, scope: "dans l'EPCI", direction: 'high' })
   })
 
   it('uses the producer same-level comparison for EPCI ranks and does not request a regional rank', async () => {
@@ -244,7 +246,7 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
     })
     vi.stubGlobal('fetch', fetcher)
     expect(await chargerRangScalaire(indicator, 'demographie', page, focal, territoiresFixture)).toEqual({
-      rank: 1, rankSize: 2, scope: 'en Bretagne',
+      rank: 1, rankSize: 2, scope: 'en Bretagne', direction: 'high',
     })
     const request = JSON.parse((fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')![1] as RequestInit).body as string)
     expect(request.items[0].intent).toEqual({ kind: 'fixed_comparison', context: 'default' })
