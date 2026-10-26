@@ -105,10 +105,16 @@ describe('OngletTheme — the shared subgroup anatomy (Mobilité, la grille + le
     const publishedMetadata = JSON.parse(readFileSync(
       join(process.cwd(), '../public/data/theme_mobilite.json'), 'utf8',
     )) as ThemeMetadata
+    const canonicalMetadata = JSON.parse(readFileSync(
+      join(process.cwd(), '../pipeline/inst/extdata/theme-metadata/theme_mobilite.json'), 'utf8',
+    )) as ThemeMetadata
     const productionFigure = publishedMetadata.subgroups.find(
       (subgroup) => subgroup.key === 'partage-de-lespace-public',
     )?.figure
     expect(productionFigure).toEqual({ family: 'composition', indicator: 'offre_cyclable' })
+    expect(canonicalMetadata.subgroups.find(
+      (subgroup) => subgroup.key === 'partage-de-lespace-public',
+    )?.figure).toEqual(productionFigure)
 
     const wrapper = await monter('22001', {
       ...payloadMobilite,
