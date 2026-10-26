@@ -637,7 +637,10 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
   // semantic fact or scalar acquisition; shared fiche subgroup presentation
   // comes from app-owned ficheGrammar.ts.
   const scalarApiEnabled = scalarCohortEnabled(import.meta.env)
-  if (scalarApiEnabled || themeAcquisitionEnabled(import.meta.env)) {
+  // Native theme facts have their own producer catalogue and must start from
+  // the validated territory target alone. The app-owned scalar-only path and
+  // explicit static opt-out retain their strict full-catalogue reconciliation.
+  if (scalarApiEnabled || !themeAcquisitionEnabled(import.meta.env)) {
     await Promise.all(Object.values(model.themes).filter((theme) => theme !== undefined).map(async (theme) => {
       const metadataUrl = `/data/theme_${theme.theme}.json`
       let metadataResponse: Response

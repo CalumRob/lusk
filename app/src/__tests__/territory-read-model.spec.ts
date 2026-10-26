@@ -117,6 +117,31 @@ describe('le modèle de lecture d’un territoire', () => {
     }
   })
 
+  it('returns validated territory identity before any optional theme catalogue is required', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url === '/data/modeles-lecture/territoires/commune/22001.json') {
+        return new Response(JSON.stringify(modelePublie22001), { status: 200 })
+      }
+      throw new Error(`Le catalogue facultatif ne doit pas bloquer l’identité : ${url}`)
+    }))
+
+    try {
+      const model = await chargerModeleTerritoire('commune', target.territoire)
+
+      expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001', nom: 'Allineuc' })
+      expect(model.territory).toEqual(model.territories.find((item) => item.territoire === '22001'))
+      expect(calls).toEqual(['/data/modeles-lecture/territoires/commune/22001.json'])
+    } finally {
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  })
+
   it('porte les faits Mobilité et ses preuves auxiliaires dans une unité atomique', () => {
     const modele = validerModeleTerritoire(
       {
