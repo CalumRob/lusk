@@ -111,6 +111,26 @@ function blocksText(blocks: readonly (readonly { value: string }[])[]): string {
 }
 
 describe('Mobilité page rundown', () => {
+  it('keeps fiche subgroup labels in app content while preserving the API-bound values', () => {
+    const staleEditorialMetadata = {
+      detail_labels: {},
+      indicator_pages: {},
+      subgroups: [
+        { key: 'acces-aux-services', label: 'Ancien libellé du producteur' },
+        { key: 'partage-de-lespace-public', label: 'Ancien partage' },
+        { key: 'motorisation', label: 'Ancienne motorisation' },
+        { key: 'offre-transports-commun', label: 'Ancien transport' },
+      ],
+    } as unknown as import('@/payload/types').ThemeMetadata
+
+    const content = resolveMobiliteThemeContent(completeFacts, staleEditorialMetadata)
+
+    expect(content.units.map(({ label }) => label)).toEqual([
+      'Accès aux services', 'Partage de l’espace public', 'Motorisation', 'Offre de transports en commun',
+    ])
+    expect(JSON.stringify(content.units[0]?.sections[0]?.evidence)).toContain('30')
+  })
+
   it('grounds figure-reading examples in the current distribution and summary', () => {
     const content = resolveMobiliteThemeContent(completeFacts)
     const summary = content.units[0].sections[0].evidence!

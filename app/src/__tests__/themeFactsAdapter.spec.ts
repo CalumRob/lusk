@@ -571,7 +571,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       '../pipeline/inst/extdata/theme-metadata/theme_programmes.json'), 'utf8'))
     const sourceId = resource.sources[0]!
     const sourceRecord = producerMetadata.source_records[sourceId]
-    const displayLabel = sourceRecord.publisher ?? sourceRecord.dataset
+    const displayLabel = 'Subventions régionales attribuées'
     const point = (axis: string, status: 'measured' | 'missing', value: number | null,
       provenance: { vintage_id: string; source_version: string; source_reference_date: string | null;
         source_publication_date: string | null }) => ({ axis, status, observation_period: '2025', value,
@@ -632,7 +632,7 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       completeness: 'may_be_missing', absence_semantics: 'no_record',
     })
     const descriptorVintageId = sourceRecord.vintages[0].id
-    const displayLabel = sourceRecord.publisher ?? sourceRecord.dataset
+    const displayLabel = 'Subventions régionales attribuées'
     const reads: any = [{ resource: resource.resource_id, shapes: resource.shapes, declaration: resource,
       data: { resource: resource.resource_id, target, publication_id: 'legacy-series-no-record-v1',
         territory: { id: target.id, type: target.type, name: 'Commune 35238' },
@@ -678,15 +678,52 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: unboundNoRecordSource },
       { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Source de série non déclarée/)
 
-    const unboundNoRecordVintage = structuredClone(reads)
-    unboundNoRecordVintage[0].data.points[1].vintage_id = 'unknown-descriptor-vintage'
-    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: unboundNoRecordVintage },
-      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Millésime de série non déclaré/)
+    const apiSelectedVintage = structuredClone(reads)
+    apiSelectedVintage[0].data.points[1].vintage_id = 'api-selected-vintage-not-in-stale-metadata'
+    expect(themeFactsRowsFromSemantic('programmes', { resource_reads: apiSelectedVintage },
+      { territoire: target.id, type: target.type }, {}, producerMetadata).indicateurs
+      .find((row) => row.key === 'subventions_annuelles' && row.dimension === '2025'))
+      .toMatchObject({ vintage_id: 'api-selected-vintage-not-in-stale-metadata', vintage_source: displayLabel,
+        source_version: null, source_reference_date: null, source_publication_date: null })
 
-    const undeclaredAbsence = structuredClone(producerMetadata)
-    undeclaredAbsence.indicator_pages[resource.indicator_id].absence_semantics = 'unavailable'
-    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: reads },
-      { territoire: target.id, type: target.type }, {}, undeclaredAbsence)).toThrow(/Absence de série legacy non déclarée/)
+    const contradictoryCompleteness = structuredClone(reads)
+    contradictoryCompleteness[0].data.completeness = 'dense_complete'
+    expect(() => themeFactsRowsFromSemantic('programmes', { resource_reads: contradictoryCompleteness },
+      { territoire: target.id, type: target.type }, {}, producerMetadata)).toThrow(/Absence de série legacy non déclarée/)
+  })
+
+  it('uses the semantic wire contract for a no-record point when static page and vintage metadata are unavailable', () => {
+    const target = { kind: 'territory' as const, type: 'commune' as const, id: cible.territoire }
+    const resource = nativeResources('programmes').find((item) => item.resource_id === 'subventions_annuelles')!
+    const reads = [{ resource: resource.resource_id, shapes: resource.shapes, declaration: resource,
+      data: { resource: resource.resource_id, target, publication_id: 'series-publication-v8',
+        territory: { id: target.id, type: target.type, name: 'Commune 35238' },
+        indicator_id: resource.indicator_id, axis_kind: 'year', completeness: 'may_be_missing',
+        label: 'Subventions annuelles', unit: '€', direction: 'none',
+        descriptor_version: 'series-descriptor-v8', comparison_point: null,
+        points: [
+          { axis: '2024', status: 'measured', observation_period: '2024', value: 230,
+            source_id: 'subventions_scdl', vintage_id: 'api-vintage-2024', source_version: 'api-v4',
+            source_reference_date: null, source_publication_date: '2025-01-10',
+            provenance: [{ source_id: 'subventions_scdl', vintage_id: 'api-vintage-2024',
+              source_name: 'API source label', version: 'api-v4', reference_date: null,
+              publication_date: '2025-01-10' }] },
+          { axis: '2025', status: 'missing', observation_period: null, value: null,
+            source_id: 'subventions_scdl', vintage_id: 'api-vintage-new', source_version: null,
+            source_reference_date: null, source_publication_date: null },
+        ], availability: 'incomplete' } }]
+
+    const annual = themeFactsRowsFromSemantic('programmes', { resource_reads: reads } as any,
+      { territoire: target.id, type: target.type }).indicateurs.filter((row) => row.key === 'subventions_annuelles')
+
+    expect(annual).toMatchObject([
+      { dimension: '2024', value: 230, observation_status: 'measured', vintage_source: 'API source label',
+        vintage_version: 'api-v4', vintage_date_reference: null, vintage_date_publication: '2025-01-10' },
+      { dimension: '2025', value: null, observation_status: 'missing', vintage_id: 'api-vintage-new',
+        source_version: null, source_reference_date: null, source_publication_date: null,
+        vintage_source: 'Subventions régionales attribuées', vintage_version: null,
+        vintage_date_reference: null, vintage_date_publication: null },
+    ])
   })
 
   it('does not downgrade an owned ordered series with missing nested provenance to the legacy contract', () => {

@@ -360,7 +360,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     expect(wrapper.find('.subvention-total').text()).toContain('230 €')
     expect(wrapper.find('.subvention-total').text()).toContain('en 2024')
     expect(wrapper.find('.subvention-total').text()).not.toMatch(/(^|\s)0\s*€/)
-    expect(wrapper.find('.subvention-vintage').text()).toContain('Région Bretagne')
+    expect(wrapper.find('.subvention-vintage').text()).toContain('Subventions régionales attribuées')
     const renderedPayload = wrapper.findComponent(BlocProgrammes).props('payload') as Payload
     const renderedAnnual = renderedPayload.indicateurs.filter((row) => row.territoire === '22001' &&
       row.theme === 'programmes' && row.key === 'subventions_annuelles')

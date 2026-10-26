@@ -19,6 +19,16 @@ export interface ThemeCatalogueContent {
   readonly sousGroupes: readonly SousGroupeCatalogueContent[]
 }
 
+/** Stable fiche subgroup labels; structural keys bind this content to theme facts. */
+export const CONTENU_SOUS_GROUPES_FICHE = {
+  mobilite: {
+    'acces-aux-services': 'Accès aux services',
+    'partage-de-lespace-public': 'Partage de l’espace public',
+    motorisation: 'Motorisation',
+    'offre-transports-commun': 'Offre de transports en commun',
+  },
+} as const satisfies Partial<Record<Theme, Readonly<Record<string, string>>>>
+
 /**
  * App-owned editorial content for the /indicateurs catalogue and its grouped
  * global-search entries. Resource keys bind page navigation to producer

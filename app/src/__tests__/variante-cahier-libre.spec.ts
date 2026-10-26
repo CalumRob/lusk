@@ -394,9 +394,11 @@ describe('figures des unités Mobilité ajoutées', () => {
     if (absentEvidence?.kind !== 'motorisation') throw new Error('Motorisation evidence should include remaining published facts')
     expect(absentEvidence.composition.some(part => part.fact.detail === 'sans_voiture')).toBe(false)
     expect(absentEvidence.charging).toHaveLength(0)
-    expect(absentContent.units.map(unit => unit.label)).toEqual(metadata.subgroups.map(subgroup => subgroup.label))
-    expect(absentContent.units[2]!.sections[0]!.label).toBe(metadata.subgroups.find(subgroup => subgroup.key === 'motorisation')?.label)
-    expect(absentContent.units[3]!.sections[0]!.label).toBe(metadata.subgroups.find(subgroup => subgroup.key === 'offre-transports-commun')?.label)
+    expect(absentContent.units.map(unit => unit.label)).toEqual([
+      'Accès aux services', 'Partage de l’espace public', 'Motorisation', 'Offre de transports en commun',
+    ])
+    expect(absentContent.units[2]!.label).toBe('Motorisation')
+    expect(absentContent.units[3]!.label).toBe('Offre de transports en commun')
 
     const baseFact = original.mobility.indicators.find(fact => fact.key === 'bornes_recharge')!
     const rider = { ...baseFact, key: 'bornes_ev_par_station_service', value: null, reason: 'Aucune station-service sur le territoire' }

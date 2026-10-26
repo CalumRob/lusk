@@ -157,7 +157,7 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
       await flushPromises()
 
       expect(wrapper.text()).not.toContain('Impossible de charger les données de la fiche.')
-      expect(wrapper.find('[role="tabpanel"]').text()).toContain('L’accès aux services')
+      expect(wrapper.find('[role="tabpanel"]').text()).toContain('Accès aux services')
       const fixedComparisonReads = requests.flat().filter((item) =>
         item.target?.kind === 'territory' && item.target.type === type && item.target.id === id &&
         item.intent?.kind === 'fixed_comparison')

@@ -1,6 +1,7 @@
 import type { Histoire, HistoireDemographie, HistoireEconomie, HistoireHabitat, HistoireMilieux, HistoireMobilite, Indicateur, TerritoireType, ThemeMetadata, VintageStamp } from './types'
 import { RAISONS_SAILLANCE } from './types'
 import type { SemanticThemeRead, ThemeKey, ThemeResponse, ThemeSelectionMember } from './themeAcquisition'
+import { DESCRIPTIONS_SOURCES } from '@/methodes/sources'
 
 /**
  * L'adaptateur du contrat `theme-facts-v1` (#627) : la réponse POST de faits
@@ -574,15 +575,15 @@ function boundLegacySourceLabel(read: SemanticThemeRead, themeMetadata: ThemeSou
   const resource = read.resource
   const declaration = isRecord(read.declaration) ? read.declaration : null
   const apiSources = declaration?.sources
-  const themeSourceId = themeMetadata?.sources?.[resource]
-  if (!Array.isArray(apiSources) || !apiSources.includes(sourceId) || themeSourceId !== sourceId) {
+  if (!Array.isArray(apiSources) || !apiSources.includes(sourceId)) {
     throw new Error(`Source de série non déclarée pour la ressource ${resource} : ${sourceId}`)
   }
+  const label = DESCRIPTIONS_SOURCES[sourceId]
+  if (label) return label
   const record = themeMetadata?.source_records?.[sourceId]
-  if (!isRecord(record)) throw new Error(`Enregistrement de source absent pour la ressource ${resource} : ${sourceId}`)
-  const label = texteNonVide(record.publisher) ? record.publisher : record.dataset
-  if (!texteNonVide(label)) throw new Error(`Libellé producteur absent pour la ressource ${resource} : ${sourceId}`)
-  return label
+  const legacyLabel = isRecord(record) ? record.dataset : undefined
+  if (!texteNonVide(legacyLabel)) throw new Error(`Description éditoriale absente pour la source ${sourceId}`)
+  return legacyLabel
 }
 
 /** Convert only the legacy point envelope; values and all clocks remain API-owned. */
@@ -611,13 +612,8 @@ function legacySeriesPointSources(point: Row, read: SemanticThemeRead,
     const data = read.data
     const declaration = isRecord(read.declaration) ? read.declaration : null
     const indicatorId = data.indicator_id
-    const absenceContract = texteNonVide(indicatorId)
-      ? themeMetadata?.indicator_pages?.[indicatorId] : undefined
     if (!texteNonVide(indicatorId) || declaration?.indicator_id !== indicatorId ||
-        absenceContract?.indicator !== indicatorId ||
-        absenceContract.completeness !== 'may_be_missing' ||
-        absenceContract.absence_semantics !== 'no_record' ||
-        data.completeness !== absenceContract.completeness || data.availability !== 'incomplete') {
+        data.completeness !== 'may_be_missing' || data.availability !== 'incomplete') {
       throw new Error(`Absence de série legacy non déclarée : ${String(point.axis)}`)
     }
     if (hasOwn(point, 'provenance') && rows(point.provenance, 'legacy_series.provenance').length !== 0) {
@@ -625,13 +621,6 @@ function legacySeriesPointSources(point: Row, read: SemanticThemeRead,
     }
     const sourceId = point.source_id
     const label = boundLegacySourceLabel(read, themeMetadata, sourceId)
-    const sourceRecord = themeMetadata?.source_records?.[sourceId]
-    const vintages = isRecord(sourceRecord) && Array.isArray(sourceRecord.vintages)
-      ? sourceRecord.vintages.filter(isRecord).map((vintage) => vintage.id).filter(texteNonVide)
-      : []
-    if (!vintages.includes(point.vintage_id)) {
-      throw new Error(`Millésime de série non déclaré pour la ressource ${read.resource} : ${point.vintage_id}`)
-    }
     return { sources: [], noRecordSourceName: label }
   }
 
