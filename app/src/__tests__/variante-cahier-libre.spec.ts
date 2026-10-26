@@ -491,7 +491,7 @@ describe('Variante D — le seam ThemeContent → Cahier', () => {
     expect(inaccessibleProfile.attributes('aria-label')).toContain('10 %')
     expect(inaccessibleProfile.attributes('aria-label')).toContain('90 %')
     expect(wrapper.find('.sources-page').text()).toContain(content.sourceRegister[0]?.source)
-    expect(wrapper.find('.page-number').text()).toContain('/01')
+    expect(wrapper.find('.page-number').text()).toBe('page 01/14')
     expect(wrapper.find('.page-subtitle').text()).toContain('1,2 millions de bâtiments')
     expect(wrapper.find('.page-subtitle strong.region-emphasis').text()).toBe('1,2 millions')
     expect(wrapper.findAll('.page-subtitle p').every((paragraph) => paragraph.classes().includes('cahier-baseline-first-line'))).toBe(true)
@@ -1134,10 +1134,10 @@ describe('Variante E — partage de l’espace public', () => {
       'L’offre de transports en commun',
     ])
     expect(wrapper.findAll('.cahier-page .page-number').map((number) => number.text())).toEqual([
-      'page 01/04',
-      'page 02/04',
-      'page 03/04',
-      'page 04/04',
+      'page 01/14',
+      'page 02/14',
+      'page 03/14',
+      'page 04/14',
     ])
     for (const page of wrapper.findAll('.cahier-page')) {
       const groups = page.findAll('.concept-group')
