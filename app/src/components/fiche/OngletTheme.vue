@@ -2,13 +2,13 @@
 /**
  * OngletTheme — one theme's tab content (ui-elements.md §ThemeBlock). Since
  * issue #314 (parent #308) the block is ONE shared subgroup loop driven by
- * the loaded theme_<theme>.json metadata and the resolved histoires — there
- * are no per-theme branches, no app-side subgroup labels, order, Story copy
- * or reading selection left. Each subgroup renders its metadata place (label
- * + framing), its reading slot (the metadata template with the row's values,
- * the reading's compact figure and its source), its compact figure (famille +
- * indicateur déclarés) and its indicator figures (the metadata key order,
- * the existing IndicatorFigure grammar with ranks and vintages).
+ * app-owned fiche content and the resolved producer readings — there are no
+ * per-theme branches. The app grammar owns subgroup order, headings, editorial
+ * framing, indicator order, compact figures and reading copy; two fact-bearing
+ * framing clauses retain their producer metadata reader. Producer rows own
+ * reading identity and values. Theme metadata remains for the theme label,
+ * factual labels and indicator-page contracts used by the fiche and other
+ * consumers.
  *
  * The block consumes the payload selectors and the shared subgroup mapper —
  * never raw JSON, never a theme branch.
@@ -191,8 +191,8 @@ const lignesReseaux = computed(
   >
     <p class="onglet-theme-overline">{{ nomTheme }}</p>
 
-    <!-- The shared subgroup loop (issue #314) — the metadata order, labels and
-         reading linkage drive the anatomy of all five themes, identically. A
+    <!-- The shared subgroup loop (issue #314) — app-owned grammar drives the
+         anatomy of all six themes, identically. A
          subgroup with neither figures nor reading stays silent (the honest
          absent-data state — never an empty shell). -->
     <template v-for="groupe in sousGroupes" :key="groupe.key">
@@ -202,9 +202,9 @@ const lignesReseaux = computed(
         :data-groupe="groupe.key"
       >
         <h3 class="sous-groupe-titre">{{ groupe.label }}</h3>
-        <p class="sous-groupe-cadrage">{{ groupe.framing }}</p>
+        <p v-if="groupe.framing" class="sous-groupe-cadrage">{{ groupe.framing }}</p>
 
-        <!-- The reading slot — the metadata template rendered with the
+        <!-- The reading slot — the app-owned template rendered with the
              resolved row's values, the reading's compact figure and its
              exhaustive source. -->
         <div v-if="groupe.lecture" class="sous-groupe-lecture">
@@ -316,9 +316,9 @@ const lignesReseaux = computed(
           </p>
         </div>
 
-        <!-- The subgroup's figures: the compact figure first (the metadata's
-             famille + indicateur — the subgroup's matter), then the rest of
-             the indicator grid (metadata key order, ranks + vintages). -->
+        <!-- The subgroup's figures: the app-owned compact family + indicator
+             first, then the remaining producer rows in app presentation order
+             (with factual labels, ranks and vintages from their contracts). -->
         <div class="grille-indicateurs">
           <div
             v-if="groupe.figureCompacte"

@@ -1,24 +1,24 @@
 /**
- * The shared fiche subgroup mapper (issue #314, parent #308) — the app's half
- * of the manifest-driven fiche: ONE loop over the theme's metadata subgroups
- * for every theme, never a per-theme branch. Everything the subgroup renders
- * comes from the payload contract:
+ * The shared fiche subgroup mapper (issue #314, parent #308) — ONE loop over
+ * the app-owned presentation grammar for every theme, never a per-theme branch.
+ * Stable headings, grouping, figure choices, editorial framing and reading
+ * templates are app content; the payload remains the authority for rows and
+ * resolved readings:
  *
- * - the subgroup ORDER, label, framing and indicator keys from
- *   theme_<theme>.json (themeMetadata) — the app owns no label/order
- *   dictionary for the subgroups;
- * - the compact figure (famille + indicateur) from the metadata, its rows
- *   from the payload;
+ * - subgroup order, label, editorial framing, resource bindings and figure
+ *   presentation from ficheGrammar.ts; the two fact-bearing framing clauses
+ *   use their explicitly retained producer metadata reader, and an app
+ *   declaration never establishes availability;
+ * - compact and indicator figures use only rows actually present in the payload;
  * - the RESOLVED reading from the histoires row joined by
  *   (territoire, groupe) — the explicit subgroup link of the contract
  *   (#312), never inferred from names or story keys (US 10–11);
- * - the reading COPY from the metadata reading template, its params resolved
- *   from the row. A reading whose row is absent, or whose referenced params
- *   are null, FAILS HONESTLY (lecture null, lectureIndisponible) — never an
- *   invented sentence.
+ * - the reading COPY and parameter presentation order from ficheGrammar.ts;
+ *   resolved values, classification labels and source facts remain payload-owned.
+ *   A missing row or referenced parameter stays honest; no sentence is invented.
  *
- * The figure/chart selection of a reading is driven by the metadata story_key
- * (figureLecturePour), never by the theme prop; a story key without a known
+ * The figure/chart selection of a reading is driven by its producer-resolved
+ * story_key (figureLecturePour), never by the theme prop; a key without a known
  * figure renders text-only (honest, never a fabricated chart).
  */
 
@@ -34,6 +34,8 @@ import type {
   Theme,
   ThemeMetadata,
 } from '@/payload/types'
+import { cadrageSousGroupeFiche, sousGroupesFiche } from '@/fiche/content/ficheGrammar'
+import type { FicheReadingGrammar } from '@/fiche/content/ficheGrammar'
 import {
   formaterNombreFR,
   formaterVintage,
@@ -49,7 +51,7 @@ import type {
   PointNuageMobilite,
 } from '@/payload/selectors'
 
-/** The subgroup's compact figure — family + indicator from the metadata, rows from the payload. */
+/** The subgroup's compact figure — app-owned family + producer key, rows from the payload. */
 export interface FigureCompacte {
   famille: FamilleFigure
   /** The indicator the figure renders — the subgroup's matter. */
@@ -57,14 +59,16 @@ export interface FigureCompacte {
   lignes: Indicateur[]
 }
 
-/** The resolved reading of a subgroup — the row plus the template params displayed. */
+/** The resolved reading — actual row plus app-owned template/parameter presentation. */
 export interface LectureSousGroupe {
-  /** The story key the metadata subgroup links to — the chart registry key. */
+  /** The story key from the resolved producer row — the chart registry key. */
   story_key: string
   /** The resolved row (the (territoire, groupe) join of the contract). */
   histoire: Histoire
-  /** The metadata reading template — the payload-owned copy the slot renders. */
-  template: NoeudTexteRiche[]
+  /** App-owned reading template; its referenced values come from the resolved row. */
+  template: readonly NoeudTexteRiche[]
+  /** Declared parameter order for the prototype's reading-value presentation. */
+  paramsDeclares: readonly string[]
   /**
    * The template params the template actually REFERENCES, resolved to display
    * strings (formatted numbers, string keys verbatim). Only referenced params
@@ -72,18 +76,18 @@ export interface LectureSousGroupe {
    * pct_iso_full_t, by contract) never kills the reading.
    */
   parametres: Record<string, string>
-  /** Optional payload-declared reading family (e.g. the LQ list). */
+  /** Optional app-owned figure presentation (e.g. the LQ list). */
   figure?: { family: FamilleFigure; indicator: string }
 }
 
-/** One fiche subgroup, rendered — the shared anatomy of all five themes. */
+/** One fiche subgroup, rendered — the shared anatomy of all six themes. */
 export interface SousGroupeRendu {
   key: string
   label: string
-  framing: string
-  /** The subgroup's indicator figures — metadata order, never an app-side order. */
+  framing: string | null
+  /** The subgroup's indicators in app-owned presentation order, when rows exist. */
   figures: GroupeIndicateur[]
-  /** The subgroup's compact figure (famille + indicateur de la métadonnée). */
+  /** The subgroup's compact figure (app-owned family + producer resource key). */
   figureCompacte: FigureCompacte | null
   /** The resolved reading of the subgroup — null when absent or unreadable. */
   lecture: LectureSousGroupe | null
@@ -111,7 +115,7 @@ export interface DistributionMobilite {
   max: number | null
 }
 
-/** The chart of a resolved reading — one per metadata story_key that owns one. */
+/** The chart of a resolved reading — selected by its producer-resolved story key. */
 export type FigureLecture =
   | {
       genre: 'soldes'
@@ -246,9 +250,8 @@ function lecturePour(
   theme: Theme,
   territoire: string,
   groupe: string,
-  template: NoeudTexteRiche[],
+  reading: FicheReadingGrammar,
   metadata: ThemeMetadata,
-  figure?: LectureSousGroupe['figure'],
 ): { lecture: LectureSousGroupe | null; indisponible: boolean } {
   const histoire = payload.histoires.find(
     (h) => h.theme === theme && h.territoire === territoire && h.groupe === groupe,
@@ -256,26 +259,33 @@ function lecturePour(
   if (!histoire) return { lecture: null, indisponible: false }
 
   const parametres: Record<string, string> = {}
-  for (const clef of clesParametresReferencees(template)) {
+  for (const clef of clesParametresReferencees([...reading.template])) {
     const valeur = valeurParametre(histoire, clef, metadata)
     if (valeur === null) return { lecture: null, indisponible: true }
     parametres[clef] = valeur
   }
-  // La story RÉSOLUE de la ligne (la sélection du pipeline, #312) — le
-  // sous-groupe déclare le lien canonique dans la métadonnée, la ligne porte
+  // La story RÉSOLUE de la ligne (la sélection du pipeline, #312) — la
+  // grammaire app-owned déclare le lien de présentation, la ligne porte
   // la sélection effective (la saillance vélo remplace le défaut, même groupe).
   return {
-    lecture: { story_key: histoire.story_key, histoire, template, parametres, ...(figure ? { figure } : {}) },
+    lecture: {
+      story_key: histoire.story_key,
+      histoire,
+      template: reading.template,
+      paramsDeclares: reading.params,
+      parametres,
+      ...(reading.figure ? { figure: reading.figure } : {}),
+    },
     indisponible: false,
   }
 }
 
 /**
- * The shared subgroup loop of the fiche — the metadata order, labels, framing,
- * indicator keys, figure family and reading linkage, for ANY theme. An absent
- * metadata (impossible under the loader contract — a present theme REQUIRES
- * its theme_<theme>.json, #313) reads as no subgroups, never a fabricated
- * block.
+ * The shared subgroup loop of the fiche — app-owned presentation grammar,
+ * joined to actual indicator and resolved-reading rows. Theme metadata remains
+ * required for factual classification labels and other consumers, but its
+ * subgroups are not fiche presentation authority. Missing metadata still fails
+ * closed as no content; no grammar entry fabricates an available fact.
  */
 export function sousGroupesPourTerritoire(
   payload: Payload,
@@ -293,7 +303,7 @@ export function sousGroupesPourTerritoire(
     else groupesParCle.set(ligne.key, [ligne])
   }
 
-  return metadata.subgroups.map((sousGroupe) => {
+  return sousGroupesFiche(theme).map((sousGroupe) => {
     const figures: GroupeIndicateur[] = []
     for (const clef of sousGroupe.indicators) {
       const lignes = groupesParCle.get(clef)
@@ -309,21 +319,13 @@ export function sousGroupesPourTerritoire(
     // A subgroup may deliberately have no reading (the silent, indicator-only
     // state). Do not turn that absence into copy or a fake Story.
     const { lecture, indisponible } = sousGroupe.reading
-      ? lecturePour(
-          payload,
-          theme,
-          territoire,
-          sousGroupe.key,
-          sousGroupe.reading.template,
-          metadata,
-          sousGroupe.reading.figure,
-        )
+      ? lecturePour(payload, theme, territoire, sousGroupe.key, sousGroupe.reading, metadata)
       : { lecture: null, indisponible: false }
 
     return {
       key: sousGroupe.key,
       label: sousGroupe.label,
-      framing: sousGroupe.framing,
+      framing: cadrageSousGroupeFiche(sousGroupe, metadata),
       figures,
       figureCompacte,
       lecture,
@@ -349,8 +351,8 @@ function distributionDe(histoire: HistoireMobilite): DistributionMobilite {
 }
 
 /**
- * The reading's compact figure — selected by the METADATA story_key (the
- * manifest's histoire linkage), never by the theme prop. A story key without
+ * The reading's compact figure — selected by the producer-resolved row's
+ * story_key (the factual selection), never by the theme prop. A key without
  * a known figure (the vélo salience, the Économie list readings, Habitat —
  * prose-only) renders text-only: null, honest.
  */

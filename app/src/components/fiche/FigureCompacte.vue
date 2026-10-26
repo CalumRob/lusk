@@ -2,8 +2,8 @@
 /**
  * FigureCompacte — le renderer partagé de la grammaire des figures (issue #371,
  * parent #367) : UN sélecteur de corps de figure par famille, sans aucune
- * branche par thème. Il consomme `figure.family` déclaré dans la métadonnée du
- * sous-groupe et délègue au corps dédié :
+ * branche par thème. Il consomme `figure.family` déclaré dans la grammaire
+ * app-owned du sous-groupe et délègue au corps dédié :
  *
  * - `scalar`      → valeur seule + puce de rang + accent de position
  *                   (IndicatorFigure) ; « L'offre cyclable » garde son corps

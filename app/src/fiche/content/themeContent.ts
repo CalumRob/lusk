@@ -24,7 +24,7 @@ import type {
   TerritoryIdentity,
 } from './territoryFacts'
 import { libelleComparaisonBâtiments } from '@/fiche/comparisonContext'
-import { CONTENU_SOUS_GROUPES_FICHE } from '@/indicateurs/catalogueContent'
+import { CONTENU_SOUS_GROUPES_FICHE } from './ficheGrammar'
 
 export interface ContentSource {
   id: string

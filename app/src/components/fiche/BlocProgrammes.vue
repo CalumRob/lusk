@@ -8,8 +8,10 @@
  * les faits d'action publique ne sont ni une courbe ni un classement.
  *
  * Le bloc lit SES fichiers hermétiques uniquement (#408) :
- *   - theme_programmes.json — les labels/cadrages des sous-groupes (jamais un
- *     vocabulaire app-side) ;
+ *   - ficheGrammar.ts — stable subgroup labels, editorial framing and figure choices ;
+ *   - theme_programmes.json — the remaining indicator labels, descriptors and
+ *     source records used by factual/page readers, plus the grant-eligibility
+ *     framing clause retained from its producer declaration ;
  *   - indicateurs_programmes.json — les faits, via programmesPourTerritoire
  *     (la dérivation en échelle : jointure relationnelle + voix honnêtes,
  *     ADR-0013 ; le total poolé est calculé côté pipeline) ;
@@ -27,6 +29,7 @@ import { ExternalLink } from 'lucide-vue-next'
 import AppIcon from '@/components/AppIcon.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { handoffExploration } from '@/fiche/explorationHandoff'
+import { cadrageSousGroupeFiche, sousGroupeFiche } from '@/fiche/content/ficheGrammar'
 import {
   LIEN_SUBVENTIONS,
   formaterMontant,
@@ -44,16 +47,15 @@ const props = defineProps<{
   territoire: string
 }>()
 
-// Les labels du bloc viennent de la métadonnée publiée (theme_programmes.json)
-// — l'overline du thème et les titres/cadrages des sous-groupes, jamais une
-// seconde liste app-side (le contrat #318/#314, validerThemeMetadata garantit
-// la forme ; un thème rendu implique sa métadonnée, #313).
+// The theme label and remaining factual/page contracts still use metadata;
+// labels and editorial framing use app grammar. Grant eligibility framing is
+// retained from its producer subgroup declaration.
 const metadata = computed(() => props.payload.themeMetadata?.programmes ?? null)
 
-function groupe(key: string): { label: string; framing: string } {
-  const g = metadata.value?.subgroups.find((sousGroupe) => sousGroupe.key === key)
-  if (!g) throw new Error(`Sous-groupe « ${key} » absent des métadonnées « programmes »`)
-  return { label: g.label, framing: g.framing }
+function groupe(key: string): { label: string; framing: string | null } {
+  const g = sousGroupeFiche('programmes', key)
+  if (!g) throw new Error(`Sous-groupe « ${key} » absent de la grammaire fiche « programmes »`)
+  return { label: g.label, framing: cadrageSousGroupeFiche(g, metadata.value ?? undefined) }
 }
 
 const element = computed(() => programmesPourTerritoire(props.payload, props.territoire))
@@ -119,7 +121,7 @@ const lienProvenance = computed(() => {
     <template v-if="elementVide">
       <section class="sous-groupe" data-groupe="couverture">
         <h3 class="sous-groupe-titre">{{ groupe('couverture').label }}</h3>
-        <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
+        <p v-if="groupe('couverture').framing" class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
         <p class="programmes-vide">Aucun programme référencé.</p>
       </section>
     </template>
@@ -134,7 +136,7 @@ const lienProvenance = computed(() => {
         data-groupe="couverture"
       >
         <h3 class="sous-groupe-titre">{{ groupe('couverture').label }}</h3>
-        <p class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
+        <p v-if="groupe('couverture').framing" class="sous-groupe-cadrage">{{ groupe('couverture').framing }}</p>
 
         <ul class="programmes-badges">
           <li v-for="badge in element.badges" :key="badge.sigle" class="programme-badge">
@@ -167,7 +169,7 @@ const lienProvenance = computed(() => {
         data-groupe="subventions"
       >
         <h3 class="sous-groupe-titre">{{ groupe('subventions').label }}</h3>
-        <p class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
+        <p v-if="groupe('subventions').framing" class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
 
         <div class="programme-subventions">
           <p class="subvention-total">

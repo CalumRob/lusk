@@ -101,7 +101,7 @@ function numeroGroupe(index: number): string {
         <span class="journal-numero" aria-hidden="true">{{ numeroGroupe(index) }}</span>
         <div class="journal-section-titre">
           <h3>{{ groupe.label }}</h3>
-          <p class="journal-cadrage">{{ groupe.framing }}</p>
+          <p v-if="groupe.framing" class="journal-cadrage">{{ groupe.framing }}</p>
         </div>
       </header>
 

@@ -101,8 +101,8 @@ export interface LectureMatiere {
   storyKey: string
   /** Les ids vintages cités exhaustivement par CETTE lecture (marqueurs). */
   sourceIds: readonly string[]
-  /** Le gabarit de la métadonnée, rendu par NoeudLecture. */
-  template: NoeudTexteRiche[]
+  /** Le gabarit app-owned, rendu par NoeudLecture. */
+  template: readonly NoeudTexteRiche[]
   /** Les paramètres résolus du gabarit (les chaînes affichées). */
   parametres: Record<string, string>
   figure: FigureLecture | null
@@ -117,12 +117,12 @@ export interface LectureMatiere {
 export interface SousGroupeMatiere {
   key: string
   label: string
-  framing: string
+  framing: string | null
   lecture: LectureMatiere | null
   lectureIndisponible: boolean
-  /** La figure compacte déclarée par la métadonnée (la matière du groupe). */
+  /** The compact figure selected by app-owned fiche grammar (the subgroup's matter). */
   valeurPrincipale: ValeurIndicateur | null
-  /** Les autres indicateurs du groupe, ordre de la métadonnée. */
+  /** The other producer indicator rows in app-owned presentation order. */
   valeurs: ValeurIndicateur[]
 }
 
@@ -446,10 +446,9 @@ export function matiereTheme(
     let lecture: LectureMatiere | null = null
     if (groupe.lecture) {
       const sourceComplete = sourceLecture(payload, groupe.lecture)
-      // Les paramètres DÉCLARÉS de la déclaration du sous-groupe (l'ordre de
-      // la métadonnée pilote la hiérarchie des nombres importants).
-      const declares =
-        metadata.subgroups.find((sg) => sg.key === groupe.key)?.reading?.params ?? []
+      // The shared mapper carries app-owned parameter order into this matter;
+      // only values resolved on the producer row can become important numbers.
+      const declares = groupe.lecture.paramsDeclares
       lecture = {
         storyKey: groupe.lecture.story_key,
         sourceIds: SOURCES_PAR_STORY_LOCAL[groupe.lecture.story_key] ?? [],

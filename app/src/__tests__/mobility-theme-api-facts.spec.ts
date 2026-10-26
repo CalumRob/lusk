@@ -19,9 +19,6 @@ const payload: Payload = {
   indicateurs: [], histoires: histoiresMobiliteFixture, apercu: null, runReport: null,
   vintages: [], programmes: null, themeMetadata: metadonneesThemesFixtures,
 }
-const readingGroup = metadonneesThemesFixtures.mobilite!.subgroups.find(
-  (group) => group.reading?.params.includes('div_loss_t'),
-)!.key
 const response = (): any => ({
   contract: 'theme-facts-v1', complete_theme: false, theme_id: 'mobilite',
   territory: { territory_id: '22001', territory_type: 'commune', name: 'Commune' },
@@ -37,10 +34,6 @@ const response = (): any => ({
       { name: 'sex', key: 'F', label: 'Femmes', order: 0, unit: null }] }],
   named_reference_evidence: [],
   series: [], bpe_profile_evidence: null,
-  readings: [{ groupe: readingGroup, story_key: 'sql-story', salience_reason: 'sql',
-    classification_saillance: null, div_loss_t: 7, div_loss_b: 8, status: 'measured', unit: 'types',
-    provenance: { source_id: 'mobilite_snapshot', source_name: 'SQL mobility', source_version: 'sql-v1',
-      source_reference_date: null, source_publication_date: null } }],
 })
 
 /** Build actual read-batch resource envelopes from the compact table used by
@@ -238,6 +231,17 @@ describe('SQL Mobilité response to Variant E facts', () => {
     expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
     expect(facts.mobility.losses.diversityBike.value).toBeNull()
   })
+  it('keeps the retired Mobility reading unavailable on the actual native resource catalogue', () => {
+    const resources = nativeResources('mobilite')
+    expect(resources.map((resource) => resource.resource_id)).not.toContain('mobilite_selected_reading')
+
+    const facts = mobilityFactsFromThemeApi(payload, '22001', {
+      theme_id: 'mobilite', resource_reads: [],
+    })
+    expect(facts.mobility.losses.diversityWalkTransit.value).toBeNull()
+    expect(facts.mobility.losses.diversityBike.value).toBeNull()
+  })
+
   it('combines regional motorisation with a synthetic producer-derived curve without rendering its named reference', () => {
     const regionPayload: Payload = { ...payload, territoires: [
       { territoire: '53', type: 'region', nom: 'Bretagne', departement: null, epci: null },
@@ -463,7 +467,6 @@ describe('SQL Mobilité response to Variant E facts', () => {
   })
   it('retains source missingness and never fills absent SQL values from static history', () => {
     const data = response()
-    data.readings = []
     data.indicators = []
     const facts = mobilityFacts(data, '22001')
     expect(facts.mobility.indicators).toHaveLength(0)

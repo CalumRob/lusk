@@ -17,8 +17,9 @@ import type { Payload } from '../payload/types'
  *     couverte / porte / compte / ort), la ventilation communale pliée
  *     top-5 + révélation, la part de contexte, la provenance, le lien
  *     portail Région ;
- *   - le vocabulaire payload-owned : l'overline et les titres/cadrages des
- *     sous-groupes viennent de theme_programmes.json ;
+ *   - l'overline, factual/page bindings and the grant-eligibility framing
+ *     remain in metadata, while subgroup labels/editorial framing use the
+ *     shared app-owned fiche grammar ;
  *   - les faits d'action publique JAMAIS des résultats : aucune formulation
  *     ne présente une adhésion ou une subvention comme un effet mesuré ;
  *   - les états d'absence honnêtes : « Aucun programme référencé. » quand le
@@ -56,14 +57,37 @@ function montage(payload: Payload, territoire: string) {
 }
 
 describe('BlocProgrammes — le premier thème de la fiche (#408)', () => {
-  it('porte l\u2019overline publiée et les sous-groupes du canon (jamais un vocabulaire app-side)', () => {
-    const wrapper = montage(payloadPlein, '22001')
+  it('porte les sous-groupes app-owned même si la présentation upstream est périmée', () => {
+    const upstreamStale = structuredClone(payloadPlein)
+    upstreamStale.themeMetadata!.programmes!.subgroups = [{
+      ...upstreamStale.themeMetadata!.programmes!.subgroups[0]!,
+      key: 'upstream-stale',
+      label: 'Libellé amont périmé',
+      framing: 'Cadrage amont périmé.',
+      indicators: ['resource-amont-perime'],
+      figure: { family: 'scalar', indicator: 'resource-amont-perime' },
+    }]
+    const wrapper = montage(upstreamStale, '22001')
 
     expect(wrapper.find('.onglet-theme-overline').text()).toBe('Programmes et subventions')
     const titres = wrapper.findAll('.sous-groupe-titre').map((t) => t.text())
     expect(titres).toEqual(['Programmes et contrats', 'Subventions attribuées'])
     expect(wrapper.find('[data-groupe="couverture"]').exists()).toBe(true)
     expect(wrapper.find('[data-groupe="subventions"]').exists()).toBe(true)
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').exists()).toBe(false)
+    expect(wrapper.text()).not.toContain('Libellé amont périmé')
+  })
+
+  it('reads the factual grant-eligibility clause from retained producer metadata', () => {
+    const upstream = structuredClone(payloadPlein)
+    upstream.themeMetadata!.programmes!.subgroups.find((subgroup) => subgroup.key === 'subventions')!.framing =
+      'Cadrage factuel des niveaux de ventilation fourni par le producteur.'
+    const wrapper = montage(upstream, '22001')
+
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-titre').text())
+      .toBe('Subventions attribuées')
+    expect(wrapper.find('[data-groupe="subventions"] .sous-groupe-cadrage').text())
+      .toBe('Cadrage factuel des niveaux de ventilation fourni par le producteur.')
   })
 
   it('rend les badges avec leurs voix honnêtes — lauréate, couverte, portage nommé', () => {

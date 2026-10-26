@@ -1,7 +1,7 @@
 import { THEMES_CANONIQUES } from '@/payload/types'
-import type { Payload } from '@/payload/types'
+import type { Payload, Theme } from '@/payload/types'
 
-import type { ThemeContent } from '@/fiche/content/themeContent'
+import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 
 /** One navigable entry in the Cahier's continuous spine. */
 export interface CahierPaginationEntry {
@@ -18,6 +18,12 @@ export interface CahierPagination {
   entries: readonly CahierPaginationEntry[]
 }
 
+/** The page-sequencing fields shared by each theme's Cahier content. */
+export interface CahierPaginationContent {
+  theme: Theme
+  units: readonly { key: string; label: string }[]
+}
+
 function anchorFor(key: string): string {
   return key === 'acces-aux-services' ? 'figure-lecture' : `figure-${key}`
 }
@@ -25,39 +31,39 @@ function anchorFor(key: string): string {
 /**
  * Resolve the Cahier page sequence for the rendered units. The sequence is
  * deliberately kept outside ThemeContent: it is a layout concern, not a
- * semantic claim. A missing metadata sequence still gets a usable one-page
- * presentation for the prototype. The default keeps the original isolated
- * first-unit presentation; callers rendering the whole Cahier opt in.
+ * semantic claim. Page order/count come from the shared app-owned fiche
+ * grammar across all six themes, never from producer subgroup counts. The
+ * default keeps the original isolated first-unit presentation; callers
+ * rendering all units of the current theme opt in while retaining the global
+ * spine's page numbers.
  */
 export function cahierPaginationFor(
-  payload: Payload,
-  content: ThemeContent,
+  _payload: Payload,
+  content: CahierPaginationContent,
   renderAllUnits = false,
 ): CahierPagination {
-  const metadata = payload.themeMetadata ?? {}
   const currentTheme = content.theme
   const currentUnits = renderAllUnits
     ? [...content.units]
     : content.units[0]
       ? [content.units[0]]
       : []
-  const currentSubgroups = metadata[currentTheme]?.subgroups ?? []
+  const currentSubgroups = sousGroupesFiche(currentTheme)
   const firstUnit = currentUnits[0]
   const currentIndex = firstUnit
     ? currentSubgroups.findIndex((subgroup) => subgroup.key === firstUnit.key)
     : -1
 
-  let offset = 0
-  for (const theme of THEMES_CANONIQUES) {
-    if (theme === currentTheme) break
-    offset += metadata[theme]?.subgroups.length ?? 0
-  }
-
-  const declaredTotal = Object.values(metadata).reduce(
-    (total, theme) => total + (theme?.subgroups.length ?? 0),
+  const currentThemeIndex = THEMES_CANONIQUES.indexOf(currentTheme)
+  const offset = THEMES_CANONIQUES.slice(0, currentThemeIndex).reduce(
+    (total, theme) => total + sousGroupesFiche(theme).length,
     0,
   )
-  const totalPages = Math.max(declaredTotal, currentUnits.length, 1)
+  const grammarPageCount = THEMES_CANONIQUES.reduce(
+    (total, theme) => total + sousGroupesFiche(theme).length,
+    0,
+  )
+  const totalPages = Math.max(grammarPageCount, currentUnits.length, 1)
   const currentPage = Math.max(1, offset + Math.max(0, currentIndex) + 1)
   const entries: CahierPaginationEntry[] = currentUnits.map((unit, index) => ({
     key: unit.key,

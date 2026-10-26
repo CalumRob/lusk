@@ -594,8 +594,10 @@ export interface Payload {
   /** Compact three-mode access-ramp quantiles; null means absent. */
   rampeAccesBatiments?: RampeAccesBatimentsRow[] | null
   /**
-   * The per-theme metadata files (theme_<theme>.json, issue #309, wired by
-   * #313) — keyed by theme, present themes only. Optional at the type level:
+   * The producer per-theme metadata files (theme_<theme>.json, issue #309,
+   * wired by #313) — keyed by theme, present themes only. These retain factual
+   * labels/page contracts, the two fact-bearing subgroup framing clauses and
+   * metadata consumed outside shared fiche presentation. Optional at the type level:
    * payloads assembled from merged documents (parsePayload) or pre-seam
    * fixtures carry none; the loader and the store always produce the section.
    */
@@ -763,7 +765,11 @@ export interface LectureSousGroupe {
   figure?: FigureSousGroupe
 }
 
-/** One subgroup of the fiche — a stable place with indicators, a figure and an optional reading. */
+/**
+ * Producer subgroup declaration retained in theme metadata for validation,
+ * non-shared-fiche consumers and the two fact-bearing framing clauses whose
+ * typed factual context is not available at the shared fiche seam.
+ */
 export interface SousGroupeMetadata {
   key: string
   label: string
@@ -775,7 +781,13 @@ export interface SousGroupeMetadata {
 }
 
 /**
- * The theme_<theme>.json contract. Validation rules (both sides):
+ * The producer theme_<theme>.json contract, retained for factual vocabularies,
+ * page contracts, validation, two fact-bearing framing clauses and consumers
+ * outside the shared fiche subgroup presentation. The shared fiche's subgroup
+ * ordering, headings, editorial framing, indicator order, figures and reading
+ * copy live in app-owned ficheGrammar.ts, except the explicitly marked
+ * producer-sourced factual framing clauses.
+ * Validation rules (both sides):
  * - `theme` ∈ THEMES_CANONIQUES (the six, Programmes et subventions included
  *   since #408);
  * - `indicator_keys` / `story_keys` are the theme's registries; each subgroup

@@ -632,8 +632,10 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
     throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
   }
   const model = validerModeleTerritoire(raw, file, { type, territoire }, { requireAllThemes: true })
-  // Theme contracts are producer-owned and may postdate the atomic territory
-  // snapshot. Reconcile them before either semantic fact or scalar acquisition.
+  // Producer-owned theme facts/contracts and metadata still used by other
+  // readers may postdate the atomic territory snapshot. Reconcile them before
+  // semantic fact or scalar acquisition; shared fiche subgroup presentation
+  // comes from app-owned ficheGrammar.ts.
   const scalarApiEnabled = scalarCohortEnabled(import.meta.env)
   if (scalarApiEnabled || themeAcquisitionEnabled(import.meta.env)) {
     await Promise.all(Object.values(model.themes).filter((theme) => theme !== undefined).map(async (theme) => {
@@ -649,10 +651,10 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
       if (canonicalMetadata.theme !== theme.theme) {
         throw new PayloadError('validation', metadataUrl, `Le catalogue ${metadataUrl} ne correspond pas au thème ${theme.theme}.`)
       }
-      // Subgroup/figure declarations, indicator-page contracts and scalar
-      // registrations are owned by the canonical theme catalogue. A
-      // per-territory model can lag this metadata even while its numeric facts
-      // remain current; reconcile contracts before API validation/rendering.
+      // Keep subgroup declarations canonical for retained non-fiche readers;
+      // the shared fiche uses its app-owned grammar. Indicator-page contracts
+      // and scalar registrations remain producer-owned. A per-territory model
+      // can lag these contracts while numeric facts remain current.
       theme.metadata.subgroups = canonicalMetadata.subgroups
       theme.metadata.indicator_pages = canonicalMetadata.indicator_pages
       if (scalarApiEnabled) {
