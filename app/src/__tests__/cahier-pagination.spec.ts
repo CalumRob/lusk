@@ -26,14 +26,24 @@ const payloadPresentationAmontPerimee = {
 } as unknown as Payload
 
 describe('cahierPaginationFor — le fil global de présentation du Cahier', () => {
-  it('keeps all six canonical theme groups in the continuous spine in both render modes', () => {
-    const isolated = cahierPaginationFor(payloadCanonique, contenuPour('mobilite'))
-    const allUnits = cahierPaginationFor(payloadCanonique, contenuPour('mobilite'), true)
+  it.each([
+    ['mobilite', 1, 4],
+    ['demographie', 5, 2],
+    ['habitat', 7, 3],
+    ['economie', 10, 2],
+    ['milieux', 12, 1],
+    ['programmes', 13, 2],
+  ] as const)('keeps %s at its global position in isolated and all-unit modes', (theme, firstPage, count) => {
+    const content = contenuPour(theme)
+    const isolated = cahierPaginationFor(payloadCanonique, content)
+    const allUnits = cahierPaginationFor(payloadCanonique, content, true)
 
-    expect(isolated).toMatchObject({ currentPage: 1, totalPages: 14 })
-    expect(isolated.entries.map(({ page }) => page)).toEqual([1, null])
-    expect(allUnits).toMatchObject({ currentPage: 1, totalPages: 14 })
-    expect(allUnits.entries.map(({ page }) => page)).toEqual([1, 2, 3, 4, null])
+    expect(isolated).toMatchObject({ currentPage: firstPage, totalPages: 14 })
+    expect(isolated.entries.map(({ page }) => page)).toEqual([firstPage, null])
+    expect(allUnits).toMatchObject({ currentPage: firstPage, totalPages: 14 })
+    expect(allUnits.entries.map(({ page }) => page)).toEqual([
+      ...Array.from({ length: count }, (_, index) => firstPage + index), null,
+    ])
   })
 
   it('derives the later-theme offset from app grammar, not stale upstream subgroup counts or order', () => {

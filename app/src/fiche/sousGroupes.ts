@@ -80,7 +80,7 @@ export interface LectureSousGroupe {
   figure?: { family: FamilleFigure; indicator: string }
 }
 
-/** One fiche subgroup, rendered — the shared anatomy of all five themes. */
+/** One fiche subgroup, rendered — the shared anatomy of all six themes. */
 export interface SousGroupeRendu {
   key: string
   label: string

@@ -79,8 +79,6 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
         'reseaux', 'reseaux_par_habitant', 'surface_reseaux_routiers', 'places_stationnement_velo_1000',
         'places_stationnement_voiture_1000', 'stationnement_velo_par_voiture', 'offre_cyclable',
       ],
-      // The shared compact renderer's specialized offer treatment is selected
-      // by the scalar family; this remains app presentation, not producer policy.
       figure: { family: 'composition', indicator: 'offre_cyclable' },
     },
     {
