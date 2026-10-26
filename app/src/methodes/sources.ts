@@ -66,6 +66,11 @@ export function datasetDeSource(id: string): string {
   return SOURCES_METHODES[id]?.dataset ?? id
 }
 
+/** Stable editorial source descriptions keyed by producer/API source identity. */
+export const DESCRIPTIONS_SOURCES: Readonly<Record<string, string>> = {
+  subventions_scdl: 'Région Bretagne',
+}
+
 /**
  * L'ancre de l'en-tête du jeu d'une source — le lien « Source » des blocs
  * d'indicateurs pointe l'en-tête du jeu (#source-dvf), jamais une ligne

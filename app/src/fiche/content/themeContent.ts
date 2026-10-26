@@ -24,6 +24,7 @@ import type {
   TerritoryIdentity,
 } from './territoryFacts'
 import { libelleComparaisonBâtiments } from '@/fiche/comparisonContext'
+import { CONTENU_SOUS_GROUPES_FICHE } from '@/indicateurs/catalogueContent'
 
 export interface ContentSource {
   id: string
@@ -1888,8 +1889,8 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
     const fact = indicatorFor(facts, key)
     return fact ? contentFact(fact, fact.label ?? key) : null
   }
-  const subgroupLabel = (key: string, fallback: string): string =>
-    metadata?.subgroups.find((subgroup) => subgroup.key === key)?.label ?? fallback
+  const subgroupLabel = (key: keyof typeof CONTENU_SOUS_GROUPES_FICHE.mobilite, fallback: string): string =>
+    CONTENU_SOUS_GROUPES_FICHE.mobilite[key] ?? fallback
   const compositionDetails = metadata?.detail_labels.voitures_menage ? Object.keys(metadata.detail_labels.voitures_menage) : ['sans_voiture', 'une_voiture', 'deux_plus']
   const composition = compositionDetails.flatMap((detail) => {
     const fact = facts.mobility.indicators.find((candidate) => candidate.key === 'voitures_menage' && candidate.detail === detail)
