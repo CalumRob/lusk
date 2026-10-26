@@ -1,22 +1,35 @@
+// @vitest-environment node
 import { mkdtempSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import os from 'node:os'
 import path from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { resolveConfig } from 'vite'
-import { copierPayloadEnBuild } from './copy-payload-build'
+import { build } from 'vite'
+import { copierPayloadEnBuild } from '../../scripts/copy-payload-build'
 
 const dirs: string[] = []
-afterEach(() => { for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true }) })
+afterEach(() => {
+  for (const dir of dirs.splice(0)) rmSync(dir, { recursive: true, force: true })
+  vi.restoreAllMocks()
+})
+
 function temporaryRoot() {
-  const parent = 'E:/Temp/opencode/619-build-hygiene-20261026'
+  const parent = path.join(os.tmpdir(), 'lusk-build-test')
   mkdirSync(parent, { recursive: true })
   const root = mkdtempSync(path.join(parent, 'test-'))
   dirs.push(root)
   return root
 }
 
-async function closeBuild(plugin: ReturnType<typeof copierPayloadEnBuild>, root: string, outDir: string) {
-  plugin.configResolved?.({ root, command: 'build', build: { outDir } } as never)
-  await plugin.closeBundle?.call({} as never)
+async function runBuild(root: string, payload: string, outDir: string) {
+  await build({
+    configFile: false,
+    root,
+    publicDir: false,
+    logLevel: 'info',
+    plugins: [copierPayloadEnBuild(payload)],
+    build: { outDir, emptyOutDir: false },
+  })
 }
 
 describe('build payload copy', () => {
@@ -26,11 +39,10 @@ describe('build payload copy', () => {
     const outDir = kind === 'relative' ? 'release/relative' : path.join(root, 'absolute-output')
     const output = path.resolve(root, outDir)
     mkdirSync(source, { recursive: true })
-    mkdirSync(path.dirname(output), { recursive: true })
+    writeFileSync(path.join(root, 'index.html'), '<!doctype html><html><script type="module" src="/entry.js"></script></html>')
+    writeFileSync(path.join(root, 'entry.js'), 'document.body.textContent = "built"')
     writeFileSync(path.join(source, 'payload.json'), '{"ok":true}')
-    const plugin = copierPayloadEnBuild(source)
-    expect(plugin.apply).toBe('build')
-    await closeBuild(plugin, root, outDir)
+    await runBuild(root, source, outDir)
     expect(readFileSync(path.join(output, 'data', 'payload.json'), 'utf8')).toBe('{"ok":true}')
   })
 
@@ -47,10 +59,12 @@ describe('build payload copy', () => {
     const root = temporaryRoot()
     const output = path.join(root, 'out')
     mkdirSync(output)
+    writeFileSync(path.join(output, 'preserve.txt'), 'keep')
+    writeFileSync(path.join(root, 'index.html'), '<!doctype html><html></html>')
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {})
-    await closeBuild(copierPayloadEnBuild(path.join(root, 'missing')), root, 'out')
+    await runBuild(root, path.join(root, 'missing'), 'out')
     expect(warn).toHaveBeenCalledWith(expect.stringContaining('payload introuvable'))
-    expect(readdirSync(output)).toEqual([])
-    warn.mockRestore()
+    expect(readFileSync(path.join(output, 'preserve.txt'), 'utf8')).toBe('keep')
+    expect(readdirSync(output)).not.toContain('data')
   })
 })
