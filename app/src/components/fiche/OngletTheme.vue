@@ -154,16 +154,22 @@ function trajectoirePour(clef: string): TrajectoryMetadata | undefined {
   const axisLabels = new Map((contract.axes ?? []).filter((axis) => axis.name === 'detail' && axis.label && axis.label !== axis.key)
     .map((axis) => [axis.key, axis.label as string]))
   const numeric = contract.axisNumericValues
+  const numericCoordinates = numeric?.length === contract.axisValues.length &&
+    numeric.every((value) => typeof value === 'number' && Number.isFinite(value))
+  const declaredDomain = new Set(contract.axisValues)
+  const retainedEndpoints = new Set((catalogueTrajectory?.endpoints ?? []).filter((detail) => declaredDomain.has(detail)))
   return {
-    ...(catalogueTrajectory ?? { endpoints: [] }),
-    axis: numeric?.length === contract.axisValues.length && numeric.every((value) => value !== null)
-      ? 'numeric'
-      : catalogueTrajectory?.axis ?? 'ordinal',
+    endpoints: contract.axisValues.filter((detail) => retainedEndpoints.has(detail)),
+    ...(catalogueTrajectory?.reference ? { reference: catalogueTrajectory.reference } : {}),
+    ...(catalogueTrajectory?.marker && declaredDomain.has(catalogueTrajectory.marker.detail)
+      ? { marker: catalogueTrajectory.marker } : {}),
+    axis: numericCoordinates ? 'numeric' : 'ordinal',
     ticks: contract.axisValues.map((detail, index) => ({
       detail,
       label: axisLabels.get(detail) ?? catalogueTicks.get(detail)?.label ??
         (numeric?.[index] !== null && numeric?.[index] !== undefined ? String(numeric[index]) : ''),
-      ...(numeric?.[index] === null || numeric?.[index] === undefined ? {} : { numericValue: numeric[index] }),
+      ...(numericCoordinates && numeric?.[index] !== null && numeric?.[index] !== undefined
+        ? { numericValue: numeric[index] } : {}),
       ...(catalogueTicks.get(detail)?.mobile === undefined ? {} : { mobile: catalogueTicks.get(detail)!.mobile }),
     })),
   }

@@ -1,8 +1,8 @@
 <script setup lang="ts">
 /**
- * The shared trajectory-family body (#371). Metadata owns the curve grid,
- * human tick labels, reference and marker; this component only projects those
- * published facts. Missing values split paths instead of being treated as 0.
+ * The shared trajectory-family body (#371). Native descriptors own axis
+ * membership/order/coordinates; verified metadata may add matching labels,
+ * references and markers. Missing values split paths instead of becoming 0.
  */
 import { computed } from 'vue'
 
@@ -54,18 +54,35 @@ function abscisseDetail(detail: string): number | null {
   return Number.isFinite(valeur) ? valeur : null
 }
 
-function pointsDepuis(lignes: Indicateur[]): Point[] {
+function pointsDepuis(lignes: Indicateur[], declaredAxisValues?: string[]): Point[] {
+  const axisValues = declaredAxisValues ?? lignes.find((ligne) => ligne.nativeContract?.axisValues?.length)
+    ?.nativeContract?.axisValues
+  const axisOrder = axisValues ? new Map(axisValues.map((detail, index) => [detail, index])) : null
   const points = lignes
     .filter((ligne): ligne is Indicateur & { detail: string } => ligne.detail !== null && ligne.detail !== undefined)
-    .map((ligne) => ({
-      detail: ligne.detail,
-      abscisse: ligne.numericAxisValue ?? abscisseDetail(ligne.detail) ?? 0,
-      texte: formaterValeur(ligne),
-      valeur: ligne.value,
-      libelle: props.labelsDetail?.[ligne.detail] ?? '',
-    }))
+    .filter((ligne) => !axisOrder || axisOrder.has(ligne.detail))
+    .map((ligne) => {
+      const contract = ligne.nativeContract
+      const axisIndex = contract?.axisValues?.indexOf(ligne.detail) ?? -1
+      const declaredCoordinate = axisIndex >= 0 ? contract?.axisNumericValues?.[axisIndex] : undefined
+      const nativeCoordinate = ligne.numericAxisValue ??
+        (typeof declaredCoordinate === 'number' ? declaredCoordinate : undefined)
+      return {
+        detail: ligne.detail,
+        // Native axes are categorical unless their complete descriptor carries
+        // numeric coordinates. Never turn an ordinal-looking key into a value.
+        abscisse: nativeCoordinate ?? (axisValues ? 0 : abscisseDetail(ligne.detail) ?? 0),
+        texte: formaterValeur(ligne),
+        valeur: ligne.value,
+        libelle: props.labelsDetail?.[ligne.detail] ?? '',
+      }
+    })
 
-  if (props.trajectory?.axis !== 'numeric') {
+  if (!numerique.value) {
+    if (axisOrder) {
+      return points.sort((a, b) => (axisOrder.get(a.detail) ?? Number.MAX_SAFE_INTEGER) -
+        (axisOrder.get(b.detail) ?? Number.MAX_SAFE_INTEGER))
+    }
     const numeriques = points.filter((point) => abscisseDetail(point.detail) !== null)
     const autres = points.filter((point) => abscisseDetail(point.detail) === null)
     return [...numeriques.sort((a, b) => a.abscisse - b.abscisse), ...autres]
@@ -73,8 +90,10 @@ function pointsDepuis(lignes: Indicateur[]): Point[] {
   return points.sort((a, b) => a.abscisse - b.abscisse)
 }
 
-const points = computed(() => pointsDepuis(props.lignes))
-const pointsReference = computed(() => pointsDepuis(props.reference ?? []))
+const nativeAxisValues = computed(() => props.lignes.find((ligne) => ligne.nativeContract?.axisValues?.length)
+  ?.nativeContract?.axisValues)
+const points = computed(() => pointsDepuis(props.lignes, nativeAxisValues.value))
+const pointsReference = computed(() => pointsDepuis(props.reference ?? [], nativeAxisValues.value))
 const premiere = computed(() => props.lignes[0] ?? props.reference?.[0] ?? null)
 const repereScalaire = computed(() => props.lignes.find((ligne) => ligne.detail == null) ?? null)
 const rangRepereScalaire = computed(() => repereScalaire.value ? detailsRangEnContexte(repereScalaire.value) : null)
@@ -94,7 +113,14 @@ const puceRepereScalaire = computed(() => {
   return rangRepereScalaire.value && direction
     ? puceRangDirection(rangRepereScalaire.value.libelle, direction) : null
 })
-const numerique = computed(() => props.trajectory?.axis === 'numeric')
+const numerique = computed(() => {
+  const contract = props.lignes.find((ligne) => ligne.nativeContract?.axisValues?.length)?.nativeContract
+  if (contract?.axisValues?.length) {
+    return contract.axisNumericValues?.length === contract.axisValues.length &&
+      contract.axisNumericValues.every((value) => typeof value === 'number' && Number.isFinite(value))
+  }
+  return props.trajectory?.axis === 'numeric'
+})
 const estPourcentage = computed(() => premiere.value?.unit === '%')
 const nomAffiche = computed(() => props.nom ?? 'le territoire sélectionné')
 const referenceText = computed(() => props.referenceLabel ?? 'la médiane Bretonne')
@@ -110,9 +136,13 @@ const domaineX = computed(() => {
   const observations = [...points.value, ...pointsReference.value].map((point) => point.abscisse)
   const ticks = props.trajectory?.ticks?.map((tick) => tick.numericValue)
     .filter((value): value is number => value !== undefined && Number.isFinite(value)) ?? []
-  const endpoints = props.trajectory?.endpoints?.map(abscisseDetail)
+  const coordinateForDetail = (detail: string): number | null => {
+    const declared = props.trajectory?.ticks?.find((tick) => tick.detail === detail)?.numericValue
+    return declared !== undefined ? declared : abscisseDetail(detail)
+  }
+  const endpoints = props.trajectory?.endpoints?.map(coordinateForDetail)
     .filter((value): value is number => value !== null) ?? []
-  const marker = props.trajectory?.marker ? abscisseDetail(props.trajectory.marker.detail) : null
+  const marker = props.trajectory?.marker ? coordinateForDetail(props.trajectory.marker.detail) : null
   const values = [...observations, ...ticks, ...endpoints, ...(marker === null ? [] : [marker])]
   if (!values.length) return { min: 0, max: 1 }
   const min = Math.min(...values)

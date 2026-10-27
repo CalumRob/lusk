@@ -52,6 +52,7 @@ function indicatorFromSql(
   const provenance = apiSources(sourceRows)
   const measured = status === 'measured'
   if (measured && !finite(value)) throw new Error(`Valeur mesurée absente : ${indicatorId}`)
+  const nativeContract = nativeFactContractFromEnvelope(nativeContractValue)
   return {
     territoire: target.territoire, type: target.type, theme: 'mobilite', key: indicatorId,
     detail, sex: sex as Indicateur['sex'], dimension, value: measured ? value as number : null, unit,
@@ -59,8 +60,7 @@ function indicatorFromSql(
     vintage_source: provenance[0]?.source ?? '', vintage_version: provenance[0]?.version ?? '',
     vintage_date_reference: provenance[0]?.referenceDate ?? null,
     vintage_date_publication: provenance[0]?.publicationDate ?? null,
-    ...(nativeFactContractFromEnvelope(nativeContractValue)
-      ? { nativeContract: nativeFactContractFromEnvelope(nativeContractValue) } : {}),
+    ...(nativeContract ? { nativeContract } : {}),
     ...(numericAxisValue === undefined ? {} : { numericAxisValue }),
     rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
     fact_sources: provenance.map((source) => ({ ...source, sourceId: source.sourceId ?? '' })),

@@ -38,7 +38,11 @@ const parts = computed<Part[]>(() => {
     if (ligne.detail && couleurDpe(ligne.detail) !== null) parEtiquette.set(ligne.detail, ligne)
   }
   const total = props.lignes.reduce((somme, l) => somme + (l.value ?? 0), 0)
-  return ORDRE_DPE.map((etiquette) => parEtiquette.get(etiquette))
+  const nativeAxisValues = props.lignes.find((ligne) =>
+    ligne.nativeContract?.shapes?.includes('declared_profile') && ligne.nativeContract.axisValues?.length,
+  )?.nativeContract?.axisValues
+  const order = nativeAxisValues ?? ORDRE_DPE
+  return order.map((etiquette) => parEtiquette.get(etiquette))
     .filter((ligne): ligne is Indicateur => ligne !== undefined)
     .map((ligne) => ({
       etiquette: ligne.detail ?? '',
