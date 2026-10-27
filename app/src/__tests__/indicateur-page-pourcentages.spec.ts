@@ -18,6 +18,7 @@ import type { Territoire } from '../payload/types'
 import { routes } from '../router'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
+import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
 
 /**
  * Les unités % des Pages d'indicateur (#466) — les tests ROUTÉS contre le
@@ -76,6 +77,7 @@ function chargerCommis(fichier: Fichier): Promise<unknown> {
 }
 
 async function monter(url: string) {
+  vi.stubGlobal('fetch', createNativeSemanticApiTransport())
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(url)
   await router.isReady()

@@ -1,0 +1,728 @@
+{
+  "facts": {
+    "resource": "distribution_dpe",
+    "target": {
+      "kind": "territory_cohort",
+      "type": "commune",
+      "department_id": null,
+      "epci_id": null
+    },
+    "shape": "declared_profile",
+    "cohort": {
+      "territory_type": "commune",
+      "department_id": null,
+      "epci_id": null,
+      "member_count": 4,
+      "members": [
+        {
+          "id": "29001",
+          "type": "commune",
+          "name": "Focal"
+        },
+        {
+          "id": "29002",
+          "type": "commune",
+          "name": "Peer"
+        },
+        {
+          "id": "29003",
+          "type": "commune",
+          "name": "Custom peer"
+        },
+        {
+          "id": "29004",
+          "type": "commune",
+          "name": "Unavailable peer"
+        }
+      ],
+      "reference_content_version": "ref-v1"
+    },
+    "content_version": "profiles-v1",
+    "reference_content_version": "ref-v1",
+    "descriptor": {
+      "indicator": "distribution_dpe",
+      "label": "Distribution DPE",
+      "unit": "%",
+      "allowed_levels": [
+        "commune"
+      ],
+      "completeness": "dense_complete",
+      "descriptor_version": "dpe-profile-v1",
+      "comparison_scalar": "part_passoires",
+      "required_scalar_version": "scalar-v1",
+      "denominator_semantics": "diagnostics DPE",
+      "axes": [
+        {
+          "name": "detail",
+          "key": "A",
+          "label": "A",
+          "order": 0,
+          "unit": "%"
+        },
+        {
+          "name": "detail",
+          "key": "B",
+          "label": "B",
+          "order": 1,
+          "unit": "%"
+        },
+        {
+          "name": "detail",
+          "key": "C",
+          "label": "C",
+          "order": 2,
+          "unit": "%"
+        },
+        {
+          "name": "detail",
+          "key": "D",
+          "label": "D",
+          "order": 3,
+          "unit": "%"
+        },
+        {
+          "name": "detail",
+          "key": "E",
+          "label": "E",
+          "order": 4,
+          "unit": "%"
+        },
+        {
+          "name": "detail",
+          "key": "F",
+          "label": "F",
+          "order": 5,
+          "unit": "%"
+        },
+        {
+          "name": "detail",
+          "key": "G",
+          "label": "G",
+          "order": 6,
+          "unit": "%"
+        }
+      ],
+      "comparison_point": null
+    },
+    "profiles": [
+      {
+        "territory": {
+          "id": "29001",
+          "type": "commune",
+          "name": "Focal"
+        },
+        "cells": [
+          {
+            "detail": "A",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.1
+          },
+          {
+            "detail": "B",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.1
+          },
+          {
+            "detail": "C",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.1
+          },
+          {
+            "detail": "D",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.1
+          },
+          {
+            "detail": "E",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.1
+          },
+          {
+            "detail": "F",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.1
+          },
+          {
+            "detail": "G",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.1
+          }
+        ]
+      },
+      {
+        "territory": {
+          "id": "29002",
+          "type": "commune",
+          "name": "Peer"
+        },
+        "cells": [
+          {
+            "detail": "A",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.2
+          },
+          {
+            "detail": "B",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.2
+          },
+          {
+            "detail": "C",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.2
+          },
+          {
+            "detail": "D",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.2
+          },
+          {
+            "detail": "E",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.2
+          },
+          {
+            "detail": "F",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.2
+          },
+          {
+            "detail": "G",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.2
+          }
+        ]
+      },
+      {
+        "territory": {
+          "id": "29003",
+          "type": "commune",
+          "name": "Custom peer"
+        },
+        "cells": [
+          {
+            "detail": "A",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.15
+          },
+          {
+            "detail": "B",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.15
+          },
+          {
+            "detail": "C",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.15
+          },
+          {
+            "detail": "D",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.15
+          },
+          {
+            "detail": "E",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.15
+          },
+          {
+            "detail": "F",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.15
+          },
+          {
+            "detail": "G",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "measured",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": 0.15
+          }
+        ]
+      },
+      {
+        "territory": {
+          "id": "29004",
+          "type": "commune",
+          "name": "Unavailable peer"
+        },
+        "cells": [
+          {
+            "detail": "A",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "not_available",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": null
+          },
+          {
+            "detail": "B",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "not_available",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": null
+          },
+          {
+            "detail": "C",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "not_available",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": null
+          },
+          {
+            "detail": "D",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "not_available",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": null
+          },
+          {
+            "detail": "E",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "not_available",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": null
+          },
+          {
+            "detail": "F",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "not_available",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": null
+          },
+          {
+            "detail": "G",
+            "sex": null,
+            "unit": "%",
+            "denominator_semantics": "diagnostics DPE",
+            "status": "not_available",
+            "sources": [
+              {
+                "source_id": "dpe_22",
+                "vintage_id": "dpe_22",
+                "name": "DPE test fixture",
+                "version": "2024",
+                "reference_date": "2024-01-01",
+                "publication_date": "2026-08-06"
+              }
+            ],
+            "value": null
+          }
+        ]
+      }
+    ]
+  },
+  "comparison": {
+    "resource": "distribution_dpe",
+    "target": {
+      "kind": "territory",
+      "type": "commune",
+      "id": "29001"
+    },
+    "contract": "indicator-comparison-v1",
+    "complete_theme": false,
+    "indicator_id": "distribution_dpe",
+    "shape": "profile",
+    "content_version": null,
+    "scalar_content_version": "scalar-v1",
+    "profile_content_version": "profiles-v1",
+    "reference_content_version": "ref-v1",
+    "selection": [
+      {
+        "territory_type": "commune",
+        "territory_id": "29001"
+      },
+      {
+        "territory_type": "commune",
+        "territory_id": "29002"
+      }
+    ],
+    "scope": {
+      "kind": "explicit_selection",
+      "member_count": 2
+    },
+    "result": {
+      "label": "Distribution DPE",
+      "unit": "%",
+      "direction": "low",
+      "statistic": "median",
+      "profile_descriptor_version": "dpe-profile-v1",
+      "scalar_descriptor_version": "scalar-d1",
+      "required_scalar_version": "scalar-v1",
+      "source_facet_label": "Part de passoires thermiques",
+      "denominator_semantics": "diagnostics DPE",
+      "focal_in_selection": true,
+      "status": "available",
+      "reason": null,
+      "selected_member_count": 2,
+      "eligible_count": 2,
+      "median": 0.2,
+      "rank": 2,
+      "rank_size": 2,
+      "comparison_sources": [
+        {
+          "source_id": "dpe_22",
+          "name": "DPE test fixture",
+          "vintage_id": "dpe_22",
+          "version": "2024",
+          "reference_date": "2024-01-01",
+          "publication_date": "2026-08-06"
+        }
+      ],
+      "rank_ties": 1,
+      "member_ranks": [
+        {
+          "territory_id": "29001",
+          "rank": 2,
+          "rank_size": 2,
+          "rank_ties": 1
+        },
+        {
+          "territory_id": "29002",
+          "rank": 1,
+          "rank_size": 2,
+          "rank_ties": 1
+        }
+      ],
+      "missing_count": 0,
+      "indicator_id": "distribution_dpe",
+      "source_facet": "part_passoires",
+      "source_facet_indicator_id": "part_passoires"
+    }
+  }
+}

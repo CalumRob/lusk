@@ -137,6 +137,10 @@ function modeleAvecContextesComparaison() {
   return validated
 }
 
+function nativeFicheReadFixture(item: Record<string, any>, resource: Parameters<typeof nativeReadFixture>[1]) {
+  return nativeReadFixture(item, resource, { syntheticProfileComparisons: true })
+}
+
 function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = []) {
   return vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input)
@@ -144,7 +148,7 @@ function nativeSemanticFetch(requests: Array<Array<Record<string, any>>> = []) {
     if (url === '/api/resources/read-batch') {
       const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
       requests.push(items)
-      return nativeBatchResponse(items, nativeReadFixture)
+      return nativeBatchResponse(items, nativeFicheReadFixture)
     }
     throw new Error(`Unexpected request: ${url}`)
   })
@@ -879,7 +883,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
           failedEconomyWarmup = true
           return new Response('background fixture unavailable', { status: 503 })
         }
-        return nativeBatchResponse(items, nativeReadFixture)
+        return nativeBatchResponse(items, nativeFicheReadFixture)
       }
       throw new Error(`Unexpected request: ${url}`)
     })
@@ -917,10 +921,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         if (!resolveHabitat && items.some((item) => habitatResources.has(item.resource) &&
             item.target.kind === 'territory' && item.intent.kind === 'facts')) {
           return new Promise<Response>((resolve) => {
-            resolveHabitat = () => resolve(nativeBatchResponse(items, nativeReadFixture))
+            resolveHabitat = () => resolve(nativeBatchResponse(items, nativeFicheReadFixture))
           })
         }
-        return nativeBatchResponse(items, nativeReadFixture)
+        return nativeBatchResponse(items, nativeFicheReadFixture)
       }
       throw new Error(`Unexpected request: ${url}`)
     })
@@ -964,7 +968,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
           failedFactsRecovery = true
           return new Response('fixture unavailable', { status: 503 })
         }
-        return nativeBatchResponse(items, nativeReadFixture)
+        return nativeBatchResponse(items, nativeFicheReadFixture)
       }
       throw new Error(`Unexpected request: ${url}`)
     })
@@ -1002,10 +1006,10 @@ describe('TerritoireView — modèle atomique par territoire', () => {
         if (shouldDefer && items.some((item) => item.target.kind === 'territory')) {
           shouldDefer = false
           return new Promise<Response>((resolve) => {
-            resolveFirstRead = () => resolve(nativeBatchResponse(items, nativeReadFixture))
+            resolveFirstRead = () => resolve(nativeBatchResponse(items, nativeFicheReadFixture))
           })
         }
-        return nativeBatchResponse(items, nativeReadFixture)
+        return nativeBatchResponse(items, nativeFicheReadFixture)
       }
       throw new Error(`Unexpected request: ${url}`)
     })
@@ -1042,7 +1046,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
           selectedFailures--
           return new Response('comparison unavailable', { status: 503 })
         }
-        return nativeBatchResponse(items, nativeReadFixture)
+        return nativeBatchResponse(items, nativeFicheReadFixture)
       }
       throw new Error(`Unexpected request: ${url}`)
     })
@@ -1077,7 +1081,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
       if (url === '/api/resources/read-batch') {
         const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
         requests.push(items)
-        const response = nativeBatchResponse(items, nativeReadFixture)
+        const response = nativeBatchResponse(items, nativeFicheReadFixture)
         if (!resolveOldComparison && items.some((item) => item.intent.kind === 'selected_comparison')) {
           return new Promise<Response>((resolve) => {
             resolveOldComparison = () => resolve(response)

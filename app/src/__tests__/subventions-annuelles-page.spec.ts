@@ -19,6 +19,7 @@ import type { Territoire } from '../payload/types'
 import { routes } from '../router'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
+import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
 
 /**
  * La Page d'indicateur subventions_annuelles contre le VRAI payload committé
@@ -77,6 +78,7 @@ function chargerCommis(fichier: Fichier): Promise<unknown> {
 }
 
 async function monter(url: string, composant?: typeof IndicateurView) {
+  vi.stubGlobal('fetch', createNativeSemanticApiTransport())
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(url)
   await router.isReady()

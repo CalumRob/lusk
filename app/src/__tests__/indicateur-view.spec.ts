@@ -1,6 +1,6 @@
 ﻿import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { describe, expect, it, beforeEach } from 'vitest'
+import { describe, expect, it, beforeEach, vi } from 'vitest'
 import IndicateurView from '../views/IndicateurView.vue'
 import { chargerAvec, indicateursDemographieFixture, indicateursHabitatFixture, indicateursMilieuxFixture, indicateursMobiliteFixture, indicateursRaccordementFixture, metadonneesMobiliteRaccordementFixture, metadonneesThemesFixtures, territoiresFixture, histoiresDemographieFixture, apercuAvecNAFixture, runReportFraisFixture, vintagesFixture } from '../payload/fixtures'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
@@ -9,6 +9,7 @@ import type { Payload, FamilleFigure, IndicatorPageMetadata } from '../payload/t
 import { routes } from '../router'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import type { Fichier } from '../payload/loader'
+import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture } from './helpers/semanticApiFixtures'
 
 const payload: Payload = { territoires: [...territoiresFixture, { territoire: 'e', type: 'epci', nom: 'EPCI test', departement: null, epci: null }], indicateurs: indicateursDemographieFixture, histoires: histoiresDemographieFixture, apercu: apercuAvecNAFixture, runReport: runReportFraisFixture, vintages: vintagesFixture, programmes: null, themeMetadata: { demographie: metadonneesThemesFixtures.demographie } }
 function pagePourFamille(family: FamilleFigure): IndicatorPageMetadata {
@@ -30,6 +31,18 @@ async function monter(url: string, appels: string[] = [], metadataOverride = met
   await router.isReady()
   const empty = { type: 'FeatureCollection' as const, features: [] }
   const routedPayload = { ...payload, indicateurs: factsOverride, themeMetadata: { [themeOverride]: metadataOverride } }
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url === '/api/resources') return nativeCatalogueResponse()
+    if (url === '/api/resources/read-batch') {
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, (item, resource) => nativeReadFixture(item, resource, {
+        territories: routedPayload.territoires, facts: factsOverride,
+        metadata: metadataOverride as unknown as Record<string, any>,
+      }))
+    }
+    return new Response('', { status: 404 })
+  })
   const wrapper = mount(IndicateurView, {
     global: {
       plugins: [router],

@@ -115,3 +115,25 @@ def test_scalar_comparison_facet_coordinate_is_applied():
         {"duration_minute": ["t0015"]}, resource)
     assert unselected["result"]["status"] == "unavailable"
     assert "median" not in unselected["result"]
+
+
+def test_profile_comparison_coordinate_binds_the_complete_facet():
+    resource = SimpleNamespace(axes=("detail", "sex"), shapes=("declared_profile",))
+    result = reader()._filter_coordinates({"result": {
+        "source_facet": {"detail": "15-24", "sex": "M"},
+        "median": 0.7, "rank": 2, "status": "available"}},
+        {"detail": ["15-24"], "sex": ["M"]}, resource)
+
+    assert result["result"]["median"] == 0.7
+    assert result["result"]["rank"] == 2
+    assert result["result"]["status"] == "available"
+
+
+def test_linked_profile_scalar_comparison_is_not_filtered_as_a_profile_bin():
+    resource = SimpleNamespace(axes=("detail",), shapes=("declared_profile",))
+    result = reader()._filter_coordinates({"result": {
+        "source_facet": "part_passoires", "median": 12.0, "rank": 1,
+        "status": "available"}}, {"detail": ["F"]}, resource)
+
+    assert result["result"]["median"] == 12.0
+    assert result["result"]["rank"] == 1

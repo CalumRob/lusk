@@ -1,5 +1,6 @@
 import json
 import shutil
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -108,6 +109,39 @@ def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():
     assert "selected_comparison" in resources["subventions_annuelles"].intents
 
 
+def test_discovery_exposes_every_retained_profile_page_and_its_declared_axes():
+    catalogue = discover_indicator_resources(METADATA)
+    resources = {resource.resource_id: resource for resource in catalogue.resources
+                 if "declared_profile" in resource.shapes}
+    expected = {}
+    families = Counter()
+    for path in METADATA.glob("theme_*.json"):
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        profile_ids = set(metadata.get("profile_contracts", {}))
+        profile_ids.update(
+            indicator for indicator, page in (metadata.get("indicator_pages") or {}).items()
+            if (page.get("pyramid") or {}).get("dimensions")
+        )
+        for indicator in profile_ids:
+            page = metadata["indicator_pages"][indicator]
+            expected[indicator] = (metadata["theme"], page["family"])
+            families[page["family"]] += 1
+
+    assert set(resources) == set(expected)
+    assert len(resources) == 10
+    assert families == Counter({"composition": 6, "list": 2, "distribution": 1, "pyramid": 1})
+    for indicator, (theme, _family) in expected.items():
+        resource = resources[indicator]
+        assert resource.theme_id == theme
+        assert resource.axes == tuple(axis for axis, _values in resource.axis_values)
+        assert resource.axes
+        assert all(resource.axis_values)
+        public = next(entry for entry in catalogue.discovery_payload()["resources"]
+                      if entry["resource_id"] == indicator)
+        assert public["axes"] == resource.axes
+        assert public["axis_values"] == resource.axis_values
+
+
 def test_cohort_capability_is_derived_from_supported_fact_families():
     catalogue = default_resource_catalogue.__wrapped__()
     resources = catalogue.resources_by_id
@@ -144,6 +178,39 @@ def test_cohort_capability_is_derived_from_supported_fact_families():
     })
     with pytest.raises(ValueError, match="facts-only"):
         validate_resource_item(comparison_cohort, catalogue)
+
+
+def test_member_ranks_are_only_projectable_for_selected_declared_profile_comparisons():
+    catalogue = default_resource_catalogue.__wrapped__()
+    selected = ResourceReadItem.model_validate({
+        "resource": "structure_age",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"},
+        ]},
+    })
+    assert validate_resource_item(selected, catalogue).resource_id == "structure_age"
+
+    fixed = ResourceReadItem.model_validate({
+        "resource": "structure_age",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "fixed_comparison", "context": "default"},
+    })
+    with pytest.raises(ValueError, match="field is not declared"):
+        validate_resource_item(fixed, catalogue)
+
+    scalar = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"},
+        ]},
+    })
+    with pytest.raises(ValueError, match="field is not declared"):
+        validate_resource_item(scalar, catalogue)
 
 
 def test_aedar_cohort_is_rejected_by_public_http_before_opening_a_connection(monkeypatch):

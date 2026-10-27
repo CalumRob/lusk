@@ -57,6 +57,12 @@ def test_published_scalar_comparison_reads_group_and_focal_result_without_peer_f
             if "FROM scalar_comparison_group" in sql:
                 return Cursor(rows=[("population", "median", 7.5, 3, 2, 1, 1, True)])
             if "FROM scalar_comparison_territory" in sql:
+                if "territory_id=ANY(%s)" in sql:
+                    return Cursor(rows=[
+                        ("population", "c1", "measured", 1, 1, 2, True),
+                        ("population", "c2", "measured", 2, 1, 2, True),
+                        ("population", "c3", "not_available", None, None, None, True),
+                    ])
                 return Cursor(rows=[("population", 10.0, "measured", 1, 1, 2, True)])
             if "FROM comparison_source_lineage l" in sql:
                 return Cursor(rows=[("population", "census", "2020", "Census", "2020", None, None, "comparison-v1")])
@@ -85,6 +91,17 @@ def test_published_scalar_comparison_reads_group_and_focal_result_without_peer_f
     territory_query = [(sql,params) for sql,params in conn.sql if "FROM scalar_comparison_territory" in sql][-1]
     assert "CASE WHEN %s THEN median" in group_query[0] and group_query[1][0] is True
     assert all(value is False for value in territory_query[1][:4])
+    assert not any("territory_id=ANY(%s)" in sql for sql, _ in conn.sql)
+
+    peer_selection = main._published_scalar_comparison_results(conn, descriptors,
+        ("density_class", "A", "commune"), "commune", ("c1", "c2", "c3"), "c1",
+        include_member_ranks=True, selected_fields=("median", "member_ranks"))["population"]
+    assert peer_selection["member_ranks"] == [
+        {"territory_id": "c1", "rank": 1, "rank_size": 2, "rank_ties": 1},
+        {"territory_id": "c2", "rank": 2, "rank_size": 2, "rank_ties": 1},
+        {"territory_id": "c3", "rank": None, "rank_size": None, "rank_ties": None},
+    ]
+    assert any("territory_id=ANY(%s)" in sql for sql, _ in conn.sql)
 
 
 def test_published_scalar_comparison_fails_closed_on_stale_inputs_or_missing_results():
@@ -120,6 +137,46 @@ def test_published_scalar_comparison_fails_closed_on_stale_inputs_or_missing_res
         main._published_scalar_comparison_results(Connection(invalid=True), descriptor,
             ("density_class", "A", "commune"), "commune", ("c1",), "c1")
     assert invalid.value.status_code == 503
+
+
+@pytest.mark.parametrize("corruption", ["status_counts", "tie_span"])
+def test_published_scalar_peer_rows_match_group_counts_and_tie_span(corruption):
+    class Connection:
+        def execute(self, sql, params=None):
+            if "to_regclass('scalar_comparison_publication')" in sql:
+                return Cursor(("scalar_comparison_publication",))
+            if "FROM scalar_comparison_publication p" in sql:
+                return Cursor(("comparison-v1", "scalar-v1", "reference-v1", 1, 3,
+                    "scalar-v1", "reference-v1", "reference-v1"))
+            if "FROM scalar_comparison_group" in sql:
+                return Cursor(rows=[("population", "median", 7.5, 3, 2, 1, 1, True)])
+            if "FROM scalar_comparison_territory" in sql:
+                if "territory_id=ANY(%s)" in sql:
+                    if corruption == "status_counts":
+                        peers = [
+                            ("population", "c1", "measured", 1, 1, 2, True),
+                            ("population", "c2", "not_available", None, None, None, True),
+                            ("population", "c3", "not_available", None, None, None, True),
+                        ]
+                    else:
+                        peers = [
+                            ("population", "c1", "measured", 1, 1, 2, True),
+                            ("population", "c2", "measured", 2, 2, 2, False),
+                            ("population", "c3", "not_available", None, None, None, True),
+                        ]
+                    return Cursor(rows=peers)
+                return Cursor(rows=[("population", 10.0, "measured", 1, 1, 2, True)])
+            if "FROM comparison_source_lineage l" in sql:
+                return Cursor(rows=[("population", "census", "2020", "Census", "2020", None, None,
+                    "comparison-v1")])
+            raise AssertionError(sql)
+
+    descriptor = [("population", "Population", "persons", "high", "population", ["commune"], "d-v1")]
+    with pytest.raises(HTTPException) as error:
+        main._published_scalar_comparison_results(Connection(), descriptor,
+            ("density_class", "A", "commune"), "commune", ("c1", "c2", "c3"), "c1",
+            include_member_ranks=True, selected_fields=("median", "member_ranks"))
+    assert error.value.status_code == 503
 
 
 def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_selection(monkeypatch):
