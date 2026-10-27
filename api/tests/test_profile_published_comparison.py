@@ -25,7 +25,8 @@ _DEFAULT = object()
 
 
 class DetailConnection:
-    def __init__(self, *, marker=_DEFAULT, members=("c1", "c2"), group=None, territory=None):
+    def __init__(self, *, marker=_DEFAULT, members=("c1", "c2"), group=None, territory=None,
+                 member_rows=None):
         self.marker = (("pub-v1", "profile-v1", "ref-v1", 1, len(members), "profile-v1", "ref-v1")
             if marker is _DEFAULT else marker)
         self.members, self.sql, self.comparison_rows_returned = members, [], 0
@@ -40,6 +41,9 @@ class DetailConnection:
             ((row[5] == "measured" and all(value is not None for value in (row[4],row[6],row[7],row[8]))) or
              (row[5] != "measured" and all(value is None for value in (row[4],row[6],row[7],row[8])))))
             for row in self.territory]
+        self.member_rows = ([("housing_profile", "old", "", member_id, "measured",
+            index + 1, 1, len(members), "profile-v1", "ref-v1", True)
+            for index, member_id in enumerate(members)] if member_rows is None else member_rows)
 
     def execute(self, sql, params=None):
         self.sql.append((sql, params))
@@ -51,6 +55,9 @@ class DetailConnection:
             self.comparison_rows_returned += len(self.group)
             return Cursor(rows=self.group)
         if "FROM profile_comparison_territory" in sql:
+            if "territory_id=ANY(%s)" in sql:
+                self.comparison_rows_returned += len(self.member_rows)
+                return Cursor(rows=self.member_rows)
             assert "territory_id=%s" in sql
             self.comparison_rows_returned += len(self.territory)
             return Cursor(rows=self.territory)
@@ -76,7 +83,7 @@ def test_fixed_detail_uses_published_statistics_and_only_reads_focal_row():
     territory_read = next((statement, params) for statement, params in conn.sql
         if "FROM profile_comparison_territory" in statement)
     assert "territory_id=%s" in territory_read[0]
-    assert territory_read[1][-1] == "c1"
+    assert territory_read[1][8] == "c1"
 
 
 def test_fixed_detail_selection_projects_result_columns_in_published_sql():
@@ -90,6 +97,28 @@ def test_fixed_detail_selection_projects_result_columns_in_published_sql():
     focal_sql,focal_params=next((sql,params) for sql,params in conn.sql if "FROM profile_comparison_territory" in sql)
     assert "CASE WHEN %s THEN median" in group_sql and group_params[0] is True
     assert all(value is False for value in focal_params[:4])
+
+
+def test_fixed_detail_returns_peer_ranks_only_when_the_field_is_requested():
+    conn = DetailConnection()
+    result = main._published_profile_comparison_results(conn, [PROFILE],
+        ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1",
+        selected_fields=("median", "member_ranks"))["housing_profile"]
+    assert [(row["territory_id"], row["rank"], row["rank_size"], row["rank_ties"])
+            for row in result["member_ranks"]] == [("c1", 1, 2, 1), ("c2", 2, 2, 1)]
+    peer_sql, peer_params = next((sql, params) for sql, params in conn.sql
+        if "territory_id=ANY(%s)" in sql and "FROM profile_comparison_territory" in sql)
+    assert "rank,tie_count,rank_size" in peer_sql.replace(" ", "")
+    assert peer_params[4] == ["c1", "c2"]
+
+
+def test_fixed_detail_default_response_does_not_expand_with_cohort_rank_arrays():
+    conn = DetailConnection()
+    result = main._published_profile_comparison_results(conn, [PROFILE],
+        ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1")["housing_profile"]
+    assert "member_ranks" not in result
+    assert not any("territory_id=ANY(%s)" in sql for sql, _ in conn.sql
+        if "FROM profile_comparison_territory" in sql)
 
 
 def test_profile_comparison_rejects_scalar_only_field_before_publication_reads():
@@ -170,7 +199,7 @@ def test_fixed_detail_published_comparison_read_work_is_bounded_as_cohort_grows(
         territory_queries = [(statement, params) for statement, params in conn.sql
             if "FROM profile_comparison_territory" in statement]
         assert len(territory_queries) == 1
-        assert territory_queries[0][1][-1] == "c1"
+        assert territory_queries[0][1][8] == "c1"
     assert returned_rows == [2, 2, 2]
 
 

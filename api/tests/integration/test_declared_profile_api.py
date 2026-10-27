@@ -398,6 +398,8 @@ def test_declared_profile_postgres_api_contract(installation):
                     conn.execute(unit_migration.read_text(encoding='utf-8'))
             conn.execute("INSERT INTO source_dataset VALUES ('one_axis_source','One axis fixture')")
             conn.execute("INSERT INTO source_vintage VALUES ('one_axis_source','v1','2025',NULL,NULL)")
+            conn.execute("INSERT INTO source_dataset VALUES ('housing_detail','Housing detail fixture')")
+            conn.execute("INSERT INTO source_vintage VALUES ('housing_detail','v1','2025','2025-01-01',NULL)")
             has_axis_units = conn.execute("""SELECT EXISTS(SELECT 1 FROM information_schema.columns
                 WHERE table_schema=current_schema() AND table_name='profile_axis' AND column_name='unit')""").fetchone()[0]
             if has_axis_units:
@@ -436,7 +438,23 @@ def test_declared_profile_postgres_api_contract(installation):
                     ('structure_age',%s,'15-24','M','age_detail','v1'),
                 ('one_axis_fixture',%s,'length','','one_axis_source','v1')""",
                 (territory + 'n', territory + 'n', territory + 'n', territory + 'n', territory + 'n'))
-            conn.execute("UPDATE table_publication SET row_count=row_count+7 WHERE table_name='declared_profile'")
+            conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,
+                completeness,descriptor_version,comparison_detail,comparison_direction,denominator_semantics,
+                detail_units_required) VALUES ('mix_logements','habitat','Housing mix',%s,ARRAY['commune'],
+                'dense_complete','housing-v1','principales','high','logements',true)""", ("%",))
+            conn.execute("INSERT INTO profile_descriptor_source VALUES ('mix_logements','housing_detail')")
+            for ordinal, detail in enumerate(('principales','secondaires','vacants')):
+                conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal,unit)
+                    VALUES ('mix_logements','detail',%s,%s,%s,%s)""", (detail, detail, ordinal, "%"))
+                for tid, value, status in ((territory,.3,'measured'),(peer,.7,'measured'),
+                                           (territory+'n',None,'not_available')):
+                    conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,
+                        detail_key,sex_key,sex_axis_name,value,status)
+                        VALUES ('mix_logements',%s,'commune',%s,'',NULL,%s,%s)""",
+                        (tid,detail,value,status))
+                    conn.execute("""INSERT INTO profile_observation_source VALUES
+                        ('mix_logements',%s,%s,'','housing_detail','v1')""", (tid,detail))
+            conn.execute("UPDATE table_publication SET row_count=row_count+12 WHERE table_name='declared_profile'")
             conn.execute("UPDATE table_publication SET reference_content_version='ref-v1' WHERE table_name='declared_profile'")
             if installation == 'fresh':
                 conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,
@@ -463,6 +481,30 @@ def test_declared_profile_postgres_api_contract(installation):
                 conn.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
                     profile_content_version,reference_content_version,group_row_count,territory_row_count)
                     VALUES (true,'profile-comparison-v1','profile-v1','ref-v1',4,10)""")
+                for context, group_id in (("density_class", "D1"), ("epci", "E1")):
+                    for detail in ("principales", "secondaires", "vacants"):
+                        member_count = 2 if context == "density_class" else 3
+                        missing_count = 0 if context == "density_class" else 1
+                        conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,
+                            indicator_id,detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,
+                            lineage_source_count,profile_content_version,reference_content_version)
+                            VALUES (%s,%s,'commune','mix_logements',%s,'','median',.5,%s,2,%s,1,'profile-v1','ref-v1')""",
+                            (context,group_id,detail,member_count,missing_count))
+                        for tid, value, rank, status in ((territory,.3,2,'measured'),
+                                (peer,.7,1,'measured'), *(([(territory+'n',None,None,'not_available')]
+                                    if context == "epci" else []))):
+                            conn.execute("""INSERT INTO profile_comparison_territory(comparison_context,group_id,
+                                territory_type,indicator_id,detail_key,sex_key,territory_id,value,status,rank,tie_count,
+                                rank_size,profile_content_version,reference_content_version)
+                                VALUES (%s,%s,'commune','mix_logements',%s,'',%s,%s,%s,%s,%s,%s,'profile-v1','ref-v1')""",
+                                (context,group_id,detail,tid,value,status,rank,1 if rank is not None else None,
+                                 2 if rank is not None else None))
+                conn.execute("""INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,
+                    territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES
+                    ('profile','density_class','D1','commune','mix_logements','housing_detail','v1','profile-comparison-v1'),
+                    ('profile','epci','E1','commune','mix_logements','housing_detail','v1','profile-comparison-v1')""")
+                conn.execute("""UPDATE profile_comparison_publication SET group_row_count=group_row_count+6,
+                    territory_row_count=territory_row_count+15 WHERE singleton""")
 
         scoped = reader_dsn + ("&" if "?" in reader_dsn else "?") + "options=" + __import__('urllib.parse').parse.quote(f"-csearch_path={schema}")
         pool = ConnectionPool(conninfo=scoped, min_size=0, max_size=1, open=True, kwargs={"autocommit": True})
@@ -498,7 +540,7 @@ def test_declared_profile_postgres_api_contract(installation):
                     if item.resource == "structure_age" and not changed_during_preflight:
                         with psycopg.connect(publisher_dsn) as writer:
                             writer.execute(f'SET search_path TO "{schema}"')
-                            writer.execute("UPDATE profile_observation SET value=.9 WHERE territory_id=%s",
+                            writer.execute("UPDATE profile_observation SET value=.9 WHERE indicator_id='structure_age' AND territory_id=%s",
                                            (territory,))
                         changed_during_preflight = True
                     return estimate
@@ -674,6 +716,55 @@ def test_declared_profile_postgres_api_contract(installation):
                     JOIN table_publication t ON t.table_name='territory_reference'
                     WHERE p.singleton""").fetchone()
             assert tie_marker_after == tie_marker_before
+
+            housing_request = {
+                "resource": "mix_logements",
+                "target": {"kind": "territory", "type": "commune", "id": territory},
+                "fields": ["median", "selected_member_count", "eligible_count", "missing_count", "member_ranks"],
+                "intent": {"kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": territory}, {"type": "commune", "id": peer}]},
+            }
+            housing_published = client.post('/api/resources/read', json=housing_request)
+            assert housing_published.status_code == 200, housing_published.text
+            published_result = housing_published.json()["result"]
+            assert published_result["median"] == pytest.approx(.5)
+            assert [row["territory_id"] for row in published_result["member_ranks"]] == [territory, peer]
+            assert [row["rank"] for row in published_result["member_ranks"]] == [2, 1]
+            projected = client.post('/api/resources/read', json={**housing_request, "fields": ["median"]})
+            assert projected.status_code == 200, projected.text
+            assert "member_ranks" not in projected.json()["result"]
+
+            # Producer-default and alternate detail coordinates omit the absent
+            # sex axis in the public grammar while SQL stores the optional axis as ''.
+            housing_default = client.post('/api/resources/read', json={
+                **housing_request, "coordinates": {"detail": ["principales"]}})
+            assert housing_default.status_code == 200, housing_default.text
+            assert housing_default.json()["result"]["source_facet"] == {"detail": "principales", "sex": None}
+            assert housing_default.json()["result"]["unit"] == "%"
+            housing_alternate = client.post('/api/resources/read', json={
+                **housing_request, "coordinates": {"detail": ["secondaires"]}})
+            assert housing_alternate.status_code == 200, housing_alternate.text
+            alternate_result = housing_alternate.json()["result"]
+            assert alternate_result["median"] == pytest.approx(.5), housing_alternate.text
+            assert alternate_result["source_facet"] == {"detail": "secondaires", "sex": None}
+            assert alternate_result["comparison_sources"][0]["source_id"] == "housing_detail"
+
+            too_few = client.post('/api/resources/read', json={
+                **selected_cell_item, "fields": ["median", "selected_member_count", "eligible_count",
+                    "missing_count", "member_ranks"], "intent": {"kind": "selected_comparison", "members": [
+                        {"type": "commune", "id": territory},
+                        {"type": "commune", "id": territory + "n"}]},
+            })
+            assert too_few.status_code == 200, too_few.text
+            too_few_result = too_few.json()["result"]
+            assert (too_few_result["status"], too_few_result["reason"]) == (
+                "unavailable", "fewer_than_two_comparable_values")
+            assert (too_few_result["selected_member_count"], too_few_result["eligible_count"],
+                    too_few_result["missing_count"], too_few_result["median"]) == (2, 1, 1, None)
+            assert {row["territory_id"]: (row["rank"], row["rank_size"], row["rank_ties"])
+                    for row in too_few_result["member_ranks"]} == {
+                territory: (None, None, None), territory + "n": (None, None, None)}
+
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
@@ -686,3 +777,159 @@ def test_declared_profile_postgres_api_contract(installation):
         if created and os.environ.get("LUSK_TEST_ALLOW_SCHEMA_CLEANUP") == "1":
             with psycopg.connect(publisher_dsn, autocommit=True) as conn:
                 conn.execute(f'DROP SCHEMA "{schema}" CASCADE')
+
+
+def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, tmp_path):
+    """The DPE profile must project the linked scalar's published ranks via HTTP."""
+    import json
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    with psycopg.connect(canonical_db_env["publish_dsn"]) as conn:
+        conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,epci_id,density_class_code,
+            density_class_label) VALUES
+            ('29001','commune','Focal','E1','D1','Dense'),
+            ('29002','commune','Peer','E1','D1','Dense'),
+            ('29003','commune','Custom peer','E2','D2','Rural'),
+            ('29004','commune','Unavailable peer','E3','D3','Mixed')""")
+        conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count) VALUES
+            ('territory_reference','ref-v1',4)""")
+        conn.execute("INSERT INTO source_dataset VALUES ('dpe_22','DPE test fixture')")
+        conn.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+            VALUES ('dpe_22','dpe_22','2024','2024-01-01','2026-08-06')""")
+        conn.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,
+            allowed_levels,denominator_semantics,completeness,descriptor_version)
+            VALUES ('part_passoires','habitat','Part de passoires thermiques','%','low','part_passoires',
+            ARRAY['commune'],'diagnostics DPE','sparse','scalar-d1')""")
+        conn.execute("INSERT INTO scalar_descriptor_source VALUES ('part_passoires','dpe_22')")
+        conn.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status)
+            VALUES ('part_passoires','29001','commune',.3,'measured'),
+                   ('part_passoires','29002','commune',.1,'measured'),
+                   ('part_passoires','29003','commune',.2,'measured'),
+                   ('part_passoires','29004','commune',NULL,'not_available')""")
+        conn.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
+            VALUES ('part_passoires','29001','dpe_22','dpe_22'),('part_passoires','29002','dpe_22','dpe_22'),
+                   ('part_passoires','29003','dpe_22','dpe_22'),('part_passoires','29004','dpe_22','dpe_22')""")
+        conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
+            VALUES ('scalar_observation','scalar-v1',4,'ref-v1')""")
+        conn.execute("""INSERT INTO scalar_comparison_publication(singleton,content_version,scalar_content_version,
+            reference_content_version,group_row_count,territory_row_count,lineage_row_count)
+            VALUES (true,'scalar-comparison-v1','scalar-v1','ref-v1',2,4,2)""")
+        conn.execute("""INSERT INTO scalar_comparison_group(comparison_context,group_id,territory_type,indicator_id,
+            statistic,median,member_count,eligible_count,missing_count,lineage_source_count) VALUES
+            ('density_class','D1','commune','part_passoires','median',.2,2,2,0,1),
+            ('epci','E1','commune','part_passoires','median',.2,2,2,0,1)""")
+        conn.execute("""INSERT INTO scalar_comparison_territory(comparison_context,group_id,territory_type,indicator_id,
+            territory_id,value,status,rank,tie_count,rank_size) VALUES
+            ('density_class','D1','commune','part_passoires','29001',.3,'measured',2,1,2),
+            ('density_class','D1','commune','part_passoires','29002',.1,'measured',1,1,2),
+            ('epci','E1','commune','part_passoires','29001',.3,'measured',2,1,2),
+            ('epci','E1','commune','part_passoires','29002',.1,'measured',1,1,2)""")
+        conn.execute("""INSERT INTO comparison_source_lineage(comparison_family,comparison_context,group_id,
+            territory_type,facet_id,source_id,vintage_id,comparison_content_version) VALUES
+            ('scalar','density_class','D1','commune','part_passoires','dpe_22','dpe_22','scalar-comparison-v1'),
+            ('scalar','epci','E1','commune','part_passoires','dpe_22','dpe_22','scalar-comparison-v1')""")
+        conn.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,completeness,
+            descriptor_version,comparison_direction,comparison_scalar,required_scalar_version,denominator_semantics)
+            VALUES ('distribution_dpe','habitat','Distribution DPE','%',ARRAY['commune'],'dense_complete',
+            'dpe-profile-v1','low','part_passoires','scalar-v1','diagnostics DPE')""")
+        conn.execute("INSERT INTO profile_descriptor_source VALUES ('distribution_dpe','dpe_22')")
+        for ordinal, detail in enumerate('ABCDEFG'):
+            conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal)
+                VALUES ('distribution_dpe','detail',%s,%s,%s)""", (detail, detail, ordinal))
+            for territory_id, value, status in (('29001',.1,'measured'), ('29002',.2,'measured'),
+                                                 ('29003',.15,'measured'), ('29004',None,'not_available')):
+                conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,
+                    detail_key,sex_key,sex_axis_name,value,status)
+                    VALUES ('distribution_dpe',%s,'commune',%s,'',NULL,%s,%s)""",
+                    (territory_id,detail,value,status))
+                conn.execute("""INSERT INTO profile_observation_source(indicator_id,territory_id,detail_key,
+                    sex_key,source_id,vintage_id) VALUES ('distribution_dpe',%s,%s,'','dpe_22','dpe_22')""",
+                    (territory_id,detail))
+        conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
+            VALUES ('declared_profile','profiles-v1',28,'ref-v1')""")
+
+    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
+                          open=True, kwargs={"autocommit": True})
+    previous = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    try:
+        with TestClient(main.app) as client:
+            selected = {
+                "resource": "distribution_dpe",
+                "target": {"kind": "territory", "type": "commune", "id": "29001"},
+                "fields": ["median", "rank", "rank_size", "rank_ties", "selected_member_count",
+                           "eligible_count", "missing_count", "member_ranks"],
+                "intent": {"kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29002"}]},
+            }
+            published = client.post('/api/resources/read', json=selected)
+            assert published.status_code == 200, published.text
+            body = published.json()
+            result = body["result"]
+            assert result["median"] == pytest.approx(.2)
+            assert (result["eligible_count"], result["missing_count"], result["selected_member_count"]) == (2,0,2)
+            assert result["source_facet"] == "part_passoires"
+            assert result["unit"] == "%" and result["direction"] == "low"
+            assert [row["territory_id"] for row in result["member_ranks"]] == ["29001","29002"]
+            assert [(row["rank"],row["rank_size"],row["rank_ties"]) for row in result["member_ranks"]] == [
+                (2,2,1),(1,2,1)]
+            assert result["comparison_sources"][0]["source_id"] == "dpe_22"
+            assert body["profile_content_version"] == "profiles-v1"
+            assert body["scalar_content_version"] == "scalar-v1"
+            assert body["reference_content_version"] == "ref-v1"
+
+            projected = client.post('/api/resources/read', json={**selected, "fields": ["median"]})
+            assert projected.status_code == 200, projected.text
+            assert projected.json()["result"]["median"] == pytest.approx(.2)
+            assert "member_ranks" not in projected.json()["result"]
+
+            custom = client.post('/api/resources/read', json={**selected, "intent": {
+                "kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29003"}]}})
+            assert custom.status_code == 200, custom.text
+            custom_result = custom.json()["result"]
+            assert custom_result["median"] == pytest.approx(.25)
+            assert [(row["territory_id"],row["rank"]) for row in custom_result["member_ranks"]] == [
+                ("29001",2),("29003",1)]
+
+            absent_focal = client.post('/api/resources/read', json={**selected,
+                "target": {"kind": "territory", "type": "commune", "id": "29003"}})
+            assert absent_focal.status_code == 200, absent_focal.text
+            assert absent_focal.json()["result"]["focal_in_selection"] is False
+            assert absent_focal.json()["result"]["rank"] is None
+            assert len(absent_focal.json()["result"]["member_ranks"]) == 2
+
+            insufficient = client.post('/api/resources/read', json={**selected, "fields": [
+                "median", "selected_member_count", "eligible_count", "missing_count", "member_ranks"],
+                "intent": {"kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29004"}]}})
+            assert insufficient.status_code == 200, insufficient.text
+            insufficient_result = insufficient.json()["result"]
+            assert insufficient_result["status"] == "unavailable"
+            assert insufficient_result["reason"] == "fewer_than_two_comparable_values"
+            assert (insufficient_result["eligible_count"], insufficient_result["missing_count"],
+                    insufficient_result["median"]) == (1,1,None)
+            assert {row["territory_id"]: (row["rank"],row["rank_size"],row["rank_ties"])
+                    for row in insufficient_result["member_ranks"]} == {
+                "29001": (None,None,None), "29004": (None,None,None)}
+
+            cohort_facts = client.post('/api/resources/read', json={
+                "resource": "distribution_dpe",
+                "target": {"kind": "territory_cohort", "type": "commune",
+                           "department_id": None, "epci_id": None},
+                "fields": ["value"], "intent": {"kind": "facts"},
+            })
+            assert cohort_facts.status_code == 200, cohort_facts.text
+            fixture_path = tmp_path / "native-dpe-profile-responses.json"
+            fixture_path.write_text(json.dumps({"facts": cohort_facts.json(), "comparison": body},
+                indent=2, ensure_ascii=False), encoding="utf-8")
+            print(f"Native DPE API response fixture: {fixture_path}", flush=True)
+    finally:
+        if previous is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous
+        pool.close()

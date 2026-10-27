@@ -364,18 +364,28 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
         _COMPARISON_RESULT_FIELDS-{"mean","mean_curve"})
     marker = _profile_comparison_publication_marker(conn)
     ids = [p["indicator"] for p in details]
-    selected = set(_COMPARISON_RESULT_FIELDS) if selected is None else set(selected)
+    # Peer-rank arrays can be cohort-sized. Preserve the existing compact default
+    # response and load them only when callers explicitly request that field.
+    selected = (_COMPARISON_RESULT_FIELDS - {"member_ranks"}) if selected is None else set(selected)
     expected_keys = set()
     for profile in details:
         point = profile.get("comparison_point") or {}
         expected_keys.add((profile["indicator"], point.get("detail"), point.get("sex") or ""))
+    expected_key_list = sorted(expected_keys)
+    expected_indicator_ids = [key[0] for key in expected_key_list]
+    expected_details = [key[1] for key in expected_key_list]
+    expected_sexes = [key[2] for key in expected_key_list]
     groups = _execute_comparison_publication_read(conn, """SELECT indicator_id,detail_key,sex_key,statistic,
         CASE WHEN %s THEN median ELSE NULL::double precision END,member_count,
         eligible_count,missing_count,lineage_source_count,profile_content_version,reference_content_version,
         ((eligible_count=0 AND median IS NULL) OR (eligible_count>0 AND median IS NOT NULL
           AND median NOT IN ('Infinity'::float8,'-Infinity'::float8,'NaN'::float8))) AS median_valid
         FROM profile_comparison_group WHERE comparison_context=%s AND group_id=%s
-        AND territory_type=%s AND indicator_id=ANY(%s)""", ("median" in selected,context, group_id, territory_type, ids)).fetchall()
+        AND territory_type=%s AND indicator_id=ANY(%s)
+        AND (indicator_id,detail_key,sex_key) IN
+            (SELECT * FROM unnest(%s::text[],%s::text[],%s::text[]))""",
+        ("median" in selected,context, group_id, territory_type, ids,
+         expected_indicator_ids, expected_details, expected_sexes)).fetchall()
     territories = _execute_comparison_publication_read(conn, """SELECT indicator_id,detail_key,sex_key,territory_id,
         CASE WHEN %s THEN value ELSE NULL::double precision END,status,
         CASE WHEN %s THEN rank ELSE NULL::integer END,
@@ -385,13 +395,39 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
           AND tie_count>=1 AND rank_size>=1 AND rank>=1 AND rank<=rank_size AND tie_count<=rank_size
           AND rank+tie_count<=rank_size+1) OR
          (status<>'measured' AND value IS NULL AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)) AS result_valid
-        FROM profile_comparison_territory
-        WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
-          AND indicator_id=ANY(%s) AND territory_id=%s""",
+         FROM profile_comparison_territory
+         WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
+           AND indicator_id=ANY(%s) AND territory_id=%s
+           AND (indicator_id,detail_key,sex_key) IN
+               (SELECT * FROM unnest(%s::text[],%s::text[],%s::text[]))""",
         ("focal_value" in selected,"rank" in selected,"rank_ties" in selected,"rank_size" in selected,
-         context, group_id, territory_type, ids, territory_id)).fetchall()
+         context, group_id, territory_type, ids, territory_id,
+         expected_indicator_ids, expected_details, expected_sexes)).fetchall()
+    member_rows = []
+    if "member_ranks" in selected:
+        member_rows = _execute_comparison_publication_read(conn, """SELECT indicator_id,detail_key,sex_key,
+            territory_id,status,rank,tie_count,rank_size,profile_content_version,reference_content_version,
+            ((status='measured' AND rank IS NOT NULL AND tie_count IS NOT NULL AND rank_size IS NOT NULL
+              AND tie_count>=1 AND rank_size>=1 AND rank>=1 AND rank<=rank_size AND tie_count<=rank_size
+              AND rank+tie_count<=rank_size+1) OR
+             (status<>'measured' AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)) AS result_valid
+            FROM profile_comparison_territory
+            WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
+              AND indicator_id=ANY(%s) AND territory_id=ANY(%s)
+              AND (indicator_id,detail_key,sex_key) IN
+                  (SELECT * FROM unnest(%s::text[],%s::text[],%s::text[]))
+            ORDER BY indicator_id,detail_key,sex_key,territory_id""",
+            (context, group_id, territory_type, ids, list(members),
+             expected_indicator_ids, expected_details, expected_sexes)).fetchall()
     group_map = {(r[0], r[1], r[2]): r for r in groups}
     territory_map = {(r[0], r[1], r[2]): r for r in territories}
+    member_map = {}
+    for row in member_rows:
+        point_key = (row[0], row[1], row[2])
+        rows = member_map.setdefault(point_key, {})
+        if row[3] in rows:
+            raise HTTPException(503, "Published profile comparison has duplicate peer ranks")
+        rows[row[3]] = row[4:]
     if (len(group_map) != len(groups) or len(territory_map) != len(territories)
             or set(group_map) != expected_keys or set(territory_map) != expected_keys):
         raise HTTPException(503, "Published profile comparison has missing or duplicate results")
@@ -427,6 +463,22 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
             "reason": None if enough else "fewer_than_two_comparable_values",
             **({"selected_member_count":member_count} if "selected_member_count" in selected else {}),
             "comparison_sources": source_map.get(profile["indicator"], [])}
+        if "member_ranks" in selected:
+            rows = member_map.get(key, {})
+            if set(rows) != set(members) or len(rows) != len(members):
+                raise HTTPException(503, "Published profile comparison peer ranks are incomplete")
+            ranks = []
+            for member_id in members:
+                peer_status, peer_rank, peer_ties, peer_size, peer_pv, peer_rv, peer_valid = rows[member_id]
+                if (peer_status not in ("measured", "suppressed", "unsupported", "not_available", "not_published")
+                        or peer_pv != marker[1] or peer_rv != marker[2] or not peer_valid
+                        or (peer_status == "measured" and peer_size != eligible)):
+                    raise HTTPException(503, "Published profile comparison peer rank is invalid")
+                ranks.append({"territory_id": member_id,
+                    **({"rank": peer_rank, "rank_size": peer_size, "rank_ties": peer_ties}
+                       if enough and peer_status == "measured" else
+                       {"rank": None, "rank_size": None, "rank_ties": None})})
+            output[profile["indicator"]]["member_ranks"] = ranks
     return output
 
 
@@ -460,6 +512,8 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         ([p["comparison_scalar"] for p in external],)).fetchall() if fixed_context and external else [])
     published_scalar = (_published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
         cohort_type, members, territory_id, include_ties=True,
+        **({"include_member_ranks": True} if internal_profile_fields is not None and
+           "member_ranks" in internal_profile_fields else {}),
         **({} if internal_profile_fields is None else {"selected_fields":internal_profile_fields})) if fixed_context and external else {})
     read_ids = list(dict.fromkeys([*members, territory_id]))
     # Published adapters already supply complete comparison provenance. Only
@@ -486,7 +540,9 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
     detail_contracts = {}
     if details and not fixed_context:
         if profile_coordinates:
-            detail, sex = profile_coordinates["detail"], profile_coordinates.get("sex", "")
+            detail = profile_coordinates["detail"]
+            sex = profile_coordinates.get("sex")
+            sex_key = sex or ""
             detail_contracts = {row[0]: row for row in conn.execute(
                 """SELECT d.indicator_id,%s,%s,d.unit,d.denominator_semantics,
                           d.descriptor_version,d.detail_units_required,a.unit
@@ -497,11 +553,11 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
             ).fetchall()}
             detail_rows = conn.execute(
                 """SELECT d.indicator_id,o.territory_id,o.value,o.status
-                   FROM profile_descriptor d JOIN profile_observation o
-                     ON o.indicator_id=d.indicator_id AND o.detail_key=%s AND o.sex_key=%s
-                   WHERE d.indicator_id=ANY(%s) AND o.territory_type=%s AND o.territory_id=ANY(%s)
-                   ORDER BY d.indicator_id,o.territory_id""",
-                (detail, sex, [p["indicator"] for p in details], cohort_type, read_ids),
+                    FROM profile_descriptor d JOIN profile_observation o
+                      ON o.indicator_id=d.indicator_id AND o.detail_key=%s AND o.sex_key=%s
+                    WHERE d.indicator_id=ANY(%s) AND o.territory_type=%s AND o.territory_id=ANY(%s)
+                    ORDER BY d.indicator_id,o.territory_id""",
+                (detail, sex_key, [p["indicator"] for p in details], cohort_type, read_ids),
             ).fetchall()
         else:
             detail_contracts = {row[0]: row for row in conn.execute(
@@ -571,8 +627,8 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
                 **({"rank": ranks_by_value[values_by_id[member_id]][0],
                    "rank_size": len(values),
                    "rank_ties": ranks_by_value[values_by_id[member_id]][1]}
-                  if member_id in values_by_id else
-                  {"rank": None, "rank_size": None, "rank_ties": None}),
+                   if enough and member_id in values_by_id else
+                   {"rank": None, "rank_size": None, "rank_ties": None}),
             } for member_id in members]
         if include_missing_count:
             result["missing_count"] = max(0, len(members) - len(values))
@@ -601,9 +657,11 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
                 "reason": None if enough else "fewer_than_two_comparable_values"}
             requested_profile_fields=None if selected_fields is None else set(selected_fields)
             for field in ("median","focal_value","rank","rank_size","rank_ties",
-                          "eligible_count","selected_member_count"):
+                          "eligible_count","missing_count","selected_member_count"):
+                if field == "missing_count" and requested_profile_fields is None:
+                    continue
                 if field in published and (requested_profile_fields is None or field in requested_profile_fields):
-                    profile_result[field]=(published[field] if field in ("eligible_count","selected_member_count")
+                    profile_result[field]=(published[field] if field in ("eligible_count","missing_count","selected_member_count")
                                            or field not in {"median","rank","rank_size","rank_ties","focal_value"}
                                            else published[field] if enough else None)
             if selected_fields is not None:
@@ -624,7 +682,9 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         profile_metadata = {**profile, "source_facet_label": descriptor[1],
                             "scalar_descriptor_version": descriptor[6]}
         output.append(summary(profile_metadata, profile["comparison_scalar"], descriptor[2], descriptor[3],
-                              normalized, external_sources.get(profile["indicator"], [])))
+                              normalized, external_sources.get(profile["indicator"], []),
+                              include_missing_count=(selected_fields is not None and
+                                  "missing_count" in selected_fields)))
     for profile in details:
         if fixed_context:
             published = published_detail.get(profile["indicator"])
@@ -727,7 +787,7 @@ def _scalar_comparison_publication_marker(conn):
 
 def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context,
                                          cohort_type, members, territory_id, *, include_ties=False,
-                                         selected_fields=None):
+                                         include_member_ranks=False, selected_fields=None):
     """Read validated group statistics and one territory's precomputed result."""
     context, group_id, territory_type = fixed_context
     comparable = [row for row in scalar_descriptors
@@ -736,7 +796,7 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
         return {}
     marker = _scalar_comparison_publication_marker(conn)
     indicator_ids = [row[0] for row in comparable]
-    selected = set(_COMPARISON_RESULT_FIELDS) if selected_fields is None else set(selected_fields)
+    selected = (_COMPARISON_RESULT_FIELDS - {"member_ranks"}) if selected_fields is None else set(selected_fields)
     groups = _execute_comparison_publication_read(conn, """SELECT indicator_id,statistic,
         CASE WHEN %s THEN median ELSE NULL::double precision END,member_count,eligible_count,missing_count,lineage_source_count,
         ((eligible_count=0 AND median IS NULL) OR
@@ -758,8 +818,29 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
           AND territory_id=%s AND indicator_id=ANY(%s)""",
         ("focal_value" in selected,"rank" in selected,"rank_ties" in selected,"rank_size" in selected,
          context, group_id, territory_type, territory_id, indicator_ids)).fetchall()
+    peer_territories = []
+    if include_member_ranks and "member_ranks" in selected:
+        peer_territories = _execute_comparison_publication_read(conn, """SELECT indicator_id,territory_id,status,
+            rank,tie_count,rank_size,
+            ((status='measured' AND value IS NOT NULL AND rank IS NOT NULL AND tie_count IS NOT NULL
+                AND rank_size IS NOT NULL AND tie_count>=1 AND rank_size>=1 AND rank>=1
+                AND rank<=rank_size AND tie_count<=rank_size) OR
+             (status IN ('suppressed','unsupported','not_available','not_published') AND value IS NULL
+                AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)) AS result_valid
+            FROM scalar_comparison_territory
+            WHERE comparison_context=%s AND group_id=%s AND territory_type=%s
+              AND territory_id=ANY(%s) AND indicator_id=ANY(%s)
+            ORDER BY indicator_id,territory_id""",
+            (context, group_id, territory_type, list(members), indicator_ids)).fetchall()
     group_by_indicator = {row[0]: row[1:] for row in groups}
     territory_by_indicator = {row[0]: row[1:] for row in territories}
+    peers_by_indicator = {}
+    for row in peer_territories:
+        indicator_id, territory_id = row[:2]
+        peers = peers_by_indicator.setdefault(indicator_id, {})
+        if territory_id in peers:
+            raise HTTPException(503, "Published scalar comparison contains duplicate peer ranks")
+        peers[territory_id] = row[2:]
     if len(group_by_indicator) != len(groups) or len(territory_by_indicator) != len(territories):
         raise HTTPException(503, "Published scalar comparison contains duplicate results")
     for indicator_id in indicator_ids:
@@ -796,6 +877,21 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
         }
         if include_ties and "rank_ties" in selected:
             results[indicator_id]["rank_ties"] = tie_count if status == "measured" else None
+        if include_member_ranks and "member_ranks" in selected:
+            peer_map = peers_by_indicator.get(indicator_id, {})
+            if set(peer_map) != set(members) or len(peer_map) != len(members):
+                raise HTTPException(503, "Published scalar comparison peer ranks are incomplete")
+            ranks = []
+            for member_id in members:
+                peer_status, peer_rank, peer_ties, peer_size, peer_valid = peer_map[member_id]
+                if (peer_status not in ("measured", "suppressed", "unsupported", "not_available", "not_published")
+                        or not peer_valid or (peer_status == "measured" and peer_size != eligible_count)):
+                    raise HTTPException(503, "Published scalar comparison peer rank is invalid")
+                ranks.append({"territory_id": member_id,
+                    **({"rank": peer_rank, "rank_size": peer_size, "rank_ties": peer_ties}
+                       if eligible_count >= 2 and peer_status == "measured" else
+                       {"rank": None, "rank_size": None, "rank_ties": None})})
+            results[indicator_id]["member_ranks"] = ranks
     return results
 
 
