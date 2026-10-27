@@ -180,6 +180,39 @@ def test_cohort_capability_is_derived_from_supported_fact_families():
         validate_resource_item(comparison_cohort, catalogue)
 
 
+def test_member_ranks_are_only_projectable_for_selected_declared_profile_comparisons():
+    catalogue = default_resource_catalogue.__wrapped__()
+    selected = ResourceReadItem.model_validate({
+        "resource": "structure_age",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"},
+        ]},
+    })
+    assert validate_resource_item(selected, catalogue).resource_id == "structure_age"
+
+    fixed = ResourceReadItem.model_validate({
+        "resource": "structure_age",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "fixed_comparison", "context": "default"},
+    })
+    with pytest.raises(ValueError, match="field is not declared"):
+        validate_resource_item(fixed, catalogue)
+
+    scalar = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"},
+        ]},
+    })
+    with pytest.raises(ValueError, match="field is not declared"):
+        validate_resource_item(scalar, catalogue)
+
+
 def test_aedar_cohort_is_rejected_by_public_http_before_opening_a_connection(monkeypatch):
     from contextlib import contextmanager
     from types import SimpleNamespace

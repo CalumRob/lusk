@@ -22,7 +22,7 @@ from api.typed_reading_snapshots import (
 
 _COMPARISON_RESULT_FIELDS = {
     "focal_value", "median", "rank", "rank_size", "rank_ties",
-    "selected_member_count", "eligible_count", "missing_count", "mean", "mean_curve",
+    "selected_member_count", "eligible_count", "missing_count", "mean", "mean_curve", "member_ranks",
 }
 _COMPARISON_MANDATORY_FIELDS = {"status", "reason"}
 def _comparison_field_selection(fields):
@@ -554,6 +554,26 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
             "rank_size": len(values) if enough and territory_id in members and focal_value is not None else None,
             "rank_ties": ties if enough and territory_id in members and focal_value is not None else None,
             "comparison_sources": sources}
+        if selected_fields is not None and "member_ranks" in selected_fields:
+            values_by_id = {member_id: value for member_id, value in values}
+            counts = {}
+            for _member_id, value in values:
+                counts[value] = counts.get(value, 0) + 1
+            ranks_by_value = {}
+            preceding = 0
+            for value in sorted(counts):
+                count = counts[value]
+                better = preceding if direction == "low" else len(values) - preceding - count
+                ranks_by_value[value] = (better + 1, count)
+                preceding += count
+            result["member_ranks"] = [{
+                "territory_id": member_id,
+                **({"rank": ranks_by_value[values_by_id[member_id]][0],
+                   "rank_size": len(values),
+                   "rank_ties": ranks_by_value[values_by_id[member_id]][1]}
+                  if member_id in values_by_id else
+                  {"rank": None, "rank_size": None, "rank_ties": None}),
+            } for member_id in members]
         if include_missing_count:
             result["missing_count"] = max(0, len(members) - len(values))
         return result

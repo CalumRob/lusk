@@ -550,6 +550,15 @@ def test_declared_profile_postgres_api_contract(installation):
             assert comparison_payload == semantic_comparison.json()
             assert comparison_payload["result"]["median"] == pytest.approx(.4)
             assert comparison_payload["result"]["eligible_count"] == 2
+            matching_fixed_coordinates = client.post("/api/resources/read", json={
+                **semantic_comparison_item, "coordinates": {"detail": ["<15"], "sex": ["F"]},
+            })
+            assert matching_fixed_coordinates.status_code == 200, matching_fixed_coordinates.text
+            assert matching_fixed_coordinates.json()["result"]["median"] == pytest.approx(.4)
+            incompatible_fixed_coordinates = client.post("/api/resources/read", json={
+                **semantic_comparison_item, "coordinates": {"detail": ["15-24"], "sex": ["M"]},
+            })
+            assert incompatible_fixed_coordinates.status_code == 422, incompatible_fixed_coordinates.text
             selected_comparison_item = {
                 "resource": "structure_age",
                 "target": {"kind": "territory", "type": "commune", "id": territory},
@@ -567,10 +576,13 @@ def test_declared_profile_postgres_api_contract(installation):
             # The fixture deliberately makes this cell differ from <15 × F.
             selected_cell_item = {
                 **selected_comparison_item,
+                "fields": ["median", "rank", "rank_size", "rank_ties", "selected_member_count",
+                           "eligible_count", "missing_count", "member_ranks"],
                 "coordinates": {"detail": ["15-24"], "sex": ["M"]},
                 "intent": {"kind": "selected_comparison", "members": [
                     {"type": "commune", "id": territory},
                     {"type": "commune", "id": peer},
+                    {"type": "commune", "id": territory + "n"},
                 ]},
             }
             with psycopg.connect(publisher_dsn) as witness:
@@ -583,6 +595,11 @@ def test_declared_profile_postgres_api_contract(installation):
                     WHERE p.singleton""").fetchone()
             selected_cell = client.post("/api/resources/read", json=selected_cell_item)
             assert selected_cell.status_code == 200, selected_cell.text
+            assert selected_cell.json()["selection"] == [
+                {"territory_type": "commune", "territory_id": territory},
+                {"territory_type": "commune", "territory_id": peer},
+                {"territory_type": "commune", "territory_id": territory + "n"},
+            ]
             selected_result = selected_cell.json()["result"]
             assert selected_result["status"] == "available"
             assert selected_result["source_facet"] == {"detail": "15-24", "sex": "M"}
@@ -592,8 +609,15 @@ def test_declared_profile_postgres_api_contract(installation):
             assert selected_result["rank"] == 2
             assert selected_result["rank_size"] == 2
             assert selected_result["rank_ties"] == 1
+            assert selected_result["selected_member_count"] == 3
             assert selected_result["eligible_count"] == 2
-            assert selected_result["missing_count"] == 0
+            assert selected_result["missing_count"] == 1
+            assert {row["territory_id"]: {key: row[key] for key in ("rank", "rank_size", "rank_ties")}
+                    for row in selected_result["member_ranks"]} == {
+                territory: {"rank": 2, "rank_size": 2, "rank_ties": 1},
+                peer: {"rank": 1, "rank_size": 2, "rank_ties": 1},
+                territory + "n": {"rank": None, "rank_size": None, "rank_ties": None},
+            }
             assert selected_result["comparison_sources"] == [{
                 "source_id": "age_detail", "name": "INSEE fixture", "vintage_id": "v1",
                 "version": "2023", "reference_date": "2023-01-01", "publication_date": None,
@@ -615,6 +639,41 @@ def test_declared_profile_postgres_api_contract(installation):
                     JOIN table_publication t ON t.table_name='territory_reference'
                     WHERE p.singleton""").fetchone()
             assert marker_after == marker_before
+            with psycopg.connect(publisher_dsn) as writer:
+                writer.execute(f'SET search_path TO "{schema}"')
+                writer.execute("""UPDATE profile_observation SET value=.5 WHERE indicator_id='structure_age'
+                    AND detail_key='15-24' AND sex_key='M' AND territory_id=%s""", (peer,))
+            with psycopg.connect(publisher_dsn) as witness:
+                witness.execute(f'SET search_path TO "{schema}"')
+                tie_marker_before = witness.execute("""SELECT p.content_version,p.profile_content_version,
+                    p.reference_content_version,p.group_row_count,p.territory_row_count,
+                    d.content_version,t.content_version FROM profile_comparison_publication p
+                    JOIN table_publication d ON d.table_name='declared_profile'
+                    JOIN table_publication t ON t.table_name='territory_reference'
+                    WHERE p.singleton""").fetchone()
+            tied_selected_cell = client.post("/api/resources/read", json={
+                **selected_cell_item,
+                "intent": {"kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": territory}, {"type": "commune", "id": peer},
+                ]},
+            })
+            assert tied_selected_cell.status_code == 200, tied_selected_cell.text
+            tied_result = tied_selected_cell.json()["result"]
+            assert tied_result["median"] == pytest.approx(.5)
+            assert tied_result["rank"] == 1
+            assert tied_result["rank_ties"] == 2
+            assert {row["territory_id"]: row["rank_ties"] for row in tied_result["member_ranks"]} == {
+                territory: 2, peer: 2,
+            }
+            with psycopg.connect(publisher_dsn) as witness:
+                witness.execute(f'SET search_path TO "{schema}"')
+                tie_marker_after = witness.execute("""SELECT p.content_version,p.profile_content_version,
+                    p.reference_content_version,p.group_row_count,p.territory_row_count,
+                    d.content_version,t.content_version FROM profile_comparison_publication p
+                    JOIN table_publication d ON d.table_name='declared_profile'
+                    JOIN table_publication t ON t.table_name='territory_reference'
+                    WHERE p.singleton""").fetchone()
+            assert tie_marker_after == tie_marker_before
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)

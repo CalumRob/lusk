@@ -188,6 +188,9 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
             "selected_member_count", "eligible_count", "missing_count", "mean", "mean_curve",
         } if item.intent.kind in {"fixed_comparison", "selected_comparison"} else
             {field for shape in resource.shapes for field in _FIELDS_BY_SHAPE.get(shape, ())})
+            if (resource.resource_kind == "indicator" and item.intent.kind == "selected_comparison" and
+                    "declared_profile" in resource.shapes):
+                supported.add("member_ranks")
         if len(item.fields) != len(set(item.fields)) or not set(item.fields) <= supported:
             raise ValueError("field is not declared for this resource")
     if item.intent.kind != "facts" and item.target.kind != "territory":

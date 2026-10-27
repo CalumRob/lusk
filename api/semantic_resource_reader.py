@@ -45,8 +45,8 @@ class SemanticResourceReader:
                 if field in {"value", "support_count", "denominator_count"}]
 
     @staticmethod
-    def _profile_comparison_coordinates(item, resource):
-        """Resolve one complete profile cell for a coordinate-aware comparison."""
+    def _profile_comparison_coordinates(conn, item, resource):
+        """Resolve selected cells without allowing coordinates to redefine a fixed published default."""
         if ("declared_profile" not in resource.shapes or not item.coordinates
                 or item.intent.kind not in {"fixed_comparison", "selected_comparison"}):
             return None
@@ -56,7 +56,17 @@ class SemanticResourceReader:
         if set(item.coordinates) != axes or any(len(values) != 1
                                                 for values in item.coordinates.values()):
             raise HTTPException(422, "Profile comparison requires one value for every declared coordinate axis")
-        return {axis: values[0] for axis, values in item.coordinates.items()}
+        coordinates = {axis: values[0] for axis, values in item.coordinates.items()}
+        if item.intent.kind == "fixed_comparison":
+            default = conn.execute("""SELECT comparison_detail,comparison_sex,comparison_scalar
+                FROM profile_descriptor WHERE indicator_id=%s""", (item.resource,)).fetchone()
+            if (not default or default[2] is not None or coordinates.get("detail") != default[0] or
+                    coordinates.get("sex") != default[1]):
+                raise HTTPException(422, "Fixed profile comparisons use only their published default facet")
+            # Matching explicit coordinates are harmless filters, not a request
+            # to reinterpret the fixed publication as a selected comparison.
+            return None
+        return coordinates
 
     def _coordinate_values(self, conn, item, resource):
         coordinates = item.coordinates or {}
@@ -106,7 +116,7 @@ class SemanticResourceReader:
                   *, work_budget: int = 200_000) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
-        profile_coordinates = self._profile_comparison_coordinates(item, resource)
+        profile_coordinates = self._profile_comparison_coordinates(conn, item, resource)
         if resource.resource_kind in {"indicator", "typed_reading"}:
             self._coordinate_values(conn, item, resource)
         dual_scalar_series = (self._has_dual_scalar_series(resource)
@@ -346,7 +356,7 @@ class SemanticResourceReader:
                                       and item.target.kind == "territory"),
                 scalar_facet_theme_id=(resource.theme_id if self._has_dual_scalar_series(resource)
                                        and item.target.kind == "territory" else None),
-                profile_coordinates=self._profile_comparison_coordinates(item, resource))
+                profile_coordinates=self._profile_comparison_coordinates(conn, item, resource))
             if item.coordinates:
                 data = self._filter_coordinates(data, item.coordinates, resource)
             return {"resource": item.resource, "target": item.target.model_dump(), **data}
