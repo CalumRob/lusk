@@ -130,12 +130,19 @@ describe('ownership des axes natifs — fiche #851', () => {
       numericAxisValue: undefined,
       nativeContract: contract,
     }))
+    const reference = [...rows].reverse().map((row) => ({
+      ...row,
+      key: 'prix_m2_reference',
+      nativeContract: undefined,
+      numericAxisValue: undefined,
+    }))
     const wrapper = mount(FigureTrajectoire, {
       props: {
         clef: 'prix_m2',
         lignes: rows,
         libelle: contract.label!,
         theme: 'habitat',
+        reference,
         trajectory: {
           axis: 'numeric',
           endpoints: keys,
@@ -145,6 +152,8 @@ describe('ownership des axes natifs — fiche #851', () => {
     })
 
     expect(wrapper.get('.trajectoire-courante').attributes('d'))
+      .toBe('M 58.0 168.0 L 620.0 30.0')
+    expect(wrapper.get('.trajectoire-reference').attributes('d'))
       .toBe('M 58.0 168.0 L 620.0 30.0')
     wrapper.unmount()
   })
@@ -176,12 +185,43 @@ describe('ownership des axes natifs — fiche #851', () => {
     const trajectory = figure.props('trajectory')
 
     expect(trajectory?.axis).toBe('ordinal')
-    expect(trajectory?.endpoints).toEqual([])
+    expect(trajectory?.endpoints).toEqual(['3', '2'])
     expect(trajectory?.ticks?.map((tick) => tick.detail)).toEqual(axisValues)
     expect(wrapper.find('.trajectoire-marqueur').exists()).toBe(false)
     expect(figure.findAll('.trajectoire-point--courant')).toHaveLength(axisValues.length)
     expect(wrapper.get('svg[role="img"]').attributes('aria-label')).toContain('À Catégorie 2')
     expect(wrapper.text()).not.toContain('Ancien marqueur')
+    wrapper.unmount()
+  })
+
+  it('uses the native final axis value when a stale catalogue endpoint still belongs to the domain', () => {
+    const values = ['2024', '2025']
+    const contract: NativeThemeFactContract = {
+      ...nativeOrdinalContract,
+      axisKind: 'declared_detail',
+      axisValues: values,
+      axes: values.map((key, order) => ({ name: 'detail', key, label: `Année ${key}`, order })),
+    }
+    const template = indicateursHabitatFixture.find((row) => row.territoire === '22001' && row.key === 'prix_m2')!
+    const rows = values.map((detail, index) => ({
+      ...template,
+      detail,
+      value: 10 + index * 10,
+      numericAxisValue: undefined,
+      nativeContract: contract,
+    }))
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_habitat.json'), 'utf8')) as ThemeMetadata
+    const page = metadata.indicator_pages?.prix_m2
+    if (!page || page.family !== 'trajectory') throw new Error('Fixture prix_m2 trajectory missing')
+    page.trajectory = {
+      axis: 'numeric',
+      endpoints: ['2024'],
+      ticks: values.map((detail) => ({ detail, label: `Année ${detail}` })),
+    }
+    const wrapper = monterOnglet(rows, metadata, 'ready')
+
+    expect(wrapper.getComponent(FigureTrajectoire).props('trajectory')?.endpoints).toEqual(['2024', '2025'])
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).toContain('À Année 2025')
     wrapper.unmount()
   })
 
@@ -202,6 +242,9 @@ describe('ownership des axes natifs — fiche #851', () => {
       .toEqual(keys)
     expect(wrapper.findAll('.barre-dpe [data-etiquette]').map((item) => item.attributes('style')))
       .toEqual(expect.arrayContaining([expect.stringContaining('#2BAE6E'), expect.stringContaining('#008659')]))
+    const widths = wrapper.findAll('.barre-dpe [data-etiquette]')
+      .map((item) => Number.parseFloat(item.attributes('style')?.match(/width: ([\d.]+)%/)?.[1] ?? '0'))
+    expect(widths.reduce((sum, width) => sum + width, 0)).toBeCloseTo(100)
     wrapper.unmount()
   })
 })
