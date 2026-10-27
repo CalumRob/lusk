@@ -165,8 +165,6 @@ function trajectoirePour(clef: string): TrajectoryMetadata | undefined {
     : [contract.axisValues[0], contract.axisValues.at(-1)].filter((detail): detail is string => detail !== undefined)
   return {
     endpoints: nativeEndpoints,
-    ...(numericCoordinates && catalogueTrajectory?.axisLabels
-      ? { axisLabels: catalogueTrajectory.axisLabels } : {}),
     ...(catalogueTrajectory?.reference ? { reference: catalogueTrajectory.reference } : {}),
     ...(catalogueTrajectory?.marker && declaredDomain.has(catalogueTrajectory.marker.detail)
       ? { marker: catalogueTrajectory.marker } : {}),

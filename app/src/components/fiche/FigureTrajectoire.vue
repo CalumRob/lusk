@@ -1,8 +1,9 @@
 <script setup lang="ts">
 /**
  * The shared trajectory-family body (#371). Native descriptors own axis
- * membership/order/coordinates; verified metadata may add matching labels,
- * references and markers. Missing values split paths instead of becoming 0.
+ * membership/order/coordinates and semantic kind; fact rows own axis units.
+ * Verified metadata may still add matching tick labels, references and markers.
+ * Missing values split paths instead of becoming 0.
  */
 import { computed } from 'vue'
 
@@ -11,6 +12,7 @@ import type { Indicateur, NativeThemeFactContract, Theme, TrajectoryMetadata } f
 import type { DirectionRang } from '@/methodes/indicateurs'
 import PuceRang from './PuceRang.vue'
 import { directionIndicateur, puceRangDirection } from '@/fiche/figureGrammaire'
+import { libelleAxeNatif } from '@/fiche/content/ficheGrammar'
 
 const props = defineProps<{
   clef: string
@@ -232,10 +234,18 @@ const ticksY = computed(() => {
   return values.map((value) => ({ value, label: estPourcentage.value ? `${value * 100}%` : formaterNombreFR(value, 2) }))
 })
 
-const axisLabels = computed(() => ({
-  x: props.trajectory?.axisLabels?.x ?? (numerique.value ? 'Temps de trajet (minutes)' : 'Temps'),
-  y: props.trajectory?.axisLabels?.y ?? (estPourcentage.value ? 'Part de population (%)' : premiere.value?.unit ?? 'Valeur'),
-}))
+const axisLabels = computed(() => {
+  if (nativeAxisContract.value) {
+    return {
+      x: libelleAxeNatif(nativeAxisContract.value.axisKind),
+      y: premiere.value?.unit || 'Valeur',
+    }
+  }
+  return {
+    x: props.trajectory?.axisLabels?.x ?? (numerique.value ? 'Temps de trajet (minutes)' : 'Temps'),
+    y: props.trajectory?.axisLabels?.y ?? (estPourcentage.value ? 'Part de population (%)' : premiere.value?.unit ?? 'Valeur'),
+  }
+})
 
 const markerPosition = computed(() => {
   const detail = props.trajectory?.marker?.detail

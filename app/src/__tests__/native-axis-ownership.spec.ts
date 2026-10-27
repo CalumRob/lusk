@@ -24,6 +24,26 @@ const nativeOrdinalContract: NativeThemeFactContract = {
   axes: axisValues.map((key, order) => ({ name: 'detail', key, label: `Catégorie ${key}`, order })),
 }
 
+function lignesAvecContratAxe(
+  values: string[],
+  contract: NativeThemeFactContract,
+  unit = '€/m²',
+  theme: Indicateur['theme'] = 'habitat',
+  key = 'prix_m2',
+): Indicateur[] {
+  const template = indicateursHabitatFixture.find((row) => row.territoire === '22001' && row.key === 'prix_m2')!
+  return values.map((detail, index) => ({
+    ...template,
+    theme,
+    key,
+    detail,
+    value: 1000 + index * 100,
+    unit,
+    numericAxisValue: undefined,
+    nativeContract: contract,
+  }))
+}
+
 function payload(indicateurs: Indicateur[], themeMetadata: Payload['themeMetadata'] = {}): Payload {
   return {
     territoires: territoiresFixture,
@@ -50,6 +70,163 @@ function monterOnglet(indicateurs: Indicateur[], metadata: ThemeMetadata | undef
 }
 
 describe('ownership des axes natifs — fiche #851', () => {
+  it('labels native year/price coordinates as years and keeps the fact unit in visual and accessible axes', () => {
+    const values = ['2024', '2025']
+    const contract: NativeThemeFactContract = {
+      label: 'Prix immobilier — contrat natif',
+      shapes: ['ordered_series'],
+      axisKind: 'year',
+      axisValues: values,
+      axisNumericValues: [2024, 2025],
+    }
+    const wrapper = mount(FigureTrajectoire, {
+      props: {
+        clef: 'prix_m2',
+        lignes: lignesAvecContratAxe(values, contract),
+        libelle: contract.label!,
+        theme: 'habitat',
+        trajectory: {
+          axis: 'numeric',
+          endpoints: values,
+          ticks: values.map((detail, index) => ({ detail, label: detail, numericValue: 2024 + index })),
+        },
+      },
+    })
+
+    expect(wrapper.get('.trajectoire-axe-x-label').text()).toBe('Année')
+    expect(wrapper.get('.trajectoire-axe-y-label').text()).toBe('€/m²')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label'))
+      .toContain('Axe horizontal : Année. Axe vertical : €/m².')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).not.toMatch(/trajet|minutes/i)
+    wrapper.unmount()
+  })
+
+  it('does not bind stale catalogue axis meanings to native year/price coordinates', () => {
+    const values = ['2024', '2025']
+    const contract: NativeThemeFactContract = {
+      label: 'Prix immobilier — contrat natif',
+      shapes: ['ordered_series'],
+      axisKind: 'year',
+      axisValues: values,
+      axisNumericValues: [2024, 2025],
+    }
+    const metadata = JSON.parse(readFileSync(resolve(process.cwd(), '../public/data/theme_habitat.json'), 'utf8')) as ThemeMetadata
+    const page = metadata.indicator_pages?.prix_m2
+    if (!page || page.family !== 'trajectory') throw new Error('Fixture prix_m2 trajectory missing')
+    page.trajectory = {
+      axis: 'numeric',
+      endpoints: values,
+      ticks: values.map((detail) => ({ detail, label: detail })),
+      axisLabels: { x: 'Temps de trajet (minutes)', y: 'Part de population (%)' },
+    }
+    const wrapper = monterOnglet(lignesAvecContratAxe(values, contract), metadata, 'ready')
+    const figure = wrapper.getComponent(FigureTrajectoire)
+
+    expect(figure.props('trajectory')?.axisLabels).toBeUndefined()
+    expect(wrapper.get('.trajectoire-axe-x-label').text()).toBe('Année')
+    expect(wrapper.get('.trajectoire-axe-y-label').text()).toBe('€/m²')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label'))
+      .toContain('Axe horizontal : Année. Axe vertical : €/m².')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).not.toMatch(/trajet|minutes|Part de population/i)
+    wrapper.unmount()
+  })
+
+  it('preserves the supported native Mobilité duration semantics and fact unit', () => {
+    const values = ['t0000', 't0090']
+    const contract: NativeThemeFactContract = {
+      label: 'Courbe native de raccordement',
+      shapes: ['ordered_series'],
+      axisKind: 'duration_minute',
+      axisValues: values,
+      axisNumericValues: [0, 90],
+    }
+    const wrapper = mount(FigureTrajectoire, {
+      props: {
+        clef: 'raccordement_courbe',
+        lignes: lignesAvecContratAxe(values, contract, '%', 'mobilite', 'raccordement_courbe'),
+        libelle: contract.label!,
+        theme: 'mobilite',
+        trajectory: {
+          axis: 'numeric',
+          endpoints: values,
+          axisLabels: { x: 'Année', y: '€/m²' },
+          ticks: values.map((detail, index) => ({ detail, label: detail, numericValue: index * 90 })),
+        },
+      },
+    })
+
+    expect(wrapper.get('.trajectoire-axe-x-label').text()).toBe('Temps de trajet (minutes)')
+    expect(wrapper.get('.trajectoire-axe-y-label').text()).toBe('%')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label'))
+      .toContain('Axe horizontal : Temps de trajet (minutes). Axe vertical : %.')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).not.toContain('Année')
+    wrapper.unmount()
+  })
+
+  it('uses neutral axis wording for an unknown native numeric kind instead of guessing travel minutes', () => {
+    const values = ['lower', 'upper']
+    const contract: NativeThemeFactContract = {
+      label: 'Série native à coordonnée inconnue',
+      shapes: ['ordered_series'],
+      axisKind: 'unregistered_measure',
+      axisValues: values,
+      axisNumericValues: [12, 970],
+    }
+    const wrapper = mount(FigureTrajectoire, {
+      props: {
+        clef: 'prix_m2',
+        lignes: lignesAvecContratAxe(values, contract),
+        libelle: contract.label!,
+        theme: 'habitat',
+        trajectory: {
+          axis: 'numeric',
+          endpoints: values,
+          ticks: values.map((detail, index) => ({ detail, label: detail, numericValue: [12, 970][index] })),
+        },
+      },
+    })
+
+    expect(wrapper.get('.trajectoire-axe-x-label').text()).toBe('Coordonnée')
+    expect(wrapper.get('.trajectoire-axe-y-label').text()).toBe('€/m²')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label'))
+      .toContain('Axe horizontal : Coordonnée. Axe vertical : €/m².')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).not.toMatch(/trajet|minutes/i)
+    wrapper.unmount()
+  })
+
+  it('keeps mixed-null native year coordinates ordinal without parsing its numeric-looking axis values', () => {
+    const values = ['2025', '2024', '2026']
+    const contract: NativeThemeFactContract = {
+      label: 'Série annuelle native',
+      shapes: ['ordered_series'],
+      axisKind: 'year',
+      axisValues: values,
+      axisNumericValues: [2025, null, 2026],
+    }
+    const valueByDetail: Record<string, number> = { '2025': 10, '2024': 20, '2026': 30 }
+    const rows = lignesAvecContratAxe(['2024', '2025', '2026'], contract)
+      .map((row) => ({ ...row, value: valueByDetail[row.detail!] }))
+    const wrapper = mount(FigureTrajectoire, {
+      props: {
+        clef: 'prix_m2',
+        lignes: rows,
+        libelle: contract.label!,
+        theme: 'habitat',
+        trajectory: {
+          axis: 'numeric',
+          endpoints: values,
+          ticks: values.map((detail) => ({ detail, label: detail })),
+        },
+      },
+    })
+
+    expect(wrapper.get('.trajectoire-courante').attributes('d'))
+      .toBe('M 58.0 168.0 L 339.0 99.0 L 620.0 30.0')
+    expect(wrapper.get('.trajectoire-axe-x-label').text()).toBe('Année')
+    expect(wrapper.get('svg[role="img"]').attributes('aria-label')).not.toMatch(/trajet|minutes/i)
+    wrapper.unmount()
+  })
+
   it('draws ordinal points in the declared producer order, not parsed-key order', () => {
     const template = indicateursHabitatFixture.find((row) => row.territoire === '22001' && row.key === 'prix_m2')!
     const rows = axisValues.map((detail, index) => ({

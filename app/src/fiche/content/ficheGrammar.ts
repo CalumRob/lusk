@@ -1,5 +1,17 @@
 import type { FamilleFigure, NoeudTexteRiche, Theme, ThemeMetadata } from '@/payload/types'
 
+/** Stable app labels for producer-declared axis kinds; unknown kinds stay neutral. */
+const LIBELLES_AXE_NATIF: Readonly<Record<string, string>> = {
+  year: 'Année',
+  duration_minute: 'Temps de trajet (minutes)',
+  state_role: 'État',
+  declared_detail: 'Détail',
+}
+
+export function libelleAxeNatif(axisKind: string | undefined): string {
+  return axisKind ? LIBELLES_AXE_NATIF[axisKind] ?? 'Coordonnée' : 'Coordonnée'
+}
+
 /** App-owned display names shared by the fiche and Mobilité's semantic content. */
 export const CONTENU_SOUS_GROUPES_FICHE = {
   mobilite: {
