@@ -3,7 +3,7 @@ import { join } from 'node:path'
 
 import { flushPromises, mount } from '@vue/test-utils'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 import IndicateurView from '../views/IndicateurView.vue'
 import { chargerFichier } from '../payload/loader'
@@ -12,6 +12,7 @@ import type { Territoire } from '../payload/types'
 import { routes } from '../router'
 import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
+import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
 
 /**
  * La note de contexte permanente + la contextualisation des compositions
@@ -73,6 +74,7 @@ function chargerCommis(fichier: Fichier): Promise<unknown> {
 }
 
 async function monter(url: string) {
+  vi.stubGlobal('fetch', createNativeSemanticApiTransport())
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(url)
   await router.isReady()

@@ -20,6 +20,7 @@ import { PAYLOAD_CHARGER_KEY } from '../payload/usePayload'
 import { GEOMETRIE_CHARGER_KEY } from '../geo/useGeometrie'
 import { normalizeComparisonFacet } from '../indicateurs/familySeam'
 import { formaterValeur } from '../payload/selectors'
+import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
 
 /**
  * #474 — séparer DPE et passoires : DEUX Pages d'indicateur indépendantes.
@@ -151,6 +152,7 @@ function chargerCommis(fichier: Fichier): Promise<unknown> {
 }
 
 async function monter(url: string) {
+  vi.stubGlobal('fetch', createNativeSemanticApiTransport())
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(url)
   await router.isReady()

@@ -20,6 +20,7 @@ import {
   validerModeleTerritoire,
 } from '@/payload/territoryReadModel'
 import { routes } from '@/router'
+import { createNativeSemanticApiTransport } from './helpers/nativeSemanticApiTransport'
 
 const payload: Payload = {
   territoires: territoiresFixture,
@@ -52,6 +53,7 @@ const readModel = validerModeleTerritoire({
 
 describe('Production Mobilité — shell performance seam', () => {
   it('resolves cahier content from the atomic territory model on the normal route', async () => {
+    vi.stubGlobal('fetch', createNativeSemanticApiTransport())
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/territoire/commune/22001?theme=mobilite')
     await router.isReady()

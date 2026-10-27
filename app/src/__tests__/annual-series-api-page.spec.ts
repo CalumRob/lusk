@@ -554,7 +554,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (file === 'theme_milieux') return metadataMilieux
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch')
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(nativeCatalogueResponse())
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/conso_enaf_annuel?territoire=22001&niveau=commune&departement=22')
     await router.isReady()

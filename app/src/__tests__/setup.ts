@@ -1,26 +1,13 @@
 import { beforeEach, vi } from 'vitest'
-import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture } from './helpers/semanticApiFixtures'
 
 /**
- * The app never fetches in tests: happy-dom's real fetch tries the network
- * (ECONNREFUSED noise). A 404 stub exercises the loader's typed error path —
- * hosts (AccueilView) show the error state, exactly as when /data/ is
- * unreachable. Loader specs inject their own fetchImpl and are unaffected.
+ * Tests default to fail-closed: happy-dom's real fetch would hit the network
+ * (ECONNREFUSED noise). The 404 stub exercises the loader's typed error path.
+ * Specs that need a healthy API explicitly opt into a bounded transport locally;
+ * loader specs inject their own fetchImpl and are unaffected.
  */
 beforeEach(() => {
-  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
-    const url = String(input)
-    if (url === '/api/resources') return nativeCatalogueResponse()
-    if (url === '/api/resources/read-batch') {
-      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
-      return nativeBatchResponse(body.items, nativeReadFixture)
-    }
-    return {
-      ok: false,
-      status: 404,
-      json: () => Promise.resolve({}),
-    } as Response
-  })
+  vi.stubGlobal('fetch', async () => new Response('', { status: 404 }))
 })
 
 /**
