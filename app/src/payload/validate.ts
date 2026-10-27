@@ -81,12 +81,14 @@ export type PayloadErrorKind = 'fetch' | 'validation'
 export class PayloadError extends Error {
   readonly kind: PayloadErrorKind
   readonly file: string
+  readonly status?: number
 
-  constructor(kind: PayloadErrorKind, file: string, message: string) {
+  constructor(kind: PayloadErrorKind, file: string, message: string, status?: number) {
     super(message)
     this.name = 'PayloadError'
     this.kind = kind
     this.file = file
+    this.status = status
   }
 }
 

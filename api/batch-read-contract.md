@@ -132,6 +132,21 @@ facet; DPE uses the linked scalar's own unit and source identity, not a DPE-bin
 rank. This projection remains subject to the semantic read's existing preflight
 work-unit and response-size bounds; it does not create an unbounded peer-list API.
 
+Scalar fixed and selected comparisons also accept the opt-in
+`fields: ["member_ranks"]` projection. Each row describes one exact member of the
+published fixed group or requested selected population and contains the API-owned
+`rank`, `rank_size`, and `rank_ties`; non-measured members have all three fields
+null. The API reconciles row identities and measured/missing totals against the
+group result and fails closed on incomplete or malformed published evidence.
+Fixed comparisons reuse the validated same-level or density-class publication;
+selected comparisons use the existing bounded scalar selection calculation.
+`member_ranks` does not request or expose `focal_value`, alter the selected
+population, or create a new comparison policy. All rows remain subject to the
+existing work-unit and output bounds. The catalogue's `sources` list is likewise
+producer-derived: it includes exact vintage source IDs where a declared source
+record covers multiple distinct territorial snapshots, so app provenance
+validation need not infer IDs from names, dates, or page metadata.
+
 At least two measured/eligible values are required for a declared-profile median
 and rank. Below that threshold the comparison is `unavailable` with
 `fewer_than_two_comparable_values`; median and focal/peer ranks are null, while

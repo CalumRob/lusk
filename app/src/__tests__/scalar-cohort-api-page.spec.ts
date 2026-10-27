@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { chargerCohorteScalaire, chargerCohortesScalaires, chargerRangScalaire,
+import { chargerCohorteScalaire, chargerCohortePageScalaire, chargerCohortesScalaires, chargerRangScalaire,
   chargerComparaisonsScalaires, indicateursScalairesEnregistres, pagesScalairesEnregistrees, remplacerFaitsScalaires,
   scalarCohortEnabled, validerEnregistrementScalaires } from '../payload/scalarCohort'
 import { territoiresFixture, indicateursEconomieFixture } from '../payload/fixtures'
@@ -17,6 +17,12 @@ afterEach(() => { vi.unstubAllGlobals(); vi.unstubAllEnvs() })
 
 function pageFor(theme: string, indicator: string) {
   return validerThemeMetadata(themeRaw(theme), `theme_${theme}.json`).indicator_pages![indicator]!
+}
+
+function sourceFor(theme: string, indicator: string) {
+  const source_id = themeRaw(theme).indicator_pages[indicator].sources[0]
+  return { source_id, name: 'Source API comparée', vintage_id: `${source_id}-2026`, version: '2026',
+    reference_date: '2026-06-30', publication_date: '2026-07-01' }
 }
 
 function declaration(theme: string, indicator: string): SemanticResourceDeclaration {
@@ -74,11 +80,13 @@ function scalarData(theme: string, indicator: string, item: SemanticReadItem, op
       allowed_levels: declaration(theme, indicator).allowed_levels,
       denominator_semantics: 'Dénominateur produit, documenté dans la publication',
       completeness: options.completeness ?? 'sparse', descriptor_version: 'scalar-descriptor-v3' },
-    observations: (options.observations ?? [{ territory: members[0]!.territoire, status: 'measured', value: 9 }])
+  observations: (options.observations ?? [{ territory: members[0]!.territoire, status: 'measured', value: 9 }])
       .map(({ territory, status, value }) => {
         const reference = territoiresFixture.find((candidate) => candidate.territoire === territory)!
+        const fields = item.fields ?? ['value', 'support_count', 'denominator_count']
         return { territory: { id: territory, type: reference.type, name: reference.nom }, status, value,
-          support_count: status === 'measured' ? 41 : 7, denominator_count: 100,
+          ...(fields.includes('support_count') ? { support_count: status === 'measured' ? 41 : 7 } : {}),
+          ...(fields.includes('denominator_count') ? { denominator_count: 100 } : {}),
           sources: [{ source_id: page.sources[0], name: 'Source API mesurée', vintage_id: 'source-vintage-2026',
             version: '2026', reference_date: '2026-06-30', publication_date: '2026-07-01' }] }
       }),
@@ -100,6 +108,53 @@ function installCatalogueAndReads(resources: SemanticResourceDeclaration[], resp
   })
   vi.stubGlobal('fetch', fetcher)
   return fetcher
+}
+
+function comparisonFixture(theme: string, indicator: string, item: SemanticReadItem,
+  values: Map<string, { status: string; value: number | null }>) {
+  const page = pageFor(theme, indicator)
+  const members = item.intent.kind === 'selected_comparison'
+    ? item.intent.members.map((member) => ({ id: member.id, type: member.type }))
+    : membersFor(item.target).map((territory) => ({ id: territory.territoire, type: territory.type }))
+  const eligible = members.flatMap(({ id }) => {
+    const row = values.get(id)
+    return row?.status === 'measured' && row.value !== null ? [{ id, value: row.value }] : []
+  })
+  const direction = page.comparison?.direction ?? page.direction
+  const sorted = eligible.map((row) => row.value).sort((a, b) => a - b)
+  const median = sorted.length === 0 ? null : sorted.length % 2
+    ? sorted[(sorted.length - 1) / 2]!
+    : (sorted[sorted.length / 2 - 1]! + sorted[sorted.length / 2]!) / 2
+  const rank = (id: string) => {
+    const value = values.get(id)
+    if (eligible.length < 2 || value?.status !== 'measured' || value.value === null) return null
+    const better = eligible.filter((row) => direction === 'high' ? row.value > value.value! : row.value < value.value!).length
+    return { territory_id: id, rank: better + 1, rank_size: eligible.length,
+      rank_ties: eligible.filter((row) => row.value === value.value).length }
+  }
+  const focalId = item.target.kind === 'territory' ? item.target.id! : ''
+  const targetType = item.target.kind === 'named_reference' ? 'commune' : item.target.type
+  const focalInSelection = members.some((member) => member.id === focalId)
+  const isSelected = item.intent.kind === 'selected_comparison'
+  return {
+    resource: indicator, target: item.target, contract: 'indicator-comparison-v1', indicator_id: indicator,
+    shape: 'scalar', content_version: 'scalar-publication-v4', reference_content_version: 'reference-v7',
+    selection: item.intent.kind === 'selected_comparison'
+      ? item.intent.members.map((member) => ({ territory_type: member.type, territory_id: member.id })) : null,
+    scope: isSelected ? { kind: 'explicit_selection', member_count: members.length }
+      : { kind: 'same_level', territory_type: targetType, member_count: members.length },
+    result: { indicator_id: indicator, status: eligible.length ? 'available' : 'unavailable',
+      reason: eligible.length ? null : 'no_selected_comparable_values', unit: page.unit, direction,
+      source_facet: page.comparison?.indicator ?? indicator, descriptor_version: 'scalar-descriptor-v3',
+      selected_member_count: members.length, eligible_count: eligible.length,
+      missing_count: members.length - eligible.length,
+      focal_in_selection: focalInSelection,
+      median, rank: focalInSelection ? rank(focalId)?.rank ?? null : null,
+      rank_size: focalInSelection ? rank(focalId)?.rank_size ?? null : null,
+      member_ranks: members.map(({ id }) => rank(id) ?? { territory_id: id, rank: null, rank_size: null, rank_ties: null }),
+      comparison_sources: eligible.length ? [sourceFor(theme, indicator)] : [],
+    },
+  }
 }
 
 describe('ordinary scalar producer declarations and semantic acquisition', () => {
@@ -144,6 +199,110 @@ describe('ordinary scalar producer declarations and semantic acquisition', () =>
       rider: 'Valeur masquée selon les règles de diffusion.' })
     expect(facts.find((fact) => fact.territoire === '22002')?.rider).not.toBe('suppressed')
     expect(identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
+  })
+
+  it('requests only producer-declared counts and accepts a focal outside the exact page cohort', async () => {
+    const indicator = 'densite'
+    const metadata = validerThemeMetadata(themeRaw('demographie'), 'theme_demographie.json')
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '29001')!
+    const fetcher = installCatalogueAndReads([declaration('demographie', indicator)], (item) => scalarData(
+      'demographie', indicator, item, { observations: [
+        { territory: '22001', status: 'measured', value: 10 },
+        { territory: '22002', status: 'measured', value: 5 },
+      ] }))
+
+    const acquired = await chargerCohortePageScalaire(indicator, 'demographie', metadata, focal,
+      'commune', territoiresFixture, { epci: '200000001' })
+    const read = fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')!
+    const request = JSON.parse((read[1] as RequestInit).body as string)
+    expect(request.items[0].fields).toEqual(['value'])
+    expect(acquired.facts.map((fact) => fact.territoire)).toEqual(['22001', '22002'])
+    expect(acquired.facts.every((fact) => !('support_count' in fact) && !('denominator_count' in fact))).toBe(true)
+    expect(acquired.identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
+    expect(page.levels).toContain('commune')
+  })
+
+  it('keeps a sparse scalar cohort with no observation rows explicitly empty', async () => {
+    const indicator = 'bornes_ev_par_station_service'
+    const focal = territoiresFixture.find((territory) => territory.territoire === '22001')!
+    const metadata = validerThemeMetadata(themeRaw('mobilite'), 'theme_mobilite.json')
+    const fetcher = installCatalogueAndReads([declaration('mobilite', indicator)], (item) =>
+      scalarData('mobilite', indicator, item, { completeness: 'sparse', observations: [] }))
+
+    const result = await chargerCohortePageScalaire(indicator, 'mobilite', metadata, focal, 'commune',
+      territoiresFixture, { department: '22', epci: '200000001' }, [declaration('mobilite', indicator)])
+    expect(result.facts).toEqual([])
+    expect(result.identity).toEqual({ contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' })
+    expect(result.contract.completeness).toBe('sparse')
+    const request = JSON.parse((fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')?.[1] as RequestInit).body as string)
+    expect(request.items[0]).toMatchObject({ resource: indicator, fields: ['value'],
+      target: { kind: 'territory_cohort', type: 'commune', department_id: '22', epci_id: '200000001' },
+      intent: { kind: 'facts' } })
+  })
+
+  it('adapts selected peer ranks without changing typed selection or losing focal-outside evidence', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.territoire === '29001')!
+    const members = [{ type: 'commune' as const, id: '22001' }, { type: 'commune' as const, id: '22002' }]
+    const request = { kind: 'selected' as const, members, scope: {
+      kind: 'explicit_selection' as const, territoryType: 'commune' as const, memberCount: 2, label: 'EPCI 200000001',
+    } }
+    const values = new Map([
+      ['22001', { status: 'measured', value: 100 }],
+      ['22002', { status: 'measured', value: 100 }],
+      ['29001', { status: 'measured', value: 42 }],
+    ])
+    const fetcher = installCatalogueAndReads([declaration('demographie', indicator)],
+      (item) => comparisonFixture('demographie', indicator, item, values))
+
+    const result = await chargerComparaisonsScalaires([indicator], 'demographie', { [indicator]: page },
+      focal, territoiresFixture, request,
+      { contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' }, true)
+    const call = fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')!
+    const item = JSON.parse((call[1] as RequestInit).body as string).items[0]
+    expect(item).toMatchObject({ target: { kind: 'territory', type: 'commune', id: '29001' },
+      fields: ['median', 'rank', 'rank_size', 'eligible_count',
+        'selected_member_count', 'missing_count', 'member_ranks'],
+      intent: { kind: 'selected_comparison', members } })
+    expect(result[indicator]).toMatchObject({ focalInSelection: false,
+      selectedMemberCount: 2, eligibleCount: 2, missingCount: 0, median: 100,
+      rank: null, rankSize: null, rankTies: null,
+      memberRanks: [
+        { territoryId: '22001', rank: 1, rankSize: 2, rankTies: 2 },
+        { territoryId: '22002', rank: 1, rankSize: 2, rankTies: 2 },
+      ],
+      comparisonSources: [{ sourceId: page.sources[0], vintageId: `${page.sources[0]}-2026`, version: '2026' }],
+    })
+  })
+
+  it('adapts fixed non-commune peer ranks through the published same-level scope', async () => {
+    const indicator = 'densite'
+    const page = pageFor('demographie', indicator)
+    const focal = territoiresFixture.find((territory) => territory.type === 'epci')!
+    const request = { kind: 'fixed' as const, scope: {
+      kind: 'same_level' as const, territoryType: 'epci' as const, memberCount: 2, label: 'en Bretagne',
+    } }
+    const values = new Map([
+      ['200000001', { status: 'measured', value: 10 }],
+      ['200000002', { status: 'measured', value: 5 }],
+    ])
+    const fetcher = installCatalogueAndReads([declaration('demographie', indicator)],
+      (item) => comparisonFixture('demographie', indicator, item, values))
+    const result = await chargerComparaisonsScalaires([indicator], 'demographie', { [indicator]: page },
+      focal, territoiresFixture, request,
+      { contentVersion: 'scalar-publication-v4', referenceContentVersion: 'reference-v7' }, true)
+    const call = fetcher.mock.calls.find(([url]) => String(url) === '/api/resources/read-batch')!
+    const item = JSON.parse((call[1] as RequestInit).body as string).items[0]
+    expect(item.intent).toEqual({ kind: 'fixed_comparison', context: 'default' })
+    expect(result[indicator]).toMatchObject({ selectedMemberCount: 2, eligibleCount: 2,
+      focalInSelection: true, rank: 1, rankSize: 2,
+      memberRanks: [
+        { territoryId: '200000001', rank: 1, rankSize: 2, rankTies: 1 },
+        { territoryId: '200000002', rank: 2, rankSize: 2, rankTies: 1 },
+      ],
+    })
   })
 
   it('keeps scalar resource theme binding strict when discovery contains other unthemed resources', async () => {

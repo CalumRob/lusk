@@ -109,6 +109,13 @@ def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():
     assert "selected_comparison" in resources["subventions_annuelles"].intents
 
 
+def test_scalar_discovery_exposes_all_producer_declared_vintage_source_identities():
+    catalogue = default_resource_catalogue.__wrapped__()
+    scalar = catalogue.resources_by_id["part_passoires"]
+
+    assert set(scalar.sources) == {"dpe_22", "dpe_29", "dpe_35", "dpe_56"}
+
+
 def test_discovery_exposes_every_retained_profile_page_and_its_declared_axes():
     catalogue = discover_indicator_resources(METADATA)
     resources = {resource.resource_id: resource for resource in catalogue.resources
@@ -180,7 +187,7 @@ def test_cohort_capability_is_derived_from_supported_fact_families():
         validate_resource_item(comparison_cohort, catalogue)
 
 
-def test_member_ranks_are_projectable_for_selected_scalar_and_profile_comparisons_only():
+def test_member_ranks_are_projectable_for_scalar_comparisons_and_selected_profiles_only():
     catalogue = default_resource_catalogue.__wrapped__()
     selected = ResourceReadItem.model_validate({
         "resource": "structure_age",
@@ -211,14 +218,13 @@ def test_member_ranks_are_projectable_for_selected_scalar_and_profile_comparison
     with pytest.raises(ValueError, match="field is not declared"):
         validate_resource_item(fixed, catalogue)
 
-    with pytest.raises(ValueError, match="field is not declared"):
-        scalar_fixed = ResourceReadItem.model_validate({
-            "resource": "densite",
-            "target": {"kind": "territory", "type": "commune", "id": "22001"},
-            "fields": ["member_ranks"],
-            "intent": {"kind": "fixed_comparison", "context": "default"},
-        })
-        validate_resource_item(scalar_fixed, catalogue)
+    scalar_fixed = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "epci", "id": "200000001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "fixed_comparison", "context": "default"},
+    })
+    assert validate_resource_item(scalar_fixed, catalogue).resource_id == "densite"
 
     non_comparable = ResourceReadItem.model_validate({
         "resource": "structure_age",
@@ -306,4 +312,7 @@ def test_public_discovery_is_producer_derived_and_database_free():
     assert len(payload["resources"]) == 33
     ids = {resource["resource_id"] for resource in payload["resources"]}
     assert "bornes_ev_par_station_service" in ids
+    passoires = next(resource for resource in payload["resources"]
+                     if resource["resource_id"] == "part_passoires")
+    assert set(passoires["sources"]) == {"dpe_22", "dpe_29", "dpe_35", "dpe_56"}
     assert not any(resource.startswith("share_") for resource in ids)

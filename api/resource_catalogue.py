@@ -163,6 +163,30 @@ _COHORT_FACT_SHAPES = frozenset({
 })
 
 
+def _declared_source_identities(page, source_records, fallback):
+    """Expose source identities that producer-declared vintages can return.
+
+    A page may name one editorial source record whose vintages identify several
+    independently sourced territorial observations (for example, one DPE
+    snapshot per département). Discovery must authorize those exact native IDs
+    without making the app infer them from source labels or dates.
+    """
+    source_keys = page.get("sources", (fallback,))
+    if isinstance(source_keys, str):
+        source_keys = (source_keys,)
+    identities = []
+    for source_key in source_keys:
+        if not isinstance(source_key, str) or not source_key:
+            continue
+        identities.append(source_key)
+        record = source_records.get(source_key) or {}
+        for vintage in record.get("vintages", ()):
+            vintage_id = vintage.get("id") if isinstance(vintage, dict) else None
+            if isinstance(vintage_id, str) and vintage_id:
+                identities.append(vintage_id)
+    return tuple(dict.fromkeys(identities))
+
+
 def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResource:
     """Apply producer-declared resource, target, field, axis and intent rules."""
     resources = {resource.resource_id: resource for resource in catalogue.resources}
@@ -188,8 +212,10 @@ def validate_resource_item(item, catalogue: ResourceCatalogue) -> IndicatorResou
             "selected_member_count", "eligible_count", "missing_count", "mean", "mean_curve",
             } if item.intent.kind in {"fixed_comparison", "selected_comparison"} else
                 {field for shape in resource.shapes for field in _FIELDS_BY_SHAPE.get(shape, ())})
-            if (resource.resource_kind == "indicator" and item.intent.kind == "selected_comparison" and
-                    {"scalar", "declared_profile"}.intersection(resource.shapes)):
+            if (resource.resource_kind == "indicator" and
+                    ((item.intent.kind == "selected_comparison" and
+                      {"scalar", "declared_profile"}.intersection(resource.shapes)) or
+                     (item.intent.kind == "fixed_comparison" and "scalar" in resource.shapes))):
                 supported.add("member_ranks")
         if len(item.fields) != len(set(item.fields)) or not set(item.fields) <= supported:
             raise ValueError("field is not declared for this resource")
@@ -320,7 +346,7 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 direction=page_descriptor.get("direction", "none"),
                 allowed_levels=tuple(page_descriptor.get(
                     "levels", page_descriptor.get("serving_levels", collection.get("levels", ())))),
-                sources=tuple(page_descriptor.get("sources", (source_id,))),
+                sources=_declared_source_identities(page_descriptor, source_records, source_id),
                 shapes=shapes,
                 axes=axes,
                 axis_values=axis_values,

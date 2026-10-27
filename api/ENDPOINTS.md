@@ -22,7 +22,11 @@ does not connect to PostgreSQL; its inventory and logical shape declarations
 come from the pipeline's checked-in theme producer descriptors. Excluded
 legacy accessibility declarations are validated for accounting but are not
 returned. This contract describes declared resources, not whether every
-resource currently has a successful publication.
+resource currently has a successful publication. Each resource's `sources`
+contains its declared native source identities, including producer-declared
+vintage IDs when one editorial source record covers multiple territorial source
+snapshots; callers bind response provenance to these identities, not to a page's
+editorial source list.
 
 `POST /api/resources/read` accepts the shared semantic item (`resource`, typed
 `target`, optional closed `coordinates`, `fields`, and typed `intent`). The

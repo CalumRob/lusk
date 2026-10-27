@@ -76,7 +76,10 @@ export interface NativeThemeFactAxis {
 
 export interface NativeThemeFactContract {
   label?: string
+  unit?: string
   direction?: string
+  comparisonFacet?: string
+  allowedLevels?: string[]
   shapes?: string[]
   axes?: NativeThemeFactAxis[]
   axisKind?: string
