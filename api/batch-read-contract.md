@@ -120,11 +120,13 @@ that population; it is not silently replaced by a selected peer.
 For a selected declared-profile comparison, callers may request
 `fields: ["member_ranks"]`. This potentially cohort-sized projection is absent
 unless explicitly requested and is not a general field for unrelated resources or
-intents. It contains one row per resolved member identity, with native published
+intents. It contains one row per resolved member identity, with API-owned
 `rank`, `rank_size`, and `rank_ties` for comparable members, or null rank fields
 when that member is not comparable. Those peer ranks come from the selected profile
 facet's native comparison or, for a scalar-backed profile, its separately declared
-scalar facet—not from client-derived/static ranks. The result's `unit`, direction,
+scalar facet—not from client-derived/static ranks. An exact published comparison
+scope may reuse its validated published ranks; otherwise the API computes ranks
+from the selected facet's native observations. The result's `unit`, direction,
 facet, denominator semantics, and comparison-source provenance follow that actual
 facet; DPE uses the linked scalar's own unit and source identity, not a DPE-bin
 rank. This projection remains subject to the semantic read's existing preflight
