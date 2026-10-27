@@ -195,7 +195,9 @@ export class ThemeAcquisitionCache<T extends ThemeResponse = ThemeResponse> {
       const legacySeriesResponse = (focal.focal.resource_reads ?? []).some((read) =>
         isNativeLegacySeriesFocal(read) && comparison.comparison_reads?.some((candidate) =>
           candidate.resource === read.resource && candidate.data.shape === 'series'))
-      if (legacySeriesResponse) {
+      const hasNativeProfileFocal = (focal.focal.resource_reads ?? []).some((read) =>
+        read.shapes?.includes('declared_profile') === true)
+      if (legacySeriesResponse || hasNativeProfileFocal) {
         validerReponseComparaisonTheme(theme, comparison, selection, { type: type as TerritoireType, id })
       }
       const references = this.legacyReferenceVersions.get(cacheKey) ?? new Map<string, string>()

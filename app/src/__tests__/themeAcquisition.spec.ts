@@ -7,14 +7,57 @@ import {
   ThemeAcquisitionCache,
   themeAcquisitionEnabled,
 } from '../payload/themeAcquisition'
-import type { ThemeResponse } from '../payload/themeAcquisition'
+import type { ThemeKey, ThemeResponse } from '../payload/themeAcquisition'
 import type { ThemeSelectionMember } from '../payload/themeAcquisition'
 import { THEMES_ACQUISITION_API } from '../payload/themeAcquisition'
 import { THEMES_CANONIQUES } from '../payload/types'
 import { semanticComparisonForTheme, validerReponseComparaisonTheme } from '../payload/themeFactsAdapter'
-import { nativeReadFixture, nativeResources } from './helpers/semanticApiFixtures'
+import {
+  nativeBatchResponse,
+  nativeCatalogueResponse,
+  nativeReadFixture,
+  nativeResources,
+} from './helpers/semanticApiFixtures'
 
 describe('theme acquisition cache', () => {
+  it('rejects a wrong typed native profile selection before caching, so retry fetches again', async () => {
+    const catalogue = await nativeCatalogueResponse().json()
+    catalogue.resources = catalogue.resources.filter((resource: { resource_id: string }) =>
+      resource.resource_id === 'mix_logements')
+    let wrongSelection = true
+    const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
+      if (String(input) === '/api/resources') return new Response(JSON.stringify(catalogue), { status: 200 })
+      if (String(input) === '/api/resources/read-batch') {
+        const { items } = JSON.parse(String(init?.body))
+        return nativeBatchResponse(items, (item, resource) => {
+          const data = nativeReadFixture(item, resource)
+          if (wrongSelection && item.intent?.kind === 'selected_comparison' && data) {
+            return { ...data, selection: [{ territory_type: 'commune', territory_id: 'wrong-member' }] }
+          }
+          return data
+        })
+      }
+      return new Response('', { status: 404 })
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const facts = vi.fn((theme: ThemeKey, key?: { type: string; id: string }) =>
+      acquireThemeFacts(key!.type, key!.id, theme))
+    const comparisons = vi.fn((selection: readonly ThemeSelectionMember[] | undefined, theme: ThemeKey,
+      key?: { type: string; id: string }) => acquireThemeComparison(key!.type, key!.id, theme, selection))
+    const cache = new ThemeAcquisitionCache(facts, comparisons)
+    const selection = [{ territory_type: 'commune' as const, territory_id: '22002' }]
+
+    await cache.get('commune', '22001', 'habitat')
+    const firstAttempt = await cache.select('commune', '22001', 'habitat', selection)
+      .then(() => 'resolved', () => 'rejected')
+    wrongSelection = false
+    await cache.select('commune', '22001', 'habitat', selection)
+
+    expect.soft(firstAttempt).toBe('rejected')
+    expect(comparisons).toHaveBeenCalledTimes(2)
+    expect(facts).toHaveBeenCalledTimes(1)
+  })
+
   it('registers every canonical theme for lazy acquisition', () => {
     expect([...THEMES_ACQUISITION_API].sort()).toEqual([...THEMES_CANONIQUES].sort())
   })
