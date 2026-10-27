@@ -160,6 +160,8 @@ function trajectoirePour(clef: string): TrajectoryMetadata | undefined {
   const retainedEndpoints = new Set((catalogueTrajectory?.endpoints ?? []).filter((detail) => declaredDomain.has(detail)))
   return {
     endpoints: contract.axisValues.filter((detail) => retainedEndpoints.has(detail)),
+    ...(numericCoordinates && catalogueTrajectory?.axisLabels
+      ? { axisLabels: catalogueTrajectory.axisLabels } : {}),
     ...(catalogueTrajectory?.reference ? { reference: catalogueTrajectory.reference } : {}),
     ...(catalogueTrajectory?.marker && declaredDomain.has(catalogueTrajectory.marker.detail)
       ? { marker: catalogueTrajectory.marker } : {}),
