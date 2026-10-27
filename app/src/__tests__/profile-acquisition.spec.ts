@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { adapterProfilComparaison, adapterProfilDeclare, chargerCohorteProfilDeclare,
-  chargerComparaisonProfilDeclare } from '@/payload/profileAcquisition'
+  chargerComparaisonProfilDeclare, adapterProfilFocalDeclare, chargerFaitFocalProfilDeclare } from '@/payload/profileAcquisition'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import type { Territoire } from '@/payload/types'
 
@@ -67,7 +67,12 @@ function comparisonResponse() {
       source_facet: { detail: 'principales', sex: null }, unit: '%', direction: 'high', statistic: 'median',
       profile_descriptor_version: 'profile-d1', denominator_semantics: 'logements',
       focal_in_selection: true, selected_member_count: 2, eligible_count: 2, missing_count: 0,
-      median: .66, rank: 2, rank_size: 2, rank_ties: 1,
+      median: .665, rank: 1, rank_size: 2, rank_ties: 1,
+      focal_value: .72,
+      member_ranks: [
+        { territory_id: '22001', rank: 1, rank_size: 2, rank_ties: 1 },
+        { territory_id: '22002', rank: 2, rank_size: 2, rank_ties: 1 },
+      ],
       comparison_sources: [source] } }
 }
 
@@ -119,13 +124,34 @@ describe('l’acquisition du profil déclaré', () => {
       territories, cohort: broken })).toThrow(/membres|cohort/i)
   })
 
+  it('adapte une lecture focale native hors cohort sans modifier les membres comparés', () => {
+    const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
+      territories, cohort: cohortResponse() })
+    const focalDescriptor = { ...descriptor }
+    delete (focalDescriptor as { completeness?: string }).completeness
+    const raw = { resource: 'mix_logements', target: { kind: 'territory', type: 'commune', id: '29001' },
+      content_version: 'profile-c1', reference_content_version: 'territories-r1',
+      descriptor: focalDescriptor, observations: [cell('principales', .55), cell('vacantes', .09)] }
+
+    const facts = adapterProfilFocalDeclare({ declaration, descriptor: acquired.descriptor, identity: acquired.identity,
+      focal: { type: 'commune', id: '29001' }, territories, result: raw })
+
+    expect(acquired.memberIds).toEqual(['22001', '22002'])
+    expect(facts.map(({ territoire, detail, value }) => [territoire, detail, value])).toEqual([
+      ['29001', 'principales', .55], ['29001', 'vacantes', .09],
+    ])
+    expect(() => adapterProfilFocalDeclare({ declaration, descriptor: acquired.descriptor, identity: acquired.identity,
+      focal: { type: 'commune', id: '29001' }, territories,
+      result: { ...raw, content_version: 'stale-profile' } })).toThrow(/publication/i)
+  })
+
   it('adapte la comparaison sélectionnée seulement si sa facette et sa version correspondent au cohort', () => {
     const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
       territories, cohort: cohortResponse() })
     const result = adapterProfilComparaison({ declaration, descriptor: acquired.descriptor, identity: acquired.identity,
       focal: { type: 'commune', id: '22001' }, memberIds: acquired.memberIds,
       coordinate: { detail: 'principales', sex: null }, comparison: comparisonResponse() })
-    expect(result).toMatchObject({ status: 'available', median: .66, rank: 2, rankSize: 2, rankTies: 1,
+    expect(result).toMatchObject({ status: 'available', median: .665, rank: 1, rankSize: 2, rankTies: 1,
       selectedMemberCount: 2, eligibleCount: 2, missingCount: 0, unit: '%', direction: 'high',
       facet: { detail: 'principales', sex: null } })
     expect(result.comparisonSources[0]).toMatchObject({ sourceId: 'logements', vintageId: 'rp-2023',
@@ -161,6 +187,28 @@ describe('l’acquisition du profil déclaré', () => {
       fields: ['value'], intent: { kind: 'facts' },
     })])
     expect(result.facts).toHaveLength(4)
+  })
+
+  it('lit uniquement le territoire focal quand une sélection explicite le place hors du cohort', async () => {
+    const raw = { resource: 'mix_logements', target: { kind: 'territory', type: 'commune', id: '29001' },
+      content_version: 'profile-c1', reference_content_version: 'territories-r1',
+      descriptor: { ...descriptor, completeness: undefined }, observations: [cell('principales', .55), cell('vacantes', .09)] }
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(init?.body as string) as { items: Array<Record<string, unknown>> }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) =>
+        ({ id: item.id, resource: item.resource, data: raw })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
+      territories, cohort: cohortResponse() })
+    const facts = await chargerFaitFocalProfilDeclare({ declaration, descriptor: acquired.descriptor,
+      identity: acquired.identity, focal: { type: 'commune', id: '29001' }, territories })
+
+    expect(JSON.parse((fetcher.mock.calls[0]![1] as RequestInit).body as string).items).toEqual([expect.objectContaining({
+      resource: 'mix_logements', target: { kind: 'territory', type: 'commune', id: '29001' },
+      fields: ['value'], intent: { kind: 'facts' },
+    })])
+    expect(facts.map(({ territoire }) => territoire)).toEqual(['29001', '29001'])
   })
 
   it('relit seulement la comparaison explicite au détail sélectionné', async () => {

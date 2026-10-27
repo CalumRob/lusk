@@ -93,8 +93,10 @@ function makeDeclarations(specs) {
 function createApiHarness(specs, territories) {
   const declarations = makeDeclarations(specs)
   const profileFacts = []
+  const profileFocalReads = []
   const scalarFacts = []
   const comparisons = []
+  const fixedComparisons = []
   const apiRequests = []
   const unexpectedApi = []
   let failComparisonFor = null
@@ -112,10 +114,13 @@ function createApiHarness(specs, territories) {
 
   function factData(item) {
     const target = item.target
-    const members = membersFor(target.type, target.department_id, target.epci_id)
-    const spec = specs.find((candidate) => candidate.indicator === item.resource)
-    if (spec) {
-      profileFacts.push(item)
+    const members = target.kind === 'territory_cohort'
+      ? membersFor(target.type, target.department_id, target.epci_id)
+      : membersFor(target.type, null, null)
+    const spec = specs.find((candidate) => candidate.indicator === item.resource || candidate.scalar === item.resource)
+    if (spec && spec.indicator === item.resource) {
+      if (target.kind === 'territory_cohort') profileFacts.push(item)
+      else profileFocalReads.push(item)
       const descriptor = descriptorFor(spec)
       const profiles = members.map((territory, memberIndex) => ({ territory: { id: territory.id, type: territory.type, name: territory.name },
         cells: spec.details.flatMap((detail, detailIndex) => (spec.sexes.length ? spec.sexes : [null]).map((sex, sexIndex) => ({
@@ -128,6 +133,10 @@ function createApiHarness(specs, territories) {
           sources: fixtureSources(spec.page.sources[0]),
         }))) }))
       if (spec.indicator === 'distribution_dpe') suppressDpeSignature = false
+      const observations = profiles.find((profile) => profile.territory.id === target.id)?.cells ?? []
+      if (target.kind === 'territory') return { resource: item.resource, shape: 'declared_profile', target,
+        content_version: `profile-content-${item.resource}-v1`, reference_content_version: 'reference-api-v1',
+        descriptor, observations }
       return { resource: item.resource, shape: 'declared_profile', target,
         content_version: `profile-content-${item.resource}-v1`, reference_content_version: 'reference-api-v1',
         descriptor, cohort: { territory_type: target.type, department_id: target.department_id,
@@ -137,13 +146,24 @@ function createApiHarness(specs, territories) {
     const specWithScalar = specs.find((candidate) => candidate.scalar === item.resource)
     if (!specWithScalar) throw new Error(`Unexpected facts resource ${item.resource}`)
     scalarFacts.push(item)
+    const scalarDescriptor = { indicator_id: item.resource, theme_id: specWithScalar.theme,
+      label: `API label ${item.resource}`, unit: specWithScalar.page.comparison.unit,
+      direction: specWithScalar.page.comparison.direction, comparison_facet: item.resource,
+      allowed_levels: specWithScalar.page.levels, completeness: 'dense_complete',
+      denominator_semantics: 'API scalar denominator', descriptor_version: `scalar-descriptor-${item.resource}-v1` }
+    if (target.kind === 'territory') {
+      const territory = members.find((candidate) => candidate.id === target.id)
+      const index = members.findIndex((candidate) => candidate.id === target.id)
+      return { resource: item.resource, shape: 'scalar', target,
+        content_version: 'scalar-content-v1', reference_content_version: 'reference-api-v1',
+        descriptor: scalarDescriptor, descriptor_version: scalarDescriptor.descriptor_version,
+        observation: { territory_id: target.id, territory_type: target.type,
+          value: 0.623 + index * 0.023, status: 'measured', support_count: 100 + index, denominator_count: 200 + index,
+          sources: fixtureSources(specWithScalar.page.sources[0]) }, territory }
+    }
     return { resource: item.resource, shape: 'scalar', target,
       content_version: 'scalar-content-v1', reference_content_version: 'reference-api-v1',
-      descriptor: { indicator_id: item.resource, theme_id: specWithScalar.theme,
-        label: `API label ${item.resource}`, unit: specWithScalar.page.comparison.unit,
-        direction: specWithScalar.page.comparison.direction, comparison_facet: item.resource,
-        allowed_levels: specWithScalar.page.levels, completeness: 'dense_complete',
-        denominator_semantics: 'API scalar denominator', descriptor_version: `scalar-descriptor-${item.resource}-v1` },
+      descriptor: scalarDescriptor,
       cohort: { territory_type: target.type, department_id: target.department_id, epci_id: target.epci_id,
         member_count: members.length, members, reference_content_version: 'reference-api-v1' },
       observations: members.map((territory, index) => ({ territory: { id: territory.id, type: territory.type, name: territory.name },
@@ -152,36 +172,66 @@ function createApiHarness(specs, territories) {
   }
 
   function comparisonData(item) {
-    const spec = specs.find((candidate) => candidate.indicator === item.resource)
+    const spec = specs.find((candidate) => candidate.indicator === item.resource || candidate.scalar === item.resource)
     if (!spec) throw new Error(`Unexpected comparison resource ${item.resource}`)
-    const selectedMembers = item.intent.members
-    const coordinates = item.coordinates
+    const linkedScalar = spec.indicator !== item.resource
+    const selectedMembers = item.intent.kind === 'selected_comparison'
+      ? item.intent.members
+      : membersFor(item.target.type, item.target.department_id ?? null, item.target.epci_id ?? null)
+        .map(({ id, type }) => ({ id, type }))
+    const coordinates = item.intent.kind === 'selected_comparison' ? item.coordinates : undefined
     const detail = coordinates?.detail?.[0] ?? spec.page.comparison?.detail ?? spec.details[0]
     const sex = coordinates?.sex?.[0] ?? spec.page.comparison?.sex ?? null
-    const unit = spec.scalar ? spec.page.comparison.unit : spec.units[detail]
-    const result = { indicator_id: spec.indicator, status: 'available', reason: null,
-      source_facet: spec.scalar ?? { detail, sex }, unit,
-      direction: spec.scalar ? spec.page.comparison.direction : spec.page.comparison?.direction ?? spec.page.direction,
-      statistic: 'median', profile_descriptor_version: `profile-descriptor-${spec.indicator}-v1`,
+    const usesScalar = linkedScalar || Boolean(spec.scalar)
+    const unit = usesScalar ? spec.page.comparison.unit : spec.units[detail]
+    const direction = usesScalar ? spec.page.comparison.direction : spec.page.comparison?.direction ?? spec.page.direction
+    const detailIndex = spec.details.indexOf(detail)
+    const sexIndex = sex === null ? 0 : spec.sexes.indexOf(sex)
+    const rankedMembers = selectedMembers.map((member) => {
+      const index = membersFor(member.type, null, null).findIndex((territory) => territory.id === member.id)
+      const value = usesScalar ? 0.623 + index * 0.023 : 0.317 + index * 0.071 + detailIndex * 0.019 + sexIndex * 0.007
+      return { territory_id: member.id, value }
+    })
+    const values = rankedMembers.map(({ value }) => value).sort((left, right) => left - right)
+    const midpoint = Math.floor(values.length / 2)
+    const median = values.length % 2 ? values[midpoint] : (values[midpoint - 1] + values[midpoint]) / 2
+    const focalValue = rankedMembers.find(({ territory_id }) => territory_id === item.target.id)?.value
+    const focalInSelection = focalValue !== undefined
+    const rank = !focalInSelection ? null : 1 + rankedMembers.filter(({ value }) =>
+      direction === 'high' ? value > focalValue : value < focalValue).length
+    const rankTies = !focalInSelection ? null : rankedMembers.filter(({ value }) => value === focalValue).length
+    const result = { indicator_id: item.resource, status: values.length >= 2 ? 'available' : 'unavailable',
+      reason: values.length >= 2 ? null : 'fewer_than_two_comparable_values',
+      source_facet: linkedScalar || spec.scalar ? spec.scalar : { detail, sex }, unit,
+      direction,
+      statistic: 'median', ...(linkedScalar ? { descriptor_version: `scalar-descriptor-${item.resource}-v1` }
+        : { profile_descriptor_version: `profile-descriptor-${spec.indicator}-v1` }),
       denominator_semantics: descriptorFor(spec).denominator_semantics,
-      focal_in_selection: selectedMembers.some((member) => member.id === item.target.id),
+      focal_in_selection: focalInSelection,
       selected_member_count: selectedMembers.length, eligible_count: selectedMembers.length, missing_count: 0,
-      median: 0.777, rank: 1, rank_size: selectedMembers.length, rank_ties: 1,
+      median: values.length >= 2 ? median : null, rank,
+      rank_size: rank === null ? null : selectedMembers.length, rank_ties: rankTies,
+      member_ranks: rankedMembers.map(({ territory_id, value }) => ({ territory_id,
+        rank: 1 + rankedMembers.filter(({ value: candidate }) => direction === 'high' ? candidate > value : candidate < value).length,
+        rank_size: selectedMembers.length,
+        rank_ties: rankedMembers.filter(({ value: candidate }) => candidate === value).length })),
       comparison_sources: fixtureSources(spec.page.sources[0]) }
-    if (spec.scalar) Object.assign(result, {
+    if (!linkedScalar && spec.scalar) Object.assign(result, {
       source_facet_indicator_id: spec.scalar, source_facet_label: `API label ${spec.scalar}`,
       scalar_descriptor_version: `scalar-descriptor-${spec.scalar}-v1`, required_scalar_version: 'scalar-content-v1',
     })
     return { resource: item.resource, target: item.target, contract: 'indicator-comparison-v1',
-      indicator_id: item.resource, shape: 'profile', content_version: `comparison-content-${item.resource}-v1`,
-      profile_content_version: `profile-content-${item.resource}-v1`, reference_content_version: 'reference-api-v1',
-      scalar_content_version: spec.scalar ? 'scalar-content-v1' : null,
+      indicator_id: item.resource, shape: linkedScalar ? 'scalar' : 'profile',
+      content_version: linkedScalar ? 'scalar-content-v1' : `profile-content-${item.resource}-v1`,
+      ...(!linkedScalar ? { profile_content_version: `profile-content-${item.resource}-v1` } : {}),
+      reference_content_version: 'reference-api-v1',
+      scalar_content_version: !linkedScalar && spec.scalar ? 'scalar-content-v1' : null,
       selection: selectedMembers.map((member) => ({ territory_type: member.type, territory_id: member.id })),
       scope: { kind: 'explicit_selection', territory_type: item.target.type, member_count: selectedMembers.length }, result }
   }
 
   return {
-    profileFacts, scalarFacts, comparisons, apiRequests, unexpectedApi,
+    profileFacts, profileFocalReads, scalarFacts, comparisons, fixedComparisons, apiRequests, unexpectedApi,
     failNextComparison(resource) { failComparisonFor = resource },
     suppressNextDpeSignature() { suppressDpeSignature = true },
     delayNextProfile(resource) {
@@ -212,7 +262,8 @@ function createApiHarness(specs, territories) {
             }
             results.push({ id: item.id, resource: item.resource, data: factData(item) })
           } else {
-            comparisons.push(item)
+            if (item.intent.kind === 'selected_comparison') comparisons.push(item)
+            else fixedComparisons.push(item)
             if (item.resource === failComparisonFor) {
               failComparisonFor = null
               await route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"fixture comparison outage"}' })
@@ -282,6 +333,21 @@ try {
     await page.getByText('API-2026', { exact: false }).first().waitFor({ state: 'visible' })
     await page.waitForFunction(() => !document.querySelector('[role="status"]:not([hidden])')?.textContent?.includes('Chargement de'))
   }
+
+  // The retained indicator-to-fiche handoff remains a live, routable destination
+  // after the profile page has acquired its facts from the semantic API.
+  await page.goto(`${baseUrl}indicateurs/habitat/mix_logements?territoire=22001&niveau=commune&vue=reperes`,
+    { waitUntil: 'domcontentloaded' })
+  const focalRow = page.locator('.comparison-table-scroll tbody tr').filter({ hasText: 'Commune A1' })
+  await focalRow.getByRole('link', { name: 'Commune A1' }).click()
+  await page.waitForURL((url) => url.pathname === '/territoire/commune/22001' && url.searchParams.get('theme') === 'habitat')
+  const ficheModel = JSON.parse(await readFile(resolve(repoRoot,
+    'public/data/modeles-lecture/territoires/commune/22001.json'), 'utf8'))
+  await page.getByRole('heading', { name: ficheModel.territory.name, level: 1 })
+    .waitFor({ state: 'visible', timeout: 15000 })
+  const ficheModelRequest = requests.find((path) => path === '/data/modeles-lecture/territoires/commune/22001.json')
+  assert.equal(ficheModelRequest, '/data/modeles-lecture/territoires/commune/22001.json',
+    'A retained profile table link must resolve to the existing territory fiche model')
 
   // The selected category/sex controls must drive the actual semantic compare request,
   // while the table/figure remain populated from the already acquired API facts.
@@ -387,6 +453,8 @@ try {
 
   const numericStatic = requests.filter((path) => /^\/data\/indicateurs_/u.test(path))
   const retired = requests.filter((path) => path.includes('/profiles/') || path.startsWith('/api/territories/'))
+  assert(harness.fixedComparisons.every((item) => item.coordinates === undefined),
+    'Fixed profile comparisons must stay on their published default facet')
   assert.deepEqual(numericStatic, [], 'No static indicator numeric payload may be requested')
   assert.deepEqual(retired, [], 'No retired profile route may be called')
   assert.deepEqual(harness.unexpectedApi, [], 'Every API request must be intercepted by this fixture')
@@ -403,8 +471,10 @@ try {
       'selected API facet and unit in the map popup', 'DPE scalar companion remains separate',
       'missing and suppressed DPE cells remain an incomplete signature',
       'actual comparison HTTP 503 retry preserves warm profile facts', 'late route response cannot replace new profile',
-      'EPCI cohort and regional facts-only behavior', '360px mobile horizontal-overflow smoke'],
+      'EPCI cohort and regional facts-only behavior', 'profile table link to retained territory fiche',
+      '360px mobile horizontal-overflow smoke'],
     counts: { interceptedApiRequests: harness.apiRequests.length, profileFactReads: harness.profileFacts.length,
+      profileFocalReads: harness.profileFocalReads.length, fixedComparisonReads: harness.fixedComparisons.length,
       linkedScalarFactReads: harness.scalarFacts.length, selectedComparisonReads: harness.comparisons.length,
       staticNumericReads: numericStatic.length, retiredProfileCalls: retired.length,
       unexpectedApiRequests: harness.unexpectedApi.length, browserPageErrors: pageErrors.length,

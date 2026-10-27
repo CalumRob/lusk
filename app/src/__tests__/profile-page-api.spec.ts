@@ -117,8 +117,9 @@ function responseEnvelope(item: JsonRecord, data: JsonRecord) {
   return { id: item.id, resource: item.resource, data }
 }
 
-function createTransport(options: { failComparisons?: number; failProfileFacts?: number;
-  emptyProfileCohort?: boolean; suppressDpeSignature?: boolean; deferFirstProfile?: boolean } = {}) {
+function createTransport(options: { failComparisons?: number; failProfileFacts?: number; failCatalogues?: number;
+  emptyProfileCohort?: boolean; suppressDpeSignature?: boolean; deferFirstProfile?: boolean;
+  mixedProfileVintages?: boolean; profileCellOverrides?: Record<string, { value: number | null; status: string }> } = {}) {
   const calls: Array<{ url: string; body?: JsonRecord }> = []
   const staticFiles: string[] = []
   const profileFactsCalls: JsonRecord[] = []
@@ -126,6 +127,7 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
   const comparisonCalls: JsonRecord[] = []
   let comparisonFailures = options.failComparisons ?? 0
   let profileFailures = options.failProfileFacts ?? 0
+  let catalogueFailures = options.failCatalogues ?? 0
   let deferredResponse: (() => void) | null = null
 
   const fetcher = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -138,6 +140,10 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
       return new Response(JSON.stringify(metadataByTheme[theme]), { status: 200 })
     }
     if (url === '/api/resources') {
+      if (catalogueFailures > 0) {
+        catalogueFailures -= 1
+        return new Response('temporary catalogue outage', { status: 503 })
+      }
       return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: resourceDeclarations() }), { status: 200 })
     }
     if (url === '/api/resources/read-batch') {
@@ -146,6 +152,25 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
         const resource = String(item.resource)
         const intent = item.intent as JsonRecord
         const target = item.target as JsonRecord
+        if (intent.kind === 'facts' && target.kind === 'territory') {
+          const spec = profileSpecs.find((candidate) => candidate.indicator === resource)!
+          profileFactsCalls.push(item)
+          const territory = territoiresFixture.find((candidate) => candidate.territoire === target.id && candidate.type === target.type)!
+          const memberIndex = cohortMembers(target.type as TerritoireType, null, null).findIndex((candidate) => candidate.id === territory.territoire)
+          const descriptor = profileDescriptor(spec)
+          const observations = spec.details.flatMap((detail, detailIndex) => (spec.sexes.length ? spec.sexes : [null]).map((sex, sexIndex) => {
+            const override = options.profileCellOverrides?.[`${resource}:${territory.territoire}:${detail}:${sex ?? ''}`]
+            const status = override?.status ?? 'measured'
+            const value = override?.value ?? 0.317 + memberIndex * 0.071 + detailIndex * 0.019 + sexIndex * 0.007
+            return { detail, sex, unit: spec.units[detail]!, denominator_semantics: descriptor.denominator_semantics,
+              status, value: status === 'measured' ? value : null, sources: [sourceInfo(spec.page.sources[0]!)] }
+          }))
+          const data: JsonRecord = { resource, target, content_version: `profile-content-${resource}-v1`,
+            reference_content_version: 'reference-api-v1',
+            descriptor: Object.fromEntries(Object.entries(descriptor).filter(([key]) => key !== 'completeness')),
+            observations }
+          return responseEnvelope(item, data)
+        }
         if (intent.kind === 'facts' && target.kind === 'territory_cohort') {
           const type = target.type as TerritoireType
           const department = typeof target.department_id === 'string' ? target.department_id : null
@@ -160,15 +185,22 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
             }
             const descriptor = profileDescriptor(spec)
             const responseMembers = options.emptyProfileCohort ? [] : members
-              const profiles = responseMembers.map((territory, memberIndex) => ({ territory,
+            const profiles = responseMembers.map((territory, memberIndex) => ({ territory,
                 cells: spec.details.flatMap((detail, detailIndex) => (spec.sexes.length ? spec.sexes : [null]).map((sex, sexIndex) => {
-                  const measured = 0.317 + memberIndex * 0.071 + detailIndex * 0.019 + sexIndex * 0.007
-                  const status = options.suppressDpeSignature && spec.indicator === 'distribution_dpe' && memberIndex === 0
+                  const fallbackValue = 0.317 + memberIndex * 0.071 + detailIndex * 0.019 + sexIndex * 0.007
+                  const override = options.profileCellOverrides?.[`${resource}:${territory.id}:${detail}:${sex ?? ''}`]
+                  const measured = override?.value ?? fallbackValue
+                  const status = override?.status ?? (options.suppressDpeSignature && spec.indicator === 'distribution_dpe' && memberIndex === 0
                     ? detail === 'F' ? 'not_available' : detail === 'G' ? 'suppressed' : 'measured'
-                    : 'measured'
+                    : 'measured')
+                  const source = options.mixedProfileVintages && detailIndex % 2 === 1
+                    ? { ...sourceInfo(spec.page.sources[0]!), vintage_id: `${spec.page.sources[0]}-v2025`, version: '2025', reference_date: '2025-01-01', publication_date: '2025-02-01' }
+                    : options.mixedProfileVintages
+                      ? { ...sourceInfo(spec.page.sources[0]!), vintage_id: `${spec.page.sources[0]}-v2023`, version: '2023', reference_date: '2023-01-01', publication_date: '2023-02-01' }
+                      : sourceInfo(spec.page.sources[0]!)
                   return { detail, sex, unit: spec.units[detail]!, denominator_semantics: descriptor.denominator_semantics,
                   status, value: status === 'measured' ? measured : null,
-                  sources: [sourceInfo(spec.page.sources[0]!) ] }
+                  sources: [source] }
               })) }))
             const data: JsonRecord = { resource, shape: 'declared_profile', target,
               content_version: `profile-content-${resource}-v1`, reference_content_version: 'reference-api-v1',
@@ -208,16 +240,55 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
         const selectedSex = coordinates?.sex?.[0] ?? spec.page.comparison?.sex ?? null
         const selectedUnit = spec.units[selectedDetail] ?? spec.page.comparison?.unit ?? spec.page.unit
         const sourceFacet = spec.scalar ? spec.scalar : { detail: selectedDetail, sex: selectedSex }
+        const matchingMembers = cohortMembers(target.type as TerritoireType,
+          typeof (item.target as JsonRecord).department_id === 'string' ? (item.target as JsonRecord).department_id as string : null,
+          typeof (item.target as JsonRecord).epci_id === 'string' ? (item.target as JsonRecord).epci_id as string : null)
+        const memberValues = selectedMembers.map((member) => {
+          if (spec.scalar) {
+            const index = matchingMembers.findIndex((territory) => territory.id === member.id)
+            return { id: member.id, value: index < 0 ? null : 0.623 + index * 0.023 }
+          }
+          const index = matchingMembers.findIndex((territory) => territory.id === member.id)
+          const override = options.profileCellOverrides?.[`${resource}:${member.id}:${selectedDetail}:${selectedSex ?? ''}`]
+          return { id: member.id, value: index < 0 ? null : (override?.status && override.status !== 'measured'
+            ? null : override?.value ?? 0.317 + index * 0.071 + spec.details.indexOf(selectedDetail) * 0.019 +
+              (selectedSex ? spec.sexes.indexOf(selectedSex) : 0) * 0.007) }
+        }).filter((member): member is { id: string; value: number } => member.value !== null)
+        const sortedValues = memberValues.map(({ value }) => value).sort((left, right) => left - right)
+        const middle = Math.floor(sortedValues.length / 2)
+        const median = sortedValues.length === 0 ? null : sortedValues.length % 2
+          ? sortedValues[middle]! : (sortedValues[middle - 1]! + sortedValues[middle]!) / 2
+        const focalOverride = options.profileCellOverrides?.[`${resource}:${target.id}:${selectedDetail}:${selectedSex ?? ''}`]
+        const focalIndex = matchingMembers.findIndex((territory) => territory.id === target.id)
+        const focalValue = spec.scalar
+          ? (focalIndex < 0 ? null : 0.623 + focalIndex * 0.023)
+          : (focalIndex < 0 || focalOverride?.status && focalOverride.status !== 'measured' ? null
+            : focalOverride?.value ?? 0.317 + focalIndex * 0.071 + spec.details.indexOf(selectedDetail) * 0.019 +
+              (selectedSex ? spec.sexes.indexOf(selectedSex) : 0) * 0.007)
+        const direction = spec.scalar ? spec.page.comparison?.direction ?? spec.page.direction
+          : spec.page.comparison?.direction ?? spec.page.direction
+        const eligibleCount = memberValues.length
+        const rank = focalValue === null || !selectedMembers.some((member) => member.id === target.id)
+          ? null : 1 + memberValues.filter(({ value }) => direction === 'high' ? value > focalValue : value < focalValue).length
+        const rankTies = rank === null ? null : memberValues.filter(({ value }) => value === focalValue).length
+        const memberRanks = selectedMembers.map((member) => {
+          const value = memberValues.find((candidate) => candidate.id === member.id)?.value
+          return { territory_id: member.id,
+            rank: value === undefined ? null : 1 + memberValues.filter(({ value: candidate }) => direction === 'high' ? candidate > value : candidate < value).length,
+            rank_size: value === undefined ? null : eligibleCount,
+            rank_ties: value === undefined ? null : memberValues.filter(({ value: candidate }) => candidate === value).length }
+        })
         const result: JsonRecord = {
           indicator_id: resource, status: 'available', reason: null,
           source_facet: sourceFacet, unit: spec.scalar ? spec.page.comparison?.unit : selectedUnit,
-          direction: spec.scalar ? spec.page.comparison?.direction : spec.page.comparison?.direction ?? spec.page.direction,
+          direction,
           statistic: 'median',
           profile_descriptor_version: `profile-descriptor-${resource}-v1`,
           denominator_semantics: profileDescriptor(spec).denominator_semantics,
           focal_in_selection: selectedMembers.some((member) => member.id === target.id),
-          selected_member_count: selectedMembers.length, eligible_count: selectedMembers.length, missing_count: 0,
-          median: 0.777, rank: 1, rank_size: selectedMembers.length, rank_ties: 1,
+          selected_member_count: selectedMembers.length, eligible_count: eligibleCount, missing_count: selectedMembers.length - eligibleCount,
+          median: eligibleCount >= 2 ? median : null, focal_value: focalValue, rank,
+          rank_size: rank === null ? null : eligibleCount, rank_ties: rankTies, member_ranks: memberRanks,
           comparison_sources: [sourceInfo(spec.page.sources[0]!)],
         }
         if (spec.scalar) {
@@ -256,19 +327,33 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
     } }
 }
 
-function pageLoader(staticFiles: string[]) {
+function pageLoader(staticFiles: string[], options: { failThemeMetadata?: number; invalidThemeMetadata?: number } = {}) {
+  let metadataFailures = options.failThemeMetadata ?? 0
+  let invalidMetadata = options.invalidThemeMetadata ?? 0
   const charger: ChargerFichier = async (file) => {
     if (file === 'territoires') return territoiresFixture
     if (file === 'territoires-metadata') return null
     staticFiles.push(file)
     if (file.startsWith('indicateurs_')) throw new Error(`static profile numerics were requested: ${file}`)
-    if (file.startsWith('theme_')) return metadataByTheme[file.slice('theme_'.length)]
+    if (file.startsWith('theme_')) {
+      if (metadataFailures > 0) {
+        metadataFailures -= 1
+        throw new Error('temporary theme metadata outage')
+      }
+      const metadata = metadataByTheme[file.slice('theme_'.length)]
+      if (invalidMetadata > 0) {
+        invalidMetadata -= 1
+        return { ...metadata, theme: 'wrong-theme' }
+      }
+      return metadata
+    }
     throw new Error(`unexpected file ${file}`)
   }
   return charger
 }
 
-async function mountPage(theme: string, indicator: string, transport: ReturnType<typeof createTransport>, query = 'territoire=22001&niveau=commune') {
+async function mountPage(theme: string, indicator: string, transport: ReturnType<typeof createTransport>, query = 'territoire=22001&niveau=commune',
+  options: { manifestRoutes?: Record<string, string[]>; failThemeMetadata?: number; invalidThemeMetadata?: number } = {}) {
   const router = createRouter({ history: createMemoryHistory(), routes })
   await router.push(`/indicateurs/${theme}/${indicator}?${query}`)
   await router.isReady()
@@ -276,8 +361,8 @@ async function mountPage(theme: string, indicator: string, transport: ReturnType
   const staticFiles: string[] = []
   vi.stubGlobal('fetch', transport.fetcher)
   const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
-    [PAYLOAD_CHARGER_KEY]: pageLoader(staticFiles),
-    [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: {} }),
+     [PAYLOAD_CHARGER_KEY]: pageLoader(staticFiles, options),
+     [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: options.manifestRoutes ?? {} }),
     [INDICATOR_READ_MODEL_CHARGER_KEY]: vi.fn(async () => { throw new Error('profile route must not load a static read model') }),
     [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
   }, stubs: { MapExplorer: {
@@ -348,7 +433,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
         expect(wrapper.text()).not.toContain(spec.metadata.detail_labels[spec.indicator]?.[part] ?? '\u0000')
         if (spec.indicator === 'mix_logements') {
           expect(wrapper.get('[data-testid="composition-contextualisee"]').text()).toContain('32%')
-          expect(wrapper.get('.median strong').text()).toContain('78 %')
+          expect(wrapper.get('.median strong').text()).toContain('42 %')
           expect(wrapper.get('.comparison-table-scroll').attributes('role')).toBe('region')
           expect(wrapper.get('.comparison-table-scroll').attributes('aria-label')).toBe('Tableau des territoires comparables')
         }
@@ -431,7 +516,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
 
     expect(transport.comparisonCalls.at(-1)?.coordinates).toEqual({ detail: ['protege_km_1000'] })
     expect(wrapper.text()).toContain('API axis protege_km_1000')
-    expect(wrapper.get('.median strong').text()).toContain('0,78 km / 1 000 hab')
+    expect(wrapper.get('.median strong').text()).toContain('0,44 km / 1 000 hab')
     wrapper.unmount()
   })
 
@@ -511,7 +596,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
 
     expect(transport.profileFactsCalls).toHaveLength(factsBefore)
     expect(transport.comparisonCalls.length).toBe(comparisonsBefore + 1)
-    expect(wrapper.get('.median strong').text()).toContain('78 %')
+    expect(wrapper.get('.median strong').text()).toContain('42 %')
     wrapper.unmount()
   })
 
@@ -548,6 +633,144 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     expect(wrapper.find('[data-testid="profile-regional-map-unavailable"]').exists()).toBe(true)
     expect(wrapper.findComponent({ name: 'MapExplorer' }).exists()).toBe(false)
     expect(staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('lie le mode profil à la découverte API même si le marqueur statique est absent et le manifeste préempte', async () => {
+    const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
+    const saved = spec.metadata.profile_contracts
+    delete spec.metadata.profile_contracts
+    const transport = createTransport()
+    try {
+      const mounted = await mountPage(spec.theme, spec.indicator, transport,
+        'territoire=22001&niveau=commune', { manifestRoutes: { habitat: ['mix_logements'] } })
+      await flushPromises()
+      expect(transport.calls.some(({ url }) => url === '/api/resources')).toBe(true)
+      expect(transport.profileFactsCalls.some((item) => item.resource === spec.indicator)).toBe(true)
+      expect(mounted.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
+      expect(transport.calls.some(({ url }) => url.startsWith('/data/indicateurs_'))).toBe(false)
+      expect(transport.calls.some(({ url }) => url.includes('modeles-lecture/indicateurs'))).toBe(false)
+      mounted.wrapper.unmount()
+    } finally {
+      spec.metadata.profile_contracts = saved
+    }
+  })
+
+  it('réessaie la découverte du catalogue et les échecs transport/validation des métadonnées via le bouton réel', async () => {
+    const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
+    const catalogue = createTransport({ failCatalogues: 1 })
+    const cataloguePage = await mountPage(spec.theme, spec.indicator, catalogue)
+    await flushPromises()
+    expect(cataloguePage.wrapper.find('[role="alert"] button').exists()).toBe(true)
+    expect(catalogue.calls.filter(({ url }) => url === '/api/resources')).toHaveLength(1)
+    await cataloguePage.wrapper.get('[role="alert"] button').trigger('click')
+    await flushPromises()
+    expect(catalogue.calls.filter(({ url }) => url === '/api/resources')).toHaveLength(2)
+    expect(catalogue.profileFactsCalls).toHaveLength(1)
+    expect(cataloguePage.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
+    cataloguePage.wrapper.unmount()
+
+    for (const failure of ['transport', 'validation'] as const) {
+      const transport = createTransport()
+      const metadataPage = await mountPage(spec.theme, spec.indicator, transport, undefined,
+        failure === 'transport' ? { failThemeMetadata: 1 } : { invalidThemeMetadata: 1 })
+      await flushPromises()
+      expect(metadataPage.wrapper.find('[role="alert"] button').exists(), failure).toBe(true)
+      expect(metadataPage.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
+      await metadataPage.wrapper.get('[role="alert"] button').trigger('click')
+      await flushPromises()
+      expect(transport.profileFactsCalls, failure).toHaveLength(1)
+      expect(metadataPage.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
+      metadataPage.wrapper.unmount()
+    }
+  })
+
+  it('conserve le territoire focal hors cohort sans altérer les filtres de comparaison', async () => {
+    const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
+    const transport = createTransport()
+    const { wrapper } = await mountPage(spec.theme, spec.indicator, transport,
+      'territoire=29001&niveau=commune&departement=22')
+    await flushPromises()
+
+    expect(transport.profileFactsCalls[0]?.target).toMatchObject({
+      kind: 'territory_cohort', type: 'commune', department_id: '22', epci_id: null,
+    })
+    expect(transport.profileFactsCalls.some((item) => {
+      const target = item.target as JsonRecord
+      return target.kind === 'territory' && target.id === '29001'
+    })).toBe(true)
+    const comparisonCall = transport.comparisonCalls.at(-1)
+    expect(comparisonCall?.target).toMatchObject({ kind: 'territory', id: '29001' })
+    expect(comparisonCall?.intent).toMatchObject({ kind: 'selected_comparison', members: [
+      { type: 'commune', id: '22001' }, { type: 'commune', id: '22002' },
+    ] })
+    expect((comparisonCall?.target as JsonRecord).id).not.toBe((transport.profileFactsCalls[0]?.target as JsonRecord).id)
+    expect(transport.calls.some(({ url }) => url.startsWith('/data/indicateurs_'))).toBe(false)
+    wrapper.unmount()
+  })
+
+  it('affiche les rangs des pairs du cohort API, avec ex-aequo, tri et absence selon la facette', async () => {
+    const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
+    const detail = spec.page.comparison?.detail ?? spec.details[0]!
+    const transport = createTransport({ profileCellOverrides: {
+      [`mix_logements:22001:${detail}:`]: { value: 0.42, status: 'measured' },
+      [`mix_logements:22002:${detail}:`]: { value: 0.31, status: 'measured' },
+      [`mix_logements:29001:${detail}:`]: { value: 0.31, status: 'measured' },
+      [`mix_logements:29002:${detail}:`]: { value: 0.58, status: 'measured' },
+    } })
+    const { wrapper } = await mountPage(spec.theme, spec.indicator, transport)
+    await flushPromises()
+
+    const ranks = () => wrapper.findAll('.comparison-table-scroll tbody tr').map((row) => row.findAll('td')[2]?.text().trim())
+    expect(ranks()).toEqual(['2e / 4', '3e / 4', '1er / 4', '3e / 4'])
+    expect(wrapper.get('.median strong').text()).toContain('37 %')
+    await wrapper.get('.comparison-table-scroll thead button').trigger('click')
+    await wrapper.get('.comparison-table-scroll thead button').trigger('click')
+    await wrapper.findAll('.comparison-table-scroll thead button')[2]!.trigger('click')
+    await flushPromises()
+    expect(ranks()).toEqual(['1er / 4', '2e / 4', '3e / 4', '3e / 4'])
+    const sortedNames = wrapper.findAll('.comparison-table-scroll tbody tr')
+      .map((row) => row.findAll('td')[0]?.text().trim())
+    expect(sortedNames.slice(0, 2)).toEqual(['Commune C', 'Commune A1'])
+    expect(new Set(sortedNames.slice(2))).toEqual(new Set(['Commune B', 'Commune D']))
+    const search = wrapper.findAll('label').find((label) => label.text().startsWith('Rechercher'))!.get('input')
+    await search.setValue('Commune B')
+    await flushPromises()
+    expect(wrapper.findAll('.comparison-table-scroll tbody tr')).toHaveLength(1)
+    expect(ranks()).toEqual(['3e / 4'])
+    await search.setValue('')
+    await flushPromises()
+    expect(wrapper.findAll('.comparison-table-scroll tbody tr')).toHaveLength(4)
+    wrapper.unmount()
+
+    const missing = createTransport({ profileCellOverrides: {
+      [`mix_logements:22002:${detail}:`]: { value: null, status: 'not_available' },
+    } })
+    const missingPage = await mountPage(spec.theme, spec.indicator, missing)
+    await flushPromises()
+    expect(missingPage.wrapper.findAll('.comparison-table-scroll tbody tr')).toHaveLength(3)
+    expect(missingPage.wrapper.findAll('.comparison-table-scroll tbody tr').every((row) =>
+      row.findAll('td')[2]?.text().trim().length > 0)).toBe(true)
+    expect(missing.comparisonCalls.at(-1)?.intent).toMatchObject({ kind: 'selected_comparison', members: [
+      { type: 'commune', id: '22001' }, { type: 'commune', id: '22002' },
+      { type: 'commune', id: '29001' }, { type: 'commune', id: '29002' },
+    ] })
+    missingPage.wrapper.unmount()
+  })
+
+  it('présente honnêtement plusieurs millésimes de cellules sans choisir la première comme fraîcheur', async () => {
+    const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
+    const transport = createTransport({ mixedProfileVintages: true })
+    const { wrapper } = await mountPage(spec.theme, spec.indicator, transport,
+      'territoire=22001&niveau=commune&vue=indicateur')
+    await flushPromises()
+
+    expect(wrapper.text()).toContain('Millésime : Plusieurs millésimes')
+    expect(wrapper.text()).toContain(`${spec.page.sources[0]}-v2023`)
+    expect(wrapper.text()).toContain(`${spec.page.sources[0]}-v2025`)
+    expect(wrapper.text()).toContain('2023-01-01')
+    expect(wrapper.text()).toContain('2025-01-01')
+    expect(wrapper.text()).not.toContain('Fraîcheur : 2023-02-01')
     wrapper.unmount()
   })
 })

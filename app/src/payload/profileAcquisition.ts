@@ -62,6 +62,7 @@ export interface ProfileComparison {
   rank: number | null
   rankSize: number | null
   rankTies: number | null
+  memberRanks: Array<{ territoryId: string; rank: number | null; rankSize: number | null; rankTies: number | null }>
   selectedMemberCount: number
   eligibleCount: number
   missingCount: number | null
@@ -410,6 +411,68 @@ export function adapterProfilDeclare(input: {
   return { facts, descriptor, identity, memberIds: [...members.keys()] }
 }
 
+/** Validate a bounded focal-only profile read when the URL focal is outside its comparison cohort. */
+export function adapterProfilFocalDeclare(input: {
+  declaration: SemanticResourceDeclaration
+  descriptor: DeclaredProfileDescriptor
+  identity: ProfilePublicationIdentity
+  focal: { type: TerritoireType; id: string }
+  territories: Territoire[]
+  result: unknown
+}): Indicateur[] {
+  const { declaration, descriptor, identity, focal } = input
+  const territory = input.territories.find((candidate) => candidate.type === focal.type && candidate.territoire === focal.id)
+  const raw = input.result
+  if (!territory || !declaration.target_kinds.includes('territory') ||
+      !declaration.intents.includes('facts') || !declaration.fields.includes('value') ||
+      !isRecord(raw) || raw.resource !== declaration.resource_id || !isRecord(raw.target) ||
+      raw.target.kind !== 'territory' || raw.target.type !== focal.type || raw.target.id !== focal.id ||
+      raw.content_version !== identity.contentVersion || raw.reference_content_version !== identity.referenceContentVersion ||
+      !isRecord(raw.descriptor) || !Array.isArray(raw.observations)) {
+    return fail('La lecture focale du profil ne correspond pas au territoire ou à la publication du cohort.')
+  }
+  const focalDescriptor = parseDescriptor({ ...raw.descriptor, completeness: descriptor.completeness },
+    declaration, focal.type, identity.contentVersion, identity.referenceContentVersion)
+  if (JSON.stringify(focalDescriptor) !== JSON.stringify(descriptor)) {
+    return fail('Le descripteur de la lecture focale diffère du cohort de profils acquis.')
+  }
+  const member = { id: focal.id, type: focal.type, name: territory.nom }
+  const cohort = {
+    resource: declaration.resource_id,
+    shape: 'declared_profile',
+    target: { kind: 'territory_cohort', type: focal.type, department_id: null, epci_id: null },
+    content_version: identity.contentVersion,
+    reference_content_version: identity.referenceContentVersion,
+    descriptor: { ...raw.descriptor, completeness: descriptor.completeness },
+    cohort: { territory_type: focal.type, department_id: null, epci_id: null,
+      member_count: 1, members: [member], reference_content_version: identity.referenceContentVersion },
+    profiles: [{ territory: { id: focal.id, type: focal.type, name: territory.nom }, cells: raw.observations }],
+  }
+  return adapterProfilDeclare({ declaration, target: { type: focal.type, department_id: null, epci_id: null },
+    territories: [territory], cohort }).facts
+}
+
+/** One focal read is allowed when the requested territory is not a cohort member; no per-member fan-out. */
+export async function chargerFaitFocalProfilDeclare(input: {
+  declaration: SemanticResourceDeclaration
+  descriptor: DeclaredProfileDescriptor
+  identity: ProfilePublicationIdentity
+  focal: { type: TerritoireType; id: string }
+  territories: Territoire[]
+}): Promise<Indicateur[]> {
+  const { declaration, focal, territories } = input
+  const resource = requireProfileDeclaration(declaration, {
+    theme: declaration.theme_id, indicator: declaration.indicator_id, level: focal.type,
+  })
+  if (!resource.target_kinds.includes('territory')) return fail('La ressource du profil ne déclare pas de lecture focale.')
+  const [data] = await lireRessourcesBatch([{
+    resource: resource.resource_id,
+    target: { kind: 'territory', type: focal.type, id: focal.id },
+    fields: ['value'], intent: { kind: 'facts' },
+  }])
+  return adapterProfilFocalDeclare({ ...input, territories, result: data })
+}
+
 function selectionIdentity(value: unknown): string[] {
   if (!Array.isArray(value)) return fail('La sélection de comparaison du profil est absente.')
   const identities = value.map((member) => {
@@ -544,6 +607,26 @@ export function adapterProfilComparaison(input: {
           rankSize !== result.eligible_count || (rankTies as number) < 1 || (rankTies as number) > (rankSize as number))) {
     return fail('La médiane ou le rang de comparaison du profil est incohérent.')
   }
+  if (!Array.isArray(result.member_ranks)) return fail('Les rangs des membres du cohort sont absents de la comparaison native.')
+  const memberRanks = result.member_ranks.map((candidate) => {
+    if (!isRecord(candidate) || !isNonEmptyText(candidate.territory_id) ||
+        !(candidate.rank === null || Number.isSafeInteger(candidate.rank)) ||
+        !(candidate.rank_size === null || Number.isSafeInteger(candidate.rank_size)) ||
+        !(candidate.rank_ties === null || Number.isSafeInteger(candidate.rank_ties)) ||
+        (candidate.rank === null
+          ? candidate.rank_size !== null || candidate.rank_ties !== null
+          : (candidate.rank as number) < 1 || candidate.rank_size !== result.eligible_count ||
+            (candidate.rank_ties as number) < 1 || (candidate.rank as number) > (candidate.rank_size as number) ||
+            (candidate.rank_ties as number) > (candidate.rank_size as number))) {
+      return fail('Un rang individuel de comparaison est mal formé ou incohérent avec les effectifs.')
+    }
+    return { territoryId: candidate.territory_id, rank: candidate.rank as number | null,
+      rankSize: candidate.rank_size as number | null, rankTies: candidate.rank_ties as number | null }
+  })
+  if (new Set(memberRanks.map(({ territoryId }) => territoryId)).size !== memberRanks.length ||
+      JSON.stringify(memberRanks.map(({ territoryId }) => territoryId).sort()) !== JSON.stringify([...memberIds].sort())) {
+    return fail('Les rangs individuels ne couvrent pas exactement les membres sélectionnés.')
+  }
   if (!Array.isArray(result.comparison_sources) || (available && result.comparison_sources.length === 0)) {
     return fail('La provenance de la comparaison publiée est absente.')
   }
@@ -556,6 +639,7 @@ export function adapterProfilComparaison(input: {
     rank: rank === null ? null : rank as number,
     rankSize: rankSize === null ? null : rankSize as number,
     rankTies: rankTies === null ? null : rankTies as number,
+    memberRanks,
     selectedMemberCount: result.selected_member_count as number,
     eligibleCount: result.eligible_count as number,
     missingCount: result.missing_count === undefined ? null : result.missing_count as number,
@@ -732,7 +816,7 @@ export async function chargerComparaisonProfilDeclare(input: {
     resource: declaration.resource_id,
     target: { kind: 'territory', type: focal.type, id: focal.id },
     ...(coordinates ? { coordinates } : {}),
-    fields: ['median', 'rank', 'rank_size', 'rank_ties', 'selected_member_count', 'eligible_count', 'missing_count'],
+    fields: ['median', 'rank', 'rank_size', 'rank_ties', 'selected_member_count', 'eligible_count', 'missing_count', 'member_ranks'],
     intent: { kind: 'selected_comparison', members: memberIds.map((id) => ({ type: focal.type, id })) },
   }])
   return adapterProfilComparaison({ ...input, comparison: data })

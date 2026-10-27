@@ -28,7 +28,7 @@ import { mergeOrderedSeriesFacts, orderedSeriesAdapterFor, orderedSeriesFacts, o
 import { chargerCohorteScalaire, choisirFocalCohorte, indicateursScalairesEnregistres, pagesScalairesEnregistrees, scalarCohortEnabled, validerEnregistrementScalaires } from '@/payload/scalarCohort'
 import type { Indicateur, IndicatorPageMetadata, Payload, TerritoireType, ThemeMetadata } from '@/payload/types'
 import { ThemeAcquisitionCache, acquireThemeComparison, acquireThemeFacts, cleSelectionComparaison } from '@/payload/themeAcquisition'
-import { adapterPageProfilDeclare, chargerCohorteProfilDeclare, chargerComparaisonProfilDeclare, chargerCohorteScalaireLiee } from '@/payload/profileAcquisition'
+import { adapterPageProfilDeclare, chargerCohorteProfilDeclare, chargerComparaisonProfilDeclare, chargerCohorteScalaireLiee, chargerFaitFocalProfilDeclare } from '@/payload/profileAcquisition'
 import type { DeclaredProfileDescriptor, ProfileComparison, ProfilePageBinding, ProfilePublicationIdentity, ProfileTarget } from '@/payload/profileAcquisition'
 import { chargerCatalogueRessources } from '@/payload/semanticResourceClient'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
@@ -99,8 +99,11 @@ const liaisonScalaireProfil = ref<SemanticResourceDeclaration | undefined>(undef
 const bindingProfil = ref<ProfilePageBinding | null>(null)
 const profileMembers = ref<string[]>([])
 const profileFacts = ref<Indicateur[]>([])
+const profileFocalFacts = ref<Indicateur[]>([])
 const profileFactsError = ref<PayloadError | null>(null)
 const profileFactsLoading = ref(false)
+const profileFocalError = ref<PayloadError | null>(null)
+const profileFocalLoading = ref(false)
 const profileScalarFacts = ref<Indicateur[]>([])
 const profileScalarError = ref<PayloadError | null>(null)
 const profileScalarLoading = ref(false)
@@ -109,13 +112,16 @@ const profileComparisonTarget = ref<string | null>(null)
 const profileComparisonError = ref(false)
 const profileComparisonLoading = ref(false)
 const retryProfileFacts = ref(0)
+const retryProfileBootstrap = ref(0)
 const retryProfileComparison = ref(0)
 const retryProfileScalar = ref(0)
 let profileDiscoverySequence = 0
 let profileFactsSequence = 0
+let profileFocalSequence = 0
 let profileComparisonSequence = 0
 let profileScalarSequence = 0
 let profileFactsRequestKey = ''
+let profileFocalRequestKey = ''
 let profileComparisonRequestKey = ''
 let profileScalarRequestKey = ''
 const utiliseManifeste = computed(() => profileDiscoveryComplete.value && !profileMode.value &&
@@ -180,8 +186,11 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   liaisonScalaireProfil.value = undefined
   bindingProfil.value = null
   profileFacts.value = []
+  profileFocalFacts.value = []
   profileFactsError.value = null
   profileFactsLoading.value = false
+  profileFocalError.value = null
+  profileFocalLoading.value = false
   profileScalarFacts.value = []
   profileScalarError.value = null
   profileScalarLoading.value = false
@@ -207,23 +216,39 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   }
 
   const canUseManifest = manifesteChargerInjecte !== null || payloadChargerInjecte === null
-  if (canUseManifest && !scalaireApiAuMontage) {
+  let earlyManifest: Awaited<ReturnType<typeof chargerManifeste>> | null = null
+  let earlyProfileCatalogue: SemanticResourceDeclaration[] | null = null
+  if (manifesteChargerInjecte !== null && !scalaireApiAuMontage) {
     chargementManifesteModeles.value = true
-    try {
-      const manifest = await chargerManifeste()
-      if (sequence !== profileDiscoverySequence) return
-      routeModeleIndicateur.value = manifest.routes[currentTheme as Theme]?.includes(currentIndicator) ?? false
-    } catch (cause) {
+    try { earlyManifest = await chargerManifeste() }
+    catch (cause) {
       if (sequence !== profileDiscoverySequence) return
       erreurManifesteModeles.value = cause instanceof PayloadError
         ? cause : new PayloadError('fetch', 'modeles-lecture/manifest.json', 'Impossible de charger le manifeste des modèles.')
     } finally {
       if (sequence === profileDiscoverySequence) chargementManifesteModeles.value = false
     }
-    if (routeModeleIndicateur.value) {
-      profileDiscoveryComplete.value = true
-      profileBootstrapLoading.value = false
-      return
+    if (earlyManifest?.routes[currentTheme as Theme]?.includes(currentIndicator)) {
+      try {
+        const resources = await chargerCatalogueRessources()
+        const declared = resources.some((resource) => resource.resource_id === currentIndicator &&
+          resource.theme_id === currentTheme && resource.indicator_id === currentIndicator &&
+          resource.shapes.includes('declared_profile'))
+        if (declared) earlyProfileCatalogue = resources
+        else {
+          routeModeleIndicateur.value = true
+          profileDiscoveryComplete.value = true
+          profileBootstrapLoading.value = false
+          return
+        }
+      } catch {
+        // Injected manifest/read-model tests may intentionally run without an
+        // API server. Production uses the metadata-first path below instead.
+        routeModeleIndicateur.value = true
+        profileDiscoveryComplete.value = true
+        profileBootstrapLoading.value = false
+        return
+      }
     }
   }
 
@@ -232,6 +257,28 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   catch (cause) {
     if (sequence !== profileDiscoverySequence) return
     if (payloadChargerInjecte && cause instanceof PayloadError && cause.kind === 'fetch') {
+      try {
+        const resources = await chargerCatalogueRessources()
+        const declared = resources.find((resource) => resource.resource_id === currentIndicator &&
+          resource.theme_id === currentTheme && resource.indicator_id === currentIndicator &&
+          resource.shapes.includes('declared_profile'))
+        if (declared) {
+          profileMode.value = true
+          catalogueProfil.value = resources
+          profileBootstrapError.value = cause
+          profileDiscoveryComplete.value = true
+          profileBootstrapLoading.value = false
+          return
+        }
+      } catch {
+        // The injected-loader compatibility path may not expose a semantic API.
+      }
+      if (earlyManifest?.routes[currentTheme as Theme]?.includes(currentIndicator)) {
+        routeModeleIndicateur.value = true
+        profileDiscoveryComplete.value = true
+        profileBootstrapLoading.value = false
+        return
+      }
       profileDiscoveryComplete.value = true
       profileBootstrapLoading.value = false
       const legacy = fichiersLegacy(currentTheme)
@@ -252,45 +299,72 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   const retainedProfileFamily = pageFamily === 'composition' || pageFamily === 'distribution' ||
     pageFamily === 'list' || pageFamily === 'pyramid'
 
-  if (profileMarked) {
-    if (!page || !retainedProfileFamily) {
-      profileBootstrapError.value = new PayloadError('validation', currentIndicator,
-        'Le profil déclaré ne dispose pas d’une présentation de page prise en charge.')
-      profileMode.value = true
-      profileDiscoveryComplete.value = true
-      profileBootstrapLoading.value = false
-      return
-    }
-    let loadedCatalogue: SemanticResourceDeclaration[]
-    try { loadedCatalogue = await chargerCatalogueRessources() }
+  // Metadata describes presentation, not factual shape. Any retained profile
+  // presentation (and any legacy profile marker) is only a discovery candidate:
+  // the semantic catalogue decides whether this route is API-owned. Do this
+  // before consulting a static read-model manifest, which can be stale too.
+  if (retainedProfileFamily || profileMarked || earlyProfileCatalogue !== null) {
+    let loadedCatalogue: SemanticResourceDeclaration[] = earlyProfileCatalogue ?? []
+    try { if (earlyProfileCatalogue === null) loadedCatalogue = await chargerCatalogueRessources() }
     catch (cause) {
       if (sequence !== profileDiscoverySequence) return
-      profileMode.value = true
-      profileBootstrapError.value = cause instanceof PayloadError ? cause
-        : new PayloadError('fetch', '/api/resources', 'Le catalogue des profils sémantiques est indisponible.')
-      profileDiscoveryComplete.value = true
-      profileBootstrapLoading.value = false
-      return
+      if (profileMarked || payloadChargerInjecte === null) {
+        profileMode.value = true
+        metadataProfilRoute.value = loadedMetadata
+        profileBootstrapError.value = cause instanceof PayloadError ? cause
+          : new PayloadError('fetch', '/api/resources', 'Le catalogue des profils sémantiques est indisponible.')
+        profileDiscoveryComplete.value = true
+        profileBootstrapLoading.value = false
+        return
+      }
+      // A presentation-family candidate is not proof of API ownership. If its
+      // catalogue lookup fails, keep the incumbent route acquisition rather
+      // than breaking unrelated static composition/distribution pages.
     }
     if (sequence !== profileDiscoverySequence) return
     const declared = loadedCatalogue.find((resource) => resource.resource_id === currentIndicator &&
       resource.theme_id === currentTheme && resource.indicator_id === currentIndicator &&
       resource.shapes.includes('declared_profile'))
-    if (!declared) {
+    if (declared) {
       profileMode.value = true
-      profileBootstrapError.value = new PayloadError('validation', currentIndicator,
-        'Le profil déclaré par la page est absent du catalogue sémantique du producteur.')
+      metadataProfilRoute.value = loadedMetadata
+      catalogueProfil.value = loadedCatalogue
+      if (!page || !retainedProfileFamily) {
+        profileBootstrapError.value = new PayloadError('validation', currentIndicator,
+          'Le profil déclaré ne dispose pas d’une présentation locale prise en charge.')
+        profileDiscoveryComplete.value = true
+        profileBootstrapLoading.value = false
+        return
+      }
+      declarationProfil.value = declared
       profileDiscoveryComplete.value = true
       profileBootstrapLoading.value = false
       return
     }
-    metadataProfilRoute.value = loadedMetadata
-    catalogueProfil.value = loadedCatalogue
-    declarationProfil.value = declared
-    profileMode.value = true
-    profileDiscoveryComplete.value = true
-    profileBootstrapLoading.value = false
-    return
+  }
+
+  if (canUseManifest && !scalaireApiAuMontage) {
+    if (earlyManifest) {
+      routeModeleIndicateur.value = earlyManifest.routes[currentTheme as Theme]?.includes(currentIndicator) ?? false
+    } else {
+      chargementManifesteModeles.value = true
+      try {
+        const manifest = await chargerManifeste()
+        if (sequence !== profileDiscoverySequence) return
+        routeModeleIndicateur.value = manifest.routes[currentTheme as Theme]?.includes(currentIndicator) ?? false
+      } catch (cause) {
+        if (sequence !== profileDiscoverySequence) return
+        erreurManifesteModeles.value = cause instanceof PayloadError
+          ? cause : new PayloadError('fetch', 'modeles-lecture/manifest.json', 'Impossible de charger le manifeste des modèles.')
+      } finally {
+        if (sequence === profileDiscoverySequence) chargementManifesteModeles.value = false
+      }
+    }
+    if (routeModeleIndicateur.value) {
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
   }
 
   profileDiscoveryComplete.value = true
@@ -303,7 +377,7 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
   }
 }
 
-watch(() => [theme.value, indicator.value] as const,
+watch(() => [theme.value, indicator.value, retryProfileBootstrap.value] as const,
   ([currentTheme, currentIndicator]) => { void resolveProfileRoute(currentTheme, currentIndicator) },
   { immediate: true })
 
@@ -454,6 +528,33 @@ async ([active, resourceId, pageId, territoryCount, routeLevel, department, epci
       ? cause : new PayloadError('fetch', resourceId, 'Impossible de charger le profil déclaré.')
   } finally {
     if (sequence === profileFactsSequence) profileFactsLoading.value = false
+  }
+}, { immediate: true })
+watch(() => [profileMode.value, declarationProfil.value?.resource_id, descriptorProfil.value?.descriptor_version,
+  identityProfil.value?.contentVersion, targetProfil.value?.type, porte.value.territoire, profileMembers.value.join('\u0000'),
+  retryProfileFacts.value] as const,
+async ([active, _resource, descriptorVersion, profileVersion, level, selectedId, members]) => {
+  const key = JSON.stringify([active, descriptorVersion, profileVersion, level, selectedId, members, retryProfileFacts.value])
+  if (active && key === profileFocalRequestKey) return
+  profileFocalRequestKey = key
+  const sequence = ++profileFocalSequence
+  profileFocalFacts.value = []
+  profileFocalError.value = null
+  if (!active || !selectedId || !level || !descriptorProfil.value || !identityProfil.value ||
+      !declarationProfil.value || profileMembers.value.includes(selectedId)) return
+  const territory = payloadLegacy.value.territoires.find((candidate) => candidate.territoire === selectedId && candidate.type === level)
+  if (!territory) return
+  profileFocalLoading.value = true
+  try {
+    const facts = await chargerFaitFocalProfilDeclare({ declaration: declarationProfil.value,
+      descriptor: descriptorProfil.value, identity: identityProfil.value,
+      focal: { type: level, id: selectedId }, territories: payloadLegacy.value.territoires })
+    if (sequence === profileFocalSequence) profileFocalFacts.value = facts
+  } catch (cause) {
+    if (sequence === profileFocalSequence) profileFocalError.value = cause instanceof PayloadError ? cause
+      : new PayloadError('fetch', selectedId, 'Impossible de charger les faits natifs du territoire sélectionné.')
+  } finally {
+    if (sequence === profileFocalSequence) profileFocalLoading.value = false
   }
 }, { immediate: true })
 watch(() => [profileMode.value, targetProfil.value?.type, targetProfil.value?.department_id,
@@ -683,7 +784,7 @@ const payload = computed<Payload>(() => {
   if (profileMode.value) {
     const profileIds = new Set([indicator.value, descriptorProfil.value?.comparison_scalar].filter((id): id is string => Boolean(id)))
     const indicators = base.indicateurs.filter((fact) => !(fact.theme === theme.value && profileIds.has(fact.key)))
-    return { ...base, indicateurs: [...indicators, ...profileFacts.value, ...profileScalarFacts.value] }
+    return { ...base, indicateurs: [...indicators, ...profileFacts.value, ...profileFocalFacts.value, ...profileScalarFacts.value] }
   }
   if (scalaireApi.value) {
     return { ...base, indicateurs: [...base.indicateurs.filter((fact) => !(fact.theme === theme.value && fact.key === indicator.value)), ...faitsScalaireApi.value] }
@@ -722,7 +823,7 @@ const payload = computed<Payload>(() => {
 })
 const erreur = computed(() => {
   if (profileBootstrapError.value) return profileBootstrapError.value
-  if (profileMode.value) return profileFactsError.value ?? erreurLegacy.value
+  if (profileMode.value) return profileFactsError.value ?? profileFocalError.value ?? erreurLegacy.value
   if (erreurManifesteModeles.value) return erreurManifesteModeles.value
   if (!profileMode.value && scalaireApiOptionnelle.value && (!metadataScalaireApi.value || scalaireApi.value)) return erreurScalaireApi.value
   return utiliseModeleIndicateur.value ? erreurModeleIndicateur.value : erreurLegacy.value
@@ -730,7 +831,7 @@ const erreur = computed(() => {
 const chargement = computed(() =>
   profileBootstrapLoading.value ||
   chargementManifesteModeles.value ||
-  (profileMode.value && profileFactsLoading.value) ||
+  (profileMode.value && (profileFactsLoading.value || profileFocalLoading.value)) ||
   (!profileMode.value && scalaireApiOptionnelle.value && chargementScalaireApi.value) ||
   (utiliseModeleIndicateur.value
     ? chargementLegacy.value || chargementModeleIndicateur.value
@@ -747,7 +848,7 @@ const profileEmptyCohort = computed(() => profileMode.value && Boolean(targetPro
 watch(() => [profileMode.value, declarationProfil.value?.resource_id, descriptorProfil.value?.descriptor_version,
   identityProfil.value?.contentVersion, profileMembers.value.join('\u0000'), targetProfil.value?.type, porte.value.territoire,
   familyDispatch.value?.facet.detail, familyDispatch.value?.facet.sex, retryProfileComparison.value,
-  profileFactsError.value?.file] as const,
+  profileFactsError.value?.file, profileFocalError.value?.file] as const,
 async ([active, resourceId, descriptorVersion, contentVersion, _members, targetType, selectedId]) => {
   const descriptor = descriptorProfil.value
   const identity = identityProfil.value
@@ -767,9 +868,13 @@ async ([active, resourceId, descriptorVersion, contentVersion, _members, targetT
   profileComparisonTarget.value = null
   profileComparisonError.value = false
   profileComparisonLoading.value = false
-  if (!active || !descriptor || !identity || !declaration || !facet || profileFactsError.value || targetType === 'region') return
+  if (!active || !descriptor || !identity || !declaration || !facet || profileFactsError.value || profileFocalError.value || targetType === 'region') return
   if (!memberIds.length) return // An explicit empty cohort remains empty; never substitute a broader group.
-  const focalId = selectedId && memberIds.includes(selectedId) ? selectedId : memberIds[0]!
+  const focalTerritory = selectedId
+    ? payloadLegacy.value.territoires.find((territory) => territory.territoire === selectedId && territory.type === targetProfil.value?.type)
+    : undefined
+  if (selectedId && !focalTerritory) return
+  const focalId = selectedId ?? memberIds[0]!
   const comparisonDeclaration = descriptor.comparison_scalar ? liaisonScalaireProfil.value : undefined
   if (descriptor.comparison_scalar && !comparisonDeclaration) {
     profileComparisonError.value = true
@@ -780,7 +885,7 @@ async ([active, resourceId, descriptorVersion, contentVersion, _members, targetT
   try {
     const result = await chargerComparaisonProfilDeclare({ declaration, descriptor, identity,
       focal: { type: profileFacts.value[0]?.type ??
-        (resoudreNiveau(porte.value.niveau, niveauMemorise.value, facet.levels) as TerritoireType), id: focalId },
+        targetProfil.value?.type ?? (resoudreNiveau(porte.value.niveau, niveauMemorise.value, facet.levels) as TerritoireType), id: focalId },
       memberIds, coordinate, scalarDeclaration: comparisonDeclaration })
     if (sequence === profileComparisonSequence) profileComparison.value = result
   } catch {
@@ -793,7 +898,7 @@ const sources = computed(() => {
   if (!page.value || !payload.value) return []
   const authority = sourceRecords(payload.value)
   if (profileMode.value) {
-    const native = [...profileFacts.value, ...profileScalarFacts.value].flatMap((fact) => fact.fact_sources ?? [])
+    const native = [...profileFacts.value, ...profileFocalFacts.value, ...profileScalarFacts.value].flatMap((fact) => fact.fact_sources ?? [])
     for (const source of profileComparison.value?.comparisonSources ?? []) {
       native.push({ sourceId: source.sourceId, source: source.name, version: source.version,
         vintageId: source.vintageId, referenceDate: source.referenceDate, publicationDate: source.publicationDate })
@@ -804,16 +909,18 @@ const sources = computed(() => {
         .map((source) => [`${source.sourceId}\u0000${source.vintageId ?? source.version}`, source])).values()]
       if (!vintages.length) return null
       const existing = authority.find((record) => record.id === id || datasetDeSource(record.id) === datasetDeSource(id))
-      const latest = vintages[0]!
       const apiVintages = vintages.map((source) => ({ id: source.vintageId ?? source.version,
-        label: source.version, version: source.version, licence: existing?.licence ?? null,
+        label: source.vintageId ?? source.version, version: source.version, licence: existing?.licence ?? null,
         dateReference: source.referenceDate, datePublication: source.publicationDate }))
+      const representative = vintages.length === 1 ? vintages[0] : null
       return {
-        id, dataset: latest.source, publisher: existing?.publisher ?? latest.source,
+        id, dataset: representative?.source ?? vintages[0]!.source,
+        publisher: existing?.publisher ?? representative?.source ?? vintages[0]!.source,
         url: existing?.url ?? null, licence: existing?.licence ?? null,
-        vintage: latest.version, freshness: latest.publicationDate,
-        sha256: existing?.sha256 ?? null, dateReference: latest.referenceDate,
-        datePublication: latest.publicationDate, vintages: apiVintages,
+        vintage: representative?.version ?? 'Plusieurs millésimes',
+        freshness: representative?.publicationDate ?? '—',
+        sha256: existing?.sha256 ?? null, dateReference: representative?.referenceDate ?? null,
+        datePublication: representative?.publicationDate ?? null, vintages: apiVintages,
         clocks: existing?.clocks ?? [], caveat: existing?.caveat ?? null,
         methodology: existing?.methodology, consumers: existing?.consumers ?? [],
         replie: existing?.replie ?? false, themes: existing?.themes ?? [theme.value as Theme],
@@ -861,18 +968,40 @@ const model = computed(() => {
   if (!profileMode.value) return calculated
   const regionOnly = profileRegionalFactOnly.value
   const selectedId = porte.value.territoire
-  const comparisonOwnsSelectedRank = Boolean(selectedId && profileComparisonTarget.value === selectedId &&
-    profileComparison.value?.focalInSelection)
+  const comparisonRanks = new Map((profileComparison.value?.memberRanks ?? []).map((item) => [item.territoryId, item]))
+  const completeComparisonRows = requested.value.recherche
+    ? modeleExploration(facts.value, dispatch.facet, payload.value.territoires,
+      { ...requested.value, recherche: undefined, tri: 'nom', ordre: 'asc' }, niveauMemorise.value, true).rows
+    : calculated.rows
+  const eligibleIds = new Set(completeComparisonRows.map((row) => row.territoire.territoire))
+  const rankedIds = new Set([...comparisonRanks.values()].filter((item) => item.rank !== null).map((item) => item.territoryId))
+  const focalRank = selectedId ? comparisonRanks.get(selectedId) : undefined
+  const comparisonRanksMatchFacts = Boolean(profileComparison.value &&
+    profileComparison.value.selectedMemberCount === profileMembers.value.length &&
+    profileComparison.value.eligibleCount === eligibleIds.size &&
+    profileComparison.value.memberRanks.length === profileMembers.value.length &&
+    eligibleIds.size === rankedIds.size && [...eligibleIds].every((id) => rankedIds.has(id)) &&
+    profileComparison.value.memberRanks.every((item) => item.rank === null || item.rankSize === profileComparison.value?.eligibleCount) &&
+    (!profileComparison.value.focalInSelection || !selectedId ||
+      (focalRank?.rank === profileComparison.value.rank && focalRank.rankSize === profileComparison.value.rankSize &&
+        focalRank.rankTies === profileComparison.value.rankTies)))
+  let profileRows = regionOnly ? [] : calculated.rows.map((row) => ({ ...row,
+    rang: comparisonRanksMatchFacts ? comparisonRanks.get(row.territoire.territoire)?.rank ?? null : null,
+    rangTaille: comparisonRanksMatchFacts ? comparisonRanks.get(row.territoire.territoire)?.rankSize ?? null : null,
+  }))
+  if (requested.value.tri === 'rang') {
+    const factor = requested.value.ordre === 'desc' ? -1 : 1
+    profileRows = [...profileRows].sort((left, right) => {
+      if (left.rang === null) return right.rang === null ? 0 : 1
+      if (right.rang === null) return -1
+      return factor * (left.rang - right.rang)
+    })
+  }
   return {
     ...calculated,
     state: regionOnly ? { ...calculated.state, niveau: 'region' } as unknown as typeof calculated.state : calculated.state,
     median: regionOnly ? null : profileComparison.value?.status === 'available' ? profileComparison.value.median : null,
-    rows: regionOnly ? [] : calculated.rows.map((row) => ({ ...row,
-      rang: comparisonOwnsSelectedRank && row.territoire.territoire === selectedId
-        ? profileComparison.value?.rank ?? null : null,
-      rangTaille: comparisonOwnsSelectedRank && row.territoire.territoire === selectedId
-        ? profileComparison.value?.rankSize ?? null : null,
-    })),
+    rows: profileRows,
     distribution: regionOnly ? [] : calculated.distribution,
     density: regionOnly ? [] : calculated.density,
     high: regionOnly ? { count: 0, rows: [] } : calculated.high,
@@ -1040,7 +1169,7 @@ watch(() => familyDispatch.value?.resolvedUrl, (resolved) => {
   <section class="indicateur-page presentation-editorial" :class="`theme-${theme}`" :style="themeVars">
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieChargement" role="status">Chargement des données actualisées…</div>
     <div v-if="orderedSeriesAdapter && !raccordementApiActive && serieErreur" role="alert">Les données de cet indicateur sont momentanément indisponibles.<button type="button" @click="chargerSerie(true)">Réessayer</button></div>
-    <div v-if="chargement || (raccordementApiActive && serieChargement)" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur || (raccordementApiActive && serieErreur)" role="alert">Impossible de charger l’indicateur.<button v-if="profileMode" type="button" @click="retryProfileFacts++">Réessayer</button><button v-if="!profileMode && scalaireApiOptionnelle" type="button" @click="retryScalaireApi++">Réessayer</button><button v-if="raccordementApiActive" type="button" @click="chargerSerie(true)">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
+    <div v-if="chargement || (raccordementApiActive && serieChargement)" role="status">Chargement de l’indicateur…</div><div v-else-if="erreur || (raccordementApiActive && serieErreur)" role="alert">Impossible de charger l’indicateur.<button v-if="profileBootstrapError" type="button" @click="retryProfileBootstrap++">Réessayer</button><button v-else-if="profileMode" type="button" @click="retryProfileFacts++">Réessayer</button><button v-if="!profileMode && scalaireApiOptionnelle" type="button" @click="retryScalaireApi++">Réessayer</button><button v-if="raccordementApiActive" type="button" @click="chargerSerie(true)">Réessayer</button></div><div v-else-if="!page || !model" role="alert">Indicateur introuvable.</div>
     <template v-else>
       <header><p class="sur-titre">{{ metadata?.label }}</p><h1>{{ page.label }}</h1><p>{{ page.definition }}</p></header>
       <section v-if="profileMode" class="profile-comparison-state" data-testid="profile-comparison-state">
