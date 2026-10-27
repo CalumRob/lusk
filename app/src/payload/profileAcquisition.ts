@@ -1,6 +1,7 @@
 import type { Indicateur, NativeThemeFactAxis, NativeThemeFactContract, Territoire, TerritoireType, Theme } from './types'
 import { THEMES_CANONIQUES } from './types'
 import type { SemanticResourceDeclaration } from './semanticResourceClient'
+import { lireRessourcesBatch } from './semanticResourceClient'
 import { PayloadError } from './validate'
 
 type Row = Record<string, unknown>
@@ -51,6 +52,28 @@ export interface ProfileCohortResult {
   descriptor: DeclaredProfileDescriptor
   identity: ProfilePublicationIdentity
   memberIds: string[]
+}
+
+export interface ProfileComparison {
+  status: 'available' | 'unavailable'
+  reason: string | null
+  median: number | null
+  rank: number | null
+  rankSize: number | null
+  rankTies: number | null
+  selectedMemberCount: number
+  eligibleCount: number
+  missingCount: number | null
+  focalInSelection: boolean
+  unit: string
+  direction: 'high' | 'low'
+  facet: { detail: string; sex: string | null } | string
+  comparisonSources: Array<{ sourceId: string; name: string; vintageId: string; version: string;
+    referenceDate: string | null; publicationDate: string | null }>
+  contentVersion: string
+  profileContentVersion: string
+  referenceContentVersion: string
+  scalarContentVersion: string | null
 }
 
 function fail(message: string): never {
@@ -372,4 +395,212 @@ export function adapterProfilDeclare(input: {
     return fail('La déclaration des faits du profil est vide.')
   }
   return { facts, descriptor, identity, memberIds: [...members.keys()] }
+}
+
+function selectionIdentity(value: unknown): string[] {
+  if (!Array.isArray(value)) return fail('La sélection de comparaison du profil est absente.')
+  const identities = value.map((member) => {
+    if (!isRecord(member) || member.territory_type === undefined || !isNonEmptyText(member.territory_id)) {
+      return fail('Un membre de la comparaison du profil est mal formé.')
+    }
+    return `${member.territory_type}\u0000${member.territory_id}`
+  })
+  if (new Set(identities).size !== identities.length) return fail('La sélection de comparaison du profil est dupliquée.')
+  return identities.sort()
+}
+
+function comparisonSources(value: unknown, declaration: SemanticResourceDeclaration) {
+  if (!Array.isArray(value)) return fail('La provenance de la comparaison du profil est mal formée.')
+  const allowed = new Set(declaration.sources)
+  const seen = new Set<string>()
+  return value.map((candidate) => {
+    if (!isRecord(candidate) || !isNonEmptyText(candidate.source_id) || !allowed.has(candidate.source_id) ||
+        !isNonEmptyText(candidate.name) || !isNonEmptyText(candidate.vintage_id) ||
+        !isNonEmptyText(candidate.version) || !isDate(candidate.reference_date) ||
+        !isDate(candidate.publication_date)) {
+      return fail('La provenance de la comparaison ne correspond pas aux ressources déclarées.')
+    }
+    const key = `${candidate.source_id}\u0000${candidate.vintage_id}`
+    if (seen.has(key)) return fail('La provenance de la comparaison contient une source dupliquée.')
+    seen.add(key)
+    return { sourceId: candidate.source_id, name: candidate.name, vintageId: candidate.vintage_id,
+      version: candidate.version, referenceDate: candidate.reference_date,
+      publicationDate: candidate.publication_date }
+  })
+}
+
+/** Validate the API-owned comparison for exactly the selected profile coordinate and cohort. */
+export function adapterProfilComparaison(input: {
+  declaration: SemanticResourceDeclaration
+  descriptor: DeclaredProfileDescriptor
+  identity: ProfilePublicationIdentity
+  focal: { type: TerritoireType; id: string }
+  memberIds: string[]
+  coordinate: { detail: string; sex: string | null } | null
+  comparison: unknown
+  scalarDeclaration?: SemanticResourceDeclaration
+}): ProfileComparison {
+  const { declaration, descriptor, identity, focal, memberIds, coordinate, scalarDeclaration } = input
+  const raw = input.comparison
+  if (!isRecord(raw) || raw.resource !== declaration.resource_id ||
+      raw.contract !== 'indicator-comparison-v1' || raw.indicator_id !== declaration.indicator_id ||
+      raw.shape !== 'profile' || !isNonEmptyText(raw.content_version) ||
+      raw.profile_content_version !== identity.contentVersion ||
+      raw.reference_content_version !== identity.referenceContentVersion ||
+      !isRecord(raw.target) || raw.target.kind !== 'territory' || raw.target.type !== focal.type ||
+      raw.target.id !== focal.id || !isRecord(raw.scope) || raw.scope.kind !== 'explicit_selection' ||
+      raw.scope.territory_type !== focal.type || raw.scope.member_count !== memberIds.length) {
+    return fail('La ressource ou les versions de la comparaison du profil ne correspondent pas aux faits acquis.')
+  }
+  const selected = selectionIdentity(raw.selection)
+  const expectedSelection = memberIds.map((id) => `${focal.type}\u0000${id}`).sort()
+  if (JSON.stringify(selected) !== JSON.stringify(expectedSelection)) {
+    return fail('La sélection de comparaison ne correspond pas exactement au cohort de profils.')
+  }
+  const result = isRecord(raw.result) ? raw.result : null
+  if (!result || result.indicator_id !== declaration.indicator_id ||
+      (result.status !== 'available' && result.status !== 'unavailable') ||
+      !(result.reason === null || isText(result.reason)) || result.statistic !== 'median' ||
+      result.profile_descriptor_version !== descriptor.descriptor_version ||
+      result.denominator_semantics !== descriptor.denominator_semantics ||
+      result.focal_in_selection !== memberIds.includes(focal.id) ||
+      !Number.isSafeInteger(result.selected_member_count) || result.selected_member_count !== memberIds.length ||
+      !Number.isSafeInteger(result.eligible_count) || (result.eligible_count as number) < 0 ||
+      (result.eligible_count as number) > memberIds.length ||
+      !(result.missing_count === undefined || (Number.isSafeInteger(result.missing_count) &&
+        result.missing_count === memberIds.length - (result.eligible_count as number)))) {
+    return fail('Les effectifs ou l’état de la comparaison du profil sont incompatibles avec la sélection.')
+  }
+
+  let facet: ProfileComparison['facet']
+  let unit: string
+  let direction: 'high' | 'low'
+  let sourceDeclaration = declaration
+  if (descriptor.comparison_scalar) {
+    if (coordinate !== null || !scalarDeclaration ||
+        scalarDeclaration.resource_id !== descriptor.comparison_scalar ||
+        scalarDeclaration.indicator_id !== descriptor.comparison_scalar ||
+        scalarDeclaration.theme_id !== declaration.theme_id || !scalarDeclaration.shapes.includes('scalar') ||
+        !scalarDeclaration.allowed_levels.includes(focal.type) ||
+        !scalarDeclaration.intents.includes('selected_comparison') ||
+        !scalarDeclaration.target_kinds.includes('territory') ||
+        result.source_facet !== descriptor.comparison_scalar ||
+        result.source_facet_indicator_id !== descriptor.comparison_scalar ||
+        result.source_facet_label !== scalarDeclaration.label ||
+        raw.scalar_content_version !== descriptor.required_scalar_version ||
+        result.required_scalar_version !== descriptor.required_scalar_version ||
+        !isNonEmptyText(result.scalar_descriptor_version)) {
+      return fail('La facette scalaire liée au profil ne correspond pas à sa dépendance publiée.')
+    }
+    facet = descriptor.comparison_scalar
+    unit = scalarDeclaration.unit
+    direction = scalarDeclaration.direction as 'high' | 'low'
+    sourceDeclaration = scalarDeclaration
+  } else {
+    const point = descriptor.comparison_point
+    if (!coordinate || !point || !descriptor.axes.some((axis) => axis.name === 'detail' && axis.key === coordinate.detail) ||
+        (descriptor.axes.some((axis) => axis.name === 'sex')
+          ? !descriptor.axes.some((axis) => axis.name === 'sex' && axis.key === coordinate.sex)
+          : coordinate.sex !== null) ||
+        !isRecord(result.source_facet) || result.source_facet.detail !== coordinate.detail ||
+        !sameNullable(result.source_facet.sex, coordinate.sex) ||
+        result.source_facet_indicator_id !== undefined ||
+        result.unit !== descriptor.axes.find((axis) => axis.name === 'detail' && axis.key === coordinate.detail)?.unit ||
+        result.direction !== point.direction) {
+      return fail('La facette comparative ne correspond pas au détail et au sexe sélectionnés.')
+    }
+    facet = { ...coordinate }
+    unit = result.unit as string
+    direction = result.direction as 'high' | 'low'
+  }
+  if ((direction !== 'high' && direction !== 'low') || result.unit !== unit || !isNonEmptyText(unit) ||
+      result.direction !== direction || !isNonEmptyText(result.source_facet_label ?? declaration.label)) {
+    return fail('L’unité ou la direction de la comparaison ne correspond pas à sa facette native.')
+  }
+
+  const median = result.median
+  const rank = result.rank
+  const rankSize = result.rank_size
+  const rankTies = result.rank_ties
+  const available = result.status === 'available'
+  if (result.missing_count !== undefined && result.missing_count !== memberIds.length - (result.eligible_count as number) ||
+      (available ? !isFinite(median) || (result.eligible_count as number) < 2 : median !== null) ||
+      (rank === null ? rankSize !== null || rankTies !== null
+        : !Number.isSafeInteger(rank) || !Number.isSafeInteger(rankSize) || !Number.isSafeInteger(rankTies) ||
+          (rank as number) < 1 || (rank as number) > (rankSize as number) ||
+          rankSize !== result.eligible_count || (rankTies as number) < 1 || (rankTies as number) > (rankSize as number))) {
+    return fail('La médiane ou le rang de comparaison du profil est incohérent.')
+  }
+  if (!Array.isArray(result.comparison_sources) || (available && result.comparison_sources.length === 0)) {
+    return fail('La provenance de la comparaison publiée est absente.')
+  }
+  const sources = comparisonSources(result.comparison_sources, sourceDeclaration)
+  const pointFacet = typeof facet === 'string' ? facet : facet.detail
+  return {
+    status: result.status,
+    reason: result.reason as string | null,
+    median: median === null ? null : median as number,
+    rank: rank === null ? null : rank as number,
+    rankSize: rankSize === null ? null : rankSize as number,
+    rankTies: rankTies === null ? null : rankTies as number,
+    selectedMemberCount: result.selected_member_count as number,
+    eligibleCount: result.eligible_count as number,
+    missingCount: result.missing_count === undefined ? null : result.missing_count as number,
+    focalInSelection: result.focal_in_selection,
+    unit,
+    direction,
+    facet: typeof facet === 'string' ? facet : { detail: pointFacet, sex: facet.sex },
+    comparisonSources: sources,
+    contentVersion: raw.content_version,
+    profileContentVersion: raw.profile_content_version,
+    referenceContentVersion: raw.reference_content_version,
+    scalarContentVersion: raw.scalar_content_version === null || raw.scalar_content_version === undefined
+      ? null : raw.scalar_content_version as string,
+  }
+}
+
+/** Acquire facts for one selected profile resource and bounded territory cohort. */
+export async function chargerCohorteProfilDeclare(declaration: SemanticResourceDeclaration,
+  target: ProfileTarget, territories: Territoire[]): Promise<ProfileCohortResult> {
+  const resource = requireProfileDeclaration(declaration, {
+    theme: declaration.theme_id, indicator: declaration.indicator_id, level: target.type,
+  })
+  const filters = expectedTarget(target)
+  const [data] = await lireRessourcesBatch([{
+    resource: resource.resource_id,
+    target: { kind: 'territory_cohort', type: target.type,
+      department_id: filters.department, epci_id: filters.epci },
+    fields: ['value'], intent: { kind: 'facts' },
+  }])
+  return adapterProfilDeclare({ declaration: resource, target, territories, cohort: data })
+}
+
+/** A comparison retry re-reads only this selected comparison, never profile facts. */
+export async function chargerComparaisonProfilDeclare(input: {
+  declaration: SemanticResourceDeclaration
+  descriptor: DeclaredProfileDescriptor
+  identity: ProfilePublicationIdentity
+  focal: { type: TerritoireType; id: string }
+  memberIds: string[]
+  coordinate: { detail: string; sex: string | null } | null
+  scalarDeclaration?: SemanticResourceDeclaration
+}): Promise<ProfileComparison> {
+  const { declaration, descriptor, focal, memberIds, coordinate, scalarDeclaration } = input
+  if (!declaration.target_kinds.includes('territory') || !declaration.intents.includes('selected_comparison') ||
+      !declaration.allowed_levels.includes(focal.type) || declaration.shapes.includes('declared_profile') === false ||
+      (descriptor.comparison_scalar ? !scalarDeclaration : Boolean(scalarDeclaration))) {
+    return fail('La ressource du profil ne déclare pas la comparaison demandée.')
+  }
+  const coordinates = coordinate === null ? undefined : {
+    detail: [coordinate.detail],
+    ...(coordinate.sex === null ? {} : { sex: [coordinate.sex] }),
+  }
+  const [data] = await lireRessourcesBatch([{
+    resource: declaration.resource_id,
+    target: { kind: 'territory', type: focal.type, id: focal.id },
+    ...(coordinates ? { coordinates } : {}),
+    fields: ['median', 'rank', 'rank_size', 'rank_ties', 'selected_member_count', 'eligible_count', 'missing_count'],
+    intent: { kind: 'selected_comparison', members: memberIds.map((id) => ({ type: focal.type, id })) },
+  }])
+  return adapterProfilComparaison({ ...input, comparison: data })
 }

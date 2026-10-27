@@ -1,5 +1,6 @@
-import { describe, expect, it } from 'vitest'
-import { adapterProfilDeclare } from '@/payload/profileAcquisition'
+import { afterEach, describe, expect, it, vi } from 'vitest'
+import { adapterProfilComparaison, adapterProfilDeclare, chargerCohorteProfilDeclare,
+  chargerComparaisonProfilDeclare } from '@/payload/profileAcquisition'
 import type { SemanticResourceDeclaration } from '@/payload/semanticResourceClient'
 import type { Territoire } from '@/payload/types'
 
@@ -11,6 +12,8 @@ const declaration: SemanticResourceDeclaration = {
   axes: ['detail'], axis_values: [['detail', ['principales', 'vacantes']]],
   fields: ['value'], intents: ['facts', 'selected_comparison'],
 }
+
+afterEach(() => vi.unstubAllGlobals())
 
 const territories: Territoire[] = [
   { territoire: '22001', type: 'commune', nom: 'Focal', departement: '22', epci: 'E1' },
@@ -50,6 +53,22 @@ function cohortResponse() {
     profiles: members.map((territory) => ({ territory,
       cells: territory.id === '22001' ? [cell('principales', .72), cell('vacantes', .08)]
         : [cell('principales', .61), cell('vacantes', .12)] })) }
+}
+
+function comparisonResponse() {
+  return { resource: 'mix_logements', target: { kind: 'territory', type: 'commune', id: '22001' },
+    contract: 'indicator-comparison-v1', indicator_id: 'mix_logements', shape: 'profile',
+    content_version: 'comparison-c1', profile_content_version: 'profile-c1',
+    reference_content_version: 'territories-r1', scalar_content_version: null,
+    selection: [{ territory_type: 'commune', territory_id: '22001' },
+      { territory_type: 'commune', territory_id: '22002' }],
+    scope: { kind: 'explicit_selection', territory_type: 'commune', member_count: 2 },
+    result: { indicator_id: 'mix_logements', status: 'available', reason: null,
+      source_facet: { detail: 'principales', sex: null }, unit: '%', direction: 'high', statistic: 'median',
+      profile_descriptor_version: 'profile-d1', denominator_semantics: 'logements',
+      focal_in_selection: true, selected_member_count: 2, eligible_count: 2, missing_count: 0,
+      median: .66, rank: 2, rank_size: 2, rank_ties: 1,
+      comparison_sources: [source] } }
 }
 
 describe('l’acquisition du profil déclaré', () => {
@@ -98,5 +117,71 @@ describe('l’acquisition du profil déclaré', () => {
     broken.cohort.members.push({ id: '29001', type: 'commune', name: 'Other' })
     expect(() => adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
       territories, cohort: broken })).toThrow(/membres|cohort/i)
+  })
+
+  it('adapte la comparaison sélectionnée seulement si sa facette et sa version correspondent au cohort', () => {
+    const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
+      territories, cohort: cohortResponse() })
+    const result = adapterProfilComparaison({ declaration, descriptor: acquired.descriptor, identity: acquired.identity,
+      focal: { type: 'commune', id: '22001' }, memberIds: acquired.memberIds,
+      coordinate: { detail: 'principales', sex: null }, comparison: comparisonResponse() })
+    expect(result).toMatchObject({ status: 'available', median: .66, rank: 2, rankSize: 2, rankTies: 1,
+      selectedMemberCount: 2, eligibleCount: 2, missingCount: 0, unit: '%', direction: 'high',
+      facet: { detail: 'principales', sex: null } })
+    expect(result.comparisonSources[0]).toMatchObject({ sourceId: 'logements', vintageId: 'rp-2023',
+      version: '2023', referenceDate: '2023-01-01', publicationDate: '2026-06-30' })
+  })
+
+  it('refuse une comparaison de profil d’une autre facette ou d’une publication différente', () => {
+    const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
+      territories, cohort: cohortResponse() })
+    const input = { declaration, descriptor: acquired.descriptor, identity: acquired.identity,
+      focal: { type: 'commune' as const, id: '22001' }, memberIds: acquired.memberIds,
+      coordinate: { detail: 'principales', sex: null }, comparison: comparisonResponse() }
+    expect(() => adapterProfilComparaison({ ...input, comparison: { ...comparisonResponse(),
+      result: { ...comparisonResponse().result, source_facet: { detail: 'vacantes', sex: null } } } })).toThrow(/facette/i)
+    expect(() => adapterProfilComparaison({ ...input, comparison: { ...comparisonResponse(),
+      profile_content_version: 'stale-profile' } })).toThrow(/version/i)
+  })
+
+  it('lit le cohort de faits d’une seule ressource à la cible filtrée du contrat', async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(init?.body as string) as { items: Array<Record<string, unknown>> }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) =>
+        ({ id: item.id, resource: item.resource, data: cohortResponse() })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const result = await chargerCohorteProfilDeclare(declaration,
+      { type: 'commune', department_id: '22', epci_id: null }, territories)
+    const call = fetcher.mock.calls[0]!
+    expect(String(call[0])).toBe('/api/resources/read-batch')
+    expect(JSON.parse((call[1] as RequestInit).body as string).items).toEqual([expect.objectContaining({
+      resource: 'mix_logements',
+      target: { kind: 'territory_cohort', type: 'commune', department_id: '22', epci_id: null },
+      fields: ['value'], intent: { kind: 'facts' },
+    })])
+    expect(result.facts).toHaveLength(4)
+  })
+
+  it('relit seulement la comparaison explicite au détail sélectionné', async () => {
+    const fetcher = vi.fn(async (_input: RequestInfo | URL, init?: RequestInit) => {
+      const request = JSON.parse(init?.body as string) as { items: Array<Record<string, unknown>> }
+      return new Response(JSON.stringify({ contract: 'semantic-read-batch-v1', results: request.items.map((item) =>
+        ({ id: item.id, resource: item.resource, data: comparisonResponse() })) }))
+    })
+    vi.stubGlobal('fetch', fetcher)
+    const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
+      territories, cohort: cohortResponse() })
+    await chargerComparaisonProfilDeclare({ declaration, descriptor: acquired.descriptor, identity: acquired.identity,
+      focal: { type: 'commune', id: '22001' }, memberIds: acquired.memberIds,
+      coordinate: { detail: 'principales', sex: null } })
+    const request = JSON.parse((fetcher.mock.calls[0]![1] as RequestInit).body as string)
+    expect(request.items).toHaveLength(1)
+    expect(request.items[0]).toMatchObject({ resource: 'mix_logements',
+      target: { kind: 'territory', type: 'commune', id: '22001' },
+      coordinates: { detail: ['principales'] },
+      intent: { kind: 'selected_comparison', members: [
+        { type: 'commune', id: '22001' }, { type: 'commune', id: '22002' },
+      ] } })
   })
 })
