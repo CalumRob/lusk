@@ -132,15 +132,6 @@ const erreurModeleIndicateur = ref<PayloadError | null>(null)
 const chargementModeleIndicateur = ref(false)
 let modeleIndicateurDemarre = false
 const chargerModele = modeleChargerInjecte ?? chargerModeleIndicateur
-function metadataDeclaresProfile(metadata: ThemeMetadata | null, currentIndicator: string): boolean {
-  if (!metadata) return false
-  const raw = metadata as ThemeMetadata & { profile_contracts?: unknown }
-  const contracts = raw.profile_contracts
-  return (typeof contracts === 'object' && contracts !== null && !Array.isArray(contracts) && currentIndicator in contracts) ||
-    (metadata.indicator_pages?.[currentIndicator]?.family === 'pyramid' &&
-      metadata.indicator_pages[currentIndicator].pyramid.dimensions.includes('detail'))
-}
-
 function profileCatalogueBinding(resources: SemanticResourceDeclaration[], currentTheme: string,
   currentIndicator: string) {
   const candidates = resources.filter((resource) => resource.resource_id === currentIndicator &&
@@ -224,230 +215,90 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     return
   }
 
-  const canUseManifest = manifesteChargerInjecte !== null || payloadChargerInjecte === null
-  let earlyManifest: Awaited<ReturnType<typeof chargerManifeste>> | null = null
-  let earlyProfileCatalogue: SemanticResourceDeclaration[] | null = null
-  if (manifesteChargerInjecte !== null && !scalaireApiAuMontage) {
-    chargementManifesteModeles.value = true
-    try { earlyManifest = await chargerManifeste() }
+  let resources: SemanticResourceDeclaration[]
+  try { resources = await chargerCatalogueRessources() }
+  catch (cause) {
+    if (sequence !== profileDiscoverySequence) return
+    profileBootstrapError.value = cause instanceof PayloadError ? cause
+      : new PayloadError('fetch', '/api/resources', 'Le catalogue sémantique est indisponible.')
+    profileDiscoveryComplete.value = true
+    profileBootstrapLoading.value = false
+    return
+  }
+  if (sequence !== profileDiscoverySequence) return
+
+  // The producer catalogue is the first authority for every indicator-page
+  // route. Presentation metadata and static/model readers are considered only
+  // after this shared classification succeeds.
+  const binding = profileCatalogueBinding(resources, currentTheme, currentIndicator)
+  if (binding.incompatible) {
+    profileMode.value = true
+    catalogueProfil.value = resources
+    profileBootstrapError.value = new PayloadError('validation', currentIndicator,
+      'La déclaration du profil ne correspond pas à la route disponible.')
+    profileDiscoveryComplete.value = true
+    profileBootstrapLoading.value = false
+    return
+  }
+
+  if (binding.declaration) {
+    let loadedMetadata: ThemeMetadata
+    try { loadedMetadata = await loadRouteThemeMetadata(currentTheme) }
     catch (cause) {
+      if (sequence !== profileDiscoverySequence) return
+      profileBootstrapError.value = cause instanceof PayloadError ? cause
+        : new PayloadError('fetch', `theme_${currentTheme}.json`, 'Les métadonnées de cette page sont indisponibles.')
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
+    if (sequence !== profileDiscoverySequence) return
+    profileMode.value = true
+    catalogueProfil.value = resources
+    metadataProfilRoute.value = loadedMetadata
+    const page = loadedMetadata.indicator_pages?.[currentIndicator]
+    const pageFamily = page?.family
+    const retainedProfileFamily = pageFamily === 'composition' || pageFamily === 'distribution' ||
+      pageFamily === 'list' || pageFamily === 'pyramid'
+    if (!page || !retainedProfileFamily) {
+      profileBootstrapError.value = new PayloadError('validation', currentIndicator,
+        'Le profil déclaré ne dispose pas d’une présentation locale prise en charge.')
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
+    declarationProfil.value = binding.declaration
+    profileDiscoveryComplete.value = true
+    profileBootstrapLoading.value = false
+    return
+  }
+
+  // The route is now confirmed not to be profile-owned. Its existing scalar,
+  // ordered-series, manifest/model, or legacy numerical path remains intact.
+  if (scalaireApiAuMontage) {
+    profileDiscoveryComplete.value = true
+    profileBootstrapLoading.value = false
+    return
+  }
+
+  const canUseManifest = manifesteChargerInjecte !== null || payloadChargerInjecte === null
+  if (canUseManifest) {
+    chargementManifesteModeles.value = true
+    try {
+      const manifest = await chargerManifeste()
+      if (sequence !== profileDiscoverySequence) return
+      routeModeleIndicateur.value = manifest.routes[currentTheme as Theme]?.includes(currentIndicator) ?? false
+    } catch (cause) {
       if (sequence !== profileDiscoverySequence) return
       erreurManifesteModeles.value = cause instanceof PayloadError
         ? cause : new PayloadError('fetch', 'modeles-lecture/manifest.json', 'Impossible de charger le manifeste des modèles.')
     } finally {
       if (sequence === profileDiscoverySequence) chargementManifesteModeles.value = false
     }
-    if (earlyManifest?.routes[currentTheme as Theme]?.includes(currentIndicator)) {
-      try {
-        const resources = await chargerCatalogueRessources()
-        const binding = profileCatalogueBinding(resources, currentTheme, currentIndicator)
-        if (binding.declaration) earlyProfileCatalogue = resources
-        else if (binding.incompatible) {
-          profileMode.value = true
-          catalogueProfil.value = resources
-          profileBootstrapError.value = new PayloadError('validation', currentIndicator,
-            'La déclaration du profil ne correspond pas à la route disponible.')
-          profileDiscoveryComplete.value = true
-          profileBootstrapLoading.value = false
-          return
-        }
-        else {
-          earlyProfileCatalogue = resources
-          routeModeleIndicateur.value = true
-        }
-      } catch {
-        // Injected manifest/read-model tests may intentionally run without an
-        // API server. The manifest path remains available for ordinary static
-        // read models when semantic ownership cannot be discovered.
-        routeModeleIndicateur.value = true
-        profileDiscoveryComplete.value = true
-        profileBootstrapLoading.value = false
-        return
-      }
-    }
-  }
-
-  let loadedMetadata: ThemeMetadata
-  try { loadedMetadata = await loadRouteThemeMetadata(currentTheme) }
-  catch (cause) {
-    if (sequence !== profileDiscoverySequence) return
-    if (payloadChargerInjecte && cause instanceof PayloadError && cause.kind === 'fetch') {
-      try {
-        const resources = await chargerCatalogueRessources()
-        const binding = profileCatalogueBinding(resources, currentTheme, currentIndicator)
-        if (binding.declaration) {
-          profileMode.value = true
-          catalogueProfil.value = resources
-          profileBootstrapError.value = cause
-          profileDiscoveryComplete.value = true
-          profileBootstrapLoading.value = false
-          return
-        }
-      } catch {
-        // The injected-loader compatibility path may not expose a semantic API.
-      }
-      if (earlyManifest?.routes[currentTheme as Theme]?.includes(currentIndicator) && earlyProfileCatalogue === null) {
-        profileMode.value = true
-        profileBootstrapError.value = new PayloadError('fetch', '/api/resources',
-          'Le catalogue des profils sémantiques est indisponible.')
-        profileDiscoveryComplete.value = true
-        profileBootstrapLoading.value = false
-        return
-      }
-      if (earlyManifest?.routes[currentTheme as Theme]?.includes(currentIndicator)) {
-        routeModeleIndicateur.value = true
-        profileDiscoveryComplete.value = true
-        profileBootstrapLoading.value = false
-        return
-      }
-      profileDiscoveryComplete.value = true
-      profileBootstrapLoading.value = false
-      const legacy = fichiersLegacy(currentTheme)
-      attendrePage.value = legacy
-      demarrerPage.value = [...legacy, 'territoires-metadata']
-      return
-    }
-    profileBootstrapError.value = cause instanceof PayloadError ? cause
-      : new PayloadError('fetch', `theme_${currentTheme}.json`, 'Les métadonnées de cette page sont indisponibles.')
-    profileDiscoveryComplete.value = true
-    profileBootstrapLoading.value = false
-    return
-  }
-  if (sequence !== profileDiscoverySequence) return
-  const page = loadedMetadata.indicator_pages?.[currentIndicator]
-  const profileMarked = metadataDeclaresProfile(loadedMetadata, currentIndicator)
-  const pageFamily = page?.family
-  const retainedProfileFamily = pageFamily === 'composition' || pageFamily === 'distribution' ||
-    pageFamily === 'list' || pageFamily === 'pyramid'
-
-  // Metadata describes presentation, not factual shape. Any retained profile
-  // presentation (and any legacy profile marker) is only a discovery candidate:
-  // the semantic catalogue decides whether this route is API-owned. Do this
-  // before consulting a static read-model manifest, which can be stale too.
-  if (retainedProfileFamily || profileMarked || earlyProfileCatalogue !== null) {
-    let loadedCatalogue: SemanticResourceDeclaration[] = earlyProfileCatalogue ?? []
-    try { if (earlyProfileCatalogue === null) loadedCatalogue = await chargerCatalogueRessources() }
-    catch (cause) {
-      if (sequence !== profileDiscoverySequence) return
-      if (profileMarked || payloadChargerInjecte === null) {
-        profileMode.value = true
-        metadataProfilRoute.value = loadedMetadata
-        profileBootstrapError.value = cause instanceof PayloadError ? cause
-          : new PayloadError('fetch', '/api/resources', 'Le catalogue des profils sémantiques est indisponible.')
-        profileDiscoveryComplete.value = true
-        profileBootstrapLoading.value = false
-        return
-      }
-      // A presentation-family candidate is not proof of API ownership. If its
-      // catalogue lookup fails, keep the incumbent route acquisition rather
-      // than breaking unrelated static composition/distribution pages.
-    }
-    if (sequence !== profileDiscoverySequence) return
-    const binding = profileCatalogueBinding(loadedCatalogue, currentTheme, currentIndicator)
-    if (binding.declaration) {
-      profileMode.value = true
-      metadataProfilRoute.value = loadedMetadata
-      catalogueProfil.value = loadedCatalogue
-      if (!page || !retainedProfileFamily) {
-        profileBootstrapError.value = new PayloadError('validation', currentIndicator,
-          'Le profil déclaré ne dispose pas d’une présentation locale prise en charge.')
-        profileDiscoveryComplete.value = true
-        profileBootstrapLoading.value = false
-        return
-      }
-      declarationProfil.value = binding.declaration
-      profileDiscoveryComplete.value = true
-      profileBootstrapLoading.value = false
-      return
-    }
-    if (profileMarked || binding.incompatible) {
-      profileMode.value = true
-      metadataProfilRoute.value = loadedMetadata
-      catalogueProfil.value = loadedCatalogue
-      profileBootstrapError.value = new PayloadError('validation', currentIndicator,
-        'La déclaration du profil ne correspond pas au catalogue sémantique disponible.')
-      profileDiscoveryComplete.value = true
-      profileBootstrapLoading.value = false
-      return
-    }
-  }
-
-  if (canUseManifest) {
-    if (earlyManifest) {
-      routeModeleIndicateur.value = earlyManifest.routes[currentTheme as Theme]?.includes(currentIndicator) ?? false
-    } else {
-      chargementManifesteModeles.value = true
-      try {
-        const manifest = await chargerManifeste()
-        if (sequence !== profileDiscoverySequence) return
-        routeModeleIndicateur.value = manifest.routes[currentTheme as Theme]?.includes(currentIndicator) ?? false
-      } catch (cause) {
-        if (sequence !== profileDiscoverySequence) return
-        erreurManifesteModeles.value = cause instanceof PayloadError
-          ? cause : new PayloadError('fetch', 'modeles-lecture/manifest.json', 'Impossible de charger le manifeste des modèles.')
-      } finally {
-        if (sequence === profileDiscoverySequence) chargementManifesteModeles.value = false
-      }
-    }
-    if (routeModeleIndicateur.value) {
-      let resources = earlyProfileCatalogue
-      if (resources === null) {
-        try { resources = await chargerCatalogueRessources() }
-        catch (cause) {
-          if (sequence !== profileDiscoverySequence) return
-          // A manifest route with no retained page metadata cannot prove that
-          // its static projection is safe to serve. Keep it retryable rather
-          // than letting an unavailable catalogue authorize stale numerics.
-          if (!page || profileMarked) {
-            profileMode.value = true
-            metadataProfilRoute.value = loadedMetadata
-            profileBootstrapError.value = cause instanceof PayloadError ? cause
-              : new PayloadError('fetch', '/api/resources', 'Le catalogue des profils sémantiques est indisponible.')
-            profileDiscoveryComplete.value = true
-            profileBootstrapLoading.value = false
-            return
-          }
-        }
-      }
-      if (resources !== null) {
-        const binding = profileCatalogueBinding(resources, currentTheme, currentIndicator)
-        if (binding.declaration) {
-          profileMode.value = true
-          metadataProfilRoute.value = loadedMetadata
-          catalogueProfil.value = resources
-          if (!page || !retainedProfileFamily) {
-            profileBootstrapError.value = new PayloadError('validation', currentIndicator,
-              'Le profil déclaré ne dispose pas d’une présentation locale prise en charge.')
-            profileDiscoveryComplete.value = true
-            profileBootstrapLoading.value = false
-            return
-          }
-          declarationProfil.value = binding.declaration
-          profileDiscoveryComplete.value = true
-          profileBootstrapLoading.value = false
-          return
-        }
-        if (profileMarked || binding.incompatible) {
-          profileMode.value = true
-          metadataProfilRoute.value = loadedMetadata
-          catalogueProfil.value = resources
-          profileBootstrapError.value = new PayloadError('validation', currentIndicator,
-            'La déclaration du profil ne correspond pas au catalogue sémantique disponible.')
-          profileDiscoveryComplete.value = true
-          profileBootstrapLoading.value = false
-          return
-        }
-      }
-      if (scalaireApiAuMontage) routeModeleIndicateur.value = false
-      profileDiscoveryComplete.value = true
-      profileBootstrapLoading.value = false
-      return
-    }
   }
 
   profileDiscoveryComplete.value = true
   profileBootstrapLoading.value = false
-  if (scalaireApiAuMontage) return
   if (!routeModeleIndicateur.value) {
     const legacy = fichiersLegacy(currentTheme)
     attendrePage.value = legacy

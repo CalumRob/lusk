@@ -121,6 +121,19 @@ def test_fixed_detail_default_response_does_not_expand_with_cohort_rank_arrays()
         if "FROM profile_comparison_territory" in sql)
 
 
+def test_fixed_detail_reconciles_peer_status_counts_with_published_group():
+    conn = DetailConnection(member_rows=[
+        ("housing_profile", "old", "", "c1", "measured", 1, 1, 2, "profile-v1", "ref-v1", True),
+        ("housing_profile", "old", "", "c2", "not_available", None, None, None,
+         "profile-v1", "ref-v1", True),
+    ])
+    with pytest.raises(HTTPException) as error:
+        main._published_profile_comparison_results(conn, [PROFILE],
+            ("density_class", "A", "commune"), "commune", ("c1", "c2"), "c1",
+            selected_fields=("median", "member_ranks"))
+    assert error.value.status_code == 503
+
+
 def test_profile_comparison_rejects_scalar_only_field_before_publication_reads():
     conn=DetailConnection()
     with pytest.raises(HTTPException) as error:

@@ -56,7 +56,7 @@ async function mountRaccordementPage(options: RaccordementPageOptions) {
       const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
       requests.push(items)
       const respond = () => nativeBatchResponse(items, (item, resource) => {
-        const data = nativeReadFixture(item, resource)
+        const data = nativeReadFixture(item, resource, { territories })
         return options.transformRead?.(item, resource, data) ?? data
       })
       return options.readBatch ? options.readBatch(items, respond) : respond()
@@ -313,7 +313,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (file === 'theme_habitat') return metadataHabitat
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => String(input) === '/api/resources'
+      ? nativeCatalogueResponse() : new Response(JSON.stringify({
       dataset_id: 'dvf_prix_m2', indicator_id: 'prix_m2', axis_kind: 'year', unit: '€/m²',
       territory: { id: '22001', type: 'commune', name: 'Commune A1' },
       points: [{ axis: '2024', observation_period: '2024', value: null, status: 'missing', provenance: [] },
@@ -335,7 +336,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } } })
     try {
       await flushPromises()
-      expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/series-datasets/dvf_prix_m2/territories/commune/22001/prix_m2?scope_level=commune&department_id=22')
+      expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/resources')
+      expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/series-datasets/dvf_prix_m2/territories/commune/22001/prix_m2?scope_level=commune&department_id=22')
       expect(wrapper.text()).toContain('525')
       expect(wrapper.text()).toContain('Prix')
     } finally { wrapper.unmount() }
@@ -351,7 +353,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       if (file === 'theme_milieux') return metadata
       throw new Error(`unexpected static read: ${file}`)
     }
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => String(input) === '/api/resources'
+      ? nativeCatalogueResponse() : new Response(JSON.stringify({
       dataset_id: 'ocsge_artif_etats', indicator_id: 'artif_par_habitant', points: [], scope_series: [],
       territory: { id: '22001', type: 'commune', name: 'Commune A1' },
     }), { status: 200 }))
@@ -366,10 +369,10 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     } } })
     try {
       await flushPromises()
-      expect(fetchMock).not.toHaveBeenCalled()
+      expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/resources')
       publishMetadata(metadataMilieux)
       await flushPromises()
-      expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
+      expect(fetchMock).toHaveBeenNthCalledWith(2, '/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
       expect(wrapper.find('[role="alert"]').exists()).toBe(false)
     } finally { wrapper.unmount() }
   })
@@ -393,7 +396,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       throw new Error(`unexpected static read: ${file}`)
     }
     let complete!: (response: Response) => void
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(() => new Promise<Response>((resolve) => { complete = resolve }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation((input) => String(input) === '/api/resources'
+      ? Promise.resolve(nativeCatalogueResponse()) : new Promise<Response>((resolve) => { complete = resolve }))
     const router = createRouter({ history: createMemoryHistory(), routes })
     await router.push('/indicateurs/milieux/artif_par_habitant?territoire=22001&niveau=commune&departement=22')
     await router.isReady()
@@ -414,7 +418,10 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       scope_series: [{ territory: { id: '22001', type: 'commune', name: 'Commune A1' }, points: [point] }],
     }), { status: 200 }))
     await flushPromises()
-    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+    expect(fetchMock).toHaveBeenNthCalledWith(1, '/api/resources')
+    expect(fetchMock).toHaveBeenNthCalledWith(2,
+      '/api/series-datasets/ocsge_artif_etats/territories/commune/22001/artif_par_habitant?scope_level=commune&department_id=22')
     expect(wrapper.text()).not.toContain('Chargement des données actualisées')
     expect(wrapper.text()).toContain('42')
     wrapper.unmount()
@@ -430,7 +437,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       throw new Error(`unexpected static read: ${file}`)
     }
     let apiAvailable=false
-    const fetchMock = vi.spyOn(globalThis,'fetch').mockImplementation(async () => {
+    const fetchMock = vi.spyOn(globalThis,'fetch').mockImplementation(async (input) => {
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
       if(!apiAvailable) throw new Error('owned API unavailable')
       return new Response(JSON.stringify({
       dataset_id:'ocsge_artif_etats',indicator_id:'artif_par_habitant',axis_kind:'declared_detail',unit:'m²/hab',
@@ -500,7 +508,8 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
     let apiCalls = 0
     let retryEnabled = false
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (input) => {
-      if (!String(input).startsWith('/api/')) return new Response('{}', { status: 404 })
+      if (String(input) === '/api/resources') return nativeCatalogueResponse()
+      if (!String(input).startsWith('/api/series-datasets/')) return new Response('{}', { status: 404 })
       apiCalls++
       if (!retryEnabled) throw new Error('offline')
       return new Response(JSON.stringify(apiRead), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -556,7 +565,7 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
       [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
     } } })
     await flushPromises()
-    expect(fetchMock).not.toHaveBeenCalled()
+    expect(fetchMock).toHaveBeenCalledExactlyOnceWith('/api/resources')
     expect(wrapper.text()).not.toContain('momentanément indisponibles')
     expect(wrapper.text()).toContain('12 ha')
     expect(wrapper.find('.vues').exists()).toBe(true)

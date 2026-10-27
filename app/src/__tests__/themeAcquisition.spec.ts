@@ -1040,7 +1040,7 @@ describe('theme acquisition cache', () => {
         required_scalar_version: 'scalar-v3' },
     } }] }
     const comparison = (scalarVersion?: string) => ({ comparison_reads: [{ resource: 'distribution_dpe', data: {
-      content_version: 'profile-v1', reference_content_version: 'territories-v1',
+      content_version: null, profile_content_version: 'profile-v1', reference_content_version: 'territories-v1',
       scalar_content_version: scalarVersion,
       result: { profile_descriptor_version: 'profile-descriptor-v1', required_scalar_version: 'scalar-v3' },
     } }] })
@@ -1048,9 +1048,19 @@ describe('theme acquisition cache', () => {
     expect(semanticPublicationsCompatible(facts, comparison())).toBe(false)
     expect(semanticPublicationsCompatible(facts, comparison('scalar-v2'))).toBe(false)
     expect(semanticPublicationsCompatible(facts, { comparison_reads: [{ resource: 'distribution_dpe', data: {
-      content_version: 'profile-v1', reference_content_version: 'territories-v1',
+      content_version: null, profile_content_version: 'profile-v1', reference_content_version: 'territories-v1',
       scalar_content_version: 'scalar-v3',
       result: { profile_descriptor_version: 'profile-descriptor-v1' },
+    } }] })).toBe(false)
+    expect(semanticPublicationsCompatible(facts, { comparison_reads: [{ resource: 'distribution_dpe', data: {
+      content_version: 'profile-v1', profile_content_version: 'profile-v1', reference_content_version: 'territories-v1',
+      scalar_content_version: 'scalar-v3',
+      result: { profile_descriptor_version: 'profile-descriptor-v1', required_scalar_version: 'scalar-v3' },
+    } }] })).toBe(true)
+    expect(semanticPublicationsCompatible(facts, { comparison_reads: [{ resource: 'distribution_dpe', data: {
+      content_version: null, profile_content_version: 'stale-profile-v0', reference_content_version: 'territories-v1',
+      scalar_content_version: 'scalar-v3',
+      result: { profile_descriptor_version: 'profile-descriptor-v1', required_scalar_version: 'scalar-v3' },
     } }] })).toBe(false)
   })
 })

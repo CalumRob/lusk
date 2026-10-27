@@ -372,6 +372,82 @@ function publishedIndicators(resource: Resource, target: Record<string, any>): R
     fact.key === resource.resource_id) ?? []
 }
 
+// Profile page fixtures use current producer clocks even when their supplied
+// test observations intentionally differ from the stale static page values.
+function profileSourceFor(resource: Resource) {
+  const metadata = metadataFor(resource.theme_id)
+  const sourceId = resource.sources[0]
+  const record = metadata.source_records?.[sourceId]
+  const clock = record?.vintages?.[0]
+  if (!sourceId || !record || !clock) throw new Error(`Missing producer source clock for profile ${resource.resource_id}`)
+  return { source_id: sourceId, name: record.publisher ?? record.dataset,
+    vintage_id: clock.id, version: String(clock.version),
+    reference_date: clock.dateReference ?? null, publication_date: clock.datePublication ?? null }
+}
+
+type NativeFixtureContext = {
+  territories?: Array<Record<string, any>>
+  facts?: Array<Record<string, any>>
+  metadata?: Record<string, any>
+  syntheticProfileComparisons?: boolean
+}
+
+function profileFixtureContract(resource: Resource, metadataOverride?: Record<string, any>) {
+  const metadata = metadataOverride ?? metadataFor(resource.theme_id) as Record<string, any>
+  const page = metadata.indicator_pages?.[resource.indicator_id] ?? {}
+  const contract = metadata.profile_contracts?.[resource.indicator_id] ?? {}
+  const comparison = page.comparison ?? {}
+  const scalarId = typeof comparison.indicator === 'string' && comparison.indicator !== resource.indicator_id
+    ? comparison.indicator : null
+  const scalar = scalarId ? catalogue.resources.find((candidate) => candidate.resource_id === scalarId) ?? null : null
+  const details = resource.axis_values?.find(([name]) => name === 'detail')?.[1] ?? []
+  const sexes = resource.axis_values?.find(([name]) => name === 'sex')?.[1] ?? []
+  const units = contract.detail_units ?? {}
+  const detailLabels = metadata.detail_labels?.[resource.resource_id] ?? comparison.labels ?? {}
+  const axes = [...details.map((key, order) => ({ name: 'detail', key, label: detailLabels[key] ?? key, order,
+    unit: units[key] ?? comparison.unit ?? page.unit ?? resource.unit })),
+  ...sexes.map((key, order) => ({ name: 'sex', key, label: key, order, unit: null }))]
+  const detail = comparison.detail ?? details[0] ?? null
+  const sex = comparison.sex ?? null
+  const descriptorVersion = `${resource.resource_id}-fixture-descriptor-v1`
+  const descriptor = {
+    indicator: resource.indicator_id, label: page.label ?? resource.label, unit: page.unit ?? resource.unit,
+    allowed_levels: resource.allowed_levels, completeness: contract.completeness ?? 'dense_complete',
+    descriptor_version: descriptorVersion,
+    denominator_semantics: contract.denominator_semantics ?? `Fixture denominator ${resource.indicator_id}`,
+    comparison_scalar: scalarId, required_scalar_version: scalar ? publicationFor(scalar) : null,
+    comparison_point: scalar ? null : { detail, sex, direction: comparison.direction ?? resource.direction,
+      unit: units[detail] ?? comparison.unit ?? page.unit ?? resource.unit }, axes,
+  }
+  return { metadata, page, contract, comparison, scalar, scalarId, descriptor, version: publicationFor(resource),
+    scalarVersion: scalar ? publicationFor(scalar) : null }
+}
+
+function profileFixtureCells(resource: Resource, member: Record<string, any>, descriptor: Record<string, any>,
+  fixtureFacts?: Array<Record<string, any>>, allowPublishedFallback = true) {
+  const identity = { kind: 'territory', type: member.type, id: member.territoire }
+  const facts = fixtureFacts
+    ? fixtureFacts.filter((candidate) => candidate.key === resource.resource_id &&
+      candidate.type === member.type && candidate.territoire === member.territoire)
+    : allowPublishedFallback ? publishedIndicators(resource, identity) : []
+  const axes = descriptor.axes as Array<{ name: string; key: string; unit: string | null; order: number }>
+  const detailAxes = axes.filter((axis) => axis.name === 'detail')
+  const sexAxes = axes.filter((axis) => axis.name === 'sex')
+  const source = profileSourceFor(resource)
+  return detailAxes.flatMap((detail) => (sexAxes.length ? sexAxes.map((axis) => axis.key) : [null]).map((sex) => {
+    const fact = facts.find((candidate) => candidate.detail === detail.key && (candidate.sex ?? null) === sex)
+    const candidateStatus = fact?.fact_status
+    const sexOrder = sex === null ? 0 : sexAxes.findIndex((axis) => axis.key === sex)
+    const identifier = [...member.territoire].reduce((sum, char) => sum + char.charCodeAt(0), 0)
+    const syntheticValue = 0.2 + ((identifier + detail.order * 13 + sexOrder * 7) % 500) / 1000
+    const status = ['measured', 'suppressed', 'unsupported', 'not_available', 'not_published'].includes(candidateStatus)
+      ? candidateStatus : fact?.value === null || (!fact && allowPublishedFallback) ? 'not_available' : 'measured'
+    return { detail: detail.key, sex, unit: detail.unit ?? resource.unit,
+      denominator_semantics: descriptor.denominator_semantics,
+      status, ...(status === 'measured' ? { value: fact?.value ?? syntheticValue } : { value: null }), sources: [source] }
+  }))
+}
+
 function readingFixture(resource: Resource, target: Record<string, any>): Record<string, any>[] {
   const themeMetadata = metadataFor(resource.theme_id)
   const group = resource.axis_values?.find(([axis]) => axis === 'groupe')?.[1]?.[0]
@@ -479,8 +555,10 @@ function syntheticMilieuxSourceBindings(target: Record<string, any>,
 }
 
 /** Return one response-shaped payload using only fields declared by the producer catalogue. */
-export function nativeReadFixture(item: Record<string, any>, resource: Resource): Record<string, any> {
+export function nativeReadFixture(item: Record<string, any>, resource: Resource,
+  context: NativeFixtureContext = {}): Record<string, any> {
   const target = item.target
+  const territoryReference = context.territories ?? territories
   const version = publicationFor(resource)
   const referenceVersion = 'semantic-reference-fixture-v1'
   const descriptorVersion = `${resource.resource_id}-fixture-descriptor-v1`
@@ -514,11 +592,102 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource)
       ? item.intent.members.map((member: { type: string; id: string }) => ({
         territory_type: member.type, territory_id: member.id,
       })) : null
-    const focal = territories.find((territory) => territory.type === target.type && territory.territoire === target.id)
+    const focal = territoryReference.find((territory) => territory.type === target.type && territory.territoire === target.id)
     const cohort = selected ?? (target.type === 'commune'
-      ? territories.filter((territory) => territory.type === 'commune' &&
+      ? territoryReference.filter((territory) => territory.type === 'commune' &&
         territory.classe_densite_code === focal?.classe_densite_code)
-      : territories.filter((territory) => territory.type === target.type))
+      : territoryReference.filter((territory) => territory.type === target.type))
+    if (isProfile) {
+      const profile = profileFixtureContract(resource, context.metadata)
+      const comparisonSelected: Array<Record<string, any>> = item.intent.kind === 'selected_comparison'
+        ? (item.intent.members as Array<{ type: string; id: string }>).map((member) =>
+          territoryReference.find((territory) => territory.type === member.type && territory.territoire === member.id))
+          .filter((member): member is Record<string, any> => member !== undefined)
+        : cohort
+      const coordinateDetail = item.coordinates?.detail?.[0] ?? profile.descriptor.comparison_point?.detail
+      const coordinateSex = item.coordinates?.sex?.[0] ?? profile.descriptor.comparison_point?.sex ?? null
+      const comparisonResource = profile.scalar ?? resource
+      const observed: Array<{ member: Record<string, any>; fact: Record<string, any> | undefined; value: number | null }> =
+        comparisonSelected.map((member, memberIndex) => {
+        const territoryTarget = { kind: 'territory', type: member.type, id: member.territoire }
+        if (profile.scalar) {
+          const matchedFacts = context.facts?.filter((candidate) => candidate.key === profile.scalarId &&
+            candidate.type === member.type && candidate.territoire === member.territoire)
+          const fact = context.facts
+            ? matchedFacts?.find((candidate) => candidate.key === profile.scalarId)
+            : context.syntheticProfileComparisons ? undefined
+              : publishedIndicators(profile.scalar, territoryTarget).find((candidate) => candidate.key === profile.scalarId)
+          const value = context.syntheticProfileComparisons && !context.facts
+            ? 0.1 + memberIndex * 0.001
+            : fact?.value === null || !fact ? null : Number(fact.value)
+          return { member, fact, value }
+        }
+        const cell = profileFixtureCells(resource, member, profile.descriptor, context.facts,
+          !context.syntheticProfileComparisons).find((candidate) =>
+          candidate.detail === coordinateDetail && candidate.sex === coordinateSex)
+        return { member, fact: cell, value: cell?.status === 'measured' ? Number(cell.value) : null }
+        })
+      const eligible = observed.filter((row) => row.value !== null)
+      const sorted = eligible.map((row) => row.value as number).sort((left, right) => left - right)
+      const direction = profile.scalar?.direction ?? profile.descriptor.comparison_point?.direction ?? resource.direction
+      const counts = new Map<number, number>()
+      for (const value of sorted) counts.set(value, (counts.get(value) ?? 0) + 1)
+      const rankByValue = new Map<number, number>()
+      let valuesBelow = 0
+      for (const value of [...counts.keys()].sort((left, right) => left - right)) {
+        const ties = counts.get(value)!
+        rankByValue.set(value, 1 + (direction === 'high'
+          ? eligible.length - valuesBelow - ties : valuesBelow))
+        valuesBelow += ties
+      }
+      const middle = Math.floor(sorted.length / 2)
+      const median = sorted.length === 0 ? null : sorted.length % 2
+        ? sorted[middle]! : (sorted[middle - 1]! + sorted[middle]!) / 2
+      const enough = eligible.length >= 2
+      const unit = profile.scalar?.unit ?? profile.descriptor.comparison_point?.unit ?? resource.unit
+      const rankFor = (value: number | null) => value === null ? null : rankByValue.get(value) ?? null
+      const tiesFor = (value: number | null) => value === null ? null : counts.get(value) ?? null
+      const focalInSelection = observed.some((row) => row.member.territoire === target.id && row.member.type === target.type)
+      const focalValue = observed.find((row) => row.member.territoire === target.id && row.member.type === target.type)?.value ?? null
+      const availableSources = eligible.flatMap((row) => {
+        return row.fact ? [profileSourceFor(comparisonResource)] : []
+      })
+      const comparisonSources = [...new Map(availableSources.map((source) => [
+        `${source.source_id}\u0000${source.vintage_id}`, source,
+      ])).values()]
+      const scalarVersion = profile.scalar ? profile.scalarVersion : null
+      const result = {
+        indicator_id: resource.indicator_id, status: enough ? 'available' : 'unavailable',
+        reason: enough ? null : 'fewer_than_two_comparable_values', unit, direction, statistic: 'median',
+        profile_descriptor_version: profile.descriptor.descriptor_version,
+        denominator_semantics: profile.descriptor.denominator_semantics,
+        focal_in_selection: focalInSelection, selected_member_count: observed.length,
+        eligible_count: eligible.length, missing_count: observed.length - eligible.length,
+        median: enough ? median : null, rank: enough && focalInSelection ? rankFor(focalValue) : null,
+        rank_size: enough && focalInSelection && rankFor(focalValue) !== null ? eligible.length : null,
+        rank_ties: enough && focalInSelection ? tiesFor(focalValue) : null,
+        member_ranks: observed.map(({ member, value }) => {
+          const rank = enough ? rankFor(value) : null
+          return { territory_id: member.territoire, rank,
+            rank_size: rank === null ? null : eligible.length, rank_ties: rank === null ? null : tiesFor(value) }
+        }), comparison_sources: comparisonSources,
+        ...(profile.scalar ? { source_facet: profile.scalarId,
+          source_facet_indicator_id: profile.scalarId,
+          source_facet_label: profile.comparison.label ?? profile.scalar.label,
+          scalar_descriptor_version: `${profile.scalarId}-fixture-descriptor-v1`,
+          required_scalar_version: scalarVersion } :
+          { source_facet: { detail: coordinateDetail, sex: coordinateSex },
+            source_facet_label: profile.descriptor.label }),
+      }
+      return { ...shared, contract: 'indicator-comparison-v1', indicator_id: resource.indicator_id,
+        shape: 'profile', content_version: null, profile_content_version: profile.version,
+        reference_content_version: referenceVersion, scalar_content_version: scalarVersion,
+        selection: selected,
+        scope: selected ? { kind: 'explicit_selection', member_count: selected.length }
+          : { kind: target.type === 'commune' ? 'density_class' : 'same_level',
+            territory_type: target.type, density_class_code: focal?.classe_densite_code ?? null,
+            member_count: cohort.length }, result }
+    }
     const shape = isProfile ? 'declared_profile' : isSeries ? 'ordered_series'
       : isCollection ? 'period_detail' : 'scalar'
     const result = { indicator_id: resource.indicator_id, status: 'unavailable', reason: 'fixture_unavailable',
@@ -623,27 +792,64 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource)
       unit: resource.unit, completeness: 'observed_sparse', availability: 'no_record', entries: [], relationships: [], summaries: [] }
   }
 
-  const facts = publishedIndicators(resource, target)
-
   if (shapes.includes('declared_profile')) {
-    const axes = (resource.axis_values ?? []).flatMap(([name, values]) => values.map((key, order) => ({
-      name, key, label: key, order, unit: resource.unit,
-    })))
-    const details = axes.filter((axis) => axis.name === 'detail')
-    const sexes = axes.filter((axis) => axis.name === 'sex')
-    const observations = facts.map((fact) => {
-        const provenance = sourceFor(resource, fact, target)
-      return { detail: fact.detail, sex: fact.sex ?? null, unit: fact.unit ?? resource.unit,
-        status: fact.value === null ? 'missing' : 'measured', value: fact.value,
-        sources: [provenance] }
-    })
-    return { ...shared, content_version: version, reference_content_version: referenceVersion,
-      descriptor: { indicator: resource.indicator_id,
-      label: resource.label, unit: resource.unit, descriptor_version: descriptorVersion,
-      comparison_scalar: null, required_scalar_version: null, denominator_semantics: 'Fixture',
-      comparison_point: { detail: details[0]?.key ?? null, sex: sexes[0]?.key ?? null,
-        direction: resource.direction, unit: resource.unit }, axes }, observations }
+    const profile = profileFixtureContract(resource, context.metadata)
+    if (target.kind === 'territory_cohort') {
+      const members = territoryReference.filter((member) => member.type === target.type &&
+        (!target.department_id || member.departement === target.department_id) &&
+        (!target.epci_id || member.epci === target.epci_id))
+      return { ...shared, shape: 'declared_profile', content_version: profile.version,
+        reference_content_version: referenceVersion, descriptor: profile.descriptor,
+        cohort: { territory_type: target.type, department_id: target.department_id ?? null,
+          epci_id: target.epci_id ?? null, member_count: members.length,
+          members: members.map((member) => ({ id: member.territoire, type: member.type, name: member.nom })),
+          reference_content_version: referenceVersion },
+        profiles: members.map((member) => ({ territory: { id: member.territoire,
+          type: member.type, name: member.nom }, cells: profileFixtureCells(resource, member, profile.descriptor, context.facts) })) }
+    }
+    if (target.kind === 'territory') {
+      const member = territoryReference.find((candidate) => candidate.type === target.type && candidate.territoire === target.id)
+      if (!member) throw new Error(`Native profile fixture has no territory ${target.type}/${target.id}`)
+      return { ...shared, shape: 'declared_profile', content_version: profile.version,
+        reference_content_version: referenceVersion, descriptor: profile.descriptor,
+        observations: profileFixtureCells(resource, member, profile.descriptor, context.facts) }
+    }
+    throw new Error(`Unsupported native profile fixture target: ${target.kind}`)
   }
+
+  if (target.kind === 'territory_cohort' && shapes.includes('scalar')) {
+    const members = territoryReference.filter((member) => member.type === target.type &&
+      (!target.department_id || member.departement === target.department_id) &&
+      (!target.epci_id || member.epci === target.epci_id))
+    const metadata = metadataFor(resource.theme_id)
+    const scalarContract = metadata.scalar_contracts?.[resource.resource_id] ?? {}
+    const descriptorVersion = `${resource.resource_id}-fixture-descriptor-v1`
+    const observations = members.map((member) => {
+      const fact = publishedIndicators(resource, { kind: 'territory', type: member.type, id: member.territoire })
+        .find((candidate) => candidate.key === resource.resource_id)
+      const status = fact && fact.value !== null ? 'measured' :
+        fact?.fact_status && ['suppressed', 'unsupported', 'not_available', 'not_published'].includes(fact.fact_status)
+          ? fact.fact_status : 'not_available'
+      return { territory: { id: member.territoire, type: member.type, name: member.nom }, status,
+        value: status === 'measured' ? fact!.value : null,
+        support_count: fact?.support_count ?? fact?.n ?? null,
+        denominator_count: fact?.denominator_count ?? null,
+        sources: [profileSourceFor(resource)] }
+    })
+    return { ...shared, shape: 'scalar', content_version: version, reference_content_version: referenceVersion,
+      descriptor: { indicator_id: resource.indicator_id, theme_id: resource.theme_id,
+        label: resource.label, unit: resource.unit, direction: resource.direction,
+        comparison_facet: resource.indicator_id, allowed_levels: resource.allowed_levels,
+        completeness: scalarContract.completeness ?? 'dense_complete',
+        denominator_semantics: scalarContract.denominator_semantics ?? `Fixture denominator ${resource.resource_id}`,
+        descriptor_version: descriptorVersion },
+      cohort: { territory_type: target.type, department_id: target.department_id ?? null,
+        epci_id: target.epci_id ?? null, member_count: members.length,
+        members: members.map((member) => ({ id: member.territoire, type: member.type, name: member.nom })),
+        reference_content_version: referenceVersion }, observations }
+  }
+
+  const facts = publishedIndicators(resource, target)
 
   if (shapes.includes('ordered_series')) {
     if (resource.resource_id === 'raccordement_courbe') {
@@ -731,6 +937,11 @@ export function nativeBatchResponse<T extends Record<string, any>>(
   const byId = new Map(catalogue.resources.map((resource) => [resource.resource_id, resource]))
   const results = items.map((item) => {
     const resource = byId.get(item.resource)
+    const profileComparisonFields = ['median', 'rank', 'rank_size', 'rank_ties', 'selected_member_count',
+      'eligible_count', 'missing_count', 'member_ranks']
+    const allowedFields = resource && resource.shapes.includes('declared_profile') &&
+      item.intent?.kind === 'selected_comparison'
+      ? new Set([...resource.fields, ...profileComparisonFields]) : new Set(resource?.fields ?? [])
     const invalidCoordinates = Boolean(resource && item.coordinates &&
       Object.entries(item.coordinates).some(([axis, values]) => {
         if (!(resource.axes ?? []).includes(axis)) return true
@@ -745,7 +956,7 @@ export function nativeBatchResponse<T extends Record<string, any>>(
           const measure = field.match(/^measures\.([a-z0-9_]+)$/)?.[1]
           return !measure || !aedarMeasureKeys.includes(measure)
         })
-        : item.fields.some((field: string) => !resource.fields.includes(field))))
+        : item.fields.some((field: string) => !allowedFields.has(field))))
     if (!resource || typeof item.id !== 'string' || !item.id ||
         !resource.target_kinds.includes(item.target?.kind) ||
         !resource.intents.includes(item.intent?.kind) ||

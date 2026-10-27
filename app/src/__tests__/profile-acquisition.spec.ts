@@ -58,17 +58,16 @@ function cohortResponse() {
 function comparisonResponse() {
   return { resource: 'mix_logements', target: { kind: 'territory', type: 'commune', id: '22001' },
     contract: 'indicator-comparison-v1', indicator_id: 'mix_logements', shape: 'profile',
-    content_version: 'comparison-c1', profile_content_version: 'profile-c1',
+    content_version: null, profile_content_version: 'profile-c1',
     reference_content_version: 'territories-r1', scalar_content_version: null,
     selection: [{ territory_type: 'commune', territory_id: '22001' },
       { territory_type: 'commune', territory_id: '22002' }],
-    scope: { kind: 'explicit_selection', territory_type: 'commune', member_count: 2 },
+    scope: { kind: 'explicit_selection', member_count: 2 },
     result: { indicator_id: 'mix_logements', status: 'available', reason: null,
       source_facet: { detail: 'principales', sex: null }, unit: '%', direction: 'high', statistic: 'median',
       profile_descriptor_version: 'profile-d1', denominator_semantics: 'logements',
       focal_in_selection: true, selected_member_count: 2, eligible_count: 2, missing_count: 0,
       median: .665, rank: 1, rank_size: 2, rank_ties: 1,
-      focal_value: .72,
       member_ranks: [
         { territory_id: '22001', rank: 1, rank_size: 2, rank_ties: 1 },
         { territory_id: '22002', rank: 2, rank_size: 2, rank_ties: 1 },
@@ -153,9 +152,14 @@ describe('l’acquisition du profil déclaré', () => {
       coordinate: { detail: 'principales', sex: null }, comparison: comparisonResponse() })
     expect(result).toMatchObject({ status: 'available', median: .665, rank: 1, rankSize: 2, rankTies: 1,
       selectedMemberCount: 2, eligibleCount: 2, missingCount: 0, unit: '%', direction: 'high',
-      facet: { detail: 'principales', sex: null } })
+      facet: { detail: 'principales', sex: null }, contentVersion: null })
     expect(result.comparisonSources[0]).toMatchObject({ sourceId: 'logements', vintageId: 'rp-2023',
       version: '2023', referenceDate: '2023-01-01', publicationDate: '2026-06-30' })
+    expect(adapterProfilComparaison({ declaration, descriptor: acquired.descriptor, identity: acquired.identity,
+      focal: { type: 'commune', id: '22001' }, memberIds: acquired.memberIds,
+      coordinate: { detail: 'principales', sex: null },
+      comparison: { ...comparisonResponse(), content_version: 'unrelated-global-token' } }))
+      .toMatchObject({ profileContentVersion: 'profile-c1', referenceContentVersion: 'territories-r1', contentVersion: null })
   })
 
   it('refuse une comparaison de profil d’une autre facette ou d’une publication différente', () => {
@@ -168,6 +172,23 @@ describe('l’acquisition du profil déclaré', () => {
       result: { ...comparisonResponse().result, source_facet: { detail: 'vacantes', sex: null } } } })).toThrow(/facette/i)
     expect(() => adapterProfilComparaison({ ...input, comparison: { ...comparisonResponse(),
       profile_content_version: 'stale-profile' } })).toThrow(/version/i)
+  })
+
+  it('refuse un intervalle de rangs à ex-aequo impossible pour une comparaison native', () => {
+    const acquired = adapterProfilDeclare({ declaration, target: { type: 'commune', department_id: '22', epci_id: null },
+      territories, cohort: cohortResponse() })
+    const input = { declaration, descriptor: acquired.descriptor, identity: acquired.identity,
+      focal: { type: 'commune' as const, id: '22001' }, memberIds: acquired.memberIds,
+      coordinate: { detail: 'principales', sex: null }, comparison: comparisonResponse() }
+    const brokenFocal = comparisonResponse()
+    brokenFocal.result.rank = 2
+    brokenFocal.result.rank_ties = 2
+    expect(() => adapterProfilComparaison({ ...input, comparison: brokenFocal })).toThrow(/rang|cohérent/i)
+
+    const brokenPeer = comparisonResponse()
+    brokenPeer.result.member_ranks[1]!.rank = 2
+    brokenPeer.result.member_ranks[1]!.rank_ties = 2
+    expect(() => adapterProfilComparaison({ ...input, comparison: brokenPeer })).toThrow(/rang individuel|incohérent/i)
   })
 
   it('lit le cohort de faits d’une seule ressource à la cible filtrée du contrat', async () => {

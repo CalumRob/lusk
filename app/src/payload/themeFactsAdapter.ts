@@ -118,7 +118,11 @@ function validerResultatComparaison(result: Row, data: Row, declaration?: Row): 
   if (result.status === 'available' && direction !== 'high' && direction !== 'low') {
     throw new Error('Direction de comparaison absente pour un résultat disponible')
   }
-  if (result.source_facet !== undefined && result.source_facet !== null && !texteNonVide(result.source_facet)) {
+  const profilePointFacet = data.shape === 'profile' && isRecord(result.source_facet) &&
+    texteNonVide(result.source_facet.detail) &&
+    (result.source_facet.sex === null || texteNonVide(result.source_facet.sex))
+  if (result.source_facet !== undefined && result.source_facet !== null &&
+      !texteNonVide(result.source_facet) && !profilePointFacet) {
     throw new Error('Facette de comparaison sémantique invalide')
   }
   if (result.status === 'available' && data.shape === 'scalar' &&
@@ -1198,7 +1202,7 @@ export function lignesAvecComparaisonApi(lignes: Indicateur[], comparison: unkno
       return (facet.detail ?? null) === (row.detail ?? null) && (facet.sex ?? null) === (row.sex ?? null)
     })
     if (!match) return row
-    validerResultatComparaison(match, {})
+    validerResultatComparaison(match, profiles.includes(match) ? { shape: 'profile' } : {})
     if (match.status !== 'available' || match.rank === null || match.rank === undefined) return row
     return { ...row, comparaisonApi: { rang: match.rank as number, taille: match.rank_size as number | null,
       portee, direction: match.direction as 'high' | 'low' } }

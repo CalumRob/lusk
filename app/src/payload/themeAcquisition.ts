@@ -519,14 +519,26 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
           typeof focal.availability !== 'string' || !focal.availability || !Array.isArray(focal.points) ||
           Object.prototype.hasOwnProperty.call(comparisonResult, 'owned_content_version')) return false
     }
-    const focalVersion = focal.content_version ?? focal.publication_id
-    const comparisonVersion = data.content_version ?? data.publication_id
-    if (typeof focalVersion !== 'string' || !focalVersion || typeof comparisonVersion !== 'string' ||
-        !comparisonVersion || focalVersion !== comparisonVersion) return false
-    if (nativeSeriesComparison && (typeof data.content_version !== 'string' ||
-        data.content_version !== focalVersion ||
-        (typeof focal.content_version === 'string' && typeof focal.publication_id === 'string' &&
-         focal.content_version !== focal.publication_id))) return false
+    const profile = shapes.includes('declared_profile')
+    if (profile) {
+      // Native profile comparisons intentionally have no global content clock:
+      // bind their independent profile/reference clocks to the acquired facts.
+      // Some legacy-shaped transports may still include an unrelated global
+      // token; validate its shape, but never use it as the dependency clock.
+      if (!(data.content_version === null || (typeof data.content_version === 'string' && data.content_version.length > 0)) ||
+          typeof focal.content_version !== 'string' || !focal.content_version ||
+          data.profile_content_version !== focal.content_version ||
+          data.reference_content_version !== focal.reference_content_version) return false
+    } else {
+      const focalVersion = focal.content_version ?? focal.publication_id
+      const comparisonVersion = data.content_version ?? data.publication_id
+      if (typeof focalVersion !== 'string' || !focalVersion || typeof comparisonVersion !== 'string' ||
+          !comparisonVersion || focalVersion !== comparisonVersion) return false
+      if (nativeSeriesComparison && (typeof data.content_version !== 'string' ||
+          data.content_version !== focalVersion ||
+          (typeof focal.content_version === 'string' && typeof focal.publication_id === 'string' &&
+           focal.content_version !== focal.publication_id))) return false
+    }
     const hasFocalReferenceVersion = typeof focal.reference_content_version === 'string' &&
       focal.reference_content_version.length > 0
     if (hasFocalReferenceVersion) {
@@ -558,7 +570,6 @@ export function semanticPublicationsCompatible(facts: ThemeResponse, comparison:
         comparisonResult.owned_content_version !== data.content_version)) return false
     const dualScalarSeries = shapes.includes('scalar') && shapes.includes('ordered_series')
     if (dualScalarSeries && !validDualScalarFacet(focal, data, resource)) return false
-    const profile = shapes.includes('declared_profile')
     if (shapes.includes('scalar') || shapes.includes('ordered_series') || shapes.includes('period_detail')) {
       if (typeof focal.descriptor_version !== 'string' || !focal.descriptor_version ||
           typeof comparisonResult !== 'object' || comparisonResult === null ||

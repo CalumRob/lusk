@@ -1,4 +1,5 @@
-import { vi } from 'vitest'
+import { beforeEach, vi } from 'vitest'
+import { nativeBatchResponse, nativeCatalogueResponse, nativeReadFixture } from './helpers/semanticApiFixtures'
 
 /**
  * The app never fetches in tests: happy-dom's real fetch tries the network
@@ -6,15 +7,21 @@ import { vi } from 'vitest'
  * hosts (AccueilView) show the error state, exactly as when /data/ is
  * unreachable. Loader specs inject their own fetchImpl and are unaffected.
  */
-vi.stubGlobal(
-  'fetch',
-  () =>
-    Promise.resolve({
+beforeEach(() => {
+  vi.stubGlobal('fetch', async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = String(input)
+    if (url === '/api/resources') return nativeCatalogueResponse()
+    if (url === '/api/resources/read-batch') {
+      const body = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      return nativeBatchResponse(body.items, nativeReadFixture)
+    }
+    return {
       ok: false,
       status: 404,
       json: () => Promise.resolve({}),
-    } as Response),
-)
+    } as Response
+  })
+})
 
 /**
  * ECharts renders to canvas or SVG — happy-dom has no canvas 2D implementation.

@@ -467,6 +467,8 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
             rows = member_map.get(key, {})
             if set(rows) != set(members) or len(rows) != len(members):
                 raise HTTPException(503, "Published profile comparison peer ranks are incomplete")
+            peer_eligible = 0
+            peer_missing = 0
             ranks = []
             for member_id in members:
                 peer_status, peer_rank, peer_ties, peer_size, peer_pv, peer_rv, peer_valid = rows[member_id]
@@ -474,10 +476,14 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
                         or peer_pv != marker[1] or peer_rv != marker[2] or not peer_valid
                         or (peer_status == "measured" and peer_size != eligible)):
                     raise HTTPException(503, "Published profile comparison peer rank is invalid")
+                peer_eligible += peer_status == "measured"
+                peer_missing += peer_status != "measured"
                 ranks.append({"territory_id": member_id,
                     **({"rank": peer_rank, "rank_size": peer_size, "rank_ties": peer_ties}
                        if enough and peer_status == "measured" else
-                       {"rank": None, "rank_size": None, "rank_ties": None})})
+                        {"rank": None, "rank_size": None, "rank_ties": None})})
+            if peer_eligible != eligible or peer_missing != missing:
+                raise HTTPException(503, "Published profile comparison peer statuses do not match group counts")
             output[profile["indicator"]]["member_ranks"] = ranks
     return output
 
@@ -809,8 +815,9 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
         CASE WHEN %s THEN rank ELSE NULL::integer END,
         CASE WHEN %s THEN tie_count ELSE NULL::integer END,
         CASE WHEN %s THEN rank_size ELSE NULL::integer END,
-        ((status='measured' AND value IS NOT NULL AND rank IS NOT NULL AND tie_count IS NOT NULL AND rank_size IS NOT NULL
-            AND tie_count>=1 AND rank_size>=1 AND rank>=1 AND rank<=rank_size AND tie_count<=rank_size)
+         ((status='measured' AND value IS NOT NULL AND rank IS NOT NULL AND tie_count IS NOT NULL AND rank_size IS NOT NULL
+             AND tie_count>=1 AND rank_size>=1 AND rank>=1 AND rank<=rank_size AND tie_count<=rank_size
+             AND rank+tie_count<=rank_size+1)
          OR (status IN ('suppressed','unsupported','not_available','not_published')
              AND value IS NULL AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)) AS result_valid
         FROM scalar_comparison_territory
@@ -822,9 +829,9 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
     if include_member_ranks and "member_ranks" in selected:
         peer_territories = _execute_comparison_publication_read(conn, """SELECT indicator_id,territory_id,status,
             rank,tie_count,rank_size,
-            ((status='measured' AND value IS NOT NULL AND rank IS NOT NULL AND tie_count IS NOT NULL
-                AND rank_size IS NOT NULL AND tie_count>=1 AND rank_size>=1 AND rank>=1
-                AND rank<=rank_size AND tie_count<=rank_size) OR
+             ((status='measured' AND value IS NOT NULL AND rank IS NOT NULL AND tie_count IS NOT NULL
+                 AND rank_size IS NOT NULL AND tie_count>=1 AND rank_size>=1 AND rank>=1
+                 AND rank<=rank_size AND tie_count<=rank_size AND rank+tie_count<=rank_size+1) OR
              (status IN ('suppressed','unsupported','not_available','not_published') AND value IS NULL
                 AND rank IS NULL AND tie_count IS NULL AND rank_size IS NULL)) AS result_valid
             FROM scalar_comparison_territory
@@ -881,16 +888,22 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
             peer_map = peers_by_indicator.get(indicator_id, {})
             if set(peer_map) != set(members) or len(peer_map) != len(members):
                 raise HTTPException(503, "Published scalar comparison peer ranks are incomplete")
+            peer_eligible = 0
+            peer_missing = 0
             ranks = []
             for member_id in members:
                 peer_status, peer_rank, peer_ties, peer_size, peer_valid = peer_map[member_id]
                 if (peer_status not in ("measured", "suppressed", "unsupported", "not_available", "not_published")
                         or not peer_valid or (peer_status == "measured" and peer_size != eligible_count)):
                     raise HTTPException(503, "Published scalar comparison peer rank is invalid")
+                peer_eligible += peer_status == "measured"
+                peer_missing += peer_status != "measured"
                 ranks.append({"territory_id": member_id,
                     **({"rank": peer_rank, "rank_size": peer_size, "rank_ties": peer_ties}
                        if eligible_count >= 2 and peer_status == "measured" else
-                       {"rank": None, "rank_size": None, "rank_ties": None})})
+                        {"rank": None, "rank_size": None, "rank_ties": None})})
+            if peer_eligible != eligible_count or peer_missing != missing_count:
+                raise HTTPException(503, "Published scalar comparison peer statuses do not match group counts")
             results[indicator_id]["member_ranks"] = ranks
     return results
 

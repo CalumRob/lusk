@@ -39,6 +39,20 @@ const sources = () => [{
 }]
 
 describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#627)', () => {
+  it('accepts the native detail/sex facet identity on a declared-profile comparison', () => {
+    const declaration = nativeResources('habitat').find((resource) => resource.resource_id === 'mix_logements')!
+    const target = { kind: 'territory', type: 'commune', id: '22001' }
+    const data = nativeReadFixture({ target, intent: { kind: 'fixed_comparison', context: 'default' } }, declaration)
+    const response = { theme_id: 'habitat', comparison_reads: [{ resource: declaration.resource_id,
+      declaration, shapes: declaration.shapes, data }] }
+    expect(() => validerReponseComparaisonTheme('habitat', response, undefined,
+      { type: 'commune', id: '22001' })).not.toThrow()
+    const invalid = structuredClone(response)
+    ;(invalid.comparison_reads[0]!.data.result as Record<string, unknown>).source_facet = { detail: 'principales', sex: 42 }
+    expect(() => validerReponseComparaisonTheme('habitat', invalid, undefined,
+      { type: 'commune', id: '22001' })).toThrow(/facette/i)
+  })
+
   it('attache uniquement les rangs disponibles de la comparaison API sans modifier les valeurs focales', () => {
     const row = { territoire: '35238', type: 'commune' as const, theme: 'habitat' as const, key: 'part_passoires', detail: null,
       vintage_source: '', vintage_version: '', vintage_date_reference: null, vintage_date_publication: null,
@@ -779,6 +793,10 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       value: 0.4, unit: '%', rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null }
     const comparison = { results: [], profile_comparisons: [{ indicator: 'structure_age', facet: { detail: 'ancien', sex: 'M' }, status: 'available', direction: 'high', rank: 1, rank_size: 10 }] }
     expect(lignesAvecComparaisonApi([row], comparison, null)[0]?.comparaisonApi).toBeUndefined()
+    const matching = { results: [], profile_comparisons: [{ indicator: 'structure_age', facet: { detail: 'ancien', sex: 'F' },
+      source_facet: { detail: 'ancien', sex: 'F' }, unit: '%', status: 'available', direction: 'high', rank: 1, rank_size: 10 }] }
+    expect(lignesAvecComparaisonApi([row], matching, 'Bretagne')[0]?.comparaisonApi)
+      .toMatchObject({ rang: 1, taille: 10, portee: 'Bretagne', direction: 'high' })
   })
   it('projette les adhésions ancrées et les subventions depuis leurs collections/séries sans inventer absence', () => {
     // Trimmed served capture: E:/Temp/opencode/lusk-live-captured/programmes-facts.json;

@@ -38,11 +38,11 @@ def test_dpe_profile_without_publication_is_unavailable_not_an_unknown_route(can
         pool.close()
 
 
-def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env, monkeypatch):
+def test_dpe_profile_read_is_focal_only_and_pins_dependency_snapshot(canonical_db_env, monkeypatch):
     import psycopg
     from fastapi.testclient import TestClient
     from psycopg_pool import ConnectionPool
-    from api import main
+    from api import main, semantic_resource_reader
 
     with psycopg.connect(canonical_db_env['publish_dsn']) as conn:
         conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,epci_id,density_class_code,density_class_label)
@@ -116,13 +116,13 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env,
                     yield CountedConnection(conn)
 
         main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(CountedPool())
-        original_focal_profiles = main.focal_profiles
+        original_focal_profiles = semantic_resource_reader.focal_profiles
         wrote_concurrently = False
 
         def mutate_after_profile_read(conn, *args, **kwargs):
             nonlocal wrote_concurrently
             result = original_focal_profiles(conn, *args, **kwargs)
-            if not wrote_concurrently and kwargs.get("theme_id") == "habitat":
+            if not wrote_concurrently and kwargs.get("indicator_id") == "distribution_dpe":
                 wrote_concurrently = True
                 with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
                     with writer.transaction():
@@ -132,153 +132,54 @@ def test_dpe_theme_read_is_focal_only_and_pins_scalar_snapshot(canonical_db_env,
                         writer.execute("UPDATE table_publication SET content_version='profiles-v2' WHERE table_name='declared_profile'")
             return result
 
-        monkeypatch.setattr(main, "focal_profiles", mutate_after_profile_read)
+        monkeypatch.setattr(semantic_resource_reader, "focal_profiles", mutate_after_profile_read)
         with TestClient(main.app) as client:
-            url = '/api/territories/commune/29001/themes/habitat/facts'
-            response = client.get(url)
+            request = {"resource": "distribution_dpe",
+                       "target": {"kind": "territory", "type": "commune", "id": "29001"},
+                       "fields": ["value"], "intent": {"kind": "facts"}}
+            response = client.post('/api/resources/read', json=request)
             assert response.status_code == 200, response.text
             body = response.json()
             assert counts == {"connections": 1, "transactions": 1}
             assert wrote_concurrently
-            assert body['content_version'] == 'scalar-v1'
-            assert body['profile_content_version'] == 'profiles-v1'
-            assert next(row for row in body['indicators'] if row['indicator_id'] == 'part_passoires')['value'] == 0.3
-            assert body['default_comparison']['results'][0]['median'] == 0.2
+            assert body['content_version'] == 'profiles-v1'
+            assert body['descriptor']['required_scalar_version'] == 'scalar-v1'
+            assert body['observations'][0]['value'] == 0.1
+            assert '29002' not in response.text
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
                 with writer.transaction():
                     writer.execute("UPDATE scalar_observation SET value=0.3 WHERE indicator_id='part_passoires' AND territory_id='29001'")
                     writer.execute("UPDATE table_publication SET content_version='scalar-v1' WHERE table_name='scalar_observation'")
                     writer.execute("UPDATE profile_descriptor SET required_scalar_version='scalar-v1' WHERE indicator_id='distribution_dpe'")
                     writer.execute("UPDATE table_publication SET content_version='profiles-v1' WHERE table_name='declared_profile'")
-            monkeypatch.setattr(main, "focal_profiles", original_focal_profiles)
+            monkeypatch.setattr(semantic_resource_reader, "focal_profiles", original_focal_profiles)
             counts.update(connections=0, transactions=0)
             main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-            response = client.get(url)
+            response = client.post('/api/resources/read', json=request)
             assert response.status_code == 200, response.text
             body = response.json()
-            assert body['profile_content_version'] == 'profiles-v1'
-            profile = [row for row in body['indicators'] if row['indicator_id'] == 'distribution_dpe']
-            profile_metadata = next(row for row in body['indicator_metadata']
-                                    if row['indicator_id'] == 'distribution_dpe')
-            assert [(row['dimensions']['detail'], row['dimensions'].get('sex')) for row in profile] == [(detail, None) for detail in 'ABCDEFG']
+            assert body['content_version'] == 'profiles-v1'
+            profile = body['observations']
+            profile_metadata = body['descriptor']
+            assert [(row['detail'], row.get('sex')) for row in profile] == [(detail, None) for detail in 'ABCDEFG']
             assert profile[6]['value'] == 0.4
             assert profile[0]['sources'][0]['version'] == '2024'
             assert [(axis['name'], axis['key'], axis['order']) for axis in profile_metadata['axes']] == [
                 ('detail', detail, order) for order, detail in enumerate('ABCDEFG')]
             assert profile_metadata['comparison_scalar'] == 'part_passoires'
             assert all('comparison' not in row for row in profile) and '29002' not in response.text
-            assert body['default_comparison']['results'][0]['median'] == 0.2
-            dpe_comparison = body['default_comparison']['profile_comparisons'][0]
-            assert dpe_comparison['indicator'] == 'distribution_dpe'
-            assert dpe_comparison['facet'] == 'part_passoires'
-            assert dpe_comparison['median'] == 0.2
-            assert dpe_comparison['eligible_count'] == 2
-            assert len(dpe_comparison['comparison_sources']) == 1
-            legacy = client.get('/api/territories/commune/29001/profiles/distribution_dpe')
-            assert legacy.status_code == 200, legacy.text
-            assert legacy.json()['comparison']['indicator'] == 'part_passoires'
-            assert legacy.json()['comparison']['values'][0]['value'] == 0.3
-            # The stable indicator-name URL resolves the producer-declared shape;
-            # callers do not need a separate profile URL or a key allowlist.
-            counts.update(connections=0, transactions=0)
-            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(CountedPool())
-            named_profile = client.get('/api/territories/commune/29001/indicators/distribution_dpe')
-            assert named_profile.status_code == 200, named_profile.text
-            assert counts == {"connections": 1, "transactions": 1}
-            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-            assert named_profile.json()['indicator'] == 'distribution_dpe'
-            assert [cell['detail'] for cell in named_profile.json()['cells']] == list('ABCDEFG')
-            assert '29002' not in named_profile.text
-            assert named_profile.json()['default_comparison']['results'][0]['median'] == 0.2
-            counts.update(connections=0, transactions=0)
-            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(CountedPool())
-            named_scalar = client.get('/api/territories/commune/29001/indicators/part_passoires')
-            assert named_scalar.status_code == 200, named_scalar.text
-            assert counts == {"connections": 1, "transactions": 1}
-            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-            assert named_scalar.json()['value'] == 0.3
-            assert '29002' not in named_scalar.text
-            assert named_scalar.json()['indicator_id'] == 'part_passoires'
-            counts.update(connections=0, transactions=0)
-            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(CountedPool())
-            scalar_comparison = client.post(
-                '/api/territories/commune/29001/indicators/part_passoires/comparison')
-            assert scalar_comparison.status_code == 200, scalar_comparison.text
-            assert counts == {"connections": 1, "transactions": 1}
-            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-            assert scalar_comparison.json()['result']['median'] == 0.2
-            assert scalar_comparison.json()['result']['unit'] == '%'
-            assert scalar_comparison.json()['result']['comparison_sources'][0]['source_id'] == 'dpe'
-            counts.update(connections=0, transactions=0)
-            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(CountedPool())
-            profile_comparison = client.post(
-                '/api/territories/commune/29001/indicators/distribution_dpe/comparison',
-                json={'selection': [{'territory_type':'commune','territory_id':'29002'}]})
-            assert profile_comparison.status_code == 200, profile_comparison.text
-            assert counts == {"connections": 1, "transactions": 1}
-            main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
-            assert profile_comparison.json()['result']['source_facet_indicator_id'] == 'part_passoires'
-            assert profile_comparison.json()['result']['required_scalar_version'] == 'scalar-v1'
-            comparison_url = '/api/territories/commune/29001/themes/comparison'
-            selection = {'theme_id': 'habitat', 'selection': [{'territory_type': 'commune', 'territory_id': '29002'}]}
-            compared = client.post(comparison_url, json=selection)
-            assert compared.status_code == 200
-            assert compared.json()['profile_content_version'] == 'profiles-v1'
-            profile_result = compared.json()['profile_comparisons'][0]
-            assert profile_result['indicator'] == 'distribution_dpe'
-            assert profile_result['facet'] == 'part_passoires'
-            assert profile_result['status'] == 'unavailable'
-            assert profile_result['reason'] == 'fewer_than_two_comparable_values'
-            assert profile_result['median'] is None
-            assert profile_result['eligible_count'] == 1
-            assert profile_result['focal_in_selection'] is False
-            assert profile_result['focal_value'] == 0.3
-            assert profile_result['rank'] is None
-            assert '29001' not in compared.text
-            assert compared.json()['results'][0]['median'] == 0.1
-            mixed_group = client.post(comparison_url, json={'theme_id':'habitat','selection':[
-                {'territory_type':'epci','territory_id':'E1'},
-                {'territory_type':'commune','territory_id':'29002'}]})
-            assert mixed_group.status_code == 200, mixed_group.text
-            mixed_profile_result = mixed_group.json()['profile_comparisons'][0]
-            assert mixed_profile_result['eligible_count'] == 2
-            assert mixed_profile_result['selected_member_count'] == 2
-            assert mixed_profile_result['median'] == 0.2
-
-            # A scalar-backed profile comparison consumes the scalar comparison
-            # publication only. An unrelated declared detail profile in the
-            # same theme must neither require the profile comparison marker nor
-            # appear in this indicator-scoped reader.
+            assert profile_metadata['required_scalar_version'] == 'scalar-v1'
             with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
-                writer.execute("""INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,
-                    completeness,descriptor_version,comparison_detail,comparison_direction)
-                    VALUES ('unrelated_detail_fixture','habitat','Unrelated detail','u',ARRAY['commune'],
-                    'dense_complete','detail-v1','value','high')""")
-                assert writer.execute("SELECT count(*) FROM profile_comparison_publication").fetchone()[0] == 0
-            dpe_single = client.post(
-                '/api/territories/commune/29001/indicators/distribution_dpe/comparison')
-            dpe_batch = client.post('/api/read-batch', json={'items': [{
-                'id': 'dpe-comparison', 'resource': 'indicator_comparison',
-                'territory_type': 'commune', 'territory_id': '29001',
-                'indicator_id': 'distribution_dpe'}]})
-            assert dpe_single.status_code == dpe_batch.status_code == 200, (dpe_single.text, dpe_batch.text)
-            assert dpe_batch.json()['results'][0]['data'] == dpe_single.json()
-            with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as conn:
-                conn.execute("UPDATE table_publication SET content_version='scalar-v2' WHERE table_name='scalar_observation'")
-            assert client.get(url).status_code == 503
-            assert client.get('/api/territories/commune/29001/profiles/distribution_dpe').status_code == 503
-            assert client.post(comparison_url, json=selection).status_code == 503
-            assert client.post('/api/territories/commune/29001/indicators/distribution_dpe/comparison').status_code == 503
-            with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as conn:
-                conn.execute("UPDATE table_publication SET content_version='scalar-v1' WHERE table_name='scalar_observation'")
-                conn.execute("DELETE FROM profile_observation_source WHERE territory_id='29001' AND detail_key='A'")
-            assert client.get(url).status_code == 503
-            assert client.get('/api/territories/commune/29001/profiles/distribution_dpe').status_code == 503
-            assert client.post('/api/territories/commune/29001/indicators/distribution_dpe/comparison').status_code == 503
-            with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as conn:
-                conn.execute("INSERT INTO profile_observation_source VALUES ('distribution_dpe','29001','A','','dpe','v1')")
-                conn.execute("DELETE FROM profile_observation WHERE territory_id='29001' AND detail_key='G'")
-            assert client.get(url).status_code == 503
+                writer.execute("UPDATE table_publication SET content_version='scalar-v2' WHERE table_name='scalar_observation'")
+            assert client.post('/api/resources/read', json=request).status_code == 503
+            with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
+                writer.execute("UPDATE table_publication SET content_version='scalar-v1' WHERE table_name='scalar_observation'")
+                writer.execute("DELETE FROM profile_observation_source WHERE territory_id='29001' AND detail_key='A'")
+            assert client.post('/api/resources/read', json=request).status_code == 503
+            with psycopg.connect(canonical_db_env['publish_dsn'], autocommit=True) as writer:
+                writer.execute("INSERT INTO profile_observation_source VALUES ('distribution_dpe','29001','A','','dpe','v1')")
+                writer.execute("DELETE FROM profile_observation WHERE territory_id='29001' AND detail_key='G'")
+            assert client.post('/api/resources/read', json=request).status_code == 503
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)
@@ -933,3 +834,78 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
         else:
             main.app.dependency_overrides[main.get_repository] = previous
         pool.close()
+
+
+@pytest.mark.parametrize("corruption", ["status_counts", "tie_span"])
+def test_dpe_published_peer_rows_must_match_group_counts_and_rank_span(
+    canonical_db_env, tmp_path, monkeypatch, corruption,
+):
+    """Malformed, committed peer rows fail closed through the public read route."""
+    import psycopg
+    from fastapi.testclient import TestClient
+
+    original_post = TestClient.post
+    exercised = False
+
+    def inspect_post(client, url, *args, **kwargs):
+        nonlocal exercised
+        response = original_post(client, url, *args, **kwargs)
+        request = kwargs.get("json", {})
+        if (not exercised and str(url) == "/api/resources/read" and
+                request.get("resource") == "distribution_dpe" and
+                "member_ranks" in request.get("fields", []) and response.status_code == 200):
+            with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as writer:
+                assert writer.execute("SELECT current_database(),current_user").fetchone() == (
+                    "lusk_it_contract", "lusk_it_contract_pub")
+                original_peer = writer.execute("""SELECT status,value,rank,tie_count,rank_size
+                    FROM scalar_comparison_territory
+                    WHERE territory_id='29002' AND indicator_id='part_passoires'
+                      AND comparison_context='epci' AND group_id='E1'
+                      AND territory_type='commune'""").fetchone()
+                assert original_peer == ("measured", .1, 1, 1, 2)
+                if corruption == "status_counts":
+                    changed = writer.execute("""UPDATE scalar_comparison_territory SET status='not_available',
+                        value=NULL,rank=NULL,tie_count=NULL,rank_size=NULL
+                        WHERE territory_id='29002' AND indicator_id='part_passoires'
+                          AND comparison_context='epci' AND group_id='E1'
+                          AND territory_type='commune'""")
+                else:
+                    changed = writer.execute("""UPDATE scalar_comparison_territory SET rank=2,tie_count=2,rank_size=2
+                        WHERE territory_id='29002' AND indicator_id='part_passoires'
+                          AND comparison_context='epci' AND group_id='E1'
+                          AND territory_type='commune'""")
+                assert changed.rowcount == 1
+                if corruption == "status_counts":
+                    assert writer.execute("""SELECT status,value,rank,tie_count,rank_size
+                        FROM scalar_comparison_territory WHERE territory_id='29002'
+                          AND indicator_id='part_passoires' AND comparison_context='epci'
+                          AND group_id='E1' AND territory_type='commune'""").fetchone() == (
+                              "not_available", None, None, None, None)
+                else:
+                    assert writer.execute("""SELECT status,value,rank,tie_count,rank_size
+                        FROM scalar_comparison_territory WHERE territory_id='29002'
+                          AND indicator_id='part_passoires' AND comparison_context='epci'
+                          AND group_id='E1' AND territory_type='commune'""").fetchone() == (
+                              "measured", .1, 2, 2, 2)
+                with psycopg.connect(canonical_db_env["read_dsn"], autocommit=True) as reader:
+                    observed_peer = reader.execute("""SELECT status,value,rank,tie_count,rank_size
+                        FROM scalar_comparison_territory WHERE territory_id='29002'
+                          AND indicator_id='part_passoires' AND comparison_context='epci'
+                          AND group_id='E1' AND territory_type='commune'""").fetchone()
+                    assert observed_peer != original_peer
+            inconsistent = original_post(client, url, json=request)
+            try:
+                assert inconsistent.status_code == 503, inconsistent.text
+            finally:
+                with psycopg.connect(canonical_db_env["publish_dsn"], autocommit=True) as writer:
+                    writer.execute("""UPDATE scalar_comparison_territory
+                        SET status=%s,value=%s,rank=%s,tie_count=%s,rank_size=%s
+                        WHERE territory_id='29002' AND indicator_id='part_passoires'
+                          AND comparison_context='epci' AND group_id='E1'
+                          AND territory_type='commune'""", original_peer)
+            exercised = True
+        return response
+
+    monkeypatch.setattr(TestClient, "post", inspect_post)
+    test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, tmp_path)
+    assert exercised, "the captured native DPE selected-comparison request was not exercised"

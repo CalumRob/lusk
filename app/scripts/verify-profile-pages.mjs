@@ -202,8 +202,9 @@ function createApiHarness(specs, territories) {
     const rank = !focalInSelection ? null : 1 + rankedMembers.filter(({ value }) =>
       direction === 'high' ? value > focalValue : value < focalValue).length
     const rankTies = !focalInSelection ? null : rankedMembers.filter(({ value }) => value === focalValue).length
-    const result = { indicator_id: item.resource, status: values.length >= 2 ? 'available' : 'unavailable',
-      reason: values.length >= 2 ? null : 'fewer_than_two_comparable_values',
+    const enough = values.length >= 2
+    const result = { indicator_id: item.resource, status: enough ? 'available' : 'unavailable',
+      reason: enough ? null : 'fewer_than_two_comparable_values',
       source_facet: linkedScalar || spec.scalar ? spec.scalar : { detail, sex }, unit,
       direction,
       statistic: 'median', ...(linkedScalar ? { descriptor_version: `scalar-descriptor-${item.resource}-v1` }
@@ -211,25 +212,25 @@ function createApiHarness(specs, territories) {
       denominator_semantics: descriptorFor(spec).denominator_semantics,
       focal_in_selection: focalInSelection,
       selected_member_count: selectedMembers.length, eligible_count: selectedMembers.length, missing_count: 0,
-      median: values.length >= 2 ? median : null, rank,
-      rank_size: rank === null ? null : selectedMembers.length, rank_ties: rankTies,
+      median: enough ? median : null, rank: enough ? rank : null,
+      rank_size: enough && rank !== null ? selectedMembers.length : null, rank_ties: enough ? rankTies : null,
       member_ranks: rankedMembers.map(({ territory_id, value }) => ({ territory_id,
-        rank: 1 + rankedMembers.filter(({ value: candidate }) => direction === 'high' ? candidate > value : candidate < value).length,
-        rank_size: selectedMembers.length,
-        rank_ties: rankedMembers.filter(({ value: candidate }) => candidate === value).length })),
+        rank: !enough ? null : 1 + rankedMembers.filter(({ value: candidate }) => direction === 'high' ? candidate > value : candidate < value).length,
+        rank_size: !enough ? null : selectedMembers.length,
+        rank_ties: !enough ? null : rankedMembers.filter(({ value: candidate }) => candidate === value).length })),
       comparison_sources: fixtureSources(spec.page.sources[0]) }
     if (!linkedScalar && spec.scalar) Object.assign(result, {
       source_facet_indicator_id: spec.scalar, source_facet_label: `API label ${spec.scalar}`,
       scalar_descriptor_version: `scalar-descriptor-${spec.scalar}-v1`, required_scalar_version: 'scalar-content-v1',
     })
     return { resource: item.resource, target: item.target, contract: 'indicator-comparison-v1',
-      indicator_id: item.resource, shape: linkedScalar ? 'scalar' : 'profile',
-      content_version: linkedScalar ? 'scalar-content-v1' : `profile-content-${item.resource}-v1`,
+       indicator_id: item.resource, shape: linkedScalar ? 'scalar' : 'profile',
+       content_version: linkedScalar ? 'scalar-content-v1' : null,
       ...(!linkedScalar ? { profile_content_version: `profile-content-${item.resource}-v1` } : {}),
       reference_content_version: 'reference-api-v1',
-      scalar_content_version: !linkedScalar && spec.scalar ? 'scalar-content-v1' : null,
-      selection: selectedMembers.map((member) => ({ territory_type: member.type, territory_id: member.id })),
-      scope: { kind: 'explicit_selection', territory_type: item.target.type, member_count: selectedMembers.length }, result }
+       scalar_content_version: !linkedScalar && spec.scalar ? 'scalar-content-v1' : null,
+       selection: selectedMembers.map((member) => ({ territory_type: member.type, territory_id: member.id })),
+       scope: { kind: 'explicit_selection', member_count: selectedMembers.length }, result }
   }
 
   return {

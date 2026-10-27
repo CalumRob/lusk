@@ -69,7 +69,9 @@ describe('Production Mobilité — shell performance seam', () => {
 
     await flushPromises()
 
-    expect(factsSpy).toHaveBeenCalledTimes(1)
+    // The initial incomplete shell and the completed API facts each materialize
+    // the display model once; neither may receive a reactive payload.
+    expect(factsSpy).toHaveBeenCalledTimes(2)
     expect(factsSpy.mock.calls.every(([facts]) => !isReactive(facts))).toBe(true)
     expect(wrapper.find('.fiche-en-tete-surface').exists()).toBe(true)
     expect(wrapper.find('.fiche--theme-mobilite').exists()).toBe(true)

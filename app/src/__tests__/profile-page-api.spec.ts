@@ -27,6 +27,8 @@ type ProfileSpec = {
 const themeNames = ['demographie', 'habitat', 'mobilite'] as const
 const metadataByTheme = Object.fromEntries(themeNames.map((theme) => [theme,
   JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data', `theme_${theme}.json`), 'utf8')) as ThemeMetadata & JsonRecord]))
+const currentReadModelManifestRoutes = JSON.parse(readFileSync(join(process.cwd(), '..', 'public', 'data',
+  'modeles-lecture', 'manifest.json'), 'utf8')).routes as Record<string, string[]>
 
 function profilesFromProducerMetadata(): ProfileSpec[] {
   const profiles: ProfileSpec[] = []
@@ -271,18 +273,20 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
         const direction = spec.scalar ? spec.page.comparison?.direction ?? spec.page.direction
           : spec.page.comparison?.direction ?? spec.page.direction
         const eligibleCount = memberValues.length
+        const enough = eligibleCount >= 2
         const rank = focalValue === null || !selectedMembers.some((member) => member.id === target.id)
           ? null : 1 + memberValues.filter(({ value }) => direction === 'high' ? value > focalValue : value < focalValue).length
         const rankTies = rank === null ? null : memberValues.filter(({ value }) => value === focalValue).length
         const memberRanks = selectedMembers.map((member) => {
           const value = memberValues.find((candidate) => candidate.id === member.id)?.value
           return { territory_id: member.id,
-            rank: value === undefined ? null : 1 + memberValues.filter(({ value: candidate }) => direction === 'high' ? candidate > value : candidate < value).length,
-            rank_size: value === undefined ? null : eligibleCount,
-            rank_ties: value === undefined ? null : memberValues.filter(({ value: candidate }) => candidate === value).length }
+            rank: !enough || value === undefined ? null : 1 + memberValues.filter(({ value: candidate }) => direction === 'high' ? candidate > value : candidate < value).length,
+            rank_size: !enough || value === undefined ? null : eligibleCount,
+            rank_ties: !enough || value === undefined ? null : memberValues.filter(({ value: candidate }) => candidate === value).length }
         })
         const result: JsonRecord = {
-          indicator_id: resource, status: 'available', reason: null,
+          indicator_id: resource, status: enough ? 'available' : 'unavailable',
+          reason: enough ? null : 'fewer_than_two_comparable_values',
           source_facet: sourceFacet, unit: spec.scalar ? spec.page.comparison?.unit : selectedUnit,
           direction,
           statistic: 'median',
@@ -290,8 +294,9 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
           denominator_semantics: profileDescriptor(spec).denominator_semantics,
           focal_in_selection: selectedMembers.some((member) => member.id === target.id),
           selected_member_count: selectedMembers.length, eligible_count: eligibleCount, missing_count: selectedMembers.length - eligibleCount,
-          median: eligibleCount >= 2 ? median : null, focal_value: focalValue, rank,
-          rank_size: rank === null ? null : eligibleCount, rank_ties: rankTies, member_ranks: memberRanks,
+          median: enough ? median : null, rank: enough ? rank : null,
+          rank_size: enough && rank !== null ? eligibleCount : null,
+          rank_ties: enough ? rankTies : null, member_ranks: memberRanks,
           comparison_sources: [sourceInfo(spec.page.sources[0]!)],
         }
         if (spec.scalar) {
@@ -302,12 +307,12 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
         }
         const data: JsonRecord = { resource, target,
           contract: 'indicator-comparison-v1', indicator_id: resource, shape: 'profile',
-          content_version: `comparison-content-${resource}-v1`,
+          content_version: null,
           profile_content_version: `profile-content-${resource}-v1`,
           reference_content_version: 'reference-api-v1',
           scalar_content_version: spec.scalar ? 'scalar-content-v1' : null,
           selection: selectedMembers.map((member) => ({ territory_type: member.type, territory_id: member.id })),
-          scope: { kind: 'explicit_selection', territory_type: target.type, member_count: selectedMembers.length },
+          scope: { kind: 'explicit_selection', member_count: selectedMembers.length },
           result }
         return responseEnvelope(item, data)
       })
@@ -639,7 +644,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     wrapper.unmount()
   })
 
-  it('refuse le manifeste statique quand famille et marqueur éditoriaux manquent mais que l’API déclare un profil', async () => {
+  it('découvre le profil avant le manifeste courant si famille et marqueur éditoriaux manquent', async () => {
     const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
     const saved = spec.metadata.profile_contracts
     const savedPage = spec.metadata.indicator_pages?.[spec.indicator]
@@ -648,7 +653,7 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     const transport = createTransport()
     try {
       const mounted = await mountPage(spec.theme, spec.indicator, transport,
-        'territoire=22001&niveau=commune', { manifestRoutes: { habitat: ['mix_logements'] } })
+        'territoire=22001&niveau=commune', { manifestRoutes: currentReadModelManifestRoutes })
       await flushPromises()
       expect(transport.calls.some(({ url }) => url === '/api/resources')).toBe(true)
       expect(transport.profileFactsCalls).toHaveLength(0)

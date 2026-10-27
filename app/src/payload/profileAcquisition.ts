@@ -72,7 +72,7 @@ export interface ProfileComparison {
   facet: { detail: string; sex: string | null } | string
   comparisonSources: Array<{ sourceId: string; name: string; vintageId: string; version: string;
     referenceDate: string | null; publicationDate: string | null }>
-  contentVersion: string
+  contentVersion: null
   profileContentVersion: string
   referenceContentVersion: string
   scalarContentVersion: string | null
@@ -520,12 +520,12 @@ export function adapterProfilComparaison(input: {
   const raw = input.comparison
   if (!isRecord(raw) || raw.resource !== declaration.resource_id ||
       raw.contract !== 'indicator-comparison-v1' || raw.indicator_id !== declaration.indicator_id ||
-      raw.shape !== 'profile' || !isNonEmptyText(raw.content_version) ||
+      raw.shape !== 'profile' || !(raw.content_version === null || isNonEmptyText(raw.content_version)) ||
       raw.profile_content_version !== identity.contentVersion ||
       raw.reference_content_version !== identity.referenceContentVersion ||
       !isRecord(raw.target) || raw.target.kind !== 'territory' || raw.target.type !== focal.type ||
       raw.target.id !== focal.id || !isRecord(raw.scope) || raw.scope.kind !== 'explicit_selection' ||
-      raw.scope.territory_type !== focal.type || raw.scope.member_count !== memberIds.length) {
+      raw.scope.member_count !== memberIds.length) {
     return fail('La ressource ou les versions de la comparaison du profil ne correspondent pas aux faits acquis.')
   }
   const selected = selectionIdentity(raw.selection)
@@ -574,7 +574,8 @@ export function adapterProfilComparaison(input: {
     sourceDeclaration = scalarDeclaration
   } else {
     const point = descriptor.comparison_point
-    if (!coordinate || !point || !descriptor.axes.some((axis) => axis.name === 'detail' && axis.key === coordinate.detail) ||
+    if (raw.scalar_content_version !== null || !coordinate || !point ||
+        !descriptor.axes.some((axis) => axis.name === 'detail' && axis.key === coordinate.detail) ||
         (descriptor.axes.some((axis) => axis.name === 'sex')
           ? !descriptor.axes.some((axis) => axis.name === 'sex' && axis.key === coordinate.sex)
           : coordinate.sex !== null) ||
@@ -601,10 +602,12 @@ export function adapterProfilComparaison(input: {
   const available = result.status === 'available'
   if (result.missing_count !== undefined && result.missing_count !== memberIds.length - (result.eligible_count as number) ||
       (available ? !isFinite(median) || (result.eligible_count as number) < 2 : median !== null) ||
-      (rank === null ? rankSize !== null || rankTies !== null
-        : !Number.isSafeInteger(rank) || !Number.isSafeInteger(rankSize) || !Number.isSafeInteger(rankTies) ||
-          (rank as number) < 1 || (rank as number) > (rankSize as number) ||
-          rankSize !== result.eligible_count || (rankTies as number) < 1 || (rankTies as number) > (rankSize as number))) {
+       (rank === null ? rankSize !== null || rankTies !== null
+         : !Number.isSafeInteger(rank) || !Number.isSafeInteger(rankSize) || !Number.isSafeInteger(rankTies) ||
+           (rank as number) < 1 || (rank as number) > (rankSize as number) ||
+           rankSize !== result.eligible_count || (rankTies as number) < 1 ||
+           (rankTies as number) > (rankSize as number) ||
+           (rank as number) + (rankTies as number) > (rankSize as number) + 1)) {
     return fail('La médiane ou le rang de comparaison du profil est incohérent.')
   }
   if (!Array.isArray(result.member_ranks)) return fail('Les rangs des membres du cohort sont absents de la comparaison native.')
@@ -615,9 +618,10 @@ export function adapterProfilComparaison(input: {
         !(candidate.rank_ties === null || Number.isSafeInteger(candidate.rank_ties)) ||
         (candidate.rank === null
           ? candidate.rank_size !== null || candidate.rank_ties !== null
-          : (candidate.rank as number) < 1 || candidate.rank_size !== result.eligible_count ||
-            (candidate.rank_ties as number) < 1 || (candidate.rank as number) > (candidate.rank_size as number) ||
-            (candidate.rank_ties as number) > (candidate.rank_size as number))) {
+           : (candidate.rank as number) < 1 || candidate.rank_size !== result.eligible_count ||
+             (candidate.rank_ties as number) < 1 || (candidate.rank as number) > (candidate.rank_size as number) ||
+             (candidate.rank_ties as number) > (candidate.rank_size as number) ||
+             (candidate.rank as number) + (candidate.rank_ties as number) > (candidate.rank_size as number) + 1)) {
       return fail('Un rang individuel de comparaison est mal formé ou incohérent avec les effectifs.')
     }
     return { territoryId: candidate.territory_id, rank: candidate.rank as number | null,
@@ -648,7 +652,7 @@ export function adapterProfilComparaison(input: {
     direction,
     facet: typeof facet === 'string' ? facet : { detail: pointFacet, sex: facet.sex },
     comparisonSources: sources,
-    contentVersion: raw.content_version,
+    contentVersion: null,
     profileContentVersion: raw.profile_content_version,
     referenceContentVersion: raw.reference_content_version,
     scalarContentVersion: raw.scalar_content_version === null || raw.scalar_content_version === undefined

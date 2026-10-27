@@ -74,6 +74,13 @@ PowerShell: `$env:VITE_THEME_ACQUISITION_API='0'` before running a command).
   series reader also enables `raccordement_courbe` through the default-on
   `VITE_THEME_ACQUISITION_API` switch. This is inherited client behavior, not
   support for its retired endpoint.
+- Every canonical `/indicateurs/:theme/:indicator` route first discovers its
+  producer-owned resource classification through `/api/resources`. A fresh
+  discovery outage is retryable for all indicator pages, including pages whose
+  successful non-profile classification keeps an existing static reader. Page
+  metadata or the read-model manifest cannot select a reader during an outage.
+  After successful classification, non-profile scalar, series, model, and legacy
+  numeric readers keep their existing modes and factual semantics.
 - All retained declared-profile Page d’indicateur resources use the shared
   semantic profile reader without an opt-in switch. They remain API-only even
   when the independent scalar or theme-acquisition switches are unset or set
