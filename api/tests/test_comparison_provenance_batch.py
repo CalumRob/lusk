@@ -106,7 +106,7 @@ def test_profile_comparison_sources_are_distinct_and_batched_by_profile():
     assert "profile_observation_source os" in detail_query
     assert "p.comparison_detail" in detail_query
     assert external_params == (["external_profile"], "commune", ["29001", "29002"])
-    assert detail_params == (["detail_profile"], "commune", ["29001", "29002"])
+    assert detail_params == (None, None, ["detail_profile"], "commune", ["29001", "29002"])
 
 
 def test_published_comparison_lineage_reads_only_the_resolved_group_and_facet():

@@ -320,6 +320,8 @@ def test_declared_profile_postgres_api_contract(installation):
     created = False
     pool = None
     previous = main.app.dependency_overrides.get(main.get_repository)
+    reader_provider = main.get_semantic_resource_reader
+    previous_reader = main.app.dependency_overrides.get(reader_provider)
     try:
         with psycopg.connect(publisher_dsn, autocommit=True) as conn:
             conn.execute(f'CREATE SCHEMA "{schema}"')
@@ -369,20 +371,20 @@ def test_declared_profile_postgres_api_contract(installation):
                     ('density_class','D1','commune','habitat_fixture',%s,.6,'measured',1,1,2)""", (territory, peer))
             conn.execute("COMMIT")
             profile_insert = """INSERT INTO profile_descriptor(indicator_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction) VALUES
-                ('structure_age','Structure par âge','%',ARRAY['commune'],'dense_complete','fixture-v1','15-29','F','high')"""
+                    ('structure_age','Structure par âge','%',ARRAY['commune'],'dense_complete','fixture-v1','<15','F','high')"""
             if installation == 'fresh':
                 profile_insert = """INSERT INTO profile_descriptor(indicator_id,theme_id,label,unit,allowed_levels,completeness,descriptor_version,comparison_detail,comparison_sex,comparison_direction) VALUES
-                    ('structure_age','demographie','Structure par âge','%',ARRAY['commune'],'dense_complete','fixture-v1','15-29','F','high')"""
+                        ('structure_age','demographie','Structure par âge','%',ARRAY['commune'],'dense_complete','fixture-v1','<15','F','high')"""
             conn.execute(profile_insert)
             conn.execute("""INSERT INTO profile_axis(indicator_id,axis_name,axis_key,label,ordinal) VALUES
-                ('structure_age','detail','15-29','15 à 29 ans',0),
-                ('structure_age','detail','0-14','Moins de 15 ans',1),
+                ('structure_age','detail','<15','Moins de 15 ans',0),
+                ('structure_age','detail','15-24','15 à 24 ans',1),
                 ('structure_age','sex','F','Femmes',0),('structure_age','sex','M','Hommes',1)""")
             conn.execute("INSERT INTO source_dataset VALUES ('age_detail','INSEE fixture')")
             conn.execute("INSERT INTO source_vintage VALUES ('age_detail','v1','2023','2023-01-01',NULL)")
             conn.execute("INSERT INTO profile_descriptor_source VALUES ('structure_age','age_detail')")
             for tid, vals in ((territory, (.2,.3,.4,.5)), (peer, (.6,.7,.8,.9))):
-                for detail, sex, value in zip(('15-29','15-29','0-14','0-14'), ('F','M','F','M'), vals):
+                for detail, sex, value in zip(('<15','<15','15-24','15-24'), ('F','M','F','M'), vals):
                     conn.execute("INSERT INTO profile_observation(indicator_id,territory_id,territory_type,detail_key,sex_key,value,status) VALUES ('structure_age',%s,'commune',%s,%s,%s,'measured')", (tid,detail,sex,value))
                     conn.execute("INSERT INTO profile_observation_source VALUES ('structure_age',%s,%s,%s,'age_detail','v1')", (tid,detail,sex))
             conn.execute("INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version) VALUES ('declared_profile','profile-v1',8,'ref-v1')")
@@ -421,17 +423,17 @@ def test_declared_profile_postgres_api_contract(installation):
                     (tid,))
             conn.execute("""INSERT INTO profile_observation(indicator_id,territory_id,territory_type,detail_key,
                 sex_key,sex_axis_name,value,status) VALUES
-                ('structure_age',%s,'commune','15-29','F','sex',NULL,'not_available'),
-                ('structure_age',%s,'commune','15-29','M','sex',NULL,'not_available'),
-                ('structure_age',%s,'commune','0-14','F','sex',NULL,'not_available'),
-                ('structure_age',%s,'commune','0-14','M','sex',NULL,'not_available'),
+                    ('structure_age',%s,'commune','<15','F','sex',NULL,'not_available'),
+                    ('structure_age',%s,'commune','<15','M','sex',NULL,'not_available'),
+                    ('structure_age',%s,'commune','15-24','F','sex',NULL,'not_available'),
+                    ('structure_age',%s,'commune','15-24','M','sex',NULL,'not_available'),
                 ('one_axis_fixture',%s,'commune','length','',NULL,NULL,'not_available')""",
                 (territory + 'n', territory + 'n', territory + 'n', territory + 'n', territory + 'n'))
             conn.execute("""INSERT INTO profile_observation_source VALUES
-                ('structure_age',%s,'15-29','F','age_detail','v1'),
-                ('structure_age',%s,'15-29','M','age_detail','v1'),
-                ('structure_age',%s,'0-14','F','age_detail','v1'),
-                ('structure_age',%s,'0-14','M','age_detail','v1'),
+                    ('structure_age',%s,'<15','F','age_detail','v1'),
+                    ('structure_age',%s,'<15','M','age_detail','v1'),
+                    ('structure_age',%s,'15-24','F','age_detail','v1'),
+                    ('structure_age',%s,'15-24','M','age_detail','v1'),
                 ('one_axis_fixture',%s,'length','','one_axis_source','v1')""",
                 (territory + 'n', territory + 'n', territory + 'n', territory + 'n', territory + 'n'))
             conn.execute("UPDATE table_publication SET row_count=row_count+7 WHERE table_name='declared_profile'")
@@ -440,22 +442,22 @@ def test_declared_profile_postgres_api_contract(installation):
                 conn.execute("""INSERT INTO profile_comparison_group(comparison_context,group_id,territory_type,
                     indicator_id,detail_key,sex_key,statistic,median,member_count,eligible_count,missing_count,
                     lineage_source_count,profile_content_version,reference_content_version) VALUES
-                    ('density_class','D1','commune','structure_age','15-29','F','median',.4,2,2,0,0,'profile-v1','ref-v1'),
+                        ('density_class','D1','commune','structure_age','<15','F','median',.4,2,2,0,0,'profile-v1','ref-v1'),
                     ('density_class','D1','commune','one_axis_fixture','length','','median',.9,2,2,0,0,'profile-v1','ref-v1'),
-                    ('epci','E1','commune','structure_age','15-29','F','median',.4,3,2,1,0,'profile-v1','ref-v1'),
+                        ('epci','E1','commune','structure_age','<15','F','median',.4,3,2,1,0,'profile-v1','ref-v1'),
                     ('epci','E1','commune','one_axis_fixture','length','','median',.9,3,2,1,0,'profile-v1','ref-v1')""")
                 conn.execute("""INSERT INTO profile_comparison_territory(comparison_context,group_id,territory_type,
                     indicator_id,detail_key,sex_key,territory_id,value,status,rank,tie_count,rank_size,
                     profile_content_version,reference_content_version) VALUES
-                    ('density_class','D1','commune','structure_age','15-29','F',%s,.2,'measured',2,1,2,'profile-v1','ref-v1'),
-                    ('density_class','D1','commune','structure_age','15-29','F',%s,.6,'measured',1,1,2,'profile-v1','ref-v1'),
+                        ('density_class','D1','commune','structure_age','<15','F',%s,.2,'measured',2,1,2,'profile-v1','ref-v1'),
+                        ('density_class','D1','commune','structure_age','<15','F',%s,.6,'measured',1,1,2,'profile-v1','ref-v1'),
                     ('density_class','D1','commune','one_axis_fixture','length','',%s,.9,'measured',1,2,2,'profile-v1','ref-v1'),
                     ('density_class','D1','commune','one_axis_fixture','length','',%s,.9,'measured',1,2,2,'profile-v1','ref-v1'),
-                    ('epci','E1','commune','structure_age','15-29','F',%s,.2,'measured',2,1,2,'profile-v1','ref-v1'),
-                    ('epci','E1','commune','structure_age','15-29','F',%s,.6,'measured',1,1,2,'profile-v1','ref-v1'),
+                        ('epci','E1','commune','structure_age','<15','F',%s,.2,'measured',2,1,2,'profile-v1','ref-v1'),
+                        ('epci','E1','commune','structure_age','<15','F',%s,.6,'measured',1,1,2,'profile-v1','ref-v1'),
                     ('epci','E1','commune','one_axis_fixture','length','',%s,.9,'measured',1,2,2,'profile-v1','ref-v1'),
                     ('epci','E1','commune','one_axis_fixture','length','',%s,.9,'measured',1,2,2,'profile-v1','ref-v1'),
-                    ('epci','E1','commune','structure_age','15-29','F',%s,NULL,'not_available',NULL,NULL,NULL,'profile-v1','ref-v1'),
+                        ('epci','E1','commune','structure_age','<15','F',%s,NULL,'not_available',NULL,NULL,NULL,'profile-v1','ref-v1'),
                     ('epci','E1','commune','one_axis_fixture','length','',%s,NULL,'not_available',NULL,NULL,NULL,'profile-v1','ref-v1')""",
                     (territory, peer, territory, peer, territory, peer, territory, peer, territory + 'n', territory + 'n'))
                 conn.execute("""INSERT INTO profile_comparison_publication(singleton,content_version,
@@ -484,31 +486,45 @@ def test_declared_profile_postgres_api_contract(installation):
             assert len(semantic_data["observations"]) == 4
             assert all("value" in observation and "status" in observation
                        for observation in semantic_data["observations"])
-            original_preflight = main._semantic_resource_preflight
             changed_during_preflight = False
 
-            def concurrent_update_preflight(connection, item, catalogue=None):
-                nonlocal changed_during_preflight
-                estimate = original_preflight(connection, item, catalogue)
-                if not changed_during_preflight:
-                    with psycopg.connect(publisher_dsn) as writer:
-                        writer.execute(f'SET search_path TO "{schema}"')
-                        writer.execute("UPDATE profile_observation SET value=.9 WHERE territory_id=%s",
-                                       (territory,))
-                    changed_during_preflight = True
-                return estimate
+            def concurrent_reader_provider():
+                reader = reader_provider()
+                original_preflight = reader.preflight
 
-            main._semantic_resource_preflight = concurrent_update_preflight
+                def concurrent_update_preflight(connection, item, catalogue=None, *, work_budget=200_000):
+                    nonlocal changed_during_preflight
+                    estimate = original_preflight(connection, item, catalogue, work_budget=work_budget)
+                    if item.resource == "structure_age" and not changed_during_preflight:
+                        with psycopg.connect(publisher_dsn) as writer:
+                            writer.execute(f'SET search_path TO "{schema}"')
+                            writer.execute("UPDATE profile_observation SET value=.9 WHERE territory_id=%s",
+                                           (territory,))
+                        changed_during_preflight = True
+                    return estimate
+
+                reader.preflight = concurrent_update_preflight
+                return reader
+
+            main.app.dependency_overrides[reader_provider] = concurrent_reader_provider
             try:
                 snapshot_batch = client.post("/api/resources/read-batch", json={"items": [
                     {"id": "snapshot-a", **semantic_item},
                     {"id": "snapshot-b", **semantic_item},
                 ]})
             finally:
-                main._semantic_resource_preflight = original_preflight
+                if previous_reader is None:
+                    main.app.dependency_overrides.pop(reader_provider, None)
+                else:
+                    main.app.dependency_overrides[reader_provider] = previous_reader
                 with psycopg.connect(publisher_dsn) as writer:
                     writer.execute(f'SET search_path TO "{schema}"')
-                    writer.execute("UPDATE profile_observation SET value=.2 WHERE territory_id=%s",
+                    writer.execute("""UPDATE profile_observation SET value=CASE
+                        WHEN detail_key='<15' AND sex_key='F' THEN .2
+                        WHEN detail_key='<15' AND sex_key='M' THEN .3
+                        WHEN detail_key='15-24' AND sex_key='F' THEN .4
+                        WHEN detail_key='15-24' AND sex_key='M' THEN .5
+                        END WHERE indicator_id='structure_age' AND territory_id=%s""",
                                    (territory,))
             assert snapshot_batch.status_code == 200, snapshot_batch.text
             snapshot_values = [observation["value"]
@@ -546,6 +562,59 @@ def test_declared_profile_postgres_api_contract(installation):
             assert selected_comparison.json()["selection"] == [
                 {"territory_type": "commune", "territory_id": peer},
             ]
+            # A selected profile facet is an actual coordinate selection, not
+            # a filter applied to the descriptor's published default point.
+            # The fixture deliberately makes this cell differ from <15 × F.
+            selected_cell_item = {
+                **selected_comparison_item,
+                "coordinates": {"detail": ["15-24"], "sex": ["M"]},
+                "intent": {"kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": territory},
+                    {"type": "commune", "id": peer},
+                ]},
+            }
+            with psycopg.connect(publisher_dsn) as witness:
+                witness.execute(f'SET search_path TO "{schema}"')
+                marker_before = witness.execute("""SELECT p.content_version,p.profile_content_version,
+                    p.reference_content_version,p.group_row_count,p.territory_row_count,
+                    d.content_version,t.content_version FROM profile_comparison_publication p
+                    JOIN table_publication d ON d.table_name='declared_profile'
+                    JOIN table_publication t ON t.table_name='territory_reference'
+                    WHERE p.singleton""").fetchone()
+            selected_cell = client.post("/api/resources/read", json=selected_cell_item)
+            assert selected_cell.status_code == 200, selected_cell.text
+            selected_result = selected_cell.json()["result"]
+            assert selected_result["status"] == "available"
+            assert selected_result["source_facet"] == {"detail": "15-24", "sex": "M"}
+            assert selected_result["unit"] == "%"
+            assert selected_result["direction"] == "high"
+            assert selected_result["median"] == pytest.approx(.7)
+            assert selected_result["rank"] == 2
+            assert selected_result["rank_size"] == 2
+            assert selected_result["rank_ties"] == 1
+            assert selected_result["eligible_count"] == 2
+            assert selected_result["missing_count"] == 0
+            assert selected_result["comparison_sources"] == [{
+                "source_id": "age_detail", "name": "INSEE fixture", "vintage_id": "v1",
+                "version": "2023", "reference_date": "2023-01-01", "publication_date": None,
+            }]
+            multiple_coordinates = client.post("/api/resources/read", json={
+                **selected_cell_item, "coordinates": {"detail": ["<15", "15-24"], "sex": ["M"]},
+            })
+            assert multiple_coordinates.status_code == 422
+            incomplete_coordinates = client.post("/api/resources/read", json={
+                **selected_cell_item, "coordinates": {"detail": ["15-24"]},
+            })
+            assert incomplete_coordinates.status_code == 422
+            with psycopg.connect(publisher_dsn) as witness:
+                witness.execute(f'SET search_path TO "{schema}"')
+                marker_after = witness.execute("""SELECT p.content_version,p.profile_content_version,
+                    p.reference_content_version,p.group_row_count,p.territory_row_count,
+                    d.content_version,t.content_version FROM profile_comparison_publication p
+                    JOIN table_publication d ON d.table_name='declared_profile'
+                    JOIN table_publication t ON t.table_name='territory_reference'
+                    WHERE p.singleton""").fetchone()
+            assert marker_after == marker_before
     finally:
         if previous is None:
             main.app.dependency_overrides.pop(main.get_repository, None)

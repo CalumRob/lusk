@@ -286,6 +286,12 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 axes = ("period", "detail")
             elif collection.get("kind") == "anchored_membership":
                 axes = ("membership",)
+            axis_values = _axis_values(metadata, indicator_id, page_descriptor, shapes, parent_indicator)
+            if "declared_profile" in shapes:
+                # Declared profile axes come from the published profile contract
+                # (or the pyramid dimensions), not only from the optional
+                # pyramid-specific page decoration.
+                axes = tuple(dict.fromkeys((*axes, *(axis for axis, _values in axis_values))))
             comparison_declared = (
                 bool(page_descriptor.get("comparison"))
                 or bool((metadata.get("scalar_contracts") or {}).get(indicator_id, {}).get(
@@ -314,13 +320,12 @@ def discover_indicator_resources(metadata_directory: str | Path,
                 sources=tuple(page_descriptor.get("sources", (source_id,))),
                 shapes=shapes,
                 axes=axes,
-                axis_values=_axis_values(metadata, indicator_id, page_descriptor, shapes, parent_indicator),
+                axis_values=axis_values,
                 target_kinds=tuple(target_kinds),
                 target_ids=((str((metadata.get("owned_series_routes") or {})
                                  .get(parent_indicator, {}).get("reference_id")),)
                             if parent_indicator is not None else ()),
-                dynamic_axes=tuple(axis for axis, values in _axis_values(
-                    metadata, indicator_id, page_descriptor, shapes, parent_indicator)
+                dynamic_axes=tuple(axis for axis, values in axis_values
                     if not values or "ordered_series" in shapes or "declared_profile" in shapes),
                 fields=tuple(dict.fromkeys(
                     field for shape in shapes for field in _FIELDS_BY_SHAPE.get(shape, ()))),

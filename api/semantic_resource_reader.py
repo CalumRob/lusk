@@ -44,6 +44,20 @@ class SemanticResourceReader:
         return [field for field in item.fields
                 if field in {"value", "support_count", "denominator_count"}]
 
+    @staticmethod
+    def _profile_comparison_coordinates(item, resource):
+        """Resolve one complete profile cell for a coordinate-aware comparison."""
+        if ("declared_profile" not in resource.shapes or not item.coordinates
+                or item.intent.kind not in {"fixed_comparison", "selected_comparison"}):
+            return None
+        axes = {axis for axis, _values in resource.axis_values}
+        if not axes:
+            axes = set(resource.axes)
+        if set(item.coordinates) != axes or any(len(values) != 1
+                                                for values in item.coordinates.values()):
+            raise HTTPException(422, "Profile comparison requires one value for every declared coordinate axis")
+        return {axis: values[0] for axis, values in item.coordinates.items()}
+
     def _coordinate_values(self, conn, item, resource):
         coordinates = item.coordinates or {}
         domains = {axis: set(values) for axis, values in resource.axis_values}
@@ -92,6 +106,7 @@ class SemanticResourceReader:
                   *, work_budget: int = 200_000) -> int:
         catalogue = catalogue or default_resource_catalogue()
         resource = catalogue.resources_by_id[item.resource]
+        profile_coordinates = self._profile_comparison_coordinates(item, resource)
         if resource.resource_kind in {"indicator", "typed_reading"}:
             self._coordinate_values(conn, item, resource)
         dual_scalar_series = (self._has_dual_scalar_series(resource)
@@ -175,7 +190,8 @@ class SemanticResourceReader:
             estimate = self._indicator_comparison_preflight(
                 conn, item.target.type, item.target.id, item.resource, selection, fields,
                 include_scalar_facet=dual_scalar_series,
-                scalar_facet_theme_id=resource.theme_id if dual_scalar_series else None)
+                scalar_facet_theme_id=resource.theme_id if dual_scalar_series else None,
+                profile_coordinates=profile_coordinates)
             resource = catalogue.resources_by_id[item.resource]
             members = ([member_id for _, member_id in selection] if selection else
                        list(estimate.get("members", ())) if isinstance(estimate, dict) else [])
@@ -329,7 +345,8 @@ class SemanticResourceReader:
                 include_scalar_facet=(self._has_dual_scalar_series(resource)
                                       and item.target.kind == "territory"),
                 scalar_facet_theme_id=(resource.theme_id if self._has_dual_scalar_series(resource)
-                                       and item.target.kind == "territory" else None))
+                                       and item.target.kind == "territory" else None),
+                profile_coordinates=self._profile_comparison_coordinates(item, resource))
             if item.coordinates:
                 data = self._filter_coordinates(data, item.coordinates, resource)
             return {"resource": item.resource, "target": item.target.model_dump(), **data}
@@ -634,11 +651,26 @@ class SemanticResourceReader:
         if not rows_found and isinstance(data, dict):
             result = data.get("result")
             if isinstance(result, dict) and result.get("source_facet") is not None:
-                axis = resource.axes[0] if resource.axes else "axis"
-                values = coordinates.get(axis)
-                if values is not None:
+                source_facet = result["source_facet"]
+                values = None
+                if isinstance(source_facet, dict):
+                    matches = all(str(source_facet.get(axis)) in set(values)
+                                  for axis, values in coordinates.items())
+                else:
+                    if "declared_profile" in getattr(resource, "shapes", ()):
+                        # A profile may declare a distinct linked scalar
+                        # comparison (for example the DPE signature). Its
+                        # result is not a comparison of the selected profile bin.
+                        rows_found = True
+                        matches = True
+                    else:
+                        axis = resource.axes[0] if resource.axes else "axis"
+                        values = coordinates.get(axis)
+                        matches = values is not None and str(source_facet) in set(values)
+                if (isinstance(source_facet, dict) or values is not None
+                        or "declared_profile" in getattr(resource, "shapes", ())):
                     rows_found = True
-                    if str(result["source_facet"]) not in set(values):
+                    if not matches:
                         for field in ("median", "mean", "rank", "rank_size", "rank_ties",
                                       "focal_value", "mean_curve"):
                             result.pop(field, None)

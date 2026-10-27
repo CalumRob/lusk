@@ -1,5 +1,6 @@
 import json
 import shutil
+from collections import Counter
 from pathlib import Path
 
 import pytest
@@ -106,6 +107,39 @@ def test_discovery_preserves_multiple_producer_declared_shapes_and_axes():
     assert resources["subventions_annuelles"].shapes == ("ordered_series",)
     assert "fixed_comparison" in resources["subventions_par_domaine"].intents
     assert "selected_comparison" in resources["subventions_annuelles"].intents
+
+
+def test_discovery_exposes_every_retained_profile_page_and_its_declared_axes():
+    catalogue = discover_indicator_resources(METADATA)
+    resources = {resource.resource_id: resource for resource in catalogue.resources
+                 if "declared_profile" in resource.shapes}
+    expected = {}
+    families = Counter()
+    for path in METADATA.glob("theme_*.json"):
+        metadata = json.loads(path.read_text(encoding="utf-8"))
+        profile_ids = set(metadata.get("profile_contracts", {}))
+        profile_ids.update(
+            indicator for indicator, page in (metadata.get("indicator_pages") or {}).items()
+            if (page.get("pyramid") or {}).get("dimensions")
+        )
+        for indicator in profile_ids:
+            page = metadata["indicator_pages"][indicator]
+            expected[indicator] = (metadata["theme"], page["family"])
+            families[page["family"]] += 1
+
+    assert set(resources) == set(expected)
+    assert len(resources) == 10
+    assert families == Counter({"composition": 6, "list": 2, "distribution": 1, "pyramid": 1})
+    for indicator, (theme, _family) in expected.items():
+        resource = resources[indicator]
+        assert resource.theme_id == theme
+        assert resource.axes == tuple(axis for axis, _values in resource.axis_values)
+        assert resource.axes
+        assert all(resource.axis_values)
+        public = next(entry for entry in catalogue.discovery_payload()["resources"]
+                      if entry["resource_id"] == indicator)
+        assert public["axes"] == resource.axes
+        assert public["axis_values"] == resource.axis_values
 
 
 def test_cohort_capability_is_derived_from_supported_fact_families():

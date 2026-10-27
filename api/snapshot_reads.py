@@ -289,7 +289,8 @@ def _execute_comparison_publication_read(conn, query, params=None):
         raise
 
 
-def _selected_profile_comparison_sources(conn, *, external, details, cohort_type, members):
+def _selected_profile_comparison_sources(conn, *, external, details, cohort_type, members,
+                                         detail=None, sex=None):
     """Fetch distinct provenance for profile comparison facets, not every cell."""
     external_sources = []
     if external and members:
@@ -315,8 +316,9 @@ def _selected_profile_comparison_sources(conn, *, external, details, cohort_type
                       sv.version,sv.reference_date,sv.publication_date
                FROM profile_descriptor p
                JOIN profile_observation o
-                 ON o.indicator_id=p.indicator_id AND o.detail_key=p.comparison_detail
-                  AND o.sex_key=COALESCE(p.comparison_sex,'')
+                  ON o.indicator_id=p.indicator_id
+                   AND o.detail_key=COALESCE(%s,p.comparison_detail)
+                   AND o.sex_key=COALESCE(%s,COALESCE(p.comparison_sex,''))
                JOIN profile_observation_source os
                  ON os.indicator_id=o.indicator_id AND os.territory_id=o.territory_id
                   AND os.detail_key=o.detail_key AND os.sex_key=o.sex_key
@@ -325,7 +327,7 @@ def _selected_profile_comparison_sources(conn, *, external, details, cohort_type
                WHERE p.indicator_id=ANY(%s) AND o.territory_type=%s
                  AND o.territory_id=ANY(%s)
                ORDER BY p.indicator_id,os.source_id,os.vintage_id""",
-            (list(details), cohort_type, list(members)),
+             (detail, sex, list(details), cohort_type, list(members)),
         ).fetchall()
     return (_comparison_sources_by_indicator(external_sources),
             _comparison_sources_by_indicator(detail_sources))
@@ -429,14 +431,27 @@ def _published_profile_comparison_results(conn, profiles, fixed_context, cohort_
 
 
 def _profile_comparison_results(conn, profiles, members, cohort_type, territory_id, fixed_context=None,
-                                selected_fields=None):
+                                selected_fields=None, profile_coordinates=None):
     """Compare only declared profile facets, using one batch query per facet grain."""
     external = [p for p in profiles if p.get("comparison_scalar")]
     details = [p for p in profiles if not p.get("comparison_scalar")]
+    if profile_coordinates and details:
+        if len(details) != 1:
+            raise HTTPException(503, "Coordinate-selected profile comparison is ambiguous")
+        profile = details[0]
+        default_point = profile.get("comparison_point") or {}
+        details = [{**profile, "comparison_point": {
+            "detail": profile_coordinates["detail"],
+            "sex": profile_coordinates.get("sex"),
+            "direction": default_point.get("direction"),
+        }}]
     profile_fields = (None if selected_fields is None else
         tuple(field for field in selected_fields if field not in {"mean", "mean_curve"}))
     internal_profile_fields = (None if profile_fields is None else
         tuple(dict.fromkeys((*profile_fields,"eligible_count"))))
+    if internal_profile_fields is not None and "missing_count" in (profile_fields or ()):
+        internal_profile_fields = tuple(dict.fromkeys((*internal_profile_fields,
+            "selected_member_count")))
     published_detail = (_published_profile_comparison_results(conn, details, fixed_context,
         cohort_type, members, territory_id, **({} if internal_profile_fields is None else {"selected_fields":internal_profile_fields}))
         if fixed_context and details else {})
@@ -452,7 +467,9 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
     external_sources, detail_sources = _selected_profile_comparison_sources(
         conn, external=[p["indicator"] for p in external],
         details=[p["indicator"] for p in details],
-        cohort_type=cohort_type, members=members) if not fixed_context else ({}, {})
+        cohort_type=cohort_type, members=members,
+        detail=(profile_coordinates or {}).get("detail"),
+        sex=(profile_coordinates or {}).get("sex")) if not fixed_context else ({}, {})
     scalar_rows = []
     if external and not fixed_context:
         scalar_rows = conn.execute(
@@ -468,31 +485,50 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
     detail_rows = []
     detail_contracts = {}
     if details and not fixed_context:
-        detail_contracts = {row[0]: row for row in conn.execute(
-            """SELECT d.indicator_id,d.comparison_detail,d.comparison_sex,d.unit,
-                      d.denominator_semantics,d.descriptor_version,d.detail_units_required,a.unit
-               FROM profile_descriptor d LEFT JOIN profile_axis a
-                 ON a.indicator_id=d.indicator_id AND a.axis_name='detail'
-                  AND a.axis_key=d.comparison_detail
-               WHERE d.indicator_id=ANY(%s)""",
-            ([p["indicator"] for p in details],),
-        ).fetchall()}
-        detail_rows = conn.execute(
-            """SELECT d.indicator_id,o.territory_id,o.value,o.status
-               FROM profile_descriptor d JOIN profile_observation o
-                 ON o.indicator_id=d.indicator_id AND o.detail_key=d.comparison_detail
-                  AND o.sex_key=COALESCE(d.comparison_sex,'')
-               WHERE d.indicator_id=ANY(%s) AND o.territory_type=%s AND o.territory_id=ANY(%s)
-               ORDER BY d.indicator_id,o.territory_id""",
-            ([p["indicator"] for p in details], cohort_type, read_ids),
-        ).fetchall()
+        if profile_coordinates:
+            detail, sex = profile_coordinates["detail"], profile_coordinates.get("sex", "")
+            detail_contracts = {row[0]: row for row in conn.execute(
+                """SELECT d.indicator_id,%s,%s,d.unit,d.denominator_semantics,
+                          d.descriptor_version,d.detail_units_required,a.unit
+                   FROM profile_descriptor d LEFT JOIN profile_axis a
+                     ON a.indicator_id=d.indicator_id AND a.axis_name='detail' AND a.axis_key=%s
+                   WHERE d.indicator_id=ANY(%s)""",
+                (detail, sex, detail, [p["indicator"] for p in details]),
+            ).fetchall()}
+            detail_rows = conn.execute(
+                """SELECT d.indicator_id,o.territory_id,o.value,o.status
+                   FROM profile_descriptor d JOIN profile_observation o
+                     ON o.indicator_id=d.indicator_id AND o.detail_key=%s AND o.sex_key=%s
+                   WHERE d.indicator_id=ANY(%s) AND o.territory_type=%s AND o.territory_id=ANY(%s)
+                   ORDER BY d.indicator_id,o.territory_id""",
+                (detail, sex, [p["indicator"] for p in details], cohort_type, read_ids),
+            ).fetchall()
+        else:
+            detail_contracts = {row[0]: row for row in conn.execute(
+                """SELECT d.indicator_id,d.comparison_detail,d.comparison_sex,d.unit,
+                          d.denominator_semantics,d.descriptor_version,d.detail_units_required,a.unit
+                   FROM profile_descriptor d LEFT JOIN profile_axis a
+                     ON a.indicator_id=d.indicator_id AND a.axis_name='detail'
+                      AND a.axis_key=d.comparison_detail
+                   WHERE d.indicator_id=ANY(%s)""",
+                ([p["indicator"] for p in details],),
+            ).fetchall()}
+            detail_rows = conn.execute(
+                """SELECT d.indicator_id,o.territory_id,o.value,o.status
+                   FROM profile_descriptor d JOIN profile_observation o
+                     ON o.indicator_id=d.indicator_id AND o.detail_key=d.comparison_detail
+                      AND o.sex_key=COALESCE(d.comparison_sex,'')
+                   WHERE d.indicator_id=ANY(%s) AND o.territory_type=%s AND o.territory_id=ANY(%s)
+                   ORDER BY d.indicator_id,o.territory_id""",
+                ([p["indicator"] for p in details], cohort_type, read_ids),
+            ).fetchall()
     scalar_by_profile, detail_by_profile = {}, {}
     for row in scalar_rows:
         scalar_by_profile.setdefault(row[0], []).append(row)
     for row in detail_rows:
         detail_by_profile.setdefault(row[0], []).append(row)
 
-    def summary(profile, facet, unit, direction, rows, sources):
+    def summary(profile, facet, unit, direction, rows, sources, *, include_missing_count=False):
         indicator = profile["indicator"]
         values = [(row[0], float(row[1])) for row in rows
                   if row[0] in members and row[2] == "measured" and row[1] is not None]
@@ -502,7 +538,7 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         better = sum(v > focal_value if direction == "high" else v < focal_value for _, v in values) if focal_value is not None else None
         ties = sum(v == focal_value for _, v in values) if focal_value is not None else None
         enough = len(values) >= 2
-        return {"indicator": indicator, "facet": facet, "label": profile["label"],
+        result = {"indicator": indicator, "facet": facet, "label": profile["label"],
             "unit": unit, "direction": direction, "statistic": "median",
             "profile_descriptor_version": profile.get("descriptor_version"),
             "scalar_descriptor_version": profile.get("scalar_descriptor_version"),
@@ -518,6 +554,9 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
             "rank_size": len(values) if enough and territory_id in members and focal_value is not None else None,
             "rank_ties": ties if enough and territory_id in members and focal_value is not None else None,
             "comparison_sources": sources}
+        if include_missing_count:
+            result["missing_count"] = max(0, len(members) - len(values))
+        return result
 
     output = []
     for profile in external:
@@ -580,6 +619,9 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
                 "source_facet_label": profile.get("source_facet_label"),
                 "denominator_semantics": profile.get("denominator_semantics"), "focal_in_selection": territory_id in members,
                 **published}
+            if "selected_member_count" in published and "eligible_count" in published:
+                profile_result["missing_count"] = max(
+                    0, published["selected_member_count"] - published["eligible_count"])
             if selected_fields is not None:
                 profile_result=_project_comparison_result_fields(profile_result,selected_fields)
             output.append(profile_result)
@@ -605,7 +647,8 @@ def _profile_comparison_results(conn, profiles, members, cohort_type, territory_
         normalized = [(r[1], r[2], r[3]) for r in detail_by_profile.get(profile["indicator"], [])]
         output.append(summary(profile, {"detail": detail, "sex": sex}, unit,
                               point["direction"], normalized,
-                              detail_sources.get(profile["indicator"], [])))
+                              detail_sources.get(profile["indicator"], []),
+                              include_missing_count=True))
     return output
 
 
@@ -739,7 +782,8 @@ def _published_scalar_comparison_results(conn, scalar_descriptors, fixed_context
 def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, selection,
                                *, indicator_id=None, profiles=None, profile_version=None, has_readings=False,
                                result_fields=None, preflight_only=False, snapshot_state=None,
-                               include_owned_series=True, include_fixed_context=False):
+                               include_owned_series=True, include_fixed_context=False,
+                               profile_coordinates=None):
     """Read scalar and profile comparisons from the caller's MVCC snapshot."""
     scalar_descriptors = conn.execute(
         """SELECT indicator_id,label,unit,direction,comparison_facet,allowed_levels,descriptor_version
@@ -817,8 +861,16 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
             selection,cohort_type,members,scope,snapshot_state=snapshot_state)
         if territory_id not in members:
             fixed_context = None
-        if fixed_context and any(not p["comparison_scalar"] for p in (profiles or [])):
-            _profile_comparison_publication_marker(conn)
+        if any(not p["comparison_scalar"] for p in (profiles or [])):
+            if profile_coordinates:
+                profile_marker = conn.execute("""SELECT p.content_version,p.reference_content_version,
+                    t.content_version FROM table_publication p LEFT JOIN table_publication t
+                    ON t.table_name='territory_reference' WHERE p.table_name='declared_profile'""").fetchone()
+                if (not profile_marker or not profile_marker[0] or not profile_marker[1]
+                        or profile_marker[1] != profile_marker[2]):
+                    raise HTTPException(503, "Profile publication is unavailable or incompatible")
+            elif fixed_context:
+                _profile_comparison_publication_marker(conn)
         scalar_backed_profiles = [p for p in (profiles or []) if p["comparison_scalar"]]
         comparable_scalars = [row for row in scalar_descriptors
             if row[4] == row[0] and row[3] in ("high", "low") and cohort_type in row[5]]
@@ -894,8 +946,16 @@ def _theme_comparison_snapshot(conn, territory_type, territory_id, theme_id, sel
                 "rank": rank, "rank_size": len(values) if rank is not None else None,
                 "comparison_sources": sources})
     profile_fixed_context = fixed_context if profiles else None
+    if profile_coordinates and any(not p.get("comparison_scalar") for p in (profiles or [])):
+        # Published comparison projections contain the descriptor's default
+        # point. A requested alternate cell is computed from its own published
+        # observations in this same read-only snapshot instead.
+        profile_fixed_context = None
+    profile_result_kwargs = {} if result_fields is None else {"selected_fields":result_fields}
+    if profile_coordinates is not None:
+        profile_result_kwargs["profile_coordinates"] = profile_coordinates
     profile_results = _profile_comparison_results(conn, profiles, members, cohort_type, territory_id,
-        profile_fixed_context, **({} if result_fields is None else {"selected_fields":result_fields}))
+        profile_fixed_context, **profile_result_kwargs)
     owned_markers = {}
     if include_owned_series:
         owned_results,owned_markers,_,_,_=_owned_series_comparison_results(conn,
@@ -2095,7 +2155,8 @@ def _scalar_facet_comparison_snapshot(conn, territory_type, territory_id, indica
 def _indicator_comparison_preflight(conn, territory_type, territory_id, indicator_id,
                                     selection, selected_fields, *, snapshot_state=None,
                                     include_scalar_facet=False,
-                                    scalar_facet_theme_id=None):
+                                    scalar_facet_theme_id=None,
+                                    profile_coordinates=None):
     _validate_comparison_fields(selected_fields,
         _COMPARISON_RESULT_FIELDS - {"mean", "mean_curve", "focal_value"})
     focal = conn.execute("SELECT territory_type FROM territory_reference WHERE territory_id=%s",
@@ -2178,7 +2239,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
         estimate = _theme_comparison_snapshot(conn, territory_type, territory_id, descriptor[0],
                                    selection, indicator_id=indicator_id,
                                    result_fields=selected_fields, preflight_only=True,
-                                   snapshot_state=snapshot_state)
+                                   snapshot_state=snapshot_state,
+                                   profile_coordinates=profile_coordinates)
         return {**estimate, "theme_id": descriptor[0], "shape": shape}
     elif shapes[0][1] == "series":
         result = _indicator_facts_snapshot(conn, territory_type, territory_id, indicator_id,
@@ -2195,7 +2257,8 @@ def _indicator_comparison_preflight(conn, territory_type, territory_id, indicato
 def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator_id, selection,
                                    selected_fields, *, snapshot_state=None,
                                    include_scalar_facet=False,
-                                   scalar_facet_theme_id=None):
+                                   scalar_facet_theme_id=None,
+                                   profile_coordinates=None):
     resource = (_batch_indicator_resource(conn, indicator_id, snapshot_state)
                 if snapshot_state is not None else None)
     active_owned = resource.owned_route if resource else _owned_series_route(conn,indicator_id)
@@ -2291,7 +2354,7 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
         raise HTTPException(503, "Indicator theme metadata is unavailable")
     comparison = _theme_comparison_snapshot(conn, territory_type, territory_id,
         descriptor[0], selection, indicator_id=indicator_id,result_fields=selected_fields,
-        snapshot_state=snapshot_state)
+        snapshot_state=snapshot_state, profile_coordinates=profile_coordinates)
     result_rows = comparison["results"] if shape == "scalar" else comparison["profile_comparisons"]
     if len(result_rows) != 1:
         raise HTTPException(503, "Indicator comparison facet is unavailable or ambiguous")
