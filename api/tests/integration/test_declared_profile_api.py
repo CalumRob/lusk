@@ -836,6 +836,69 @@ def test_dpe_profile_comparison_projects_published_peer_ranks(canonical_db_env, 
         pool.close()
 
 
+def test_ordinary_scalar_selected_comparison_requests_native_peer_ranks(canonical_db_env):
+    """The scalar page's selected table/rank sort needs an opt-in native peer projection."""
+    import psycopg
+    from fastapi.testclient import TestClient
+    from psycopg_pool import ConnectionPool
+    from api import main
+
+    with psycopg.connect(canonical_db_env["publish_dsn"]) as conn:
+        conn.execute("""INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,density_class_code)
+            VALUES ('29001','commune','Focal','29','E1','D1'),
+                   ('29002','commune','Peer','29','E1','D1'),
+                   ('29003','commune','EPCI peer','29','E1','D2'),
+                   ('29004','commune','Density peer','29','E2','D1')""")
+        conn.execute("INSERT INTO table_publication(table_name,content_version,row_count) VALUES ('territory_reference','ref-v1',4)")
+        conn.execute("INSERT INTO source_dataset VALUES ('serie_historique','Historical population')")
+        conn.execute("""INSERT INTO source_vintage(source_id,vintage_id,version,reference_date,publication_date)
+            VALUES ('serie_historique','serie_historique','2023','2023-01-01','2025-01-01')""")
+        conn.execute("""INSERT INTO scalar_descriptor(indicator_id,theme_id,label,unit,direction,comparison_facet,
+            allowed_levels,denominator_semantics,completeness,descriptor_version)
+            VALUES ('densite','demographie','Densité de population','hab/km²','high','densite',
+            ARRAY['commune','epci','departement','region'],'population municipale','sparse','densite-native-d1')""")
+        conn.execute("INSERT INTO scalar_descriptor_source VALUES ('densite','serie_historique')")
+        conn.execute("""INSERT INTO scalar_observation(indicator_id,territory_id,territory_type,value,status)
+            VALUES ('densite','29001','commune',100,'measured'),
+                   ('densite','29002','commune',100,'measured')""")
+        conn.execute("""INSERT INTO scalar_observation_source(indicator_id,territory_id,source_id,vintage_id)
+            VALUES ('densite','29001','serie_historique','serie_historique'),
+                   ('densite','29002','serie_historique','serie_historique')""")
+        conn.execute("""INSERT INTO table_publication(table_name,content_version,row_count,reference_content_version)
+            VALUES ('scalar_observation','densite-v1',2,'ref-v1')""")
+
+    pool = ConnectionPool(conninfo=canonical_db_env["read_dsn"], min_size=0, max_size=1,
+                          open=True, kwargs={"autocommit": True})
+    previous = main.app.dependency_overrides.get(main.get_repository)
+    main.app.dependency_overrides[main.get_repository] = lambda: main.ReadRepository(pool)
+    try:
+        with TestClient(main.app) as client:
+            response = client.post("/api/resources/read", json={
+                "resource": "densite",
+                "target": {"kind": "territory", "type": "commune", "id": "29001"},
+                "fields": ["median", "rank", "rank_size", "rank_ties", "selected_member_count",
+                           "eligible_count", "missing_count", "member_ranks"],
+                "intent": {"kind": "selected_comparison", "members": [
+                    {"type": "commune", "id": "29001"}, {"type": "commune", "id": "29002"}]},
+            })
+        assert response.status_code == 200, response.text
+        result = response.json()["result"]
+        assert (result["median"], result["selected_member_count"], result["eligible_count"],
+                result["missing_count"]) == (100, 2, 2, 0)
+        assert result["member_ranks"] == [
+            {"territory_id": "29001", "rank": 1, "rank_size": 2, "rank_ties": 2},
+            {"territory_id": "29002", "rank": 1, "rank_size": 2, "rank_ties": 2},
+        ]
+        assert response.json()["scope"] == {"kind": "explicit_selection", "member_count": 2}
+        assert "territory_type" not in response.json()["scope"]
+    finally:
+        if previous is None:
+            main.app.dependency_overrides.pop(main.get_repository, None)
+        else:
+            main.app.dependency_overrides[main.get_repository] = previous
+        pool.close()
+
+
 @pytest.mark.parametrize("corruption", ["status_counts", "tie_span"])
 def test_dpe_published_peer_rows_must_match_group_counts_and_rank_span(
     canonical_db_env, tmp_path, monkeypatch, corruption,
