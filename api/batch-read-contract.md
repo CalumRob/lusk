@@ -89,6 +89,66 @@ Legacy
 service/building accessibility and Mobility snapshot-derived reading resources
 are retired; they are not represented as semantic resources.
 
+## Declared-profile comparisons
+
+Indicator comparisons use the existing `fixed_comparison` or
+`selected_comparison` intent on a declared profile's territory target.
+`fixed_comparison` accepts only the closed `default` context and reads the
+profile descriptor's published default comparison facet. Coordinates may be
+omitted; when explicitly supplied for a detail-backed profile, they must name
+every declared axis exactly once and match that same default detail/sex point.
+They are a consistency filter, not an override. An alternate profile facet is
+requested with `selected_comparison`; omit `coordinates` to use the declared
+default, or provide exactly one catalogue-owned value for every declared profile
+axis (for example, both `detail` and `sex` for an age pyramid). Unknown
+axes/values, partial axes, and multi-value profile comparison coordinates are
+rejected with `422`. A scalar-backed profile such as the DPE distribution keeps
+its linked scalar comparison facet: DPE bins remain profile facts and are never
+reinterpreted as the linked scalar.
+
+`selected_comparison.intent.members` is an ordered, unique list of up to 1,500 typed
+`{type,id}` territory identities. The response `selection` echoes those requested
+typed identities; the `scope` reports `kind: "explicit_selection"` and
+`member_count`, not an invented `scope.territory_type`. The API resolves supported
+commune/EPCI/département/région targets through the same published reference to a
+bounded set of unique communes. Overlapping parent and commune selections are
+deduplicated for calculation; result counts and optional peer rows describe that
+resolved population, while the typed selection echo remains the caller's original
+selection. The focal `target` remains its own typed identity and may be outside
+that population; it is not silently replaced by a selected peer.
+
+For a selected declared-profile comparison, callers may request
+`fields: ["member_ranks"]`. This potentially cohort-sized projection is absent
+unless explicitly requested and is not a general field for unrelated resources or
+intents. It contains one row per resolved member identity, with native published
+`rank`, `rank_size`, and `rank_ties` for comparable members, or null rank fields
+when that member is not comparable. Those peer ranks come from the selected profile
+facet's native comparison or, for a scalar-backed profile, its separately declared
+scalar facet—not from client-derived/static ranks. The result's `unit`, direction,
+facet, denominator semantics, and comparison-source provenance follow that actual
+facet; DPE uses the linked scalar's own unit and source identity, not a DPE-bin
+rank. This projection remains subject to the semantic read's existing preflight
+work-unit and response-size bounds; it does not create an unbounded peer-list API.
+
+At least two measured/eligible values are required for a declared-profile median
+and rank. Below that threshold the comparison is `unavailable` with
+`fewer_than_two_comparable_values`; median and focal/peer ranks are null, while
+selected/eligible/missing counts and typed member identities remain truthful when
+requested. Suppressed, unsupported, unavailable, and unpublished cells are not
+converted to zero or ranked. Published peer status totals must reconcile with the
+group's eligible/missing counts; malformed, incomplete, stale, or impossible
+publication evidence, or impossible rank/tie spans fail closed with `503`.
+
+Profile, scalar, and territory-reference publications have independent clocks.
+Profile comparison responses bind `profile_content_version` and
+`reference_content_version`; scalar-backed comparisons additionally bind the
+linked scalar's required/content version. The legacy-shaped global
+`content_version` may be null or unrelated and is not a substitute for those
+dependencies. Do not synthesize a global release token or a territory type on an
+explicit-selection scope. These comparison reads remain inside the existing
+bounded, read-only repeatable-read grammar; they add no endpoint, query language,
+publication mutation, or schema.
+
 ## Example
 
 ```json
