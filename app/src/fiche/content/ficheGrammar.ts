@@ -1,5 +1,17 @@
 import type { FamilleFigure, NoeudTexteRiche, Theme, ThemeMetadata } from '@/payload/types'
 
+/** Stable app labels for producer-declared axis kinds; unknown kinds stay neutral. */
+const LIBELLES_AXE_NATIF: Readonly<Record<string, string>> = {
+  year: 'Année',
+  duration_minute: 'Temps de trajet (minutes)',
+  state_role: 'État',
+  declared_detail: 'Détail',
+}
+
+export function libelleAxeNatif(axisKind: string | undefined): string {
+  return axisKind ? LIBELLES_AXE_NATIF[axisKind] ?? 'Coordonnée' : 'Coordonnée'
+}
+
 /** App-owned display names shared by the fiche and Mobilité's semantic content. */
 export const CONTENU_SOUS_GROUPES_FICHE = {
   mobilite: {
@@ -14,6 +26,8 @@ export interface FicheReadingGrammar {
   /** Template text and its presentation order; the resolved row remains API-owned. */
   readonly template: readonly NoeudTexteRiche[]
   readonly params: readonly string[]
+  /** Stable labels for app-rendered parameters; never sourced from legacy facts. */
+  readonly paramLabels?: Readonly<Record<string, string>>
   readonly figure?: { readonly family: FamilleFigure; readonly indicator: string }
 }
 
@@ -160,6 +174,12 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       figure: { family: 'scalar', indicator: 'effectifs_salaries' },
       reading: {
         params: ['rang', 'activity_label', 'lq', 'n'],
+        paramLabels: {
+          rang: 'Rang',
+          activity_label: 'Activité dominante',
+          lq: 'Location quotient (LQ)',
+          n: 'Nombre d’établissements',
+        },
         figure: { family: 'list', indicator: 'lq' },
         template: [
           texte('La commune se spécialise dans '),

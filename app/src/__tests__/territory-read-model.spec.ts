@@ -11,6 +11,7 @@ import {
 } from '@/payload/fixtures'
 import {
   chargerModeleTerritoire,
+  chargerMetadonneesTheme,
   payloadDepuisModeleTerritoire,
   validerModeleTerritoire,
 } from '@/payload/territoryReadModel'
@@ -58,6 +59,8 @@ describe('le modèle de lecture d’un territoire', () => {
   })
 
   it('refuse au chargement un artefact de production qui ne porte pas les six thèmes', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
     const fetchMock = vi.fn(async () => ({
       ok: true,
       status: 200,
@@ -89,7 +92,7 @@ describe('le modèle de lecture d’un territoire', () => {
     }
   })
 
-  it('reconciles canonical producer absence semantics before default theme acquisition', async () => {
+  it('does not gate native territory identity on reconciliation of theme catalogues', async () => {
     const calls: string[] = []
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
@@ -106,11 +109,120 @@ describe('le modèle de lecture d’un territoire', () => {
 
     try {
       const model = await chargerModeleTerritoire('commune', target.territoire)
-      expect(calls).toContain('/data/theme_programmes.json')
+      expect(calls).toEqual(['/data/modeles-lecture/territoires/commune/22001.json'])
       expect(calls).not.toContain('/data/territoires.json')
-      expect(model.themes.programmes?.metadata.indicator_pages?.subventions_annuelles).toMatchObject({
-        completeness: 'may_be_missing', absence_semantics: 'no_record',
+      expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001' })
+    } finally {
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('returns validated territory identity before any optional theme catalogue is required', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    const calls: string[] = []
+    vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      calls.push(url)
+      if (url === '/data/modeles-lecture/territoires/commune/22001.json') {
+        return new Response(JSON.stringify(modelePublie22001), { status: 200 })
+      }
+      throw new Error(`Le catalogue facultatif ne doit pas bloquer l’identité : ${url}`)
+    }))
+
+    try {
+      const model = await chargerModeleTerritoire('commune', target.territoire)
+
+      expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001', nom: 'Allineuc' })
+      expect(model.territory).toEqual(model.territories.find((item) => item.territoire === '22001'))
+      expect(calls).toEqual(['/data/modeles-lecture/territoires/commune/22001.json'])
+    } finally {
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.each([
+    ['native / scalar off', '1', '0', 0, false],
+    ['native / scalar on', '1', '1', 0, false],
+    ['explicit static / scalar off', '0', '0', 0, false],
+    ['scalar-only', '0', '1', 6, true],
+  ] as const)(
+    'retains the supported metadata dependency in the %s mode',
+    async (_label, native, scalar, catalogueCount, referenceExpected) => {
+      vi.stubEnv('VITE_THEME_ACQUISITION_API', native)
+      vi.stubEnv('VITE_SCALAR_COHORT_API', scalar)
+      const calls: string[] = []
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        calls.push(url)
+        if (!url.startsWith('/data/')) throw new Error(`Unexpected request: ${url}`)
+        const file = url.slice('/data/'.length)
+        const body = file === 'modeles-lecture/territoires/commune/22001.json'
+          ? modelePublie22001
+          : JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/${file}`), 'utf8'))
+        return new Response(JSON.stringify(body), { status: 200 })
+      }))
+
+      try {
+        const model = await chargerModeleTerritoire('commune', target.territoire)
+        expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001' })
+        expect(calls.filter((url) => /^\/data\/theme_[^/]+\.json$/.test(url))).toHaveLength(catalogueCount)
+        expect(calls.filter((url) => url === '/data/territoires.json')).toHaveLength(referenceExpected ? 1 : 0)
+      } finally {
+        vi.unstubAllGlobals()
+        vi.unstubAllEnvs()
+      }
+    },
+  )
+
+  it('isolates invalid inactive legacy theme content from the native territory identity', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    const rawModel = structuredClone(modelePublie22001)
+    rawModel.themes.habitat.theme_metadata = null
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(rawModel), { status: 200 })))
+
+    try {
+      const model = await chargerModeleTerritoire('commune', '22001')
+      expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001' })
+      expect(model.themes.programmes).toBeDefined()
+      expect(model.themes.habitat).toBeUndefined()
+      expect(model.themeErrors?.habitat).toMatchObject({ kind: 'validation' })
+    } finally {
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it.each([
+    ['HTTP 404', new Response('missing', { status: 404 })],
+    ['JSON invalide', new Response('not-json', { status: 200 })],
+    ['erreur réseau', null],
+  ])('keeps a %s metadata failure local to the optional catalogue loader', async (_name, response) => {
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (response === null) throw new TypeError('network unavailable')
+      return response
+    }))
+
+    try {
+      await expect(chargerMetadonneesTheme('programmes')).rejects.toMatchObject({
+        file: '/data/theme_programmes.json',
       })
+    } finally {
+      vi.unstubAllGlobals()
+      vi.unstubAllEnvs()
+    }
+  })
+
+  it('rejects a territory model that carries a different canonical route identity', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    vi.stubGlobal('fetch', vi.fn(async () => new Response(JSON.stringify(modelePublie22001), { status: 200 })))
+
+    try {
+      await expect(chargerModeleTerritoire('commune', '22002')).rejects.toThrow(/ne correspond pas à la route/)
     } finally {
       vi.unstubAllGlobals()
       vi.unstubAllEnvs()

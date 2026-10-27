@@ -1891,11 +1891,10 @@ export function resolveMobiliteThemeContent(facts: TerritoryFacts, metadata?: Th
   }
   const subgroupLabel = (key: keyof typeof CONTENU_SOUS_GROUPES_FICHE.mobilite, fallback: string): string =>
     CONTENU_SOUS_GROUPES_FICHE.mobilite[key] ?? fallback
-  const compositionDetails = metadata?.detail_labels.voitures_menage ? Object.keys(metadata.detail_labels.voitures_menage) : ['sans_voiture', 'une_voiture', 'deux_plus']
-  const composition = compositionDetails.flatMap((detail) => {
-    const fact = facts.mobility.indicators.find((candidate) => candidate.key === 'voitures_menage' && candidate.detail === detail)
-    return fact ? [{ ...contentFact(fact, metadata?.detail_labels.voitures_menage?.[detail] ?? detailLabelFor('voitures_menage', detail)) }] : []
-  })
+  const composition = facts.mobility.indicators.filter((fact) => fact.key === 'voitures_menage')
+    .map((fact) => contentFact(fact, fact.detailLabel ??
+      metadata?.detail_labels.voitures_menage?.[fact.detail ?? ''] ??
+      (fact.detail ? detailLabelFor('voitures_menage', fact.detail) : fact.label ?? 'Fait disponible')))
   const charging = ['bornes_recharge', 'bornes_ev_par_station_service'].flatMap((key) => {
     const fact = factFor(key)
     return fact ? [fact] : []

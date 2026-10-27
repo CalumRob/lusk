@@ -18,7 +18,7 @@
  * honest empty state when the territory (or its type) is unknown.
  */
 import { AlertCircle, ChevronRight, SearchX } from 'lucide-vue-next'
-import { computed, ref, toRaw, watch } from 'vue'
+import { computed, inject, ref, toRaw, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import AppIcon from '@/components/AppIcon.vue'
@@ -57,9 +57,9 @@ import { LIENS_LISTES, NOMS_TYPES, idOnglet, idPanneau } from '@/fiche/onglets'
 import type { SlugOnglet } from '@/fiche/onglets'
 import { trouverTerritoire } from '@/payload/selectors'
 import { THEMES_CANONIQUES } from '@/payload/types'
-import type { Histoire, Indicateur, Payload, Territoire, Theme } from '@/payload/types'
+import type { Histoire, Indicateur, Payload, Territoire, Theme, ThemeMetadata } from '@/payload/types'
 import { useTerritoryReadModel } from '@/payload/useTerritoryReadModel'
-import { payloadDepuisModeleTerritoire } from '@/payload/territoryReadModel'
+import { chargerMetadonneesTheme, payloadDepuisModeleTerritoire, THEME_METADATA_CHARGER_KEY } from '@/payload/territoryReadModel'
 import type { TerritoryReadModel } from '@/payload/territoryReadModel'
 
 const route = useRoute()
@@ -72,10 +72,29 @@ const THEME_DEFAUT: Theme = 'programmes'
 
 const typeRoute = computed(() => String(route.params.type))
 const idRoute = computed(() => String(route.params.id))
+/** The theme selection is independent of both identity and its optional catalogue. */
+const selection = computed<Theme | null>(() => {
+  const demande = route.query.theme
+  if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
+    return demande as Theme
+  }
+  return THEME_DEFAUT
+})
 const modeleTerritoire = useTerritoryReadModel(typeRoute, idRoute, computed(() => true))
-const payloadModele = computed(() =>
-  modeleTerritoire.model.value ? payloadDepuisModeleTerritoire(modeleTerritoire.model.value) : null,
-)
+const chargerCatalogueTheme = inject(THEME_METADATA_CHARGER_KEY, chargerMetadonneesTheme)
+const catalogueThemeAcquis = ref<{ type: string; id: string; theme: Theme; metadata: ThemeMetadata } | null>(null)
+const statutCatalogueTheme = ref<'idle' | 'loading' | 'ready' | 'error'>('idle')
+const retryCatalogueTheme = ref(0)
+let sequenceCatalogueTheme = 0
+const payloadModele = computed(() => {
+  const model = modeleTerritoire.model.value
+  if (!model) return null
+  const payload = payloadDepuisModeleTerritoire(model)
+  const acquired = catalogueThemeAcquis.value
+  if (!acquired || acquired.type !== typeRoute.value || acquired.id !== idRoute.value ||
+      acquired.theme !== selection.value) return payload
+  return { ...payload, themeMetadata: { ...payload.themeMetadata, [acquired.theme]: acquired.metadata } }
+})
 const ficheScalaires = ref<import('@/payload/types').Indicateur[] | null>(null)
 const ficheScalairesStatus = ref<'loading' | 'ready' | 'error'>('loading')
 const ficheScalairesEnregistres = ref<string[]>([])
@@ -98,13 +117,6 @@ let derniereRepriseComparaisonScalaire = -1
  * réchauffe en arrière-plan (décision propriétaire 2026-10-07). Un thème hors
  * de `THEMES_ACQUISITION_API` garde le chemin incumbent, drapeau ou pas.
  */
-const selection = computed<Theme | null>(() => {
-  const demande = route.query.theme
-  if (typeof demande === 'string' && (THEMES_CANONIQUES as readonly string[]).includes(demande)) {
-    return demande as Theme
-  }
-  return THEME_DEFAUT
-})
 const productionMobilite = computed(() => selection.value === 'mobilite')
 const aedarData = ref<AedarFetchResult | null>(null)
 const aedarStatus = ref<'loading' | 'ready' | 'error'>('loading')
@@ -134,6 +146,39 @@ watch([productionMobilite, typeRoute, idRoute, retryAedarCount], async ([active,
 /** Le garde du chemin migré — booléen (la branche fausse ne rétrécit rien). */
 const themeMigre = (theme: Theme | null): boolean =>
   themeAcquisitionEnabled(import.meta.env) && theme !== null && THEMES_ACQUISITION_API.includes(theme)
+const statutMetadataPourAffichage = computed<'loading' | 'ready' | 'error'>(() =>
+  !themeMigre(selection.value)
+    ? 'ready'
+    : statutCatalogueTheme.value === 'error' ? 'error'
+      : statutCatalogueTheme.value === 'ready' ? 'ready' : 'loading',
+)
+function retryExplicationTheme(): void { retryCatalogueTheme.value++ }
+
+/** The selected theme's legacy catalogue enriches explanations only; it never gates API facts. */
+watch([() => modeleTerritoire.model.value, selection, typeRoute, idRoute, retryCatalogueTheme],
+  async ([model, theme, type, id], _old, onCleanup) => {
+    const request = ++sequenceCatalogueTheme
+    let cancelled = false
+    onCleanup(() => { cancelled = true })
+    if (theme === null || !themeMigre(theme) || !model || model.territory.type !== type || model.territory.territoire !== id) {
+      statutCatalogueTheme.value = 'idle'
+      return
+    }
+    statutCatalogueTheme.value = 'loading'
+    try {
+      const metadata = await chargerCatalogueTheme(theme)
+      if (cancelled || request !== sequenceCatalogueTheme || model !== modeleTerritoire.model.value ||
+          theme !== selection.value || type !== typeRoute.value || id !== idRoute.value) return
+      if (metadata.theme !== theme) throw new Error(`Catalogue ${metadata.theme} inattendu pour ${theme}`)
+      catalogueThemeAcquis.value = { type, id, theme, metadata }
+      statutCatalogueTheme.value = 'ready'
+    } catch {
+      if (!cancelled && request === sequenceCatalogueTheme && model === modeleTerritoire.model.value &&
+          theme === selection.value && type === typeRoute.value && id === idRoute.value) {
+        statutCatalogueTheme.value = 'error'
+      }
+    }
+  }, { immediate: true })
 const cacheAcquisition = new ThemeAcquisitionCache(
   (theme, key) => acquireThemeFacts(key!.type, key!.id, theme),
   (selection, theme, key) => acquireThemeComparison(key!.type, key!.id, theme, selection),
@@ -1030,12 +1075,16 @@ watch(
               v-else-if="selection === 'programmes' && payloadPourRendu"
               :payload="payloadPourRendu"
               :territoire="idRoute"
+              :metadata-status="statutMetadataPourAffichage"
+              :retry-metadata="retryExplicationTheme"
             />
             <OngletTheme
               v-else-if="ongletTheme"
               :theme="ongletTheme.theme"
               :payload="ongletTheme.payload"
               :territoire="idRoute"
+              :metadata-status="statutMetadataPourAffichage"
+              :retry-metadata="retryExplicationTheme"
             />
           </div>
         </template>

@@ -85,6 +85,7 @@ export interface SousGroupeRendu {
   key: string
   label: string
   framing: string | null
+  metadataExplanationPending: boolean
   /** The subgroup's indicators in app-owned presentation order, when rows exist. */
   figures: GroupeIndicateur[]
   /** The subgroup's compact figure (app-owned family + producer resource key). */
@@ -251,7 +252,7 @@ function lecturePour(
   territoire: string,
   groupe: string,
   reading: FicheReadingGrammar,
-  metadata: ThemeMetadata,
+  metadata?: ThemeMetadata,
 ): { lecture: LectureSousGroupe | null; indisponible: boolean } {
   const histoire = payload.histoires.find(
     (h) => h.theme === theme && h.territoire === territoire && h.groupe === groupe,
@@ -282,18 +283,19 @@ function lecturePour(
 
 /**
  * The shared subgroup loop of the fiche — app-owned presentation grammar,
- * joined to actual indicator and resolved-reading rows. Theme metadata remains
- * required for factual classification labels and other consumers, but its
- * subgroups are not fiche presentation authority. Missing metadata still fails
- * closed as no content; no grammar entry fabricates an available fact.
+ * joined to actual indicator and resolved-reading rows. Theme metadata supplies
+ * only the still-dependent factual explanations. Missing
+ * metadata cannot hide producer-validated indicator rows; no grammar entry
+ * fabricates an available fact.
  */
 export function sousGroupesPourTerritoire(
   payload: Payload,
   theme: Theme,
   territoire: string,
+  options: { metadataVerified?: boolean } = {},
 ): SousGroupeRendu[] {
   const metadata = payload.themeMetadata?.[theme]
-  if (!metadata) return []
+  const metadataVerified = options.metadataVerified ?? true
 
   const groupesParCle = new Map<string, Indicateur[]>()
   for (const ligne of payload.indicateurs) {
@@ -318,14 +320,24 @@ export function sousGroupesPourTerritoire(
 
     // A subgroup may deliberately have no reading (the silent, indicator-only
     // state). Do not turn that absence into copy or a fake Story.
+    const hasReading = sousGroupe.reading !== undefined && payload.histoires.some((row) =>
+      row.theme === theme && row.territoire === territoire && row.groupe === sousGroupe.key)
+    const readingNeedsMetadata = Boolean(sousGroupe.reading?.params.includes('classification'))
+    const explanationPending = !metadataVerified &&
+      (sousGroupe.framingSource === 'theme-metadata' || (hasReading && readingNeedsMetadata))
     const { lecture, indisponible } = sousGroupe.reading
-      ? lecturePour(payload, theme, territoire, sousGroupe.key, sousGroupe.reading, metadata)
+      ? explanationPending && hasReading
+        ? { lecture: null, indisponible: false }
+        : lecturePour(payload, theme, territoire, sousGroupe.key, sousGroupe.reading, metadataVerified ? metadata : undefined)
       : { lecture: null, indisponible: false }
 
     return {
       key: sousGroupe.key,
       label: sousGroupe.label,
-      framing: cadrageSousGroupeFiche(sousGroupe, metadata),
+      framing: metadataVerified || sousGroupe.framingSource !== 'theme-metadata'
+        ? cadrageSousGroupeFiche(sousGroupe, metadata)
+        : null,
+      metadataExplanationPending: explanationPending,
       figures,
       figureCompacte,
       lecture,
@@ -391,6 +403,7 @@ export function figureLecturePour(
     // Mode wording is resolved from the payload's shared reseaux vocabulary;
     // classification_labels describes reading values, not transport modes.
     const modes = modesDepuisMetadata(metadata)
+    if (!modes.t || !modes.b) return null
     return {
       genre: 'distribution',
       distribution: distributionPourLecture(h),

@@ -195,11 +195,16 @@ describe('fiche — chargement par modèle de lecture de territoire', () => {
     }
     expect(comparisons?.bretagne?.buildingDistribution?.totalBuildings)
       .toBeGreaterThan(comparisons?.epci?.buildingDistribution?.totalBuildings ?? 0)
-    const fetchMock = vi.fn(async () => ({
-      ok: true,
-      status: 200,
-      json: async () => publishedModel,
-    }))
+    // This route-only assertion exercises the explicit incumbent static path;
+    // native acquisition is the default and needs semantic API fixtures instead.
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '0')
+    const fetchMock = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input)
+      const payload = url === '/data/modeles-lecture/territoires/commune/35238.json'
+        ? publishedModel
+        : JSON.parse(readFileSync(resolve(process.cwd(), `../public${url}`), 'utf8'))
+      return { ok: true, status: 200, json: async () => payload }
+    })
     vi.stubGlobal('fetch', fetchMock)
 
     try {

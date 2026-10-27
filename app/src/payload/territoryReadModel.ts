@@ -106,6 +106,8 @@ export interface TerritoryReadModel {
   /** Full validated reference required only for bounded API cohorts, whose peer sets may outgrow the fiche model's four local references. */
   cohortTerritories?: Territoire[]
   themes: Partial<Record<Theme, TerritoryThemeReadModel>>
+  /** A malformed optional legacy theme projection is isolated from native facts and its siblings. */
+  themeErrors?: Partial<Record<Theme, PayloadError>>
 }
 
 export type ChargerModeleTerritoire = (
@@ -113,8 +115,36 @@ export type ChargerModeleTerritoire = (
   territoire: string,
 ) => Promise<TerritoryReadModel>
 
+export type ChargerMetadonneesTheme = (theme: Theme) => Promise<ThemeMetadata>
+
 export const TERRITORY_READ_MODEL_CHARGER_KEY: InjectionKey<ChargerModeleTerritoire> =
   Symbol('territory-read-model-charger')
+export const THEME_METADATA_CHARGER_KEY: InjectionKey<ChargerMetadonneesTheme> =
+  Symbol('theme-metadata-charger')
+
+/** Load one producer catalogue only when the active native fiche needs its explanations. */
+export const chargerMetadonneesTheme: ChargerMetadonneesTheme = async (theme) => {
+  const url = `/data/theme_${theme}.json`
+  let response: Response
+  try {
+    response = await fetch(url)
+  } catch (cause) {
+    throw new PayloadError('fetch', url,
+      `Impossible de charger le catalogue thématique : ${cause instanceof Error ? cause.message : String(cause)}`)
+  }
+  if (!response.ok) throw new PayloadError('fetch', url, `Réponse HTTP ${response.status} pour ${url}`)
+  let raw: unknown
+  try {
+    raw = await response.json()
+  } catch {
+    throw new PayloadError('validation', url, `JSON illisible dans ${url}`)
+  }
+  const metadata = validerThemeMetadata(raw, url)
+  if (metadata.theme !== theme) {
+    throw new PayloadError('validation', url, `Le catalogue ${url} ne correspond pas au thème ${theme}.`)
+  }
+  return metadata
+}
 
 type JsonObject = Record<string, unknown>
 
@@ -527,7 +557,7 @@ export function validerModeleTerritoire(
   raw: unknown,
   file: string,
   expected?: { type: TerritoireType; territoire: string },
-  options: { requireAllThemes?: boolean } = {},
+  options: { requireAllThemes?: boolean; allowPartialThemes?: boolean } = {},
 ): TerritoryReadModel {
   if (!isObject(raw)) fail(file, 'le modèle de territoire doit être un objet')
   if (raw.schema_version !== '1') fail(file, '« schema_version » inconnue')
@@ -556,10 +586,10 @@ export function validerModeleTerritoire(
     fail(file, `le territoire déclaré ne correspond pas à la route ${expected.type}/${expected.territoire}`)
   }
 
-  if (!isObject(raw.themes)) fail(file, '« themes » doit être un objet')
-  const rawThemes = raw.themes
+  if (!isObject(raw.themes) && !options.allowPartialThemes) fail(file, '« themes » doit être un objet')
+  const rawThemes = isObject(raw.themes) ? raw.themes : {}
   const themeEntries = Object.entries(rawThemes)
-  if (themeEntries.length === 0) fail(file, '« themes » doit porter au moins un thème publié')
+  if (themeEntries.length === 0 && !options.allowPartialThemes) fail(file, '« themes » doit porter au moins un thème publié')
   if (options.requireAllThemes) {
     const missingThemes = THEMES_CANONIQUES.filter((theme) => !(theme in rawThemes))
     if (missingThemes.length > 0) {
@@ -567,11 +597,27 @@ export function validerModeleTerritoire(
     }
   }
   const themes: Partial<Record<Theme, TerritoryThemeReadModel>> = {}
+  const themeErrors: Partial<Record<Theme, PayloadError>> = {}
   for (const [key, value] of themeEntries) {
     if (!(THEMES_CANONIQUES as readonly string[]).includes(key)) {
-      fail(file, `thème inconnu « ${key} » dans « themes »`)
+      if (!options.allowPartialThemes) fail(file, `thème inconnu « ${key} » dans « themes »`)
+      continue
     }
-    themes[key as Theme] = validateTheme(value, key as Theme, file, territories, territory)
+    try {
+      themes[key as Theme] = validateTheme(value, key as Theme, file, territories, territory)
+    } catch (cause) {
+      if (!options.allowPartialThemes) throw cause
+      themeErrors[key as Theme] = cause instanceof PayloadError
+        ? cause
+        : new PayloadError('validation', file, `Projection facultative du thème « ${key} » invalide.`)
+    }
+  }
+  if (options.allowPartialThemes) {
+    for (const theme of THEMES_CANONIQUES) {
+      if (!(theme in rawThemes) && !themeErrors[theme]) {
+        themeErrors[theme] = new PayloadError('validation', file, `Projection facultative du thème « ${theme} » absente.`)
+      }
+    }
   }
 
   return {
@@ -580,6 +626,7 @@ export function validerModeleTerritoire(
     territory,
     territories,
     themes,
+    ...(Object.keys(themeErrors).length ? { themeErrors } : {}),
   }
 }
 
@@ -631,13 +678,18 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
   } catch {
     throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
   }
-  const model = validerModeleTerritoire(raw, file, { type, territoire }, { requireAllThemes: true })
-  // Producer-owned theme facts/contracts and metadata still used by other
-  // readers may postdate the atomic territory snapshot. Reconcile them before
-  // semantic fact or scalar acquisition; shared fiche subgroup presentation
-  // comes from app-owned ficheGrammar.ts.
   const scalarApiEnabled = scalarCohortEnabled(import.meta.env)
-  if (scalarApiEnabled || themeAcquisitionEnabled(import.meta.env)) {
+  const nativeThemeApiEnabled = themeAcquisitionEnabled(import.meta.env)
+  const scalarOnlyEnabled = scalarApiEnabled && !nativeThemeApiEnabled
+  const model = validerModeleTerritoire(raw, file, { type, territoire }, nativeThemeApiEnabled
+    ? { allowPartialThemes: true }
+    : { requireAllThemes: true })
+  // Native theme facts use their semantic API contracts and start from the
+  // validated target alone; the selected legacy catalogue is optional fiche
+  // explanation enrichment. The scalar-only and explicit static paths still
+  // reconcile their producer-owned catalogues strictly. Shared fiche subgroup
+  // presentation comes from app-owned ficheGrammar.ts.
+  if (scalarOnlyEnabled) {
     await Promise.all(Object.values(model.themes).filter((theme) => theme !== undefined).map(async (theme) => {
       const metadataUrl = `/data/theme_${theme.theme}.json`
       let metadataResponse: Response
@@ -664,7 +716,7 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
       }
     }))
   }
-  if (scalarApiEnabled) {
+  if (scalarOnlyEnabled) {
     const referenceUrl = '/data/territoires.json'
     let referenceResponse: Response
     try { referenceResponse = await fetch(referenceUrl) }

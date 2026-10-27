@@ -33,12 +33,20 @@ interface Part {
 }
 
 const parts = computed<Part[]>(() => {
+  const nativeAxisValues = props.lignes.find((ligne) =>
+    ligne.nativeContract?.shapes?.includes('declared_profile') && ligne.nativeContract.axisValues?.length,
+  )?.nativeContract?.axisValues
+  const nativeDomain = nativeAxisValues ? new Set(nativeAxisValues) : null
+  const profileRows = nativeDomain
+    ? props.lignes.filter((ligne) => ligne.detail !== null && nativeDomain.has(ligne.detail))
+    : props.lignes
   const parEtiquette = new Map<string, Indicateur>()
-  for (const ligne of props.lignes) {
+  for (const ligne of profileRows) {
     if (ligne.detail && couleurDpe(ligne.detail) !== null) parEtiquette.set(ligne.detail, ligne)
   }
-  const total = props.lignes.reduce((somme, l) => somme + (l.value ?? 0), 0)
-  return ORDRE_DPE.map((etiquette) => parEtiquette.get(etiquette))
+  const total = profileRows.reduce((somme, l) => somme + (l.value ?? 0), 0)
+  const order = nativeAxisValues ?? ORDRE_DPE
+  return order.map((etiquette) => parEtiquette.get(etiquette))
     .filter((ligne): ligne is Indicateur => ligne !== undefined)
     .map((ligne) => ({
       etiquette: ligne.detail ?? '',

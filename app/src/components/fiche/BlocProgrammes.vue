@@ -30,6 +30,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { handoffExploration } from '@/fiche/explorationHandoff'
 import { cadrageSousGroupeFiche, sousGroupeFiche } from '@/fiche/content/ficheGrammar'
+import { NOMS_THEMES } from '@/fiche/onglets'
 import {
   LIEN_SUBVENTIONS,
   formaterMontant,
@@ -45,6 +46,8 @@ import type { Payload } from '@/payload/types'
 const props = defineProps<{
   payload: Payload
   territoire: string
+  metadataStatus?: 'loading' | 'ready' | 'error'
+  retryMetadata?: () => void
 }>()
 
 // The theme label and remaining factual/page contracts still use metadata;
@@ -55,7 +58,9 @@ const metadata = computed(() => props.payload.themeMetadata?.programmes ?? null)
 function groupe(key: string): { label: string; framing: string | null } {
   const g = sousGroupeFiche('programmes', key)
   if (!g) throw new Error(`Sous-groupe « ${key} » absent de la grammaire fiche « programmes »`)
-  return { label: g.label, framing: cadrageSousGroupeFiche(g, metadata.value ?? undefined) }
+  const metadataVerified = props.metadataStatus === undefined || props.metadataStatus === 'ready'
+  return { label: g.label, framing: metadataVerified || g.framingSource !== 'theme-metadata'
+    ? cadrageSousGroupeFiche(g, metadata.value ?? undefined) : null }
 }
 
 const element = computed(() => programmesPourTerritoire(props.payload, props.territoire))
@@ -111,12 +116,10 @@ const lienProvenance = computed(() => {
 </script>
 
 <template>
-  <!-- Le bloc ne rend qu'avec sa métadonnée publiée (le loader la garantit
-       pour un thème présent, #313 ; dans le chargement progressif du magasin,
-       les faits peuvent atterrir un instant avant elle — on attend, jamais un
-       titre inventé ni un crash de rendu). -->
-  <article v-if="metadata" class="onglet-theme onglet-theme--programmes bloc-programmes">
-    <p class="onglet-theme-overline">{{ metadata?.label ?? '' }}</p>
+  <!-- Facts-first: API facts and the app-owned heading survive a missing
+       optional catalogue projection. -->
+  <article class="onglet-theme onglet-theme--programmes bloc-programmes">
+    <p class="onglet-theme-overline">{{ metadata?.label ?? NOMS_THEMES.programmes }}</p>
 
     <template v-if="elementVide">
       <section class="sous-groupe" data-groupe="couverture">
@@ -164,13 +167,18 @@ const lienProvenance = computed(() => {
            portail Région. Un territoire sans fait reste silencieux — jamais un
            zéro inventé, jamais une figure vide. -->
       <section
-        v-if="element.subventions"
+        v-if="element.subventions || metadataStatus === 'loading' || metadataStatus === 'error'"
         class="sous-groupe"
         data-groupe="subventions"
       >
         <h3 class="sous-groupe-titre">{{ groupe('subventions').label }}</h3>
         <p v-if="groupe('subventions').framing" class="sous-groupe-cadrage">{{ groupe('subventions').framing }}</p>
+        <p v-if="metadataStatus === 'loading' || metadataStatus === 'error'" class="subvention-vintage" role="status">
+          {{ metadataStatus === 'error' ? 'L’explication des conditions d’éligibilité n’est pas disponible.' : 'Explication des conditions d’éligibilité en cours de chargement.' }}
+          <button v-if="metadataStatus === 'error'" type="button" @click="retryMetadata?.()">Réessayer l’explication</button>
+        </p>
 
+        <template v-if="element.subventions">
         <div class="programme-subventions">
           <p class="subvention-total">
             {{ formaterMontant(element.subventions.total) }}
@@ -224,6 +232,7 @@ const lienProvenance = computed(() => {
           {{ LIEN_SUBVENTIONS.libelle }}
           <AppIcon :icone="ExternalLink" :taille="14" class="programmes-lien-icone" aria-hidden="true" />
         </a>
+        </template>
       </section>
     </template>
   </article>

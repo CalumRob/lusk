@@ -76,6 +76,8 @@ export interface NumericFact {
   sex?: Indicateur['sex']
   /** Payload-owned label when this fact is a published indicator. */
   label?: string | null
+  /** Producer/app display label for its declared category coordinate. */
+  detailLabel?: string | null
   value: number | null
   unit: string
   availability: FactAvailability
@@ -432,6 +434,7 @@ function factOf(options: {
   detail?: string | null
   sex?: Indicateur['sex']
   label?: string | null
+  detailLabel?: string | null
   value: number | null
   unit: string
   present: boolean
@@ -446,6 +449,7 @@ function factOf(options: {
     detail: options.detail ?? null,
     ...(options.sex !== undefined ? { sex: options.sex } : {}),
     label: options.label ?? null,
+    ...(options.detailLabel !== undefined ? { detailLabel: options.detailLabel } : {}),
     value: options.value,
     unit: options.unit,
     availability: availabilityOf(options.value, options.present),
@@ -732,7 +736,10 @@ function indicatorsOf(
         key: row.key,
         detail: row.detail,
         sex: row.sex ?? null,
-        label: payload.themeMetadata?.mobilite?.indicator_labels[row.key] ?? null,
+        label: row.nativeContract?.label ?? payload.themeMetadata?.mobilite?.indicator_labels[row.key] ?? null,
+        detailLabel: row.detail === null ? null : row.nativeContract?.axes?.find((axis) =>
+          axis.name === 'detail' && axis.key === row.detail)?.label ??
+          payload.themeMetadata?.mobilite?.detail_labels[row.key]?.[row.detail] ?? null,
         value: row.value,
         unit: row.unit,
         present: true,
