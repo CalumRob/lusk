@@ -71,7 +71,7 @@ export interface NativeThemeFactAxis {
   key: string
   label?: string
   order?: number
-  unit?: string
+  unit?: string | null
 }
 
 export interface NativeThemeFactContract {
@@ -82,6 +82,12 @@ export interface NativeThemeFactContract {
   axisKind?: string
   axisValues?: string[]
   axisNumericValues?: Array<number | null>
+  completeness?: string
+  denominatorSemantics?: string
+  descriptorVersion?: string
+  contentVersion?: string
+  referenceContentVersion?: string
+  comparisonPoint?: { detail: string; sex: string | null; direction: string; unit: string } | null
 }
 
 /**
@@ -103,7 +109,7 @@ export interface VintageStamp {
   /** The publication date — null for a continuous-follow source (ORT, #175). */
   vintage_date_publication: string | null
   /** Complete source lineage for SQL-backed read-model facts. */
-  fact_sources?: Array<{ sourceId: string; source: string; version: string;
+  fact_sources?: Array<{ sourceId: string; source: string; version: string; vintageId?: string;
     referenceDate: string | null; publicationDate: string | null; lineage?: Record<string, unknown> }>
 }
 
@@ -132,6 +138,8 @@ export interface Indicateur extends Omit<VintageStamp, 'vintage_version'> {
   observation_status?: 'measured' | 'missing'
   /** Producer-owned availability state for semantic scalar observations. */
   fact_status?: 'measured' | 'suppressed' | 'unsupported' | 'not_available' | 'not_published' | 'unavailable'
+  /** Producer-declared profile denominator semantics, when supplied by the API. */
+  denominator_semantics?: string | null
   /** Producer-owned evidence counts for scalar facts; null means not declared. */
   support_count?: number | null
   denominator_count?: number | null
