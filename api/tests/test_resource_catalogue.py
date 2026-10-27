@@ -180,7 +180,7 @@ def test_cohort_capability_is_derived_from_supported_fact_families():
         validate_resource_item(comparison_cohort, catalogue)
 
 
-def test_member_ranks_are_only_projectable_for_selected_declared_profile_comparisons():
+def test_member_ranks_are_projectable_for_selected_scalar_and_profile_comparisons_only():
     catalogue = default_resource_catalogue.__wrapped__()
     selected = ResourceReadItem.model_validate({
         "resource": "structure_age",
@@ -192,6 +192,16 @@ def test_member_ranks_are_only_projectable_for_selected_declared_profile_compari
     })
     assert validate_resource_item(selected, catalogue).resource_id == "structure_age"
 
+    scalar = ResourceReadItem.model_validate({
+        "resource": "densite",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "selected_comparison", "members": [
+            {"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"},
+        ]},
+    })
+    assert validate_resource_item(scalar, catalogue).resource_id == "densite"
+
     fixed = ResourceReadItem.model_validate({
         "resource": "structure_age",
         "target": {"kind": "territory", "type": "commune", "id": "22001"},
@@ -201,16 +211,32 @@ def test_member_ranks_are_only_projectable_for_selected_declared_profile_compari
     with pytest.raises(ValueError, match="field is not declared"):
         validate_resource_item(fixed, catalogue)
 
-    scalar = ResourceReadItem.model_validate({
+    with pytest.raises(ValueError, match="field is not declared"):
+        scalar_fixed = ResourceReadItem.model_validate({
+            "resource": "densite",
+            "target": {"kind": "territory", "type": "commune", "id": "22001"},
+            "fields": ["member_ranks"],
+            "intent": {"kind": "fixed_comparison", "context": "default"},
+        })
+        validate_resource_item(scalar_fixed, catalogue)
+
+    non_comparable = ResourceReadItem.model_validate({
+        "resource": "structure_age",
+        "target": {"kind": "territory", "type": "commune", "id": "22001"},
+        "fields": ["member_ranks"],
+        "intent": {"kind": "facts"},
+    })
+    with pytest.raises(ValueError, match="field is not declared"):
+        validate_resource_item(non_comparable, catalogue)
+
+    scalar_facts = ResourceReadItem.model_validate({
         "resource": "densite",
         "target": {"kind": "territory", "type": "commune", "id": "22001"},
         "fields": ["member_ranks"],
-        "intent": {"kind": "selected_comparison", "members": [
-            {"type": "commune", "id": "22001"}, {"type": "commune", "id": "22002"},
-        ]},
+        "intent": {"kind": "facts"},
     })
     with pytest.raises(ValueError, match="field is not declared"):
-        validate_resource_item(scalar, catalogue)
+        validate_resource_item(scalar_facts, catalogue)
 
 
 def test_aedar_cohort_is_rejected_by_public_http_before_opening_a_connection(monkeypatch):

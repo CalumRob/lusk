@@ -205,25 +205,30 @@ def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_
         "commune", ("c1", "c2"), {"kind": "density_class"}))
     monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: (
         "density_class", "A", "commune") if _args[3] is None else None)
-    monkeypatch.setattr(main, "_published_scalar_comparison_results", lambda *_args, **_kwargs: (
-        published_calls.append(True) or {"population": {"status": "available", "reason": None,
+    monkeypatch.setattr(main, "_published_scalar_comparison_results", lambda *_args, **kwargs: (
+        published_calls.append(kwargs) or {"population": {"status": "available", "reason": None,
             "selected_member_count": 2, "eligible_count": 2, "missing_count": 0,
             "focal_value": 10.0, "median": 7.5, "rank": 1, "rank_size": 2,
             "comparison_sources": []}}))
     monkeypatch.setattr(main, "_selected_scalar_comparison_inputs", lambda *_args, **_kwargs: (
         dynamic_calls.append(True) or [("population", "c1", "commune", 10.0, "measured"),
             ("population", "c2", "commune", 5.0, "measured")], {}))
-    monkeypatch.setattr(main, "_profile_comparison_results", lambda *_args: [])
+    monkeypatch.setattr(main, "_profile_comparison_results", lambda *_args, **_kwargs: [])
     monkeypatch.setattr(main, "_owned_series_comparison_results", lambda *_args, **_kwargs: ([], {}, None, None, None))
 
-    fixed = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie", None)
+    fixed = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie", None,
+        result_fields=("member_ranks",))
     assert fixed["results"][0]["median"] == 7.5
-    assert published_calls == [True]
+    assert published_calls[0]["include_member_ranks"] is True
     assert dynamic_calls == []
 
     monkeypatch.setattr(main, "_fixed_scalar_comparison_context", lambda *_args, **_kwargs: None)
-    dynamic = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie", [("commune", "c2")])
-    assert dynamic["results"][0]["median"] == 7.5
+    dynamic = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie",
+        [("commune", "c2")], result_fields=("member_ranks",))
+    assert dynamic["results"][0]["member_ranks"] == [
+        {"territory_id": "c1", "rank": 1, "rank_size": 2, "rank_ties": 1},
+        {"territory_id": "c2", "rank": 2, "rank_size": 2, "rank_ties": 1},
+    ]
     assert dynamic_calls == [True]
 
     monkeypatch.setattr(main, "_comparison_cohort", lambda *_args: (
@@ -233,4 +238,4 @@ def test_theme_comparison_uses_published_fixed_scalar_results_but_keeps_dynamic_
     outside = main._theme_comparison_snapshot(Connection(), "commune", "c1", "demographie", [("commune", "c2")])
     assert outside["results"][0]["rank"] is None
     assert dynamic_calls == [True, True]
-    assert published_calls == [True]
+    assert len(published_calls) == 1
