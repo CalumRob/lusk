@@ -119,7 +119,8 @@ function responseEnvelope(item: JsonRecord, data: JsonRecord) {
 
 function createTransport(options: { failComparisons?: number; failProfileFacts?: number; failCatalogues?: number;
   emptyProfileCohort?: boolean; suppressDpeSignature?: boolean; deferFirstProfile?: boolean;
-  mixedProfileVintages?: boolean; profileCellOverrides?: Record<string, { value: number | null; status: string }> } = {}) {
+  mixedProfileVintages?: boolean; incompatibleCatalogueResource?: string;
+  profileCellOverrides?: Record<string, { value: number | null; status: string }> } = {}) {
   const calls: Array<{ url: string; body?: JsonRecord }> = []
   const staticFiles: string[] = []
   const profileFactsCalls: JsonRecord[] = []
@@ -144,7 +145,9 @@ function createTransport(options: { failComparisons?: number; failProfileFacts?:
         catalogueFailures -= 1
         return new Response('temporary catalogue outage', { status: 503 })
       }
-      return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources: resourceDeclarations() }), { status: 200 })
+      const resources = resourceDeclarations().map((resource) => resource.resource_id === options.incompatibleCatalogueResource
+        ? { ...resource, theme_id: 'mobilite' } : resource)
+      return new Response(JSON.stringify({ contract: 'semantic-resource-catalogue-v1', resources }), { status: 200 })
     }
     if (url === '/api/resources/read-batch') {
       const items = body?.items as JsonRecord[]
@@ -636,24 +639,44 @@ describe('les dix pages de profils déclarés utilisent le lecteur sémantique c
     wrapper.unmount()
   })
 
-  it('lie le mode profil à la découverte API même si le marqueur statique est absent et le manifeste préempte', async () => {
+  it('refuse le manifeste statique quand famille et marqueur éditoriaux manquent mais que l’API déclare un profil', async () => {
     const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
     const saved = spec.metadata.profile_contracts
+    const savedPage = spec.metadata.indicator_pages?.[spec.indicator]
     delete spec.metadata.profile_contracts
+    delete spec.metadata.indicator_pages?.[spec.indicator]
     const transport = createTransport()
     try {
       const mounted = await mountPage(spec.theme, spec.indicator, transport,
         'territoire=22001&niveau=commune', { manifestRoutes: { habitat: ['mix_logements'] } })
       await flushPromises()
       expect(transport.calls.some(({ url }) => url === '/api/resources')).toBe(true)
-      expect(transport.profileFactsCalls.some((item) => item.resource === spec.indicator)).toBe(true)
+      expect(transport.profileFactsCalls).toHaveLength(0)
+      expect(mounted.wrapper.find('[role="alert"]').exists()).toBe(true)
+      expect(mounted.wrapper.find('[role="alert"] button').text()).toContain('Réessayer')
       expect(mounted.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
       expect(transport.calls.some(({ url }) => url.startsWith('/data/indicateurs_'))).toBe(false)
       expect(transport.calls.some(({ url }) => url.includes('modeles-lecture/indicateurs'))).toBe(false)
       mounted.wrapper.unmount()
     } finally {
       spec.metadata.profile_contracts = saved
+      if (savedPage) spec.metadata.indicator_pages![spec.indicator] = savedPage
     }
+  })
+
+  it('refuse une déclaration de profil dont le thème API ne correspond pas à la route', async () => {
+    const spec = profileSpecs.find((candidate) => candidate.indicator === 'mix_logements')!
+    const transport = createTransport({ incompatibleCatalogueResource: spec.indicator })
+    const mounted = await mountPage(spec.theme, spec.indicator, transport,
+      'territoire=22001&niveau=commune')
+    await flushPromises()
+    expect(transport.calls.some(({ url }) => url === '/api/resources')).toBe(true)
+    expect(transport.profileFactsCalls).toHaveLength(0)
+    expect(mounted.wrapper.find('[role="alert"]').exists()).toBe(true)
+    expect(mounted.wrapper.find('[role="alert"] button').text()).toContain('Réessayer')
+    expect(transport.staticFiles.some((file) => file.startsWith('indicateurs_'))).toBe(false)
+    expect(transport.calls.some(({ url }) => url.startsWith('/data/indicateurs_'))).toBe(false)
+    mounted.wrapper.unmount()
   })
 
   it('réessaie la découverte du catalogue et les échecs transport/validation des métadonnées via le bouton réel', async () => {

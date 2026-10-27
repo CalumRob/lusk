@@ -141,6 +141,15 @@ function metadataDeclaresProfile(metadata: ThemeMetadata | null, currentIndicato
       metadata.indicator_pages[currentIndicator].pyramid.dimensions.includes('detail'))
 }
 
+function profileCatalogueBinding(resources: SemanticResourceDeclaration[], currentTheme: string,
+  currentIndicator: string) {
+  const candidates = resources.filter((resource) => resource.resource_id === currentIndicator &&
+    resource.shapes.includes('declared_profile'))
+  const declaration = candidates.find((resource) => resource.theme_id === currentTheme &&
+    resource.indicator_id === currentIndicator)
+  return { declaration, incompatible: candidates.length > 0 && declaration === undefined }
+}
+
 async function loadRouteThemeMetadata(currentTheme: string): Promise<ThemeMetadata> {
   const file = `theme_${currentTheme}`
   const path = `/data/${file}.json`
@@ -231,19 +240,25 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     if (earlyManifest?.routes[currentTheme as Theme]?.includes(currentIndicator)) {
       try {
         const resources = await chargerCatalogueRessources()
-        const declared = resources.some((resource) => resource.resource_id === currentIndicator &&
-          resource.theme_id === currentTheme && resource.indicator_id === currentIndicator &&
-          resource.shapes.includes('declared_profile'))
-        if (declared) earlyProfileCatalogue = resources
-        else {
-          routeModeleIndicateur.value = true
+        const binding = profileCatalogueBinding(resources, currentTheme, currentIndicator)
+        if (binding.declaration) earlyProfileCatalogue = resources
+        else if (binding.incompatible) {
+          profileMode.value = true
+          catalogueProfil.value = resources
+          profileBootstrapError.value = new PayloadError('validation', currentIndicator,
+            'La déclaration du profil ne correspond pas à la route disponible.')
           profileDiscoveryComplete.value = true
           profileBootstrapLoading.value = false
           return
         }
+        else {
+          earlyProfileCatalogue = resources
+          routeModeleIndicateur.value = true
+        }
       } catch {
         // Injected manifest/read-model tests may intentionally run without an
-        // API server. Production uses the metadata-first path below instead.
+        // API server. The manifest path remains available for ordinary static
+        // read models when semantic ownership cannot be discovered.
         routeModeleIndicateur.value = true
         profileDiscoveryComplete.value = true
         profileBootstrapLoading.value = false
@@ -259,10 +274,8 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
     if (payloadChargerInjecte && cause instanceof PayloadError && cause.kind === 'fetch') {
       try {
         const resources = await chargerCatalogueRessources()
-        const declared = resources.find((resource) => resource.resource_id === currentIndicator &&
-          resource.theme_id === currentTheme && resource.indicator_id === currentIndicator &&
-          resource.shapes.includes('declared_profile'))
-        if (declared) {
+        const binding = profileCatalogueBinding(resources, currentTheme, currentIndicator)
+        if (binding.declaration) {
           profileMode.value = true
           catalogueProfil.value = resources
           profileBootstrapError.value = cause
@@ -272,6 +285,14 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
         }
       } catch {
         // The injected-loader compatibility path may not expose a semantic API.
+      }
+      if (earlyManifest?.routes[currentTheme as Theme]?.includes(currentIndicator) && earlyProfileCatalogue === null) {
+        profileMode.value = true
+        profileBootstrapError.value = new PayloadError('fetch', '/api/resources',
+          'Le catalogue des profils sémantiques est indisponible.')
+        profileDiscoveryComplete.value = true
+        profileBootstrapLoading.value = false
+        return
       }
       if (earlyManifest?.routes[currentTheme as Theme]?.includes(currentIndicator)) {
         routeModeleIndicateur.value = true
@@ -322,10 +343,8 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
       // than breaking unrelated static composition/distribution pages.
     }
     if (sequence !== profileDiscoverySequence) return
-    const declared = loadedCatalogue.find((resource) => resource.resource_id === currentIndicator &&
-      resource.theme_id === currentTheme && resource.indicator_id === currentIndicator &&
-      resource.shapes.includes('declared_profile'))
-    if (declared) {
+    const binding = profileCatalogueBinding(loadedCatalogue, currentTheme, currentIndicator)
+    if (binding.declaration) {
       profileMode.value = true
       metadataProfilRoute.value = loadedMetadata
       catalogueProfil.value = loadedCatalogue
@@ -336,14 +355,24 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
         profileBootstrapLoading.value = false
         return
       }
-      declarationProfil.value = declared
+      declarationProfil.value = binding.declaration
+      profileDiscoveryComplete.value = true
+      profileBootstrapLoading.value = false
+      return
+    }
+    if (profileMarked || binding.incompatible) {
+      profileMode.value = true
+      metadataProfilRoute.value = loadedMetadata
+      catalogueProfil.value = loadedCatalogue
+      profileBootstrapError.value = new PayloadError('validation', currentIndicator,
+        'La déclaration du profil ne correspond pas au catalogue sémantique disponible.')
       profileDiscoveryComplete.value = true
       profileBootstrapLoading.value = false
       return
     }
   }
 
-  if (canUseManifest && !scalaireApiAuMontage) {
+  if (canUseManifest) {
     if (earlyManifest) {
       routeModeleIndicateur.value = earlyManifest.routes[currentTheme as Theme]?.includes(currentIndicator) ?? false
     } else {
@@ -361,6 +390,55 @@ async function resolveProfileRoute(currentTheme: string, currentIndicator: strin
       }
     }
     if (routeModeleIndicateur.value) {
+      let resources = earlyProfileCatalogue
+      if (resources === null) {
+        try { resources = await chargerCatalogueRessources() }
+        catch (cause) {
+          if (sequence !== profileDiscoverySequence) return
+          // A manifest route with no retained page metadata cannot prove that
+          // its static projection is safe to serve. Keep it retryable rather
+          // than letting an unavailable catalogue authorize stale numerics.
+          if (!page || profileMarked) {
+            profileMode.value = true
+            metadataProfilRoute.value = loadedMetadata
+            profileBootstrapError.value = cause instanceof PayloadError ? cause
+              : new PayloadError('fetch', '/api/resources', 'Le catalogue des profils sémantiques est indisponible.')
+            profileDiscoveryComplete.value = true
+            profileBootstrapLoading.value = false
+            return
+          }
+        }
+      }
+      if (resources !== null) {
+        const binding = profileCatalogueBinding(resources, currentTheme, currentIndicator)
+        if (binding.declaration) {
+          profileMode.value = true
+          metadataProfilRoute.value = loadedMetadata
+          catalogueProfil.value = resources
+          if (!page || !retainedProfileFamily) {
+            profileBootstrapError.value = new PayloadError('validation', currentIndicator,
+              'Le profil déclaré ne dispose pas d’une présentation locale prise en charge.')
+            profileDiscoveryComplete.value = true
+            profileBootstrapLoading.value = false
+            return
+          }
+          declarationProfil.value = binding.declaration
+          profileDiscoveryComplete.value = true
+          profileBootstrapLoading.value = false
+          return
+        }
+        if (profileMarked || binding.incompatible) {
+          profileMode.value = true
+          metadataProfilRoute.value = loadedMetadata
+          catalogueProfil.value = resources
+          profileBootstrapError.value = new PayloadError('validation', currentIndicator,
+            'La déclaration du profil ne correspond pas au catalogue sémantique disponible.')
+          profileDiscoveryComplete.value = true
+          profileBootstrapLoading.value = false
+          return
+        }
+      }
+      if (scalaireApiAuMontage) routeModeleIndicateur.value = false
       profileDiscoveryComplete.value = true
       profileBootstrapLoading.value = false
       return

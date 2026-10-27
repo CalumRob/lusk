@@ -14,6 +14,7 @@ for (const name of Object.keys(process.env)) {
 }
 const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
+const headAtStart = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
 const expectedCensus = [
   ['demographie', 'structure_age', 'pyramid'],
   ['habitat', 'mix_logements', 'composition'], ['habitat', 'statut', 'composition'],
@@ -96,6 +97,7 @@ function createApiHarness(specs, territories) {
   const profileFocalReads = []
   const scalarFacts = []
   const comparisons = []
+  const comparisonResults = []
   const fixedComparisons = []
   const apiRequests = []
   const unexpectedApi = []
@@ -231,7 +233,8 @@ function createApiHarness(specs, territories) {
   }
 
   return {
-    profileFacts, profileFocalReads, scalarFacts, comparisons, fixedComparisons, apiRequests, unexpectedApi,
+    profileFacts, profileFocalReads, scalarFacts, comparisons, comparisonResults,
+    fixedComparisons, apiRequests, unexpectedApi,
     failNextComparison(resource) { failComparisonFor = resource },
     suppressNextDpeSignature() { suppressDpeSignature = true },
     delayNextProfile(resource) {
@@ -269,7 +272,9 @@ function createApiHarness(specs, territories) {
               await route.fulfill({ status: 503, contentType: 'application/json', body: '{"detail":"fixture comparison outage"}' })
               return
             }
-            results.push({ id: item.id, resource: item.resource, data: comparisonData(item) })
+            const data = comparisonData(item)
+            comparisonResults.push({ item, result: data.result })
+            results.push({ id: item.id, resource: item.resource, data })
           }
         }
         await route.fulfill({ status: 200, contentType: 'application/json',
@@ -299,6 +304,7 @@ try {
     return [theme, JSON.parse(text)]
   })))
   const specs = getSpecs(metadataByTheme)
+  const { formaterValeur, formaterRang } = await server.ssrLoadModule('/src/payload/selectors.ts')
   const census = specs.map(({ theme, indicator, page }) => [theme, indicator, page.family])
   assert.deepEqual(census, expectedCensus, 'The producer-derived profile census must remain complete and exact')
   const harness = createApiHarness(specs, territoiresFixture)
@@ -309,12 +315,18 @@ try {
   page.on('pageerror', (error) => pageErrors.push(error.message))
   page.on('request', (request) => requests.push(new URL(request.url()).pathname))
   page.on('requestfailed', (request) => {
-    if (!new URL(request.url()).hostname.startsWith('127.0.0.1')) externalFailures.push(request.url())
+    // MapLibre cancels in-flight vector tiles when the route/viewport changes;
+    // these navigation aborts are not failed assets.
+    if (!new URL(request.url()).hostname.startsWith('127.0.0.1') &&
+        request.failure()?.errorText !== 'net::ERR_ABORTED') {
+      externalFailures.push(`${request.url()} (${request.failure()?.errorText ?? 'request failed'})`)
+    }
   })
   await page.route('**/api/**', (route) => harness.handleApi(route))
   await page.route('**/data/territoires.json', (route) => route.fulfill({ status: 200, contentType: 'application/json',
     body: JSON.stringify(territoiresFixture) }))
 
+  const routeEvidence = []
   for (const spec of specs) {
     const startFacts = harness.profileFacts.length
     const startComparisons = harness.comparisons.length
@@ -329,6 +341,64 @@ try {
       `${spec.indicator} must acquire one selected semantic comparison`)
     assert((await page.locator('body').innerText()).includes('API source'), `${spec.indicator} must display API provenance`)
     assert((await page.locator('body').innerText()).includes('API axis'), `${spec.indicator} must use native API axes`)
+
+    const comparison = harness.comparisonResults.slice(startComparisons)
+      .find(({ item }) => item.resource === spec.indicator)?.result
+    assert(comparison, `${spec.indicator} must return a selected numeric comparison`)
+    const expectedMedian = `${formaterValeur({ value: comparison.median, unit: comparison.unit })} ${comparison.unit}`
+    const medianSurface = spec.family === 'distribution' || typeof comparison.source_facet === 'string'
+      ? await page.locator('[data-testid="profile-comparison-summary"]').innerText()
+      : await page.locator('.median strong').innerText()
+    assert(medianSurface.includes(expectedMedian),
+      `${spec.indicator} must render its selected API median ${expectedMedian}: ${medianSurface}`)
+
+    const tableRows = page.locator('.comparison-table-scroll tbody tr')
+    assert.equal(await tableRows.count(), comparison.member_ranks.length,
+      `${spec.indicator} table must cover every selected API peer`)
+    let selectedTableFact = null
+    for (const peer of comparison.member_ranks) {
+      const territory = territoiresFixture.find((candidate) => candidate.territoire === peer.territory_id)
+      assert(territory, `${spec.indicator} peer ${peer.territory_id} must exist in the territory reference`)
+      const cells = tableRows.filter({ hasText: territory.nom }).locator('td')
+      const expectedRank = formaterRang(peer.rank, peer.rank_size) ?? ''
+      assert.equal((await cells.nth(2).innerText()).trim(), expectedRank,
+        `${spec.indicator} peer rank for ${territory.nom} must match the semantic API result`)
+      if (peer.territory_id === '22001') {
+        const detail = spec.page.comparison?.detail ?? spec.details[0]
+        const sex = spec.page.comparison?.sex ?? null
+        const detailIndex = spec.details.indexOf(detail)
+        const sexIndex = sex === null ? 0 : spec.sexes.indexOf(sex)
+        const value = spec.scalar ? 0.623 : 0.317 + detailIndex * 0.019 + sexIndex * 0.007
+        const unit = spec.scalar ? spec.page.comparison.unit : spec.units[detail]
+        const expectedFact = `${formaterValeur({ value, unit })} ${unit}`
+        assert((await cells.nth(1).innerText()).includes(expectedFact),
+          `${spec.indicator} peer table must render its selected API fact ${expectedFact}: ${await cells.nth(1).innerText()}`)
+        selectedTableFact = expectedFact
+      }
+    }
+
+    // Verify the actual map surface uses this route's native API fact, including
+    // the separately declared scalar companion for DPE.
+    await page.getByRole('button', { name: 'Carte', exact: true }).click()
+    await page.locator('.popup-carte-kpi').first().waitFor({ state: 'visible', timeout: 20000 })
+    const routeMapPopup = await page.locator('.popup-carte').innerText()
+    const detail = spec.page.comparison?.detail ?? spec.details[0]
+    const sex = spec.page.comparison?.sex ?? null
+    const detailIndex = spec.details.indexOf(detail)
+    const sexIndex = sex === null ? 0 : spec.sexes.indexOf(sex)
+    const unit = spec.scalar ? spec.page.comparison.unit : spec.units[detail]
+    const value = spec.scalar ? 0.623 : spec.sexes.length
+      ? spec.sexes.reduce((sum, _sex, index) => sum + 0.317 + detailIndex * 0.019 + index * 0.007, 0)
+      : 0.317 + detailIndex * 0.019 + sexIndex * 0.007
+    const label = spec.scalar ? `API label ${spec.scalar}` : `API axis ${detail}`
+    const expectedMapFact = `${formaterValeur({ value, unit })} ${unit}`
+    assert(routeMapPopup.includes(label) && routeMapPopup.includes(expectedMapFact),
+      `${spec.indicator} map must display ${label} · ${expectedMapFact}: ${routeMapPopup}`)
+    routeEvidence.push({ theme: spec.theme, indicator: spec.indicator,
+      comparison: { median: comparison.median, unit: comparison.unit, rendered: expectedMedian },
+      selectedTableFact, peerRanks: comparison.member_ranks,
+      mapFact: { label, rendered: expectedMapFact } })
+
     await page.getByRole('button', { name: 'L’indicateur' }).click()
     await page.getByText('API-2026', { exact: false }).first().waitFor({ state: 'visible' })
     await page.waitForFunction(() => !document.querySelector('[role="status"]:not([hidden])')?.textContent?.includes('Chargement de'))
@@ -460,12 +530,15 @@ try {
   assert.deepEqual(harness.unexpectedApi, [], 'Every API request must be intercepted by this fixture')
   assert.deepEqual(pageErrors, [], `The browser must finish without uncaught page errors: ${pageErrors.join('; ')}`)
 
-  const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+  const headAtEnd = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+  assert.equal(headAtEnd, headAtStart, 'HEAD must remain unchanged throughout browser verification')
   const report = {
-    issue: '#853', head, command: 'cd app && npm run verify:profile-pages',
+    issue: '#853', head: headAtEnd, headAtStart, headAtEnd, command: 'cd app && npm run verify:profile-pages',
     modeVariables: 'all VITE_* variables unset before Vite server start',
     profileRoutes: census.length, profileCensus: census,
+    routeEvidence,
     checks: ['API-derived headings/axes/provenance and all four page families',
+      'all ten routes render selected numeric facts/units, exact API peer ranks, and map values',
       'single semantic profile cohort per route; no static numeric payload or retired endpoint',
       'selected detail × sex coordinates update comparison without rereading facts',
       'selected API facet and unit in the map popup', 'DPE scalar companion remains separate',
@@ -478,7 +551,7 @@ try {
       linkedScalarFactReads: harness.scalarFacts.length, selectedComparisonReads: harness.comparisons.length,
       staticNumericReads: numericStatic.length, retiredProfileCalls: retired.length,
       unexpectedApiRequests: harness.unexpectedApi.length, browserPageErrors: pageErrors.length,
-      externalAssetFailures: externalFailures.length },
+      externalAssetFailures: externalFailures },
     renderedEvidence: { profileMapPopup: mapPopup, dpeScalarMapPopup: dpePopup },
     mobile,
   }
