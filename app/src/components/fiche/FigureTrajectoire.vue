@@ -7,7 +7,7 @@
 import { computed } from 'vue'
 
 import { detailsRangEnContexte, formaterNombreFR, formaterValeur, formaterVintage } from '@/payload/selectors'
-import type { Indicateur, Theme, TrajectoryMetadata } from '@/payload/types'
+import type { Indicateur, NativeThemeFactContract, Theme, TrajectoryMetadata } from '@/payload/types'
 import type { DirectionRang } from '@/methodes/indicateurs'
 import PuceRang from './PuceRang.vue'
 import { directionIndicateur, puceRangDirection } from '@/fiche/figureGrammaire'
@@ -54,24 +54,24 @@ function abscisseDetail(detail: string): number | null {
   return Number.isFinite(valeur) ? valeur : null
 }
 
-function pointsDepuis(lignes: Indicateur[], declaredAxisValues?: string[]): Point[] {
-  const axisValues = declaredAxisValues ?? lignes.find((ligne) => ligne.nativeContract?.axisValues?.length)
-    ?.nativeContract?.axisValues
+function pointsDepuis(lignes: Indicateur[], nativeContract?: NativeThemeFactContract): Point[] {
+  const contract = nativeContract ?? lignes.find((ligne) => ligne.nativeContract?.axisValues?.length)?.nativeContract
+  const axisValues = contract?.axisValues
   const axisOrder = axisValues ? new Map(axisValues.map((detail, index) => [detail, index])) : null
   const points = lignes
     .filter((ligne): ligne is Indicateur & { detail: string } => ligne.detail !== null && ligne.detail !== undefined)
     .filter((ligne) => !axisOrder || axisOrder.has(ligne.detail))
     .map((ligne) => {
-      const contract = ligne.nativeContract
-      const axisIndex = contract?.axisValues?.indexOf(ligne.detail) ?? -1
+      const axisIndex = axisValues?.indexOf(ligne.detail) ?? -1
       const declaredCoordinate = axisIndex >= 0 ? contract?.axisNumericValues?.[axisIndex] : undefined
-      const nativeCoordinate = ligne.numericAxisValue ??
-        (typeof declaredCoordinate === 'number' ? declaredCoordinate : undefined)
+      const nativeCoordinate = axisValues
+        ? (typeof declaredCoordinate === 'number' ? declaredCoordinate : undefined)
+        : ligne.numericAxisValue ?? abscisseDetail(ligne.detail) ?? undefined
       return {
         detail: ligne.detail,
         // Native axes are categorical unless their complete descriptor carries
         // numeric coordinates. Never turn an ordinal-looking key into a value.
-        abscisse: nativeCoordinate ?? (axisValues ? 0 : abscisseDetail(ligne.detail) ?? 0),
+        abscisse: nativeCoordinate ?? 0,
         texte: formaterValeur(ligne),
         valeur: ligne.value,
         libelle: props.labelsDetail?.[ligne.detail] ?? '',
@@ -90,10 +90,11 @@ function pointsDepuis(lignes: Indicateur[], declaredAxisValues?: string[]): Poin
   return points.sort((a, b) => a.abscisse - b.abscisse)
 }
 
-const nativeAxisValues = computed(() => props.lignes.find((ligne) => ligne.nativeContract?.axisValues?.length)
-  ?.nativeContract?.axisValues)
-const points = computed(() => pointsDepuis(props.lignes, nativeAxisValues.value))
-const pointsReference = computed(() => pointsDepuis(props.reference ?? [], nativeAxisValues.value))
+const nativeAxisContract = computed(() => props.lignes.find((ligne) => ligne.nativeContract?.axisValues?.length)
+  ?.nativeContract)
+const nativeAxisValues = computed(() => nativeAxisContract.value?.axisValues)
+const points = computed(() => pointsDepuis(props.lignes, nativeAxisContract.value))
+const pointsReference = computed(() => pointsDepuis(props.reference ?? [], nativeAxisContract.value))
 const premiere = computed(() => props.lignes[0] ?? props.reference?.[0] ?? null)
 const repereScalaire = computed(() => props.lignes.find((ligne) => ligne.detail == null) ?? null)
 const rangRepereScalaire = computed(() => repereScalaire.value ? detailsRangEnContexte(repereScalaire.value) : null)
@@ -138,7 +139,8 @@ const domaineX = computed(() => {
     .filter((value): value is number => value !== undefined && Number.isFinite(value)) ?? []
   const coordinateForDetail = (detail: string): number | null => {
     const declared = props.trajectory?.ticks?.find((tick) => tick.detail === detail)?.numericValue
-    return declared !== undefined ? declared : abscisseDetail(detail)
+    if (declared !== undefined) return declared
+    return nativeAxisValues.value ? null : abscisseDetail(detail)
   }
   const endpoints = props.trajectory?.endpoints?.map(coordinateForDetail)
     .filter((value): value is number => value !== null) ?? []
@@ -176,7 +178,7 @@ function x(point: Point): number {
 
 function xMarker(detail: string): number | null {
   const tick = ticks.value.find((candidate) => candidate.detail === detail)
-  const abscisse = tick?.numericValue ?? abscisseDetail(detail)
+  const abscisse = tick?.numericValue ?? (nativeAxisValues.value ? null : abscisseDetail(detail))
   if (numerique.value && abscisse !== null && abscisse !== undefined) {
     const fraction = (abscisse - domaineX.value.min) / (domaineX.value.max - domaineX.value.min)
     return PLOT_LEFT + fraction * (PLOT_RIGHT - PLOT_LEFT)

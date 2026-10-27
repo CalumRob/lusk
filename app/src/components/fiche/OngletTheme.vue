@@ -157,9 +157,14 @@ function trajectoirePour(clef: string): TrajectoryMetadata | undefined {
   const numericCoordinates = numeric?.length === contract.axisValues.length &&
     numeric.every((value) => typeof value === 'number' && Number.isFinite(value))
   const declaredDomain = new Set(contract.axisValues)
-  const retainedEndpoints = new Set((catalogueTrajectory?.endpoints ?? []).filter((detail) => declaredDomain.has(detail)))
+  const nativeEndpoints = numericCoordinates
+    ? contract.axisValues.map((detail, index) => ({ detail, coordinate: numeric![index] as number }))
+      .sort((a, b) => a.coordinate - b.coordinate)
+      .filter((_, index, values) => index === 0 || index === values.length - 1)
+      .map(({ detail }) => detail)
+    : [contract.axisValues[0], contract.axisValues.at(-1)].filter((detail): detail is string => detail !== undefined)
   return {
-    endpoints: contract.axisValues.filter((detail) => retainedEndpoints.has(detail)),
+    endpoints: nativeEndpoints,
     ...(numericCoordinates && catalogueTrajectory?.axisLabels
       ? { axisLabels: catalogueTrajectory.axisLabels } : {}),
     ...(catalogueTrajectory?.reference ? { reference: catalogueTrajectory.reference } : {}),
