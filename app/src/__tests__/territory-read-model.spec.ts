@@ -143,6 +143,40 @@ describe('le modèle de lecture d’un territoire', () => {
     }
   })
 
+  it.each([
+    ['native / scalar off', '1', '0', 0, false],
+    ['native / scalar on', '1', '1', 0, false],
+    ['explicit static / scalar off', '0', '0', 0, false],
+    ['scalar-only', '0', '1', 6, true],
+  ] as const)(
+    'retains the supported metadata dependency in the %s mode',
+    async (_label, native, scalar, catalogueCount, referenceExpected) => {
+      vi.stubEnv('VITE_THEME_ACQUISITION_API', native)
+      vi.stubEnv('VITE_SCALAR_COHORT_API', scalar)
+      const calls: string[] = []
+      vi.stubGlobal('fetch', vi.fn(async (input: RequestInfo | URL) => {
+        const url = String(input)
+        calls.push(url)
+        if (!url.startsWith('/data/')) throw new Error(`Unexpected request: ${url}`)
+        const file = url.slice('/data/'.length)
+        const body = file === 'modeles-lecture/territoires/commune/22001.json'
+          ? modelePublie22001
+          : JSON.parse(readFileSync(resolve(process.cwd(), `../public/data/${file}`), 'utf8'))
+        return new Response(JSON.stringify(body), { status: 200 })
+      }))
+
+      try {
+        const model = await chargerModeleTerritoire('commune', target.territoire)
+        expect(model.territory).toMatchObject({ type: 'commune', territoire: '22001' })
+        expect(calls.filter((url) => /^\/data\/theme_[^/]+\.json$/.test(url))).toHaveLength(catalogueCount)
+        expect(calls.filter((url) => url === '/data/territoires.json')).toHaveLength(referenceExpected ? 1 : 0)
+      } finally {
+        vi.unstubAllGlobals()
+        vi.unstubAllEnvs()
+      }
+    },
+  )
+
   it('isolates invalid inactive legacy theme content from the native territory identity', async () => {
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
@@ -165,8 +199,12 @@ describe('le modèle de lecture d’un territoire', () => {
   it.each([
     ['HTTP 404', new Response('missing', { status: 404 })],
     ['JSON invalide', new Response('not-json', { status: 200 })],
+    ['erreur réseau', null],
   ])('keeps a %s metadata failure local to the optional catalogue loader', async (_name, response) => {
-    vi.stubGlobal('fetch', vi.fn(async () => response))
+    vi.stubGlobal('fetch', vi.fn(async () => {
+      if (response === null) throw new TypeError('network unavailable')
+      return response
+    }))
 
     try {
       await expect(chargerMetadonneesTheme('programmes')).rejects.toMatchObject({

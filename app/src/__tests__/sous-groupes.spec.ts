@@ -129,14 +129,19 @@ describe('sousGroupesPourTerritoire — l’ordre, les labels et les clés vienn
     ])
   })
 
-  it('ne rend aucune figure pour une métadonnée absente — jamais un bloc inventé', () => {
+  it('keeps producer facts visible with a missing catalogue but withholds the unresolved reading', () => {
     const sousGroupes = sousGroupesPourTerritoire(
       payloadDe(indicateursDemographieFixture, histoiresDemographieFixture),
       'demographie',
       '22001',
     )
 
-    expect(sousGroupes).toEqual([])
+    expect(sousGroupes).toHaveLength(2)
+    expect(sousGroupes[0]?.figureCompacte?.clef).toBe('structure_age')
+    expect(sousGroupes[0]?.figures.map((figure) => figure.key)).toContain('densite')
+    expect(sousGroupes[1]?.figureCompacte?.clef).toBe('evolution_1968')
+    expect(sousGroupes[1]?.lecture).toBeNull()
+    expect(sousGroupes[1]?.lectureIndisponible).toBe(true)
   })
 })
 

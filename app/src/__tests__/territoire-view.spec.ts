@@ -217,9 +217,9 @@ async function monterNoteComparaison(mode: 'densite' | 'epci' | 'bretagne') {
 }
 
 describe('TerritoireView — modèle atomique par territoire', () => {
-  it('renders native Programmes facts while the selected legacy catalogue is still held', async () => {
+  it('renders native Programmes facts with a missing active projection while its catalogue is held', async () => {
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
-    vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
+    vi.stubEnv('VITE_SCALAR_COHORT_API', '1')
     let notifyMetadataStarted!: () => void
     const metadataStarted = new Promise<void>((resolve) => { notifyMetadataStarted = resolve })
     let releaseMetadata!: (response: Response) => void
@@ -228,6 +228,7 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     let metadataCalls = 0
     const modelWithBadInactiveMetadata = structuredClone(modelePublie22001)
     modelWithBadInactiveMetadata.themes.habitat.theme_metadata = null
+    modelWithBadInactiveMetadata.themes.programmes.theme_metadata = null
     const programmeResources = nativeResources('programmes')
     const annual = programmeResources.find((resource) => resource.resource_id === 'subventions_annuelles')!
     const fetchAll = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -270,6 +271,8 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     try {
       const mounted = await monter('/territoire/commune/22001', chargerModeleTerritoire, chargerMetadonneesTheme)
       wrapper = mounted.wrapper
+      await flushPromises()
+      expect(metadataCalls).toBe(1)
       await metadataStarted
       await flushPromises()
 
@@ -358,18 +361,26 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     }
   }, 20000)
 
-  it('keeps a producer-typed non-scalar reading visible when its optional catalogue returns 404', async () => {
+  it('keeps typed facts visible with a malformed active projection and retries only its 404 catalogue', async () => {
     vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
     vi.stubEnv('VITE_SCALAR_COHORT_API', '0')
     const requests: Array<Array<Record<string, any>>> = []
     const readingResource = nativeResources('economie').find((resource) =>
       resource.resource_id === 'economie_selected_reading')!
+    const modelWithMalformedEconomyProjection = structuredClone(modelePublie22001)
+    modelWithMalformedEconomyProjection.themes.economie.theme_metadata = { theme: 'programmes' }
+    let metadataCalls = 0
     const fetchAll = vi.fn(async (input: RequestInfo | URL, init?: RequestInit) => {
       const url = String(input)
       if (url === '/data/modeles-lecture/territoires/commune/22001.json') {
-        return new Response(JSON.stringify(modelePublie22001), { status: 200 })
+        return new Response(JSON.stringify(modelWithMalformedEconomyProjection), { status: 200 })
       }
-      if (url === '/data/theme_economie.json') return new Response('not found', { status: 404 })
+      if (url === '/data/theme_economie.json') {
+        metadataCalls += 1
+        return metadataCalls === 1
+          ? new Response('not found', { status: 404 })
+          : new Response(readFileSync(resolve(process.cwd(), '../public/data/theme_economie.json'), 'utf8'), { status: 200 })
+      }
       if (url === '/api/resources') return nativeCatalogueResponse()
       if (url === '/api/resources/read-batch') {
         const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
@@ -390,10 +401,18 @@ describe('TerritoireView — modèle atomique par territoire', () => {
     try {
       await flushPromises()
       expect(wrapper.get('[role="tabpanel"]').text()).toContain('Sentinelle API — activité')
+      const focalReadingReads = () => requests.flat().filter((item) =>
+        item.resource === readingResource.resource_id && item.intent.kind === 'facts').length
+      const readsBeforeMetadataRetry = focalReadingReads()
       expect(requests.flat().some((item) => item.resource === readingResource.resource_id &&
         item.intent.kind === 'facts')).toBe(true)
       expect(fetchAll.mock.calls.map(([url]) => String(url)).filter((url) => url.startsWith('/data/theme_')))
         .toEqual(['/data/theme_economie.json'])
+      await wrapper.get('[role="tabpanel"] button').trigger('click')
+      await flushPromises()
+      expect(metadataCalls).toBe(2)
+      expect(focalReadingReads()).toBe(readsBeforeMetadataRetry)
+      expect(wrapper.get('[role="tabpanel"]').text()).toContain('Sentinelle API — activité')
     } finally {
       wrapper.unmount()
       vi.unstubAllGlobals()

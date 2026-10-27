@@ -7,7 +7,16 @@ import OngletTheme from '../components/fiche/OngletTheme.vue'
 import {
   apercuAvecNAFixture,
   histoiresDemographieFixture,
+  histoiresEconomieFixture,
+  histoiresHabitatFixture,
+  histoiresMilieuxFixture,
+  histoiresMobiliteFixture,
+  indicateursEconomieFixture,
   indicateursDemographieFixture,
+  indicateursHabitatFixture,
+  indicateursMilieuxFixture,
+  indicateursMobiliteFixture,
+  indicateursProgrammesFixture,
   metadonneesThemesFixtures,
   runReportFraisFixture,
   territoiresFixture,
@@ -54,6 +63,98 @@ async function monter(
 }
 
 describe('OngletTheme — the shared app-owned subgroup grammar (Démographie)', () => {
+  it('keeps native descriptor labels and axis membership ahead of a stale loaded catalogue', async () => {
+    const indicators = indicateursHabitatFixture.filter((row) => row.key !== 'distribution_dpe' ||
+      row.detail === 'A' || row.detail === 'B').map((row) => row.key === 'distribution_dpe'
+      ? { ...row, nativeContract: {
+        label: 'Distribution DPE — contrat API',
+        shapes: ['declared_profile'],
+        axisValues: ['A', 'B'],
+        axes: [
+          { name: 'detail', key: 'A', label: 'Étiquette A — contrat API', order: 0 },
+          { name: 'detail', key: 'B', label: 'Étiquette B — contrat API', order: 1 },
+        ],
+      } }
+      : row)
+    const staleMetadata = structuredClone(metadonneesThemesFixtures.habitat)
+    staleMetadata.indicator_labels.distribution_dpe = 'Ancien libellé du catalogue'
+    staleMetadata.detail_labels.distribution_dpe = {
+      A: 'Ancienne étiquette A', B: 'Ancienne étiquette B', C: 'Ancienne étiquette C',
+    }
+    const wrapper = mount(OngletTheme, {
+      props: {
+        theme: 'habitat',
+        territoire: '22001',
+        metadataStatus: 'ready',
+        payload: {
+          ...payloadDemographie,
+          indicateurs: indicators,
+          histoires: histoiresHabitatFixture,
+          themeMetadata: { habitat: staleMetadata },
+        },
+      },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await flushPromises()
+
+    const figure = wrapper.get('[data-clef="distribution_dpe"]')
+    expect(figure.get('figcaption').text()).toBe('Distribution DPE — contrat API')
+    expect(figure.get('[data-etiquette="A"]').attributes('title')).toContain('Étiquette A — contrat API')
+    expect(figure.text()).not.toContain('Ancien libellé du catalogue')
+    expect(figure.text()).not.toContain('Ancienne étiquette')
+    expect(figure.find('[data-etiquette="C"]').exists()).toBe(false)
+    wrapper.unmount()
+  })
+
+  it.each([
+    ['demographie', 'structure_age'],
+    ['habitat', 'mix_logements'],
+    ['economie', 'effectifs_salaries'],
+    ['milieux', 'artif_par_habitant'],
+    ['mobilite', 'voitures_menage'],
+  ] as const)('keeps native %s figures visible while its catalogue is unavailable', async (theme, key) => {
+    const allIndicators = [
+      ...indicateursDemographieFixture,
+      ...indicateursHabitatFixture,
+      ...indicateursEconomieFixture,
+      ...indicateursMilieuxFixture,
+      ...indicateursMobiliteFixture,
+      ...indicateursProgrammesFixture,
+    ].map((row) => theme === 'economie' && row.theme === 'economie' && row.key === 'chomage'
+      ? { ...row, nativeContract: { direction: 'high' } }
+      : row)
+    const wrapper = mount(OngletTheme, {
+      props: {
+        theme,
+        territoire: '22001',
+        metadataStatus: 'error',
+        retryMetadata: () => undefined,
+        payload: {
+          ...payloadDemographie,
+          indicateurs: allIndicators,
+          histoires: [
+            ...histoiresDemographieFixture,
+            ...histoiresHabitatFixture,
+            ...histoiresEconomieFixture,
+            ...histoiresMilieuxFixture,
+            ...histoiresMobiliteFixture,
+          ],
+          themeMetadata: {},
+        },
+      },
+      global: { stubs: { RouterLink: RouterLinkStub } },
+    })
+    await flushPromises()
+
+    expect(wrapper.find(`[data-clef="${key}"]`).exists()).toBe(true)
+    expect(wrapper.text().toLowerCase()).toContain('disponible')
+    expect(wrapper.findAll('button').some((button) => button.text() === 'Réessayer l’explication')).toBe(true)
+    if (theme === 'economie') {
+      expect(wrapper.get('[data-clef="chomage"] .puce-rang').attributes('aria-label')).toContain('plus = mieux')
+    }
+    wrapper.unmount()
+  })
+
   it('renders the theme overline from the metadata label', async () => {
     const wrapper = await monter('22001')
 

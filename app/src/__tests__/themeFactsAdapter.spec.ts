@@ -519,10 +519,21 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
     const adapted = themeFactsRowsFromSemantic('habitat', { resource_reads: [
       { resource: 'part_passoires', shapes: ['scalar'], data: { resource: 'part_passoires',
         target: { kind: 'territory', type: 'commune', id: cible.territoire },
-        indicator_id: 'part_passoires', unit: '%', value: 0.42, status: 'measured', sources: source } },
-      { resource: 'distribution_dpe', shapes: ['declared_profile'], data: { resource: 'distribution_dpe',
+        indicator_id: 'part_passoires', unit: '%', value: 0.42, status: 'measured', sources: source },
+        declaration: { resource_id: 'part_passoires', indicator_id: 'part_passoires',
+          label: 'Part de passoires API', unit: '%', direction: 'low', shapes: ['scalar'], axes: [],
+          theme_id: 'habitat', allowed_levels: ['commune'], sources: ['dpe'], target_kinds: ['territory'],
+          fields: ['value'], intents: ['facts'] } },
+      { resource: 'distribution_dpe', shapes: ['declared_profile'], declaration: {
+        resource_id: 'distribution_dpe', indicator_id: 'distribution_dpe', label: 'Distribution DPE API',
+        unit: '%', direction: 'none', shapes: ['declared_profile'], axes: ['detail'],
+        axis_values: [['detail', ['A']]],
+        theme_id: 'habitat', allowed_levels: ['commune'], sources: ['dpe'], target_kinds: ['territory'],
+        fields: ['observations'], intents: ['facts'],
+      }, data: { resource: 'distribution_dpe',
         target: { kind: 'territory', type: 'commune', id: cible.territoire }, content_version: 'profile-v1',
-        descriptor: { indicator_id: 'distribution_dpe', unit: '%', axes: [{ name: 'detail', key: 'A' }] },
+        descriptor: { indicator_id: 'distribution_dpe', unit: '%', axes: [{ name: 'detail', key: 'A',
+          label: 'Étiquette A API', order: 0, unit: '%' }] },
         observations: [{ detail: 'A', value: 0.25, status: 'measured', unit: '%', sources: source }] } },
       { resource: 'prix_m2', shapes: ['ordered_series'], data: { resource: 'prix_m2',
         target: { kind: 'territory', type: 'commune', id: cible.territoire }, publication_id: 'series-v1',
@@ -535,7 +546,14 @@ describe('themeFactsAdapter — le contrat theme-facts-v1 en lignes de fiche (#6
       ['part_passoires', null, 0.42, 'measured'], ['distribution_dpe', 'A', 0.25, 'measured'],
       ['prix_m2', '2024', 3000, 'measured'], ['prix_m2', '2025', null, 'missing'],
     ])
+    expect(adapted.indicateurs.filter((row) => row.key === 'prix_m2').map((row) => row.numericAxisValue)).toEqual([2024, 2025])
     expect(adapted.indicateurs.every((row) => row.fact_sources?.[0]?.source === 'DPE source')).toBe(true)
+    expect(adapted.indicateurs.find((row) => row.key === 'part_passoires')?.nativeContract).toMatchObject({
+      label: 'Part de passoires API', direction: 'low', shapes: ['scalar'],
+    })
+    expect(adapted.indicateurs.find((row) => row.key === 'distribution_dpe')?.nativeContract).toMatchObject({
+      label: 'Distribution DPE API', axes: [{ name: 'detail', key: 'A', label: 'Étiquette A API', order: 0 }],
+    })
   })
 
   it('fails closed when a legacy ordered-series point source is not bound to the producer declaration', () => {
