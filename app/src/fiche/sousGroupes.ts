@@ -283,10 +283,10 @@ function lecturePour(
 
 /**
  * The shared subgroup loop of the fiche — app-owned presentation grammar,
- * joined to actual indicator and resolved-reading rows. Theme metadata remains
- * required for factual classification labels and other consumers, but its
- * subgroups are not fiche presentation authority. Missing metadata still fails
- * closed as no content; no grammar entry fabricates an available fact.
+ * joined to actual indicator and resolved-reading rows. Theme metadata supplies
+ * only the still-dependent factual explanations. Missing
+ * metadata cannot hide producer-validated indicator rows; no grammar entry
+ * fabricates an available fact.
  */
 export function sousGroupesPourTerritoire(
   payload: Payload,
@@ -296,7 +296,6 @@ export function sousGroupesPourTerritoire(
 ): SousGroupeRendu[] {
   const metadata = payload.themeMetadata?.[theme]
   const metadataVerified = options.metadataVerified ?? true
-  if (!metadata) return []
 
   const groupesParCle = new Map<string, Indicateur[]>()
   for (const ligne of payload.indicateurs) {
@@ -404,6 +403,7 @@ export function figureLecturePour(
     // Mode wording is resolved from the payload's shared reseaux vocabulary;
     // classification_labels describes reading values, not transport modes.
     const modes = modesDepuisMetadata(metadata)
+    if (!modes.t || !modes.b) return null
     return {
       genre: 'distribution',
       distribution: distributionPourLecture(h),

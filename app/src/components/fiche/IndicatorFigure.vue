@@ -21,6 +21,7 @@ import {
   phraseRaccordement,
 } from '@/payload/selectors'
 import type { Indicateur, Theme } from '@/payload/types'
+import type { DirectionRang } from '@/methodes/indicateurs'
 import {
   accentPositionRang,
   directionIndicateur,
@@ -36,6 +37,8 @@ const props = defineProps<{
   large?: boolean
   /** Le thème — porté par OngletTheme, nécessaire à la dérivation du sens du classement (#367). */
   theme: Theme
+  /** Native descriptor direction takes precedence; null means no directional rank. */
+  direction?: DirectionRang | null
   /** The territory name used by the approved raccordement sentence (#487). */
   nomTerritoire?: string
 }>()
@@ -70,9 +73,11 @@ const detailsRang = computed(() =>
   premiere.value ? detailsRangEnContexte(premiere.value) : null,
 )
 
-/** La direction du classement — dérivée du registre Méthodes, jamais dupliquée
- *  app-side (#367). null = pas de glyphe (un indicateur hors registre). */
-const direction = computed(() => directionIndicateur(props.theme, props.clef))
+/** Native descriptor first; the retained Méthodes register is used only when
+ *  the caller has no native contract. null = no directional glyph. */
+const direction = computed(() => props.direction !== undefined
+  ? props.direction
+  : directionIndicateur(props.theme, props.clef))
 
 /** La puce de rang directionnelle — glyphe + phrase accessible (#367). */
 const puce = computed(() =>

@@ -147,7 +147,7 @@ watch([productionMobilite, typeRoute, idRoute, retryAedarCount], async ([active,
 const themeMigre = (theme: Theme | null): boolean =>
   themeAcquisitionEnabled(import.meta.env) && theme !== null && THEMES_ACQUISITION_API.includes(theme)
 const statutMetadataPourAffichage = computed<'loading' | 'ready' | 'error'>(() =>
-  !themeMigre(selection.value) || scalarCohortEnabled(import.meta.env)
+  !themeMigre(selection.value)
     ? 'ready'
     : statutCatalogueTheme.value === 'error' ? 'error'
       : statutCatalogueTheme.value === 'ready' ? 'ready' : 'loading',
@@ -160,8 +160,7 @@ watch([() => modeleTerritoire.model.value, selection, typeRoute, idRoute, retryC
     const request = ++sequenceCatalogueTheme
     let cancelled = false
     onCleanup(() => { cancelled = true })
-    if (theme === null || !themeMigre(theme) || !model || model.territory.type !== type || model.territory.territoire !== id ||
-        scalarCohortEnabled(import.meta.env)) {
+    if (theme === null || !themeMigre(theme) || !model || model.territory.type !== type || model.territory.territoire !== id) {
       statutCatalogueTheme.value = 'idle'
       return
     }

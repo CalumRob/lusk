@@ -23,6 +23,7 @@ import FigureCompacte from '@/components/fiche/FigureCompacte.vue'
 import FigureLectureRenderer from '@/components/fiche/FigureLecture.vue'
 import NoeudLecture from '@/components/fiche/NoeudLecture.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
+import { sousGroupesFiche } from '@/fiche/content/ficheGrammar'
 import { libelleIndicateur } from '@/fiche/libelles'
 import {
   figureLecturePour,
@@ -33,6 +34,8 @@ import {
 import type { FigureLecture, SousGroupeRendu } from '@/fiche/sousGroupes'
 import { LIBELLE_HANDOFF, handoffExploration, passarellesLecture } from '@/fiche/explorationHandoff'
 import type { PassarelleLecture } from '@/fiche/explorationHandoff'
+import { NOMS_THEMES } from '@/fiche/onglets'
+import type { DirectionRang } from '@/methodes/indicateurs'
 import { descriptionNuage, estampilleSnapshot, trouverTerritoire } from '@/payload/selectors'
 import type { FamilleFigure, Indicateur, Payload, Theme, TrajectoryMetadata } from '@/payload/types'
 
@@ -53,15 +56,33 @@ interface SousGroupeRenduComplet extends SousGroupeRendu {
   passarellesDeLecture: PassarelleLecture[]
 }
 
-// The theme's published label rides in the metadata (theme_<theme>.json) — the
-// overline never falls back to an app-side dictionary.
-const nomTheme = computed(() => props.payload.themeMetadata?.[props.theme]?.label ?? props.theme)
+const metadataVerified = computed(() => props.metadataStatus === undefined
+  ? Boolean(props.payload.themeMetadata?.[props.theme])
+  : props.metadataStatus === 'ready')
+const nomTheme = computed(() => props.metadataStatus === undefined
+  ? props.payload.themeMetadata?.[props.theme]?.label ?? props.theme
+  : metadataVerified.value
+    ? props.payload.themeMetadata?.[props.theme]?.label ?? NOMS_THEMES[props.theme]
+    : NOMS_THEMES[props.theme])
 
-// Les libellés payload-owned (issue #318) : la fiche lit indicator_labels /
-// detail_labels de la métadonnée du thème — jamais une clé brute. Un sous-groupe
-// rendu implique la métadonnée (sousGroupesPourTerritoire la lit) : les
-// lookups ne retombent jamais, ils échouent fort (le contrat, validé au load).
+// Resolve factual labels from the verified catalogue or native descriptor;
+// never expose an internal indicator key in the fiche.
 const metadata = computed(() => props.payload.themeMetadata?.[props.theme] ?? null)
+
+function nativeContract(clef: string) {
+  return props.payload.indicateurs.find((row) => row.theme === props.theme && row.key === clef && row.nativeContract)
+    ?.nativeContract
+}
+
+function directionPour(clef: string): DirectionRang | null | undefined {
+  const contract = nativeContract(clef)
+  if (!contract) return metadataVerified.value ? undefined : null
+  if (contract.direction === 'high') return 'plus-est-mieux'
+  if (contract.direction === 'low') return 'moins-est-mieux'
+  return null
+}
+
+const hasLocalMetadataExplanation = computed(() => sousGroupes.value.some((groupe) => groupe.metadataExplanationPending))
 
 /** La passarelle « Explorer » (#409 ; compacte #468) emporte SON territoire —
  *  le référent partagé des figures de grille ET des grandes lectures (#473). */
@@ -69,14 +90,14 @@ const refTerritoire = computed(() => trouverTerritoire(props.payload, props.terr
 
 const sousGroupes = computed<SousGroupeRenduComplet[]>(() =>
   sousGroupesPourTerritoire(props.payload, props.theme, props.territoire,
-    { metadataVerified: props.metadataStatus === undefined || props.metadataStatus === 'ready' }).map((groupe) => ({
+    { metadataVerified: metadataVerified.value }).map((groupe) => ({
     ...groupe,
     figureLecture: groupe.lecture
       ? figureLecturePour(props.payload, props.territoire, groupe.lecture)
       : null,
     source: groupe.lecture ? sourceLecture(props.payload, groupe.lecture) : null,
     lignesLQ: groupe.lecture ? lignesLQPour(groupe.lecture) : [],
-    passarellesDeLecture: groupe.lecture
+    passarellesDeLecture: groupe.lecture && metadataVerified.value
       ? passarellesLecture(metadata.value, groupe.lecture.story_key, refTerritoire.value)
       : [],
   })),
@@ -110,15 +131,42 @@ function figuresGrille(groupe: SousGroupeRenduComplet) {
   )
 }
 
-/** The family is metadata-owned for every grid figure, not inferred by key. */
+/** Prefer the verified page contract; otherwise use app presentation or native shape. */
 function familleFigure(clef: string): FamilleFigure {
-  return metadata.value?.indicator_pages?.[clef]?.family ?? 'scalar'
+  if (metadataVerified.value) return metadata.value?.indicator_pages?.[clef]?.family ?? 'scalar'
+  const ficheFigure = sousGroupesFiche(props.theme).find((groupe) => groupe.figure.indicator === clef)?.figure
+  if (ficheFigure) return ficheFigure.family
+  const shapes = nativeContract(clef)?.shapes ?? []
+  if (shapes.includes('ordered_series')) return 'trajectory'
+  if (shapes.includes('declared_profile')) return 'composition'
+  return 'scalar'
 }
 
 /** A trajectory's optional comparison series and marker are data-contract fields. */
 function trajectoirePour(clef: string): TrajectoryMetadata | undefined {
-  const page = metadata.value?.indicator_pages?.[clef]
-  return page?.family === 'trajectory' ? page.trajectory : undefined
+  const catalogueTrajectory = metadataVerified.value && metadata.value?.indicator_pages?.[clef]?.family === 'trajectory'
+    ? metadata.value.indicator_pages[clef]!.trajectory
+    : undefined
+  const contract = nativeContract(clef)
+  if (!contract?.axisValues?.length) return catalogueTrajectory
+
+  const catalogueTicks = new Map((catalogueTrajectory?.ticks ?? []).map((tick) => [tick.detail, tick]))
+  const axisLabels = new Map((contract.axes ?? []).filter((axis) => axis.name === 'detail' && axis.label && axis.label !== axis.key)
+    .map((axis) => [axis.key, axis.label as string]))
+  const numeric = contract.axisNumericValues
+  return {
+    ...(catalogueTrajectory ?? { endpoints: [] }),
+    axis: numeric?.length === contract.axisValues.length && numeric.every((value) => value !== null)
+      ? 'numeric'
+      : catalogueTrajectory?.axis ?? 'ordinal',
+    ticks: contract.axisValues.map((detail, index) => ({
+      detail,
+      label: axisLabels.get(detail) ?? catalogueTicks.get(detail)?.label ??
+        (numeric?.[index] !== null && numeric?.[index] !== undefined ? String(numeric[index]) : ''),
+      ...(numeric?.[index] === null || numeric?.[index] === undefined ? {} : { numericValue: numeric[index] }),
+      ...(catalogueTicks.get(detail)?.mobile === undefined ? {} : { mobile: catalogueTicks.get(detail)!.mobile }),
+    })),
+  }
 }
 
 function lignesReferencePour(clef: string): { lignes: Indicateur[]; label?: string } {
@@ -133,24 +181,34 @@ function lignesReferencePour(clef: string): { lignes: Indicateur[]; label?: stri
 }
 
 function figureEstReference(clef: string): boolean {
+  if (!metadataVerified.value) return false
   return Object.values(metadata.value?.indicator_pages ?? {}).some(
     (page) => page.family === 'trajectory' && page.trajectory.reference?.indicator === clef,
   )
 }
 
-/** The detail labels of a multi-detail figure — the metadata's detail_labels
- *  (issue #318), never an app-side map. A scalar key has no detail map —
- *  IndicatorFigure only reads it for detail rows, which never exist there. */
+/** Resolve category labels from the verified catalogue or native axis descriptor. */
 function labelsDetailPour(clef: string): Record<string, string> | undefined {
-  return metadata.value?.detail_labels[clef]
+  const contract = nativeContract(clef)
+  const catalogueLabels = metadataVerified.value ? metadata.value?.detail_labels[clef] ?? {} : {}
+  if (!contract) return Object.keys(catalogueLabels).length ? catalogueLabels : undefined
+  const labels: Record<string, string> = { ...catalogueLabels }
+  const declaredKeys = new Set(contract.axisValues ?? [])
+  for (const axis of contract.axes ?? []) {
+    if (axis.name === 'detail' && axis.label && axis.label !== axis.key) {
+      labels[axis.key] = axis.label
+      declaredKeys.add(axis.key)
+    }
+  }
+  for (const key of Object.keys(labels)) if (!declaredKeys.has(key)) delete labels[key]
+  return Object.keys(labels).length ? labels : undefined
 }
 
-/** The indicator's French label — the metadata's indicator_labels (never a raw key). */
+/** Resolve the indicator label without falling back to its internal key. */
 function libelleIndicateurMetier(clef: string): string {
-  if (metadata.value === null) {
-    throw new Error(`Métadonnées « ${props.theme} » absentes — la fiche ne rend jamais de clé brute`)
-  }
-  return libelleIndicateur(metadata.value, clef)
+  const nativeLabel = nativeContract(clef)?.label
+  if (nativeLabel && nativeLabel !== clef) return nativeLabel
+  return metadataVerified.value && metadata.value ? libelleIndicateur(metadata.value, clef) : 'Fait disponible'
 }
 
 /**
@@ -159,7 +217,17 @@ function libelleIndicateurMetier(clef: string): string {
  * null pour un indicateur sans page publiée : jamais de lien mort.
  */
 function passarelle(clef: string) {
-  return handoffExploration(metadata.value, clef, refTerritoire.value)
+  return metadataVerified.value ? handoffExploration(metadata.value, clef, refTerritoire.value) : null
+}
+
+function labelsLectureActivite(key: string) {
+  const appLabels = sousGroupesFiche(props.theme).find((subgroup) => subgroup.key === key)?.reading?.paramLabels
+  const catalogueLabels = metadataVerified.value ? metadata.value?.param_labels : undefined
+  return {
+    rang: appLabels?.rang ?? catalogueLabels?.rang ?? '',
+    activity_label: appLabels?.activity_label ?? catalogueLabels?.activity_label ?? '',
+    lq: appLabels?.lq ?? catalogueLabels?.lq ?? '',
+  }
 }
 
 /** The wide figures of the grid (the multi-detail groups). */
@@ -193,6 +261,13 @@ const lignesReseaux = computed(
     }"
   >
     <p class="onglet-theme-overline">{{ nomTheme }}</p>
+    <p v-if="!hasLocalMetadataExplanation && metadataStatus === 'loading'" class="lecture-absent" role="status">
+      Explications complémentaires en cours de chargement.
+    </p>
+    <p v-if="!hasLocalMetadataExplanation && metadataStatus === 'error'" class="lecture-absent" role="status">
+      Les explications complémentaires ne sont pas disponibles.
+      <button type="button" @click="retryMetadata?.()">Réessayer l’explication</button>
+    </p>
 
     <!-- The shared subgroup loop (issue #314) — app-owned grammar drives the
          anatomy of all six themes, identically. A
@@ -275,7 +350,7 @@ const lignesReseaux = computed(
                 v-if="groupe.lignesLQ.length"
                 :famille="groupe.lecture?.figure?.family ?? 'list'"
                 :lignes="groupe.lignesLQ"
-                :labels="{ rang: metadata!.param_labels.rang, activite: metadata!.param_labels.activity_label, lq: metadata!.param_labels.lq }"
+                :labels="{ rang: labelsLectureActivite(groupe.key).rang, activite: labelsLectureActivite(groupe.key).activity_label, lq: labelsLectureActivite(groupe.key).lq }"
               />
               <GraphiqueQuadrantMilieux
                 v-if="groupe.figureLecture?.genre === 'quadrant'"
@@ -348,6 +423,7 @@ const lignesReseaux = computed(
               :large="figureLarge(groupe.figureCompacte.clef)"
               :signe="figureSigne(groupe.figureCompacte.clef)"
               :theme="theme"
+              :direction="directionPour(groupe.figureCompacte.clef)"
             />
             <!-- #409/#468 : la passarelle compacte partagée vers la Page
                  d'indicateur publiée — nouvelle fenêtre, vraie ancre. -->
@@ -374,6 +450,7 @@ const lignesReseaux = computed(
               :large="figureLarge(figure.key)"
               :signe="figureSigne(figure.key)"
               :theme="theme"
+              :direction="directionPour(figure.key)"
             />
             <PassarelleExploration v-if="passarelle(figure.key)" :to="passarelle(figure.key)!" />
           </div>

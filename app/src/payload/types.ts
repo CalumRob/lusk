@@ -63,6 +63,27 @@ export interface Territoire {
   classe_densite_libelle_public?: string | null
 }
 
+/** Narrow factual descriptor copied from the validated native theme API read.
+ * It is deliberately not a ThemeMetadata projection: only the producer's
+ * resource label/shape/axes needed to bind already-validated rows are retained. */
+export interface NativeThemeFactAxis {
+  name: string
+  key: string
+  label?: string
+  order?: number
+  unit?: string
+}
+
+export interface NativeThemeFactContract {
+  label?: string
+  direction?: string
+  shapes?: string[]
+  axes?: NativeThemeFactAxis[]
+  axisKind?: string
+  axisValues?: string[]
+  axisNumericValues?: Array<number | null>
+}
+
 /**
  * The four vintage columns every dated row of the payload carries (indicateurs
  * AND the Économie Stories — issue #120): source · version · the two ISO dates
@@ -99,6 +120,10 @@ export interface Indicateur extends Omit<VintageStamp, 'vintage_version'> {
   sex?: Sexe | null
   /** Optional analytical dimension for multi-axis indicator facts. */
   dimension?: string | null
+  /** The exact native API descriptor for this fact's resource, when acquired. */
+  nativeContract?: NativeThemeFactContract
+  /** Producer-declared numeric coordinate for an ordered-series observation. */
+  numericAxisValue?: number | null
   value: number | null
   unit: string
   /** Contextual explanation for an unavailable value (pipeline-owned fact). */
@@ -983,6 +1008,8 @@ export interface TrajectoryTickMetadata {
   detail: string
   /** Human label; raw detail keys never render. */
   label: string
+  /** Native numeric coordinate for this tick, when the producer declares one. */
+  numericValue?: number
   /** Keep this anchor when the chart has to hide dense labels on mobile. */
   mobile?: boolean
 }

@@ -22,6 +22,7 @@ import {
   ratioOffreCyclable,
 } from '@/payload/selectors'
 import type { Indicateur, Theme } from '@/payload/types'
+import type { DirectionRang } from '@/methodes/indicateurs'
 import {
   directionIndicateur,
   puceRangDirection,
@@ -38,6 +39,8 @@ const props = defineProps<{
   labelsDetail?: Record<string, string>
   /** Le thème — porté par OngletTheme, nécessaire à la dérivation du sens du classement (#367). */
   theme: Theme
+  /** Native descriptor direction takes precedence over the legacy register. */
+  direction?: DirectionRang | null
 }>()
 
 /** Le headline — le ratio total ÷ réseau c, app-side depuis les lignes du payload. */
@@ -73,8 +76,9 @@ const segments = computed<Segment[]>(() => {
 
 const vintage = computed(() => (props.lignes[0] ? formaterVintage(props.lignes[0]) : null))
 
-/** La direction du classement — dérivée du registre Méthodes (#367). */
-const direction = computed(() => directionIndicateur(props.theme, props.clef))
+/** Prefer the native resource descriptor; retain the Méthodes fallback for static callers. */
+const direction = computed(() => props.direction !== undefined
+  ? props.direction : directionIndicateur(props.theme, props.clef))
 
 /** La puce de rang directionnelle d'une ligne — glyphe + phrase accessible. */
 function pucePour(ligne: Indicateur | null): PuceRangDirection | null {

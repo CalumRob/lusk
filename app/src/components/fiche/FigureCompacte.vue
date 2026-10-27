@@ -20,6 +20,7 @@
 import { computed } from 'vue'
 
 import type { FamilleFigure, Indicateur, Theme, TrajectoryMetadata } from '@/payload/types'
+import type { DirectionRang } from '@/methodes/indicateurs'
 import FigureOffreCyclable from './FigureOffreCyclable.vue'
 import FigureCompositionDpe from './FigureCompositionDpe.vue'
 import FigureCompositionPyramide from './FigureCompositionPyramide.vue'
@@ -35,6 +36,8 @@ const props = defineProps<{
   labelsDetail?: Record<string, string>
   /** Le thème — nécessaire à la dérivation du sens du classement (#367). */
   theme: Theme
+  /** Native descriptor direction takes precedence over the legacy method register. */
+  direction?: DirectionRang | null
   /** Les lignes reseaux du MÊME territoire — le dénominateur de L'offre cyclable. */
   reseaux?: Indicateur[]
   /** Optional metadata-driven comparison series for the trajectory family. */
@@ -79,6 +82,7 @@ const corps = computed<Corps>(() => {
     :libelle="libelle"
     :labels-detail="labelsDetail"
     :theme="theme"
+    :direction="direction"
   />
   <FigureCompositionDpe
     v-else-if="corps === 'composition-dpe'"
@@ -103,6 +107,7 @@ const corps = computed<Corps>(() => {
     :libelle="libelle"
     :labels-detail="labelsDetail"
     :theme="theme"
+    :direction="direction"
     :trajectory="trajectory"
     :reference="reference"
     :reference-label="referenceLabel"
@@ -118,5 +123,6 @@ const corps = computed<Corps>(() => {
     :signe="signe"
     :nom-territoire="nom"
     :theme="theme"
+    :direction="direction"
   />
 </template>

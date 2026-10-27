@@ -14,6 +14,8 @@ export interface FicheReadingGrammar {
   /** Template text and its presentation order; the resolved row remains API-owned. */
   readonly template: readonly NoeudTexteRiche[]
   readonly params: readonly string[]
+  /** Stable labels for app-rendered parameters; never sourced from legacy facts. */
+  readonly paramLabels?: Readonly<Record<string, string>>
   readonly figure?: { readonly family: FamilleFigure; readonly indicator: string }
 }
 
@@ -160,6 +162,12 @@ export const GRAMMAIRE_SOUS_GROUPES_FICHE = {
       figure: { family: 'scalar', indicator: 'effectifs_salaries' },
       reading: {
         params: ['rang', 'activity_label', 'lq', 'n'],
+        paramLabels: {
+          rang: 'Rang',
+          activity_label: 'Activité dominante',
+          lq: 'Location quotient (LQ)',
+          n: 'Nombre d’établissements',
+        },
         figure: { family: 'list', indicator: 'lq' },
         template: [
           texte('La commune se spécialise dans '),

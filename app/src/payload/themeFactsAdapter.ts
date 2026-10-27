@@ -1,4 +1,4 @@
-import type { Histoire, HistoireDemographie, HistoireEconomie, HistoireHabitat, HistoireMilieux, HistoireMobilite, Indicateur, TerritoireType, ThemeMetadata, VintageStamp } from './types'
+import type { Histoire, HistoireDemographie, HistoireEconomie, HistoireHabitat, HistoireMilieux, HistoireMobilite, Indicateur, NativeThemeFactContract, NativeThemeFactAxis, TerritoireType, ThemeMetadata, VintageStamp } from './types'
 import { RAISONS_SAILLANCE } from './types'
 import type { SemanticThemeRead, ThemeKey, ThemeResponse, ThemeSelectionMember } from './themeAcquisition'
 import { DESCRIPTIONS_SOURCES } from '@/methodes/sources'
@@ -291,6 +291,7 @@ function indicateurDeSql(
   return {
     territoire: target.territoire, type: target.type, theme, key: fact.indicator_id,
     detail, sex: text(dimensions.sex) ? dimensions.sex as Indicateur['sex'] : null, dimension: null,
+    ...(dimensions.numeric_axis_value === undefined ? {} : { numericAxisValue: dimensions.numeric_axis_value as number | null }),
     value: measured ? fact.value as number : null, unit: fact.unit,
     rider: measured ? null : fact.status,
     observation_status: measured ? 'measured' : 'missing',
@@ -533,6 +534,31 @@ export interface ThemeFactsRows {
   unavailableReadings?: string[]
 }
 
+/** Read only the small API-owned descriptor slice needed to present native facts. */
+export function nativeFactContractFromEnvelope(value: unknown): NativeThemeFactContract | undefined {
+  if (!isRecord(value)) return undefined
+  const contract: NativeThemeFactContract = {}
+  if (texteNonVide(value.label)) contract.label = value.label
+  if (texteNonVide(value.direction)) contract.direction = value.direction
+  if (Array.isArray(value.shapes) && value.shapes.every(text)) contract.shapes = value.shapes
+  if (Array.isArray(value.axes)) {
+    const axes: NativeThemeFactAxis[] = value.axes.flatMap((candidate) => {
+      if (!isRecord(candidate) || !texteNonVide(candidate.name) || !texteNonVide(candidate.key)) return []
+      return [{ name: candidate.name, key: candidate.key,
+        ...(texteNonVide(candidate.label) ? { label: candidate.label } : {}),
+        ...(Number.isInteger(candidate.order) ? { order: candidate.order as number } : {}),
+        ...(texteNonVide(candidate.unit) ? { unit: candidate.unit } : {}) }]
+    })
+    if (axes.length) contract.axes = axes
+  }
+  if (texteNonVide(value.axisKind)) contract.axisKind = value.axisKind
+  if (Array.isArray(value.axisValues) && value.axisValues.every(text)) contract.axisValues = value.axisValues
+  if (Array.isArray(value.axisNumericValues) && value.axisNumericValues.every((item) => item === null || finite(item))) {
+    contract.axisNumericValues = value.axisNumericValues
+  }
+  return Object.keys(contract).length ? contract : undefined
+}
+
 function sourceName(source: Row): unknown { return source.name ?? source.source_name }
 
 function normalizeNativeSources(value: unknown): Row[] {
@@ -709,6 +735,7 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
   const readings: Row[] = []
   const namedReferences: Row[] = []
   const unavailableReadings: string[] = []
+  const nativeContracts: Array<{ indicator_id: string; native_contract: NativeThemeFactContract }> = []
   const reads = acquired.resource_reads
 
   for (const read of reads) {
@@ -717,6 +744,26 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
         read.data.target.kind !== 'territory' || read.data.target.id !== target.territoire || read.data.target.type !== target.type) {
       throw new Error('Identité de lecture sémantique du thème invalide')
     }
+    const declaration = isRecord(read.declaration) ? read.declaration : null
+    const descriptor = isRecord(read.data.descriptor) ? read.data.descriptor : null
+    const indicatorId = texteNonVide(declaration?.indicator_id) ? declaration.indicator_id
+      : texteNonVide(read.data.indicator_id) ? read.data.indicator_id : read.resource
+    const declaredAxis = Array.isArray(declaration?.axes) ? declaration.axes.find(text) : undefined
+    const declaredAxisValues = Array.isArray(declaration?.axis_values)
+      ? declaration.axis_values.find((entry) => Array.isArray(entry) && entry.length === 2 &&
+        (entry[0] === read.data.axis_kind || entry[0] === declaredAxis))?.[1]
+      : undefined
+    const nativeContract = nativeFactContractFromEnvelope({
+      label: texteNonVide(descriptor?.label) ? descriptor.label
+        : texteNonVide(declaration?.label) ? declaration.label : read.data.label,
+      direction: texteNonVide(read.data.direction) ? read.data.direction : declaration?.direction,
+      shapes: Array.isArray(read.shapes) ? read.shapes : declaration?.shapes,
+      axes: descriptor?.axes,
+      axisKind: texteNonVide(read.data.axis_kind) ? read.data.axis_kind : declaredAxis,
+      axisValues: Array.isArray(read.data.axis_values) ? read.data.axis_values : declaredAxisValues,
+      axisNumericValues: read.data.axis_numeric_values,
+    })
+    if (nativeContract) nativeContracts.push({ indicator_id: indicatorId, native_contract: nativeContract })
     // Do not pool provenance across resources. A source/vintage pair on an
     // observation is not permission to borrow labels or dates from a sibling
     // indicator; only evidence attached to this exact native resource read is
@@ -889,6 +936,12 @@ export function themeFactsEnvelopeFromSemantic(theme: ThemeKey, acquired: ThemeR
         ...point, provenance: normalizeNativeSources(point.provenance)
           .map((source) => ({ ...source, source_name: source.name })),
       })) })
+  }
+
+  for (const { indicator_id, native_contract } of nativeContracts) {
+    const existing = indicatorMetadata.find((item) => item.indicator_id === indicator_id)
+    if (existing) existing.native_contract = native_contract
+    else indicatorMetadata.push({ indicator_id, native_contract })
   }
 
   const territory = acquired.target
@@ -1306,6 +1359,10 @@ export function themeFactsRowsFromApi(
     throw new Error('Territoire de la réponse du thème invalide')
   }
   const metadata = rows(response.indicator_metadata, 'indicator_metadata')
+  const nativeContracts = new Map(metadata.flatMap((item) => {
+    const contract = nativeFactContractFromEnvelope(item.native_contract)
+    return texteNonVide(item.indicator_id) && contract ? [[item.indicator_id, contract] as const] : []
+  }))
   const indicateurs = rows(response.indicators, 'indicators')
     .map((fact) => indicateurDeSql(theme, target, fact, metadata))
   if (theme === 'programmes') indicateurs.push(...programmesRows(response, target, referential))
@@ -1313,6 +1370,8 @@ export function themeFactsRowsFromApi(
     for (const series of rows(response.owned_series ?? [], 'owned_series')) {
       if (series.indicator_id !== 'prix_m2') continue
       if (!texteNonVide(series.unit)) throw new Error('Unité de série Habitat absente')
+      const axisValues = Array.isArray(series.axis_values) ? series.axis_values : []
+      const axisNumericValues = Array.isArray(series.axis_numeric_values) ? series.axis_numeric_values : []
       for (const point of rows(series.points, 'series.points')) {
         if (!texteNonVide(point.axis) || !(point.status === 'measured' ? finite(point.value) : point.value === null)) {
           throw new Error('Point annuel Habitat invalide')
@@ -1321,8 +1380,11 @@ export function themeFactsRowsFromApi(
         const converted = apiSources(provenance.map((source) => ({ source_id: source.source_id,
           name: source.source_name, version: source.version, reference_date: source.reference_date,
           publication_date: source.publication_date })), 'prix_m2')
+        const axisIndex = axisValues.indexOf(point.axis)
         indicateurs.push({ territoire: target.territoire, type: target.type, theme, key: series.indicator_id,
           detail: point.axis, sex: null, dimension: null, value: point.status === 'measured' ? point.value as number : null,
+          ...(axisIndex >= 0 && finite(axisNumericValues[axisIndex])
+            ? { numericAxisValue: axisNumericValues[axisIndex] as number } : {}),
           unit: series.unit as string, rider: point.status === 'measured' ? null : text(point.missing_reason) ? point.missing_reason as string : point.status as string,
           observation_status: point.status === 'measured' ? 'measured' : 'missing', observation_period: text(point.observation_period) ? point.observation_period : null,
           vintage_source: converted[0]?.source ?? '', vintage_version: converted[0]?.version ?? '',
@@ -1352,7 +1414,10 @@ export function themeFactsRowsFromApi(
     // lecture en silence serait un fait caché, pas une migration.
     throw new Error(`Thème non migré vers l’acquisition paresseuse : ${theme}`)
   }
-  return { indicateurs, histoires }
+  return { indicateurs: indicateurs.map((row) => {
+    const nativeContract = nativeContracts.get(row.key)
+    return nativeContract ? { ...row, nativeContract } : row
+  }), histoires }
 }
 
 /** Valide la réponse comparison-only d'un thème contre la sélection demandée —

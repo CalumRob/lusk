@@ -8,6 +8,7 @@ import { computed } from 'vue'
 
 import { detailsRangEnContexte, formaterNombreFR, formaterValeur, formaterVintage } from '@/payload/selectors'
 import type { Indicateur, Theme, TrajectoryMetadata } from '@/payload/types'
+import type { DirectionRang } from '@/methodes/indicateurs'
 import PuceRang from './PuceRang.vue'
 import { directionIndicateur, puceRangDirection } from '@/fiche/figureGrammaire'
 
@@ -17,6 +18,7 @@ const props = defineProps<{
   libelle: string
   labelsDetail?: Record<string, string>
   theme: Theme
+  direction?: DirectionRang | null
   trajectory?: TrajectoryMetadata
   reference?: Indicateur[]
   referenceLabel?: string
@@ -34,6 +36,7 @@ interface Point {
 interface Tick {
   detail: string
   label: string
+  numericValue?: number
   mobile?: boolean
 }
 
@@ -56,7 +59,7 @@ function pointsDepuis(lignes: Indicateur[]): Point[] {
     .filter((ligne): ligne is Indicateur & { detail: string } => ligne.detail !== null && ligne.detail !== undefined)
     .map((ligne) => ({
       detail: ligne.detail,
-      abscisse: abscisseDetail(ligne.detail) ?? 0,
+      abscisse: ligne.numericAxisValue ?? abscisseDetail(ligne.detail) ?? 0,
       texte: formaterValeur(ligne),
       valeur: ligne.value,
       libelle: props.labelsDetail?.[ligne.detail] ?? '',
@@ -82,7 +85,9 @@ const directionRepereScalaire = computed(() => {
     if (comparaison.direction === 'low') return 'moins-est-mieux'
     return null
   }
-  return repereScalaire.value ? directionIndicateur(props.theme, props.clef) : null
+  return repereScalaire.value
+    ? props.direction !== undefined ? props.direction : directionIndicateur(props.theme, props.clef)
+    : null
 })
 const puceRepereScalaire = computed(() => {
   const direction = directionRepereScalaire.value
@@ -101,15 +106,18 @@ const detailsAxe = computed(() => {
   return [...new Set(details)]
 })
 
-const borneX = computed(() => {
-  const valeurs = [...points.value, ...pointsReference.value]
-    .map((point) => point.abscisse)
-    .filter((value) => Number.isFinite(value))
-  const endpoints = props.trajectory?.endpoints
-    ?.map(abscisseDetail)
+const domaineX = computed(() => {
+  const observations = [...points.value, ...pointsReference.value].map((point) => point.abscisse)
+  const ticks = props.trajectory?.ticks?.map((tick) => tick.numericValue)
+    .filter((value): value is number => value !== undefined && Number.isFinite(value)) ?? []
+  const endpoints = props.trajectory?.endpoints?.map(abscisseDetail)
     .filter((value): value is number => value !== null) ?? []
   const marker = props.trajectory?.marker ? abscisseDetail(props.trajectory.marker.detail) : null
-  return Math.max(...valeurs, ...endpoints, marker ?? 0, 1)
+  const values = [...observations, ...ticks, ...endpoints, ...(marker === null ? [] : [marker])]
+  if (!values.length) return { min: 0, max: 1 }
+  const min = Math.min(...values)
+  const max = Math.max(...values)
+  return min === max ? { min: min - 1, max: max + 1 } : { min, max }
 })
 
 const valeurs = computed(() => [...points.value, ...pointsReference.value]
@@ -126,7 +134,8 @@ const domaineY = computed(() => {
 })
 
 function xPourcent(point: Point): number {
-  if (numerique.value) return point.abscisse / borneX.value
+  if (numerique.value) return (point.abscisse - domaineX.value.min) /
+    (domaineX.value.max - domaineX.value.min)
   const index = detailsAxe.value.indexOf(point.detail)
   return detailsAxe.value.length <= 1 ? 0.5 : index / (detailsAxe.value.length - 1)
 }
@@ -136,8 +145,12 @@ function x(point: Point): number {
 }
 
 function xMarker(detail: string): number | null {
-  const abscisse = abscisseDetail(detail)
-  if (numerique.value && abscisse !== null) return PLOT_LEFT + (abscisse / borneX.value) * (PLOT_RIGHT - PLOT_LEFT)
+  const tick = ticks.value.find((candidate) => candidate.detail === detail)
+  const abscisse = tick?.numericValue ?? abscisseDetail(detail)
+  if (numerique.value && abscisse !== null && abscisse !== undefined) {
+    const fraction = (abscisse - domaineX.value.min) / (domaineX.value.max - domaineX.value.min)
+    return PLOT_LEFT + fraction * (PLOT_RIGHT - PLOT_LEFT)
+  }
   const index = detailsAxe.value.indexOf(detail)
   return index < 0 ? null : PLOT_LEFT + (detailsAxe.value.length <= 1 ? 0.5 : index / (detailsAxe.value.length - 1)) * (PLOT_RIGHT - PLOT_LEFT)
 }

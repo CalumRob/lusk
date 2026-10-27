@@ -30,6 +30,7 @@ import AppIcon from '@/components/AppIcon.vue'
 import PassarelleExploration from '@/components/fiche/PassarelleExploration.vue'
 import { handoffExploration } from '@/fiche/explorationHandoff'
 import { cadrageSousGroupeFiche, sousGroupeFiche } from '@/fiche/content/ficheGrammar'
+import { NOMS_THEMES } from '@/fiche/onglets'
 import {
   LIEN_SUBVENTIONS,
   formaterMontant,
@@ -115,12 +116,10 @@ const lienProvenance = computed(() => {
 </script>
 
 <template>
-  <!-- Le bloc ne rend qu'avec sa métadonnée publiée (le loader la garantit
-       pour un thème présent, #313 ; dans le chargement progressif du magasin,
-       les faits peuvent atterrir un instant avant elle — on attend, jamais un
-       titre inventé ni un crash de rendu). -->
-  <article v-if="metadata" class="onglet-theme onglet-theme--programmes bloc-programmes">
-    <p class="onglet-theme-overline">{{ metadata?.label ?? '' }}</p>
+  <!-- Facts-first: API facts and the app-owned heading survive a missing
+       optional catalogue projection. -->
+  <article class="onglet-theme onglet-theme--programmes bloc-programmes">
+    <p class="onglet-theme-overline">{{ metadata?.label ?? NOMS_THEMES.programmes }}</p>
 
     <template v-if="elementVide">
       <section class="sous-groupe" data-groupe="couverture">
@@ -168,7 +167,7 @@ const lienProvenance = computed(() => {
            portail Région. Un territoire sans fait reste silencieux — jamais un
            zéro inventé, jamais une figure vide. -->
       <section
-        v-if="element.subventions"
+        v-if="element.subventions || metadataStatus === 'loading' || metadataStatus === 'error'"
         class="sous-groupe"
         data-groupe="subventions"
       >
@@ -179,6 +178,7 @@ const lienProvenance = computed(() => {
           <button v-if="metadataStatus === 'error'" type="button" @click="retryMetadata?.()">Réessayer l’explication</button>
         </p>
 
+        <template v-if="element.subventions">
         <div class="programme-subventions">
           <p class="subvention-total">
             {{ formaterMontant(element.subventions.total) }}
@@ -232,6 +232,7 @@ const lienProvenance = computed(() => {
           {{ LIEN_SUBVENTIONS.libelle }}
           <AppIcon :icone="ExternalLink" :taille="14" class="programmes-lien-icone" aria-hidden="true" />
         </a>
+        </template>
       </section>
     </template>
   </article>

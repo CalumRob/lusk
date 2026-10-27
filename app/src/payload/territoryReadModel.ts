@@ -679,7 +679,8 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
     throw new PayloadError('fetch', file, `JSON illisible dans ${url}`)
   }
   const scalarApiEnabled = scalarCohortEnabled(import.meta.env)
-  const nativeThemeApiEnabled = themeAcquisitionEnabled(import.meta.env) && !scalarApiEnabled
+  const nativeThemeApiEnabled = themeAcquisitionEnabled(import.meta.env)
+  const scalarOnlyEnabled = scalarApiEnabled && !nativeThemeApiEnabled
   const model = validerModeleTerritoire(raw, file, { type, territoire }, nativeThemeApiEnabled
     ? { allowPartialThemes: true }
     : { requireAllThemes: true })
@@ -688,7 +689,7 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
   // explanation enrichment. The scalar-only and explicit static paths still
   // reconcile their producer-owned catalogues strictly. Shared fiche subgroup
   // presentation comes from app-owned ficheGrammar.ts.
-  if (scalarApiEnabled || !themeAcquisitionEnabled(import.meta.env)) {
+  if (scalarOnlyEnabled) {
     await Promise.all(Object.values(model.themes).filter((theme) => theme !== undefined).map(async (theme) => {
       const metadataUrl = `/data/theme_${theme.theme}.json`
       let metadataResponse: Response
@@ -715,7 +716,7 @@ export const chargerModeleTerritoire: ChargerModeleTerritoire = async (type, ter
       }
     }))
   }
-  if (scalarApiEnabled) {
+  if (scalarOnlyEnabled) {
     const referenceUrl = '/data/territoires.json'
     let referenceResponse: Response
     try { referenceResponse = await fetch(referenceUrl) }
