@@ -20,6 +20,7 @@ Design decisions live in **`DESIGN.md`** (repo root) — the single source of tr
 | `npm run dev` | Vite dev server (hot reload) |
 | `npm run test` | Vitest, one run (payload contract + fiche/carte + bascule + tokens + router) |
 | `npm run build` | `vue-tsc` type-check + `vite build` → `dist/` |
+| `npm run verify:profile-pages` | Bounded Playwright proof of all retained API-only profile pages with fully intercepted semantic API traffic |
 | `npm run preview` | Serve the built `dist/` locally |
 
 ## Routes
@@ -67,13 +68,19 @@ PowerShell: `$env:VITE_THEME_ACQUISITION_API='0'` before running a command).
 - `VITE_THEME_ACQUISITION_API` is enabled by default; setting it to `'0'` selects
   the incumbent static path. This client-side switch does not establish that an
   API route is deployed or available.
-- `VITE_SCALAR_COHORT_API`, `VITE_STRUCTURE_AGE_PROFILE_API`,
-  `VITE_OWNED_SERIES_API`, `VITE_CONSO_ENAF_SERIES_API`, and
+- `VITE_SCALAR_COHORT_API`, `VITE_OWNED_SERIES_API`, `VITE_CONSO_ENAF_SERIES_API`, and
   `VITE_OCSGE_STATE_SERIES_API` remain explicit opt-ins (`'1'`) for their
   applicable readers; normal commands do not set them. Exception: the ordered
   series reader also enables `raccordement_courbe` through the default-on
   `VITE_THEME_ACQUISITION_API` switch. This is inherited client behavior, not
   support for its retired endpoint.
+- All retained declared-profile Page d’indicateur resources use the shared
+  semantic profile reader without an opt-in switch. They remain API-only even
+  when the independent scalar or theme-acquisition switches are unset or set
+  to `'0'`; their incumbent page numerics are never a fallback. The old
+  `VITE_STRUCTURE_AGE_PROFILE_API` switch and retired age-profile route reader
+  have been removed. This does not change scalar, series, fiche, or standalone
+  map acquisition modes.
 - `LUSK_API_ORIGIN` optionally overrides the Vite development server's `/api`
   proxy target only; it is not bundled into the production frontend.
 - `VITE_MAPS_PUBLIC_BASE_URL` optionally overrides the map-asset origin; the

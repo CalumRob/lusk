@@ -1,4 +1,5 @@
-import type { Indicateur, NativeThemeFactAxis, NativeThemeFactContract, Territoire, TerritoireType, Theme } from './types'
+import type { IndicatorPageMetadata, Indicateur, NativeThemeFactAxis, NativeThemeFactContract,
+  Territoire, TerritoireType, Theme } from './types'
 import { THEMES_CANONIQUES } from './types'
 import type { SemanticResourceDeclaration } from './semanticResourceClient'
 import { lireRessourcesBatch } from './semanticResourceClient'
@@ -74,6 +75,18 @@ export interface ProfileComparison {
   profileContentVersion: string
   referenceContentVersion: string
   scalarContentVersion: string | null
+}
+
+export interface ProfilePageBinding {
+  page: IndicatorPageMetadata
+  detailLabels: Record<string, string>
+}
+
+export interface LinkedScalarCohortResult {
+  facts: Indicateur[]
+  contentVersion: string
+  referenceContentVersion: string
+  descriptorVersion: string
 }
 
 function fail(message: string): never {
@@ -575,6 +588,126 @@ export async function chargerCohorteProfilDeclare(declaration: SemanticResourceD
   return adapterProfilDeclare({ declaration: resource, target, territories, cohort: data })
 }
 
+/** Read a producer-declared scalar companion (for example DPE passoires) without
+ * making it part of the profile-bin facts or tying it to the scalar rollout flag. */
+export async function chargerCohorteScalaireLiee(input: {
+  profileDeclaration: SemanticResourceDeclaration
+  declaration: SemanticResourceDeclaration
+  target: ProfileTarget
+  territories: Territoire[]
+  profileDescriptor: DeclaredProfileDescriptor
+  profileIdentity: ProfilePublicationIdentity
+}): Promise<LinkedScalarCohortResult> {
+  const { profileDeclaration, declaration, target, territories, profileDescriptor, profileIdentity } = input
+  const resource = declaration
+  if (!profileDescriptor.comparison_scalar || resource.resource_id !== profileDescriptor.comparison_scalar ||
+      resource.indicator_id !== profileDescriptor.comparison_scalar || resource.theme_id !== profileDeclaration.theme_id ||
+      !profileDeclaration.shapes.includes('declared_profile') || profileDeclaration.indicator_id !== profileDescriptor.indicator ||
+      !resource.shapes.includes('scalar') || !resource.target_kinds.includes('territory_cohort') ||
+      !resource.allowed_levels.includes(target.type) || !resource.intents.includes('facts') ||
+      !['value', 'support_count', 'denominator_count'].every((field) => resource.fields.includes(field))) {
+    return fail('La ressource scalaire liée au profil n’est pas déclarée pour cette lecture.')
+  }
+  const filters = expectedTarget(target)
+  const [data] = await lireRessourcesBatch([{
+    resource: resource.resource_id,
+    target: { kind: 'territory_cohort', type: target.type,
+      department_id: filters.department, epci_id: filters.epci },
+    fields: ['value', 'support_count', 'denominator_count'], intent: { kind: 'facts' },
+  }])
+  const raw = data!
+  if (raw.resource !== resource.resource_id || raw.shape !== 'scalar' || !isRecord(raw.target) ||
+      raw.target.kind !== 'territory_cohort' || raw.target.type !== target.type ||
+      !sameNullable(raw.target.department_id, filters.department) || !sameNullable(raw.target.epci_id, filters.epci) ||
+      !isRecord(raw.cohort) || raw.cohort.territory_type !== target.type ||
+      !sameNullable(raw.cohort.department_id, filters.department) || !sameNullable(raw.cohort.epci_id, filters.epci) ||
+      !Array.isArray(raw.cohort.members) || !Number.isSafeInteger(raw.cohort.member_count) ||
+      raw.cohort.member_count !== raw.cohort.members.length || !isNonEmptyText(raw.content_version) ||
+      raw.content_version !== profileDescriptor.required_scalar_version ||
+      raw.reference_content_version !== profileIdentity.referenceContentVersion ||
+      raw.cohort.reference_content_version !== raw.reference_content_version ||
+      !isRecord(raw.descriptor) || raw.descriptor.indicator_id !== resource.indicator_id ||
+      raw.descriptor.theme_id !== resource.theme_id || !isNonEmptyText(raw.descriptor.unit) ||
+      !isNonEmptyText(raw.descriptor.label) || !isNonEmptyText(raw.descriptor.descriptor_version) ||
+      raw.descriptor.unit !== resource.unit || raw.descriptor.direction !== resource.direction ||
+      raw.descriptor.comparison_facet !== resource.indicator_id || !Array.isArray(raw.descriptor.allowed_levels) ||
+      !raw.descriptor.allowed_levels.includes(target.type) || !['sparse', 'dense_complete'].includes(String(raw.descriptor.completeness)) ||
+      !isNonEmptyText(raw.descriptor.denominator_semantics) || !Array.isArray(raw.observations)) {
+    return fail('La publication ou le cohort de la ressource scalaire liée est incompatible avec le profil.')
+  }
+  const scalarDescriptor = raw.descriptor as Row
+  const references = new Map(territories.filter((territory) => territory.type === target.type)
+    .map((territory) => [territory.territoire, territory]))
+  const expectedMembers = [...references.values()].filter((territory) =>
+    (!filters.department || territory.departement === filters.department) &&
+    (!filters.epci || territory.epci === filters.epci))
+  const memberIds = new Set<string>()
+  for (const candidate of rows(raw.cohort.members)) {
+    if (!isNonEmptyText(candidate.id) || candidate.type !== target.type || !isText(candidate.name) ||
+        memberIds.has(candidate.id) || references.get(candidate.id)?.nom !== candidate.name) {
+      return fail('Un membre de la ressource scalaire liée est absent, dupliqué ou inconnu.')
+    }
+    const reference = references.get(candidate.id)!
+    if ((filters.department && reference.departement !== filters.department) ||
+        (filters.epci && reference.epci !== filters.epci)) return fail('Le cohort scalaire lié contient un membre hors filtres.')
+    memberIds.add(candidate.id)
+  }
+  if (memberIds.size !== expectedMembers.length || expectedMembers.some((territory) => !memberIds.has(territory.territoire))) {
+    return fail('Le cohort scalaire lié ne correspond pas exactement au référentiel filtré.')
+  }
+  const seen = new Set<string>()
+  const allowedSources = new Set(resource.sources)
+  const statusValues = ['measured', 'suppressed', 'unsupported', 'not_available', 'not_published']
+  const facts = rows(raw.observations).map((observation): Indicateur => {
+    if (!isRecord(observation) || !isRecord(observation.territory) ||
+        !isNonEmptyText(observation.territory.id) || observation.territory.type !== target.type ||
+        !isText(observation.territory.name) || !memberIds.has(observation.territory.id) ||
+        references.get(observation.territory.id)?.nom !== observation.territory.name ||
+        seen.has(observation.territory.id) || !statusValues.includes(String(observation.status)) ||
+        !('value' in observation) || (observation.status === 'measured'
+          ? !isFinite(observation.value) : observation.value !== null) ||
+        !(observation.support_count === null || (Number.isSafeInteger(observation.support_count) &&
+          (observation.support_count as number) >= 0)) ||
+        !(observation.denominator_count === null || (Number.isSafeInteger(observation.denominator_count) &&
+          (observation.denominator_count as number) >= 0))) {
+      return fail('Une observation de la ressource scalaire liée est incohérente.')
+    }
+    const provenance = sourcesForCell(observation.sources, resource)
+    seen.add(observation.territory.id)
+    const primary = provenance[0]!
+    return {
+      territoire: observation.territory.id, type: target.type, theme: resource.theme_id as Theme,
+      key: resource.indicator_id, detail: null,
+      value: observation.status === 'measured' ? observation.value as number : null,
+      unit: scalarDescriptor.unit as string,
+      fact_status: observation.status as Indicateur['fact_status'],
+      observation_status: observation.status === 'measured' ? 'measured' : 'missing',
+      rider: observation.status === 'suppressed' ? 'Valeur masquée selon les règles de diffusion.'
+        : observation.status === 'unsupported' ? 'Valeur non prise en charge pour ce territoire.'
+          : observation.status === 'not_available' ? 'Valeur non disponible.'
+            : observation.status === 'not_published' ? 'Valeur non publiée à ce niveau.' : null,
+      support_count: observation.support_count as number | null,
+      denominator_count: observation.denominator_count as number | null,
+      nativeContract: { label: scalarDescriptor.label as string, direction: resource.direction,
+        shapes: ['scalar'], descriptorVersion: scalarDescriptor.descriptor_version as string,
+        contentVersion: raw.content_version as string, referenceContentVersion: raw.reference_content_version as string },
+      vintage_source: primary.source, vintage_version: primary.version,
+      vintage_date_reference: primary.referenceDate, vintage_date_publication: primary.publicationDate,
+      source_id: primary.sourceId, vintage_id: primary.vintageId,
+      fact_sources: provenance.map(({ sourceId, source: name, version, vintageId, referenceDate, publicationDate, lineage }) =>
+        ({ sourceId, source: name, version, vintageId, referenceDate, publicationDate, lineage })),
+      rang_epci: null, rang_epci_n: null, rang_dep: null, rang_dep_n: null, rang_reg: null, rang_reg_n: null,
+    }
+  })
+  if (seen.size !== memberIds.size || facts.length !== memberIds.size ||
+      (scalarDescriptor.completeness === 'dense_complete' && seen.size !== memberIds.size)) {
+    return fail('La ressource scalaire dense ne couvre pas tous les membres du cohort.')
+  }
+  if (!allowedSources.size) return fail('La ressource scalaire liée ne déclare aucune provenance.')
+  return { facts, contentVersion: raw.content_version, referenceContentVersion: raw.reference_content_version,
+    descriptorVersion: scalarDescriptor.descriptor_version as string }
+}
+
 /** A comparison retry re-reads only this selected comparison, never profile facts. */
 export async function chargerComparaisonProfilDeclare(input: {
   declaration: SemanticResourceDeclaration
@@ -603,4 +736,93 @@ export async function chargerComparaisonProfilDeclare(input: {
     intent: { kind: 'selected_comparison', members: memberIds.map((id) => ({ type: focal.type, id })) },
   }])
   return adapterProfilComparaison({ ...input, comparison: data })
+}
+
+/** Bind API-owned profile facts and facets to the retained app presentation family. */
+export function adapterPageProfilDeclare(page: IndicatorPageMetadata,
+  declaration: SemanticResourceDeclaration, descriptor: DeclaredProfileDescriptor,
+  scalarDeclaration?: SemanticResourceDeclaration,
+  selectedFacet: { detail?: string | null; sex?: string | null } = {}): ProfilePageBinding {
+  if (page.indicator !== descriptor.indicator || declaration.indicator_id !== page.indicator ||
+      !['composition', 'distribution', 'list', 'pyramid'].includes(page.family) ||
+      !descriptor.allowed_levels.length) {
+    return fail('La page éditoriale n’est pas compatible avec le profil déclaré par l’API.')
+  }
+  const levels = page.levels.filter((level) => descriptor.allowed_levels.includes(level))
+  if (!levels.length) return fail('La page ne partage aucun niveau publié avec le profil déclaré.')
+  const details = descriptor.axes.filter((axis) => axis.name === 'detail')
+  const sexes = descriptor.axes.filter((axis) => axis.name === 'sex')
+  const detailLabels = Object.fromEntries(details.map((axis) => [axis.key, axis.label]))
+  const point = descriptor.comparison_point
+  let comparison: IndicatorPageMetadata['comparison']
+  if (descriptor.comparison_scalar) {
+    if (!scalarDeclaration || scalarDeclaration.resource_id !== descriptor.comparison_scalar ||
+        scalarDeclaration.theme_id !== declaration.theme_id || !scalarDeclaration.shapes.includes('scalar') ||
+        !scalarDeclaration.target_kinds.includes('territory_cohort') ||
+        !scalarDeclaration.allowed_levels.some((level) => levels.includes(level)) ||
+        (scalarDeclaration.direction !== 'high' && scalarDeclaration.direction !== 'low')) {
+      return fail('La facette scalaire liée au profil n’est pas déclarée pour sa page.')
+    }
+    comparison = {
+      indicator: scalarDeclaration.indicator_id,
+      label: scalarDeclaration.label,
+      detail: null,
+      sex: null,
+      direction: scalarDeclaration.direction,
+      unit: scalarDeclaration.unit,
+    }
+  } else {
+    if (!point || (point.sex !== null && point.sex !== 'F' && point.sex !== 'M') ||
+        (sexes.some((axis) => axis.key !== 'F' && axis.key !== 'M'))) {
+      return fail('La facette du profil ne correspond pas aux dimensions de page actuellement prises en charge.')
+    }
+    const selectedDetail = selectedFacet.detail && details.some((axis) => axis.key === selectedFacet.detail)
+      ? selectedFacet.detail : point.detail
+    const selectedSex = selectedFacet.sex && sexes.some((axis) => axis.key === selectedFacet.sex)
+      ? selectedFacet.sex : point.sex
+    const selectedUnit = details.find((axis) => axis.key === selectedDetail)?.unit
+    if (!selectedUnit) return fail('L’unité de la facette sélectionnée est absente du descripteur natif.')
+    comparison = {
+      indicator: declaration.indicator_id,
+      detail: selectedDetail,
+      details: details.map((axis) => axis.key),
+      sex: selectedSex as 'F' | 'M' | null,
+      sexes: sexes.length ? sexes.map((axis) => axis.key as 'F' | 'M') : undefined,
+      direction: point.direction,
+      unit: selectedUnit,
+      labels: detailLabels,
+    }
+  }
+
+  let adaptedPage: IndicatorPageMetadata = {
+    ...page,
+    label: descriptor.label,
+    unit: point?.unit ?? scalarDeclaration?.unit ?? descriptor.unit,
+    direction: point?.direction ?? (scalarDeclaration?.direction as 'high' | 'low'),
+    levels,
+    sources: [...declaration.sources],
+    comparison,
+  }
+  switch (page.family) {
+    case 'composition': {
+      const parts = page.composition.parts
+      if (parts.some((detail) => !details.some((axis) => axis.key === detail))) {
+        return fail('La présentation de composition référence une catégorie absente du profil natif.')
+      }
+      adaptedPage = { ...adaptedPage, family: 'composition', composition: { parts: [...parts] } }
+      break
+    }
+    case 'distribution':
+      adaptedPage = { ...adaptedPage, family: 'distribution', distribution: { signature: details.map((axis) => axis.key) } }
+      break
+    case 'list':
+      adaptedPage = { ...adaptedPage, family: 'list', list: { categories: details.map((axis) => axis.key) } }
+      break
+    case 'pyramid':
+      adaptedPage = { ...adaptedPage, family: 'pyramid', pyramid: { dimensions: descriptor.axes.map((axis) => axis.name) } }
+      break
+    default:
+      return fail('Famille de présentation non prise en charge pour un profil déclaré.')
+  }
+  return { page: adaptedPage, detailLabels }
 }

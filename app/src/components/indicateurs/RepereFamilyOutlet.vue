@@ -17,12 +17,12 @@ defineProps<{ dispatch: FamilyDispatch; modele?: ModeleTrajectoire | null; signa
     <p v-else-if="dispatch.status === 'unavailable'" role="status">Cette famille de Repères n’est pas disponible pour ce territoire.</p>
     <ScalarFamilyRenderer v-else-if="dispatch.family === 'scalar'" :dispatch="dispatch"><slot :dispatch="dispatch" /></ScalarFamilyRenderer>
     <TrajectoryFamilyRenderer v-else-if="dispatch.family === 'trajectory'" :dispatch="dispatch" :modele="modele"><slot :dispatch="dispatch" /></TrajectoryFamilyRenderer>
-    <CompositionFamilyRenderer v-else-if="dispatch.family === 'composition'" :dispatch="dispatch" :composition="composition" />
+    <template v-else-if="dispatch.family === 'composition'"><CompositionFamilyRenderer :dispatch="dispatch" :composition="composition" /><slot :dispatch="dispatch" /></template>
     <DistributionFamilyRenderer v-else-if="dispatch.family === 'distribution'" :dispatch="dispatch" :signature="signature" :ensemble="ensemble"><slot :dispatch="dispatch" /></DistributionFamilyRenderer>
     <ListFamilyRenderer v-else-if="dispatch.family === 'list'" :dispatch="dispatch" :profil="profil"><slot :dispatch="dispatch" /></ListFamilyRenderer>
     <RelationshipFamilyRenderer v-else-if="dispatch.family === 'relationship'" :dispatch="dispatch" :relation="relation"><slot :dispatch="dispatch" /></RelationshipFamilyRenderer>
-    <PyramidFamilyRenderer v-else-if="dispatch.family === 'pyramid'" :dispatch="dispatch" />
-    <ComparisonBarsFamilyRenderer v-else-if="dispatch.family === 'comparison-bars'" :dispatch="dispatch" />
+    <template v-else-if="dispatch.family === 'pyramid'"><PyramidFamilyRenderer :dispatch="dispatch" /><slot :dispatch="dispatch" /></template>
+    <template v-else-if="dispatch.family === 'comparison-bars'"><ComparisonBarsFamilyRenderer :dispatch="dispatch" /><slot :dispatch="dispatch" /></template>
     <p v-if="dispatch.status === 'incomplete'" role="status">Repères partiels : certaines valeurs sont indisponibles.</p>
   </section>
 </template>

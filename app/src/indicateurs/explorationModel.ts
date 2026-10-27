@@ -56,7 +56,9 @@ export function dansScope(territoire: Territoire, niveau: TerritoireType, depart
   return territoire.type === niveau && (niveau !== 'commune' || ((!departement || territoire.departement === departement) && (!epci || territoire.epci === epci)))
 }
 
-const LIBELLES_NIVEAU: Record<NiveauIndicateur, string> = { commune: 'communes', epci: 'EPCI', departement: 'départements' }
+const LIBELLES_NIVEAU: Record<TerritoireType, string> = {
+  commune: 'communes', epci: 'EPCI', departement: 'départements', region: 'Région',
+}
 
 type ResolutionTerritoire =
   | { statut: 'silence'; ref: null; nom: null; message: null }
@@ -72,7 +74,7 @@ type ResolutionTerritoire =
  */
 function resoudreTerritoire(
   territoires: readonly Territoire[],
-  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+  etat: { niveau: TerritoireType; departement?: string; epci?: string; territoire?: string },
 ): ResolutionTerritoire {
   if (!etat.territoire) return { statut: 'silence', ref: null, nom: null, message: null }
 
@@ -104,11 +106,11 @@ function resoudreTerritoire(
  * par famille. L'univers suit la règle de la page : Bretagne par défaut,
  * resserré au département ou à l'EPCI au niveau commune seulement.
  */
-export function situationContexte(territoires: readonly Territoire[], etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string }): { ref: Territoire | null; nom: string | null; horsPerimetre: boolean; introuvable: boolean; univers: string } {
+export function situationContexte(territoires: readonly Territoire[], etat: { niveau: TerritoireType; departement?: string; epci?: string; territoire?: string }): { ref: Territoire | null; nom: string | null; horsPerimetre: boolean; introuvable: boolean; univers: string } {
   const resolution = resoudreTerritoire(territoires, etat)
   const refs = new Map(territoires.map((territoire) => [territoire.territoire, territoire] as const))
   const niveau = LIBELLES_NIVEAU[etat.niveau]
-  let univers = `les ${niveau} de Bretagne`
+  let univers = etat.niveau === 'region' ? 'la Région Bretagne' : `les ${niveau} de Bretagne`
   if (etat.niveau === 'commune' && etat.departement) {
     const departement = territoires.find((t) => t.type === 'departement' && t.departement === etat.departement)
     univers = departement ? `les communes du département ${departement.nom}` : `les communes du département ${etat.departement}`
@@ -453,7 +455,7 @@ export type SelectionTerritoire =
 
 export function selectionTerritoire(
   territoires: readonly Territoire[],
-  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+  etat: { niveau: TerritoireType; departement?: string; epci?: string; territoire?: string },
 ): SelectionTerritoire {
   const resolution = resoudreTerritoire(territoires, etat)
   if (resolution.statut === 'silence') return { kind: 'silence' }
@@ -491,7 +493,7 @@ export function modeleSignature(
   page: IndicatorPageMetadata,
   territoires: readonly Territoire[],
   labels: Record<string, string>,
-  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+  etat: { niveau: TerritoireType; departement?: string; epci?: string; territoire?: string },
 ): ModeleSignature {
   const details = page.family === 'distribution' ? [...page.distribution.signature] : []
   const barresDe = (valeurs: ReadonlyMap<string, number>): BarreSignature[] => details.map((detail) => ({ detail, label: labels[detail] ?? detail, valeur: valeurs.get(detail) ?? null }))
@@ -549,7 +551,7 @@ export function modeleProfil(
   page: IndicatorPageMetadata,
   territoires: readonly Territoire[],
   labels: Record<string, string>,
-  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+  etat: { niveau: TerritoireType; departement?: string; epci?: string; territoire?: string },
 ): ModeleProfil {
   // La liste fermée déclarée par la page — l'app rend ce que le payload
   // déclare (ADR-0023), jamais un vocabulaire dérivé des faits.
@@ -619,7 +621,7 @@ export function modeleComposition(
   page: IndicatorPageMetadata,
   territoires: readonly Territoire[],
   labels: Record<string, string>,
-  etat: { niveau: NiveauIndicateur; departement?: string; epci?: string; territoire?: string },
+  etat: { niveau: TerritoireType; departement?: string; epci?: string; territoire?: string },
 ): ModeleComposition {
   // La liste fermée déclarée par la page — l'app rend ce que le payload
   // déclare (ADR-0023), jamais un vocabulaire dérivé des faits. Une extension
@@ -634,6 +636,7 @@ export function modeleComposition(
   // périmètre et le même calcul que la facette résumée, jamais une moyenne
   // de parts recomposée côté app. La jointure : le prédicat unique (#507).
   const references = new Map<string, number | null>(partiesDeclarees.map((detail) => {
+    if (etat.niveau === 'region') return [detail, null] as const
     const valeurs = filtrerFaits(faits, { theme: facet.theme, cle: page.indicator, detail, niveau: etat.niveau, avecValeur: true, sexe: facet.sex, dimension: facet.dimension }, CORRESPONDANCE_STRICTE).map((fact) => ({ territoire: refs.get(fact.territoire), value: fact.value as number })).filter((row): row is { territoire: Territoire; value: number } => Boolean(row.territoire && dansScope(row.territoire, etat.niveau, etat.departement, etat.epci))).map((row) => row.value)
     return [detail, mediane(valeurs)] as const
   }))
