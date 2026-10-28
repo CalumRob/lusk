@@ -428,13 +428,8 @@ try {
         `${spec.indicator} source card must expose the API reference/publication dates`)
       assert(sourceText.includes('Révision :') && sourceText.includes(nativeSource.revision_hash),
         `${spec.indicator} source card must expose the API revision hash`)
-      if (spec.indicator === 'subventions_annuelles') {
-        assert.equal(await page.locator('.source-card a[href^="/sources#"]').count(), 0,
-          'subventions must omit the Sources link without an exact record match (no historical fallback)')
-      } else {
-        assert(await page.locator('.source-card a[href^="/sources#"]').first().isVisible(),
-          `${spec.indicator} native source identity matches a Sources record; the fiche-source link must render`)
-      }
+      assert(await page.locator('.source-card a[href^="/sources#"]').first().isVisible(),
+        `${spec.indicator} native source identity matches a Sources record; the fiche-source link must render`)
     }
 
     // Indicator-page Carte maps the active coordinate's native layer.
