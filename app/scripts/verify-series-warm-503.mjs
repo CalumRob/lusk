@@ -154,7 +154,13 @@ try {
     assert.deepEqual(staged.map(({ status, items }) => [status, items.length]), [[200, 1], [503, 1]],
       `${spec.indicator}: admit exact focal facts before independent comparison 503; ` +
       `trace=${JSON.stringify(trace.slice(start).map(({ status, items }) => ({ status,
-        intents: items.map((item) => item.intent.kind), targets: items.map((item) => item.target) })))}`)
+        intents: items.map((item) => item.intent.kind), targets: items.map((item) => item.target),
+        publications: (trace.at(-1)?.response?.results ?? []).map(({ data }) => ({
+          target: data.target, content_version: data.content_version,
+          reference_content_version: data.reference_content_version,
+          pooled_content_version: data.scalar_facet?.content_version,
+          pooled_reference_content_version: data.scalar_facet?.reference_content_version,
+        })) })))}`)
     assert.equal(staged[0].items[0].target.id, focalB.territoire)
     assert.equal(staged[1].items[0].intent.kind, 'selected_comparison')
     const factsAtComparisonFailure = factReads.filter((item) => item.resource === spec.indicator).length
