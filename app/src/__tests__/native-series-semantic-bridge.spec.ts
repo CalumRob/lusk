@@ -169,7 +169,7 @@ conditionalDescribe('guarded native corrupt-evidence rejection → shared series
     it(`rejects each corrupt wire field of ${resource} before admitting the read`, async () => {
       // The selection echo applies only to selected-comparison captures.
       expect(applicable.length).toBeGreaterThanOrEqual(10)
-      for (const [name, mutate] of applicable) {
+      for (const [, mutate] of applicable) {
         const fetcher = serveBridge(bridge, mutate)
         vi.stubGlobal('fetch', fetcher)
         try {
@@ -186,7 +186,8 @@ conditionalDescribe('guarded native corrupt-evidence rejection → shared series
     })
     it(`a comparison-only rejection of ${resource} keeps the validated facts reacquirable`, async () => {
       const fetcher = serveBridge(bridge, (data) => {
-        data[2].result.axis_comparisons[0].member_ranks[0].rank = 999
+        const comparison = data[2] as { result: { axis_comparisons: Array<{ member_ranks: Array<{ rank: number }> }> } }
+        comparison.result.axis_comparisons[0]!.member_ranks[0]!.rank = 999
       })
       vi.stubGlobal('fetch', fetcher)
       const read = await acquireOrderedSeriesSemantic({ resource, level: focalTarget.type,

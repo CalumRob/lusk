@@ -993,7 +993,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
         const axis = String(fact.detail ?? fact.dimension)
         const declaredVintages = Object.entries(metadata.source_records ?? {})
           .flatMap(([id, record]) => ((record as Record<string, any>).vintages ?? [])
-            .map((vintage) => ({ id, ...vintage })))
+            .map((vintage: Record<string, any>) => ({ id, ...vintage })))
         let revisions: Array<Record<string, any>>
         try {
           const source = sourceFor(resource, fact, { kind: 'territory', type: member.type, id: member.territoire }, true)
