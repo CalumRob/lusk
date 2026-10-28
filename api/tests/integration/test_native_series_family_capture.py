@@ -45,6 +45,9 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
     cohort_target = {'kind': 'territory_cohort', 'type': 'commune',
         'department_id': None if indicator == 'prix_m2' else '35',
         'epci_id': 'native-e1' if indicator == 'prix_m2' else None}
+    bridge_members = [t for t in territories if t['type'] == 'commune' and
+        (not cohort_target['department_id'] or t['departement'] == cohort_target['department_id']) and
+        (not cohort_target['epci_id'] or t['epci'] == cohort_target['epci_id'])]
     with psycopg.connect(canonical_db_env['publish_dsn']) as conn:
         for t in territories:
             conn.execute('''INSERT INTO territory_reference(territory_id,territory_type,name,department_id,epci_id,
@@ -166,7 +169,7 @@ def test_native_series_family_capture(canonical_db_env, tmp_path, theme, indicat
                 {'id': f'scalar-2-{indicator}', 'resource': indicator,
                  'target': {'kind': 'territory', 'type': 'commune', 'id': 'native-c3'},
                  'intent': {'kind': 'selected_comparison', 'members': [
-                     {'type': 'commune', 'id': 'native-c1'}, {'type': 'commune', 'id': 'native-c2'}]},
+                     {'type': 'commune', 'id': member['territoire']} for member in bridge_members]},
                  'fields': pooled_page_fields if indicator == 'prix_m2' else ['axis_comparisons']},
             ]
             bridge_response = client.post('/api/resources/read-batch', json={'items': bridge_items})
