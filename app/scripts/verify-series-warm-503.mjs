@@ -40,6 +40,7 @@ try {
   assert(pages.every((page) => page.resource && page.page), 'The four shared pages must come from producer declarations')
 
   const trace = []
+  const networkTrace = []
   const factReads = []
   const comparisonReads = []
   let failWholeBatch = false
@@ -47,8 +48,11 @@ try {
   const handle = async (route) => {
     const request = route.request()
     const url = new URL(request.url())
+    const networkRecord = { method: request.method(), path: url.pathname, status: null }
+    networkTrace.push(networkRecord)
     if (url.pathname === '/api/resources' && request.method() === 'GET') {
       const response = await fixtures.nativeCatalogueResponse()
+      networkRecord.status = 200
       await route.fulfill({ status: 200, contentType: 'application/json', body: await response.text() })
       return
     }
@@ -61,12 +65,14 @@ try {
       if (failWholeBatch) {
         failWholeBatch = false
         record.status = 503
+        networkRecord.status = 503
         await route.fulfill({ status: 503, contentType: 'text/plain', body: 'native read-batch unavailable' })
         return
       }
       if (failComparison && items.length === 1 && items[0]?.intent.kind !== 'facts') {
         failComparison = false
         record.status = 503
+        networkRecord.status = 503
         await route.fulfill({ status: 503, contentType: 'text/plain', body: 'comparison unavailable' })
         return
       }
@@ -87,11 +93,13 @@ try {
         return data
       })
       record.status = 200
+      networkRecord.status = 200
       const responseBody = await response.text()
       record.response = JSON.parse(responseBody)
       await route.fulfill({ status: 200, contentType: 'application/json', body: responseBody })
       return
     }
+    networkRecord.status = 599
     await route.fulfill({ status: 599, contentType: 'text/plain', body: `Unexpected API request: ${url.pathname}` })
   }
 
@@ -158,6 +166,7 @@ try {
         pooled_content_version: initialCohort.scalar_facet?.content_version,
         pooled_reference_content_version: initialCohort.scalar_facet?.reference_content_version })}; ` +
       `alert=${await page.getByTestId('series-comparison-error').innerText()}; ` +
+      `networkTrace=${JSON.stringify(networkTrace.slice(-8))}; ` +
       `trace=${JSON.stringify(trace.slice(start).map(({ status, items }) => ({ status,
         intents: items.map((item) => item.intent.kind), targets: items.map((item) => item.target),
         publications: (trace.at(-1)?.response?.results ?? []).map(({ data }) => ({
@@ -207,7 +216,7 @@ try {
   assert.equal(statusAfter, statusBefore, 'Source cleanliness must remain unchanged during the browser proof')
   const report = { issue: '#857', branch, head, cleanBeforeAndAfter: true,
     proxy: 'http://127.0.0.1:9', lifecycle: outcomes,
-    requestTrace: trace, pageErrors }
+    requestTrace: trace, networkTrace, pageErrors }
   await mkdir(dirname(evidencePath), { recursive: true })
   await writeFile(evidencePath, `${JSON.stringify(report, null, 2)}\n`, { encoding: 'utf8' })
   console.log(JSON.stringify({ ...report, evidencePath }, null, 2))
