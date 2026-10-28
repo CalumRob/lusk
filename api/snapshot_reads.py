@@ -2429,9 +2429,12 @@ def _indicator_comparison_snapshot(conn, territory_type, territory_id, indicator
                 territory_id,indicator_id,selection,selected_fields)
         projected = _project_comparison_payload_fields(result,selected_fields)
         if include_scalar_facet:
+            # The scalar facet keeps its own established comparison contract
+            # (the closed comparison vocabulary), independent of the series
+            # comparison's requested projection.
             projected["scalar_facet"] = _scalar_facet_comparison_snapshot(
                 conn, territory_type, territory_id, indicator_id, scalar_facet_theme_id,
-                selection, selected_fields)
+                selection, None)
         return projected
     collections = list(resource.collections) if resource else collection_descriptors(
         conn,indicator_id=indicator_id)

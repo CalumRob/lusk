@@ -119,8 +119,6 @@ class SemanticResourceReader:
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import preflight_axis_comparisons
             base_fields = [f for f in item.fields if f not in {"axis_comparisons", "scalar_facet"}]
-            if "scalar_facet" in item.fields and "member_ranks" not in base_fields:
-                base_fields.append("member_ranks")
             base_item = item.model_copy(update={"fields": base_fields or ["status"],
                                                 "coordinates": None})
             base_work = self.preflight(conn, base_item, catalogue, work_budget=work_budget)
@@ -344,8 +342,6 @@ class SemanticResourceReader:
         if item.fields and "axis_comparisons" in item.fields:
             from api.series_comparison_projection import read_axis_comparisons
             base_fields = [f for f in item.fields if f not in {"axis_comparisons", "scalar_facet"}]
-            if "scalar_facet" in item.fields and "member_ranks" not in base_fields:
-                base_fields.append("member_ranks")
             base_item = item.model_copy(update={"fields": base_fields or ["status"],
                                                 "coordinates": None})
             data = self.read(conn, base_item, catalogue)
