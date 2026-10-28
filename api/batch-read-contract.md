@@ -58,8 +58,20 @@ Annual points and their series publication/descriptor versions remain unchanged,
 and no ambiguous top-level scalar `value` is added. Explicit `fields` are
 projected independently within each facet while mandatory status, descriptor,
 provenance, and publication metadata remain. This additive facet applies to
-focal territory reads only; cohort responses and series-only resources keep their
-existing contracts.
+focal territory reads and, when explicitly selected, dual-resource `territory_cohort`
+facts. The pooled scalar projection and annual ordered-series facts/comparisons are
+independent: each keeps its own statistic/value, descriptor, provenance and
+publication/reference clocks. For comparison intents, request `axis_comparisons` to
+project published series-axis comparisons. On a dual resource, explicitly include
+`scalar_facet` to request the pooled comparison and include `member_ranks` only when
+both fields are selected; those peer ranks belong to the nested pooled scalar result.
+`member_ranks` is not accepted for an ordinary owned-series comparison. The pooled
+projection returns the producer-published statistic/value and comparison counts/ranks;
+when its available result omits a requested numeric statistic, count or exact peer
+rank evidence, or any identity/version/provenance binding is inconsistent, strict
+admission fails closed rather than manufacturing or borrowing annual-series values.
+Omitting these optional selectors preserves the incumbent dual-shape response and
+common-field projection behavior; no fields are silently added to the default response.
 
 ## Bounded territory cohorts
 

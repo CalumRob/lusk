@@ -52,10 +52,38 @@ ex-æquo with ties), and `sources` lineage. The projection validates its own
 published evidence (statistics, rank spans within the eligible population, member
 identity, counts, and lineage) and fails closed with HTTP 503 rather than serving
 an inconsistent published group; a request that names a non-published comparison
-axis is refused with 422. Dual scalar/series resources accept `scalar_facet` on a
-cohort/facts request to return that resource's independent scalar cohort facts; the
-same comparison field requests include its existing scalar comparison contract. These
-nested projections are opt-in and do not change default/unrequested responses.
+axis is refused with 422. For an ordered-series comparison, `member_ranks` is not
+an independently selectable peer field: it is accepted only when a dual
+scalar/ordered-series indicator explicitly selects both `axis_comparisons` and
+`scalar_facet`. In that case, `member_ranks` belongs to the nested pooled scalar
+comparison, while `axis_comparisons` remains the separate published series
+projection. A dual resource's focal facts request retains its existing scalar facet;
+the `facts` request may explicitly select `scalar_facet` on a cohort target to return
+pooled scalar cohort facts. The comparison request may explicitly select
+`scalar_facet` for the pooled result. The nested scalar and annual series retain
+their own numeric values, statistic, descriptor, provenance and publication/reference
+clocks; neither facet supplies or substitutes for the other's facts. The axis
+projection, pooled comparison projection, and cohort scalar-facts projection are
+opt-in; omission preserves the existing focal dual-facet and legacy common-field
+behavior without injecting the new pooled peer projection.
+
+For example, the dual `prix_m2` page's cohort-facts item selects the pooled
+cohort projection with `fields: ["value", "scalar_facet"]`. Its comparison
+item explicitly requests the two independent projections and the nested pooled
+peer fields:
+
+```json
+{
+  "fields": ["axis_comparisons", "scalar_facet", "median", "rank", "rank_size",
+    "rank_ties", "selected_member_count", "eligible_count", "missing_count", "member_ranks"]
+}
+```
+
+`median`, rank/count fields and `member_ranks` requested here apply to the
+producer's nested pooled-scalar comparison; `axis_comparisons` applies to the
+owned series. Do not request `member_ranks` for an ordinary ordered-series
+comparison: that field is rejected there rather than projected from annual
+points or silently added to the response.
 The catalogue also includes four producer-declared `typed_reading` resources for
 selected Démographie, Économie/Emploi, Habitat, and Milieux evidence. These use the
 same `facts` grammar and a declared `groupe` coordinate. Ranked economy activities,

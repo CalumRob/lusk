@@ -1,15 +1,22 @@
 import assert from 'node:assert/strict'
 import { execFileSync } from 'node:child_process'
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
+import { mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, isAbsolute, relative, resolve } from 'node:path'
 import { chromium } from 'playwright-core'
 import { createServer } from 'vite'
 
 for (const name of Object.keys(process.env)) if (name.startsWith('VITE_')) delete process.env[name]
 const appRoot = process.cwd()
 const repoRoot = resolve(appRoot, '..')
+assert(process.argv[2], 'Pass an external UTF-8 JSON evidence path as the first argument')
+const evidencePath = resolve(process.argv[2])
+const evidenceRelativeToRepo = relative(repoRoot, evidencePath)
+assert(evidenceRelativeToRepo.startsWith('..') || isAbsolute(evidenceRelativeToRepo),
+  'Evidence output must be outside the repository')
 const branch = execFileSync('git', ['branch', '--show-current'], { cwd: repoRoot, encoding: 'utf8' }).trim()
 const head = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+const statusBefore = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+assert.equal(statusBefore, '', 'Warm 503 browser proof requires a clean committed source tree')
 
 const server = await createServer({ configFile: resolve(appRoot, 'vite.config.ts'),
   server: { host: '127.0.0.1', port: 0, strictPort: false } })
@@ -179,8 +186,18 @@ try {
     cohortReads: cohortBefore, cohortRetained: true, revisitsDeduplicated: true })
   }
   assert.deepEqual(pageErrors, [], `Browser page errors: ${pageErrors.join('; ')}`)
-  console.log(JSON.stringify({ issue: '#857', branch, head, proxy: 'http://127.0.0.1:9',
-    lifecycle: outcomes }, null, 2))
+  const statusAfter = execFileSync('git', ['status', '--porcelain'], { cwd: repoRoot, encoding: 'utf8' }).trim()
+  assert.equal(execFileSync('git', ['rev-parse', 'HEAD'], { cwd: repoRoot, encoding: 'utf8' }).trim(), head,
+    'HEAD must remain unchanged during the browser proof')
+  assert.equal(execFileSync('git', ['branch', '--show-current'], { cwd: repoRoot, encoding: 'utf8' }).trim(), branch,
+    'Branch must remain unchanged during the browser proof')
+  assert.equal(statusAfter, statusBefore, 'Source cleanliness must remain unchanged during the browser proof')
+  const report = { issue: '#857', branch, head, cleanBeforeAndAfter: true,
+    proxy: 'http://127.0.0.1:9', lifecycle: outcomes,
+    requestTrace: trace, pageErrors }
+  await mkdir(dirname(evidencePath), { recursive: true })
+  await writeFile(evidencePath, `${JSON.stringify(report, null, 2)}\n`, { encoding: 'utf8' })
+  console.log(JSON.stringify({ ...report, evidencePath }, null, 2))
 } finally {
   if (browser) await browser.close()
   await server.close()

@@ -21,6 +21,10 @@ Design decisions live in **`DESIGN.md`** (repo root) — the single source of tr
 | `npm run test` | Vitest, one run (payload contract + fiche/carte + bascule + tokens + router) |
 | `npm run build` | `vue-tsc` type-check + `vite build` → `dist/` |
 | `npm run verify:profile-pages` | Bounded Playwright proof of all retained API-only profile pages with fully intercepted semantic API traffic |
+| `npm run verify:ordinary-scalar-pages` | Bounded browser proof for all 15 retained ordinary-scalar pages; emits a JSON report to stdout for external capture |
+| `npm run verify:series-pages` | Bounded browser proof for the five retained series-backed pages, including cold/warm acquisition and comparison retry; emits a JSON report to stdout |
+| `npm run verify:series-warm-503 -- <external-report.json>` | Mounted browser proof of cold-batch and warm-focal HTTP 503 recovery, comparison-only retry, cache revisits and no previous-focal substitution; requires a clean committed tree and writes a trace-bearing UTF-8 JSON report outside the checkout |
+| `npm run verify:series-native-bridge -- <external-output-directory>` | Fresh guarded SQL/HTTP capture plus the real native series acquirer bridge tests; requires the documented test-only database environment and writes evidence outside the checkout |
 | `npm run preview` | Serve the built `dist/` locally |
 
 ## Routes
@@ -52,6 +56,23 @@ Two hosts, one URL contract (`/` = app, `/data/` = payload):
 The app therefore uses **history-mode routing** (`createWebHistory`, default base `/`) — matching the fallback on both hosts. The app's own bundle never ships the payload; `public/data/` at the repo root remains the single source, fetched at runtime from `/data/`.
 
 From the repo root, `npm run dev` / `build` / `test` / `preview` forward to the app via the root `package.json` wrapper.
+
+The bounded browser proofs use intercepted API routes and fail closed for any
+unrecognized request (HTTP 599); Chromium has a loopback-only outbound proxy
+(`127.0.0.1:9`). Pass a unique output path under an external evidence directory,
+for example:
+
+```powershell
+npm run verify:series-warm-503 -- 'E:\Temp\opencode\857-series-parent-review\luna-readiness\attempt-<id>\series-warm-503.json'
+```
+
+For the #857 final acceptance battery, run the five-page series proof, this
+warm-503 proof, the native bridge, all 15 ordinary-scalar and 10 declared-profile
+page proofs, plus the separately retained fiche 8-scenario and facts-first
+3-scenario browser proofs. Capture each JSON stdout stream as UTF-8 in the
+attempt's external evidence directory, use the native bridge's explicit external
+output directory, and record the full exact source SHA; a passing browser fixture
+run is not live-publication parity.
 
 ## Conventions
 

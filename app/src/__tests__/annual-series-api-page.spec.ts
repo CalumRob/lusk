@@ -529,6 +529,124 @@ describe("Page d'indicateur — lecture ordonnée dans le contrat existant", () 
         .toEqual(siblingValues)
     } finally { wrapper.unmount() }
     })
+
+  it('keeps a delayed old focal reply out of the refreshed mounted page and cache generation', async () => {
+    vi.stubEnv('VITE_THEME_ACQUISITION_API', '1')
+    const requests: Array<Array<Record<string, any>>> = []
+    let publication: 1 | 2 = 1
+    let deferOldFocal = true
+    let initialPeerValues: number[] = []
+    let refreshedPeerValues: number[] = []
+    let refreshedInitialFocalValues: number[] = []
+    let releaseOldFocal!: (response: Response) => void
+    let oldFocalStarted!: () => void
+    const oldFocalSeen = new Promise<void>((resolve) => { oldFocalStarted = resolve })
+    const oldFocalReply = new Promise<Response>((resolve) => { releaseOldFocal = resolve })
+    const loader: ChargerFichier = async (file) => {
+      if (file === 'territoires') return territoiresFixture
+      if (file === 'indicateurs_habitat') return indicateursHabitatFixture
+      if (file === 'theme_habitat') return metadataHabitat
+      throw new Error(`unexpected static read: ${file}`)
+    }
+    vi.spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
+      const path = String(input)
+      if (path === '/api/resources') return nativeCatalogueResponse()
+      if (path !== '/api/resources/read-batch') throw new Error(`unexpected network request: ${path}`)
+      const { items } = JSON.parse(String(init?.body)) as { items: Array<Record<string, any>> }
+      requests.push(items)
+      const response = await nativeBatchResponse(items, (item, resource) => {
+        const data = nativeReadFixture(item, resource, { territories: territoiresFixture })
+        if (item.target.kind === 'territory_cohort' && Array.isArray(data.series)) {
+          const peer = data.series.find((group: Record<string, any>) => group.territory.id === '22002')
+          if (peer && publication === 1) initialPeerValues = peer.points
+            .filter((point: Record<string, any>) => point.status === 'measured').map((point: Record<string, any>) => point.value)
+        }
+        if (publication === 2) {
+          data.content_version = 'prix_m2-fixture-publication-v2'
+          if (data.publication_id) data.publication_id = 'prix_m2-fixture-publication-v2'
+          if (data.scalar_facet) {
+            data.scalar_facet.content_version = 'prix_m2-fixture-publication-v1-scalar-facet-v1'
+            data.scalar_facet.reference_content_version = 'semantic-reference-fixture-v1'
+          }
+          if (item.target.kind === 'territory' && item.intent.kind === 'facts') {
+            data.points = data.points.map((point: Record<string, any>) => ({ ...point,
+              value: point.value === null ? null : point.value + 100 }))
+          }
+          if (Array.isArray(data.series)) data.series = data.series.map((group: Record<string, any>) => ({ ...group,
+            points: group.points.map((point: Record<string, any>) => ({ ...point,
+              value: point.value === null ? null : point.value + 100 })) }))
+          if (item.target.kind === 'territory_cohort' && Array.isArray(data.series)) {
+            const peer = data.series.find((group: Record<string, any>) => group.territory.id === '22002')
+            if (peer) refreshedPeerValues = peer.points
+              .filter((point: Record<string, any>) => point.status === 'measured')
+              .map((point: Record<string, any>) => point.value)
+            const initialFocal = data.series.find((group: Record<string, any>) => group.territory.id === '22001')
+            if (initialFocal) refreshedInitialFocalValues = initialFocal.points
+              .filter((point: Record<string, any>) => point.status === 'measured')
+              .map((point: Record<string, any>) => point.value)
+          }
+          if (item.intent.kind !== 'facts') data.content_version = 'prix_m2-fixture-publication-v2'
+        }
+        return data
+      })
+      if (deferOldFocal && items.length === 1 && items[0]?.target.kind === 'territory' &&
+          items[0]?.target.id === '22002') {
+        deferOldFocal = false
+        oldFocalStarted()
+        return oldFocalReply
+      }
+      return response
+    })
+    const router = createRouter({ history: createMemoryHistory(), routes })
+    await router.push('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
+    await router.isReady()
+    const empty = { type: 'FeatureCollection' as const, features: [] }
+    const wrapper = mount(IndicateurView, { global: { plugins: [router], provide: {
+      [PAYLOAD_CHARGER_KEY]: loader,
+      [INDICATOR_READ_MODEL_MANIFEST_CHARGER_KEY]: async () => ({ schemaVersion: '1' as const, routes: { habitat: [] } }),
+      [GEOMETRIE_CHARGER_KEY]: async () => ({ communes: empty, epcis: empty, departements: empty }),
+    } } })
+    try {
+      await flushPromises()
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await oldFocalSeen
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=29001&niveau=commune&departement=29')
+      await flushPromises()
+      publication = 2
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await flushPromises()
+      expect(wrapper.get('[data-testid="series-comparison-error"] button').text()).toContain('Actualiser les faits')
+      await wrapper.get('[data-testid="series-comparison-error"] button').trigger('click')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="series-comparison-error"]').exists()).toBe(false)
+      const refreshedValues = wrapper.findAll('.trajectoire-territoire-point')
+        .map((point) => Number(point.attributes('data-value')))
+      expect(refreshedValues).toEqual(refreshedPeerValues)
+      expect(refreshedValues).toEqual(initialPeerValues.map((value) => value + 100))
+
+      releaseOldFocal(await nativeBatchResponse(requests[1]!, (item, resource) =>
+        nativeReadFixture(item, resource, { territories: territoiresFixture })))
+      await flushPromises()
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => Number(point.attributes('data-value'))))
+        .toEqual(refreshedValues)
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22001&niveau=commune&departement=22')
+      await flushPromises()
+      expect(wrapper.find('[data-testid="series-comparison-error"]').exists()).toBe(false)
+      expect(wrapper.findAll('.trajectoire-territoire-point')
+        .filter((point) => point.attributes('data-value') !== undefined)
+        .map((point) => Number(point.attributes('data-value'))))
+        .toEqual(refreshedInitialFocalValues)
+      const countAfterRefresh = requests.length
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=29001&niveau=commune&departement=29')
+      await flushPromises()
+      await router.replace('/indicateurs/habitat/prix_m2?territoire=22002&niveau=commune&departement=22')
+      await flushPromises()
+      expect(requests).toHaveLength(countAfterRefresh)
+      expect(wrapper.findAll('.trajectoire-territoire-point').map((point) => Number(point.attributes('data-value'))))
+        .toEqual(refreshedValues)
+      expect(requests[1]?.[0]?.target).toMatchObject({ kind: 'territory', id: '22002' })
+    } finally { wrapper.unmount() }
+  })
   it('waits for delayed metadata before choosing a series route when both API gates are enabled', async () => {
     let publishMetadata!: (metadata: typeof metadataMilieux) => void
     const metadata = new Promise<typeof metadataMilieux>((resolve) => { publishMetadata = resolve })
