@@ -153,10 +153,9 @@ try {
       item.target.kind === 'territory_cohort').length, cohortBefore,
     `${spec.indicator}: validated cohort facts are retained through focal 503`)
     failComparison = true
-    await waitPageData(page, spec)
-    await assertCohortFactsVisible(page, spec, initialCohort, focalB, formaterValeur)
-
+    await page.getByRole('button', { name: 'Réessayer', exact: true }).click()
     await page.getByTestId('series-comparison-error').waitFor({ state: 'visible', timeout: 20000 })
+    await assertCohortFactsVisible(page, spec, initialCohort, focalB, formaterValeur)
     const staged = trace.slice(start)
     const focalFactsSuccess = staged.find(({ status, items }) => status === 200 && items.length === 1 &&
       items[0].intent.kind === 'facts' && items[0].target.kind === 'territory' &&
