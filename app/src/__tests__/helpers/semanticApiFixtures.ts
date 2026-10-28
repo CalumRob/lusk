@@ -484,6 +484,7 @@ function nativeScalarComparison(item: Record<string, any>, resource: Resource,
   return { resource: resource.resource_id, target: item.target, contract: 'indicator-comparison-v1',
     complete_theme: false, indicator_id: resource.indicator_id, shape: 'scalar',
     content_version: version, reference_content_version: referenceVersion,
+    ...(selected ? {} : { comparison_content_version: `${resource.resource_id}-fixture-comparison-v1` }),
     selection: selected ? item.intent.members.map((member: { type: string; id: string }) =>
       ({ territory_type: member.type, territory_id: member.id })) : null,
     scope, result }
@@ -871,6 +872,7 @@ export function nativeReadFixture(item: Record<string, any>, resource: Resource,
       content_version: scalarVersions.content_version,
       reference_content_version: scalarVersions.reference_content_version,
       descriptor_version: scalarVersions.descriptor_version,
+      comparison_content_version: scalarComparison.comparison_content_version,
       descriptor: scalarFacetDescriptor(resource, scalarVersions.descriptor_version),
       selection: scalarComparison.selection, scope: scalarComparison.scope,
       result: scalarComparison.result } : undefined
