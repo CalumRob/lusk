@@ -138,6 +138,14 @@ function sourcesFor(resource: Resource, fact?: Record<string, any>, target?: Rec
     (typeof fact?.vintage_date_publication !== 'string' || vintage.date_publication === fact.vintage_date_publication) &&
     (typeof fact?.vintage_source !== 'string' || vintage.source === fact.vintage_source)
   let candidates = declared.filter(matchesFact)
+  if (!candidates.length && fact?.vintage_source) {
+    // A mixed-vintage aggregate fact (an EPCI spanning two OCS-GE millésimes)
+    // carries its own composite vintage identity: reuse it verbatim instead of
+    // inventing a clock.
+    candidates = [{ source_id: typeof fact.source_id === 'string' ? fact.source_id : fact.vintage_source,
+      name: fact.vintage_source, version: String(fact.vintage_version ?? 'vintage inconnu'),
+      reference_date: fact.vintage_date_reference ?? null, publication_date: fact.vintage_date_publication ?? null }]
+  }
   if (candidates.length > 1 && target?.type === 'commune') {
     const territory = territories.find((item) => item.type === target.type && item.territoire === target.id)
     const department = territory?.departement
