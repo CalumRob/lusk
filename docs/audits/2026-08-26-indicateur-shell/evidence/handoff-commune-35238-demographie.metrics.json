@@ -1,0 +1,127 @@
+{
+  "genre": "handoff",
+  "ficheUrl": "http://localhost:5481/territoire/commune/35238?theme=demographie",
+  "theme": "demographie",
+  "spec": {
+    "type": "commune",
+    "id": "35238",
+    "nom": "Rennes",
+    "sansNiveau": false
+  },
+  "inventaire": {
+    "total": 4,
+    "ancres": [
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/demographie/structure_age?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.481401 0.0118893 -0.054955)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/demographie/densite?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.481401 0.0118893 -0.054955)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/demographie/taille_menages?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.481401 0.0118893 -0.054955)",
+        "textDecoration": "underline"
+      },
+      {
+        "libelle": "Explorer",
+        "accessibleName": "Explorer",
+        "href": "/indicateurs/demographie/evolution_1968?territoire=35238&niveau=commune",
+        "target": "_blank",
+        "rel": "noopener noreferrer",
+        "largeur": 66,
+        "hauteur": 17,
+        "fontSize": "12px",
+        "dansNavLecture": false,
+        "etiquetteGroupe": null,
+        "couleurRepos": "oklab(0.481401 0.0118893 -0.054955)",
+        "textDecoration": "underline"
+      }
+    ],
+    "navLectures": [],
+    "grilleGroupes": [
+      {
+        "groupe": "etat-de-la-population",
+        "passarelles": [
+          {
+            "href": "/indicateurs/demographie/structure_age?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/demographie/densite?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          },
+          {
+            "href": "/indicateurs/demographie/taille_menages?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      },
+      {
+        "groupe": "trajectoire-demographique",
+        "passarelles": [
+          {
+            "href": "/indicateurs/demographie/evolution_1968?territoire=35238&niveau=commune",
+            "libelle": "Explorer",
+            "lecture": false
+          }
+        ]
+      }
+    ]
+  },
+  "survol": {
+    "avant": "oklab(0.481401 0.0118893 -0.054955)",
+    "apres": "rgb(142, 133, 196)",
+    "change": true,
+    "focus": {
+      "outlineStyle": "solid",
+      "outlineWidth": "2px",
+      "boxShadow": null
+    }
+  },
+  "arrivee": {
+    "url": "http://localhost:5481/indicateurs/demographie/structure_age?territoire=35238&niveau=commune&detail=%3C15&sex=F",
+    "queryTerritoire": "35238",
+    "queryNiveau": "commune",
+    "note": "Votre territoire : Rennes — comparaison sur les communes de Bretagne.",
+    "noteContientNom": true,
+    "horsPerimetre": false,
+    "tablePresente": false,
+    "ligneSurlignee": false,
+    "memeOrigine": true
+  },
+  "inversesEchantillon": []
+}
