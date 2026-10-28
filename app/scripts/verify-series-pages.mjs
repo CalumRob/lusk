@@ -291,7 +291,16 @@ try {
     if (level === 'commune' && !isRaccordement) query.set('departement', '22')
     await page.goto(`${baseUrl}indicateurs/${spec.theme}/${spec.indicator}?${query}&vue=reperes`,
       { waitUntil: 'domcontentloaded' })
-    await page.locator('h1').filter({ hasText: spec.page.label }).waitFor({ state: 'visible', timeout: 20000 })
+    try {
+      await page.locator('h1').filter({ hasText: spec.page.label }).waitFor({ state: 'visible', timeout: 20000 })
+    } catch (cause) {
+      if (process.env.LUSK_SERIES_PROOF_DEBUG) {
+        await page.screenshot({ path: `E:/Temp/opencode/857-series-evidence/wip/debug-h1-${spec.indicator}.png`, fullPage: false })
+        const text = await page.locator('body').innerText().catch(() => 'no body')
+        console.error(`DEBUG H1 ${spec.indicator}: url=${page.url()} h1=${await page.locator('h1').innerText().catch(() => 'none')} body=${text.slice(0, 300).replace(/\s+/g, ' ')}`)
+      }
+      throw cause
+    }
     await page.locator('figure[data-renderer], .indicateur-page').first().waitFor({ state: 'visible', timeout: 20000 })
     await page.waitForTimeout(250)
 
