@@ -165,7 +165,9 @@ try {
     const comparisonFailure = staged.find(({ status, items }) => status === 503 && items.length === 1 &&
       items[0].intent.kind === 'selected_comparison' && items[0].target.id === focalB.territoire)
     assert.ok(focalFactsSuccess, `${spec.indicator}: warm focal facts must succeed before the comparison retry`)
-    assert.ok(comparisonFailure, `${spec.indicator}: comparison must fail independently after focal facts are admitted`)
+    assert.ok(comparisonFailure, `${spec.indicator}: comparison must fail independently after focal facts are admitted; ` +
+      JSON.stringify(staged.map(({ status, items }) => ({ status, items: items.map(({ resource, intent, target }) =>
+        ({ resource, intent: intent.kind, target })) }))))
     const factsAtComparisonFailure = factReads.filter((item) => item.resource === spec.indicator).length
     const valueBeforeCompareRetry = await seriesFocalNumbers(page, spec, focalB)
     await page.getByRole('button', { name: 'Réessayer la comparaison' }).click()
