@@ -360,6 +360,14 @@ try {
           decodeURIComponent((row.querySelector('td a')?.getAttribute('href') ?? '').split('?')[0].split('/').at(-1) ?? '')))
         const expectedOrder = [...expected.exploration.rows].sort((a, b) =>
           (a.rang ?? Number.MAX_SAFE_INTEGER) - (b.rang ?? Number.MAX_SAFE_INTEGER)).map((row) => row.territoire.territoire)
+        if (process.env.LUSK_SERIES_PROOF_DEBUG && sortedRows.join() !== expectedOrder.join()) {
+          const liveRows = await page.locator('tbody tr').evaluateAll((rows) => rows.slice(0, 10).map((row) =>
+            [decodeURIComponent((row.querySelector('td a')?.getAttribute('href') ?? '').split('?')[0].split('/').at(-1) ?? ''),
+              row.querySelectorAll('td')[1]?.innerText.trim(), row.querySelectorAll('td')[2]?.innerText.trim()]))
+          const expectedRows = expected.exploration.rows.slice(0, 10).map((row) =>
+            [row.territoire.territoire, row.value, row.rang])
+          console.error(`DEBUG SORT ${spec.indicator}: live=${JSON.stringify(liveRows)} expected=${JSON.stringify(expectedRows)}`)
+        }
         assert.deepEqual(sortedRows, expectedOrder,
           `${spec.indicator} table rank sort must follow the model's rank order`)
         const focalRowRank = expected.exploration.rows.find((row) => row.territoire.territoire === focal.territoire)?.rang
