@@ -233,15 +233,13 @@ try {
     }
     await page.locator('.comparison-table-scroll thead').getByRole('button', { name: 'Rang', exact: true }).click()
     const sorted = await renderedRanks()
-    const expectedOrder = [...matched].sort((left, right) => {
-      if (left.rank === null) return right.rank === null ? 0 : 1
-      if (right.rank === null) return -1
-      return left.rank - right.rank
-    }).map((row) => row.territoryId)
-    assert.deepEqual(sorted.map((row) => row.territoryId), expectedOrder,
-      `${indicator} table rank sort must use native rank order (unranked last)`)
+    const expectedRanks = [...matched].map((row) => row.rank).sort((left, right) =>
+      (left ?? Number.MAX_SAFE_INTEGER) - (right ?? Number.MAX_SAFE_INTEGER))
+    const actualRanks = sorted.map((row) => expectedById.get(row.territoryId)?.rank ?? null)
+    assert.deepEqual(actualRanks, expectedRanks,
+      `${indicator} table rank sort must use native rank order (unranked last; tie order is unspecified)`)
     return { rows: matched, renderedRankCount: visibleRankCount,
-      nativeRankCount, sortedTerritoryIds: sorted.map((row) => row.territoryId) }
+      nativeRankCount, sortedTerritoryIds: sorted.map((row) => row.territoryId), sortedRanks: actualRanks }
   }
   for (const spec of census) {
     const pageFocal = focusFor(spec)
